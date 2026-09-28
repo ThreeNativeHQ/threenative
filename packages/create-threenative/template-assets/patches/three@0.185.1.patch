@@ -1,5 +1,5 @@
 diff --git a/build/three.cjs b/build/three.cjs
-index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda32176ef6a 100644
+index 8939a67..b0f9172 100644
 --- a/build/three.cjs
 +++ b/build/three.cjs
 @@ -26116,6 +26116,8 @@ function copyArrayContents( src, target ) {
@@ -12,7 +12,7 @@ index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda3
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.core.js b/build/three.core.js
-index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d55d6dd6e7 100644
+index 0bb9262..868a634 100644
 --- a/build/three.core.js
 +++ b/build/three.core.js
 @@ -26136,6 +26136,8 @@ function copyArrayContents( src, target ) {
@@ -25,10 +25,119 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09c414907f 100644
+index 2e49079..69a0632 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -18320,7 +18320,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -306,7 +306,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: -1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -335,7 +334,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: -1, _equal: false };
++			data = { _renderId: -1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -419,7 +418,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -431,7 +429,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -440,7 +437,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -456,18 +452,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -510,7 +500,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -523,7 +512,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -534,7 +522,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -552,7 +539,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -564,16 +550,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -18320,7 +18300,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
  
  		const uniformBufferSize = matrixCount * 16 * 4;
  
@@ -38,7 +147,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
  
-@@ -18414,7 +18415,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18414,7 +18395,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
  
@@ -48,7 +157,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			interleavedMatrix = _matrixBuffers.get( matrices );
  
-@@ -18500,7 +18502,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18500,7 +18482,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  			const previousInstanceData = _previousInstanceMatrices.get( object );
  
@@ -58,7 +167,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		} );
  
-@@ -18599,6 +18602,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18599,6 +18582,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
  
  	const matricesTexture = batchMesh._matricesTexture;
@@ -66,7 +175,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
  	const j = float( indirectId ).mul( 4 ).toInt().toConst();
-@@ -18626,6 +18630,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18626,6 +18610,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  
  	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
  
@@ -86,7 +195,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
  	const batchingNormal = bm.mul( transformedNormal ).xyz;
-@@ -18777,7 +18794,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -18777,7 +18774,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -96,7 +205,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			}
  
-@@ -18844,7 +18862,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
+@@ -18844,7 +18842,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
  
  			if ( state !== undefined ) {
  
@@ -106,7 +215,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			}
  
-@@ -29911,6 +29930,18 @@ class RenderObject {
+@@ -29911,6 +29910,18 @@ class RenderObject {
  		 */
  		this._sourceMaterial = renderer._currentSourceMaterial;
  
@@ -125,7 +234,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -30098,7 +30129,7 @@ class RenderObject {
+@@ -30098,7 +30109,7 @@ class RenderObject {
  	 */
  	getChainArray() {
  
@@ -134,7 +243,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  	}
  
-@@ -30548,6 +30579,8 @@ class RenderObject {
+@@ -30548,6 +30559,8 @@ class RenderObject {
  		}
  
  		cacheKey = hash$1( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
@@ -143,7 +252,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		return cacheKey;
  
-@@ -30680,6 +30713,8 @@ class RenderObjects {
+@@ -30680,6 +30693,8 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = material;
  		_chainKeys$3[ 2 ] = renderContext;
  		_chainKeys$3[ 3 ] = lightsNode;
@@ -152,7 +261,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		//
  
-@@ -30707,9 +30742,18 @@ class RenderObjects {
+@@ -30707,9 +30722,18 @@ class RenderObjects {
  
  			}
  
@@ -165,15 +274,15 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
++
++			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
  
 -				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
-+			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
-+
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
  					renderObject.dispose();
  
-@@ -30719,6 +30763,8 @@ class RenderObjects {
+@@ -30719,6 +30743,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -182,7 +291,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  				}
  
  			}
-@@ -30731,6 +30777,7 @@ class RenderObjects {
+@@ -30731,6 +30757,7 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = null;
  		_chainKeys$3[ 2 ] = null;
  		_chainKeys$3[ 3 ] = null;
@@ -190,7 +299,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		//
  
-@@ -33952,7 +33999,8 @@ class RenderContexts {
+@@ -33952,7 +33979,8 @@ class RenderContexts {
  
  		}
  
@@ -200,7 +309,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -34181,6 +34229,21 @@ class Textures extends DataMap {
+@@ -34181,6 +34209,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -222,7 +331,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		}
  
  		//
-@@ -39725,7 +39788,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +39768,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -232,7 +341,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		//
  
-@@ -53841,7 +53905,7 @@ class NodeBuilder {
+@@ -53841,7 +53885,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -241,7 +350,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  	}
  
-@@ -62731,6 +62795,7 @@ class Renderer {
+@@ -62731,6 +62775,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -249,7 +358,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +62821,7 @@ class Renderer {
+@@ -62756,6 +62801,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -257,7 +366,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +62829,15 @@ class Renderer {
+@@ -62763,7 +62809,15 @@ class Renderer {
  
  			}
  
@@ -274,7 +383,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +62899,7 @@ class Renderer {
+@@ -62825,6 +62879,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -282,7 +391,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		}
  
-@@ -79004,7 +79079,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79059,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -298,7 +407,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +79668,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79648,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -308,7 +417,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			} else {
  
-@@ -80329,9 +80412,12 @@ ${ flowData.code }
+@@ -80329,9 +80392,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -324,25 +433,25 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  				if ( needsSampler ) {
  
-@@ -81295,9 +81381,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81361,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
 -		const data = backend.get( this._getBufferAttribute( attribute ) );
 +		const bufferAttribute = this._getBufferAttribute( attribute );
 +		const data = backend.get( bufferAttribute );
-+
+ 
+-		data.buffer.destroy();
 +		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
 +		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
 +		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
 +		if ( data.buffer !== undefined ) data.buffer.destroy();
- 
--		data.buffer.destroy();
++
 +		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
  		backend.delete( attribute );
  
-@@ -81598,18 +81690,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +81670,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -353,10 +462,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
--
--		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
+-		}
+-
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -366,7 +475,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82221,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82201,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -376,7 +485,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  	}
  
  	/**
-@@ -83814,6 +83907,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +83887,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -391,7 +500,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84027,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84007,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -402,7 +511,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			if ( adapter === null ) {
  
-@@ -85461,13 +85564,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85544,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -419,7 +528,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			}
  
-@@ -85766,6 +85868,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +85848,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -427,7 +536,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +85890,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +85870,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -437,7 +546,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +85911,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +85891,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -445,7 +554,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  			needsUpdate = true;
  
-@@ -85828,6 +85933,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +85913,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -453,7 +562,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +85952,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +85932,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -462,10 +571,119 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..f49c45fe72e35d7522d7b5c4194b4a09
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de29b94cfb 100644
+index f707acc..11b0e4d 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
-@@ -18320,7 +18320,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -306,7 +306,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: -1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -335,7 +334,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: -1, _equal: false };
++			data = { _renderId: -1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -419,7 +418,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -431,7 +429,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -440,7 +437,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -456,18 +452,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -510,7 +500,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -523,7 +512,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -534,7 +522,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -552,7 +539,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -564,16 +550,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -18320,7 +18300,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
  
  		const uniformBufferSize = matrixCount * 16 * 4;
  
@@ -475,7 +693,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de
  
  			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
  
-@@ -18414,7 +18415,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18414,7 +18395,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
  
@@ -485,7 +703,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de
  
  			interleavedMatrix = _matrixBuffers.get( matrices );
  
-@@ -34181,6 +34183,21 @@ class Textures extends DataMap {
+@@ -34181,6 +34163,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -507,7 +725,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de
  		}
  
  		//
-@@ -79004,7 +79021,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79001,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -523,7 +741,7 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -81295,9 +81319,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81299,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -541,8 +759,121 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..158de915f7c39fd38df26ebd217c95de
  
  		backend.delete( attribute );
  
+diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
+index 1f4c254..f80864a 100644
+--- a/src/materials/nodes/manager/NodeMaterialObserver.js
++++ b/src/materials/nodes/manager/NodeMaterialObserver.js
+@@ -298,7 +298,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: - 1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -327,7 +326,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: - 1, _equal: false };
++			data = { _renderId: - 1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -411,7 +410,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -423,7 +421,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -432,7 +429,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -448,18 +444,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -502,7 +492,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -515,7 +504,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -526,7 +514,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -544,7 +531,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -556,16 +542,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
-index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
+index ab62e98..2cf4bb6 100644
 --- a/src/nodes/accessors/Batch.js
 +++ b/src/nodes/accessors/Batch.js
 @@ -1,6 +1,6 @@
@@ -588,7 +919,7 @@ index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b
 -
 -
 diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
-index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef8940a4f4 100644
+index b89834b..ed00e75 100644
 --- a/src/nodes/accessors/Instance.js
 +++ b/src/nodes/accessors/Instance.js
 @@ -40,7 +40,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
@@ -622,7 +953,7 @@ index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef
  		} );
  
 diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
-index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867ddad01b6 100644
+index 2356aed..aaeea63 100644
 --- a/src/nodes/accessors/Skinning.js
 +++ b/src/nodes/accessors/Skinning.js
 @@ -149,7 +149,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
@@ -646,7 +977,7 @@ index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867
  			}
  
 diff --git a/src/nodes/accessors/VelocityNode.js b/src/nodes/accessors/VelocityNode.js
-index 373548b0b587e7da3ef0993bfe316af420e7f66c..c48002abbce20ee8b29908cf314d7b03afe0db03 100644
+index 373548b..c48002a 100644
 --- a/src/nodes/accessors/VelocityNode.js
 +++ b/src/nodes/accessors/VelocityNode.js
 @@ -106,7 +106,8 @@ class VelocityNode extends TempNode {
@@ -660,7 +991,7 @@ index 373548b0b587e7da3ef0993bfe316af420e7f66c..c48002abbce20ee8b29908cf314d7b03
  		//
  
 diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
-index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966d8de3cb6 100644
+index be00b81..1990da8 100644
 --- a/src/nodes/core/NodeBuilder.js
 +++ b/src/nodes/core/NodeBuilder.js
 @@ -3450,7 +3450,7 @@ class NodeBuilder {
@@ -673,7 +1004,7 @@ index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966
  	}
  
 diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
-index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
+index 2ef7cb2..35cc0ff 100644
 --- a/src/objects/BatchedMesh.js
 +++ b/src/objects/BatchedMesh.js
 @@ -181,6 +181,8 @@ function copyArrayContents( src, target ) {
@@ -686,7 +1017,7 @@ index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820c
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
-index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9f3ea95ef 100644
+index 5f3d213..7a9a168 100644
 --- a/src/renderers/common/Bindings.js
 +++ b/src/renderers/common/Bindings.js
 @@ -206,10 +206,14 @@ class Bindings extends DataMap {
@@ -705,7 +1036,7 @@ index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9
  
  					} else if ( binding.isStorageBuffer ) {
 diff --git a/src/renderers/common/RenderContexts.js b/src/renderers/common/RenderContexts.js
-index 64ecdeeeabcd2b28000fc503e826d1cbf8d3c118..7319e25e280452b69c6f0c4c2f8c93c955ff9be3 100644
+index 64ecdee..7319e25 100644
 --- a/src/renderers/common/RenderContexts.js
 +++ b/src/renderers/common/RenderContexts.js
 @@ -77,7 +77,8 @@ class RenderContexts {
@@ -719,7 +1050,7 @@ index 64ecdeeeabcd2b28000fc503e826d1cbf8d3c118..7319e25e280452b69c6f0c4c2f8c93c9
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
 diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
-index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9ba5de81f 100644
+index c900fa4..aebfa51 100644
 --- a/src/renderers/common/RenderObject.js
 +++ b/src/renderers/common/RenderObject.js
 @@ -299,6 +299,18 @@ class RenderObject {
@@ -760,7 +1091,7 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9
  		return cacheKey;
  
 diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
-index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a803c852a6 100644
+index 676cc2b..72569d0 100644
 --- a/src/renderers/common/RenderObjects.js
 +++ b/src/renderers/common/RenderObjects.js
 @@ -97,6 +97,8 @@ class RenderObjects {
@@ -811,7 +1142,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  		//
  
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
-index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60afd2b259 100644
+index 8dfc2ae..e9d27b3 100644
 --- a/src/renderers/common/Renderer.js
 +++ b/src/renderers/common/Renderer.js
 @@ -3550,6 +3550,7 @@ class Renderer {
@@ -856,7 +1187,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60
  		}
  
 diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
-index f42b90eac69ca042c39e7999773d6b8303fc3dd0..be47645f5662a2be8002c23de8ff4092bf561049 100644
+index f42b90e..be47645 100644
 --- a/src/renderers/common/Textures.js
 +++ b/src/renderers/common/Textures.js
 @@ -215,6 +215,21 @@ class Textures extends DataMap {
@@ -882,7 +1213,7 @@ index f42b90eac69ca042c39e7999773d6b8303fc3dd0..be47645f5662a2be8002c23de8ff4092
  
  		//
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda9020642f77 100644
+index 06e2036..69b8b67 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -102,6 +102,14 @@ class WebGPUBackend extends Backend {
@@ -971,7 +1302,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
-index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593ef058c398 100644
+index be07536..2acc832 100644
 --- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 +++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 @@ -741,7 +741,14 @@ class WGSLNodeBuilder extends NodeBuilder {
@@ -1017,7 +1348,7 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593e
  				if ( needsSampler ) {
  
 diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
-index f683d74a3d10cdffee8a39382d6f0c635657a3cb..83bbe189915c8450c4e14108e6a3f4ed98c4b016 100644
+index f683d74..83bbe18 100644
 --- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
 @@ -361,9 +361,15 @@ class WebGPUAttributeUtils {
@@ -1039,7 +1370,7 @@ index f683d74a3d10cdffee8a39382d6f0c635657a3cb..83bbe189915c8450c4e14108e6a3f4ed
  		backend.delete( attribute );
  
 diff --git a/src/renderers/webgpu/utils/WebGPUBindingUtils.js b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
-index da4bd473bd8df021159108bac235d211ff2a011f..a5da7ca09f746c0b2859ef173df663ccdc851ebc 100644
+index da4bd47..a5da7ca 100644
 --- a/src/renderers/webgpu/utils/WebGPUBindingUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
 @@ -97,18 +97,16 @@ class WebGPUBindingUtils {
