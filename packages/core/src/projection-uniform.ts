@@ -170,9 +170,8 @@ function signatureTextOf(
  */
 export function uniformSignatureOf(material: Material): string | undefined {
   if (!uniformEligible(material)) return undefined;
-  const source = material as unknown as Record<string, unknown>;
-  const keys = Object.keys(source);
-  const values = Object.values(source);
+  const keys = Object.keys(material);
+  const values = Object.values(material);
   let record = records.get(material);
   if (record === undefined) {
     record = {
@@ -269,7 +268,7 @@ export function uniformUnchanged(material: Material): boolean {
   // disappeared comes with it. Reading each value by name instead is what this replaced, and it is
   // several times slower: an engine cannot fold a lookup through a variable, so eighty-one of
   // them per material is eighty-one dictionary probes, against one copy of eighty-one slots.
-  const current = Object.values(material as unknown as Record<string, unknown>);
+  const current = Object.values(material);
   const {
     values,
     identityRanges,

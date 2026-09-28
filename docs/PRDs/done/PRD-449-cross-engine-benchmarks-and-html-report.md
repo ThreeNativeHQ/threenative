@@ -72,6 +72,14 @@ this checkout's local QuickJS binary uses the `wgpu-native` backend while the ca
 a raw Dawn oracle. Rebuilding that target locally fails on missing `webgpu.h`; no native code in
 this PR changed. Remote CI still has to decide the full merge gate.
 
+**First remote CI repair (2026-09-28):** `budgets` and two unit shards failed for this PR's own
+new `as unknown as` casts and two test files creating unregistered temporary directories; the
+third unit shard's tests passed but its suite namespace grew. The two casts were unnecessary for
+`Object.keys`/`Object.values` on a Three.js material and are gone. The campaign-store and monitor
+tests now use the repository's `makeTempDir` cleanup helper. Focused validation passes (38 tests,
+including the temp-dir guard, quality JSON and uniform-batch tests), as do `pnpm quality --json
+--silent`, typecheck and lint. The remote checks must rerun at the new head before merge.
+
 ## Acceptance criteria
 
 - [x] Opening the report answers "is TN beating Godot?" in one line, with a winner pill per row and TN's losses left in view. proof: `progress.html` banner "ThreeNative wins 4, Godot wins 1, ties 1 — of 6 head-to-head rows"; `engine-load-test-monitor.spec.ts` 15/15.

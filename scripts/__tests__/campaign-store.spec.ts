@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, symlink } from "node:fs/promises";
-import os from "node:os";
+import { readFile, readdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 
 import {
   CAMPAIGN_DERIVATION_VERSION,
@@ -22,7 +22,7 @@ const LATENCY = "frameMs,frameIndex\n9.5,0\n10.5,1\n";
 const LATENCY_REF = `raw/${RUN_ID}-gpuLatencyMs.csv`;
 
 function campaignRoot(): Promise<string> {
-  return mkdtemp(path.join(os.tmpdir(), "tn-campaign-store-"));
+  return makeTempDir("tn-campaign-store-");
 }
 
 function record(overrides: Partial<ICampaignRunRecord> = {}): ICampaignRunRecord {

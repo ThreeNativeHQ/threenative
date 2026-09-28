@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type IAttempt,
   type IGitState,
@@ -149,7 +149,7 @@ function data(overrides: Partial<IMonitorData> = {}): IMonitorData {
 }
 
 async function campaignDir(): Promise<string> {
-  return mkdtemp(path.join(os.tmpdir(), "tn-monitor-"));
+  return makeTempDir("tn-monitor-");
 }
 
 describe("PRD-449 campaign progress monitor", () => {
