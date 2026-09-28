@@ -1,33 +1,32 @@
 import {
   GPUParticles3D,
-  type ICtx,
   Scene,
   type SceneFrame,
+  afterPhysics,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
-import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
+import { CollisionShape3D, type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
+import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { Ability } from "../abilities/Ability.js";
 import { Enemy } from "../entities/Enemy.js";
+import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import { HOSTILE_LAYER, PLAYER_LAYER, Player, WORLD_LAYER } from "../entities/Player.js";
 import { ITEMS, Inventory, type ItemId, type ItemStack } from "../items/Inventory.js";
 import { describeDrops, rollDrops } from "../loot/drops.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
+import { createDungeon, isSolid } from "../render/dungeon.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createDungeon, createLootVisual } from "../render/shapes.js";
+import { createLootVisual } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { createArcaneSurge, createAttackArc, createHitBurst } from "../render/vfx.js";
 import type { GameState } from "../state.js";
 import { StatBlock } from "../stats/StatBlock.js";
-
-export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const SPAWN = new Vector3(-8, 0.78, 0);
 const ATTACK_SHAPE = CollisionShape3D.sphere(2.2);
@@ -82,18 +81,40 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     wallEnemyAggro: 0,
   };
 
+  #mannequin: IMannequin | undefined;
+  #sky: Texture | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    // One rig, five instances. Quaternius' Universal Animation Library combat mannequin (CC0) is
+    // the shared figure: the hero, the raiders and the boss are the same asset, so "add an enemy"
+    // is a constructor call and never a second file to cook.
+    [this.#mannequin, this.#sky] = await Promise.all([
+      ctx.assets.model<IMannequin>("mannequin-combat.glb"),
+      ctx.assets.texture("sky.jpg"),
+    ]);
+  }
+
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const mannequin = this.#mannequin;
+    if (mannequin === undefined || this.#sky === undefined)
+      throw new Error("Play.enter ran before load() loaded mannequin-combat.glb and sky.jpg.");
     const restored = loadProgress(Play.initialState);
     ctx.state.set(restored);
     ctx.state.flush();
 
     const camera = ctx.camera as PerspectiveCamera;
-    const materials = createMaterials();
-    setupSky(ctx.scene);
-    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    setupSky(ctx.scene, this.#sky);
+    const lighting = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: sun, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, camera, {
+      godraysLight: lighting.key,
+      mobile: isMobile(),
+    });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);
     const cameraRig = createDungeonCamera(camera);
@@ -103,26 +124,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
 
-    const dungeon = createDungeon(materials);
+    const dungeon = createDungeon();
     ctx.add(dungeon.group);
-    const fixed = (object: Object3D, shape: CollisionShape3D) =>
-      new RigidBody3D({
+    // One call per room, and a room is one group: the collision follows the masonry the same way
+    // the look does, so cutting a wall here cuts the collider with it. The predicate keeps the
+    // torch dressing and the painted threshold out of the world.
+    for (const room of dungeon.rooms)
+      buildStaticColliders(ctx, room, {
         collisionLayer: WORLD_LAYER,
         collisionMask: PLAYER_LAYER | HOSTILE_LAYER,
-        object,
-        physics: ctx.physics,
-        shape,
-        type: "fixed",
+        predicate: isSolid,
       });
-    fixed(dungeon.floor, CollisionShape3D.box(36, 0.3, 12));
-    for (const [index, wall] of dungeon.walls.entries()) {
-      fixed(
-        wall,
-        index < 2 ? CollisionShape3D.box(36, 2.8, 0.35) : CollisionShape3D.box(0.35, 2.8, 12),
-      );
-    }
-    for (const pillar of dungeon.roomPillars) fixed(pillar, CollisionShape3D.box(0.7, 3.6, 1.2));
-    fixed(dungeon.lineOfSightWall, CollisionShape3D.box(2.4, 2.1, 0.5));
 
     const inventory = new Inventory(6);
     const savedSlots = restored.inventorySlots.filter(
@@ -141,7 +153,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const playerRef: { value?: Player } = {};
     const player = new Player(
       ctx,
-      materials,
+      mannequin,
       new Vector3(restored.playerX, restored.playerY, restored.playerZ),
       restored.health,
       (amount) => {
@@ -185,7 +197,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const enemies = new Map<number, Enemy>();
-    const enemyIds = new Map<number, string>();
     const damageStats = new StatBlock(Play.initialState.baseDamage);
     let elapsed = 0;
     let saveRequested = false;
@@ -215,7 +226,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     const retainLoot = (stack: ItemStack): void => {
-      const visual = createLootVisual(materials);
+      const visual = createLootVisual();
       visual.name = `pending-loot-${stack.itemId}`;
       visual.position
         .copy(player.mesh.position)
@@ -259,6 +270,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         changed = true;
       }
       if (changed) {
+        // A chest that actually closes is the one loot moment in this game, so it is the one the
+        // figure bends down for.
+        player.pickup();
         syncInventory();
         syncPendingLoot();
       }
@@ -284,10 +298,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     syncEquipmentStat();
 
     const onEnemyDeath = (enemy: Enemy): void => {
-      const id = enemyIds.get(enemy.body.body.id);
-      enemies.delete(enemy.body.body.id);
-      enemyIds.delete(enemy.body.body.id);
-      if (id !== undefined && ctx.entities.get(id) !== undefined) ctx.entities.remove(id);
+      // The entity stays registered so the body keeps animating its death clip and answering
+      // `debug()`; only the AI stops, which is what `alive` is for. Freeing it here would delete
+      // the corpse on the same frame the player earned it.
       const seed = DROP_SEED + enemyIndex++;
       lastDropSeed = seed;
       const drops = rollDrops(seed);
@@ -319,13 +332,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       position: Vector3,
       options: { readonly boss?: boolean; readonly health?: number } = {},
     ): Enemy => {
-      const enemy = new Enemy(ctx, materials, position, player.body.body, {
+      const enemy = new Enemy(ctx, mannequin, position, player.body.body, {
         ...options,
         onAttack: (amount) => player.takeDamage(amount),
         onDeath: onEnemyDeath,
       });
-      enemies.set(enemy.body.body.id, enemy);
-      enemyIds.set(enemy.body.body.id, id);
+      enemies.set(enemy.id, enemy);
       ctx.entities.add(id, enemy);
       return enemy;
     };
@@ -337,6 +349,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const boss = addEnemy("boss", new Vector3(16, 0.78, 0), { boss: true, health: 64 });
 
     const strike = (amount: number): void => {
+      player.strike();
       burst(attackVfx, player.attackOrigin(), "vfx-attack");
       const hits = ctx.physics.directSpaceState.intersectShape({
         collisionMask: HOSTILE_LAYER,
@@ -369,6 +382,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         emitPlaytestEvent({ entity: "player", name: "ability-expired" });
       },
       onStart: () => {
+        player.cast();
         burst(surgeVfx, player.mesh.position, "vfx-surge");
         damageStats.apply({ add: 6, duration: 1, source: "arcane-surge" }, elapsed);
         ctx.state.set({ abilityUses: ctx.state.getState().abilityUses + 1, modifierActive: 1 });
@@ -422,6 +436,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
 
     cameraRig.snap(player.mesh.position);
+    // After physics, never inside the frame: the body has moved by then, and a camera that follows
+    // a body from the previous frame trails it by a whole step at this speed.
+    afterPhysics(ctx, (dt) => cameraRig.follow(player.mesh.position, dt));
     let lastSavedRoom = currentRoom;
     const frameState: Partial<GameState> = {};
     return (frameCtx, dt) => {
@@ -437,6 +454,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true)
         strike(Math.round(damageStats.value(elapsed)));
       if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
+      if (frameCtx.input.justPressed("dodge") && player.dodge())
+        emitPlaytestEvent({ entity: "player", name: "dodged" });
       if (frameCtx.input.justPressed("equip")) {
         if (inventory.equip("ember-blade")) {
           syncEquipmentStat();
@@ -508,7 +527,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         saveProgress(frameCtx.state);
         saveRequested = false;
       }
-      cameraRig.follow(player.mesh.position, dt);
       if (boss.alive === false) frameCtx.state.set({ gameWon: 1, phase: "won" });
       if (player.dead) frameCtx.state.set({ gameOver: 1, phase: "lost" });
     };

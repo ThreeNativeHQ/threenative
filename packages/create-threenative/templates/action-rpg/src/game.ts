@@ -21,6 +21,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     ability: { buttons: [1], keys: ["KeyE"] },
     attack: { buttons: [0], keys: ["Space", "KeyF"] },
     damage: { keys: ["KeyH"] },
+    dodge: { keys: ["ShiftLeft", "ShiftRight"] },
     dropProbe: { keys: ["KeyT"] },
     equip: { keys: ["KeyQ"] },
     fill: { keys: ["KeyP"] },
