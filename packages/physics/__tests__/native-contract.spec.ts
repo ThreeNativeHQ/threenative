@@ -17,6 +17,7 @@ import {
 } from "../src/native/index.js";
 import * as nativeEntry from "../src/native/index.js";
 import type { IPhysicsContext } from "../src/plugin.js";
+import type { IPhysicsVehicleWheelOptions } from "../src/simulation.js";
 import {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_SLEEP_STATE_STRIDE,
@@ -730,5 +731,135 @@ describe("native physics contract", () => {
     expect(() => native.removeBody(1)).toThrow(/disposed/i);
     expect(createBody).not.toHaveBeenCalled();
     expect(removeBody).not.toHaveBeenCalled();
+  });
+
+  const frontLeft: IPhysicsVehicleWheelOptions = {
+    dampingCompression: 2.3,
+    dampingRelaxation: 4.4,
+    maxSuspensionTravel: 0.3,
+    position: { x: -0.8, y: -0.15, z: -1.2 },
+    suspensionRestLength: 0.3,
+    suspensionStiffness: 100,
+    useAsSteering: true,
+    useAsTraction: false,
+    wheelFrictionSlip: 10.5,
+    wheelRadius: 0.34,
+  };
+
+  const vehicleWheels = [frontLeft];
+
+  const vehicleOptions = {
+    axle: { x: 1, y: 0, z: 0 },
+    bodyId: 0,
+    forwardAxis: 2 as const,
+    wheels: vehicleWheels,
+  };
+
+  it("hands a vehicle's wheels to the native host as one flat record per wheel", () => {
+    let nextId = 0;
+    const createVehicle = vi.fn((_options: { wheels: Float32Array }) => 3);
+    const native = createNativePhysicsSimulation(
+      { createBody: () => nextId++, createVehicle } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    native.createBody(bodyOptions());
+    native.createBody(bodyOptions());
+
+    expect(native.createVehicle?.(vehicleOptions)).toBe(3);
+    const options = createVehicle.mock.calls[0]?.[0];
+    // The ABI is f32 on the wire, so the record is exactly the source numbers rounded once.
+    expect([...(options?.wheels ?? [])]).toEqual(
+      [-0.8, -0.15, -1.2, 0.34, 0.3, 100, 2.3, 4.4, 10.5, 0.3, 1, 0].map(Math.fround),
+    );
+
+    // Rapier's own default travel is sent when the game leaves it unset, so "absent" cannot
+    // drift into a different strut length on the native build.
+    native.createVehicle?.({
+      ...vehicleOptions,
+      bodyId: 1,
+      wheels: [{ ...frontLeft, maxSuspensionTravel: undefined }],
+    });
+    const defaulted = createVehicle.mock.calls[1]?.[0]?.wheels;
+    expect(defaulted?.[9]).toBe(5);
+  });
+
+  it("refuses a vehicle the native backend cannot drive, by name", () => {
+    const createVehicle = vi.fn(() => 0);
+    const native = createNativePhysicsSimulation(
+      { createBody: () => 0, createVehicle } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    native.createBody(bodyOptions("fixed"));
+
+    expect(() => native.createVehicle?.({ ...vehicleOptions, bodyId: 9 })).toThrow(
+      /TN_PHYSICS_UNKNOWN_BODY/,
+    );
+    expect(() => native.createVehicle?.({ ...vehicleOptions, bodyId: 0 })).toThrow(
+      /TN_PHYSICS_NOT_DYNAMIC/,
+    );
+    expect(() => native.createVehicle?.({ ...vehicleOptions, wheels: [] })).toThrow(
+      /TN_VEHICLE_INVALID: a vehicle needs at least one wheel/,
+    );
+    expect(() => native.createVehicle?.({ ...vehicleOptions, forwardAxis: 1 as never })).toThrow(
+      /TN_VEHICLE_INVALID: forwardAxis/,
+    );
+    // The old-runtime guard stays: a host built before vehicles must say so, not drive nothing.
+    const old = createNativePhysicsSimulation(
+      { createBody: () => 0 } as unknown as INativeSimulation,
+      "old-runtime",
+    );
+    old.createBody(bodyOptions());
+    expect(() => old.createVehicle?.(vehicleOptions)).toThrow(/TN_NATIVE_PHYSICS_VEHICLE_MISSING/);
+    expect(() => old.setVehicleInput?.(0, { brake: 0, engineForce: 0, steering: 0 })).toThrow(
+      /TN_NATIVE_PHYSICS_VEHICLE_MISSING/,
+    );
+    expect(() => old.resetVehicle?.(0, { x: 0, y: 0, z: 0 }, 0)).toThrow(
+      /TN_NATIVE_PHYSICS_VEHICLE_MISSING/,
+    );
+  });
+
+  it("reads one vehicle state through the shared stride and drops it with the chassis", () => {
+    const readVehicleState = vi.fn((_id: number, output: Float32Array) => {
+      // Speed, then one three-float record per wheel: contact, suspension length, rotation.
+      output.set([12.5, 1, 0.2769, 0.5]);
+      return output.length;
+    });
+    const setVehicleInput = vi.fn();
+    const resetVehicle = vi.fn();
+    const native = createNativePhysicsSimulation(
+      {
+        createBody: () => 0,
+        createVehicle: () => 4,
+        readVehicleState,
+        removeBody: vi.fn(),
+        resetVehicle,
+        setVehicleInput,
+      } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    native.createBody(bodyOptions());
+    const id = native.createVehicle?.(vehicleOptions) as number;
+
+    native.setVehicleInput?.(id, { brake: 60, engineForce: 4000, steering: 0.5 });
+    expect(setVehicleInput).toHaveBeenCalledWith(id, {
+      brake: 60,
+      engineForce: 4000,
+      steering: 0.5,
+    });
+    const state = native.readVehicleState?.(id);
+    expect(state?.speed).toBe(12.5);
+    expect([...(state?.wheels ?? [])]).toEqual([1, 0.2769, 0.5].map(Math.fround));
+    expect(() =>
+      native.setVehicleInput?.(id, { brake: Number.NaN, engineForce: 0, steering: 0 }),
+    ).toThrow(/TN_PHYSICS_NON_FINITE/);
+    expect(() => native.readVehicleState?.(9)).toThrow(/TN_VEHICLE_UNKNOWN/);
+    expect(() => native.resetVehicle?.(9, { x: 0, y: 0, z: 0 }, 0)).toThrow(/TN_VEHICLE_UNKNOWN/);
+
+    native.resetVehicle?.(id, { x: 1, y: 2, z: 3 }, Math.PI);
+    expect(resetVehicle).toHaveBeenCalledWith(id, { x: 1, y: 2, z: 3 }, Math.PI);
+
+    // The chassis owns the wheels: a removed car is a car that is gone.
+    native.removeBody(0);
+    expect(() => native.readVehicleState?.(id)).toThrow(/TN_VEHICLE_UNKNOWN/);
   });
 });

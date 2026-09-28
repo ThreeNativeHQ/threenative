@@ -60,12 +60,14 @@ engine changed.
 - `VehicleBody3D` extends `RigidBody3D` and adds ray-cast wheels, so a vehicle's lifetime is its
   chassis's: there is no vehicle removal call. `createVehicle`, `setVehicleInput`,
   `readVehicleState` and `resetVehicle` on `IPhysicsSimulation` are **optional** and carry plain
-  numbers only. The native backend implements none of them yet, so the node throws
-  `TN_VEHICLE_NATIVE_UNAVAILABLE` at construction there (PRD-472 phase 2). Two Rapier facts the
-  node's unit tests pin, because both are invisible in the API and wrong when assumed: the
+  numbers only; both backends implement all four, and a backend that does not still fails loudly
+  at construction with `TN_VEHICLE_NATIVE_UNAVAILABLE`. Three Rapier facts the node's unit tests
+  pin, because all three are invisible in the API and wrong when assumed: the
   `suspensionStiffness` of `@dimforge/rapier3d-compat@0.19.3` is mass-normalised (a frequency
-  squared, so sag is about `9.81 / (4 * stiffness)`), and `currentVehicleSpeed()` is not the
-  signed forward speed, which is why the seam computes that dot product itself.
+  squared, so sag is about `9.81 / (4 * stiffness)`), `currentVehicleSpeed()` is not the
+  signed forward speed, which is why the seam computes that dot product itself, and a wheel ray
+  must not hit the chassis it hangs from — Rapier `0.19.3` missed that ray and `0.30` reports a
+  zero-distance hit, so the native controller excludes its own chassis from the ray filter.
 - The parity gate must resolve web and native to genuinely different Rapier builds and assert
   both identities. `__tests__/parity.spec.ts` writes the web observation from Rapier `0.19.3`;
   `runtime-native/native/physics/tests/parity.rs` links the shipping Rust `Simulation` at

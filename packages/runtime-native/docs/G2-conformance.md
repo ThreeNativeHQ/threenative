@@ -128,3 +128,28 @@ screenshot, and kept the process alive. The report recorded `maxPointers=2`,
 `currentPointers=0`; positive and negative liveness both passed. The report is
 `artifacts/android/multitouch/report.json`; screenshot SHA-256 is
 `188bc163e12ef039448572dc66dd2d84d6fe040ab719d2fc96e2ad9a4d7d628e`.
+
+## Vehicle ray-cast suspension — PASS on web and desktop, 2026-09-28
+
+Row `vehicle-raycast-suspension` (PRD-472 phase 2) drives a `VehicleBody3D` — the same shared
+node, the same four wheels — through the WASM world on the browser lane and through the Rust
+`tn_physics_*` ABI on the desktop lane, asserting inside the scene that it settles on four loaded
+wheels, accelerates and brakes.
+
+```sh
+node packages/runtime-native/conformance/run-conformance.mjs --target web \
+  --only-tests vehicle-raycast-suspension --out artifacts/conformance/vehicle-web
+SDL_VIDEODRIVER=x11 sh scripts/xvfb.sh \
+  node packages/runtime-native/conformance/run-conformance.mjs --target desktop \
+  --only-tests vehicle-raycast-suspension --reference artifacts/conformance/vehicle-web \
+  --out artifacts/conformance/vehicle-desktop
+```
+
+Both rows report `pass`: `pixelMismatchRatio 0`, `perceptualDeltaE 0` at 1280×720, non-uniform,
+and zero GPU validation errors. The desktop lane is a bounded run of one row, not the whole
+registry. The desktop host's own `TN_VEHICLE_PROOF` marker records four wheels in contact at a
+0.27689 m strut of the 0.30 m rest length, 26.58 m/s after 3 s of 4000 N per rear wheel, 1.95 s
+of `brake = 60` to rest, and a respawn landing exactly on its requested `(10, 40)` at 17.72 m/s
+driving the other way — the numbers the web unit spec records for Rapier 0.19.3. The row also
+found a real defect while it was being written: the `resetVehicle` binding read `yaw` as a
+property of a number, so every native respawn was refused with `TN_PHYSICS_NON_FINITE`.

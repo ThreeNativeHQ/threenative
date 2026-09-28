@@ -128,6 +128,30 @@ typedef struct TnPhysicsVector3 {
   float z;
 } TnPhysicsVector3;
 
+/** Ray-cast vehicle options; the wheels ride in a separate flat float array.
+ *
+ * `forward_axis` is the chassis-local forward axis (0 = x, 2 = z) and `axle` is the wheels'
+ * chassis-local axle: the vehicle's forward is `up x axle`, so its sign decides which way a
+ * positive engine force drives and which way a positive speed means.
+ */
+typedef struct TnPhysicsVehicleOptions {
+  uint32_t id;
+  uint32_t body_id;
+  uint32_t forward_axis;
+  float axle_x;
+  float axle_y;
+  float axle_z;
+  uint32_t wheel_count;
+} TnPhysicsVehicleOptions;
+
+/** Floats per wheel: position x/y/z, wheel radius, suspension rest length, suspension
+ *  stiffness, damping compression, damping relaxation, friction slip, max suspension travel,
+ * use as steering and use as traction. `max_suspension_travel` is always sent, defaulted to
+ * Rapier's own 5.0 by the caller, so "absent" and "5.0" cannot drift apart across the ABI. */
+enum {
+  TN_PHYSICS_VEHICLE_WHEEL_WIDTH = 12,
+};
+
 /* Actuation returns 1 on success, 0 for an unknown body, -1 for a non-dynamic body,
  * and -2 for a non-finite vector. */
 enum {
@@ -161,6 +185,25 @@ bool tn_physics_configure_character(
     TnPhysicsSimulation *simulation,
     const TnPhysicsCharacterOptions *options);
 bool tn_physics_remove_body(TnPhysicsSimulation *simulation, uint32_t id);
+/** Attach ray-cast wheels to a dynamic chassis and return the vehicle id, or -1 when the
+ *  chassis is missing, is not dynamic, or the wheel records are malformed. `wheels` is
+ *  `wheel_count` records of `TN_PHYSICS_VEHICLE_WHEEL_WIDTH` floats, copied here, so the
+ *  caller's buffer only has to outlive the call. A vehicle lives and dies with its chassis:
+ *  `tn_physics_remove_body` releases it. */
+int32_t tn_physics_create_vehicle(TnPhysicsSimulation *simulation,
+                                  const TnPhysicsVehicleOptions *options,
+                                  const float *wheels);
+bool tn_physics_set_vehicle_input(TnPhysicsSimulation *simulation, uint32_t id,
+                                  float engine_force, float brake, float steering);
+/** Writes the signed forward speed followed by contact, suspension length and rotation per
+ *  wheel. Returns the number of floats written, or -1 for an unknown vehicle or a short
+ *  buffer. */
+int32_t tn_physics_read_vehicle_state(const TnPhysicsSimulation *simulation, uint32_t id,
+                                      float *output, size_t output_float_capacity);
+/** Respawn: move the chassis, face `yaw` radians about up, and drop both velocities. */
+bool tn_physics_reset_vehicle(TnPhysicsSimulation *simulation, uint32_t id, float x, float y,
+                              float z, float yaw);
+
 bool tn_physics_set_body_transform(TnPhysicsSimulation *simulation, uint32_t id,
                                    float x, float y, float z);
 int32_t tn_physics_apply_body_impulse(TnPhysicsSimulation *simulation,

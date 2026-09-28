@@ -426,6 +426,19 @@
       "required": true
     },
     {
+      "id": "vehicle-raycast-suspension",
+      "title": "VehicleBody3D settles, accelerates and brakes on ray-cast suspension",
+      "category": "physics",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/vehicle-physics.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "32-animated-shadows",
       "title": "animated shadows",
       "category": "shadows",
