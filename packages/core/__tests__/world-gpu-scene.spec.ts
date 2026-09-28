@@ -366,7 +366,7 @@ function wired(
     for (const [level, distance] of asset.levels.entries()) {
       const group = `${asset.name}:${String(level)}`;
       for (let part = 0; part < parts; part += 1)
-        scene.key(`${group}:${String(part)}`, LOCAL, capacity, { group, part });
+        scene.key(`${group}:${String(part)}`, LOCAL, capacity, { group, part, parts });
       gates.push(scene.levelKeys(group) ?? { firstKey: 0, parts: 0 });
     }
     scene.slot(asset.name, { cull: asset.cull, distances: asset.levels, levels: gates });
@@ -998,155 +998,153 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
     scene.dispose();
   });
 
-  // `fails` until the mapping this check exists for is fixed: a prewarm-order ring puts another
-  // asset's keys between a level's parts, and the gate table's `firstKey + part` then walks into
-  // them. The check sees it (`meshMismatched=3`); the kernel and its mirror do not, which is the
-  // whole reason it exists.
-  it.fails(
-    "keeps every key's record holding its own instances, over keys minted in prewarm order",
-    async () => {
-      /**
-       * A package the way a real one is made, with the key order a real one mints them in.
-       *
-       * A tree is two parts at one level, a fern is one part across a three-level chain, and a post has
-       * authored lods and a cull distance. The keys are then registered the way a ring that was built
-       * before the scene came up registers them: in the order the prewarm queued them, which is every
-       * level and part of one asset before the next — so a level's parts are NOT a contiguous run of
-       * key indices, because another asset's keys are minted between them. The gate table addresses a
-       * level's parts as `firstKey + part`, so that is the whole question: whose instances land in
-       * whose record.
-       *
-       * The instances on the CPU side are the CPU path's own answer, written out from `world-cells`:
-       * the same ascending `distance > gate` level test over the same gates `assetLevels` builds, the
-       * same cull distance, and the part's own offset multiplied in exactly as `#addPlacements` does —
-       * with no key table, no `firstKey` and no part arithmetic anywhere in it.
-       */
-      // The needles sit three metres up the trunk, so a record holding another part's instances is
-      // caught by their translation and not only by which placements they name.
-      const LOCAL_NEEDLES = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 1]);
-      const ASSETS = [
-        { cull: undefined, distances: [0], name: "pine", parts: [LOCAL, LOCAL_NEEDLES] },
-        { cull: undefined, distances: [0, 40, 120], name: "fern", parts: [LOCAL] },
-        { cull: 70, distances: [0, 60], name: "post", parts: [LOCAL] },
-      ] as const;
-      /** The prewarm's order: asset by asset, level by level, part by part. */
-      const PREWARM = [
-        "pine:0:0",
-        "fern:0:0",
-        "post:0:0",
-        "fern:1:0",
-        "pine:0:1",
-        "fern:2:0",
-        "post:1:0",
-      ];
-      const lines: string[] = [];
-      const { camera, planes } = cameraAt(0, 0);
-      /** The bytes the last readback answered with, which is what the check reads. */
-      const readback: { args: Uint32Array; drawn: Float32Array } = {
-        args: new Uint32Array(0),
-        drawn: new Float32Array(0),
-      };
-      const scene = new WorldGpuScene();
-      const renderer = {
-        compute: (): void => {},
-        kind: "webgpu",
-        log: (line: string): void => {
-          lines.push(line);
-        },
-        raw: { backend: { hasFeature: (): boolean => true } },
-        readback: (attribute: unknown): Promise<ArrayBuffer> => {
-          const result = cullAndSelect({
-            camera: { planes, x: 0, y: 0, z: 0 },
-            count: scene.placements.length,
-            placements: scene.placements,
-            regionCount: scene.regions.length,
-            regions: scene.regions,
-            slots: scene.gates(),
-          });
-          const args = Uint32Array.from(result.args);
-          const drawn = Float32Array.from(result.drawn);
-          for (const region of scene.regions) {
-            args[region.argsIndex * 5] = region.indexCount;
-            args[region.argsIndex * 5 + 4] = region.start;
-          }
-          const words = (attribute as { array: Uint32Array | Float32Array }).array;
-          readback.args = args;
-          readback.drawn = drawn;
-          return Promise.resolve((words instanceof Float32Array ? drawn : args).buffer);
-        },
-      } as unknown as IRendererLike;
-      expect(scene.enable(renderer, true, true)).toBe(true);
-      for (const name of PREWARM) {
-        const asset = ASSETS.find((one) =>
-          name.startsWith(`${one.name}:`),
-        ) as (typeof ASSETS)[number];
-        const [, level, part] = name.split(":");
-        scene.key(name, asset.parts[Number(part)] as Float32Array, 64, {
-          group: `${asset.name}:${level ?? "0"}`,
-          part: Number(part),
+  it("keeps every key's record holding its own instances, over keys minted in prewarm order", async () => {
+    /**
+     * A package the way a real one is made, with the key order a real one mints them in.
+     *
+     * A tree is two parts at one level, a fern is one part across a three-level chain, and a post has
+     * authored lods and a cull distance. The keys are then registered the way a ring that was built
+     * before the scene came up registers them: in the order the prewarm queued them, which is every
+     * level and part of one asset before the next — so a level's parts are NOT a contiguous run of
+     * key indices, because another asset's keys are minted between them. The gate table addresses a
+     * level's parts as `firstKey + part`, so that is the whole question: whose instances land in
+     * whose record.
+     *
+     * The instances on the CPU side are the CPU path's own answer, written out from `world-cells`:
+     * the same ascending `distance > gate` level test over the same gates `assetLevels` builds, the
+     * same cull distance, and the part's own offset multiplied in exactly as `#addPlacements` does —
+     * with no key table, no `firstKey` and no part arithmetic anywhere in it.
+     */
+    // The needles sit three metres up the trunk, so a record holding another part's instances is
+    // caught by their translation and not only by which placements they name.
+    const LOCAL_NEEDLES = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 1]);
+    const ASSETS = [
+      { cull: undefined, distances: [0], name: "pine", parts: [LOCAL, LOCAL_NEEDLES] },
+      { cull: undefined, distances: [0, 40, 120], name: "fern", parts: [LOCAL] },
+      { cull: 70, distances: [0, 60], name: "post", parts: [LOCAL] },
+    ] as const;
+    /** The prewarm's order: asset by asset, level by level, part by part. */
+    const PREWARM = [
+      "pine:0:0",
+      "fern:0:0",
+      "post:0:0",
+      "fern:1:0",
+      "pine:0:1",
+      "fern:2:0",
+      "post:1:0",
+    ];
+    const lines: string[] = [];
+    const { camera, planes } = cameraAt(0, 0);
+    /** The bytes the last readback answered with, which is what the check reads. */
+    const readback: { args: Uint32Array; drawn: Float32Array } = {
+      args: new Uint32Array(0),
+      drawn: new Float32Array(0),
+    };
+    const scene = new WorldGpuScene();
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: (attribute: unknown): Promise<ArrayBuffer> => {
+        const result = cullAndSelect({
+          camera: { planes, x: 0, y: 0, z: 0 },
+          count: scene.placements.length,
+          placements: scene.placements,
+          regionCount: scene.regions.length,
+          regions: scene.regions,
+          slots: scene.gates(),
         });
-        scene.indexCount(name, 96);
-      }
-      for (const [slot, asset] of ASSETS.entries()) {
-        const gates = asset.distances.map((_distance, level) => {
-          const group = `${asset.name}:${String(level)}`;
-          return scene.levelKeys(group) ?? { firstKey: 0, parts: 0 };
-        });
-        scene.slot(asset.name, { cull: asset.cull, distances: asset.distances, levels: gates });
-        // Six placements per asset, spread so both the chain's levels and the post's cull are reached.
-        for (let taken = 0; taken < 6; taken += 1) {
-          const z = 8 + taken * 26;
-          scene.place(slot, new Matrix4().makeTranslation(slot, 0, z), slot, 0, z, 0.5);
+        const args = Uint32Array.from(result.args);
+        const drawn = Float32Array.from(result.drawn);
+        for (const region of scene.regions) {
+          args[region.argsIndex * 5] = region.indexCount;
+          args[region.argsIndex * 5 + 4] = region.start;
         }
-      }
-      // A walk that filled one key's region past its capacity: the regrow re-lays the level's run.
-      const regrown = scene.key("pine:0:1", LOCAL_NEEDLES, 128, { group: "pine:0", part: 1 });
-      expect(regrown).toBe(keyOf(scene, "pine:0:1"));
-      // The CPU path's own records, per key, and the record each dressed mesh reads — which is this
-      // scene's own `argsIndex`, since a unit fixture has no mesh to read the offset off.
-      const draws: IMeshDraw[] = PREWARM.map((name) => {
-        const asset = ASSETS.find((one) =>
-          name.startsWith(`${one.name}:`),
-        ) as (typeof ASSETS)[number];
-        const [, level, part] = name.split(":");
-        const level0 = Number(level);
-        return {
-          instances: cpuKeyInstances(
-            scene.placements,
-            ASSETS.indexOf(asset),
-            level0,
-            asset.distances,
-            asset.cull,
-            asset.parts[Number(part)] as Float32Array,
-          ),
-          name,
-          record: (scene.regionOf(name) as IRegion).argsIndex,
-        };
+        const words = (attribute as { array: Uint32Array | Float32Array }).array;
+        readback.args = args;
+        readback.drawn = drawn;
+        return Promise.resolve((words instanceof Float32Array ? drawn : args).buffer);
+      },
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    for (const name of PREWARM) {
+      const asset = ASSETS.find((one) =>
+        name.startsWith(`${one.name}:`),
+      ) as (typeof ASSETS)[number];
+      const [, level, part] = name.split(":");
+      scene.key(name, asset.parts[Number(part)] as Float32Array, 64, {
+        group: `${asset.name}:${level ?? "0"}`,
+        part: Number(part),
+        parts: asset.parts.length,
       });
-      scene.drawsFrom(() => draws);
-      lines.length = 0;
-      // Thirty dispatches, so the thirtieth asks for its readback.
-      for (let index = 0; index < 30; index += 1) {
-        scene.dispatch(renderer, camera);
-        await new Promise((resolve) => setTimeout(resolve, 0));
+      scene.indexCount(name, 96);
+    }
+    for (const [slot, asset] of ASSETS.entries()) {
+      const gates = asset.distances.map((_distance, level) => {
+        const group = `${asset.name}:${String(level)}`;
+        return scene.levelKeys(group) ?? { firstKey: 0, parts: 0 };
+      });
+      scene.slot(asset.name, { cull: asset.cull, distances: asset.distances, levels: gates });
+      // Six placements per asset, spread so both the chain's levels and the post's cull are reached.
+      for (let taken = 0; taken < 6; taken += 1) {
+        const z = 8 + taken * 26;
+        scene.place(slot, new Matrix4().makeTranslation(slot, 0, z), slot, 0, z, 0.5);
       }
+    }
+    // A walk that filled one key's region past its capacity: the regrow re-lays the level's run.
+    const regrown = scene.key("pine:0:1", LOCAL_NEEDLES, 128, {
+      group: "pine:0",
+      part: 1,
+      parts: 2,
+    });
+    expect(regrown).toBe(keyOf(scene, "pine:0:1"));
+    // The CPU path's own records, per key, and the record each dressed mesh reads — which is this
+    // scene's own `argsIndex`, since a unit fixture has no mesh to read the offset off.
+    const draws: IMeshDraw[] = PREWARM.map((name) => {
+      const asset = ASSETS.find((one) =>
+        name.startsWith(`${one.name}:`),
+      ) as (typeof ASSETS)[number];
+      const [, level, part] = name.split(":");
+      const level0 = Number(level);
+      return {
+        instances: cpuKeyInstances(
+          scene.placements,
+          ASSETS.indexOf(asset),
+          level0,
+          asset.distances,
+          asset.cull,
+          asset.parts[Number(part)] as Float32Array,
+        ),
+        name,
+        record: (scene.regionOf(name) as IRegion).argsIndex,
+      };
+    });
+    scene.drawsFrom(() => draws);
+    lines.length = 0;
+    // Thirty dispatches, so the thirtieth asks for its readback.
+    for (let index = 0; index < 30; index += 1) {
+      scene.dispatch(renderer, camera);
       await new Promise((resolve) => setTimeout(resolve, 0));
-      // Every key drew the instances its own name says, and every one of them in full: the fixture's
-      // camera holds every placement, so a run shorter than its key's records is a mapping fault too,
-      // and containment alone would not see it.
-      expect(scene.validation.meshMismatched).toBe(0);
-      for (const draw of draws) {
-        const region = scene.regionOf(draw.name) as IRegion;
-        expect(region.name).toBe(draw.name);
-        expect(readback.args[region.argsIndex * 5 + 1]).toBe(draw.instances.length / 16);
-      }
-      expect(scene.validation.verdict).toBe("ok");
-      expect(lines.filter((line) => line.includes(" compared=")).at(-1)).toContain(
-        "mismatched=0 matricesMismatched=0 meshMismatched=0",
-      );
-      scene.dispose();
-    },
-  );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Every key drew the instances its own name says, and every one of them in full: the fixture's
+    // camera holds every placement, so a run shorter than its key's records is a mapping fault too,
+    // and containment alone would not see it.
+    expect(scene.validation.meshMismatched).toBe(0);
+    for (const draw of draws) {
+      const region = scene.regionOf(draw.name) as IRegion;
+      expect(region.name).toBe(draw.name);
+      expect(readback.args[region.argsIndex * 5 + 1]).toBe(draw.instances.length / 16);
+    }
+    expect(scene.validation.verdict).toBe("ok");
+    expect(lines.filter((line) => line.includes(" compared=")).at(-1)).toContain(
+      "mismatched=0 matricesMismatched=0 meshMismatched=0",
+    );
+    scene.dispose();
+  });
 
   it("culls authored ground cover at its maxDistance and switches its lods inside it", () => {
     // `ground_cover` as the committed package writes it: a `lods` entry at 60 m under a `maxDistance`
@@ -1217,7 +1215,8 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
 
     // A walk that brings the rest in: the level is regrown whole, both parts with it, and the run
     // the gate table addresses is still the two keys side by side.
-    for (const part of [0, 1]) scene.key(`gc:0:${String(part)}`, LOCAL, 8, { group: "gc:0", part });
+    for (const part of [0, 1])
+      scene.key(`gc:0:${String(part)}`, LOCAL, 8, { group: "gc:0", part, parts: 2 });
     expect(scene.levelKeys("gc:0")).toEqual({ firstKey: keyOf(scene, "gc:0:0"), parts: 2 });
     const grown = run();
     expect(grown.get(keyOf(scene, "gc:0:0"))).toHaveLength(5);
@@ -1423,7 +1422,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expectBindable(scene, "empty");
 
     // One key and one placement — the first structural change a real ring makes.
-    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
     scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
     scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
     expectBindable(scene, "one-key");
@@ -1592,7 +1591,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     raise = device.onuncapturederror ?? null;
     expect(typeof raise).toBe("function");
 
-    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
     scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
     scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
 
@@ -1663,26 +1662,27 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       readback: mirror,
     } as unknown as IRendererLike;
     expect(scene.enable(renderer, true, true)).toBe(true);
-    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
-    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    // The level declares both of its parts, so the run is claimed whole: the second part's key
+    // exists, empty, from the first key on.
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 2 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 2 }] });
     scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
 
     // Thirty dispatches, so the thirtieth asks for its readback — and the structural change lands
     // between the request and the bytes, which is the window the check used to discard.
     for (let index = 0; index < 30; index += 1) scene.dispatch(renderer, camera);
-    scene.key("pine:0:1", LOCAL, 4, { group: "pine:0", part: 1 });
-    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 2 }] });
+    scene.key("pine:0:1", LOCAL, 4, { group: "pine:0", part: 1, parts: 2 });
     scene.place(0, new Matrix4().makeTranslation(0, 0, 12), 0, 0, 12, 0.5);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // One key, because that is the one the snapshot held: the live scene has two by now, and the
-    // reference for the second key did not exist when the dispatch ran.
+    // One instance, because that is what the snapshot's own placements held: the live scene has a
+    // second placement by now, and the reference for it did not exist when the dispatch ran.
     expect(scene.regions).toHaveLength(2);
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 matricesMismatched=0 meshMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=1 instancesCpu=1 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(scene.validation.verdict).toBe("ok");
-    expect(scene.validation.compared).toBe(1);
+    expect(scene.validation.compared).toBe(2);
 
     // And the next check is a check of the world as it now is: two keys, each drawing both of the
     // two placements, so four instances where the first dispatch had one.
@@ -1707,7 +1707,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     } as unknown as IRendererLike;
     const scene = new WorldGpuScene();
     scene.enable(renderer, true, true);
-    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
     scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
     scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
 
@@ -1782,7 +1782,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       // than one whole instance out, and a fault in one key is a fault in one line.
       for (const [index, name] of ["pine:0:0", "rock:0:0", "fern:0:0"].entries()) {
         const group = name.replace(":0:0", ":0");
-        scene.key(name, LOCAL, 4, { group, part: 0 });
+        scene.key(name, LOCAL, 4, { group, part: 0, parts: 1 });
         scene.slot(group, { cull: 1000, distances: [0], levels: [{ firstKey: index, parts: 1 }] });
         for (let taken = 0; taken < 2; taken += 1) {
           const z = 8 + index * 4 + taken;

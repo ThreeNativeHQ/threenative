@@ -160,8 +160,22 @@ export interface IRegion {
 /** One level's parts and the single capacity all of them are sized from. */
 interface ILevelGroup {
   capacity: number;
+  /**
+   * The key index the level's run starts at, claimed whole at its first key and never moved, so
+   * `firstKey + part` names that part's own key however the parts were minted. The run is claimed
+   * rather than appended to because keys are not minted in level order: a prewarm mints every level
+   * and part of one asset before the next, a walk that arrives mid-prewarm mints whatever its cell
+   * needs, and the keys minted in between are not this level's. A run built by appending is a run
+   * with another asset's keys inside it, and a gate table that names it draws that asset's placements
+   * through this level's parts and this level's placements through the other's — which is a forest
+   * drawn with another tree's geometry, and a check that reproduces the same addressing reads it as
+   * agreement.
+   */
+  firstKey: number;
+  /** How many parts the level has, which is the width of the run the gate table names. */
+  parts: number;
   /** Part index to the region that part draws into; laid out in this order. */
-  readonly parts: Map<number, number>;
+  readonly minted: Map<number, number>;
 }
 
 /**
@@ -174,7 +188,16 @@ export interface ILevelKey {
   readonly group: string;
   /** The part's own index in that level, which is the order the group is laid out in. */
   readonly part: number;
+  /**
+   * How many parts the level has altogether, so the run is claimed once and in full. The caller knows
+   * it: the level is an array of parts, and every part of it will be asked for. A part outside the
+   * run the level declared is refused rather than laid over another level's key.
+   */
+  readonly parts: number;
 }
+
+/** The offset a part that has not been minted yet draws with: none at all, and nowhere to draw. */
+const NO_LOCAL = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 /** What the kernel reads, and the whole of what a dispatch touches. */
 export interface IKernelInput {
@@ -952,8 +975,21 @@ export class WorldGpuScene {
       return this.#regions.length - 1;
     }
     this.#ensure();
-    const index = this.#regions.length;
+    const index = this.#mintRegion(name, local, capacity);
     this.#keysByName.set(name, index);
+    return index;
+  }
+
+  /**
+   * One region at the tail of the key index space, with its own args record and its own drawn run,
+   * and every buffer wide enough to name it.
+   *
+   * The key index, the args record and the drawn run all move together here. A part that takes a
+   * claimed slot replaces the region already standing there rather than pushing a new one, so it
+   * inherits the args record the slot was written against and no geometry's indirect offset moves.
+   */
+  #mintRegion(name: string, local: Float32Array, capacity: number): number {
+    const index = this.#regions.length;
     this.#regions.push({
       argsIndex: index,
       capacity,
@@ -972,14 +1008,16 @@ export class WorldGpuScene {
   }
 
   /**
-   * One part of a level, in the level's own group: minted into the run its siblings occupy, and
-   * regrown with them.
+   * One part of a level, in the level's own run: minted into the slot `firstKey + part` names, and
+   * regrown with its siblings.
    *
-   * The run is what makes `firstKey + part` mean the right key, so it is laid out here and read back
-   * through {@link levelKeys} rather than by the caller remembering which index it saw first. A
-   * group holds every part minted so far in part order, one capacity for all of them, and any change
-   * — a new part, a larger capacity — re-lays the whole run out at the tail. Each part keeps its own
-   * args record, so a re-layout moves no geometry's indirect record and re-dresses no mesh.
+   * The run is what makes `firstKey + part` mean the right key, so it is claimed whole at the level's
+   * first key and read back through {@link levelKeys} rather than by the caller remembering which
+   * index it saw first. A part of the level nothing has asked for yet holds its slot as a
+   * capacity-zero region: the gate table names the whole run, the kernel reads a part's capacity
+   * before it writes into it, and a part with no mesh draws nothing at its own index. Each part
+   * keeps its own args record, so minting a later part re-lays no indirect offset and re-dresses no
+   * mesh.
    */
   #levelKey(
     name: string,
@@ -988,57 +1026,62 @@ export class WorldGpuScene {
     level: ILevelKey,
   ): number | undefined {
     if (this.#ensure() === undefined) return undefined;
-    const held =
-      this.#groups.get(level.group) ??
-      ({ capacity, parts: new Map<number, number>() } as ILevelGroup);
-    this.#groups.set(level.group, held);
-    if (capacity > held.capacity) held.capacity = capacity;
-    let index = this.#keysByName.get(name);
-    if (index === undefined) {
-      index = this.#regions.length;
-      this.#keysByName.set(name, index);
-      this.#regions.push({
-        argsIndex: index,
-        capacity: held.capacity,
-        indexCount: 0,
-        local,
-        name,
-        start: this.#drawnCapacity,
-      });
-      this.#growOf("keys", index + 1);
-      this.#growOf("locals", index + 1);
-      this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS);
+    let held = this.#groups.get(level.group);
+    if (held === undefined) {
+      held = {
+        capacity,
+        firstKey: this.#regions.length,
+        minted: new Map<number, number>(),
+        parts: level.parts,
+      };
+      this.#groups.set(level.group, held);
+      for (let part = 0; part < level.parts; part += 1)
+        this.#mintRegion(`${level.group}:${String(part)}`, NO_LOCAL, 0);
     }
-    held.parts.set(level.part, index);
+    // A part the level did not declare is refused rather than laid over the next level's key, which
+    // is the one mistake this method exists to stop.
+    if (level.part >= held.parts) return undefined;
+    if (capacity > held.capacity) held.capacity = capacity;
+    const index = held.firstKey + level.part;
+    const slot = this.#regions[index] as IRegion;
+    this.#keysByName.set(name, index);
+    this.#regions[index] = {
+      argsIndex: index,
+      capacity: held.capacity,
+      indexCount: slot.indexCount,
+      local,
+      name,
+      start: slot.start,
+    };
+    held.minted.set(level.part, index);
     this.#drawnCapacity = this.#layoutGroup(held);
     this.#growDrawn();
     // The live buffers, not the ones this method read: a regrow above may have replaced them.
-    for (const at of held.parts.values()) this.#writeKey(at);
+    for (const at of held.minted.values()) this.#writeKey(at);
     return index;
   }
 
-  /** The keys one level's parts draw into, which is what the gate table needs and the kernel assumes. */
+  /**
+   * The keys one level's parts draw into, which is what the gate table needs and the kernel assumes.
+   *
+   * The run the level claimed, read back rather than measured off the parts that happen to be
+   * minted: measuring it is what let another level's keys inside a run whose parts were minted apart.
+   */
   levelKeys(group: string): { readonly firstKey: number; readonly parts: number } | undefined {
     const held = this.#groups.get(group);
-    if (held === undefined || held.parts.size === 0) return undefined;
-    let first = Number.POSITIVE_INFINITY;
-    let last = -1;
-    for (const index of held.parts.values()) {
-      if (index < first) first = index;
-      if (index > last) last = index;
-    }
-    return { firstKey: first, parts: last - first + 1 };
+    if (held === undefined || held.minted.size === 0) return undefined;
+    return { firstKey: held.firstKey, parts: held.parts };
   }
 
   /**
-   * Lay one level's parts out contiguously at the tail, and answer where the buffer now ends.
+   * Lay one level's minted parts out contiguously at the tail, and answer where the buffer now ends.
    *
-   * Every part moves together, so `firstKey + part` names the right region however many parts the
-   * level has and in whatever order they were minted. A part already where the layout puts it is
-   * left alone, which is every frame of a settled walk.
+   * Every part moves together, so a level's drawn runs are one run however many parts it has and in
+   * whatever order they were minted. A part already where the layout puts it is left alone, which is
+   * every frame of a settled walk.
    */
   #layoutGroup(held: ILevelGroup): number {
-    const ordered = [...held.parts.entries()].sort((one, other) => one[0] - other[0]);
+    const ordered = [...held.minted.entries()].sort((one, other) => one[0] - other[0]);
     let start = this.#drawnCapacity;
     for (const [, index] of ordered) {
       const region = this.#regions[index] as IRegion;

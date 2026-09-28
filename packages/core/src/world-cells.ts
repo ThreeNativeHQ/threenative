@@ -4719,6 +4719,9 @@ export class WorldCells extends Group implements IComputeDriven {
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
       group: `${key.asset}:${String(key.level)}`,
       part: key.part,
+      // The whole run at once, so a part minted later lands in the slot `firstKey + part` names
+      // rather than at the end of the key space, where another level's key is in between.
+      parts: (asset.levels[key.level] as readonly IAssetPart[]).length,
     });
     if (region === undefined) return;
     const drawn = scene.drawn;
