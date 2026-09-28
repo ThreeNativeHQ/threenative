@@ -32,6 +32,9 @@
       "repository": "bevyengine/bevy_asset_files",
       "pinnedBaseUrl": "https://raw.githubusercontent.com/bevyengine/bevy_asset_files/086f0304449817e55d93ca25aeaac10554d6b9d5/kenney",
       "isDefaultBranchHead": true,
+      "localPath": "artifacts/engine-load-test/prd-449/bevy-asset-files/src (git-ignored)",
+      "localAcquisition": "git init + git fetch --depth 1 origin 086f0304449817e55d93ca25aeaac10554d6b9d5 + checkout FETCH_HEAD; rev-parse HEAD = 086f0304449817e55d93ca25aeaac10554d6b9d5, committer date 2026-09-17T10:13:25-07:00 = the commitDate above",
+      "localVerified": "the whole kenney/ tree is present locally (four kit directories, 217 files) and every concretePathsVerified path and all four License.txt blob shas recomputed with git hash-object equal the values recorded below, so the bytes a run would fetch from pinnedBaseUrl are already on disk",
       "reason": "Frozen as this campaign's city asset SOURCE input, replacing the moving-main null. Upstream leaves bevy_city fetching https://github.com/bevyengine/bevy_asset_files/raw/main/kenney, a moving main in a separate repository that bevy v0.19.0 does not pin, so the commit above is now the input identity for the Kenney bytes. This pins the SOURCE only: it does not by itself byte-lock what a city arm loads, and it does not close the census or fixture boxes below. Enforcement is still the open export box — upstream `assets.rs` hardcodes `const BASE_URL` with no CLI or env override (line 4, consumed as `let base_url = BASE_URL;` in `load_assets`), so a campaign arm must prefetch from the commit-addressed URLs above or vendor them, which is the same canonical-fixture export PRD 5.1 already asks for.",
       "verifiedBy": [
         "gh api repos/bevyengine/bevy_asset_files/commits/086f0304449817e55d93ca25aeaac10554d6b9d5 -> sha, committer.date 2026-09-17T17:13:25Z, subject; repos/…/commits/main -> the same sha, so the pin is the head main resolved to on 2026-09-27 and is therefore a reachable commit, not a dangling ref",
@@ -131,6 +134,13 @@
           "role": "asset attribution record for assets/"
         }
       ],
+      "localCheckout": {
+        "path": "artifacts/engine-load-test/prd-449/bevy/src (git-ignored)",
+        "acquisition": "git clone --depth 1 --single-branch --branch v0.19.0 https://github.com/bevyengine/bevy.git; shallow, so its object store holds exactly one commit and cannot drift to another revision",
+        "revParseHead": "c6f634ca9f406d68ba5109d921247b654cb42c10, equal to the pin.commit above",
+        "matches": "all 10 requiredPaths blob shas and byte counts and both codeLicense files recomputed with git hash-object equal the values recorded above; Fox.glb also matches its recorded sha256 d97044e7…71f7 (162852 B). No bevy file was edited.",
+        "notClaimed": "A local tree at the pinned commit is not a build: nothing here is compiled, no lockfile is resolved (open.bevyDependencyLock stays open) and no Bevy number is measured."
+      },
       "verifiedBy": [
         "gh api repos/bevyengine/bevy/git/ref/tags/v0.19.0 -> object.sha c6f634ca9f406d68ba5109d921247b654cb42c10 (type commit, so the tag is lightweight and the sha is the commit)",
         "gh api repos/bevyengine/bevy/contents/<path>?ref=c6f634ca9f406d68ba5109d921247b654cb42c10 -> blob sha + size for every requiredPaths entry",
