@@ -20,10 +20,32 @@ export function Hud() {
             </span>
           </div>
         </div>
-        <div className="text-right">
-          <div className="text-[10px] text-muted">wind</div>
-          <div className="mt-2 text-[22px] text-white" id="wind">
-            {Math.round(state.wind * 100)}%
+        <div className="flex items-start gap-8 text-right">
+          <div>
+            <div className="text-[10px] text-muted">next mark</div>
+            <div className="mt-2 flex items-center justify-end gap-3">
+              {/* The arrow the course is steered by. Without it the fourth mark is a hundred
+                  metres away behind a headland and the player is guessing. `markBearing` is
+                  already relative to the bow, so this is a plain rotation with no compass maths
+                  in the view. */}
+              <span
+                className="inline-block text-[20px] leading-none text-accent"
+                id="mark-bearing"
+                style={{ rotate: `${state.markBearing}rad` }}
+              >
+                ↑
+              </span>
+              <span className="text-[22px] text-white" id="mark-distance">
+                {Math.round(state.markDistance)}
+                <span className="text-[11px] text-muted">m</span>
+              </span>
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-muted">wind</div>
+            <div className="mt-2 text-[22px] text-white" id="wind">
+              {Math.round(state.wind * 100)}%
+            </div>
           </div>
         </div>
       </div>
@@ -33,6 +55,13 @@ export function Hud() {
           <div className="mt-1 text-[26px] leading-none text-white" id="submerged-fraction">
             {Math.round(state.submergedFraction * 100)}
             <span className="text-[11px] text-muted">%</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] text-muted">speed</div>
+          <div className="mt-1 text-[18px] leading-none text-white" id="speed">
+            {(state.speed * 1.944).toFixed(1)}
+            <span className="text-[11px] text-muted">kn</span>
           </div>
         </div>
         <div>

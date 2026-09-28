@@ -1,17 +1,21 @@
-// Generated for you. These six roles are the sailing kit's editable visual vocabulary.
-// Open water at mid-morning. The values these replace put a pale cyan at the top of the sky dome
-// *and* used a near-cyan accent for the wave crests, so sea and sky met at the same value and the
-// frame photographed as one flat sheet with no horizon in it. Sea and sky have to disagree.
+// Generated for you. Keep these six palette roles coherent when you change the look.
+//
+// `skyLow`/`skyHigh` are the sky photograph's own two tones, measured off `assets/sky.jpg` and
+// multiplied back by the 2.5 its HDR range was encoded with (`sky.ts`). That is the whole reason
+// the horizon used to be a seam: the dome's pale cyan and the water's haze were chosen apart from
+// the picture, and the sea met the sky at two different values. Now the far water fades into the
+// photograph's own horizon colour, because that is the colour the photograph is actually there.
 export const palette = {
-  /** Zenith. Properly blue, so the dome has somewhere to fall from. */
-  skyHigh: 0x2f6fae,
-  /** Horizon haze, and the fog colour. Where sea meets sky, this is the value. */
-  skyLow: 0x9dc2d2,
+  /** The photograph's horizon band — the fog the sea fades into, and where sea meets sky. */
+  skyLow: 0xacb1c1,
+  /** One stop brighter: the loading screen's track, and the pale top of the cloud bank. */
+  skyHigh: 0xc3d2e4,
   /** Deep water in the troughs. */
   floor: 0x0a2c3e,
-  /** The sun's own colour, used for the glint on the water. */
+  /** The sun's own colour: the key light, and the glint it leaves on the water. */
   player: 0xffe6b8,
-  /** Crest water: green-lit shallow, not cyan. */
-  accent: 0x2b8496,
+  /** Crest water: green-lit shallow, not cyan. The one saturated role. */
+  accent: 0x1d5f74,
+  /** What the sun is behind — the touch controls' plate, and the hull's shadowed timber. */
   shadow: 0x143243,
 } as const;

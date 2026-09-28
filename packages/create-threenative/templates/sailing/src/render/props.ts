@@ -218,6 +218,126 @@ function belliedSail(width: number, height: number, belly: number, taper = 1): B
   return geometry;
 }
 
+/**
+ * One sail, authored flat, ready for `SoftBody3D` to put the wind in it.
+ *
+ * `belliedSail` bakes the belly into the vertices, which is the right answer for a sail that will
+ * never move and the wrong one for a sail that will: a baked curve is the same curve in a flat
+ * calm and a gale, and this game already shows the player a wind percentage counting down. Cloth
+ * gets the belly from the simulation instead, so the canvas fills as the wind rises and goes slack
+ * as it dies — which is the one thing the whole passage turns on and the only part of the ship
+ * that ever said it.
+ *
+ * The grid is flat and a good deal finer than `belliedSail`'s: springs are built from the
+ * triangles, so the tessellation *is* the cloth's resolution, and six rows of canvas bends like a
+ * garage door.
+ */
+function sailCloth(
+  width: number,
+  height: number,
+  taper: number,
+  belly: number,
+): { geometry: BufferGeometry; pinned: number[] } {
+  const columns = 10;
+  const rows = 8;
+  const positions: number[] = [];
+  const pinned: number[] = [];
+  const at = (u: number, v: number): [number, number, number] => {
+    // `taper` narrows the **foot**, which is the difference between a square course and a lateen.
+    //
+    // The other way round — the way `belliedSail` reads it, because that sail hangs from its
+    // centre — puts the narrow end at the head, and the head is the edge bent to the yard: the
+    // mizzen came out as a wedge suspended from a point and widening downwards, which is a lateen
+    // upside down.
+    const spread = MathUtils.lerp(taper, 1, v);
+    // The cut carries a belly, and that is what gives the cloth room to move.
+    //
+    // Springs hold *distances*, so a sail cut dead flat and bent at its head and both clews can
+    // only fill by stretching, and the solver answers a stretch with a restoring force: at any
+    // stiffness that keeps the canvas its own size, the wind cannot get into it at all. Cutting
+    // the belly in gives the interior slack it can spend — the sail deepens as the wind rises and
+    // sags back towards its cut as the wind dies, without a single spring leaving its rest length.
+    return [
+      (u - 0.5) * width * spread,
+      (v - 1) * height,
+      Math.sin(Math.PI * u) * Math.sin(Math.PI * v) * belly,
+    ];
+  };
+  const push = (u: number, v: number): void => {
+    const index = positions.length / 3;
+    positions.push(...at(u, v));
+    // The head, bent to the yard, and nothing else.
+    //
+    // Pinning the clews as well is what a set course actually has, and it was tried both ways.
+    // Held at three edges the canvas has nowhere to put the wind but into its own slack, and it
+    // gathers: the courses came back as lumps balled against the masts rather than as sails. Hung
+    // from the head alone the sail swings, which is a motion the springs never resist, and it
+    // reads as a square rig running before the wind — which is the passage this game is.
+    if (v === 1) pinned.push(index);
+  };
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const u0 = column / columns;
+      const u1 = (column + 1) / columns;
+      const v0 = row / rows;
+      const v1 = (row + 1) / rows;
+      push(u0, v0);
+      push(u1, v0);
+      push(u1, v1);
+      push(u0, v0);
+      push(u1, v1);
+      push(u0, v1);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.computeVertexNormals();
+  return { geometry, pinned };
+}
+
+/**
+ * Where each sail hangs in the ship model's own space, and how big it is.
+ *
+ * The cloth cannot be a child of the hull: `SoftBody3D` detaches itself permanently the moment it
+ * is removed from the scene, and `ctx.add` is what attaches it to the renderer — so parenting it
+ * to the ship after adding would tear it down on the same frame. It lives at the scene root and
+ * `Ship` carries each one to its yard every frame instead. These are the yards.
+ */
+export const SHIP_SAILS = [
+  // Fore course, bent to the fore yard.
+  { belly: 0.2, height: 1.35, pitch: 0, taper: 1, width: 1.5, x: 0, y: 3.44, yaw: 0, z: -1.49 },
+  // Main course, bent to the main yard.
+  { belly: 0.24, height: 1.8, pitch: 0, taper: 1, width: 1.85, x: 0, y: 4.27, yaw: 0, z: 0.16 },
+  // The mizzen lateen: fore-and-aft, so it is turned side-on and raked with its yard. Its wind
+  // therefore pushes it to leeward rather than aft, which falls out of the rotation for free —
+  // `SoftBody3D` takes wind in the cloth's own local space.
+  {
+    belly: 0.16,
+    height: 1.95,
+    pitch: 0.85,
+    taper: 0.22,
+    width: 1.2,
+    x: 0.1,
+    y: 3.98,
+    yaw: Math.PI / 2,
+    z: 1.28,
+  },
+] as const;
+
+/** The cloth meshes for `SHIP_SAILS`, in the same order. */
+export function createSails(materials: ISailingMaterials): {
+  mesh: Mesh;
+  pinned: number[];
+}[] {
+  return SHIP_SAILS.map((sail) => {
+    const { geometry, pinned } = sailCloth(sail.width, sail.height, sail.taper, sail.belly);
+    const mesh = new Mesh(geometry, materials.sail);
+    mesh.castShadow = true;
+    mesh.name = "sail-cloth";
+    return { mesh, pinned };
+  });
+}
+
 function piece(geometry: BufferGeometry, material: Material, shadow = true): Mesh {
   const mesh = new Mesh(geometry, material);
   mesh.castShadow = shadow;
@@ -276,8 +396,6 @@ function mast(
   rigid: RigidAssembly,
   options: {
     readonly height: number;
-    readonly sail: BufferGeometry;
-    readonly sailY: number;
     readonly yardWidth: number;
     readonly yardY: number;
     readonly z: number;
@@ -294,10 +412,7 @@ function mast(
   yard.position.set(0, options.yardY, options.z);
   rigid.add(yard);
 
-  const canvas = piece(options.sail, materials.sail, true);
-  canvas.position.set(0, options.sailY, options.z + 0.06);
-  canvas.name = "sail";
-  group.add(canvas);
+  // No canvas here any more. The sails are cloth and live at the scene root — see `SHIP_SAILS`.
 
   // Shrouds: one line authored, placed to both rails. Without them the masts look stuck on.
   const head = foot + options.height * 0.92;
@@ -457,35 +572,36 @@ export function createShipModel(materials: ISailingMaterials): Group {
   rigid.add(bowsprit);
 
   // Rudder and tiller, hung on the transom.
-  const rudder = piece(new BoxGeometry(0.08, 1.02, 0.3), materials.hull);
-  rudder.position.set(0, -0.02, 3.26);
-  rigid.add(rudder);
+  //
+  // The rudder is the one part of the hull that is **not** in the merged assembly, and it is out
+  // of it on purpose: `RigidAssembly` bakes every part's matrix into one mesh per material, which
+  // is the right trade for a ship whose planks never move and the wrong one for the single piece
+  // that has to answer the helm. It hangs off its own named group instead, pivoted at the head of
+  // the stern post, and `Ship` turns it.
+  //
+  // It was also 1.02 long and centred on the waterline, which put its top at y = 0.49 against a
+  // transom whose wale sits at 1.66: from astern — the only angle the chase camera ever offers —
+  // it read as a loose plank floating alongside the ship rather than as a rudder hung on it.
+  const rudderPivot = new Group();
+  rudderPivot.name = "rudder";
+  rudderPivot.position.set(0, 1.1, 3.24);
+  // Long enough to reach from the wale to a little below the keel, and no longer: at 1.85 it hung
+  // a clear third of its length under the hull and read from astern as a loose board being towed.
+  const blade = piece(new BoxGeometry(0.09, 1.5, 0.3), materials.hull);
+  blade.position.set(0, -0.66, 0.06);
+  rudderPivot.add(blade);
+  const pintle = piece(new CylinderGeometry(0.055, 0.055, 0.62, 6), materials.trim);
+  pintle.position.set(0, -0.2, -0.04);
+  rudderPivot.add(pintle);
+  ship.add(rudderPivot);
   const tiller = piece(new CylinderGeometry(0.025, 0.025, 0.7, 5), materials.spar);
   tiller.rotation.x = Math.PI / 2 - 0.25;
   tiller.position.set(0, 2.0, 2.72);
   rigid.add(tiller);
 
   // The rig: two square courses of falling size and a raked lateen on the mizzen.
-  ship.add(
-    mast(materials, rigid, {
-      height: 3.2,
-      sail: belliedSail(1.5, 1.35, 0.4),
-      sailY: 2.8,
-      yardWidth: 1.7,
-      yardY: 3.5,
-      z: -1.55,
-    }),
-  );
-  ship.add(
-    mast(materials, rigid, {
-      height: 4.3,
-      sail: belliedSail(1.85, 1.8, 0.5),
-      sailY: 3.4,
-      yardWidth: 2.1,
-      yardY: 4.33,
-      z: 0.1,
-    }),
-  );
+  ship.add(mast(materials, rigid, { height: 3.2, yardWidth: 1.7, yardY: 3.5, z: -1.55 }));
+  ship.add(mast(materials, rigid, { height: 4.3, yardWidth: 2.1, yardY: 4.33, z: 0.1 }));
 
   // Crow's nest on the main.
   const nest = piece(new CylinderGeometry(0.26, 0.2, 0.24, 9), materials.deck);
@@ -500,13 +616,6 @@ export function createShipModel(materials: ISailingMaterials): Group {
   lateenYard.rotation.x = 0.85;
   lateenYard.position.set(0, 3.05, 1.9);
   rigid.add(lateenYard);
-  const lateen = piece(belliedSail(1.15, 2.3, 0.3, 0.12), materials.sail);
-  lateen.rotation.x = 0.85;
-  lateen.rotation.y = Math.PI / 2;
-  lateen.position.set(0.1, 2.95, 1.95);
-  lateen.name = "lateen";
-  ship.add(lateen);
-
   // Pennant at the main truck: the one part of the silhouette that is meant to be seen moving.
   const pennant = piece(belliedSail(0.62, 0.2, 0.05, 0.25), materials.trim, false);
   pennant.position.set(0.34, 4.95, 0.1);
@@ -518,24 +627,34 @@ export function createShipModel(materials: ISailingMaterials): Group {
 }
 
 /** A course marker: a float with a banded topmark and a small flag. */
+/**
+ * A spar buoy: a float, a mast and a flag, standing about three and a half metres out of the sea.
+ *
+ * It used to stand 1.2 m, which is the height of a real harbour mark and completely wrong for
+ * this game. The course now runs a hundred and twenty metres around a headland, and at thirty
+ * metres — the gap between two marks — a 1.2 m buoy was four pixels of red against a moving sea
+ * and the player had nothing to steer towards. A mark you cannot see is not a mark.
+ */
 export function createBuoy(materials: ISailingMaterials): Group {
   const buoy = new Group();
   const rigid = new RigidAssembly();
-  const body = new Mesh(new CylinderGeometry(0.2, 0.26, 0.66, 10), materials.buoy);
-  body.position.y = 0.16;
+  const body = new Mesh(new CylinderGeometry(0.34, 0.44, 1.1, 12), materials.buoy);
+  body.position.y = 0.2;
   body.castShadow = true;
-  const band = new Mesh(new CylinderGeometry(0.22, 0.22, 0.13, 10), materials.trim);
-  band.position.y = 0.28;
+  const band = new Mesh(new CylinderGeometry(0.37, 0.37, 0.22, 12), materials.trim);
+  band.position.y = 0.42;
   band.castShadow = true;
-  const cap = new Mesh(new SphereGeometry(0.23, 10, 7), materials.buoy);
-  cap.position.y = 0.51;
+  const cap = new Mesh(new SphereGeometry(0.38, 12, 8), materials.buoy);
+  cap.position.y = 0.78;
   cap.scale.y = 0.6;
   cap.castShadow = true;
-  const pole = new Mesh(new CylinderGeometry(0.025, 0.025, 0.7, 5), materials.spar);
-  pole.position.y = 0.85;
-  const flag = new Mesh(belliedSail(0.4, 0.24, 0.05, 0.4), materials.trim);
+  const pole = new Mesh(new CylinderGeometry(0.05, 0.06, 2.6, 6), materials.spar);
+  pole.position.y = 2.05;
+  pole.castShadow = true;
+  const flag = new Mesh(belliedSail(1.05, 0.62, 0.12, 0.4), materials.trim);
   flag.rotation.y = Math.PI / 2;
-  flag.position.set(0, 1.04, 0.17);
+  flag.position.set(0, 2.85, 0.44);
+  flag.castShadow = true;
   for (const part of [body, band, cap, pole, flag]) rigid.add(part);
   rigid.attachTo(buoy);
   return buoy;
