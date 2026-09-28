@@ -15,8 +15,8 @@ another package.
 `RigidBody3D` owns a backend handle and syncs its transform onto the `THREE.Object3D` you
 handed it; a fixed collider with no visual can instead take an initial `position`. They are
 not entities, components, or systems. The Godot names —
-`RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D` — are fixed: a fifth node type
-needs a PRD, and a name Godot does not use is rejected.
+`RigidBody3D`, `Area3D`, `CharacterBody3D`, `CollisionShape3D`, `VehicleBody3D` — are fixed: a
+sixth node type needs a PRD, and a name Godot does not use is rejected.
 
 If a wrapper starts growing convenience methods Rapier already provides, delete them.
 
@@ -57,6 +57,15 @@ engine changed.
   same machine and in a fresh worker; do not claim cross-browser, cross-OS or cross-version
   replay portability.
 - `Area3D.on('bodyEntered', ...)` returns an unsubscribe function. Callers store it.
+- `VehicleBody3D` extends `RigidBody3D` and adds ray-cast wheels, so a vehicle's lifetime is its
+  chassis's: there is no vehicle removal call. `createVehicle`, `setVehicleInput`,
+  `readVehicleState` and `resetVehicle` on `IPhysicsSimulation` are **optional** and carry plain
+  numbers only. The native backend implements none of them yet, so the node throws
+  `TN_VEHICLE_NATIVE_UNAVAILABLE` at construction there (PRD-472 phase 2). Two Rapier facts the
+  node's unit tests pin, because both are invisible in the API and wrong when assumed: the
+  `suspensionStiffness` of `@dimforge/rapier3d-compat@0.19.3` is mass-normalised (a frequency
+  squared, so sag is about `9.81 / (4 * stiffness)`), and `currentVehicleSpeed()` is not the
+  signed forward speed, which is why the seam computes that dot product itself.
 - The parity gate must resolve web and native to genuinely different Rapier builds and assert
   both identities. `__tests__/parity.spec.ts` writes the web observation from Rapier `0.19.3`;
   `runtime-native/native/physics/tests/parity.rs` links the shipping Rust `Simulation` at

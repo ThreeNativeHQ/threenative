@@ -181,6 +181,67 @@ export interface IPhysicsCharacterState {
   readonly groundNormal?: IPhysicsVector3;
 }
 
+/** One record is wheel contact (0 or 1), suspension length in metres, and rotation in radians. */
+export const PHYSICS_VEHICLE_WHEEL_STRIDE = 3;
+
+/** Godot's `VehicleWheel3D`, as backend-neutral data: the numbers, never a vehicle object. */
+export interface IPhysicsVehicleWheelOptions {
+  /** The wheel's attachment point in chassis-local space. */
+  readonly position: IPhysicsVector3;
+  readonly wheelRadius: number;
+  readonly suspensionRestLength: number;
+  /**
+   * Suspension stiffness, mass-normalised: the square of the suspension's natural frequency in
+   * rad/s, not newtons per metre. Sag is about `9.81 / (4 * suspensionStiffness)` metres, so `100`
+   * is a road car and `20` — Godot's default number — bottoms the strut out under its own weight.
+   */
+  readonly suspensionStiffness: number;
+  /** Damping while the suspension compresses. */
+  readonly dampingCompression: number;
+  /** Damping while the suspension extends. */
+  readonly dampingRelaxation: number;
+  /** How hard this tyre grips; a higher value brakes harder and flips the car more easily. */
+  readonly wheelFrictionSlip: number;
+  /** Maximum travel either side of the rest length, in metres. */
+  readonly maxSuspensionTravel?: number;
+  readonly useAsSteering: boolean;
+  readonly useAsTraction: boolean;
+}
+
+export interface IPhysicsVehicleCreateOptions {
+  /** The chassis body the wheels hang from; it must be dynamic. */
+  readonly bodyId: number;
+  /** Chassis-local forward axis: `0` = x, `2` = z. */
+  readonly forwardAxis: 0 | 2;
+  /**
+   * The wheels' axle, chassis-local. The vehicle's forward is `up × axle`, so its sign decides
+   * which way a positive `engineForce` drives and which way a positive `speed` means.
+   */
+  readonly axle: IPhysicsVector3;
+  readonly wheels: readonly IPhysicsVehicleWheelOptions[];
+}
+
+export interface IPhysicsVehicleInput {
+  /** Newtons per traction wheel. */
+  readonly engineForce: number;
+  /** Braking impulse per wheel. */
+  readonly brake: number;
+  /** Steering angle in radians, on steering wheels only. */
+  readonly steering: number;
+}
+
+/**
+ * Reflects the most recently completed step, and reuses one record per vehicle, so the next call
+ * overwrites the object it returned. Read it in the same tick, or copy the fields out before the
+ * step advances.
+ */
+export interface IPhysicsVehicleState {
+  /** Signed metres per second along the chassis forward axis. */
+  speed: number;
+  /** Reused flat per-wheel records; see `PHYSICS_VEHICLE_WHEEL_STRIDE`. */
+  readonly wheels: Float32Array;
+}
+
 export interface IPhysicsInputSnapshot {
   /** One eight-float record per kinematic body. The buffer is caller-owned and reusable. */
   readonly kinematicTransforms: Readonly<Float32Array>;
@@ -239,6 +300,19 @@ export interface IPhysicsSimulation {
    * the same tick, or copy the fields out before the step advances.
    */
   areaIntersections?(id: number): ReadonlySet<number>;
+  /**
+   * Attach ray-cast wheels to a dynamic chassis. A vehicle lives and dies with its body, so
+   * `removeBody()` releases its controller; there is no separate vehicle removal call.
+   *
+   * Optional because a backend that cannot honour it must fail loudly at construction rather than
+   * simulate a car that is not there. `VehicleBody3D` throws `TN_VEHICLE_NATIVE_UNAVAILABLE` when
+   * these are absent.
+   */
+  createVehicle?(options: IPhysicsVehicleCreateOptions): number;
+  setVehicleInput?(id: number, input: IPhysicsVehicleInput): void;
+  readVehicleState?(id: number): IPhysicsVehicleState | undefined;
+  /** Cold-path respawn: move the chassis, drop both velocities, and face the given yaw in radians. */
+  resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
   drainCollisionEvents(buffer: Uint32Array): number;
   dispose(): void;
 }
@@ -317,6 +391,41 @@ export function requirePhysicsJointCreateOptions(
   return options;
 }
 
+function requireVehicleNumber(value: unknown, label: string, positive: boolean): void {
+  if (typeof value !== "number" || !Number.isFinite(value) || (positive ? value <= 0 : value < 0))
+    throw new Error(
+      `TN_VEHICLE_INVALID: ${label} must be a finite ${positive ? "positive" : "non-negative"} number.`,
+    );
+}
+
+/**
+ * Wheels that reach Rapier as zeroes divide the suspension term, and a vehicle with none has
+ * nothing to stand on, so both are rejected at the seam every backend shares.
+ */
+export function requirePhysicsVehicleCreateOptions(
+  options: IPhysicsVehicleCreateOptions,
+): IPhysicsVehicleCreateOptions {
+  if (typeof options !== "object" || options === null)
+    throw new Error("IPhysicsSimulation vehicle options must be an object.");
+  if (options.forwardAxis !== 0 && options.forwardAxis !== 2)
+    throw new Error("TN_VEHICLE_INVALID: forwardAxis must be 0 (x) or 2 (z).");
+  requireFiniteVector(options.axle, "vehicle axle");
+  if (!Array.isArray(options.wheels) || options.wheels.length < 1)
+    throw new Error("TN_VEHICLE_INVALID: a vehicle needs at least one wheel.");
+  for (const [index, wheel] of options.wheels.entries()) {
+    requireFiniteVector(wheel.position, `vehicle wheel ${index} position`);
+    requireVehicleNumber(wheel.wheelRadius, `wheel ${index} wheelRadius`, true);
+    requireVehicleNumber(wheel.suspensionRestLength, `wheel ${index} suspensionRestLength`, true);
+    requireVehicleNumber(wheel.suspensionStiffness, `wheel ${index} suspensionStiffness`, false);
+    requireVehicleNumber(wheel.dampingCompression, `wheel ${index} dampingCompression`, false);
+    requireVehicleNumber(wheel.dampingRelaxation, `wheel ${index} dampingRelaxation`, false);
+    requireVehicleNumber(wheel.wheelFrictionSlip, `wheel ${index} wheelFrictionSlip`, false);
+    if (wheel.maxSuspensionTravel !== undefined)
+      requireVehicleNumber(wheel.maxSuspensionTravel, `wheel ${index} maxSuspensionTravel`, false);
+  }
+  return options;
+}
+
 /** Runtime metadata needed to expose backend-specific escape hatches without leaking them. */
 export interface IPhysicsRuntimeSimulation extends IPhysicsSimulation {
   readonly version: string;
@@ -364,6 +473,27 @@ interface IStoredCharacterState {
   groundBody?: IPhysicsBodyHandle;
   groundCollider?: number;
   readonly groundNormal: { x: number; y: number; z: number };
+}
+
+interface IVehicleRecord {
+  readonly bodyId: number;
+  readonly body: rapier.RigidBody;
+  readonly controller: rapier.DynamicRayCastVehicleController;
+  readonly state: IPhysicsVehicleState;
+  readonly wheels: Float32Array;
+  /** Index of the wheels that take engine force and the ones that steer. */
+  readonly traction: number[];
+  readonly steering: number[];
+  readonly restLengths: number[];
+  /**
+   * The chassis' own collision groups, so a wheel ray misses whatever the chassis is masked
+   * against. A JS filter predicate is not an option: Rapier holds the collider set borrowed while
+   * it calls back into JS, and touching a collider from there is a WASM ownership fault.
+   */
+  readonly rayGroups: number;
+  /** Which way along its forward axis the engine force drives; see `vehicleSpeed`. */
+  readonly direction: 1 | -1;
+  readonly forwardAxis: 0 | 2;
 }
 
 interface IWebPhysicsSimulationOptions {
@@ -709,6 +839,30 @@ function characterState(
 }
 
 /**
+ * Signed metres per second along the vehicle's own forward axis.
+ *
+ * Rapier's `currentVehicleSpeed()` is not this: it follows the positive forward axis regardless of
+ * which way the car drives, and on a settled car it reports the suspension's residual vertical
+ * velocity — a parked car reading 0.5 m/s. Rotating the chassis velocity into the chassis frame
+ * and taking the forward component is the number the contract names, on both backends.
+ */
+function vehicleSpeed(entry: ISimulationBody, forwardAxis: 0 | 2, sign: 1 | -1): number {
+  const rotation = entry.body.rotation();
+  const velocity = entry.body.linvel();
+  // Rotating by the conjugate of the chassis rotation is its inverse.
+  const cx = -rotation.x;
+  const cy = -rotation.y;
+  const cz = -rotation.z;
+  const tx = 2 * (cy * velocity.z - cz * velocity.y);
+  const ty = 2 * (cz * velocity.x - cx * velocity.z);
+  const tz = 2 * (cx * velocity.y - cy * velocity.x);
+  const w = rotation.w;
+  const localX = velocity.x + w * tx + (cy * tz - cz * ty);
+  const localZ = velocity.z + w * tz + (cx * ty - cy * tx);
+  return (forwardAxis === 2 ? localZ : localX) * sign;
+}
+
+/**
  * Rapier compat 0.19.3 exposes no out-parameter for rigid-body transforms. Keep its two
  * short-lived wrapper records behind this adapter and write their values directly to the shared
  * typed record; reaching through Rapier's private raw set would be an unstable API seam.
@@ -762,8 +916,10 @@ export function createWebPhysicsSimulation(
   // Flat stride-4 records instead of one array per event: contact-heavy scenes
   // drained hundreds of short-lived tuples per step into the collector.
   const pendingCollisionEvents: number[] = [];
+  const vehicles = new Map<number, IVehicleRecord>();
   let nextId = 0;
   let nextJointId = 0;
+  let nextVehicleId = 0;
   let disposed = false;
 
   const requireLive = () => {
@@ -822,6 +978,21 @@ export function createWebPhysicsSimulation(
     joints.delete(id);
     const joint = options.world.impulseJoints.get(record.handle);
     if (joint !== null) options.world.removeImpulseJoint(joint, true);
+  };
+
+  const removeVehicleRecord = (id: number): void => {
+    const record = vehicles.get(id);
+    if (record === undefined) return;
+    vehicles.delete(id);
+    // Before the chassis goes: the controller holds a raw handle to that body.
+    options.world.removeVehicleController(record.controller);
+  };
+
+  const requireVehicle = (id: number, operation: string): IVehicleRecord => {
+    const record = vehicles.get(id);
+    if (record === undefined)
+      throw new Error(`TN_VEHICLE_UNKNOWN: ${operation} references an unknown vehicle ${id}.`);
+    return record;
   };
 
   const simulation: IPhysicsRuntimeSimulation = {
@@ -945,6 +1116,9 @@ export function createWebPhysicsSimulation(
       for (const [jointId, joint] of joints) {
         if (joint.bodyA === id || joint.bodyB === id) removeJointRecord(jointId);
       }
+      for (const [vehicleId, vehicle] of vehicles) {
+        if (vehicle.bodyId === id) removeVehicleRecord(vehicleId);
+      }
       bodies.delete(id);
       byCollider.delete(entry.collider.handle);
       areaIntersections.delete(id);
@@ -1059,6 +1233,22 @@ export function createWebPhysicsSimulation(
         }
       }
       options.world.timestep = deltaTime;
+      // The wheels ray-cast and write the chassis' velocity, so they run before the solver.
+      for (const vehicle of vehicles.values()) {
+        vehicle.controller.updateVehicle(deltaTime, undefined, vehicle.rayGroups);
+        // A loaded wheel is holding the car up, and `updateVehicle` writes velocity rather than
+        // impulses. Rapier skips a sleeping body, so a car that dozed off mid-drop would hang in
+        // the air for good; only an unloaded car is left alone to sleep.
+        for (const [index, restLength] of vehicle.restLengths.entries()) {
+          if (
+            vehicle.controller.wheelIsInContact(index) &&
+            (vehicle.controller.wheelSuspensionLength(index) ?? 0) < restLength
+          ) {
+            vehicle.body.wakeUp();
+            break;
+          }
+        }
+      }
       options.world.step(options.eventQueue);
       // Rapier retains accumulated forces unless the caller clears them. The public seam is a
       // fixed-step force, so clear it after every step to keep web and native actuation aligned.
@@ -1238,6 +1428,102 @@ export function createWebPhysicsSimulation(
       }
       return current;
     },
+    createVehicle: (vehicleOptions) => {
+      requireLive();
+      const requested = requirePhysicsVehicleCreateOptions(vehicleOptions);
+      const entry = requireDynamic(bodies.get(requested.bodyId), requested.bodyId, "createVehicle");
+      const id = nextVehicleId;
+      nextVehicleId += 1;
+      const controller = options.world.createVehicleController(entry.body);
+      // The suspension ray is cast along this direction from the wheel's attachment point.
+      const suspensionDirection = { x: 0, y: -1, z: 0 };
+      const wheels = new Float32Array(requested.wheels.length * PHYSICS_VEHICLE_WHEEL_STRIDE);
+      // The engine force follows `up × axle`, so that is also the direction a positive speed means.
+      const axleComponent = requested.forwardAxis === 2 ? requested.axle.x : requested.axle.z;
+      const forwardComponent = requested.forwardAxis === 2 ? -axleComponent : axleComponent;
+      const record: IVehicleRecord = {
+        body: entry.body,
+        bodyId: requested.bodyId,
+        controller,
+        rayGroups: entry.collider.collisionGroups(),
+        restLengths: requested.wheels.map((wheel) => wheel.suspensionRestLength),
+        direction: forwardComponent < 0 ? -1 : 1,
+        forwardAxis: requested.forwardAxis,
+        state: { speed: 0, wheels },
+        steering: [],
+        traction: [],
+        wheels,
+      };
+      controller.indexUpAxis = 1;
+      controller.setIndexForwardAxis = requested.forwardAxis;
+      for (const [index, wheel] of requested.wheels.entries()) {
+        controller.addWheel(
+          wheel.position,
+          suspensionDirection,
+          requested.axle,
+          wheel.suspensionRestLength,
+          wheel.wheelRadius,
+        );
+        controller.setWheelSuspensionStiffness(index, wheel.suspensionStiffness);
+        controller.setWheelSuspensionCompression(index, wheel.dampingCompression);
+        controller.setWheelSuspensionRelaxation(index, wheel.dampingRelaxation);
+        controller.setWheelFrictionSlip(index, wheel.wheelFrictionSlip);
+        if (wheel.maxSuspensionTravel !== undefined)
+          controller.setWheelMaxSuspensionTravel(index, wheel.maxSuspensionTravel);
+        if (wheel.useAsTraction) record.traction.push(index);
+        if (wheel.useAsSteering) record.steering.push(index);
+      }
+      vehicles.set(id, record);
+      return id;
+    },
+    setVehicleInput: (id, input) => {
+      requireLive();
+      if (
+        typeof input?.engineForce !== "number" ||
+        typeof input.brake !== "number" ||
+        typeof input.steering !== "number" ||
+        !Number.isFinite(input.engineForce) ||
+        !Number.isFinite(input.brake) ||
+        !Number.isFinite(input.steering)
+      )
+        throw new Error(
+          "TN_PHYSICS_NON_FINITE: vehicle input needs a finite engineForce, brake and steering.",
+        );
+      const { controller, steering, traction } = requireVehicle(id, "setVehicleInput");
+      for (const wheel of traction) controller.setWheelEngineForce(wheel, input.engineForce);
+      for (const wheel of steering) controller.setWheelSteering(wheel, input.steering);
+      for (let wheel = 0; wheel < controller.numWheels(); wheel += 1)
+        controller.setWheelBrake(wheel, input.brake);
+    },
+    readVehicleState: (id) => {
+      requireLive();
+      const record = requireVehicle(id, "readVehicleState");
+      const { controller, state, wheels } = record;
+      const entry = bodies.get(record.bodyId);
+      if (entry === undefined) throw new Error("TN_VEHICLE_UNKNOWN: the chassis left the backend.");
+      state.speed = vehicleSpeed(entry, record.forwardAxis, record.direction);
+      for (let index = 0; index < controller.numWheels(); index += 1) {
+        const offset = index * PHYSICS_VEHICLE_WHEEL_STRIDE;
+        wheels[offset] = controller.wheelIsInContact(index) ? 1 : 0;
+        wheels[offset + 1] = controller.wheelSuspensionLength(index) ?? 0;
+        wheels[offset + 2] = controller.wheelRotation(index) ?? 0;
+      }
+      return state;
+    },
+    resetVehicle: (id, position, yaw) => {
+      requireLive();
+      requireFiniteVector(position, "vehicle position");
+      if (typeof yaw !== "number" || !Number.isFinite(yaw))
+        throw new Error("TN_PHYSICS_NON_FINITE: vehicle yaw must be a finite number of radians.");
+      const record = requireVehicle(id, "resetVehicle");
+      const entry = requireDynamic(bodies.get(record.bodyId), record.bodyId, "resetVehicle");
+      entry.body.setTranslation(position, true);
+      entry.body.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+      entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      entry.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      options.world.propagateModifiedBodyPositionsToColliders();
+      dirtyBodies.add(entry);
+    },
     drainCollisionEvents: (buffer) => {
       requireLive();
       requirePhysicsEventBuffer(buffer);
@@ -1259,6 +1545,7 @@ export function createWebPhysicsSimulation(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      for (const id of [...vehicles.keys()]) removeVehicleRecord(id);
       for (const entry of bodies.values()) {
         if (entry.controller !== undefined)
           options.world.removeCharacterController(entry.controller);
