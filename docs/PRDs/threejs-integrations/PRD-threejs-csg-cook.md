@@ -68,6 +68,12 @@ Formal engine capability tools, transitive-license audit, lockfile generation, B
 
 Biome 1.9.4 checks all 8 package source/config/test files with the unchanged repository rules, exit 0 after formatting and replacing the flagged cleanup forEach with a for-of loop. The temporary read-only cross-PR diagnostic workflow has been removed from this branch. This supersedes the earlier local dependency and export-type limitations. Khronos GLB validation, the complete engine cook/load/collision route, browser/native/Android playtests, full repository checks and independent review remain open; CPU export/readback is not platform admission.
 
+## Regression expansion — 2026-09-27
+
+Added dedicated GLB validation/reload, material/attribute diagnostics and exceptional ownership tests. The Khronos validator is pinned to `2.0.0-dev.3.10` as a test-only dependency. The standalone workflow also runs on relevant pushes so a merge conflict cannot silently prevent qualification; failed contracts still fail the job while the integration step reports its own result.
+
+Local red baseline on the unchanged normalization module: `node --experimental-strip-types --test tests/index-boundary.test.mjs` on Node 22.16.0: 2 passed, 1 failed. Exactly 65,536 unique vertices wrongly retain uint16 and expose glTF's reserved 65,535 index. The export and ownership tests pass `node --check`; dependency-backed execution is pending because this shell cannot resolve GitHub or npm. No new acceptance box is ticked from syntax checks.
+
 ## References
 
 - [Upstream](https://github.com/gkjohnson/three-bvh-csg)
