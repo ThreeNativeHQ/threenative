@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { readZipEntries } from "../../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 import { makeTempDir } from "../../test-support/temp-dir.js";
@@ -32,28 +33,43 @@ async function tempRoot(): Promise<string> {
 const PUBLISHED_RUNTIME_SO = Buffer.from("the published arm64-v8a runtime\n", "utf8");
 const PUBLISHED_RUNTIME_SHA = createHash("sha256").update(PUBLISHED_RUNTIME_SO).digest("hex");
 
-/** The smallest archive `readZipEntries` accepts: stored entries, no padding, no CRC. */
-function writeStoredApk(apk: string, entries: Readonly<Record<string, string>>): void {
+const ZIP_STORED = 0;
+const ZIP_DEFLATED = 8;
+
+/**
+ * The smallest archive `readZipEntries` accepts: no padding, no CRC, and every entry stored
+ * unless `deflate` names it — the shape a real APK has, where an aligned `.so` is stored and a
+ * staged asset is deflated.
+ */
+function writeApk(
+  apk: string,
+  entries: Readonly<Record<string, string>>,
+  deflate: readonly string[] = [],
+): void {
   const names = Object.keys(entries);
   const locals: Buffer[] = [];
   const directory: Buffer[] = [];
   let offset = 0;
   for (const name of names) {
     const label = Buffer.from(name, "utf8");
-    const data = Buffer.from(entries[name] as string, "utf8");
+    const contents = Buffer.from(entries[name] as string, "utf8");
+    const method = deflate.includes(name) ? ZIP_DEFLATED : ZIP_STORED;
+    const data = method === ZIP_STORED ? contents : deflateRawSync(contents);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
     local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(contents.length, 22);
     local.writeUInt16LE(label.length, 26);
     locals.push(Buffer.concat([local, label, data]));
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
     central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
+    central.writeUInt32LE(contents.length, 24);
     central.writeUInt16LE(label.length, 28);
     central.writeUInt32LE(offset, 42);
     directory.push(Buffer.concat([central, label]));
@@ -188,7 +204,7 @@ function happyRunner(): CommandRunner {
       args[1] === "build:android"
     ) {
       fs.mkdirSync(path.join(cwd, "dist-native"), { recursive: true });
-      writeStoredApk(path.join(cwd, "dist-native", "my-game.apk"), {
+      writeApk(path.join(cwd, "dist-native", "my-game.apk"), {
         "lib/arm64-v8a/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString("utf8"),
       });
       return "android built";
@@ -387,7 +403,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 
   it("accepts an APK whose arm64 library is the published byte sequence", async () => {
     const apk = path.join(await tempRoot(), "app.apk");
-    writeStoredApk(apk, { "lib/arm64-v8a/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
+    writeApk(apk, { "lib/arm64-v8a/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
     const proofs = androidApkPrebuiltProofs({
       "android-arm64-v8a-runtime-v8": "jniLibs/arm64-v8a/libmystral-runtime.so",
     });
@@ -403,11 +419,33 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     ).toMatch(/1 arm64-v8a prebuilt\(s\) verified byte-for-byte/u);
   });
 
+  it("inflates a deflated arm64 asset before comparing it to the published SHA-256", async () => {
+    // A staged V8 snapshot is deflated rather than stored, so hashing the entry's compressed
+    // bytes would refuse bytes that really are the published ones, and inflating it is what proves
+    // them. The compression method is asserted so a fixture that stopped deflating cannot pass
+    // through the stored path unnoticed.
+    const key = "android-arm64-v8a-v8-snapshot";
+    const entry = "assets/v8/arm64-v8a/snapshot_blob.bin";
+    const published = Buffer.from("the published arm64-v8a v8 snapshot\n", "utf8");
+    const artifacts = { [key]: { sha256: createHash("sha256").update(published).digest("hex") } };
+    const proofs = androidApkPrebuiltProofs({ [key]: entry });
+    const apk = path.join(await tempRoot(), "app.apk");
+    writeApk(apk, { [entry]: published.toString() }, [entry]);
+    expect(readZipEntries(apk).entries[0]).toMatchObject({ compression: 8 });
+    expect(assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toMatch(
+      /1 arm64-v8a prebuilt\(s\) verified byte-for-byte/u,
+    );
+    writeApk(apk, { [entry]: "compiled on this machine\n" }, [entry]);
+    expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH/u,
+    );
+  });
+
   it("refuses an APK whose arm64 library is not the published bytes", async () => {
     // A locally compiled `.so` and a stub key are the two ways this box is claimed without proof,
     // and a build exiting 0 distinguishes neither from the published cohort.
     const apk = path.join(await tempRoot(), "app.apk");
-    writeStoredApk(apk, {
+    writeApk(apk, {
       "lib/arm64-v8a/libmystral-runtime.so": "compiled on this machine\n",
     });
     const artifacts = { "android-arm64-v8a-runtime-v8": { sha256: PUBLISHED_RUNTIME_SHA } };
@@ -420,7 +458,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), {}, proofs)).toThrow(
       /TN_REGISTRY_INSTALL_ANDROID_NOT_PUBLISHED/u,
     );
-    writeStoredApk(apk, { "lib/x86_64/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
+    writeApk(apk, { "lib/x86_64/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
     expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toThrow(
       /TN_REGISTRY_INSTALL_ANDROID_ENTRY_MISSING/u,
     );

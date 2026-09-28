@@ -6,9 +6,9 @@ cohort cannot be published as-is: eight package versions are immutable on npm an
 after publication. A release owner must first
 prepare and commit a fresh coherent eleven-package cohort, then publish it with a matching
 `runtime-native-v*` release. The PRD is filed at
-`docs/PRDs/BLOCKED/requires-release-credentials/PRD-196-published-install-is-functional.md`.
+`docs/PRDs/production-readiness/critical/PRD-196-published-install-is-functional.md`.
 
-The sections below are in run order. **Repair round 8 (2026-09-08) is the current state** — it
+The sections below are in run order. **Repair round 9 (2026-09-28) is the current state** — it
 re-ran every earlier claim at the lane tip and is the section to read first.
 
 Lane: `lane-196`

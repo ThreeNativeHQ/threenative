@@ -412,8 +412,9 @@ census test fails, and `pnpm publish:check` refuses the tree.
 - [x] `android` step: `npm run build:android`, then require every `arm64-v8a` library in the APK to
       hash to the `prebuilt-lock.json` entry the *installed* `runtime-native` names — the prebuilt
       table and the release URL both read out of the installed package, never this checkout.
-      proof: `pnpm vitest run scripts/__tests__/verify-registry-install.spec.ts` — 30 passed, and
-      9 of them observed red when the `jniLibs/` → `lib/` mapping is reverted.
+      proof: `pnpm vitest run scripts/__tests__/verify-registry-install.spec.ts` — 31 passed; a
+      deflated `assets/v8/arm64-v8a/` entry passes only with the published bytes, and 9 tests
+      observed red when the `jniLibs/` → `lib/` mapping was reverted.
       — `scripts/verify-registry-install.ts:646` (`androidApkPrebuiltProofs`), `:668`
       (`assertPublishedApkPrebuilts`), `:737` (`androidStep`), `:1128` (the step).
 - [ ] The `clean-room` job provisions what the `android` step needs on the runner. proof: a
@@ -442,6 +443,7 @@ census test fails, and `pnpm publish:check` refuses the tree.
 | `scripts/__tests__/verify-registry-install.spec.ts` | `should fail when an mcp server never answers initialize` | step names the server | stub a valid handshake → fails |
 | `scripts/__tests__/verify-registry-install.spec.ts` | `should not report a pass for a step that did not run` | `exitCode === 1` | mark skipped steps `ok:true` → fails |
 | `scripts/__tests__/verify-registry-install.spec.ts` | `refuses an APK whose arm64 library is not the published bytes` | mismatch / not-published / entry-missing all throw | restore the published sha → fails |
+| `scripts/__tests__/verify-registry-install.spec.ts` | `inflates a deflated arm64 asset before comparing it to the published SHA-256` | deflated asset matches the published hash | replace the asset bytes → mismatch throws |
 
 **Revert check:** remove the `native` step → `verify-registry-install.spec.ts`'s step-list test
 fails.
