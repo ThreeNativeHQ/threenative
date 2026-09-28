@@ -1,4 +1,13 @@
-import { type Camera, type DirectionalLight, Object3D, Vector3 } from "three";
+import {
+  Box3,
+  type Camera,
+  type DirectionalLight,
+  type Mesh,
+  Object3D,
+  type OrthographicCamera,
+  Sphere,
+  Vector3,
+} from "three";
 import {
   Fn,
   If,
@@ -24,6 +33,7 @@ import {
   DirectionalClipmap,
   type IBoundsLike,
   type IClipWindow,
+  type IVector3Like,
   ShadowInvalidationTracker,
   projectBounds,
 } from "./virtual-shadow-pages.js";
@@ -67,10 +77,25 @@ export interface IVirtualShadowOptions {
    * walking camera re-renders most, so it is the one that wants the larger step.
    */
   readonly refreshStep?: number | readonly number[];
-  /** How far behind the window centre each level camera sits, in world units. Default 200. */
+  /**
+   * How far behind the window centre each level camera sits, in world units. Default 200. An
+   * explicit `lightDistance` *and* `depthRange` switch the level's light-space depth off the derived
+   * span below and back onto this pair, so a game that knows its own world sizes can still say so.
+   */
   readonly lightDistance?: number;
-  /** Depth range each level camera covers past its centre, in world units. Default 400. */
+  /**
+   * Depth range each level camera covers past its centre, in world units. Default 400. Read only
+   * together with `lightDistance`; on its own the span is still derived.
+   */
   readonly depthRange?: number;
+  /**
+   * Texels of a level a caster must cover before it draws into that level, default 1.5. A level's
+   * texel is `2 * extent / mapSize`, so the finest levels keep everything and the coarse ones keep
+   * only what they can resolve: a fern is a whole number of texels in a 48 m window and a fraction
+   * of one in a 640 m window, so it stops being drawn there and the shadow it casts is the ground
+   * cover's own, not its silhouette's. Set 0 to draw every caster into every level.
+   */
+  readonly minCasterTexels?: number;
   /** Print the `TN_VIRTUAL_SHADOW` line every `markerEvery` frames; `false` silences it. Default 300. */
   readonly marker?: boolean | number;
 }
@@ -139,6 +164,25 @@ export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
+const DEFAULT_MIN_CASTER_TEXELS = 1.5;
+/**
+ * The floor on a light's horizontal magnitude, so a sun on the horizon divides by a `cos` that is
+ * not zero: the reach of a caster grows without limit as the sun sets, and a level that spans the
+ * sky is the one this whole change exists to stop drawing.
+ */
+const MIN_SUN_COSINE = 0.05;
+
+/**
+ * World spheres one level render collects: centre, radius, shadow flags, the box's own height
+ * range, seven numbers each.
+ */
+const POOL_STRIDE = 7;
+/**
+ * How many window widths a caster may be before the window is cut out of it instead. One: an
+ * object wider than the window it is in is a mass, and only its height reaches the frustum.
+ */
+const MAX_MASS_WINDOW_WIDTHS = 1;
+const POOL_CASTERS = 1 << 0;
 
 /** A placeholder light per level: the stock shadow node reads position and target from it. */
 class LevelLight extends Object3D {
@@ -161,6 +205,14 @@ interface ILevel {
   readonly moverNode: ReturnType<typeof shadow>;
   readonly extent: number;
   readonly extentUniform: UniformNode<"float", number>;
+  /**
+   * The light-space depth this level's last render derived: how far behind its window centre the
+   * camera sat, and the near/far it drew with. Held between renders, because a level that keeps its
+   * map is placed with the same span it drew that map with.
+   */
+  eye: number;
+  depthNear: number;
+  depthFar: number;
   minX: number;
   minY: number;
   /**
@@ -192,6 +244,8 @@ type ShadowWithFilter = DirectionalLight["shadow"] & { filterNode?: unknown };
 
 const _direction = new Vector3();
 const _center = new Vector3();
+const _sphere = new Sphere();
+const _box = new Box3();
 
 /** Keep each stock node's source-owned settings aligned with the public light shadow. */
 function syncShadowSettings(
@@ -302,6 +356,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #served = 0;
   #stats: IVirtualShadowStats;
   #initialised = false;
+  /** 1 when each level derives its own light-space depth, 0 when `lightDistance`/`depthRange` pin it. */
+  #autoDepth = true;
+  /**
+   * Every shadow-relevant world sphere one level render collected, five numbers each. The depth
+   * derivation reads it in two passes after the one traverse that filled it, and it is reused
+   * between renders, so a level render allocates nothing for it.
+   */
+  #pool = new Float64Array(POOL_STRIDE * 256);
+  #poolCount = 0;
+  /** Casters the current level's size gate hid, restored the moment that render is over. */
+  #hidden: Object3D[] = [];
 
   constructor(light: DirectionalLight, options: IVirtualShadowOptions = {}) {
     super(light);
@@ -329,6 +394,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
         );
       }
     }
+    const minCasterTexels = options.minCasterTexels ?? DEFAULT_MIN_CASTER_TEXELS;
+    if (!Number.isFinite(minCasterTexels) || minCasterTexels < 0) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: minCasterTexels must be zero or positive, got ${String(minCasterTexels)}.`,
+      );
+    }
+    // Both halves or neither: one of the two alone cannot place a camera, so a half-specified
+    // override is read as no override at all and the span is derived.
+    this.#autoDepth = options.lightDistance === undefined || options.depthRange === undefined;
     // A page is a texel here: the clipmap's page snapping is exactly texel snapping.
     // The window now trails its followed centre by up to `refreshStep` extents, so the selection
     // guard gives exactly that much back: a window only reaches `1 - refreshStep` extents past the
@@ -385,6 +459,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       depthRange: options.depthRange ?? 400,
       lightDistance: options.lightDistance ?? 200,
       mapSize,
+      minCasterTexels,
       moverMapSize,
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
       refreshStep: steps,
@@ -517,6 +592,201 @@ export class VirtualShadowNode extends ShadowBaseNode {
     });
   }
 
+  /**
+   * The topmost object above the light: the scene it is lit in, whatever the game nested it under.
+   * Walked once per level render, so a `Daylight` group between the sun and the world is not the
+   * boundary that hides every tree from the span below.
+   */
+  #root(): Object3D {
+    let root = this.light as Object3D;
+    while (root.parent !== null) root = root.parent;
+    return root;
+  }
+
+  /**
+   * One traverse for both automatic fixes: the world bounding sphere of every shadow-relevant mesh
+   * goes into the pool, and every caster too small for this level's texel grid is hidden until the
+   * level's render is over. Mirrors the sphere three's own cull reads, so the gate drops exactly the
+   * volumes that cull would have kept and the depth below measures the same boxes it will draw.
+   */
+  #probe(level: ILevel): void {
+    const gate = (this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize;
+    this.#poolCount = 0;
+    this.#hidden.length = 0;
+    this.#root().traverse((object) => {
+      if (object.visible !== true) return;
+      if ((object as { isMesh?: boolean }).isMesh !== true) return;
+      const mesh = object as Mesh & {
+        boundingBox?: Box3 | null;
+        boundingSphere?: Sphere | null;
+        computeBoundingBox(): void;
+        computeBoundingSphere(): void;
+      };
+      // The same two spheres three's cull uses: an instanced mesh's own, over its instances, or the
+      // geometry's. `boundingSphere` is `null` on a fresh instanced mesh and undefined on a `Mesh`.
+      const own = mesh.boundingSphere;
+      let sphere: Sphere | null | undefined;
+      if (own === undefined) {
+        if (mesh.geometry.boundingSphere === null) mesh.geometry.computeBoundingSphere();
+        sphere = mesh.geometry.boundingSphere;
+      } else if (own === null || own.radius < 0) {
+        mesh.computeBoundingSphere();
+        sphere = mesh.boundingSphere;
+      } else {
+        sphere = own;
+      }
+      if (sphere === null || sphere === undefined) return;
+      // The box too, and for the same reason: a sphere has to cover a 128 m tile's diagonal, so its
+      // height range is the tile's diagonal rather than the tile's relief, and the window's ground
+      // is then read as 180 m of cliff.
+      const ownBox = mesh.boundingBox;
+      let box: Box3 | null | undefined;
+      if (ownBox === undefined) {
+        if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+        box = mesh.geometry.boundingBox;
+      } else if (ownBox === null) {
+        mesh.computeBoundingBox();
+        box = mesh.boundingBox;
+      } else {
+        box = ownBox;
+      }
+      _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
+      if (box === null || box === undefined) {
+        _box.min.set(_sphere.center.x, _sphere.center.y - _sphere.radius, _sphere.center.z);
+        _box.max.set(_sphere.center.x, _sphere.center.y + _sphere.radius, _sphere.center.z);
+      } else {
+        _box.copy(box).applyMatrix4(mesh.matrixWorld);
+      }
+      const at = this.#poolCount * POOL_STRIDE;
+      if (at + POOL_STRIDE > this.#pool.length) {
+        const grown = new Float64Array(this.#pool.length * 2);
+        grown.set(this.#pool);
+        this.#pool = grown;
+      }
+      const pool = this.#pool;
+      pool[at] = _sphere.center.x;
+      pool[at + 1] = _sphere.center.y;
+      pool[at + 2] = _sphere.center.z;
+      pool[at + 3] = _sphere.radius;
+      pool[at + 4] = mesh.castShadow ? POOL_CASTERS : 0;
+      pool[at + 5] = _box.min.y;
+      pool[at + 6] = _box.max.y;
+      this.#poolCount += 1;
+      // Sub-texel: a caster the level cannot resolve draws no shadow a fragment could tell from
+      // ground cover, so it is hidden for this render and put back immediately after it.
+      if (mesh.castShadow && _sphere.radius * 2 < gate) {
+        object.visible = false;
+        this.#hidden.push(object);
+      }
+    });
+  }
+
+  /** Put back every caster `#probe` hid, so the next camera sees the world as it was. */
+  #restoreHidden(): void {
+    for (const object of this.#hidden) object.visible = true;
+    this.#hidden.length = 0;
+  }
+
+  /**
+   * The light-space depth one level needs, from what can actually shadow its window: every caster
+   * whose own extent reaches the window, turned into light space along the sun. A caster `h` above
+   * the ground throws its shadow `h / tan` of a metre away, so that is how far past the window a
+   * caster has to be kept, and a caster that cannot reach the window is then outside the frustum
+   * and three's cull drops it for free.
+   *
+   * The u/v box is what bounds the window sideways, so the depth is the only free axis, and every
+   * object that overlaps that box has already been found: the pool is the whole candidate set and
+   * this pass over it costs no second traverse. The height comes from each box rather than each
+   * sphere, because a sphere has to cover a 128 m tile's diagonal and would report 180 m of cliff
+   * where the tile has 15 m of it.
+   */
+  #deriveDepth(level: ILevel, centre: IVector3Like): void {
+    const pool = this.#pool;
+    const count = this.#poolCount;
+    const { basisU, basisV, basisW } = this.clipmap;
+    const extent = level.extent;
+    // The box's own reach, in each of the three light axes: sideways is bounded, so a point in the
+    // window is at most this far along either of them.
+    const side = extent * Math.SQRT2;
+    // A caster wider than the window is not standing in it, it is a mass the window is cut out of:
+    // its own span along the light is the whole world's, and the only part of it this frustum can
+    // ever hold is the height of its box.
+    const fits = extent * 2 * MAX_MASS_WINDOW_WIDTHS;
+    const sin = basisW.y;
+    // A sun on or below the horizon: the shadow of a caster an inch tall then reaches an inch
+    // divided by a `cos` that is nearly nothing, and the one honest span is the widest there is.
+    if (sin < MIN_SUN_COSINE) return;
+    const cos = Math.hypot(basisW.x, basisW.z);
+    const tan = sin / cos;
+    // Everything that writes depth: the casters whose bounding sphere reaches into the window's
+    // u/v box. A receiver writes no depth, so a piece of ground that only receives is not in the
+    // frustum at all, however tall it is — that is the whole reason this is not a fixed range.
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    for (let index = 0; index < count; index += 1) {
+      const at = index * POOL_STRIDE;
+      if (((pool[at + 4] as number) & POOL_CASTERS) === 0) continue;
+      const radius = pool[at + 3] as number;
+      const dx = (pool[at] as number) - centre.x;
+      const dy = (pool[at + 1] as number) - centre.y;
+      const dz = (pool[at + 2] as number) - centre.z;
+      const u = Math.abs(dx * basisU.x + dy * basisU.y + dz * basisU.z);
+      const v = Math.abs(dx * basisV.x + dy * basisV.y + dz * basisV.z);
+      if (u > side + radius || v > side + radius) continue;
+      const along = dx * basisW.x + dy * basisW.y + dz * basisW.z;
+      const boxLow = pool[at + 5] as number;
+      const boxHigh = pool[at + 6] as number;
+      if (radius * 2 > fits) {
+        // A mass, not a caster in the window: the only part of it this frustum can hold is the
+        // height of its box. Its own span along the light would be the whole world's, which is the
+        // range this change exists to stop drawing.
+        if ((boxLow - centre.y) * sin - side * cos < low)
+          low = (boxLow - centre.y) * sin - side * cos;
+        if ((boxHigh - centre.y) * sin + side * cos > high)
+          high = (boxHigh - centre.y) * sin + side * cos;
+        continue;
+      }
+      // A caster standing in the window, or shadowing into it from up-sun, is worth depth only if
+      // its shadow still reaches back to the window's down-sun edge: a caster `h` tall throws that
+      // shadow `h / tan` of a metre past its own position along the ground.
+      const horizon = (along - dy * sin) / cos;
+      if (horizon + (boxHigh - boxLow) / tan < -side) continue;
+      if (along - radius < low) low = along - radius;
+      if (along + radius > high) high = along + radius;
+    }
+    if (!Number.isFinite(low)) return;
+    const span = high - low;
+    if (!(span > 0)) return;
+    // Two per cent of slack, and never less than a metre: the pool holds bounding spheres, which
+    // round up, and a caster a shadow-map texel taller than the window's own ground must still draw.
+    const margin = Math.max(1, span * 0.02);
+    level.eye = high + margin;
+    level.depthNear = margin;
+    level.depthFar = margin + span;
+  }
+
+  /** Put a level's camera on its window with the depth it last derived, and hold both maps to it. */
+  #place(level: ILevel, centre: IVector3Like): void {
+    const { basisW } = this.clipmap;
+    level.light.position.set(
+      centre.x + basisW.x * level.eye,
+      centre.y + basisW.y * level.eye,
+      centre.z + basisW.z * level.eye,
+    );
+    level.light.updateMatrixWorld(true);
+    this.#setDepth(level.shadow.camera, level);
+    // The mover map is the same window with the tracked casters in it, so it is the same column.
+    this.#setDepth(level.moverShadow.camera, level);
+  }
+
+  /** Hand a level's own cameras the depth it derived, when it is not the depth they already hold. */
+  #setDepth(camera: OrthographicCamera, level: ILevel): void {
+    if (camera.near === level.depthNear && camera.far === level.depthFar) return;
+    camera.near = level.depthNear;
+    camera.far = level.depthFar;
+    camera.updateProjectionMatrix();
+  }
+
   #init(): void {
     if (this.#initialised) return;
     this.#initialised = true;
@@ -554,6 +824,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const light = new LevelLight(levelShadow);
       light.name = `VirtualShadowLevel${String(index)}`;
       this.#levels.push({
+        depthFar: this.options.lightDistance + this.options.depthRange,
+        depthNear: 1,
+        eye: this.options.lightDistance,
         extent,
         extentUniform: uniform(extent),
         light,
@@ -801,17 +1074,26 @@ export class VirtualShadowNode extends ShadowBaseNode {
         level.offsetU.value = this.clipmap.centerLight.u - hu;
         level.offsetV.value = this.clipmap.centerLight.v - hv;
         level.light.target.position.set(centre.x, centre.y, centre.z);
-        level.light.position.set(
-          centre.x + this.clipmap.basisW.x * this.options.lightDistance,
-          centre.y + this.clipmap.basisW.y * this.options.lightDistance,
-          centre.z + this.clipmap.basisW.z * this.options.lightDistance,
-        );
-        level.light.updateMatrixWorld(true);
         level.light.target.updateMatrixWorld(true);
-        // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
         if (grant) {
-          // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
-          (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
+          // The two automatic fixes, off one traverse of the world this window can see: the depth
+          // the level needs to cover what can actually shadow it, and the casters too small for its
+          // texels. Both are undone the moment the render is over — the hidden casters by
+          // `#restoreHidden`, which the mover maps and the main pass both need back.
+          this.#probe(level);
+          if (this.#autoDepth) this.#deriveDepth(level, centre);
+          this.#place(level, centre);
+          try {
+            // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
+            // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
+            (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
+          } finally {
+            this.#restoreHidden();
+          }
+        } else {
+          // A level that keeps its map is placed with the span that map was drawn with, so the next
+          // fragment it is sampled through reads the depth it actually holds.
+          this.#place(level, centre);
         }
       });
       source.shadow.needsUpdate = false;
