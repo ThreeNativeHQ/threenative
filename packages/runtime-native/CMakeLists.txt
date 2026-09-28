@@ -2647,6 +2647,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_mark_sanitizer_contract_test(threenative-dom-dispatch-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-frame-op-stream-replay-test)
     tn_mark_sanitizer_contract_test(threenative-handle-lifetime-test)
+    # The facial rig is the one contract that parses untrusted bytes into the C ABI, so it runs
+    # instrumented too: a leak or a bad free in the DNA reader is invisible without it.
+    tn_mark_sanitizer_contract_test(threenative-metahuman-bindings-test)
     tn_mark_sanitizer_contract_test(threenative-shutdown-lifetime-test)
     tn_mark_sanitizer_contract_test(threenative-webgpu-bindings-reentrancy-test)
     get_property(TN_NATIVE_SANITIZER_TARGETS GLOBAL PROPERTY TN_NATIVE_SANITIZER_TARGETS)

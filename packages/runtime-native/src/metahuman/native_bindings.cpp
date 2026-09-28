@@ -284,6 +284,16 @@ bool initializeNativeMetaHumanBindings(js::Engine *engine) {
             return engine->newString(message == nullptr ? "" : message);
           }));
 
+  // Process wide, and deliberately not handle-scoped: it is the count a create/dispose cycle has
+  // to return to, so a stale caller cannot be answered wrongly and a leak shows up as a number.
+  engine->setProperty(
+      metahumanHost, "liveCount",
+      engine->newFunction(
+          "liveCount",
+          [engine](void *, const std::vector<js::JSValueHandle> &) {
+            return engine->newNumber(tn_rl_live_count());
+          }));
+
   engine->setProperty(nativeHost, "metahuman", metahumanHost);
   return engine->setGlobalProperty("__THREENATIVE_NATIVE__", nativeHost);
 }

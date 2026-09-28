@@ -22,6 +22,8 @@ export interface INativeMetaHumanHost {
   neutralJoints(id: number): Float32Array;
   destroy(id: number): void;
   lastError(): string;
+  /** Live rig handles in the host process, so a create/dispose cycle can be proved leak-free. */
+  liveCount(): number;
 }
 
 /**

@@ -843,9 +843,15 @@ importers:
       '@types/node':
         specifier: 20.19.43
         version: 20.19.43
+      '@types/three':
+        specifier: 0.185.3
+        version: 0.185.3
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=987eb3547d4f28c03a4a8ef1b3900d4158c805821e61e23572fdb248995c4d91)
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)

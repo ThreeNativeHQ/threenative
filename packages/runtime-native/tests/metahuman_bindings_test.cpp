@@ -279,6 +279,30 @@ const char *kScript = R"JS((() => {
   );
   metahuman.destroy(rig);
 
+  // Every rig this process created is gone, and a create/destroy cycle is repeatable: the ABI's
+  // own registry is the number a leak would move.
+  check("ten create and destroy cycles return the live handle count to baseline", () => {
+    if (typeof metahuman.liveCount !== "function")
+      return "the host does not report a live handle count";
+    const baseline = metahuman.liveCount();
+    const created = [];
+    for (let index = 0; index < 10; index += 1) {
+      const id = metahuman.create(__tnDna);
+      if (typeof id !== "number" || id < 1) return "create " + index + " returned " + id;
+      created.push(id);
+    }
+    const grown = metahuman.liveCount() - baseline;
+    if (grown !== 10) return "ten creates moved the live count by " + grown;
+    for (const id of created) metahuman.destroy(id);
+    const left = metahuman.liveCount() - baseline;
+    if (left !== 0) return left + " rigs survived their destroy";
+    // A retired id from a cycle is still retired, so the ids were really freed.
+    throws("a cycle's id stays retired", "stale handle", () =>
+      metahuman.count(created[0], KINDS.joint[1]),
+    );
+    return undefined;
+  });
+
   __tnDetail("max |error| " + worstError + " at " + worstWhere);
   __tnReport(failures.length === 0 ? "ok" : failures.join("\n"));
   return undefined;

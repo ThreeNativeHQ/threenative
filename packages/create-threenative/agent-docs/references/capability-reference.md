@@ -2966,6 +2966,26 @@ export function assertAssetPath(path: string): string { … }
 assertAssetPath("metahuman/specimen.glb");
 ```
 
+### `loadMetaHuman`
+
+`function` — Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced
+
+```ts
+loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }
+```
+
+- **Use when:** put a MetaHuman head in a browser game without an Unreal import or a baked clip
+- **Constraints:** the model is loaded through the game's own asset loader and cloned per instance, so · the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD · an undeclared control, an out-of-domain value, an undeclared LOD and any call after
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const human = await loadMetaHuman({ assets: ctx.assets, model: "metahuman/head.glb",
+  dna: "metahuman/head.dna", bindings: "metahuman/bindings.json" });
+  human.setControls({ jawOpen: 0.4 });
+// in the scene update, after any body animation
+  human.update();
+```
+
 ### `MetaHumanAssetError`
 
 `class` — The rejection every check in this package raises, carrying a stable machine-readable code.

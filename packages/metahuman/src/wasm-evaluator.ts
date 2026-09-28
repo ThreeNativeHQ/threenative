@@ -1,5 +1,7 @@
 import { MetaHumanAssetError, type MetaHumanErrorCode } from "./errors.js";
 
+export { JOINT_STRIDE } from "./abi.js";
+
 /** Selectors the ABI exposes. The values are the wire kinds in `cpp/tn_riglogic.h`. */
 export type RigEvaluatorKind = "gui" | "raw" | "joint" | "blendShape" | "animatedMap" | "lod";
 
@@ -14,9 +16,6 @@ const KIND_SELECTORS: Readonly<Record<RigEvaluatorKind, number>> = {
 
 /** TN_RL_OK. Every other status is a rejection. */
 const OK = 0;
-
-/** Floats per joint, fixed by the ABI: translation, rotation quaternion, scale. */
-export const JOINT_STRIDE = 10;
 
 export interface IRigEvaluatorCounts {
   readonly gui: number;
@@ -65,6 +64,7 @@ interface IRigLogicModule {
   _tn_rl_evaluate(handle: number, useGui: number): number;
   _tn_rl_joint_outputs(handle: number, countOut: number): number;
   _tn_rl_last_error(): number;
+  _tn_rl_live_count(): number;
   _tn_rl_name(handle: number, kind: number, index: number): number;
   _tn_rl_neutral_joints(handle: number, countOut: number): number;
   _tn_rl_set_gui(handle: number, values: number, count: number): number;
@@ -134,9 +134,25 @@ async function loadModule(): Promise<IRigLogicModule> {
         `riglogic.wasm sha256 ${actual} does not match the shipped ${expected}`,
       );
     const factory = (await import(WASM_MODULE_URL.href)) as { default: RigLogicFactory };
-    return await factory.default({ wasmBinary: binary });
+    const created = await factory.default({ wasmBinary: binary });
+    loadedModule = created;
+    return created;
   })();
   return await modulePromise;
+}
+
+/**
+ * Live handles, read through the already-loaded module.
+ *
+ * The module loads once per process, so a synchronous count is available exactly when a
+ * synchronous one is possible: after the first `create`/`upstreamCommit` call, and never before.
+ */
+let loadedModule: IRigLogicModule | undefined;
+
+function moduleLiveCount(): number {
+  if (loadedModule === undefined)
+    throw new MetaHumanAssetError("TN_MH_WASM_LOAD", "the WASM module is not loaded yet");
+  return loadedModule._tn_rl_live_count();
 }
 
 /**
@@ -193,6 +209,16 @@ export class RigEvaluator implements IRigEvaluator {
     if (typeof manifest.openRigLogicCommit !== "string")
       throw new MetaHumanAssetError("TN_MH_WASM_LOAD", "checksums.json has no pinned commit");
     return manifest.openRigLogicCommit;
+  }
+
+  /**
+   * Live evaluator handles in this process, across every instance of this class.
+   *
+   * The count a create/dispose cycle must return to. It reads the ABI's own registry, so a leak
+   * shows up as a number rather than as a slow death.
+   */
+  static liveHandleCount(): number {
+    return moduleLiveCount();
   }
 
   #live(): IRigLogicModule {

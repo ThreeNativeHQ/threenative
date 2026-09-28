@@ -91,6 +91,10 @@ function fakeHost() {
       return Float32Array.from({ length: (COUNTS[2] as number) * 10 }, (_, index) => index);
     },
     lastError: () => lastError,
+    liveCount: () => {
+      record("liveCount");
+      return live.size;
+    },
     name: (id, kind, index) => {
       handle(id);
       record("name", id, kind, index);

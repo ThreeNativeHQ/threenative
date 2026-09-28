@@ -47,6 +47,15 @@ export class NativeRigEvaluator implements IRigEvaluator {
     return this.#live().version;
   }
 
+  /**
+   * Live evaluator handles in the host process, across every instance of this class.
+   *
+   * The count a create/dispose cycle must return to, read from the ABI's own registry.
+   */
+  static liveHandleCount(host: INativeMetaHumanHost = nativeMetaHumanHost()): number {
+    return host.liveCount();
+  }
+
   #live(): INativeMetaHumanHost {
     if (this.#disposed)
       throw new MetaHumanAssetError("TN_MH_DISPOSED", "the evaluator is disposed");

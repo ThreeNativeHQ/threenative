@@ -138,6 +138,15 @@ const float* tn_rl_neutral_joints(tn_rl_handle handle, uint32_t* countOut);
 /** Last error message, never NULL, empty after a success. Process wide, not per handle. */
 const char* tn_rl_last_error(void);
 
+/**
+ * How many handles are alive right now, process wide.
+ *
+ * The count a create/destroy cycle must return to. It is a diagnostic, not a handle: it takes
+ * no id, so a stale caller cannot be answered wrongly, and it is the only way a consumer can
+ * prove ten load/dispose cycles leaked nothing without holding a pointer to the registry.
+ */
+int32_t tn_rl_live_count(void);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

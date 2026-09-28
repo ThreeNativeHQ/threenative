@@ -37,7 +37,15 @@ export interface IMetaHumanAssetInput {
   /** The parsed bindings sidecar. `unknown` because it is untrusted JSON. */
   readonly bindings: unknown;
   readonly dnaSha256: string;
-  readonly glbSha256: string;
+  /**
+   * SHA-256 of the prepared GLB, when the caller has its bytes.
+   *
+   * Optional because a loaded model is not re-downloaded to be hashed: the asset pipeline
+   * already serves a content-addressed file, so the preparation step is where that hash belongs.
+   * Omitted, every other check below still runs — this weakens the tamper check, not the
+   * name, index, domain or bounds checks.
+   */
+  readonly glbSha256?: string;
   readonly rig: IMetaHumanRigFacts;
   readonly gltf: IMetaHumanGltfFacts;
 }
@@ -171,8 +179,10 @@ export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHuman
   // Format before equality: a malformed hash is a schema error, not a mismatch.
   const dnaHash = sha256(hashes.dna, "hashes.dna");
   const glbHash = sha256(hashes.glb, "hashes.glb");
-  if (dnaHash !== dnaSha256 || glbHash !== glbSha256)
-    fail("TN_MH_HASH_MISMATCH", "bindings name different bytes than the loaded DNA and GLB");
+  if (dnaHash !== dnaSha256)
+    fail("TN_MH_HASH_MISMATCH", "the loaded DNA is not the one this bindings sidecar names");
+  if (glbSha256 !== undefined && glbHash !== glbSha256)
+    fail("TN_MH_HASH_MISMATCH", "the loaded GLB is not the one this bindings sidecar names");
 
   const nodeNames = new Set<string>();
   for (const node of gltf.nodes) {

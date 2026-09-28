@@ -62,7 +62,7 @@ const LINK = [
   "-sALLOW_MEMORY_GROWTH=1",
   "-sMAXIMUM_MEMORY=536870912",
   "-sFILESYSTEM=0",
-  "-sEXPORTED_FUNCTIONS=_tn_rl_create,_tn_rl_destroy,_tn_rl_count,_tn_rl_name,_tn_rl_set_lod,_tn_rl_set_gui,_tn_rl_set_raw,_tn_rl_evaluate,_tn_rl_joint_outputs,_tn_rl_blendshape_outputs,_tn_rl_animated_map_outputs,_tn_rl_neutral_joints,_tn_rl_last_error,_malloc,_free",
+  "-sEXPORTED_FUNCTIONS=_tn_rl_create,_tn_rl_destroy,_tn_rl_count,_tn_rl_name,_tn_rl_set_lod,_tn_rl_set_gui,_tn_rl_set_raw,_tn_rl_evaluate,_tn_rl_joint_outputs,_tn_rl_blendshape_outputs,_tn_rl_animated_map_outputs,_tn_rl_neutral_joints,_tn_rl_last_error,_tn_rl_live_count,_malloc,_free",
   "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF32,UTF8ToString",
 ];
 

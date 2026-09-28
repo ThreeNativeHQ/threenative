@@ -380,4 +380,8 @@ const char* tn_rl_last_error(void) {
     return g_lastError;
 }
 
+int32_t tn_rl_live_count(void) {
+    return static_cast<int32_t>(liveHandles().size());
+}
+
 }  // extern "C"

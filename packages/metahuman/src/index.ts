@@ -1,3 +1,7 @@
+import { createMetaHuman } from "./metahuman.js";
+import type { ILoadMetaHumanOptions, IMetaHuman } from "./metahuman.js";
+import { RigEvaluator } from "./wasm-evaluator.js";
+
 /**
  * Keeps a caller-supplied asset path inside the asset directory.
  * @situation reject a MetaHuman asset path that would read outside the game's asset root
@@ -60,3 +64,39 @@ export type {
   RigEvaluatorErrorCode,
   RigEvaluatorKind,
 } from "./wasm-evaluator.js";
+/**
+ * Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator:
+ * declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary
+ * Three.js object graph.
+ * @situation put a MetaHuman head in a browser game without an Unreal import or a baked clip
+ * @constraint the model is loaded through the game's own asset loader and cloned per instance, so
+ *   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns
+ * @constraint the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD
+ *   switch re-evaluates the current controls before the replacement mesh is shown
+ * @constraint an undeclared control, an out-of-domain value, an undeclared LOD and any call after
+ *   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced
+ * @requires npm i @threenative/metahuman
+ * @example const human = await loadMetaHuman({ assets: ctx.assets, model: "metahuman/head.glb",
+ *   dna: "metahuman/head.dna", bindings: "metahuman/bindings.json" });
+ *   human.setControls({ jawOpen: 0.4 });
+ * @example // in the scene update, after any body animation
+ *   human.update();
+ */
+export const loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> =>
+  createMetaHuman(
+    {
+      name: "wasm",
+      create: (dna) => RigEvaluator.create(dna),
+      openRigLogic: () => RigEvaluator.upstreamCommit(),
+    },
+    options,
+  );
+export type {
+  ILoadMetaHumanOptions,
+  IMetaHuman,
+  IMetaHumanAssets,
+  IMetaHumanBackend,
+  IMetaHumanControl,
+  IMetaHumanDiagnostics,
+  IMetaHumanModel,
+} from "./metahuman.js";
