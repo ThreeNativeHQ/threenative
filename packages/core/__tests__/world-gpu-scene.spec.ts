@@ -262,6 +262,14 @@ function mainMesh(world: WorldCells): InstancedMesh {
   return mesh;
 }
 
+/**
+ * The main pass's own meshes. A main key is `asset:level:part` and a caster or wide half carries an
+ * `@x,z` or `@*` of its own, so the name is what separates them.
+ */
+function mainKeys(world: WorldCells): InstancedMesh[] {
+  return worldMeshes(world).filter((one) => one.name !== "" && !one.name.includes("@"));
+}
+
 async function flush(rounds = 12): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -521,21 +529,21 @@ describe("WorldCells GPU-driven main pass", () => {
       const gl = new WorldGpuScene();
       expect(gl.enable({ kind: "webgl2", raw: {} } as never, true)).toBe(false);
       expect(gl.report().reason).toBe("backend=webgl2");
-      // A backend that can run it is on, and the marker says so.
+      // A backend that can run it is on, and the marker says so — through `announce`, which is what
+      // the owner calls once it has dressed the keys its ring was already holding, so the line
+      // carries a census rather than the count of a ring that has not been built yet.
       const on = new WorldGpuScene();
-      expect(
-        on.enable(
-          {
-            kind: "webgpu",
-            raw: { backend: { hasFeature: () => true } },
-            compute: () => {},
-          } as never,
-          true,
-        ),
-      ).toBe(true);
+      const supported = {
+        compute: () => {},
+        kind: "webgpu",
+        raw: { backend: { hasFeature: () => true } },
+      } as never;
+      expect(on.enable(supported, true)).toBe(true);
       expect(on.on).toBe(true);
       expect(on.report().reason).toBe("on");
+      on.announce(supported, { dressed: 21094, meshes: 21094 });
       expect(lines.at(-1)).toContain("TN_WORLD_GPU_SCENE on reason=on");
+      expect(lines.at(-1)).toContain("dressed=21094/21094");
     } finally {
       console.info = () => {};
     }
@@ -690,6 +698,107 @@ describe("WorldCells with the GPU-driven main pass", () => {
     expect(after.refilters - settled.refilters).toBe(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("dresses a ring the prewarm built before the scene came up", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      gpuSceneValidate: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    // A real game loads, mints the whole ring on its loading screen, and hands the world its first
+    // renderer a frame later. The prewarm therefore mints every main key while the scene is still
+    // off, and the tests that enable it on the first frame never reached that: a `dressGpu` at mint
+    // time is the whole of what dresses a key, so a ring built before the scene is on came up with
+    // nothing named and every batch still on the CPU path.
+    await flushed(world);
+    const minted = mainKeys(world);
+    expect(minted.length).toBeGreaterThan(0);
+    for (const mesh of minted) {
+      expect((mesh.geometry as BufferGeometry & { indirect: unknown }).indirect).toBeNull();
+      expect(
+        (mesh.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+          .isStorageInstancedBufferAttribute,
+      ).toBeUndefined();
+    }
+    expect(world.stats().gpuScene.keys).toBe(0);
+
+    const lines: string[] = [];
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (message: string): void => {
+        lines.push(message);
+      },
+      // No GPU here, so the args read back are the zeros the clear dispatch never wrote: the counts
+      // mismatch the reference by construction. What this test reads is `compared`, which is the
+      // number of regions the dispatch had — the number that was `0` in the real run.
+      readback: async (args: { array: Uint32Array }): Promise<ArrayBuffer> =>
+        args.array.slice().buffer as ArrayBuffer,
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    const camera = playerCamera();
+    world.update(renderer, camera);
+    await flushed(world);
+
+    // Every main mesh draws from the scene's own buffers, and every one of them has a region: the
+    // gate table addresses `firstKey + part`, so a key the scene never named is a placement the
+    // dispatch draws nowhere.
+    const main = mainKeys(world);
+    expect(main.length).toBeGreaterThanOrEqual(minted.length);
+    for (const mesh of main) {
+      expect(
+        (mesh.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+          .isStorageInstancedBufferAttribute,
+      ).toBe(true);
+      expect((mesh.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+      expect(mesh.frustumCulled).toBe(false);
+    }
+    expect(world.stats().gpuScene.keys).toBe(main.length);
+    // And the marker names it, because a browser run reads the line and nothing else.
+    const on = lines.find((one) => one.includes("TN_WORLD_GPU_SCENE on"));
+    expect(on).toContain(`dressed=${String(main.length)}/${String(main.length)}`);
+
+    // Thirty dispatches, so a readback lands: a scene with regions compares them.
+    for (let index = 0; index < 40; index += 1) world.update(renderer, camera);
+    await flush();
+    const validation = lines.find((one) => one.includes("TN_WORLD_GPU_SCENE_VALIDATE"));
+    expect(validation).toBeDefined();
+    expect(Number(validation?.match(/compared=(\d+)/u)?.[1])).toBeGreaterThan(0);
+
+    // A key the walk retires into the pool and comes back to: the rebind replaces the instance
+    // buffer, so the mesh is no longer the one the scene dressed, and the pool hands back the mesh
+    // rather than a key.
+    const held = mainMesh(world);
+    const away = cellCentre(6, 1);
+    follow.position.x = away.x;
+    follow.position.z = away.z;
+    world.update(renderer, camera);
+    await flushed(world);
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    const home = cellCentre(0, 1);
+    follow.position.x = home.x;
+    follow.position.z = home.z;
+    world.update(renderer, camera);
+    await flushed(world);
+    const back = mainMesh(world);
+    expect(back).toBe(held);
+    expect(
+      (back.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+        .isStorageInstancedBufferAttribute,
+    ).toBe(true);
+    expect((back.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
     expect(world.stats().failures).toBe(0);
     world.dispose();
   });

@@ -531,7 +531,9 @@ export interface IWorldCellsStats {
    * What the GPU-driven main pass is doing, and why it is not: `on` is the answer, `reason` is the
    * one line `TN_WORLD_GPU_SCENE` printed, and `dispatches` is what the walk actually paid for its
    * per-instance work. `mainCull.repacks` and `refilters` stay at `0` while it is on — that is the
-   * CPU work it replaced, counted by the same counters that report it when it is off.
+   * CPU work it replaced, counted by the same counters that report it when it is off. `dressed` over
+   * `meshes` is the marker line's own pair, and it is the one that says the scene has meshes to draw
+   * with: an `on` with `0` dressed is a ring the CPU path is still drawing.
    */
   readonly gpuScene: {
     readonly on: boolean;
@@ -540,6 +542,8 @@ export interface IWorldCellsStats {
     /** Resident source records: one per placement, shared by every part of the level it reached. */
     readonly instances: number;
     readonly keys: number;
+    readonly dressed: number;
+    readonly meshes: number;
   };
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
@@ -728,6 +732,20 @@ class SharedBatch {
    * `gpu` guards in `write`, `clear`, `#settle`, `#touched` and `#publish` are.
    */
   gpu:
+    | {
+        readonly asset: string;
+        readonly level: number;
+        readonly part: number;
+        readonly key: string;
+      }
+    | undefined;
+  /**
+   * The same descriptor, recorded whether or not the GPU scene is on, which is the whole of what
+   * lets a mesh minted before the scene came up be dressed after it: `gpu` says the mesh draws from
+   * the scene's buffers, `main` says which key it would draw. A prewarm that mints a whole ring on a
+   * loading screen mints it with the scene off, and the first frame with a renderer turns it on.
+   */
+  main:
     | {
         readonly asset: string;
         readonly level: number;
@@ -3123,7 +3141,12 @@ export class WorldCells extends Group implements IComputeDriven {
     // resident ring puts them in, through the same build every first-seen asset takes.
     if (this.#gpuScene.on && this.#gpuSeeded === false) {
       this.#gpuSeeded = true;
+      this.#seedGpuKeys();
       this.#seedGpuSources();
+      // After the keys, because that is the only point at which the marker can say how many of the
+      // world's main meshes are dressed: printed at enable it would read the ring as it was a frame
+      // earlier, which is the state the run that found this was in.
+      this.#gpuScene.announce(this.#renderer as IRendererLike, this.#gpuCensus());
     }
     // A new upload epoch, so no batch's pending span outlives the render that consumed it. See
     // `SharedBatch#touched`.
@@ -3685,6 +3708,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   stats(): IWorldCellsStats {
     const gpu = this.#gpuScene.report();
+    const census = this.#gpuCensus();
     return {
       admission: { ...this.#admission },
       evictions: this.#evictions,
@@ -3695,6 +3719,8 @@ export class WorldCells extends Group implements IComputeDriven {
         keys: gpu.keys,
         on: gpu.on,
         reason: gpu.reason,
+        dressed: census.dressed,
+        meshes: census.meshes,
       },
       instances: this.#instances,
       loadsInFlight: this.#limiter.inFlight,
@@ -4204,6 +4230,10 @@ export class WorldCells extends Group implements IComputeDriven {
    * draw that are now not submitted at all: in three r185's WebGPU path a zero-count `InstancedMesh`
    * still runs the whole per-draw JS chain, so an empty batch was CPU a frame for no draw — the number
    * is the part of the census that no longer costs anything.
+   *
+   * `dressed=N/M` is the GPU scene's own claim, repeated every five seconds: a scene that is on over
+   * meshes nothing is dressed into compacts a set the CPU path is still drawing, and `keys` alone
+   * cannot say so — a ring built before the scene came up has no keys at all and looks healthy.
    */
   #reportMainCull(): void {
     const now = this.#now();
@@ -4220,6 +4250,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // the wide half draws the asset's coarsest level, so it is the one that falls.
     let clusterTriangles = 0;
     let wideTriangles = 0;
+    let dressed = 0;
+    let mainMeshes = 0;
     for (const shared of this.#shared.values()) {
       if (shared.role !== "main") {
         if (shared.mesh.visible === false) castersHidden += 1;
@@ -4229,6 +4261,8 @@ export class WorldCells extends Group implements IComputeDriven {
         else wideTriangles += triangles;
         continue;
       }
+      mainMeshes += 1;
+      if (shared.gpu !== undefined) dressed += 1;
       instances += shared.live;
       drawn += shared.drawn;
       if (shared.mesh.visible === false) hidden += 1;
@@ -4236,7 +4270,8 @@ export class WorldCells extends Group implements IComputeDriven {
     console.info(
       `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
         `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
-        `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)}`,
+        `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
+        `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );
   }
 
@@ -4572,12 +4607,19 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * A caster or wide key is named `@x,z` or `@*` and belongs to the shadow passes, which the GPU scene
    * does not touch, so those are left exactly as they were.
+   *
+   * The key is recorded whether or not the scene is on, because a prewarm mints a whole ring before
+   * the first frame that can answer whether this backend can run the scene, and a key recorded only
+   * when the dress happened is a key the scene is never told about. `#seedGpuKeys` comes back for
+   * those; see there.
    */
   #adoptGpu(shared: SharedBatch, assetId: string, key: string, level: number, part: number): void {
-    if (this.#gpuScene.on === false || shared.role !== "main") return;
-    const dressed = { asset: this.#canonical(assetId), key, level, part };
-    shared.gpu = dressed;
-    this.#dressGpu(shared, dressed);
+    if (shared.role !== "main") return;
+    const named = { asset: this.#canonical(assetId), key, level, part };
+    shared.main = named;
+    if (this.#gpuScene.on === false) return;
+    shared.gpu = named;
+    this.#dressGpu(shared, named);
   }
 
   /**
@@ -4592,6 +4634,11 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * A key whose placements outgrew its region is regrown here rather than silently dropping instances
    * against the capacity guard, which is what a fixed ceiling did to any key a walk filled past.
+   *
+   * The buffers are read after `scene.key` rather than before it, because minting the first key is
+   * what allocates them: a dress that gave up on their absence was a dress that never happened, and
+   * the only frame that would have retried it was one whose fast path had already found the mesh
+   * dressed. A regrow replaces them, so the attribute handed to the mesh is the one a draw will read.
    */
   #dressGpu(
     shared: SharedBatch,
@@ -4603,29 +4650,30 @@ export class WorldCells extends Group implements IComputeDriven {
     },
   ): void {
     const scene = this.#gpuScene;
-    const drawn = scene.drawn;
-    const args = scene.args;
-    if (drawn === undefined || args === undefined) return;
+    const asset = this.#assets.get(key.asset);
+    const part = asset?.levels[key.level]?.[key.part];
+    if (asset === undefined || part === undefined) return;
     // The asset's own resident placements, not one level's share of them: a placement's level is
     // decided per frame from where the camera is, so every level's region has to hold all of them.
     const capacity = Math.max(shared.liveCeiling, this.#gpuResident.get(key.asset) ?? 0);
+    const settled = scene.drawn;
     const held = scene.regionOf(key.key);
     if (
-      shared.mesh.instanceMatrix === drawn &&
+      settled !== undefined &&
+      shared.mesh.instanceMatrix === settled &&
       shared.mesh.frustumCulled === false &&
       (held?.capacity ?? 0) >= capacity
     )
       return;
-    const asset = this.#assets.get(key.asset);
-    const part = asset?.levels[key.level]?.[key.part];
-    if (asset === undefined || part === undefined) return;
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
       group: `${key.asset}:${String(key.level)}`,
       part: key.part,
     });
     if (region === undefined) return;
+    const drawn = scene.drawn;
+    const args = scene.args;
     const args2 = scene.regionOf(key.key);
-    if (args2 === undefined) return;
+    if (drawn === undefined || args === undefined || args2 === undefined) return;
     const mesh = shared.mesh;
     mesh.instanceMatrix = drawn;
     // A clone, so the part's own geometry keeps its attributes and the indirect record is this mesh's:
@@ -4680,6 +4728,49 @@ export class WorldCells extends Group implements IComputeDriven {
         // batch would rebuild the same placements once per level and part.
         this.#queueBuild(asset, cell, batch.run, true);
       }
+  }
+
+  /**
+   * Dress every main batch the world already holds, the mirror of {@link #seedGpuSources} for the
+   * keys rather than the sources: the keys a prewarm minted on the loading screen were minted with
+   * the scene off, and a key is only named at mint time, so a ring built that way came up with an
+   * empty region table and every batch still drawing from its own buffer. The dispatch was drawing
+   * 21,094 placements into no region at all, and the validation marker said so — `compared=0` — for
+   * a scene that reported itself on.
+   *
+   * The pool is seeded with the rest: a retained key's mesh is handed back by a rebind rather than
+   * re-minted, and rebinding replaces the instance buffer, so a parked batch is undressed by the
+   * park and dressing it here is what leaves the walk with a key that is already in the table. From
+   * here every main batch carries `gpu`, which is what puts it on the dispatch's per-instance answer
+   * and off the CPU repack and the refilter.
+   */
+  #seedGpuKeys(): void {
+    for (const shared of this.#shared.values()) this.#seedGpuKey(shared);
+    for (const shared of this.#retired.values()) this.#seedGpuKey(shared);
+  }
+
+  /** Dress one undressed main batch, or leave a batch the scene does not touch. */
+  #seedGpuKey(shared: SharedBatch): void {
+    // `main` is the key; `gpu` is the mesh pointing at the scene's buffers. A dressed mesh is left
+    // alone, and `#dressGpu` says so itself — it is idempotent against the buffers it was given.
+    if (shared.main === undefined || shared.gpu !== undefined) return;
+    this.#dressGpu(shared, shared.main);
+  }
+
+  /**
+   * The main meshes the scene owns and the main meshes the world holds, live and pooled, which is
+   * the `dressed=N/M` the marker carries. A scene reporting itself on over a ring it never dressed
+   * read `dressed=0/21094` on nothing, so the number is the owner's: the scene cannot see the meshes.
+   */
+  #gpuCensus(): { readonly dressed: number; readonly meshes: number } {
+    let dressed = 0;
+    let meshes = 0;
+    for (const batch of [...this.#shared.values(), ...this.#retired.values()]) {
+      if (batch.role !== "main") continue;
+      meshes += 1;
+      if (batch.gpu !== undefined) dressed += 1;
+    }
+    return { dressed, meshes };
   }
 
   /**

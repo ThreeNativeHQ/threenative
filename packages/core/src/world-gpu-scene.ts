@@ -597,8 +597,25 @@ export class WorldGpuScene {
     this.#on = true;
     this.#reason = "on";
     this.#watchDevice(renderer);
-    this.#report(renderer);
+    // Not printed here: the owner's own line is the one that says how many of its meshes are
+    // dressed, and that number is only known once it has dressed them — see {@link announce}.
     return true;
+  }
+
+  /**
+   * The one line, printed once, with the owner's census of dressed main meshes.
+   *
+   * `enable` announces every answer but "on", because a scene that is off has nothing to count. This
+   * is the answer that does: the owner dresses the keys a ring built before the scene came up is
+   * already holding, and only then can `dressed=N/M` say whether the dispatch has anything to draw
+   * into. A caller with no owner of its own announces without a census, which reads `0/0`.
+   */
+  announce(
+    renderer: IRendererLike,
+    census?: { readonly dressed: number; readonly meshes: number },
+  ): void {
+    if (census !== undefined) this.#census = { dressed: census.dressed, meshes: census.meshes };
+    this.#report(renderer);
   }
 
   /**
@@ -928,6 +945,12 @@ export class WorldGpuScene {
   #validate = false;
   #validating = false;
   #watched = false;
+  /**
+   * The main meshes the owner has dressed against these buffers, and the main meshes it holds. It is
+   * the owner's, not this class's: a scene that reports itself on over a ring it never dressed was
+   * invisible from here, and `dressed=0/21094` is what a real run printed. See {@link announce}.
+   */
+  #census = { dressed: 0, meshes: 0 };
   /** The device's last uncaptured error, reported by the next check and then cleared. */
   #deviceError = "";
 
@@ -1290,7 +1313,8 @@ export class WorldGpuScene {
       "log" in renderer ? (renderer.log as ((message: string) => void) | undefined) : undefined;
     const line =
       `TN_WORLD_GPU_SCENE ${report.on ? "on" : "off"} reason=${report.reason || "none"} ` +
-      `instances=${String(report.instances)} keys=${String(report.keys)}`;
+      `instances=${String(report.instances)} keys=${String(report.keys)} ` +
+      `dressed=${String(this.#census.dressed)}/${String(this.#census.meshes)}`;
     if (typeof name === "function") name(line);
     else console.info(line);
   }
