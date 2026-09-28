@@ -27,7 +27,12 @@ import {
   readVelocityPreviousWorldMatrix,
 } from "../src/render/velocity.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
-import { SoftwareVelocityRenderer, prepareVelocityShaderState } from "./velocity-render-fixture.js";
+import {
+  SoftwareVelocityRenderer,
+  isObjectEvent,
+  prepareVelocityShaderState,
+  previousBuffer,
+} from "./velocity-render-fixture.js";
 
 /**
  * Three's own compile-time gate. `NodeBuilder.needsPreviousData()` decides whether `skinning()`,
@@ -128,21 +133,9 @@ function buildVelocityUpdateNodes(object: Object3D, node: Node): IInspectableVel
 }
 
 function runObjectUpdate(builder: IInspectableVelocityBuilder, object: Object3D): void {
-  const event = [...builder.nodes].find((node) => node.constructor.name === "EventNode");
+  const event = [...builder.nodes].find(isObjectEvent);
   if (event === undefined) throw new Error("velocity fixture did not build an object update");
   event.update({ frameId: 1, object });
-}
-
-function previousBuffer(
-  builder: IInspectableVelocityBuilder,
-  current: ArrayLike<number>,
-): Float32Array {
-  const buffer = [...builder.nodes].find(
-    (node) =>
-      node.isBufferNode === true && node.value instanceof Float32Array && node.value !== current,
-  )?.value;
-  if (!(buffer instanceof Float32Array)) throw new Error("velocity fixture did not build history");
-  return buffer;
 }
 
 function velocitySceneFixture() {
