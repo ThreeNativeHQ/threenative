@@ -38,4 +38,15 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
     id: "networked-multiplayer",
     situations: ["authoritative replication", "client prediction"],
   },
+  {
+    guidance:
+      "The framework owns no vegetation system. Copy the MIT source in examples/integrations/vegetation/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/vegetation) into your src/ and follow its README: generate seeded, vertex-budgeted EZ Tree variants offline (tree.ts, from the pinned ez-tree source, not the npm 1.1.0 bundle), write them with treeToGlb into assets/, cook them with assets.models.passes.prune: false (prune strips the uv and _WIND weight your materials read), load with ctx.assets.model and re-material by glTF material name. render/wind.ts is editable TSL wind in world metres; call expandBounds(geometry, minWorldScale) per variant geometry. assets.lod bakes bark levels and keeps alpha-masked leaves at LOD0. Worked sample: the grove game in github.com/ThreeNativeHQ/examples.",
+    id: "procedural-vegetation",
+    situations: [
+      "procedural trees",
+      "swaying trees",
+      "tree foliage wind sway",
+      "generate a forest of trees",
+    ],
+  },
 ];

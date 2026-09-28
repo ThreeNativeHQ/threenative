@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -241,6 +242,62 @@ describe("ci run summary", () => {
 });
 
 describe("PRD-373 measured queue and execution time", () => {
+  /** The one `gh api` invocation the run summary's timings come from. */
+  function timingCollection(source: string): string {
+    const match = /gh api [\s\S]*?job-timings\.json"; then/u.exec(source);
+    expect(match?.[0], "ci.yml must collect job timings").toBeTruthy();
+    return match?.[0] ?? "";
+  }
+
+  it("calls gh with a flag pairing gh accepts", async () => {
+    // gh rejects `--slurp` beside `--jq` or `--template`, and the `if !` guard turned that rejection
+    // into `[]` — so every run reported a header-only table and an empty measurement read as a
+    // measured one.
+    const call = timingCollection(await ci());
+    expect(call).toContain("--paginate");
+    expect(call).toContain("--slurp");
+    expect(call).not.toContain("--jq");
+    expect(call).not.toContain("--template");
+  });
+
+  it("flattens the paginated pages into a populated table", async () => {
+    const script = /node -e '([^']+)'/u.exec(timingCollection(await ci()));
+    expect(script?.[1], "the flatten must stay a runnable node expression").toBeTruthy();
+    const pages = [
+      {
+        jobs: [
+          {
+            name: "typecheck",
+            created_at: "2026-09-26T00:00:00Z",
+            started_at: "2026-09-26T00:02:00Z",
+            completed_at: "2026-09-26T00:02:45Z",
+          },
+        ],
+      },
+      {},
+      {
+        jobs: [
+          {
+            name: "build",
+            created_at: "2026-09-26T00:00:00Z",
+            started_at: null,
+            completed_at: null,
+          },
+        ],
+      },
+    ];
+    const flatten = spawnSync("node", ["-e", script?.[1] ?? ""], {
+      input: JSON.stringify(pages),
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    expect(flatten.stderr).toBe("");
+    expect(flatten.status).toBe(0);
+    const summary = formatJobTimings(JSON.parse(flatten.stdout));
+    expect(summary).toContain("| typecheck | 120s | 45s |");
+    expect(summary).toContain("| build | unavailable | unavailable |");
+  });
+
   it("keeps runner queue time distinct from execution time", () => {
     const summary = formatJobTimings([
       {
