@@ -25,6 +25,7 @@
  */
 
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
+import { markEngineRenderHook } from "./engine-render-hook.js";
 import type { Camera, Object3D } from "three";
 import { baseGeometryOf, conservativeViewDepth, lodPixelScale, worldSphere } from "./model-lod.js";
 import type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
@@ -640,6 +641,11 @@ export class GeometryCapture {
       record.byPass.set(kind, pass);
       previous.call(this, renderer, scene, camera, geometry, material, group);
     };
+    // Engine bookkeeping, exactly as the world's prewarm borrow is: the capture counts the draws
+    // the frame really submits, so it claims no object and the scene render projection may fold
+    // the scene away underneath it. Unmarked, an armed capture declined the projection on every
+    // frame and the counter then reported the collapse it had prevented.
+    markEngineRenderHook(instrumented);
     rendered.onBeforeRender = instrumented;
     armed.restore.push(() => {
       if (rendered.onBeforeRender !== instrumented) return;
