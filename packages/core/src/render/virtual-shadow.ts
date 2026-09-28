@@ -3,6 +3,7 @@ import {
   Fn,
   If,
   abs,
+  and,
   float,
   max,
   min,
@@ -90,6 +91,11 @@ export interface IVirtualShadowStats {
   readonly cached: number;
   /** Levels rendered this frame, for any reason. */
   readonly rendered: number;
+  /**
+   * Levels that wanted a render this frame and did not get one, because the node renders at most
+   * one level per frame. They keep the map they already have and come due again next frame.
+   */
+  readonly deferred: number;
   /** Fraction of levels served from cache over the node's lifetime. */
   readonly reuseRatio: number;
 }
@@ -139,6 +145,18 @@ interface ILevel {
   readonly extentUniform: UniformNode<"float", number>;
   minX: number;
   minY: number;
+  /**
+   * 1 once this level's map has been rendered at least once, 0 until then. A fragment never
+   * samples a map this level has not drawn yet: with one render per frame the coarse levels are
+   * behind on the frame the fine one comes due, and their targets have no depth in them yet.
+   */
+  readonly mapped: UniformNode<"float", number>;
+  /**
+   * Set when this level was due and the frame's single render went to a finer one. Sticky, so a
+   * level that was passed over stays due on the next frame instead of waiting for its window to
+   * move again — the reason it was due (an `invalidateAll`, an explicit region) is already cleared.
+   */
+  pending: boolean;
   /**
    * Where this level's *rendered* map sits, relative to the centre the fragment test measures
    * from. A level whose re-render was deferred still holds an older window, and its selection has
@@ -201,7 +219,9 @@ interface IRenderingShadowNode {
  * map type and filter, and those source settings are mirrored into each stock level node before
  * rendering. Per-level map sizes, cameras, `autoUpdate` and `needsUpdate` are owned by this node.
  * Each level is rendered by the stock {@link ShadowNode} through the renderer's shadow-map type,
- * so the look is the same code path a plain shadow uses.
+ * so the look is the same code path a plain shadow uses. At most one level renders per frame,
+ * finest first — a level render is a whole scene draw, and a level passed over keeps the map and
+ * window it has, so a fragment only ever samples a map that level drew.
  *
  * Ported from the virtual-shadow-map prototype's clipmap and invalidation; the sparse page atlas
  * is deliberately not the first cut — a page needs the scene rendered once per page, and on a
@@ -350,6 +370,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     };
     this.#stats = {
       cached: 0,
+      deferred: 0,
       frame: 0,
       invalidated: 0,
       levels: clipExtents.length,
@@ -513,8 +534,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         extent,
         extentUniform: uniform(extent),
         light,
+        mapped: uniform(0),
         minX: Number.NaN,
         minY: Number.NaN,
+        pending: false,
         offsetU: uniform(0),
         offsetV: uniform(0),
         guardUniform: uniform(
@@ -548,9 +571,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (coarsest === undefined) return vec4(1, 1, 1, 1);
       const moverResult = (level: ILevel) =>
         moversActive.greaterThan(0).select(vec4(level.moverNode as never), vec4(1, 1, 1, 1));
-      const result = min(vec4(coarsest.node as never), moverResult(coarsest)).toVar(
-        "virtualShadowValue",
-      );
+      // Every level is read through its own `mapped` gate. A level whose map this node has not
+      // drawn yet contributes nothing rather than being sampled: with one level rendered per frame
+      // the coarse levels trail the fine one, and their targets hold nothing to compare against.
+      const result = vec4(1, 1, 1, 1).toVar("virtualShadowValue");
+      If(coarsest.mapped.greaterThan(0), () => {
+        result.assign(min(vec4(coarsest.node as never), moverResult(coarsest)));
+      });
       // Coarse to fine, so the finest containing level assigns last and wins.
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const level = levels[index];
@@ -561,9 +588,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const distance = max(abs(u.add(level.offsetU)), abs(v.add(level.offsetV))).toVar(
           `virtualShadowDistance${String(index)}`,
         );
-        If(distance.lessThanEqual(level.extentUniform.mul(level.guardUniform)), () => {
-          result.assign(min(vec4(level.node as never), moverResult(level)));
-        });
+        If(
+          and(
+            level.mapped.greaterThan(0),
+            distance.lessThanEqual(level.extentUniform.mul(level.guardUniform)),
+          ),
+          () => {
+            result.assign(min(vec4(level.node as never), moverResult(level)));
+          },
+        );
       }
       return result;
       // quality-allow: Three's Fn invocation loses the concrete node type.
@@ -644,6 +677,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let moved = 0;
     let invalidated = 0;
     let rendered = 0;
+    let deferred = 0;
+    // One level render per frame, finest first: a level render is a whole scene draw, and three of
+    // them in one frame is the long task a fly-through cannot absorb. A level the budget skipped
+    // holds the map it has and is due again on the next frame.
+    let budgetSpent = false;
     try {
       const half = this.clipmap.pagesPerAxis / 2;
       // The window each level's map was actually rendered with. A level that does not get this
@@ -681,18 +719,31 @@ export class VirtualShadowNode extends ShadowBaseNode {
             invalidateAll ||
             invalidatedLevels.has(index) ||
             regionDirty ||
-            source.shadow.needsUpdate);
-        if (due) {
+            source.shadow.needsUpdate ||
+            level.pending);
+        // Finest first: the loop walks the levels in that order, so the first due level takes the
+        // frame's single render and every other due level is deferred behind it.
+        const grant = due && !budgetSpent;
+        if (grant) {
           level.minX = window.minX;
           level.minY = window.minY;
+          level.mapped.value = 1;
+          level.pending = false;
           rendered += 1;
+          budgetSpent = true;
+        } else if (due) {
+          deferred += 1;
+          level.pending = true;
+        } else {
+          level.pending = false;
         }
         // The level camera sits on the window its map was rendered with, deferred or not. A level
-        // that has never rendered has no window to hold, so it takes this frame's.
+        // that has never rendered takes this frame's: it has no map to hold, and `mapped` keeps
+        // every fragment out of it until it does.
         const held =
-          due || Number.isNaN(level.minX)
-            ? window
-            : { minX: level.minX, minY: level.minY, pageWorldSize: window.pageWorldSize };
+          level.mapped.value === 1 && !grant
+            ? { minX: level.minX, minY: level.minY, pageWorldSize: window.pageWorldSize }
+            : window;
         const { cu: hu, cv: hv } = centreOf(held as IClipWindow);
         // The window's centre in light space, snapped to whole texels, back in world space at the
         // camera's own depth along the light — that is what keeps the map stable under motion.
@@ -712,7 +763,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         level.light.updateMatrixWorld(true);
         level.light.target.updateMatrixWorld(true);
         // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-        if (due) {
+        if (grant) {
           // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
           (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
         }
@@ -737,6 +788,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const total = this.#rendered + this.#served;
     this.#stats = {
       cached: this.#levels.length - rendered,
+      deferred,
       frame: this.#frame,
       invalidated,
       levels: this.#levels.length,
@@ -777,6 +829,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
 const VIRTUAL_SHADOW_STAT_FIELDS = [
   "cached",
+  "deferred",
   "frame",
   "invalidated",
   "levels",

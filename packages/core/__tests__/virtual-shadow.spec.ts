@@ -69,6 +69,22 @@ function stubLevelRenders(node: VirtualShadowNode): void {
   }
 }
 
+/**
+ * Run frames until no level is waiting for the frame's single render.
+ *
+ * The node renders at most one level per frame, finest first, so a fresh node needs one frame per
+ * level before every map holds something. A test about what a steady walk costs starts here; a
+ * test about the scheduling itself counts the frames instead.
+ */
+function settle(node: VirtualShadowNode, camera: PerspectiveCamera): number {
+  let frames = 0;
+  do {
+    node.updateBefore(frameFor(camera));
+    frames += 1;
+  } while (node.stats.deferred > 0 && frames < 16);
+  return frames;
+}
+
 interface IShaderGraphBuilder extends NodeBuilder {
   setShaderStage(shaderStage: "fragment"): void;
   flowStagesNode(node: Node, output: "vec4"): { code: string };
@@ -111,8 +127,12 @@ describe("VirtualShadowNode", () => {
     expect(node.levelLights).toHaveLength(3);
     node.updateBefore(frameFor(camera));
     for (const level of node.levelLights) expect(level.parent).toBe(scene);
-    // Every level renders on its first frame, none was cached.
-    expect(node.stats).toMatchObject({ cached: 0, levels: 3, rendered: 3 });
+    // One level per frame, finest first: the first frame renders the finest and defers the rest.
+    expect(node.stats).toMatchObject({ cached: 2, levels: 3, rendered: 1, deferred: 2 });
+    // The finest is the one whose map a fragment under the camera samples, so it is never the one
+    // held back: the two coarse levels follow, one frame each, until nothing is deferred.
+    expect(settle(node, camera)).toBe(2);
+    expect(node.stats).toMatchObject({ levels: 3, rendered: 1, deferred: 0 });
     node.dispose();
     expect(
       scene.children.filter((child) => child.name.startsWith("VirtualShadowLevel")),
@@ -122,13 +142,19 @@ describe("VirtualShadowNode", () => {
   it("should serve every level from cache while the camera stays inside its texel", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    settle(node, camera);
     camera.position.set(0.02, 5, 0.02);
     node.updateBefore(frameFor(camera));
+    camera.position.set(0.12, 5, 0.12);
+    node.updateBefore(frameFor(camera));
+    // The second frame spent its render on the coarse level the first one deferred; the third has
+    // nothing left to do, which is the state this test is about.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, moved: 0, rendered: 0 });
     const targets = node.levelLights.map((level) =>
       (level as unknown as { target: { position: { clone(): unknown } } }).target.position.clone(),
     );
-    // A texel of the finest level is 2 * 8 / 64 = 0.25 world units; 0.1 stays inside it.
-    camera.position.set(0.12, 5, 0.12);
+    camera.position.set(0.2, 5, 0.2);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, moved: 0, rendered: 0 });
     node.levelLights.forEach((level, index) => {
@@ -141,7 +167,7 @@ describe("VirtualShadowNode", () => {
   it("should invalidate cached levels when a caster is tracked or untracked", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
 
@@ -150,12 +176,14 @@ describe("VirtualShadowNode", () => {
     node.trackCaster(caster);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       movers: 1,
       moverRenders: 2,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
+    settle(node, camera);
 
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
@@ -163,12 +191,14 @@ describe("VirtualShadowNode", () => {
     expect(node.untrackCaster(caster)).toBe(true);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       movers: 0,
       moverRenders: 0,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
+    expect(settle(node, camera)).toBe(1);
   });
 
   it("should copy source shadow settings to cached and mover shadow nodes", () => {
@@ -263,11 +293,11 @@ describe("VirtualShadowNode", () => {
     // until the centre has moved a fraction of the extent, which the test below covers.
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64, refreshStep: 0 });
     camera.position.set(0, 5, 0);
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     // 0.3 crosses the finest texel (0.25) but not the coarse one (1.0).
     camera.position.set(0.3, 5, 0);
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ cached: 1, moved: 1, rendered: 1 });
+    expect(node.stats).toMatchObject({ cached: 1, deferred: 0, moved: 1, rendered: 1 });
     // Negative control: a level that never moves is never re-rendered.
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
@@ -277,7 +307,7 @@ describe("VirtualShadowNode", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
     camera.position.set(0, 5, 0);
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     // The finest extent is 8 m and the default step is an eighth of it, so 0.5 m is a fifth of a
     // step: the window holds and the level is served from cache.
     camera.position.set(0.5, 5, 0);
@@ -327,22 +357,25 @@ describe("VirtualShadowNode", () => {
     camera.position.set(0, 5, 0);
     node.updateBefore(frameFor(camera));
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0 });
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0, deferred: 0 });
     // A step — and a breathing idle would do the same — is a mover-map render, never a level one.
     mover.position.set(2, 0, 2);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, moverRenders: 2, rendered: 0 });
-    // Three frames: the first placed and rendered both levels, the other two served both.
-    expect(node.stats.reuseRatio).toBeCloseTo(4 / 6);
+    // Three frames, two level renders — the second one the frame after the first, because the node
+    // renders one level per frame — and six level serves.
+    expect(node.stats.reuseRatio).toBeCloseTo(6 / 8);
     expect(node.untrackCaster(mover)).toBe(true);
     expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       moverRenders: 0,
       movers: 0,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
   });
 
@@ -359,13 +392,17 @@ describe("VirtualShadowNode", () => {
   it("should keep explicit tracker invalidation working for existing callers", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.tracker.update("manual", {
       min: { x: 0.2, y: 0, z: -0.8 },
       max: { x: 0.8, y: 2, z: -0.2 },
     });
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1 });
+    // The level the budget skipped stays due on the next frame: the reason it was due is cleared,
+    // and only a sticky flag keeps it in the queue.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ invalidated: 0, rendered: 1, deferred: 0 });
   });
 
   it("should keep a tracked caster out of the cached level render and put it back afterwards", () => {
@@ -392,11 +429,12 @@ describe("VirtualShadowNode", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
     camera.position.set(0, 5, 0);
-    node.updateBefore(frameFor(camera));
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.invalidateAll();
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1 });
+    expect(settle(node, camera)).toBe(1);
+    expect(node.stats).toMatchObject({ invalidated: 0, rendered: 1, deferred: 0 });
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ invalidated: 0, rendered: 0 });
   });
@@ -427,6 +465,7 @@ describe("VirtualShadowNode", () => {
         readVirtualShadowMarker(
           `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
             cached: 0,
+            deferred: 0,
             frame: "2",
             invalidated: 0,
             levels: 1,
@@ -442,6 +481,7 @@ describe("VirtualShadowNode", () => {
         readVirtualShadowMarker(
           `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
             cached: 0,
+            deferred: 0,
             frame: 2,
             invalidated: 0,
             levels: 1,
@@ -449,6 +489,23 @@ describe("VirtualShadowNode", () => {
             moverRenders: 1,
             movers: 1,
             rendered: 1,
+          })}`,
+        ),
+      ).toBeUndefined();
+      // `deferred` is part of the shape, so a marker from a node that does not report it — an
+      // older log read by a newer harness, or one sliced in half — parses as nothing.
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: 2,
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+            reuseRatio: 0,
           })}`,
         ),
       ).toBeUndefined();

@@ -484,8 +484,13 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
 
   it("invalidates only the levels whose window covers the region, and nothing when it is unchanged", () => {
     const built = node(0.125);
+    // One level per frame, finest first, so the node needs a few frames to map all three before a
+    // steady walk is the thing under test.
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ moved: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ moved: 3, rendered: 1, deferred: 2 });
+    while (built.stats.deferred > 0) built.updateBefore(frame);
+    built.updateBefore(frame);
+    expect(built.stats).toMatchObject({ rendered: 0, deferred: 0 });
 
     // A corner the coarsest window reaches and the two fine ones do not.
     built.invalidateRegion({
@@ -503,10 +508,13 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
     // A region at the camera redraws every window, and `invalidateAll` still redraws them all.
     built.invalidateRegion({ max: { x: 1, y: 1, z: 1 }, min: { x: -1, y: -1, z: -1 } });
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 1, deferred: 2 });
+    while (built.stats.deferred > 0) built.updateBefore(frame);
+    built.updateBefore(frame);
+    expect(built.stats).toMatchObject({ rendered: 0, deferred: 0 });
     built.invalidateAll();
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 1, deferred: 2 });
     built.dispose();
   });
 });
