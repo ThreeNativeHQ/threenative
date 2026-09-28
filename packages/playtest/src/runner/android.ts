@@ -109,9 +109,10 @@ export interface IPlaytestDeviceLifecycleObservation {
    *
    * Android counts drawn frames, not simulation steps: `dumpsys gfxinfo` has no physics counter,
    * and the native host's `TN_FRAME_BUDGET` `substeps` are a per-window distribution emitted once
-   * every 300 frames, not a count per phase. The seam that would close this is a step counter in
-   * the host's mailbox `advance` result (`IPlaytestAdvanceResult`), which is a
-   * `packages/runtime-native` change.
+   * every 300 frames, not a count per phase. The mailbox already relays `advance`'s fixed-step
+   * `clock.tick`, but a game-loop tick is not proof that the physics simulation stepped. The
+   * counter must be recorded at the physics plugin's `simulation.step` call and surfaced through
+   * a runtime-owned observation before the runner can claim physics continuity.
    */
   physics: { available: false; reason: string };
   render: {

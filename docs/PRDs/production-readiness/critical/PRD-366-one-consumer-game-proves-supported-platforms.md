@@ -308,9 +308,11 @@ was not touched.
       drawn frames, not simulation steps (`dumpsys gfxinfo` has no physics counter); the host's
       `TN_FRAME_BUDGET` `substeps` are a per-window distribution emitted once every 300 frames
       (`packages/core/src/frame-budget.ts:785`), unusable per phase; and the bridge's `clock.tick`
-      is a game-loop tick, not a physics count. The seam that closes it is a step counter in the
-      native host's mailbox `advance` result (`IPlaytestAdvanceResult`), which is a
-      `packages/runtime-native` change outside this slice's ownership. Until that exists the box
+      is a game-loop tick, not a physics count. The mailbox already relays the bridge's
+      `IPlaytestAdvanceResult` with `clock.tick`; the runner discards it, but retaining it would
+      still only count ticks. The seam that closes this is a counter incremented at the physics
+      plugin's `simulation.step` call (`packages/physics/src/plugin.ts:211`), surfaced through a
+      runtime-owned observation and read by the runner around lifecycle phases. Until that exists the box
       cannot be ticked, because "render/physics continuity" is a conjunction and one clause is
       unmeasured.
 - [ ] [engine; local] The physical collector consumes those runner-owned observations, binds them
