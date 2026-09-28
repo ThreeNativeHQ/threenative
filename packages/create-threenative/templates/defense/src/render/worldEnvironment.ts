@@ -27,9 +27,9 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { godrays } from "three/addons/tsl/display/GodraysNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
-import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
   color,
