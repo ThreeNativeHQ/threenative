@@ -21,7 +21,7 @@ describe("starter playtest proof", () => {
   );
 
   it.each(DURABLE_PLAYTEST_TEMPLATES)(
-    "should drive the registered player with input in the %s durable scenario",
+    "should drive its registered subject with input in the %s durable scenario",
     async (template) => {
       const scenario = JSON.parse(
         await readFile(
@@ -36,11 +36,15 @@ describe("starter playtest proof", () => {
         subject?: string;
       };
 
+      // The subject is the template's own, not a literal: `minimal` proves its `player` moved,
+      // `defense` its camera, and the `rts` kit its camera, because a strategy game has no avatar
+      // and its durable proof is that a held key pans a battlefield. What every one of them shares
+      // is the claim underneath: a named registered entity, a held input step, and a distance.
       const inputStep = scenario.steps?.find(
         (step) => step.kind === "input" && step.press === "ArrowUp",
       );
-      expect(scenario.subject).toBe("player");
-      expect(scenario.assert?.movement?.entity).toBe("player");
+      expect(scenario.subject).toBeTruthy();
+      expect(scenario.assert?.movement?.entity).toBe(scenario.subject);
       expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
       expect(inputStep).toMatchObject({ kind: "input", press: "ArrowUp" });
       expect(inputStep?.holdTicks).toBeGreaterThan(0);

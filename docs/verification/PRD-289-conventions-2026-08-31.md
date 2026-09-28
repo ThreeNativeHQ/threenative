@@ -20,7 +20,7 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
 | puzzle | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
-| rts | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Player.ts`), which extends AnimationPlayer |
+| rts | N/A — every unit is placed by the simulation at its own ground height, so there is no rendered body to keep on a floor | N/A — every model is procedural in metres already, so no authored asset needs normalising | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:7` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |

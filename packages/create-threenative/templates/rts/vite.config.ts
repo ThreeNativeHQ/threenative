@@ -1,4 +1,6 @@
+import tailwindcss from "@tailwindcss/vite";
 import { watchAssets } from "@threenative/assets";
+import react from "@vitejs/plugin-react";
 import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
@@ -20,7 +22,13 @@ function assetsWatchPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [createEngineFreshnessPlugin(), createWebBrandPlugin(), assetsWatchPlugin()],
+  plugins: [
+    createEngineFreshnessPlugin(),
+    createWebBrandPlugin(),
+    react(),
+    tailwindcss(),
+    assetsWatchPlugin(),
+  ],
   server: {
     watch: {
       ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],
