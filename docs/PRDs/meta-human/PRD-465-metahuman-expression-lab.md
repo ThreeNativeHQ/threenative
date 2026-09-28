@@ -1,6 +1,6 @@
 # PRD-465 — MetaHuman Expression Lab
 
-**Status:** NOT STARTED — proposed design; implementation is not verified.
+**Status:** IN PROGRESS — lane `feat/prd-465-metahuman-expression-lab`; specimen acquired and prepared (§10), no box ticked yet.
 
 **Date:** 2026-09-28.
 
@@ -322,7 +322,9 @@ Follow `docs/PRDs/AGENTS.md`: open one draft engine PR from/against `develop` be
 
 ## 10. Blocked on
 
-**Authorized real specimen:** Joao or another authorized asset owner supplies or acquires the MetaHuman export and permits local integration testing. The only content acquired so far is the OpenRigLogic Sample Content (§2). Phases 1–2 can proceed without the specimen; Phase 3 cannot.
+**Authorized real specimen — resolved 2026-09-28.** Joao claimed Epic's free "MetaHumans" sample (Fab `0281d63e-71f7-4e07-a344-5fa721ac4d35`, artifact `MetaHumanSample_5.5`). Its `Ada_FaceMesh` is the specimen, via §4 route 1. `asset_import_unreal` first refused the package with `UNREAL_EXPORT_EMPTY`: its skeletal hint did not know UE 5.5's `SkeletalMeshSourceModel`. That is fixed in threenative-asset-mcp PR #15. The fixed importer writes one skinned GLB: 34,615 vertices over 9 primitives (head, teeth, saliva, eyes L/R, eye occlusion, eyelashes, lacrimal, cartilage), 875 joints, and 821 morph targets named `head_lod0_mesh__<DNA channel>`. Only LOD0 is exported, and skin weights are `JOINTS_0` only. The CUE4Parse converter also writes the embedded `DNAAsset` as a 4,829,103-byte DNA v2.1 with behaviour layers and an empty geometry layer. Both stay local under `~/.cache/threenative/metahuman/ada-face/`. Still open for this specimen: LOD1 is not exported (needed by A5), and the converter writes the `.dna` into its working directory under a literal backslash path (an importer bug to fix in the same repo).
+
+An editable MetaHuman (`.mhpkg`, e.g. `skotukeda3.mhpkg`: UE 5.8 `MetaHumanCharacter`, `lod0VertCount: 0`, ~420 MB of compressed character state and textures) is **not** a specimen: only UE's MetaHuman Creator assembles it into meshes and DNA. An `.mhpkg` importer is follow-up work outside this PRD (Joao, 2026-09-28).
 
 The OpenRigLogic Sample Content does **not** satisfy this: `Sample.dna` has no face. Either form unblocks Phase 3: a MetaHuman Creator DCC export (head DNA with geometry, plus textures) or a MetaHuman as an Unreal package. §4 picks the route. Record the exact tool/export versions before declaring a route supported. This is not permission to substitute unrelated geometry.
 
