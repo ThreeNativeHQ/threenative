@@ -8,7 +8,11 @@ import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): { key: DirectionalLight } {
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
@@ -16,9 +20,12 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): { key: Di
   const key = new DirectionalLight(0xfff1e0, 4.5);
   key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
-  // 2048² over the 36 m arena is under two centimetres a texel. Widen the extent when the level
-  // grows, accepting softer shadows, or follow the player with the shadow camera.
-  key.shadow.mapSize.set(2048, 2048);
+  // One map fitted to the 36 m arena: 4096² is under a centimetre a texel, so every shadow has the
+  // same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here their
+  // level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 80;
   const extent = 18;
@@ -30,8 +37,6 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): { key: Di
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.005;
   scene.add(key);
-  // In the scene, so a camera-following shadow (`VirtualShadowNode`) can aim at it.
-  scene.add(key.target);
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };

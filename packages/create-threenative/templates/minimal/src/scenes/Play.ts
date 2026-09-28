@@ -2,7 +2,6 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
-  VirtualShadowNode,
   afterPhysics,
   isMobile,
   isTouchscreenAvailable,
@@ -64,6 +63,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
@@ -90,14 +90,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     // Bevelled, not sharp: a 3 cm rounded edge catches a line of sun and a line of sky, which is
     // what makes a block read as a made object instead of a placeholder. UVs are world metres, so
-    // one grid tile is one metre on every face (`worldGridUVs`).
+    // one grid tile is one metre on every face (`worldGridUVs`). Each block sinks by its bevel
+    // radius: resting the rounded bottom edge on the floor leaves a lit sliver under it, and the
+    // block's shadow reads as detached from the block.
+    const BEVEL = 0.03;
     const block = (
       size: readonly [number, number, number],
       at: readonly [number, number, number],
       material = structureMaterial,
     ): Mesh => {
-      const geometry = new RoundedBoxGeometry(size[0], size[1], size[2], 2, 0.03);
-      geometry.translate(at[0], at[1] + size[1] / 2, at[2]);
+      const geometry = new RoundedBoxGeometry(size[0], size[1], size[2], 2, BEVEL);
+      geometry.translate(at[0], at[1] + size[1] / 2 - BEVEL, at[2]);
       return solid(new Mesh(worldGridUVs(geometry), material));
     };
     // The floor runs out past the walls to the haze line, so the sky over a wall meets ground, not
@@ -136,7 +139,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // A raised deck with a ramp up to it, and a step block beside it.
     block([8, 1.5, 6], [-9, 0, -9]);
     block([4, 0.75, 3], [-3.5, 0, -12.5]);
-    const ramp = new RoundedBoxGeometry(6.2, 0.4, 4, 2, 0.03);
+    const ramp = new RoundedBoxGeometry(6.2, 0.4, 4, 2, BEVEL);
     ramp.rotateZ(-Math.atan2(1.5, 6));
     ramp.translate(-2, 0.55, -8);
     solid(new Mesh(worldGridUVs(ramp), structureMaterial));
@@ -150,8 +153,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       [-6, 0, 4, 1.5, -0.25],
       [10, 0, 5, 1.2, 0.6],
     ] as const) {
-      const crate = new Mesh(new RoundedBoxGeometry(edge, edge, edge, 2, 0.03), propMaterial);
-      crate.position.set(x, y + edge / 2, z);
+      const crate = new Mesh(new RoundedBoxGeometry(edge, edge, edge, 2, BEVEL), propMaterial);
+      crate.position.set(x, y + edge / 2 - BEVEL, z);
       crate.rotation.y = turn;
       solid(crate);
     }
@@ -161,15 +164,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     afterPhysics(ctx, (dt) => followCamera(camera, player.mesh.position, dt));
     ctx.entities.add("player", player);
-    // Camera-centred shadow levels on WebGPU: a 6 m window around the camera at ~0.6 cm a texel
-    // for crisp contact under the feet, widening to 48 m for the far walls. The moving figure is a
-    // tracked caster, so it redraws every frame without invalidating the cached static levels.
-    // The WebGL fallback keeps the single fitted shadow map `lighting.ts` configures.
-    if (ctx.renderer.kind === "webgpu") {
-      const shadows = new VirtualShadowNode(lighting.key, { clipExtents: [6, 18, 48] });
-      lighting.key.shadow.shadowNode = shadows;
-      shadows.trackCaster(player.mesh);
-    }
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: 1.5, y: 0.5, z: 0 },
