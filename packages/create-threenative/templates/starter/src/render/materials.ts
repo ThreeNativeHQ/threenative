@@ -5,7 +5,7 @@
 // neighbours — grass, sand and granite scatter light very differently, and the sky environment
 // `sky.ts` installs is what makes that difference visible. This scene now runs on a real
 // photographic sky, so a material that is only convincing next to an unlit dome will not be.
-import { Color, DoubleSide, MeshBasicMaterial, MeshStandardMaterial, type Texture } from "three";
+import { Color, DoubleSide, MeshStandardMaterial, type Texture } from "three";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { palette } from "./palette.js";
 
@@ -20,12 +20,15 @@ export function createMaterials() {
     goal: new MeshStandardMaterial({ color: palette.rock, roughness: 0.45, metalness: 0.2 }),
     // The columns under the ledge: lit, matte, granite, so the drop has a below.
     rock: new MeshStandardMaterial({ color: palette.rock, roughness: 0.98, metalness: 0 }),
-    // The ridge on the horizon is unlit on purpose. A standard material there takes the warm key
-    // like everything else and the backdrop stops being a backdrop; a flat colour between the
-    // granite and the sky's own horizon stays a silhouette from every light angle, reads as
-    // distance rather than as a rock, and the scene's fog still fades it.
-    ridge: new MeshBasicMaterial({
-      color: new Color(palette.rock).lerp(new Color(palette.skyLow), 0.55),
+    // The headland on the horizon: lit rock, faceted, so the sun models its ridges and the photo
+    // sky fills the shade. It used to be unlit to stay a silhouette against a flat painted sky;
+    // against a real sky an unlit slab reads as a grey cut-out pasted on the horizon. The fog in
+    // `sky.ts` supplies the distance.
+    ridge: new MeshStandardMaterial({
+      color: palette.rock,
+      roughness: 1,
+      metalness: 0,
+      flatShading: true,
     }),
     /** A pale dry wildflower head: sand lightened towards the white it is in daylight. */
     flower: new MeshStandardMaterial({
