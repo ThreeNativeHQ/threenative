@@ -275,9 +275,10 @@ describe("VehicleBody3D", () => {
   });
 
   it("refuses to build on a backend with no vehicle controller", () => {
-    // The native entry point is the same class, so the only honest difference between the two
-    // platforms today is that one of them throws by name instead of quietly not driving.
-    const native = createNativePhysicsSimulation({ createBody: () => 0 } as never, "0.30.0");
+    // The node asks for the four vehicle members before it builds anything, so a backend that
+    // cannot drive a car says so by name instead of leaving a motionless chassis behind. Both
+    // shipped backends answer now; this is the guard for any simulation that does not.
+    const backend = { createBody: () => 0, step: () => {} } as never;
 
     expect(
       () =>
@@ -285,9 +286,39 @@ describe("VehicleBody3D", () => {
           object: new Group(),
           shape: CollisionShape3D.box(1.6, 0.5, 3.6),
           wheels: WHEELS,
-          world: native,
+          world: backend,
         }),
     ).toThrow(/TN_VEHICLE_NATIVE_UNAVAILABLE/);
+  });
+
+  it("drives a car through the native adapter seam", () => {
+    // The native adapter is the same shared node, so it must build a vehicle rather than throw;
+    // the adapter's own guards are in native-contract.spec.ts.
+    const native = createNativePhysicsSimulation(
+      {
+        createBody: () => 0,
+        createVehicle: () => 0,
+        readVehicleState: (_id: number, output: Float32Array) => {
+          output.fill(0);
+          return output.length;
+        },
+        resetVehicle: () => {},
+        setVehicleInput: () => {},
+      } as never,
+      "0.30.0",
+    );
+
+    const vehicle = new VehicleBody3D({
+      mass: 900,
+      object: new Group(),
+      shape: CollisionShape3D.box(1.6, 0.5, 3.6),
+      wheels: WHEELS,
+      world: native,
+    });
+    vehicle.engineForce = 4000;
+    vehicle.brake = 60;
+    vehicle.steering = 0.25;
+    expect(vehicle.engineForce).toBe(4000);
   });
 
   it("drops the vehicle with its body and stops answering after dispose", async () => {
