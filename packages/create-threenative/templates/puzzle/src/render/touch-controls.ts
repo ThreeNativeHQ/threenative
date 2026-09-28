@@ -12,7 +12,6 @@ import {
 import { palette } from "./palette.js";
 
 const MOVE_RADIUS = 72;
-const BUTTON_RADIUS = 58;
 const EDGE = 36;
 
 export interface ITouchPointer {
@@ -25,8 +24,6 @@ export interface ITouchViewport {
 }
 
 export interface ITouchInput {
-  readonly swingPressed: boolean;
-  readonly grabPressed: boolean;
   readonly move: Vector2;
 }
 
@@ -48,57 +45,39 @@ function place(mesh: Mesh, point: Vector2): void {
   mesh.position.set(point.x, point.y, 0);
 }
 
-function controlPoint(size: ITouchViewport, name: "grab" | "swing" | "move"): Vector2 {
-  if (name === "move") return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS - EDGE);
-  const yOffset = name === "swing" ? BUTTON_RADIUS * 2 + EDGE : 0;
-  return new Vector2(
-    size.width - BUTTON_RADIUS - EDGE,
-    size.height - BUTTON_RADIUS - EDGE - yOffset,
-  );
+/** Bottom-left, where a left thumb already is. Anchored on touch-down, so the ring is a hint. */
+function restingPoint(size: ITouchViewport): Vector2 {
+  return new Vector2(MOVE_RADIUS + EDGE, size.height - MOVE_RADIUS - EDGE);
 }
 
 export class TouchControls {
   readonly root = new Group();
   readonly object = this.root;
   #camera: PerspectiveCamera;
-  #input: { swingPressed: boolean; grabPressed: boolean; move: Vector2 } = {
-    swingPressed: false,
-    grabPressed: false,
-    move: new Vector2(),
-  };
-  #wasSwing = false;
-  #wasGrab = false;
+  #input: { move: Vector2 } = { move: new Vector2() };
   #moveAnchor = new Vector2();
   #resting = new Vector2();
-  #swingCenter = new Vector2();
-  #grabCenter = new Vector2();
   #hasMoveAnchor = false;
   #lastWidth = -1;
   #lastHeight = -1;
   #moveBase: Mesh;
   #moveKnob: Mesh;
-  #swing: Mesh;
-  #grab: Mesh;
   #idleMaterial: MeshBasicMaterial;
   #activeMaterial: MeshBasicMaterial;
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = overlayMaterial(palette.wall, 0.35);
+    this.#idleMaterial = overlayMaterial(palette.gridLine, 0.34);
     this.#activeMaterial = overlayMaterial(palette.accent, 0.6);
     this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);
-    this.#swing = ringMesh(BUTTON_RADIUS, this.#idleMaterial);
-    this.#grab = ringMesh(BUTTON_RADIUS, this.#idleMaterial);
-    this.root.add(this.#moveBase, this.#moveKnob, this.#swing, this.#grab);
+    this.root.add(this.#moveBase, this.#moveKnob);
     this.root.renderOrder = 10_001;
     camera.add(this.root);
   }
 
   update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
     this.#ensureLayout(size);
-    const grab = this.#at(pointers, this.#grabCenter, BUTTON_RADIUS);
-    const swing = this.#at(pointers, this.#swingCenter, BUTTON_RADIUS);
     let movement: ITouchPointer | undefined;
     for (const pointer of pointers.values()) {
       if (pointer.position.x < size.width * 0.5) {
@@ -129,22 +108,12 @@ export class TouchControls {
         center.y - this.#input.move.y * MOVE_RADIUS,
       ),
     );
-    this.#swing.material = swing ? this.#activeMaterial : this.#idleMaterial;
-    this.#grab.material = grab ? this.#activeMaterial : this.#idleMaterial;
-    this.#input.swingPressed = swing && !this.#wasSwing;
-    this.#input.grabPressed = grab && !this.#wasGrab;
-    this.#wasSwing = swing;
-    this.#wasGrab = grab;
     this.#layout(size);
     return this.#input;
   }
 
   debug(): Record<string, unknown> {
-    return {
-      grab: this.#wasGrab,
-      swing: this.#wasSwing,
-      move: this.#input.move.toArray(),
-    };
+    return { move: this.#input.move.toArray() };
   }
 
   dispose(): void {
@@ -160,9 +129,7 @@ export class TouchControls {
     if (size.width === this.#lastWidth && size.height === this.#lastHeight) return;
     this.#lastWidth = size.width;
     this.#lastHeight = size.height;
-    this.#resting.copy(controlPoint(size, "move"));
-    this.#swingCenter.copy(controlPoint(size, "swing"));
-    this.#grabCenter.copy(controlPoint(size, "grab"));
+    this.#resting.copy(restingPoint(size));
   }
 
   #layout(size: ITouchViewport): void {
@@ -171,15 +138,5 @@ export class TouchControls {
     this.root.position.set(-(size.width * pixels) / 2, worldHeight / 2, -1);
     this.root.scale.set(pixels, -pixels, 1);
     place(this.#moveBase, this.#hasMoveAnchor ? this.#moveAnchor : this.#resting);
-    place(this.#swing, this.#swingCenter);
-    place(this.#grab, this.#grabCenter);
-  }
-
-  #at(pointers: ReadonlyMap<number, ITouchPointer>, center: Vector2, radius: number): boolean {
-    const radiusSquared = radius * radius;
-    for (const pointer of pointers.values()) {
-      if (pointer.position.distanceToSquared(center) <= radiusSquared) return true;
-    }
-    return false;
   }
 }

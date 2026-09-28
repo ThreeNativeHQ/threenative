@@ -1,0 +1,98 @@
+{
+  "name": "through-the-ward-onto-the-seal",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross-the-vault",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "through-the-ward",
+      "press": "ArrowUp",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand-on-the-seal",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "passThroughs",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "sealContacts",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "anyOf": [
+          {
+            "path": "sealedBy",
+            "equals": "warden"
+          },
+          {
+            "path": "sealedBy",
+            "equals": "crate"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "won",
+        "changed": true
+      }
+    ],
+    "contacts": [
+      {
+        "entity": "player",
+        "with": "seal",
+        "kind": "trigger",
+        "minCount": 1
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 5
+    },
+    "visibility": [
+      {
+        "entity": "seal",
+        "minProjectedPixels": 200,
+        "allowTrivial": "The seal is authored in frame so the player can see where to go; held from the first tick, and the row proves it is still drawn when the run ends."
+      }
+    ]
+  }
+}

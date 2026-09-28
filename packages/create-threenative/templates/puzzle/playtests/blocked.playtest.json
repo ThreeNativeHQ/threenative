@@ -1,0 +1,73 @@
+{
+  "name": "the-pile-blocks-the-warden",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "line-up",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-into-the-pile",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "still-pressed-against-it",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "blockedTicks",
+        "gte": 20,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "gte": -0.2,
+        "allowTrivial": "A bound the warden starts inside and must never leave: the pile's south face is at z = -0.04 and the warden's capsule is 0.28 m wide, so any value below -0.2 means it walked through three courses of solid crates. The row's whole value is that it stays true."
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "playing",
+        "allowTrivial": "Held on purpose: walking into the pile must not end the run. A change here would mean the warden reached the seal through the crates."
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 100,
+        "allowTrivial": "The vault is one fixed shot and the warden is framed in it from the first tick; this row is a held invariant and exists to catch a warden that leaves the picture."
+      }
+    ]
+  }
+}

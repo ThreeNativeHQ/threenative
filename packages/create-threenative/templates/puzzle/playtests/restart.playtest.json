@@ -1,0 +1,108 @@
+{
+  "name": "r-rebuilds-the-vault",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross-the-vault",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "through-the-ward",
+      "press": "ArrowUp",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "won",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reset",
+      "press": "KeyR",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "vault-reopens",
+      "waitTicks": 360,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          {
+            "label": "won",
+            "equals": "won"
+          },
+          {
+            "label": "vault-reopens",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "sealedBy",
+        "atSteps": [
+          {
+            "label": "won",
+            "equals": "warden"
+          },
+          {
+            "label": "vault-reopens",
+            "equals": "none"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "settled",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "crates",
+        "gte": 30,
+        "allowTrivial": "The rebuilt vault has to contain the same level again; the count is a property of the layout, and this row is what caught the rebuild that produced none at all."
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 100,
+        "allowTrivial": "One fixed shot: the warden is framed from the first tick and this row exists to catch a rebuild that loses it."
+      }
+    ]
+  }
+}

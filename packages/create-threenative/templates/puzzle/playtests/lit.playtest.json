@@ -1,0 +1,73 @@
+{
+  "name": "the-room-is-actually-lit",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "vault-drops",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "look",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "scene": {
+      "litMaterialsAreLit": true,
+      "minVisibleLights": 2,
+      "cameraClearsScene": true,
+      "fogClearsScene": true
+    },
+    "renderChain": {
+      "tier": "high"
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 780,
+          "y": 215,
+          "width": 90,
+          "height": 60,
+          "maxDarkPixelRatio": 0.3
+        }
+      },
+      {
+        "region": {
+          "x": 470,
+          "y": 520,
+          "width": 300,
+          "height": 120,
+          "minDarkPixelRatio": 0.5
+        }
+      },
+      {
+        "entityVisible": {
+          "entity": "player",
+          "minProjectedPixels": 200
+        }
+      }
+    ]
+  }
+}

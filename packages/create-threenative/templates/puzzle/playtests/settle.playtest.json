@@ -1,0 +1,100 @@
+{
+  "name": "vault-settles",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "first-look",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "vault-opens",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "world": {
+      "seed": 6132
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "settled",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "crates",
+        "gte": 30,
+        "allowTrivial": "The brief's floor of 30 dynamic bodies is a property of the level, not an event: the count reaches 38 on the first frame after the vault drops, which is inside the window between the game's first published state and the runner's first sample. changed:true cannot catch it \u2014 measured, the first sample already reads 38."
+      },
+      {
+        "id": "state",
+        "path": "phaseCrates",
+        "gte": 4,
+        "allowTrivial": "Same window as `crates`: the six phase bodies exist from the first observed frame. The row proves the pass-through class is present at all, which is a standing property of the vault."
+      },
+      {
+        "id": "state",
+        "path": "settledCrates",
+        "gte": 40,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "sealContacts",
+        "equals": 0,
+        "allowTrivial": "Nothing may reach the seal during an opening drop nobody touched; this row is a held invariant and its whole value is that it stays zero."
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "playing",
+        "allowTrivial": "The run must still be unwon after the drop; held from the first tick on purpose, and the row exists to catch a vault that wins itself."
+      }
+    ],
+    "settled": [
+      {
+        "atStep": "fall-and-settle",
+        "entity": "crate.",
+        "minBodies": 30,
+        "compareToStep": "first-look",
+        "minMeanPoseDistance": 0.02
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 100,
+        "allowTrivial": "The warden is framed from the first tick by design \u2014 the whole room is one fixed shot \u2014 so this row is held, not driven."
+      },
+      {
+        "entity": "seal",
+        "minProjectedPixels": 200,
+        "allowTrivial": "The seal is authored in frame so the player can see where to go; held from the first tick, and the row proves it is still drawn at the end."
+      }
+    ]
+  }
+}

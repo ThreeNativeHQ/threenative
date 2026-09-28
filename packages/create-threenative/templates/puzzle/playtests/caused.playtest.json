@@ -1,0 +1,47 @@
+{
+  "name": "the-win-arrives-after-the-contact-and-never-before",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "vault-drops", "waitTicks": 400, "release": true },
+    { "kind": "input", "label": "cross-the-vault", "press": "ArrowRight", "holdTicks": 200, "release": true },
+    { "kind": "input", "label": "reach-the-seal", "press": "ArrowUp", "holdTicks": 200, "release": true },
+    { "kind": "wait", "label": "after-the-contact", "waitTicks": 60, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          { "label": "vault-drops", "equals": "playing" },
+          { "label": "cross-the-vault", "equals": "playing" },
+          { "label": "after-the-contact", "equals": "won" }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "sealContacts",
+        "atSteps": [
+          { "label": "vault-drops", "equals": 0 },
+          { "label": "cross-the-vault", "equals": 0 }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "sealedBy",
+        "atSteps": [
+          { "label": "vault-drops", "equals": "none" },
+          { "label": "after-the-contact", "equals": "warden" }
+        ]
+      }
+    ],
+    "contacts": [
+      { "entity": "player", "with": "seal", "kind": "trigger", "minCount": 1, "atStep": "reach-the-seal" }
+    ]
+  }
+}

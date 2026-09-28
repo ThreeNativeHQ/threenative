@@ -1,0 +1,56 @@
+{
+  "name": "pause",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "focus-pause-button",
+      "press": "Tab",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pause-button",
+      "press": "Enter",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "paused",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "movement-while-paused",
+      "press": "ArrowRight",
+      "holdTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "maxDistance": 0.1
+    }
+  }
+}
