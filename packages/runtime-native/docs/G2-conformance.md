@@ -148,5 +148,8 @@ SDL_VIDEODRIVER=x11 sh scripts/xvfb.sh \
 Both rows report `pass`: `pixelMismatchRatio 0`, `perceptualDeltaE 0` at 1280×720, non-uniform,
 and zero GPU validation errors. The desktop lane is a bounded run of one row, not the whole
 registry. The desktop host's own `TN_VEHICLE_PROOF` marker records four wheels in contact at a
-0.27689 m strut of the 0.30 m rest length, 26.58 m/s after 3 s of 4000 N per rear wheel, and
-1.95 s of `brake = 60` to rest — the numbers the web unit spec records for Rapier 0.19.3.
+0.27689 m strut of the 0.30 m rest length, 26.58 m/s after 3 s of 4000 N per rear wheel, 1.95 s
+of `brake = 60` to rest, and a respawn landing exactly on its requested `(10, 40)` at 17.72 m/s
+driving the other way — the numbers the web unit spec records for Rapier 0.19.3. The row also
+found a real defect while it was being written: the `resetVehicle` binding read `yaw` as a
+property of a number, so every native respawn was refused with `TN_PHYSICS_NON_FINITE`.

@@ -17,6 +17,7 @@ import {
 } from "../src/native/index.js";
 import * as nativeEntry from "../src/native/index.js";
 import type { IPhysicsContext } from "../src/plugin.js";
+import type { IPhysicsVehicleWheelOptions } from "../src/simulation.js";
 import {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_SLEEP_STATE_STRIDE,
@@ -732,20 +733,20 @@ describe("native physics contract", () => {
     expect(removeBody).not.toHaveBeenCalled();
   });
 
-  const vehicleWheels = [
-    {
-      dampingCompression: 2.3,
-      dampingRelaxation: 4.4,
-      maxSuspensionTravel: 0.3,
-      position: { x: -0.8, y: -0.15, z: -1.2 },
-      suspensionRestLength: 0.3,
-      suspensionStiffness: 100,
-      useAsSteering: true,
-      useAsTraction: false,
-      wheelFrictionSlip: 10.5,
-      wheelRadius: 0.34,
-    },
-  ];
+  const frontLeft: IPhysicsVehicleWheelOptions = {
+    dampingCompression: 2.3,
+    dampingRelaxation: 4.4,
+    maxSuspensionTravel: 0.3,
+    position: { x: -0.8, y: -0.15, z: -1.2 },
+    suspensionRestLength: 0.3,
+    suspensionStiffness: 100,
+    useAsSteering: true,
+    useAsTraction: false,
+    wheelFrictionSlip: 10.5,
+    wheelRadius: 0.34,
+  };
+
+  const vehicleWheels = [frontLeft];
 
   const vehicleOptions = {
     axle: { x: 1, y: 0, z: 0 },
@@ -776,7 +777,7 @@ describe("native physics contract", () => {
     native.createVehicle?.({
       ...vehicleOptions,
       bodyId: 1,
-      wheels: [{ ...(vehicleWheels[0] as object), maxSuspensionTravel: undefined }],
+      wheels: [{ ...frontLeft, maxSuspensionTravel: undefined }],
     });
     const defaulted = createVehicle.mock.calls[1]?.[0]?.wheels;
     expect(defaulted?.[9]).toBe(5);
