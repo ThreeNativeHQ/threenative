@@ -586,6 +586,15 @@ non-fatal native-census drift. **No hardware or live collection was run to produ
 change is proved by the unit test and the retained-artifact contract, and the performance box above
 stays open.
 
+**Web-only rerun at this head (2026-09-28):**
+`.runtime/prd064/production/web-after-diagnostic/production-evidence.json` has all three markers,
+one passing startup, one passing playtest and 1,919 presented samples over 32.00 seconds. The web
+mean is 59.9665 FPS (p95 16.8 ms), so its only failure code is `TN_PROD_PERFORMANCE_BUDGET`
+against the unrelaxed 60 FPS floor. No missing-report artifact was produced: the absent web series
+in the previous pair did not recur on this isolated run. This web-only result cannot prove native
+parity, and the adapter name is still absent from the retained identity; the performance box remains
+open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:
