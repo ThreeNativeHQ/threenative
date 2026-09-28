@@ -28,8 +28,8 @@ Use a 4m x 3m x 0.3m wall minus a through-cutter making a 1m x 2m opening. Rays 
 
 ### Phase 2 — offline generation and round-trip
 - [x] Implement the editable authoring script and active-range normalization. proof: `npm test` in `examples/integrations/csg` runs strict TypeScript 5.9.3 and passes the 13 dependency-free contracts; the CLI test spawns the real compiled `generate.js`, reads the GLB it wrote and proves a second invocation is refused without changing the bytes.
-- [x] Pass the GLB validation and geometry round-trip tests. proof: `npm run test:integration` — 31 passed, 0 failed on Node 22.22.0, including pinned Khronos `gltf-validator` validation, real Three.js `GLTFLoader` readback, reflected-winding repair, normalized colors and exact indexed/nonindexed two-material active-range round-trips.
-- [x] Prove failure diagnostics and shared-input disposal behaviour. proof: the same 31-case suite — invalid normal/UV/color layouts, unadmitted and inherited semantics, float32 overflow, `BackSide` and unsupported PBR factors each fail by name; a throwing donor releases every owned scratch resource, output disposal is idempotent and shared caller inputs stay reusable.
+- [x] Pass the GLB validation and geometry round-trip tests. proof: `npm run test:integration` — 34 passed, 0 failed on Node 22.22.0, including pinned Khronos `gltf-validator` validation, real Three.js `GLTFLoader` readback, reflected-winding repair, normalized colors and exact indexed/nonindexed two-material active-range round-trips.
+- [x] Prove failure diagnostics and shared-input disposal behaviour. proof: the same 34-case suite — invalid normal/UV/color layouts, unadmitted and inherited semantics, float32 overflow, `BackSide` and unsupported PBR factors each fail by name; a throwing donor releases every owned scratch resource, output disposal is idempotent and shared caller inputs stay reusable.
 
 ### Phase 3 — real game, collision, platforms and hygiene
 - [x] Wire the doorway fixture through the existing cook and model loader, with collision from LOD0. proof: `examples/csg-doorway` — the ordinary cook reports `[ok] doorway.glb: 55 triangles` and writes a content-addressed output (`public/doorway.7f18b990.glb`); `ctx.assets.model("doorway.glb")` loads it and `buildStaticColliders` builds the fixed trimesh from that same LOD0 geometry.
@@ -44,7 +44,7 @@ Use a 4m x 3m x 0.3m wall minus a through-cutter making a 1m x 2m opening. Rays 
 - [x] A TypeScript-authored Boolean model reaches a playable game through the ordinary asset path. proof: `examples/csg-doorway` loads the cooked `doorway.glb` with `ctx.assets.model`; all three playtest lanes assert the loaded mesh (`sceneNodes` `doorway-mesh`, ≥ 40 triangles).
 - [x] The rendered opening and collision opening agree after the complete cook/load round-trip. proof: each lane asserts `renderedOpeningMiss`/`renderedWallHit` (mesh raycast) equal `physicsOpeningMiss`/`physicsWallHit` (cooked collider raycast) — see the Phase 3 playtest boxes.
 - [x] Active ranges and material groups survive export without hidden extra triangles. proof: `examples/integrations/csg` `npm run test:integration` — both two-material active-range cases round-trip indexed and nonindexed with exact index counts and material order.
-- [x] Invalid or unsupported input fails with a named diagnostic. proof: the same 31-case suite — export and ownership regressions throw `CSG …` / `TN_…` named errors instead of degrading.
+- [x] Invalid or unsupported input fails with a named diagnostic. proof: the same 34-case suite — export and ownership regressions throw `CSG …` / `TN_…` named errors instead of degrading.
 - [x] No Boolean authoring code is loaded by a game using only the cooked asset. proof: `pnpm --filter csg-doorway check:no-generator`, exit 0.
 - [x] Browser WebGPU evidence is recorded. proof: Phase 3 browser box — adapter `nvidia / turing`.
 - [x] Desktop-native evidence is recorded. proof: Phase 3 desktop box — CachyOS Linux, NVIDIA GeForce RTX 2080 / Vulkan.
@@ -71,7 +71,7 @@ Formal engine capability tools, transitive-license audit, lockfile generation, B
 
 **Full qualification — 2026-09-27:** all of the above plus the new `examples/csg-doorway` game run green in this worktree.
 
-- `examples/integrations/csg` `npm test`: 13 contracts + 31 integration = 44 passed, 0 failed (Node 22.22.0).
+- `examples/integrations/csg` `npm test`: 13 contracts + 34 integration = 47 passed, 0 failed (Node 22.22.0).
 - `examples/csg-doorway` typecheck exit 0; web playtest exit 0 (11/11, adapter `nvidia / turing`); desktop playtest exit 0 (10/10, NVIDIA GeForce RTX 2080 / Vulkan on CachyOS Linux); Android playtest exit 0 (10/10, emulator `threenative_api35`, API 35, x86_64).
 - `pnpm --filter csg-doorway check:no-generator` exit 0.
 - `pnpm typecheck` exit 0; `pnpm lint` exit 0 (0 errors, 850 warnings); `pnpm test` 1528 passed / 1 failed — the failure is `packages/runtime-native/tests/windows-installer.test.mjs`, reproduced unchanged in the `develop` checkout, so it is this machine, not this change.

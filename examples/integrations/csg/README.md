@@ -9,7 +9,7 @@ npm test
 npm run generate -- /absolute/path/to/game/assets/doorway.glb
 ```
 
-The generator refuses overwrites. Run the game's ordinary asset cook next and use `ctx.assets.model('doorway.glb')`. Create collision from the authored LOD0 geometry. The generated GLB does not require the authoring program to load it; the complete engine cook, collision and platform route still needs qualification.
+The generator refuses overwrites. Run the game's ordinary asset cook next and use `ctx.assets.model('doorway.glb')`. Create collision from the authored LOD0 geometry. The generated GLB does not require the authoring program to load it; `examples/csg-doorway` qualifies the complete engine cook, collision and platform route.
 
 `evaluateSolid(left, right, 'subtract' | 'union' | 'intersect')` calls three-bvh-csg with owned scratch geometry. Caller geometries and shared materials retain their lifetime. `result.dispose()` releases output geometry only and is idempotent. The evaluation target is owned before the donor runs, so a thrown evaluation also reaches cleanup.
 
@@ -23,7 +23,7 @@ Textures, physical materials, BackSide, morph targets and interleaved buffers ar
 
 ## Checks
 
-`npm test` builds strict TypeScript, runs 13 dependency-free contracts and then the 31 configured donor/export/CLI cases. These include Khronos GLB validation, actual Three.js GLTFLoader readback, reflected winding, indexed/nonindexed active material groups, normalized colors, invalid-input diagnostics and failure/disposal paths. Missing dependencies fail, never skip. `npm run test:contracts` can run the CPU-only subset without downloading the donor.
+`npm test` builds strict TypeScript, runs 13 dependency-free contracts and then the 34 configured donor/export/CLI cases. These include Khronos GLB validation, actual Three.js GLTFLoader readback, reflected winding, indexed/nonindexed active material groups, normalized colors, invalid-input diagnostics and failure/disposal paths. Missing dependencies fail, never skip. `npm run test:contracts` can run the CPU-only subset without downloading the donor.
 
 The dedicated workflow runs on relevant PRs and pushes because root Vitest excludes examples. Every phase and acceptance box of the [PRD](../../../docs/PRDs/done/PRD-threejs-csg-cook.md) is ticked with its evidence; the lockfile is committed. The standalone Three pin does not apply the framework renderer patch.
 

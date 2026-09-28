@@ -41,7 +41,7 @@ pnpm build:native                    # desktop JS bundle into dist/
 ```sh
 node ../../packages/playtest/dist/runner/cli.js playtests/doorway-native.playtest.json \
   --target desktop --project . \
-  --executable packages/runtime-native/build/tn-linux/mystral \
+  --executable ../../packages/runtime-native/build/tn-linux/mystral \
   --host-arg run --host-arg dist/csg-doorway-native.js
 ```
 
