@@ -185,7 +185,7 @@ jobs:
     if: >-
       needs.android-v8-source.outputs.published == 'false' &&
       github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/ci/prd-463-native-leg-time')
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
