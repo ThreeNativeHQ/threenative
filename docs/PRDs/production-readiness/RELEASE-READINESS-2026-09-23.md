@@ -8,11 +8,10 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 Android 60 Hz
-UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
-controls and web/native parity · PRD-375 branding machine gates are closed and it is blocked only on owner visual inspection (PRD-365 is closed: 2026-09-27, its CI
-signing proof green and its registry-consumer run passed; public Authenticode/notarization superseded
-because each developer signs their own) · PRD-445 is filed in
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 final
+cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
+controls and web/native parity. PRD-365 and PRD-375 are closed; PRD-375's owner visual check and
+PR #271 merge completed on 2026-09-28. PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
 20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
 `threenative-sculpt-mcp` release and three owner calls remain).
@@ -23,6 +22,11 @@ packed journey passed all ten discovered templates and its mutated-package negat
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
 `max(50 ms, 4 panel frames)` with in-frame behind the off flag.
+
+**Completion scope:** the owner asked to include R3 production 1.0, not stop at the R2 beta.
+PRD-446's stable-API draft is at 11/14 phase boxes, while its real N-1 upgrade and 1.0 release
+acceptance remain open. The R3 physical, parity and distribution PRDs below remain release
+blockers until their own evidence passes. PRD-375 is merged after owner visual confirmation.
 
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
 alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
@@ -43,11 +47,10 @@ target, and no public text may claim iOS until a later decision adds it.
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
 **The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/) or in their
-explicit `BLOCKED/` folders when only external work remains.** On 2026-09-27 PRD-375 moved to
-`BLOCKED/requires-owner-provider-checkpoint/` because all machine gates passed and only the owner
-look remains; PRD-365 moved to `done/` because its last box — the public-registry consumer launch —
-passed; PRD-445 had already moved to `BLOCKED/requires-release-credentials/` on 2026-09-25.
-The 1.0 PRDs under R3 stay in their own folders and block nothing until the beta ships.
+explicit `BLOCKED/` folders when only external work remains.** PRD-365 and PRD-375 are now in
+`done/`; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25.
+The 1.0 PRDs under R3 stay in their own folders; independent work can proceed now, and the
+final 1.0 qualification depends on the immutable R2 consumer cohort.
 
 ## What was measured today
 
@@ -120,9 +123,10 @@ to 0.3.3 and not released.
    mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
    its [repair](../done/PRD-112-repair-golden-path-contract.md).
-3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
-   50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
-   [PRD-399](critical/PRD-399-playable-dev-distributables.md) (5/18 boxes).
+3. **Final cross-platform React UI qualification is open.** The approved 60 Hz Android bound is
+   four panel frames (~66.7 ms); an unplugged Pixel 8 fixture passed at p95 55.78 ms on 2026-09-27.
+   This does not qualify the immutable consumer cohort or the other supported platforms. Owner:
+   [PRD-399](critical/PRD-399-playable-dev-distributables.md) (8/20 boxes).
 4. **The desktop production-performance judge is BLOCKED today** (six `TN_PROD_*` codes, above).
    Owner: [PRD-064](critical/PRD-064-tier-1-native-reliability.md) (no phase boxes — cannot report
    progress). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
@@ -138,9 +142,10 @@ box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) b
 1. **Proof on real hardware.** One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
    0/42 boxes. Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
    the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md).
-2. **No stable-API or upgrade contract exists.** Nothing defines the public surface, the deprecation
-   window, or proves a game on version N-1 upgrades to N. **New:
-   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md).**
+2. **The stable-API contract is partial.** PRD-446 now snapshots the public surface and defines
+   deprecation policy; its prepublication upgrade path is wired, but real N-1 starter/platformer
+   runs and 1.0 acceptance remain open. Owner:
+   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md) (11/14 phase boxes).
 3. **Web/native parity is not proven.** [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md):
    browser 66/1/0, desktop 65/1/1, Android 0/0/67 blocked. Audio parity is at its review cap —
    [PRD-057](../BLOCKED/review-cap/PRD-057-native-audio-parity.md) (0/56).
@@ -182,8 +187,8 @@ flowchart TD
 parallel with the PRD-196 cohort cut; publish under a candidate dist-tag, run PRD-196's
 installed-consumer gates against it, then move `latest`. R2's lanes are independent and can run
 in parallel once R1 lands — PRD-112 and PRD-064 are local, PRD-399 needs the Pixel. The stranger test (PRD-080) was removed by the owner and gates nothing.
-R3 starts only after R2; do not open R3 lanes early, because each one reads the published
-cohort that R1 and R2 fix.
+R3 lanes that do not need the final cohort can proceed now. The physical, store, upgrade and
+promotion claims still need the published cohort that R1 and R2 establish.
 
 ## Decisions only you can make
 
