@@ -133,12 +133,9 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
   // arms are not comparable: pinned to a 60 Hz display ThreeNative reads 16.6 ms at every rung and
   // its real cost is unknowable. The host refuses to fall back to FIFO, so this fails loudly.
   if (process.env.TN_BENCH_VSYNC !== "on") hostArgs.push("--no-vsync");
-  // `TN_BENCH_DISPLAY` puts the host on a real X display instead of a virtual one. It matters:
-  // `runGodotDesktop` has always launched its binary straight onto `DISPLAY`, so wrapping only this
-  // arm in `xvfb-run` compared one engine on the compositor against the other on a virtual server
-  // that costs ~25 ms a frame by itself — 256 cubes measured 26.13 ms under it. Point both arms at
-  // the same display and the desktop comparison means something.
-  const display = process.env.TN_BENCH_DISPLAY;
+  // Use Godot's display by default. A caller may explicitly select another display; with no
+  // display at all, the headless lane still provisions Xvfb below.
+  const display = process.env.TN_BENCH_DISPLAY ?? process.env.DISPLAY;
   if (display !== undefined && display.length > 0) {
     return runCapturing(binary, hostArgs, {
       cwd: repoRoot,

@@ -14,6 +14,7 @@ export function isBenchmarkWorkloadModule(entry: IModuleGraphEntry): boolean {
   return (
     pathname === "/src/game.ts" ||
     pathname === "/src/workload.ts" ||
+    /^\/assets\/(?:game|workload)-[A-Za-z0-9_-]+\.ts$/u.test(pathname) ||
     pathname.endsWith("/examples/engine-load-test/src/game.ts") ||
     pathname.endsWith("/examples/engine-load-test/src/workload.ts")
   );
@@ -1867,7 +1868,7 @@ function serializeModuleGraph(
   return concatenate(chunks);
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+export async function sha256(bytes: Uint8Array): Promise<string> {
   if (globalThis.crypto?.subtle === undefined)
     throw new Error("TN_BENCH_IDENTITY_HASH_UNAVAILABLE");
   const copy = new Uint8Array(bytes.byteLength);

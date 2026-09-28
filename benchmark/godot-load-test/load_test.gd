@@ -125,6 +125,20 @@ func _cube_bob_y(index: int, frame_index: int, base_y: float) -> float:
 	return base_y + sin(float(frame_index) * 0.05 + float(index) * 0.3) * 0.5
 
 
+# L4's per-cube material, the port of `uniqueMaterialColor` in
+# `examples/engine-load-test/src/workload.ts`: red pinned and the index in the other two channels, so
+# no two cubes below 2^24 can share an albedo and this arm has nothing to pair two materials on.
+# Created with the rung, before its warmup, so the program it compiles lands in the warmup frames.
+func _unique_material(index: int) -> StandardMaterial3D:
+	var owned := StandardMaterial3D.new()
+	owned.albedo_color = Color(
+		1.0, float((index >> 16) & 0xff) / 255.0, float(index & 0xff) / 255.0
+	)
+	owned.roughness = _material.roughness
+	owned.metallic = _material.metallic
+	return owned
+
+
 func _read_query() -> Dictionary:
 	var query := {}
 	var search := ""
@@ -225,11 +239,13 @@ func _begin_rung() -> void:
 	_triangles = 0
 	_visible_objects = 0
 
-	if _mode == "L1":
+	if _mode == "L1" or _mode == "L4":
 		for index in _object_count:
 			var cube := MeshInstance3D.new()
 			cube.mesh = _cube_mesh
-			cube.material_override = _material
+			# L4 owns one material resource per cube, so this arm cannot fold the lattice into fewer
+			# draws the way it does for L1's single shared material.
+			cube.material_override = _unique_material(index) if _mode == "L4" else _material
 			cube.position = _placements[index]
 			add_child(cube)
 			_cubes.append(cube)
@@ -256,7 +272,7 @@ func _step(frame_index: int) -> void:
 	_camera.position = pose[0]
 	_camera.look_at(pose[1], Vector3.UP)
 	# 100% dirty transforms every frame — the honest worst case a game with moving actors pays.
-	if _mode == "L1":
+	if _mode == "L1" or _mode == "L4":
 		for index in _cubes.size():
 			var placement := _placements[index]
 			var basis := Basis.from_euler(

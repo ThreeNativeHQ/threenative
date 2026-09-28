@@ -1,8 +1,11 @@
 // Native entry for the PRD-117 ThreeNative desktop/device arms. It drives the same ladder as the
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
+import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
+import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
+import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
-import { type RenderMode, parseAxesRecord, percentile } from "./workload.js";
+import { type RenderMode, isProjectedRung, parseAxesRecord, percentile } from "./workload.js";
 
 declare global {
   var canvas: HTMLCanvasElement | undefined;
@@ -29,9 +32,33 @@ function nextFrame(): Promise<number> {
 }
 
 async function main(): Promise<void> {
+  const presentMode =
+    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
+      ?.presentMode ?? "fifo";
+  // The desktop collector requests immediate presentation. The host's separate 60 FPS ceiling
+  // otherwise still paces the run, so require its existing diagnostic uncapped mode as well.
+  if (__TN_PLATFORM__ !== "android" && presentMode !== "fifo") {
+    const presentationCap = (globalThis as { __tnPresentationCap?: (hz: number) => number })
+      .__tnPresentationCap;
+    if (typeof presentationCap !== "function" || presentationCap(0) !== 0)
+      throw new Error("TN_BENCH_PRESENTATION_CAP_NOT_DISABLED");
+  }
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface", config.animate, axes);
+  // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
+  // control can drive the same harness without the framework in its graph. This arm has one, and
+  // L3 is a native cell. The other two passes a shipped `defineGame` installs around the draw go
+  // with it, at the same defaults `defineGame` resolves (`renderer.matrixWorld` is `"visible"`,
+  // `renderer.minimumProjectedPixels` is 0.5), because an L3 that kept three's own world-matrix
+  // walk and no projected-size cull would time a pipeline no ThreeNative game ever draws with.
+  const harness = await createLoadTestHarness(
+    surface,
+    "native host surface",
+    config.animate,
+    axes,
+    (scene, options) => new SceneRenderProjection(scene, options),
+    { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
+  );
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {
@@ -39,7 +66,7 @@ async function main(): Promise<void> {
       for (let repeat = 0; repeat < config.repeats; repeat += 1) {
         console.log(`begin ${mode}@${objectCount}`);
         harness.setRung({ mode, objectCount });
-        if (mode === "L3") {
+        if (isProjectedRung(mode)) {
           harness.beginCollapse();
           for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle++) {
             // See the web entry: drawing one settle frame in eight keeps the host's frame pump
@@ -55,17 +82,22 @@ async function main(): Promise<void> {
             }
             await nextFrame();
           }
-          // `projected` is the projection's applied state. The pass this replaced said `applied`;
-          // both mean the same thing here, that the optimizer took the scene rather than handing
-          // the frame back, and a rung that measured an un-optimized scene must still refuse to
-          // report rather than publish L1 timings under an L3 label.
-          if (harness.collapseStatus() !== "projected")
-            throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
-          // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
-          // dangerous outcome here, not the good one.
-          const moving = harness.collapseMovingParts();
-          if (moving < objectCount)
-            throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
+          // L4 measures what the shipped default costs on a scene nothing may batch, so the
+          // projection declining is that row's answer and `drawCalls` is what records it. Only
+          // L3's two guards stay strict; see the web entry for why.
+          if (mode === "L3") {
+            // `projected` is the projection's applied state. The pass this replaced said `applied`;
+            // both mean the same thing here, that the optimizer took the scene rather than handing
+            // the frame back, and a rung that measured an un-optimized scene must still refuse to
+            // report rather than publish L1 timings under an L3 label.
+            if (harness.collapseStatus() !== "projected")
+              throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+            // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
+            // dangerous outcome here, not the good one.
+            const moving = harness.collapseMovingParts();
+            if (moving < objectCount)
+              throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
+          }
         }
         const frameMs: number[] = [];
         // Split the frame in two: `stepMs` is the game-side transform loop, the remainder is the
@@ -125,9 +157,6 @@ async function main(): Promise<void> {
   // property access like `scope.__TN_PLATFORM__` is never replaced and silently reads undefined —
   // which filed every phone run as `tn-desktop`.
   const onAndroid = __TN_PLATFORM__ === "android";
-  const presentMode =
-    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
-      ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
     axes,
