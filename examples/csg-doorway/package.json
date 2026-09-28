@@ -10,7 +10,8 @@
     "build:native": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/csg-doorway-native.js",
     "check:no-generator": "node scripts/check-no-generator.mjs",
     "playtest:web": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway.playtest.json --browser-recipe webgpu --server-command \"pnpm dev --host 127.0.0.1 --port 5281 --strictPort\" --url http://127.0.0.1:5281",
-    "playtest:android": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway-android.playtest.json --target android"
+    "playtest:desktop": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway-native.playtest.json --target desktop --project . --executable ../../packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg dist/csg-doorway-native.js",
+    "playtest:android": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway-native.playtest.json --target android --package com.threenative.csgdoorway --activity com.threenative.runtime.MystralActivity --timeout 90000"
   },
   "dependencies": {
     "@threenative/assets": "workspace:*",

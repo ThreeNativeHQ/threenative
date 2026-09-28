@@ -1,7 +1,7 @@
 {
-  "name": "csg-doorway-desktop",
+  "name": "csg-doorway-native",
   "schemaVersion": 1,
-  "subject": "the native desktop host cooks and loads the Boolean doorway and its collision opening matches the rendered opening",
+  "subject": "the native hosts cook and load the Boolean doorway; on desktop and Android the cooked collision opening matches the rendered opening",
   "target": "desktop",
   "viewport": {
     "width": 1280,

@@ -19,6 +19,11 @@ Four ray observations are published as scene state. Two cast against the **rende
 .intersectRay`, doorway layer only). The opening is a miss and the intact wall is a hit on both
 sides, which is the rendered-opening == collision-opening agreement the PRD asks for.
 
+The native physics backend had no concave shape, so a doorway could only ever be a filled box on
+Android. `tn_physics_add_trimesh_body` closes that gap: the mesh's vertices and indices cross the
+FFI once and Rapier builds the collider from them, which is why the same scenario runs on desktop
+and Android.
+
 ## Commands
 
 ```sh
@@ -30,11 +35,11 @@ pnpm typecheck
 pnpm build:native                    # desktop JS bundle into dist/
 ```
 
-The desktop and Android scenarios assert the same resources. Pass the packed host explicitly on
-desktop:
+`playtests/doorway-native.playtest.json` is the same scenario on desktop and Android — the CLI's
+`--target` picks the host. On desktop, pass the packed host explicitly:
 
 ```sh
-node ../../packages/playtest/dist/runner/cli.js playtests/doorway-desktop.playtest.json \
+node ../../packages/playtest/dist/runner/cli.js playtests/doorway-native.playtest.json \
   --target desktop --project . \
   --executable packages/runtime-native/build/tn-linux/mystral \
   --host-arg run --host-arg dist/csg-doorway-native.js
