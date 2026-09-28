@@ -473,18 +473,10 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
   const executable = join(root, "native-test.mjs");
   await writeFile(executable, [
     "#!/usr/bin/env node",
-    'import { unlinkSync } from "node:fs";',
-    'import { join } from "node:path";',
     'if (process.argv[2] !== "silent") {',
     '  console.log("[Playtest] mailbox ready");',
     '  console.log("[Screenshot] waiting for request");',
     '  console.log("platform noise the reader does not need");',
-    "}",
-    'if (process.argv[2] === "consume") {',
-    '  setTimeout(() => {',
-    '    unlinkSync(join(process.env.TN_PLAYTEST_MAILBOX_ROOT ?? "", "tn-playtest-screenshot-request.txt"));',
-    '    console.log("[Screenshot] request consumed, no png written");',
-    "  }, 200);",
     "}",
     'if (process.argv[2] === "error") {',
     '  console.log("[Screenshot] request pending");',
@@ -518,11 +510,6 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
     expect(untouched).toContain("[Playtest] mailbox ready");
     // The tail is short and tagged: a line the reader cannot act on is not evidence.
     expect(untouched).not.toContain("platform noise the reader does not need");
-
-    const consumed = await driveTimeout(["consume"]);
-    expect(consumed).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
-    expect(consumed).toContain("request file consumed");
-    expect(consumed).toContain("[Screenshot] request consumed, no png written");
 
     // A host that logged nothing still has to name the state it was in, not print an empty tail.
     const mute = await driveTimeout(["silent"]);
@@ -561,6 +548,38 @@ test("a failed desktop screenshot still leaves the host console in the artifact 
     expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual(console);
   } finally {
     await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
+// Arm64 llvmpipe serves endDawnFrame at p50 333ms and max 4.3s, so the host picks the request up
+// inside the short wait and then needs far longer than it for the readback and the present. One
+// deadline for both phases reported that healthy host as TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE.
+test.skipIf(process.platform === "win32")("desktop screenshot outlives the unpicked-request wait", async () => {
+  const root = await makeTempDir("playtest-desktop-slow-screenshot-");
+  const executable = join(root, "native-test.mjs");
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { env } from "node:process";
+const request = \`\${env.TN_PLAYTEST_MAILBOX_ROOT}/tn-playtest-screenshot-request.txt\`;
+setInterval(() => {
+  if (!existsSync(request)) return;
+  unlinkSync(request);
+  setTimeout(() => writeFileSync(env.TN_PLAYTEST_CAPTURE, Buffer.from("${nonBlankPngBase64()}", "base64")), 800);
+}, 5);
+`);
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({
+    env: { TN_PLAYTEST_CAPTURE: join(root, "capture.png") },
+    executable,
+    mailboxRoot: root,
+    screenshotTimeoutMs: 200,
+  });
+  try {
+    await driver.prepare("unused");
+    await driver.screenshot(join(root, "capture.png"));
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
   }
 });
 
