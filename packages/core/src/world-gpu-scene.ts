@@ -41,6 +41,8 @@ import type { IRendererLike } from "./renderer.js";
 const PLACEMENT_WORDS = 24;
 /** `DrawIndexedIndirect`: indexCount, instanceCount, firstIndex, baseVertex, firstInstance. */
 const DRAW_ARGS_WORDS = 5;
+/** The same record in bytes, which is the unit `BufferGeometry.setIndirect` takes its offset in. */
+export const DRAW_ARGS_BYTES = DRAW_ARGS_WORDS * 4;
 /** One `vec4` per key, per asset slot and per level gate. */
 const VEC4_WORDS = 4;
 /** `mat4` per key: the part's own offset inside the model, the same matrix the CPU composes. */
@@ -172,8 +174,31 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
   return { args, counts, drawn: matrix };
 }
 
-/** `out * into` at `at`, column-major, which is the element order both matrices are written in. */
-function compose(out: Float32Array, into: Float32Array, target: Float32Array, at: number): void {
+/**
+ * Whether two gate tables are the same one, so a level key minted after the table was written
+ * rewrites it and a swap that arrives with nothing new does not. A level the world has not minted a
+ * key for carries `parts: 0`, which is what the kernel's own loop then draws for it: nothing.
+ */
+function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
+  if (one.cull !== other.cull) return false;
+  if (one.distances.length !== other.distances.length) return false;
+  for (const [index, distance] of one.distances.entries())
+    if (distance !== other.distances[index]) return false;
+  if (one.levels.length !== other.levels.length) return false;
+  for (const [index, level] of one.levels.entries()) {
+    const gate = other.levels[index];
+    if (gate === undefined || gate.firstKey !== level.firstKey || gate.parts !== level.parts)
+      return false;
+  }
+  return true;
+}
+
+/** `out * into` at `at`, column-major, which is the element order both matrices are written in. */ function compose(
+  out: Float32Array,
+  into: Float32Array,
+  target: Float32Array,
+  at: number,
+): void {
   for (let column = 0; column < 4; column += 1)
     for (let row = 0; row < 4; row += 1) {
       let sum = 0;
@@ -255,6 +280,35 @@ function nodes(value: unknown): Kernel {
   return value as unknown as Kernel;
 }
 
+/** The launch flag. */
+export const GPU_SCENE_FLAG = "TN_GPU_SCENE";
+
+/**
+ * Whether `TN_GPU_SCENE` asks for the GPU-driven main pass on this launch.
+ *
+ * @situation measure a walk with the main pass culling and LOD-selecting on the GPU
+ * @constraint off by default: the flag flips once a browser capture proves the picture
+ * @example WorldCells.load({ ...options, gpuScene: gpuSceneRequested() });
+ *
+ * Read the way `renderListValidationRequested` and `terrainValidationRequested` read their own: a
+ * native launch sets the environment variable, a browser asks with the query string, and a test
+ * sets the global. `0` and `false` are off, so a saved URL that used to enable a switch still
+ * says "off".
+ */
+export function gpuSceneRequested(): boolean {
+  const host = globalThis as {
+    process?: { env?: Record<string, unknown> };
+    __tnGpuScene?: unknown;
+  };
+  const fromEnv = host.process?.env?.[GPU_SCENE_FLAG];
+  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
+    return true;
+  const query = globalThis.location?.search;
+  if (typeof query === "string" && /[?&]tnGpuScene=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query))
+    return true;
+  return host.__tnGpuScene === true || host.__tnGpuScene === "1";
+}
+
 /**
  * The GPU scene, owned by one `WorldCells`.
  *
@@ -278,6 +332,8 @@ export class WorldGpuScene {
   #live = 0;
   #on = false;
   #reason = "not-attached";
+  /** Set by the one report this class ever prints, so a frame cannot repeat the line. */
+  #reported = false;
   /** Bumped by every buffer swap, so a mesh re-dressed once knows if it still points at live data. */
   #version = 0;
   /** The kernel, rebuilt whenever a capacity changed under it. */
@@ -290,6 +346,7 @@ export class WorldGpuScene {
    */
   enable(renderer: IRendererLike | undefined, wanted: boolean): boolean {
     if (this.#on) return true;
+    if (this.#reported) return false;
     if (renderer === undefined) {
       this.#reason = "no-renderer";
       return false;
@@ -395,12 +452,13 @@ export class WorldGpuScene {
    * reaches the same level wherever the level is decided.
    */
   slot(asset: string, definition: IAssetSlot): number {
-    if (this.#slotsByAsset.has(asset)) return this.#order.indexOf(asset);
+    const at = this.#order.indexOf(asset);
+    if (at >= 0 && sameGates(this.#slotsByAsset.get(asset) as IAssetSlot, definition)) return at;
     if (this.#ensure() === undefined) return SLOT_NONE;
     this.#slotsByAsset.set(asset, definition);
-    this.#order.push(asset);
+    if (at < 0) this.#order.push(asset);
     this.#writeSlots();
-    return this.#order.length - 1;
+    return at < 0 ? this.#order.length - 1 : at;
   }
 
   /** The gates a slot index names, which is what the kernel and the reference both read. */
@@ -721,6 +779,7 @@ export class WorldGpuScene {
   }
 
   #report(renderer: IRendererLike): void {
+    this.#reported = true;
     const report = this.report();
     const name =
       "log" in renderer ? (renderer.log as ((message: string) => void) | undefined) : undefined;

@@ -36,6 +36,12 @@ import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { within, yieldToHost } from "./warmup.js";
+import {
+  DRAW_ARGS_BYTES,
+  type IAssetSlot,
+  WorldGpuScene,
+  gpuSceneRequested,
+} from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
   type IWorldAsset,
@@ -443,6 +449,18 @@ export interface IWorldCellsLoadOptions {
     readonly viewportHeight?: number;
     readonly maxPixelError?: number;
   };
+  /**
+   * The GPU-driven main pass: one compute dispatch culls and LOD-selects every resident placement
+   * into a shared matrix buffer, and each main key draws its own region of it through an indirect
+   * record. The CPU keeps only the coarse per-cell visibility, so a walking camera costs no repack
+   * and no `maxDistance`/`lods` refilter.
+   *
+   * `false` by default, and `TN_GPU_SCENE=1` or `?tnGpuScene=1` turns it on: it needs compute,
+   * storage buffers and `drawIndexedIndirect`, and a backend without them falls back to exactly
+   * this class's CPU path — a lost saving, never a wrong picture. `stats().gpuScene` and the
+   * `TN_WORLD_GPU_SCENE` line say which path a run took.
+   */
+  readonly gpuScene?: boolean;
 }
 
 export interface IWorldCellsStats {
@@ -499,6 +517,20 @@ export interface IWorldCellsStats {
     readonly repacks: number;
     readonly visibleEpoch: number;
   };
+  /**
+   * What the GPU-driven main pass is doing, and why it is not: `on` is the answer, `reason` is the
+   * one line `TN_WORLD_GPU_SCENE` printed, and `dispatches` is what the walk actually paid for its
+   * per-instance work. `mainCull.repacks` and `refilters` stay at `0` while it is on — that is the
+   * CPU work it replaced, counted by the same counters that report it when it is off.
+   */
+  readonly gpuScene: {
+    readonly on: boolean;
+    readonly reason: string;
+    readonly dispatches: number;
+    /** Resident source records: one per placement, shared by every part of the level it reached. */
+    readonly instances: number;
+    readonly keys: number;
+  };
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
   /**
@@ -533,6 +565,13 @@ interface ICellBatch {
   /** The shared mesh this cell's instances are written into, and its segment there (-1: none). */
   shared: SharedBatch | undefined;
   segment: number;
+  /**
+   * The GPU scene's source records this entry draws from, shared by every part of its level, and
+   * handed back by `#clearSegment`. `undefined` while the scene is off or the records are the
+   * dispatches' own already — a record released twice is a no-op, which is what lets one list be
+   * held by a whole level's parts.
+   */
+  gpu: number[] | undefined;
   /**
    * The shadow-caster cluster this cell's records also go into, and its segment there (-1: none).
    * The main mesh is one per key and casts nothing; the same records are written into one mesh per
@@ -572,6 +611,8 @@ interface IPrewarmEntry {
   readonly key: string;
   readonly level: number;
   readonly material: Material;
+  /** The part of the level, which is the third half of a key's name. */
+  readonly part: number;
 }
 
 /**
@@ -667,6 +708,23 @@ class SharedBatch {
    * carries is the one thing that survives that.
    */
   smallCaster = false;
+  /**
+   * Set when the GPU scene owns this batch's draw, with the key it was minted under. See
+   * `WorldCells#dressGpu`.
+   *
+   * It is a field rather than a name test because a dressed batch's `mesh.instanceMatrix` is the
+   * scene's shared compaction buffer, and everything below writes records into that attribute: a
+   * dressed batch keeps its bookkeeping and skips every byte of it, which is the whole of what the
+   * `gpu` guards in `write`, `clear`, `#settle`, `#touched` and `#publish` are.
+   */
+  gpu:
+    | {
+        readonly asset: string;
+        readonly level: number;
+        readonly part: number;
+        readonly key: string;
+      }
+    | undefined;
   readonly #clustered: boolean;
   readonly #segmentSize: number;
   /** Block handle -> the block's first instance record. */
@@ -732,8 +790,12 @@ class SharedBatch {
       bounds,
     );
     this.#free = [[0, this.mesh.instanceMatrix.count]];
+    this.#ceiling = this.mesh.instanceMatrix.count;
     this.#rebound();
   }
+
+  /** This batch's own record ceiling; see {@link liveCeiling}. */
+  #ceiling = 0;
 
   /** The package extent, the conservative fallback when a part's own box cannot be read. */
   readonly #bounds: Box3;
@@ -806,6 +868,7 @@ class SharedBatch {
   #resize(capacity: number): void {
     const mesh = this.mesh;
     mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
+    this.#ceiling = capacity;
     this.#publish(0);
     this.#free = [[0, capacity]];
     this.#drawn = 0;
@@ -942,6 +1005,7 @@ class SharedBatch {
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
     this.mesh = mesh;
+    this.#ceiling = mesh.instanceMatrix.count;
     this.#settle();
     // The whole drawn range, because this is a different buffer. `#meshFor` left the new
     // attribute's range list empty, and an empty list is how three is told "upload everything" — so
@@ -957,6 +1021,16 @@ class SharedBatch {
     const start = this.#start.get(segment);
     const reserved = this.#size.get(segment);
     if (start === undefined || reserved === undefined) return;
+    if (this.gpu !== undefined) {
+      // The records themselves are the GPU scene's, written by its dispatch from the source buffer;
+      // what the coarse per-cell gate and the counters need is the per-square count and the total.
+      const cluster = this.#blockCluster.get(segment) ?? "";
+      this.#size.set(segment, batch.count);
+      this.#squareSizes.set(cluster, (this.#squareSizes.get(cluster) ?? 0) + batch.count);
+      this.#drawn += batch.count;
+      this.#publish(this.#drawn);
+      return;
+    }
     const array = this.mesh.instanceMatrix.array as Float32Array;
     const written = batch.writeMatrices(array, start);
     array.fill(0, (start + written) * 16, (start + reserved) * 16);
@@ -980,9 +1054,20 @@ class SharedBatch {
     const start = this.#start.get(segment);
     if (start === undefined) return;
     const size = this.#size.get(segment) ?? 0;
+    if (this.gpu !== undefined) {
+      // The mirrored half of `write`: the coarse gate and the live total follow the records that left,
+      // and no byte of the shared buffer is touched, because none of them were ever in it.
+      const cluster = this.#blockCluster.get(segment) ?? "";
+      this.#squareSizes.set(cluster, Math.max(0, (this.#squareSizes.get(cluster) ?? 0) - size));
+      this.#drawn -= size;
+    }
     this.#start.delete(segment);
     this.#size.delete(segment);
     this.#blockCluster.delete(segment);
+    if (this.gpu !== undefined) {
+      this.#publish(this.#drawn);
+      return;
+    }
     (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
     this.#hole(start, start + size);
     this.#settle();
@@ -1284,6 +1369,16 @@ class SharedBatch {
     return this.#drawn;
   }
 
+  /**
+   * The record ceiling of this batch's *own* buffer, which is what a key's GPU region is sized from:
+   * the same ring-sized ceiling the CPU path stops growing at. Held rather than read, because a
+   * dressed batch's `mesh.instanceMatrix` is the GPU scene's shared buffer and its count is that
+   * buffer's, not this key's.
+   */
+  get liveCeiling(): number {
+    return this.#ceiling;
+  }
+
   /** Records `mesh.count` draws: every live one, until a cull narrows the window. */
   get drawn(): number {
     return this.#clustered ? this.#window : this.#drawn;
@@ -1299,6 +1394,9 @@ class SharedBatch {
    * whole drawn range, which is never more bytes than the two halves it replaced.
    */
   #touched(from: number, count: number): void {
+    // A dressed batch's records were never in this attribute, so there is nothing to upload and
+    // nothing to put back in charge of culling: the dispatch decided what it drew.
+    if (this.gpu !== undefined) return;
     const matrix = this.mesh.instanceMatrix;
     // A record is 16 array elements, and that is the unit `updateRanges` is in: three reads them
     // as element offsets into `array`, not as bytes.
@@ -1353,7 +1451,33 @@ class SharedBatch {
    */
   #publish(count: number): void {
     this.mesh.count = count;
+    // A dressed batch's instances are the GPU scene's, and its own count says nothing about how many
+    // of them the dispatch kept — so the coarse per-cell gate in `visibleFrom` is what shows it. The
+    // one exception is the prewarm draw, which stays visible *because* it is empty: that submission
+    // is what builds the node and the pipeline.
+    if (this.gpu !== undefined) {
+      this.mesh.visible = this.#awaitingPrewarm;
+      return;
+    }
     this.mesh.visible = count > 0 || this.#awaitingPrewarm;
+  }
+
+  /**
+   * The GPU-driven main pass's coarse gate: one boolean per key a frame, from the same visibility
+   * cells, with no window, no copy and no upload. A key holding no visible cell draws nothing, and
+   * one holding any of them draws what the dispatch kept — which is the whole of what the CPU
+   * decides while the GPU decides the rest. See `WorldCells#cullMainPass`.
+   */
+  visibleFrom(visible: ReadonlySet<string>): void {
+    if (this.gpu === undefined || this.#clustered === false) return;
+    let shown = this.#awaitingPrewarm;
+    for (const square of this.#squareSizes.keys())
+      if (visible.has(square)) {
+        shown = true;
+        break;
+      }
+    this.mesh.count = this.#drawn;
+    this.mesh.visible = shown;
   }
 
   /**
@@ -1465,6 +1589,24 @@ interface IBuildJob {
   boxes: Box3[][] | undefined;
   /** How many of the (level, part) meshes have been built. */
   published: number;
+  /**
+   * The GPU scene's source records for the placements this filter kept, one per placement beside the
+   * level it reached — filled by `#addPlacements` only while the scene is on, and read on the swap.
+   */
+  sources: IGpuSource[] | undefined;
+  /** The records placed per level, so every part of a level shares one list; see `#placeSources`. */
+  gpuByLevel: Map<number, number[]> | undefined;
+}
+
+/** One placement as the GPU scene's source buffer holds it: the placement's own transform, no part. */
+interface IGpuSource {
+  readonly level: number;
+  readonly matrix: Matrix4;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** Half the diagonal of the asset's authored bounds at this placement's scale. */
+  readonly radius: number;
 }
 
 /** One drawable part of one level, read out of the level's own GLB. */
@@ -2709,6 +2851,15 @@ export class WorldCells extends Group implements IComputeDriven {
   #staleEntries = 0;
   #generation = 0;
   #released = false;
+  /**
+   * The GPU-driven main pass, and whether the world asked for it. Off is byte-for-byte this class's
+   * own CPU path: nothing below reads `on` except the four places the option changes what a frame
+   * does. See the `gpuScene` load option and `#cullMainPass`.
+   */
+  readonly #gpuScene = new WorldGpuScene();
+  readonly #gpuWanted: boolean;
+  /** Scene key index per `asset:level`, which is what an asset's gate table is built from. */
+  readonly #gpuFirst = new Map<string, Map<number, number>>();
 
   private constructor(init: IWorldCellsInit) {
     super();
@@ -2763,6 +2914,7 @@ export class WorldCells extends Group implements IComputeDriven {
       positiveInteger(init.concurrency ?? WORLD_LOAD_CONCURRENCY, "concurrency"),
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
+    this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
     this.#castShadowLevels =
       init.shadows?.cast === true
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
@@ -2942,6 +3094,10 @@ export class WorldCells extends Group implements IComputeDriven {
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
     if (camera !== undefined) this.#camera = camera;
+    // The first frame that hands over a renderer is the only one that can answer whether this
+    // backend can run the GPU scene, and it prints its answer once: `enable` reports, then returns
+    // early for the rest of the world's life.
+    if (renderer !== undefined) this.#gpuScene.enable(renderer, this.#gpuWanted);
     // A new upload epoch, so no batch's pending span outlives the render that consumed it. See
     // `SharedBatch#touched`.
     advanceWriteEpoch();
@@ -2975,7 +3131,10 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
       // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-      if (this.#refilterStale(x, z)) {
+      // The GPU scene selects the level and culls per instance on the dispatch, so the pass has
+      // nothing left to decide for the main pass and is skipped outright. The casters still run
+      // theirs, on their own records.
+      if (this.#gpuScene.on === false && this.#refilterStale(x, z)) {
         this.#refilterPoint.set(x, 0, z);
         this.#refilterEpoch = this.#residencyEpoch;
         this.#updateMaxDistance(x, z);
@@ -3058,8 +3217,17 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#cullScratch = was;
       this.#cullScratch.clear();
     }
+    const gpu = this.#gpuScene;
     for (const shared of this.#shared.values()) {
       if (shared.role !== "main") continue;
+      // A dressed batch draws from the GPU scene's own buffers, so the frame's per-instance answer is
+      // the dispatch's and this mesh's own window would be a second, stale copy of it. What the CPU
+      // still decides is the one coarse thing: whether any of its visibility cells is in the frustum.
+      if (gpu.on && shared.gpu !== undefined) {
+        this.#dressGpu(shared, shared.gpu);
+        shared.visibleFrom(this.#visibleSquares);
+        continue;
+      }
       const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
       if (outcome === "settled") continue;
       this.#mainCullWindows += 1;
@@ -3068,6 +3236,10 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#mainCullPacks += 1;
       }
     }
+    // After the coarse gate, and only for the main camera: an orthographic one — every shadow
+    // level's own — returned at the top, so a level's render never dispatches over the main pass's
+    // compaction.
+    if (gpu.on) gpu.dispatch(this.#renderer as IRendererLike, camera);
   }
 
   /**
@@ -3277,6 +3449,9 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     shared.smallCaster = this.#smallCaster(entry.asset);
     this.#dressMesh(shared, entry.role === "main" && this.#receiveShadow);
+    // Dressed here, before the walk that fills it: the prewarm is what mints every key of an asset
+    // before its first placement is swapped, so this is where the whole gate table comes from.
+    this.#adoptGpu(shared, entry.asset, entry.key, entry.level, entry.part);
     this.#shared.set(entry.key, shared);
     this.add(shared.mesh);
     this.#prewarmPending += 1;
@@ -3401,6 +3576,7 @@ export class WorldCells extends Group implements IComputeDriven {
             key: name,
             level,
             material: shape.material,
+            part,
           });
         }
       }
@@ -3481,10 +3657,18 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   stats(): IWorldCellsStats {
+    const gpu = this.#gpuScene.report();
     return {
       admission: { ...this.#admission },
       evictions: this.#evictions,
       failures: this.#failures,
+      gpuScene: {
+        dispatches: gpu.dispatches,
+        instances: gpu.instances,
+        keys: gpu.keys,
+        on: gpu.on,
+        reason: gpu.reason,
+      },
       instances: this.#instances,
       loadsInFlight: this.#limiter.inFlight,
       loadsQueued: this.#limiter.queued,
@@ -3534,6 +3718,8 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#proxyMaterials.clear();
     this.#renderer = undefined;
     this.#camera = undefined;
+    this.#gpuScene.dispose();
+    this.#gpuFirst.clear();
     if (this.#drainShared() > 0) this.#failures += 1;
     // The batches `#drainShared` just retired. Their geometry and material were released by the
     // refcount path above, which is why they are disposed and not reused.
@@ -3677,6 +3863,7 @@ export class WorldCells extends Group implements IComputeDriven {
       batches: undefined,
       boxes: undefined,
       cell,
+      gpuByLevel: undefined,
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
       fresh: [],
@@ -3687,6 +3874,7 @@ export class WorldCells extends Group implements IComputeDriven {
         ? cell.batches.filter((entry) => entry.asset === asset.id && entry.run === run)
         : [],
       run,
+      sources: undefined,
     });
   }
 
@@ -3834,6 +4022,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const entry of job.fresh) {
       cell.batches.push(entry);
       if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
+      if (this.#gpuScene.on) entry.gpu = this.#placeSources(job, entry);
       if (entry.caster !== undefined) entry.caster.write(entry.casterSegment, entry.batch);
       if (entry.wide !== undefined) entry.wide.write(entry.wideSegment, entry.batch);
     }
@@ -3893,6 +4082,11 @@ export class WorldCells extends Group implements IComputeDriven {
 
   #clearSegment(entry: ICellBatch): void {
     if (entry.shared !== undefined && entry.segment >= 0) entry.shared.clear(entry.segment);
+    // The source records go back with the block that held them, on every path a cell's records leave:
+    // a refilter's replacement, an eviction, and a queued build dropped with its cell. Releasing one
+    // twice is a no-op, which is what lets a level's parts share a single list.
+    if (entry.gpu !== undefined) for (const at of entry.gpu) this.#gpuScene.release(at);
+    entry.gpu = undefined;
     if (entry.caster !== undefined && entry.casterSegment >= 0)
       entry.caster.clear(entry.casterSegment);
     if (entry.wide !== undefined && entry.wideSegment >= 0) entry.wide.clear(entry.wideSegment);
@@ -4018,6 +4212,16 @@ export class WorldCells extends Group implements IComputeDriven {
     if (job.records === undefined) job.records = cellPlacements(this.#placements, job.run);
     const records = job.records;
     const inner = cullDistance(asset.definition.maxDistance);
+    // Half the diagonal of the asset's authored bounds: the sphere the dispatch culls this placement
+    // with, and the one number about its extent that comes from the package rather than from here.
+    const authored = asset.definition.bounds;
+    const boundsRadius =
+      0.5 *
+      Math.hypot(
+        (authored.max[0] as number) - (authored.min[0] as number),
+        (authored.max[1] as number) - (authored.min[1] as number),
+        (authored.max[2] as number) - (authored.min[2] as number),
+      );
     for (let index = from; index < to; index += 1) {
       const base = index * PLACEMENT_RECORD_FLOATS;
       const x = records[base] as number;
@@ -4037,6 +4241,21 @@ export class WorldCells extends Group implements IComputeDriven {
       // The placement transform, then the part's own offset inside the model: a bark primitive at
       // the trunk and a needles primitive higher up both land in the one instance matrix.
       const level = levelAt(asset.distances, distance);
+      // The GPU scene's source record for this placement: the placement's own transform, the level it
+      // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
+      // key's own, so one record serves every part of the level — see `#placeSources`.
+      if (this.#gpuScene.on) {
+        const list = job.sources ?? [];
+        job.sources = list;
+        list.push({
+          level,
+          matrix: this.#matrix.clone(),
+          radius: 0.5 * boundsRadius * Math.abs(this.#scale.x),
+          x,
+          y,
+          z,
+        });
+      }
       const parts = asset.levels[level] as readonly IAssetPart[];
       const levelBatches = job.batches?.[level] as InstancedBatch[];
       const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
@@ -4103,6 +4322,7 @@ export class WorldCells extends Group implements IComputeDriven {
         batch: levelBatches[part] as InstancedBatch,
         caster: undefined,
         casterSegment: -1,
+        gpu: undefined,
         wide: undefined,
         wideSegment: -1,
         lastFilterX: job.filterX,
@@ -4232,6 +4452,9 @@ export class WorldCells extends Group implements IComputeDriven {
       released.mesh.name = key;
       released.smallCaster = smallCaster;
       this.#dressMesh(released, receiveShadow);
+      // A rebind swaps the geometry and may swap the buffer, so the key is dressed again: the indirect
+      // record and the shared matrix buffer belong to the mesh, not to the batch.
+      this.#adoptGpu(released, entry.asset, key, entry.level, entry.part);
       this.#shared.set(key, released);
       this.add(released.mesh);
       return released;
@@ -4254,6 +4477,7 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     shared.smallCaster = smallCaster;
     this.#dressMesh(shared, receiveShadow);
+    this.#adoptGpu(shared, entry.asset, key, entry.level, entry.part);
     this.#shared.set(key, shared);
     this.add(shared.mesh);
     return shared;
@@ -4297,6 +4521,125 @@ export class WorldCells extends Group implements IComputeDriven {
     // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
     // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
     // as long as the camera looked away. That leaves `onBeforeRender` to the prewarm borrow alone.
+  }
+
+  /**
+   * Name one main key to the GPU scene, and dress its mesh against the scene's live buffers.
+   *
+   * A caster or wide key is named `@x,z` or `@*` and belongs to the shadow passes, which the GPU scene
+   * does not touch, so those are left exactly as they were.
+   */
+  #adoptGpu(shared: SharedBatch, assetId: string, key: string, level: number, part: number): void {
+    if (this.#gpuScene.on === false || shared.role !== "main") return;
+    const dressed = { asset: this.#canonical(assetId), key, level, part };
+    shared.gpu = dressed;
+    this.#dressGpu(shared, dressed);
+  }
+
+  /**
+   * Point one main key's mesh at the GPU scene's buffers, and hand the asset's gate table over.
+   *
+   * The mesh's `instanceMatrix` becomes the shared compacted matrix buffer, its geometry a clone that
+   * shares the part's own attributes and carries this key's indirect record, and its whole-mesh
+   * frustum test is off — the dispatch already tested every instance against the camera's six
+   * planes, and the mesh's own bounds are the whole resident ring. Idempotent: a settled frame's
+   * buffers are the ones it was dressed against, and a regrow, a rebind or a `grow` replaces them,
+   * which is the only thing that brings a dressed mesh back through here.
+   */
+  #dressGpu(
+    shared: SharedBatch,
+    key: {
+      readonly asset: string;
+      readonly level: number;
+      readonly part: number;
+      readonly key: string;
+    },
+  ): void {
+    const scene = this.#gpuScene;
+    const drawn = scene.drawn;
+    const args = scene.args;
+    if (drawn === undefined || args === undefined) return;
+    if (shared.mesh.instanceMatrix === drawn && shared.mesh.frustumCulled === false) return;
+    const asset = this.#assets.get(key.asset);
+    const part = asset?.levels[key.level]?.[key.part];
+    if (asset === undefined || part === undefined) return;
+    const region = scene.key(key.key, new Float32Array(part.local.elements), shared.liveCeiling);
+    if (region === undefined) return;
+    const args2 = scene.regionOf(key.key);
+    if (args2 === undefined) return;
+    const mesh = shared.mesh;
+    mesh.instanceMatrix = drawn;
+    // A clone, so the part's own geometry keeps its attributes and the indirect record is this mesh's:
+    // the original is the shape the caster halves and a rebind still draw with.
+    const geometry = mesh.geometry.clone();
+    geometry.setIndirect(args, args2.argsIndex * DRAW_ARGS_BYTES);
+    mesh.geometry = geometry;
+    mesh.frustumCulled = false;
+    shared.gpu = key;
+    // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
+    // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
+    // the table holds, and a rewrite when a key joined it.
+    const id = key.asset;
+    const first = this.#gpuFirst.get(id) ?? new Map<number, number>();
+    if (first.get(key.level) !== args2.argsIndex) {
+      first.set(key.level, args2.argsIndex);
+      this.#gpuFirst.set(id, first);
+    }
+    scene.slot(id, this.#gatesOf(id, asset));
+  }
+
+  /**
+   * The asset's own gates, as the kernel reads them: the CPU path's switch distances and cull
+   * distance, and the scene key each level's parts draw into. A level with no minted key has no parts,
+   * so the dispatch draws nothing at that level rather than reading a key that is not there.
+   */
+  #gatesOf(id: string, asset: IAssetState): IAssetSlot {
+    const first = this.#gpuFirst.get(id);
+    const gates: { firstKey: number; parts: number }[] = [];
+    for (const [level, parts] of asset.levels.entries())
+      gates.push({
+        firstKey: first?.get(level) ?? 0,
+        parts: first?.has(level) === true ? parts.length : 0,
+      });
+    return {
+      cull: cullDistance(asset.definition.maxDistance),
+      distances: asset.distances,
+      levels: gates,
+    };
+  }
+
+  /**
+   * The source records one swapped-in entry draws from: one per placement, not per part, because the
+   * part's own offset is the key's and the dispatch composes it. Every part of the level shares the
+   * list, which is why releasing one is idempotent and a whole level's records are handed back by the
+   * first of its entries that leaves.
+   */
+  #placeSources(job: IBuildJob, entry: ICellBatch): number[] | undefined {
+    const sources = job.sources;
+    if (sources === undefined) return undefined;
+    const asset = this.#assets.get(entry.asset);
+    if (asset === undefined) return undefined;
+    const slot = this.#gpuScene.slot(entry.asset, this.#gatesOf(entry.asset, asset));
+    if (slot < 0) return undefined;
+    const byLevel = job.gpuByLevel ?? new Map<number, number[]>();
+    job.gpuByLevel = byLevel;
+    const held = byLevel.get(entry.level);
+    if (held !== undefined) return held;
+    const records: number[] = [];
+    for (const source of sources)
+      if (source.level === entry.level) {
+        const at = this.#gpuScene.place(
+          slot,
+          source.matrix,
+          source.x,
+          source.y,
+          source.z,
+          source.radius,
+        );
+        if (at >= 0) records.push(at);
+      }
+    byLevel.set(entry.level, records);
+    return records;
   }
 
   /** The world-grid square the follow point is in, as the `@x,z` half of a cluster key. */

@@ -1,5 +1,20 @@
-import { Frustum, Matrix4, PerspectiveCamera } from "three";
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  BoxGeometry,
+  type BufferGeometry,
+  Frustum,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  type Object3D,
+  PerspectiveCamera,
+} from "three";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { IRendererLike } from "../src/renderer.js";
 import {
   type IGpuPlacement,
   type IKernelInput,
@@ -8,6 +23,7 @@ import {
   cullAndSelect,
   gpuSceneUnsupported,
 } from "../src/world-gpu-scene.js";
+import { type IWorldPackage, WorldCells } from "../src/world.js";
 
 /**
  * The GPU scene's per-instance kernel, proved against the CPU path it replaces.
@@ -129,6 +145,145 @@ function kernelDrawn(
 
 const DISTANCES = [0, 40, 120] as const;
 const LOCAL = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+/**
+ * The committed `world-v1` package, which is what the wiring half below streams: one `pine` asset
+ * with a run per cell, so a walk over its ring admits, refills and evicts real records. The harness
+ * is the main-cull spec's, unchanged — the same package, the same camera, the same flush — so a
+ * number here and a number there are about the same world.
+ */
+const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "world-v1");
+const manifest = JSON.parse(
+  readFileSync(path.join(fixture, "world.json"), "utf8"),
+) as IWorldPackage;
+const placementBytes = readFileSync(path.join(fixture, "placements.bin"));
+const surface = new MeshBasicMaterial();
+const budgets = { bytes: 1_000_000_000, instances: 1_000_000, residentCells: 64 };
+/** The fixture's `cellSize`; a square is one cell unless the test says otherwise. */
+const CELL = 64;
+
+/** Every `pine` placement each cell files, so a cell's own records are a number. */
+const PINE = new Map<string, number>();
+for (const cell of manifest.cells)
+  for (const run of cell.runs)
+    if (run.asset === "pine") PINE.set(`${String(cell.x)},${String(cell.z)}`, run.count);
+
+function pineIn(...cells: string[]): number {
+  return cells.reduce((sum, cell) => sum + (PINE.get(cell) ?? 0), 0);
+}
+
+/** The world-space centre of cell `(x, z)`, from the package's own extent and cell size. */
+function cellCentre(x: number, z: number): { x: number; z: number } {
+  return { x: manifest.extent.minX + (x + 0.5) * CELL, z: manifest.extent.minZ + (z + 0.5) * CELL };
+}
+
+function plainModel(): Group {
+  const group = new Group();
+  group.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
+  return group;
+}
+
+function fileResponse(buffer: Buffer): object {
+  return {
+    arrayBuffer: async () =>
+      buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
+    headers: new Headers(),
+    json: async () => JSON.parse(buffer.toString("utf8")),
+    ok: true,
+    status: 200,
+  };
+}
+
+/**
+ * The package with `pine`'s authored `lods` removed, so every one of its placements is drawn at level
+ * 0 and a cell's worth of a key is exactly the count its run states.
+ */
+function stubManifestFetch(): void {
+  const pine = manifest.assets.pine;
+  if (pine === undefined) throw new Error("the committed package has no pine asset.");
+  const pkg: IWorldPackage = {
+    ...manifest,
+    assets: { ...manifest.assets, pine: { bounds: pine.bounds, glb: pine.glb } },
+  };
+  const body = JSON.stringify(pkg);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<object> => {
+      const url = String(input);
+      if (url.endsWith("world.json"))
+        return {
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+          headers: new Headers(),
+          json: async () => pkg,
+          ok: true,
+          status: 200,
+        };
+      if (url.endsWith("placements.bin")) return fileResponse(placementBytes);
+      if (url.endsWith("heightmap.u16"))
+        return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
+      return {
+        arrayBuffer: async () => new ArrayBuffer(0),
+        headers: new Headers(),
+        ok: false,
+        status: 404,
+      };
+    }),
+  );
+}
+
+/**
+ * A player camera in the middle of cell (0,1) at head height, looking west: the main-cull spec's
+ * camera, so the visible visibility cells are the ones the coarse gate below is judged against.
+ */
+function playerCamera(at: readonly [number, number] = [0, 1]): PerspectiveCamera {
+  const centre = cellCentre(at[0], at[1]);
+  const camera = new PerspectiveCamera(30, 1, 0.1, 1000);
+  camera.position.set(centre.x, 4, centre.z);
+  camera.lookAt(centre.x - CELL * 4, 4, centre.z);
+  camera.updateMatrixWorld();
+  return camera;
+}
+
+/** Every `WorldCells`-owned `InstancedMesh` under the world, whatever role or key it serves. */
+function worldMeshes(world: WorldCells): InstancedMesh[] {
+  const found: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh) found.push(object);
+  });
+  return found;
+}
+
+/** The `pine` level-0 main mesh: one per key, the one every camera here draws. */
+function mainMesh(world: WorldCells): InstancedMesh {
+  const mesh = worldMeshes(world).find((one) => one.name === "pine:0:0");
+  if (mesh === undefined) throw new Error("the world has no pine:0:0 mesh.");
+  return mesh;
+}
+
+async function flush(rounds = 12): Promise<void> {
+  for (let round = 0; round < rounds; round += 1)
+    await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Let the loads settle, then step again: a build waiting on the frame's mesh allowance is deferred. */
+async function flushed(world: WorldCells): Promise<void> {
+  for (let pass = 0; pass < 200; pass += 1) {
+    await flush();
+    world.update();
+    const stats = world.stats();
+    if (
+      stats.admission.backlog === 0 &&
+      stats.admission.deferred === 0 &&
+      stats.loadsInFlight === 0
+    )
+      return;
+  }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe("WorldCells GPU-driven main pass", () => {
   it("draws the same set per key as the CPU path, over a 50-pose walk", () => {
@@ -402,5 +557,143 @@ describe("WorldCells GPU-driven main pass", () => {
     // The placement at y 0 with a part three metres up draws at y 3.
     expect(result.drawn[13]).toBeCloseTo(3, 5);
     expect(result.drawn[14]).toBeCloseTo(10, 5);
+  });
+});
+
+/**
+ * The GPU scene wired into `WorldCells`, default off and proven with the flag on.
+ *
+ * The claims are the ones the walk has to earn: a moving follow point spends nothing on the CPU work
+ * the dispatch replaced — no main regroup, no `maxDistance`/`lods` refilter — residency still feeds
+ * the source buffer both ways, and every main key's mesh is dressed against the scene's own buffers
+ * rather than its own. The renderer is a stub that reports the three features, because what is under
+ * test is the wiring and the counters, not a draw.
+ */
+describe("WorldCells with the GPU-driven main pass", () => {
+  it("spends no regroup and no refilter, feeds the source buffer, and dresses every main key", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    const camera = playerCamera();
+    world.update(renderer, camera);
+    await flushed(world);
+    // Dressed and fed, both of them, before a single walked frame.
+    const settled = world.stats();
+    expect(settled.gpuScene.on).toBe(true);
+    expect(settled.gpuScene.reason).toBe("on");
+    expect(settled.gpuScene.keys).toBeGreaterThan(0);
+    expect(settled.gpuScene.instances).toBeGreaterThan(0);
+    const main = mainMesh(world);
+    // The shared compaction buffer is the mesh's `instanceMatrix`, its own indirect record is on the
+    // geometry, and three's whole-mesh test is off because the dispatch already did the culling.
+    expect(
+      (main.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+        .isStorageInstancedBufferAttribute,
+    ).toBe(true);
+    expect((main.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+    expect(main.frustumCulled).toBe(false);
+
+    for (let index = 0; index < 200; index += 1) {
+      // A walk across the ring, so residency changes underneath the camera rather than a camera
+      // turning on the spot: this is the case the CPU per-instance work existed for.
+      const at = cellCentre(index % 3, 1 + (index % 2));
+      follow.position.x = at.x;
+      follow.position.z = at.z;
+      world.update(renderer, camera);
+    }
+    const after = world.stats();
+    // The whole claim: 200 frames of a moving follow point, and not one main regroup and not one
+    // refilter. With the option off the same walk repacks every time the window moves.
+    expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
+    expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
+    expect(after.refilters - settled.refilters).toBe(0);
+    expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
+    expect(after.gpuScene.instances).toBeGreaterThan(0);
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("hands the source records back when the ring empties, and says it is off by default", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    world.update(renderer, playerCamera());
+    await flushed(world);
+    const resident = world.stats().gpuScene.instances;
+    expect(resident).toBeGreaterThan(0);
+
+    // Six cells east, which evicts every resident cell. The records the dispatches were drawing are
+    // handed back, or the source buffer would grow for the rest of the walk.
+    const away = cellCentre(6, 1);
+    follow.position.x = away.x;
+    follow.position.z = away.z;
+    world.update(renderer, playerCamera());
+    await flushed(world);
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    expect(world.stats().gpuScene.instances).toBe(0);
+    world.dispose();
+  });
+
+  it("is the CPU path byte for byte with the option off", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgl2",
+      raw: {},
+    } as unknown as IRendererLike;
+    world.update(renderer, playerCamera());
+    await flushed(world);
+    // Off, and it says so: the option was not asked for, so a WebGL renderer is never even the
+    // interesting answer — the marker names the option.
+    expect(world.stats().gpuScene.on).toBe(false);
+    expect(world.stats().gpuScene.reason).toBe("option-off");
+    expect(world.stats().gpuScene.dispatches).toBe(0);
+    // And the batch draws from its own buffer, which is the whole of "byte for byte today".
+    const main = mainMesh(world);
+    expect(main.frustumCulled).toBe(true);
+    expect((main.geometry as BufferGeometry & { indirect: unknown }).indirect).toBeNull();
+    expect(mainMesh(world).count).toBe(pineIn("0,0", "0,1", "0,2", "1,0", "1,1", "1,2"));
+    world.dispose();
   });
 });
