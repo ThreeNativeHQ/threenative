@@ -30,10 +30,13 @@ import {
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
-  readonly kind: "box" | "capsule" | "sphere";
+  readonly kind: "box" | "capsule" | "sphere" | "trimesh";
   readonly x: number;
   readonly y: number;
   readonly z: number;
+  /** Present for `trimesh` only: a flat xyz vertex buffer and a flat triangle-index buffer. */
+  readonly vertices?: Float32Array;
+  readonly indices?: Uint32Array;
   collisionLayer: number;
   collisionMask: number;
   sensor: boolean;
@@ -203,6 +206,32 @@ function primitiveShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor 
   if (shape.kind !== "box" && shape.kind !== "sphere" && shape.kind !== "capsule")
     throw new Error(`TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED: ${shape.kind} remains OPEN on native`);
   return shape as INativeShapeDescriptor;
+}
+
+/**
+ * A body's shape, including the one concave shape a static level needs.
+ *
+ * A doorway, an arch or a floor with a hole cannot be a box, a ball or a capsule, so a trimesh is
+ * the only shape that keeps the opening the model actually has. Queries stay primitive-only: the
+ * native query path has no trimesh representation and says so instead of silently missing.
+ */
+function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
+  if (shape.kind === "trimesh") {
+    if (shape.vertices === undefined || shape.indices === undefined)
+      throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: trimesh requires vertices and indices");
+    return {
+      collisionLayer: shape.collisionLayer,
+      collisionMask: shape.collisionMask,
+      indices: shape.indices,
+      kind: shape.kind,
+      sensor: shape.sensor,
+      vertices: shape.vertices,
+      x: shape.x,
+      y: shape.y,
+      z: shape.z,
+    };
+  }
+  return primitiveShape(shape);
 }
 
 function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
@@ -393,7 +422,7 @@ export function createNativePhysicsSimulation(
       // the run instead of throwing, and a zero-length rotation normalizes to NaN.
       requireFiniteVector(options.position, "body position");
       requireFiniteRotation(options.rotation, "body rotation");
-      const shape = primitiveShape(options.shape);
+      const shape = nativeBodyShape(options.shape);
       const sensor = requirePhysicsBodySensor(options);
       const id = raw.createBody({
         collisionLayer: shape.collisionLayer,
