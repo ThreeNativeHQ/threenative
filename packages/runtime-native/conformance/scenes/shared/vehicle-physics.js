@@ -147,6 +147,28 @@ export async function startScene(canvas, dimensions) {
     `the car is still rolling at ${vehicle.speed} m/s after the brake window`,
   );
 
+  // Respawn: the fourth entry point, and the sign check — facing the other way, the same
+  // positive engine force is now +z.
+  vehicle.teleport({ x: 10, y: RIDE, z: 40 }, Math.PI);
+  advance(10);
+  observation.respawn = [chassis.position.x, chassis.position.z];
+  assertCondition(
+    Math.abs(chassis.position.x - 10) < 0.01 && Math.abs(chassis.position.z - 40) < 0.01,
+    `a respawn landed at ${chassis.position.x}, ${chassis.position.z} instead of 10, 40`,
+  );
+  vehicle.engineForce = 4000;
+  vehicle.brake = 0;
+  advance(120);
+  observation.reverseSpeed = vehicle.speed;
+  assertCondition(
+    observation.reverseSpeed > 5,
+    `a respawned car reached only ${observation.reverseSpeed} m/s driving the other way`,
+  );
+  assertCondition(
+    chassis.position.z > 41,
+    `a respawned car drove to z ${chassis.position.z} instead of +z`,
+  );
+
   vehicle.dispose();
   floor.dispose();
   console.info(`TN_VEHICLE_PROOF:${JSON.stringify(observation)}`);

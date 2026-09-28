@@ -751,9 +751,15 @@ js::JSValueHandle makeSimulationObject(
                 !readFiniteNumber(engine, args[1], "x", x) ||
                 !readFiniteNumber(engine, args[1], "y", y) ||
                 !readFiniteNumber(engine, args[1], "z", z) ||
-                !readFiniteNumber(engine, args[2], "yaw", yaw))
+                !engine->isNumber(args[2]))
               return fail(engine,
                           "TN_PHYSICS_NON_FINITE: a respawn needs a finite position and yaw.");
+            const double yawNumber = engine->toNumber(args[2]);
+            if (!std::isfinite(yawNumber) || yawNumber < -std::numeric_limits<float>::max() ||
+                yawNumber > std::numeric_limits<float>::max())
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: a respawn needs a finite position and yaw.");
+            yaw = static_cast<float>(yawNumber);
             if (!tn_physics_reset_vehicle(owner->simulation, id, x, y, z, yaw))
               return fail(engine, "TN_VEHICLE_UNKNOWN: the vehicle left the backend.");
             return engine->newUndefined();
