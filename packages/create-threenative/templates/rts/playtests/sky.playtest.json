@@ -1,0 +1,27 @@
+{
+  "name": "sky",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "steps": [{ "kind": "wait", "label": "settle", "waitTicks": 120, "release": true }],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "renderChain": { "tier": "high" },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 160,
+          "minNonblankPixelRatio": 0.95
+        }
+      }
+    ]
+  }
+}

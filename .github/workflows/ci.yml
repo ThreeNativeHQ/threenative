@@ -731,6 +731,7 @@ jobs:
           - { template: puzzle, shard: "1/2" }
           - { template: puzzle, shard: "2/2" }
           - { template: racing, shard: "1/1" }
+          - { template: rts, shard: "1/1" }
           - { template: runner, shard: "1/1" }
           - { template: sailing, shard: "1/1" }
           - { template: shooter, shard: "1/1" }
