@@ -292,6 +292,19 @@ the repository's registered `makeTempDirSync`; the profile and cleanup guard tes
 skipped and no temporary-directory growth. `pnpm typecheck`, `pnpm lint` (0 errors),
 `pnpm check:docs` and `pnpm budgets` pass.
 
+**2026-09-28 desktop pacing experiment (one repetition per mode, same clean source
+`ddb384a39`):** at 1920×1080, the default capped presentation run
+(`.runtime/prd064/capped/production-evidence.json`) measured 57.57 FPS mean,
+18.49 ms p95 and 22.48 ms p99. Setting the existing
+`THREENATIVE_PRESENT_UNCAPPED=1` switch
+(`.runtime/prd064/uncapped/production-evidence.json`) improved those to
+59.01 FPS, 17.04 ms and 17.32 ms. Both runs had complete start/end markers
+and failed only `TN_PROD_PERFORMANCE_BUDGET` against the 60 FPS mean floor;
+uncapped still exceeded the prior web p95 of 16.80 ms and had two hitches of
+168.6 and 295.4 ms. This isolates part of the deficit to the present cap but
+does not establish parity or justify changing the budget. The performance box
+stays open.
+
 **2026-09-27, the rest of the judge still counted callbacks, and `desktop-pair-8` says by how much.**
 The correction above moved only the percentile series; five quantities beside it still described rAF
 callbacks — `oneSecondFrameFloors(metrics.intervals)`, `runWindows[].sampleCount`, `sampleCount`,
@@ -353,6 +366,16 @@ Chromium's is the vsync itself, so even a perfectly aligned pump's "presented" s
 dispatch cadence rather than the display's — the same missing signal causes both the pacing deficit
 and the measurement asymmetry, and closing the second needs the timestamp to come from the display's
 own domain, which is what `notePresentationFrame` already carries on Android.
+
+**2026-09-28 API check narrows that proposed fix:** the installed SDL 3.2.30 video API and
+Dawn surface API expose no desktop per-present timestamp or vblank callback to feed that
+condition variable. The existing FIFO surface can apply backpressure when
+`wgpuSurfaceGetCurrentTexture` acquires the next image
+(`bindings_presentation.cpp:721`; `context.cpp:1291`), but it supplies no display-domain
+timestamp and can block indefinitely when a window is occluded. A desktop source for
+`notePresentationFrame` is therefore still unproven; wiring the condition variable to a
+host-clock guess would repeat the same timing error. No pacer change is claimed from this
+read-only check.
 
 **Trace, read-only: the WebGPU adapter is already in the produced report and only unthreaded.** The
 producer exists and runs for this exact scenario. `readCaptureProvenance`
