@@ -15,6 +15,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
+import {
+  type IModelDedupeSummary,
+  formatModelDedupe,
+  groupModelSources,
+} from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import {
@@ -302,6 +307,11 @@ export interface IAssetCompileResult {
   readonly skippedCompression: readonly ISkippedReportRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
+  /**
+   * What the model cook saved by cooking content-identical sources once, when this project has
+   * any model source. `cooked` is the number of distinct outputs those sources produced.
+   */
+  readonly dedupe?: IModelDedupeSummary;
   readonly skipped: number;
   readonly written: number;
 }
@@ -366,6 +376,23 @@ interface IAssetManifestEntry {
 interface IAssetManifest {
   readonly entries: Record<string, IAssetManifestEntry>;
   readonly version: 1;
+}
+
+/**
+ * What one cook contributes to the manifest, the receipt, the health report and the size report.
+ *
+ * A source that shares its content with an earlier one is not cooked; it publishes this record
+ * unchanged apart from the bytes its own source weighed, so one output serves both.
+ */
+interface ICookedModel {
+  readonly auxiliary: readonly {
+    readonly bytes: number;
+    readonly path: string;
+    readonly producer: string;
+  }[];
+  readonly entry: IAssetManifestEntry;
+  readonly lightmap: IModelSizeRow["lightmap"] | undefined;
+  readonly measured: Buffer;
 }
 
 interface ICompileLayout {
@@ -2375,6 +2402,28 @@ export async function compileAssets(
   if (options.processingOrder === "reversed") logicals.reverse();
 
   /**
+   * Content-identical model sources cook once.
+   *
+   * A streamed world package shipped 374 model files for 101 distinct models — the same prop
+   * exported under ten different object names — and every copy paid a full cook and a separate
+   * output, because the output name carries the digest of the *named* bytes. The scan reads each
+   * model source once and keys it on the binary chunk plus the glTF JSON with every `name`
+   * removed, and the lexicographically smallest path in each group is the one that is cooked.
+   *
+   * A source carrying its own `assets.lod` override keeps its own cook: that block is keyed by
+   * source path, so a shared output would silently serve it the canonical member's policy.
+   */
+  const modelSources = logicals.filter((logical) => classify(logical) === "model");
+  const perAssetLod =
+    typeof layout.lod === "object" && layout.lod !== null && layout.lod.overrides !== undefined
+      ? new Set(Object.keys(layout.lod.overrides))
+      : new Set<string>();
+  const canonicalOf = await groupModelSources(
+    layout.sourceRoot,
+    modelSources.filter((logical) => !perAssetLod.has(logical)),
+  );
+
+  /**
    * The Blender importer joins the chain only when this source tree actually holds something it
    * owns, which is why the walk happens before the pass list is fixed.
    *
@@ -2431,6 +2480,8 @@ export async function compileAssets(
   const modelRows: IModelSizeRow[] = [];
   let written = 0;
   let skipped = 0;
+  /** Cooked bytes the content-identical model sources saved by sharing one output. */
+  let dedupeSavedBytes = 0;
   let textureCount = 0;
   let compressedModelCount = 0;
 
@@ -2561,7 +2612,8 @@ export async function compileAssets(
       ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
-  const processOne = async (logical: string): Promise<void> => {
+  /** One cooked source, published as itself. */
+  const cookOne = async (logical: string): Promise<ICookedModel> => {
     const input = await readInput(layout.sourceRoot, logical);
     const digest = createHash("sha256")
       .update(input)
@@ -2588,7 +2640,12 @@ export async function compileAssets(
       bookkeep(logical, measured, reused, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
-      return;
+      return {
+        auxiliary: reusable,
+        entry: reused,
+        lightmap: undefined,
+        measured,
+      };
     }
     const applied =
       pool === undefined
@@ -2660,17 +2717,13 @@ export async function compileAssets(
             validTexels: Number(lightmapMetadata.validTexels),
           }
         : undefined;
-    bookkeep(
-      logical,
-      needsBlenderImport(logical) ? applied.buffer : input,
-      entry,
-      auxiliaryOutputs.map((output) => ({
-        bytes: output.buffer.length,
-        path: output.output,
-        producer: output.role,
-      })),
-      lightmap,
-    );
+    const measured = needsBlenderImport(logical) ? applied.buffer : input;
+    const auxiliary = auxiliaryOutputs.map((output) => ({
+      bytes: output.buffer.length,
+      path: output.output,
+      producer: output.role,
+    }));
+    bookkeep(logical, measured, entry, auxiliary, lightmap);
     const existing = previous.entries[logical];
     if (
       existing !== undefined &&
@@ -2685,7 +2738,7 @@ export async function compileAssets(
       ).every(Boolean)
     ) {
       skipped += 1;
-      return;
+      return { auxiliary, entry, lightmap, measured };
     }
     await recordPendingOutputs([entry.output, ...auxiliaryOutputs.map((output) => output.output)]);
     await writeOutput(layout.outputRoot, entry, applied.buffer);
@@ -2706,9 +2759,55 @@ export async function compileAssets(
       }
     }
     written += 1;
+    return { auxiliary, entry, lightmap, measured };
   };
 
-  const queue = [...logicals];
+  /**
+   * One source: cooked, or the cook it shares with a canonical member of its content group.
+   *
+   * A duplicate never reads its own bytes again and never runs a pass. It publishes the
+   * canonical's entry — the same output URL, the same cooked bytes — with `bytesBefore` measured
+   * against its own source, because what that file weighed is the one number about it that is
+   * its own. Its auxiliary outputs and its health measurement are the canonical's, which is what
+   * sharing one output means: the same embedded images, the same geometry.
+   */
+  const cookedModels = new Map<string, Promise<ICookedModel>>();
+  const processOne = async (logical: string): Promise<void> => {
+    const canonical = canonicalOf.get(logical);
+    if (canonical === undefined) {
+      // Registered before the cook's first await, so a duplicate queued behind it always finds
+      // the cook it reuses.
+      const pending = cookOne(logical);
+      cookedModels.set(logical, pending);
+      await pending;
+      return;
+    }
+    const pending = cookedModels.get(canonical);
+    if (pending === undefined) {
+      throw new Error(
+        `TN_ASSETS_MODEL_DEDUPE_ORDER: '${logical}' is content-identical to '${canonical}', which this cook has not reached; the queue must place every canonical before the members that share it.`,
+      );
+    }
+    const cooked = await pending;
+    dedupeSavedBytes += cooked.entry.bytes;
+    const entry = withFreshLodRuntime(
+      { ...cooked.entry, bytesBefore: (await stat(path.join(layout.sourceRoot, logical))).size },
+      logical,
+      layout.lod,
+      layout.lodLegacy,
+    );
+    entries[logical] = entry;
+    bookkeep(logical, cooked.measured, entry, cooked.auxiliary, cooked.lightmap);
+    recordCachedInputs(costInputs, passNames);
+    skipped += 1;
+  };
+
+  // Every canonical is queued before any member that reuses its cook. That is what makes a
+  // duplicate's wait terminate: the runner holding the canonical is never waiting on a duplicate.
+  const queue = [
+    ...logicals.filter((logical) => !canonicalOf.has(logical)),
+    ...logicals.filter((logical) => canonicalOf.has(logical)),
+  ];
   const runnerCount = Math.min(pool === undefined ? 1 : concurrency, queue.length);
   try {
     await Promise.all(
@@ -2767,6 +2866,15 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const dedupe: IModelDedupeSummary | undefined =
+    modelSources.length === 0
+      ? undefined
+      : {
+          cooked: modelSources.length - canonicalOf.size,
+          savedBytes: dedupeSavedBytes,
+          sources: modelSources.length,
+        };
+  if (dedupe !== undefined) console.log(formatModelDedupe(dedupe));
   if (
     isRecord(options.config) &&
     isRecord(options.config.models) &&
@@ -2816,9 +2924,16 @@ export async function compileAssets(
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   await rm(pendingReceiptPath, { force: true });
   const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
-  return options.health === true
-    ? { concurrencyUsed, passCosts, receipt, report, skipped, skippedCompression, written }
-    : { concurrencyUsed, passCosts, receipt, skipped, skippedCompression, written };
+  const shared = {
+    concurrencyUsed,
+    ...(dedupe === undefined ? {} : { dedupe }),
+    passCosts,
+    receipt,
+    skipped,
+    skippedCompression,
+    written,
+  };
+  return options.health === true ? { ...shared, report } : shared;
 }
 
 /**
@@ -2846,8 +2961,12 @@ function skippedCompressionRows(
     if (reason === undefined || !layout.builtinRegistry) continue;
     let bytes = 0;
     let files = 0;
+    // Counted per output, not per source: content-identical models share one cooked file, and
+    // this row is about what the build ships.
+    const counted = new Set<string>();
     for (const entry of Object.values(entries)) {
-      if (entry.kind !== kind) continue;
+      if (entry.kind !== kind || counted.has(entry.output)) continue;
+      counted.add(entry.output);
       bytes += entry.bytes;
       files += 1;
     }

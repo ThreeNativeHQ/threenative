@@ -76,11 +76,12 @@ async function hashOutputRoot(outputRoot: string): Promise<Map<string, string>> 
 async function stageTwoSharedModels(): Promise<string> {
   const root = await makeTempDir("threenative-determinism-");
   await mkdir(path.join(root, "assets"));
-  const glb = await buildFixtureGlb();
-  // Two logical paths, byte-identical models: both embed the same images, so the shared-image
-  // merge is on the path and the two inputs are the independent work a scheduler would overlap.
-  await writeFile(path.join(root, "assets", "a.glb"), glb);
-  await writeFile(path.join(root, "assets", "b.glb"), glb);
+  // Two logical paths over the same images: the shared-image merge is on the path and the two
+  // inputs are the independent work a scheduler would overlap. Different geometry, because a
+  // byte-identical copy is one model published under two names (TN_ASSET_MODEL_DEDUPE) and only
+  // one of the two would ever be cooked — which is also what makes a reversed run indistinguishable.
+  await writeFile(path.join(root, "assets", "a.glb"), await buildFixtureGlb());
+  await writeFile(path.join(root, "assets", "b.glb"), await buildFixtureGlb({ gridDepth: 4 }));
   return root;
 }
 

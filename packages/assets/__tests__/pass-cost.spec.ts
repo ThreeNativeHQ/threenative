@@ -89,9 +89,10 @@ describe("pass cost records", () => {
     const { buildFixtureGlb } = await import("../../../test-support/generate-fixture-model.js");
     const root = await makeTempDir("threenative-pass-cost-models-");
     await mkdir(path.join(root, "assets"));
-    const glb = await buildFixtureGlb();
-    await writeFile(path.join(root, "assets", "elm.glb"), glb);
-    await writeFile(path.join(root, "assets", "rock.glb"), glb);
+    await writeFile(path.join(root, "assets", "elm.glb"), await buildFixtureGlb());
+    // A distinct model, not a copy: the cook publishes one output per distinct content
+    // (TN_ASSET_MODEL_DEDUPE), so two copies would be one row.
+    await writeFile(path.join(root, "assets", "rock.glb"), await buildFixtureGlb({ gridDepth: 4 }));
     const result = await compileAssets({ cwd: root, config: { textures: "none" } });
 
     const row = result.passCosts.find((pass) => pass.pass === "model");
