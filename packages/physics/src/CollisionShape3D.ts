@@ -208,6 +208,18 @@ export class CollisionShape3D {
     const width = (bounds.max.x - bounds.min.x) * Math.abs(mesh.scale.x);
     const height = (bounds.max.y - bounds.min.y) * Math.abs(mesh.scale.y);
     const depth = (bounds.max.z - bounds.min.z) * Math.abs(mesh.scale.z);
+    // A primitive is centred on the body, i.e. on the mesh origin. Geometry whose bounds are not
+    // centred there (translated or merged in place) would get a collider displaced from what is
+    // drawn — silently, which is how a figure ends up standing on air. Fail closed by name.
+    const offset = Math.max(
+      Math.abs(bounds.max.x + bounds.min.x) / 2,
+      Math.abs(bounds.max.y + bounds.min.y) / 2,
+      Math.abs(bounds.max.z + bounds.min.z) / 2,
+    );
+    if (offset > 1e-4 + 1e-3 * Math.max(width, height, depth))
+      throw new Error(
+        `TN_COLLISION_SHAPE_OFF_CENTRE: '${mesh.name || "mesh"}' has geometry centred ${offset.toFixed(3)} from its origin, so a ${inferred} collider would sit away from what is drawn. Call geometry.center() and move the mesh instead, pass "trimesh", or build level colliders with buildStaticColliders.`,
+      );
     if (inferred === "sphere") {
       geometry.computeBoundingSphere();
       const radius =

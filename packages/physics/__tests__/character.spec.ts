@@ -398,6 +398,15 @@ describe("CharacterBody3D", () => {
     expect(() => CollisionShape3D.fromMesh(mesh)).not.toThrow();
   });
 
+  // A primitive collider is centred on the body, so geometry whose bounds are not centred on its
+  // own origin (translated or merged in place) used to get a displaced collider silently — it
+  // floated a 1.8 m figure 0.4 m above the floor it stood on. Refuse by name instead.
+  it("should refuse a primitive collider for off-centre geometry, naming the fix", () => {
+    const offCentre = new Mesh(new BoxGeometry(1, 1, 1).translate(3, 0.5, 0));
+    expect(() => CollisionShape3D.fromMesh(offCentre)).toThrow(/TN_COLLISION_SHAPE_OFF_CENTRE/u);
+    expect(() => CollisionShape3D.fromMesh(offCentre, "trimesh")).not.toThrow();
+  });
+
   it("should place the body and zero its velocity when teleported", async () => {
     const { ctx } = await setup();
     const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));
