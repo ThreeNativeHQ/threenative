@@ -637,8 +637,10 @@ describe("automatic discrete LOD generation", () => {
       },
       { build: () => smallGlb({ joints: true }), reason: "deforming" },
       { build: () => smallGlb({ morph: true }), reason: "deforming" },
+      // `MASK` used to be declined here too, and no longer is: an alpha-tested card draws a subset
+      // of LOD0's fragments, so a chain keeps its silhouette. `foliage-lod.spec.ts` proves the
+      // foliage half; `BLEND` is still refused, because a simplified blended card is a hole.
       { build: () => smallGlb({ alpha: "BLEND" }), reason: "material-unsupported" },
-      { build: () => smallGlb({ alpha: "MASK" }), reason: "material-unsupported" },
       { build: () => smallGlb({ name: "hull_LOD1" }), reason: "authored-lod" },
       {
         // Edge (0,1) is shared by three triangles: a non-manifold fan. A tiny floor is needed so

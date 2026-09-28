@@ -118,10 +118,20 @@ function validIndices(primitive: Primitive): boolean {
   return true;
 }
 
-/** A material whose appearance index-only geometry cannot preserve. */
+/**
+ * A material whose appearance index-only geometry cannot preserve.
+ *
+ * `MASK` is admitted, and that admission is the whole of the foliage path (PRD-458 §4): an
+ * alpha-tested material draws a *subset* of the LOD0 fragments — the ones above the cutoff — so a
+ * chain that keeps every border vertex, with UVs weighted, keeps the silhouette. `BLEND` is not,
+ * because a simplified card blends with whatever is behind it and a dropped triangle there is a
+ * visible hole. Everything that is really translucent (transmission, volume, displacement) keeps
+ * its refusal whatever its alpha mode, because no index reduction preserves it.
+ */
 function unsupportedMaterial(material: Material | null): boolean {
   if (material === null) return false;
-  if (material.getAlphaMode() !== "OPAQUE") return true;
+  const alphaMode = material.getAlphaMode();
+  if (alphaMode !== "OPAQUE" && alphaMode !== "MASK") return true;
   for (const extension of material.listExtensions()) {
     const name = extension.extensionName.toLowerCase();
     if (name.includes("transmission") || name.includes("displacement") || name.includes("volume"))
