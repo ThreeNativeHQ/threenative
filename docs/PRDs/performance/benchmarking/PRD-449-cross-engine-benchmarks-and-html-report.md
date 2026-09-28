@@ -7,6 +7,8 @@
 
 ## Decisions
 
+**No benchmaxxing — owner, 2026-09-27.** A fix is kept only when it also holds on a real game. Each kept fix gets a before/after on a scaffolded template game on the same machine (the gain, or "no effect" stated plainly, and never a regression). Colour-only batching is a first slice toward batching by any numeric material parameter, never the end state. Render bundles are probed as the scene-general per-draw lever.
+
 **R3 fix path — owner, 2026-09-27.** Profiling (`artifacts/engine-load-test/prd-449/tmp/attribution/l4/`) showed the R3 loss is three.js's per-object JS renderer cost (75% of the frame). Unique materials cost only 1.15× a shared one, and nothing is re-created per frame. Micro-patches recover about 10%. The owner chose to extend the projection to batch meshes that differ only by colour; patching three.js is allowed where needed. It is tracked here rather than as a new PRD to keep the lane lean.
 
 **Scope cut — owner, 2026-09-27.**
@@ -48,5 +50,5 @@ Shipped defaults and explicit instancing tie at both counts: the gaps are inside
 ### Phase 3: Fix TN where it loses, then close
 
 - [x] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and re-run R1. proof: guard specs red-green, a 3+3 run A/B table, and the new R1 row on the scoreboard. Done 2026-09-27: guards `c69143921`, fix `2d856ac19` + `288198dc5`, A/B `bd52da0d7`: TN L3 4,096 median p50 10.93 → 6.08 ms (−44%), faster in 6/6 paired blocks, identical draws/triangles/hash. Core suite 1872 pass; the 6 failures (4 `packaging.spec.ts`, `render-projection-pipeline`, `three-shadow-override-cache`) reproduce at `f5639d2ac` without the fix.
-- [ ] Batch by uniforms: the projection merges meshes that share geometry and shader but differ only in material colour into its batched draw with per-instance colour, identical pixels, and per-frame colour changes honoured. proof: guard specs red-green, projection-on/off pixel match, and a paired R3 A/B plus a scoreboard rerun.
+- [ ] Batch by uniforms: the projection merges meshes that share geometry and shader but differ only in material colour into its batched draw with per-instance colour, identical pixels, and per-frame colour changes honoured. proof: guard specs red-green, projection-on/off pixel match, a paired R3 A/B plus a scoreboard rerun, and a template-game before/after with no regression.
 - [ ] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit.
