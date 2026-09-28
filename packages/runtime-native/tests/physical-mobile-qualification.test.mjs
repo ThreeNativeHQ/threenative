@@ -10,8 +10,10 @@ import {
   REQUIRED_PREREQUISITES,
   createEvidenceFixture,
   hashIdentifier,
+  physicalDeviceEvidenceV2,
   sha256File,
   validatePhysicalDeviceEvidence,
+  validatePhysicalDeviceEvidenceV1,
 } from "../scripts/physical-device-evidence.mjs";
 import {
   buildProductionEvidence,
@@ -381,7 +383,7 @@ test("parses the final pretty multi-line playtest JSON report after diagnostics"
   assert.equal(parsePlaytestReport("diagnostic only\n"), null);
 });
 
-test("production evidence refuses to certify a lifecycle the v1 evidence schema cannot represent", () => {
+test("production evidence certifies a device-measured lifecycle in the v2 form", () => {
   withPrerequisiteReports((paths, directory) => {
     const reportRecords = Object.fromEntries(Object.entries(paths).map(([name, path]) => [name, {
       path,
@@ -463,27 +465,36 @@ test("production evidence refuses to certify a lifecycle the v1 evidence schema 
       ],
       gateEvidence: productionGateEvidence(),
     };
-    // The device observation is accepted, and the run then stops on the one thing the v1 evidence
-    // schema has no field for: four ordered rows carrying a wall-clock phase time and a per-phase
-    // physics step count, against phase offsets from the run's own clock and three step reads. A
-    // collector that filled those in would put numbers in the evidence no read produced, so it
-    // refuses by name and writes no document.
-    assert.throws(() => buildProductionEvidence(request), (error) => {
-      assert.equal(error.code, "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE");
-      assert.match(error.message, /observations\.deviceLifecycle/u);
-      return true;
-    });
+    // The device observation is accepted and written out as v2: one row per operation the phone
+    // measured, timed as an offset from the run's own clock, with the three step counts bracketing
+    // the away period. No fourth phase, no wall-clock phase time, no session nonce, no per-phase
+    // step count and no ready/first-frame/frame300 time — the run measured none of them, and
+    // `validatePhysicalDeviceEvidence` re-derives every claim from the readings that are there.
+    const evidence = buildProductionEvidence(request);
+    assert.equal(evidence.schemaVersion, 2);
+    assert.deepEqual(validatePhysicalDeviceEvidence(evidence), { valid: true, errors: [] });
+    assert.equal(physicalDeviceEvidenceV2(evidence).valid, true);
+    assert.equal(validatePhysicalDeviceEvidenceV1(evidence).valid, false);
+    assert.equal(evidence.lifecycle.events, undefined);
+    assert.equal(evidence.execution.sessionNonce, undefined);
+    assert.deepEqual([evidence.execution.readyAt, evidence.execution.firstFrameAt, evidence.execution.frame300At], [null, null, null]);
+    assert.deepEqual(evidence.lifecycle.operations.map(({ offsetMs, frames, pid }) => ({ offsetMs, frames, pid })), [
+      { offsetMs: 940, frames: 320, pid: 7123 },
+      { offsetMs: 2_410, frames: 327, pid: 7123 },
+      { offsetMs: 3_120, frames: 418, pid: 7123 },
+      { offsetMs: 4_260, frames: 420, pid: 7123 },
+    ]);
+    assert.deepEqual(evidence.lifecycle.physics.steps, { afterAdvance: 1023, afterForeground: 1021, beforeBackground: 1021 });
     // A device claim that is false is refused first, by the guard that reads the phone.
     assert.throws(
       () => buildProductionEvidence({ ...request, playtestRun: { report: { ...request.playtestRun.report, observations: { ...request.playtestRun.report.observations, deviceLifecycle: withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true }) } } } }),
       (error) => error.code === "TN_QUALIFY_LIFECYCLE_CONTINUITY",
     );
-    // The shape a real consumer scenario drives — background, foreground, rotate — is a valid
-    // lifecycle and is refused for the schema's four rows, not for the observation.
-    assert.throws(
-      () => buildProductionEvidence({ ...request, playtestRun: { report: { ...request.playtestRun.report, observations: { ...request.playtestRun.report.observations, deviceLifecycle: withLifecycleClaim("phases", deviceLifecycleObservation().phases.slice(0, 3)) } } } }),
-      (error) => error.code === "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE" && error.message.includes("3 device-observed phases"),
-    );
+    // The shape a real consumer scenario drives — background, foreground, rotate — needs no fourth
+    // row to be evidence, and none is invented to fill the space.
+    const threeOperations = buildProductionEvidence({ ...request, playtestRun: { report: { ...request.playtestRun.report, observations: { ...request.playtestRun.report.observations, deviceLifecycle: withLifecycleClaim("phases", deviceLifecycleObservation().phases.slice(0, 3)) } } } });
+    assert.equal(threeOperations.lifecycle.operations.length, 3);
+    assert.deepEqual(validatePhysicalDeviceEvidence(threeOperations), { valid: true, errors: [] });
   });
 });
 
@@ -887,9 +898,10 @@ test("the declared subject resolves one application id, project and scenario for
 test("a declared consumer project installs and drives its own artifact on the phone it names", () => {
   withConsumerRun(({ declared, host, result }) => {
     // Every device guard ran — the declared package is what was installed, launched and driven —
-    // and the run then stops at the lifecycle claim the v1 evidence schema cannot represent.
-    assert.equal(result.status, "fail", JSON.stringify(result));
-    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE");
+    // and the run then wrote a v2 evidence document that re-validates from its own measurements.
+    assert.equal(result.status, "pass", JSON.stringify(result));
+    assert.equal(result.code, "TN_QUALIFY_PHYSICAL_PASS");
+    assert.deepEqual(validatePhysicalDeviceEvidence(JSON.parse(readFileSync(result.report, "utf8"))), { valid: true, errors: [] });
     const scenarioCall = host.calls.find((call) => call.executable === process.execPath);
     const args = scenarioCall.args;
     assert.equal(args[1], declared.scenario);
@@ -898,6 +910,33 @@ test("a declared consumer project installs and drives its own artifact on the ph
     assert.equal(args[args.indexOf("--activity") + 1], "com.threenative.runtime.MystralActivity");
     const launch = host.calls.find((call) => call.args.includes("am") && call.args.includes("start"));
     assert.ok(launch.args.at(-1).startsWith(`${CONSUMER_APP_ID}/`), launch.args.at(-1));
+  });
+});
+
+test("the v2 lifecycle re-derives its claims from the readings, so a false one is refused", () => {
+  withConsumerRun(({ result }) => {
+    const written = JSON.parse(readFileSync(result.report, "utf8"));
+    const refused = {
+      "a surface that never stopped while away": (evidence) => { evidence.lifecycle.framesPaused = false; return "lifecycle.framesPaused"; },
+      "a summary denying the readings' own frame counts": (evidence) => { evidence.lifecycle.framesAdvanced = false; return "lifecycle.framesAdvanced"; },
+      "a backgrounded reading that denies its own pause": (evidence) => { evidence.lifecycle.operations[0].framesPaused = false; return "lifecycle.operations[0].framesPaused"; },
+      "a simulation that kept stepping while the app was away": (evidence) => { evidence.lifecycle.physics.steps.afterForeground = 1_040; return "lifecycle.physics.steps"; },
+      "a physics summary that is not true": (evidence) => { evidence.lifecycle.physics.stepsPaused = false; return "lifecycle.physics.stepsPaused"; },
+      "an offset that did not advance": (evidence) => { evidence.lifecycle.operations[1].offsetMs = 100; return "lifecycle.operations[1].offsetMs"; },
+      "a process that changed mid-run": (evidence) => { evidence.lifecycle.operations[2].pid = 9_999; return "lifecycle.operations[2].pid"; },
+      "a rotation the device never turned to": (evidence) => { evidence.lifecycle.operations[2].windowRotation = 0; return "lifecycle.operations[2].windowRotation"; },
+      "a first-frame time copied from the run's start": (evidence) => { evidence.execution.firstFrameAt = "2026-09-27T10:00:00.000Z"; return "execution.firstFrameAt"; },
+      "phase times read as wall clock": (evidence) => { evidence.lifecycle.clock = "utc"; return "lifecycle.clock"; },
+      "a v1 claim with no measured field behind it": (evidence) => { evidence.lifecycle.sameSession = true; return "lifecycle.sameSession"; },
+      "an operation the device never read": (evidence) => { evidence.lifecycle.operations[3].operation = "resume"; return "lifecycle.operations[3].operation"; },
+    };
+    for (const [claim, corrupt] of Object.entries(refused)) {
+      const evidence = structuredClone(written);
+      const field = corrupt(evidence);
+      const validation = validatePhysicalDeviceEvidence(evidence);
+      assert.equal(validation.valid, false, claim);
+      assert.ok(validation.errors.some((error) => error === field || error.startsWith(`${field}:`)), `${claim}: ${validation.errors.join("; ")}`);
+    }
   });
 });
 

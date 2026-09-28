@@ -355,8 +355,9 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       to the exact scenario and installed APK already checked above, and rejects absent or
       inconsistent continuity. proof: collector false-value controls and a real Android emulator
       lifecycle scenario. An emulator pass grants no physical performance credit.
-      **Landed and unit-proven; the box stays open because the evidence document itself is
-      blocked.** `evaluateLifecycleObservation` reads `observations.deviceLifecycle` and nothing
+      **Landed and unit-proven; the box stays open because no device has run the claim yet** (the
+      evidence document itself is written and re-validates as of 2026-09-28, below).
+      `evaluateLifecycleObservation` reads `observations.deviceLifecycle` and nothing
       else: `observations.resources.GameState` is no longer read, so a game can no longer certify its
       own resume. It requires the ordered phases (`background` → `foreground` → `rotate`, then
       foreground resumes) with `at` and `frames` nondecreasing across them, one pid across every
@@ -373,28 +374,59 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       data each fail with a diagnostic naming the field, under `TN_QUALIFY_LIFECYCLE_CONTINUITY`;
       the installed-APK SHA, the reported-scenario identity check and the telemetry / prerequisite /
       signing / device guards still run ahead of it, unchanged.
-      **The gap, named rather than papered over:** the run then stops at
-      `TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE` and writes no document, because
-      `physicalDeviceEvidenceV1` (PRD-056's `physical-device-evidence.mjs`, outside this slice's
-      file budget) wants exactly four lifecycle rows, each carrying a wall-clock `at`, a
-      `sessionNonce` and a `physicsStepCount` read *during* that phase, while a report carries
-      phase offsets from the run's own clock, no session nonce, and three step reads around the
-      away period, none of them keyed to a phase. The lifecycle block is refused by name rather
-      than filled with a neighbouring reading or a synthesised timestamp; that schema has to grow before a collector run can be
-      evidence. No emulator, Pixel 8 or physical run happened for this slice, so the box stays open.
+      **The gap, closed by a v2 form the device can fill (2026-09-28):** the run used to stop at
+      `TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE` and write no document, because
+      `physicalDeviceEvidenceV1` (PRD-056's `physical-device-evidence.mjs`) wants exactly four
+      lifecycle rows, each carrying a wall-clock `at`, a `sessionNonce` and a `physicsStepCount`
+      read *during* that phase, while a report carries phase offsets from the run's own clock, no
+      session nonce, and three step reads around the away period, none of them keyed to a phase.
+      The collector now writes `physicalDeviceEvidenceV2` — same document, `schemaVersion: 2` —
+      whose `lifecycle` is `{ clock: "run-relative-ms", operations[], framesPaused, framesAdvanced,
+      physics: { steps, stepsPaused, stepsAdvanced } }`. One `operations` row per device-read
+      operation, carrying only that reading: `operation`, `offsetMs`, `frames`, `focused`, `pid`,
+      `framesPaused` on the backgrounded reading, and `windowRotation` / `requestedRotation` on the
+      rotation. Nothing is attributed to a phase that did not produce it: no fourth phase, no
+      wall-clock phase time, no per-phase step count, no `sessionNonce` (the session claim is the
+      one pid every reading and `execution` share). `execution.readyAt`, `firstFrameAt` and
+      `frame300At` are `null` — the run measures none of them, and the v2 validator refuses a
+      string in any of them rather than let the scenario's start read as a measurement. What v1
+      asserted as standalone booleans with no measured field behind them
+      (`sameSession`, `surfaceValidAfterResume`, `stateContinuity`, `backgroundGapIntegrated`, and
+      `physicsStepDelta`, which is a count rather than a delta) is not restated: v2 re-derives each
+      claim from the readings and refuses a document that denies them, so `framesPaused` must equal
+      the backgrounded reading's own `framesPaused`, `framesAdvanced` must equal what the readings'
+      frame counts show, and the three step counts must actually bracket the away period.
+      `validatePhysicalDeviceEvidence` dispatches on `schemaVersion`, so the v1 validator, its
+      fixture and `--validate-fixture` and the rollup all still read v1 unchanged and reject a v2
+      document; no collector logic was re-implemented — `evaluateLifecycleObservation` still gates
+      the observation before any document is built, and the v2 validator is an independent reader of
+      the same numbers rather than an import of it (no cycle). The lifecycle claim is now
+      unit-proven end to end, which is why this box stays open: **no emulator, Pixel 8 or physical
+      run happened for this slice.**
       proof: `pnpm exec vitest run --config vitest.config.ts
-      tests/physical-mobile-qualification.test.mjs` from `packages/runtime-native` — **31 passed**:
-      one positive device observation, the absent / reordered / turned-never / pid-changed /
-      unfocused / rotation-never-turned / physics-unavailable / stepping-while-away controls, the
-      monotonicity and summary-contradiction controls added with this pass (each checked to be
-      refused by its own named diagnostic, not merely by some other one), and the evidence
-      rejection for both a four-phase and a three-phase observation.
-      `pnpm exec biome check` on both files reports no error; the script carries 14 warnings — the
-      12 complexity warnings already at HEAD plus `lifecycleContinuityErrors` and
-      `buildProductionEvidence`, which are new with this slice, and the rule is warn-level — and the
-      test file its 1 pre-existing `noDelete`. `pnpm check:docs`, `git diff --check`, `pnpm typecheck`,
-      and `pnpm lint` passed. `pnpm test` passed: runtime-native 1454 passed / 59 skipped, repository
-      vitest 6150 passed / 8 skipped. No collector-produced physical evidence was run or claimed.
+      tests/physical-mobile-qualification.test.mjs` from `packages/runtime-native` — **32 passed**
+      (was 31): the declared-consumer run now reaches `TN_QUALIFY_PHYSICAL_PASS` and the report it
+      writes re-validates as v2; `buildProductionEvidence` returns a v2 document whose operations
+      are exactly the four measured offsets, frame counts and pids, whose `physics.steps` are the
+      three measured reads, and whose unmeasured timings are `null`; a three-operation observation
+      validates with three rows and no fourth invented; and eleven controls corrupt that written
+      document — a surface that never stopped, a summary denying its own frame counts, a
+      backgrounded reading denying its pause, a simulation that stepped while away, `stepsPaused:
+      false`, a non-advance offset, a mid-run pid, a rotation never turned to, a first-frame time
+      copied from the run's start, `clock: "utc"`, and a v1 `sameSession` — each is refused and each
+      is checked against its own named field. Mutation-checked: disabling the `clock`, the
+      unmeasured-timings, the derived-`framesAdvanced`, the step-count and the per-operation pid /
+      rotation / `framesPaused` checks each reds a specific control, so those rows execute.
+      `pnpm exec biome check` on the three files reports no error; warnings are 3 complexity in
+      `physical-device-evidence.mjs` (its v1 lifecycle, its new v2 lifecycle and the v2 body) and
+      the 12 pre-existing complexity plus 2 pre-existing `noDelete` in the collector, and the test
+      file its 1 pre-existing `noDelete` — the rule is warn-level, and `pnpm lint` exits 0.
+      `pnpm typecheck` exits 0. The repository-wide `pnpm test` from the previous pass (runtime-native
+      1454 passed / 59 skipped, repository vitest 6150 passed / 8 skipped) was **not** re-run for this
+      slice: the only test files that import `physical-device-evidence.mjs` or
+      `qualify-physical-mobile.mjs` are `physical-mobile-qualification.test.mjs` and
+      `device-preflight.test.mjs`, and both pass (**57 passed**). No collector-produced physical
+      evidence was run or claimed.
 
 **Carried in from phase 2 (2026-09-15), both with concrete evidence rather than theory:**
 

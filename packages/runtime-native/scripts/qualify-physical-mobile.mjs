@@ -92,7 +92,7 @@ Prerequisite options:
   --prd048-report PATH         shorthand prerequisite report path
 
 Evidence and controls:
-  --validate-fixture PATH      validate one physicalDeviceEvidenceV1 document
+  --validate-fixture PATH      validate one physicalDeviceEvidenceV1 or V2 document
   --rollup PATH                require passing Android and iOS reports below PATH
   --artifact-provenance PATH   supplied artifact provenance sidecar
   --ios-telemetry PATH         signed iOS collector report from the app bridge (including processPid)
@@ -1169,19 +1169,38 @@ function actualArtifactRecord(path, producerCommand, retention = "ignored-raw") 
 }
 
 /**
- * The v1 evidence document's lifecycle block, which this runner cannot fill honestly.
+ * The v2 evidence document's lifecycle block: exactly what the device reported, in the order it
+ * read it.
  *
- * `physicalDeviceEvidenceV1` wants four ordered rows, each with a wall-clock `at`, a `sessionNonce`
- * and a `physicsStepCount` read *during* that phase. A device observation carries phase offsets from
- * the run's own clock, no session nonce, and three step counts bracketing the away period rather
- * than keyed to a phase. Restating a neighbouring read would put a timestamp and a count in the
- * evidence that no read produced, so the collector refuses by name and writes no document.
+ * Each row is one operation the phone observed, timed as an offset from the run's own clock, and
+ * carries that reading's own frame count, focus, pid and — on the rotation — the window state the
+ * turn produced. The three step counts bracket the away period rather than being attributed to a
+ * phase, because none of them was read during one. So the v1 booleans (`sameSession`,
+ * `surfaceValidAfterResume`, `stateContinuity`, `backgroundGapIntegrated`, and `physicsStepDelta`,
+ * which is a count, not a delta) have no measured field behind them and are not restated: the v2
+ * validator re-derives each claim from these numbers and refuses a document that denies them.
  */
-function unrepresentableLifecycle(observation) {
-  throw new QualificationError(
-    `observations.deviceLifecycle reported ${observation.phases.length} device-observed phases (${observation.phases.map(({ phase }) => phase).join(", ")}) with its physics steps keyed as ${Object.keys(observation.physics.steps).join(", ")}, and physicalDeviceEvidenceV1 carries four ordered lifecycle rows that each need a wall-clock time, a session nonce and a step count read during that phase. No evidence document is written until the schema reads what the device actually reported.`,
-    { code: "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE", status: "fail" },
-  );
+function observedLifecycle(observation) {
+  return {
+    clock: "run-relative-ms",
+    operations: observation.phases.map((phase) => ({
+      operation: phase.phase,
+      offsetMs: phase.at,
+      frames: phase.frames,
+      focused: phase.focused,
+      pid: phase.pid,
+      ...(phase.framesPaused === undefined ? {} : { framesPaused: phase.framesPaused }),
+      ...(phase.windowRotation === undefined ? {} : { windowRotation: phase.windowRotation }),
+      ...(phase.requestedRotation === undefined ? {} : { requestedRotation: phase.requestedRotation }),
+    })),
+    framesPaused: observation.render.framesPaused,
+    framesAdvanced: observation.render.framesAdvanced,
+    physics: {
+      steps: { ...observation.physics.steps },
+      stepsPaused: observation.physics.stepsPaused,
+      stepsAdvanced: observation.physics.stepsAdvanced,
+    },
+  };
 }
 
 export function buildProductionEvidence({
@@ -1219,7 +1238,7 @@ export function buildProductionEvidence({
   const { nativeGpu, ...publicDevice } = device;
   const candidateSha = source.headSha;
   const evidence = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     identity: {
       schemaVersion: 1,
       runId: `prd056-${platform}-${timestamps.startedAt}`,
@@ -1256,10 +1275,12 @@ export function buildProductionEvidence({
     execution: {
       installStartedAt: timestamps.installStartedAt,
       launchStartedAt: timestamps.launchStartedAt,
+      // The scenario's own start and end are not a ready time, a first frame or a 300th frame, so
+      // the run reports them as unmeasured rather than copying its own clock into all three.
+      readyAt: null,
+      firstFrameAt: null,
+      frame300At: null,
       pid,
-      readyAt: timestamps.readyAt,
-      firstFrameAt: timestamps.firstFrameAt,
-      frame300At: timestamps.frame300At,
       frames,
       nonBlankCaptureSha256: artifactPaths.find((item) => item.capture === true)?.sha256 ?? "",
       gpuErrorCount: countScenarioErrors(playtest),
@@ -1268,7 +1289,7 @@ export function buildProductionEvidence({
       processLiveness,
       assertionCount: playtest.assertionResults.length,
     },
-    lifecycle: unrepresentableLifecycle(observation),
+    lifecycle: observedLifecycle(observation),
     consumption: productionConsumption(preflightResult, candidateSha),
     telemetry,
     artifacts: artifactPaths.map(({ capture: _capture, ...record }) => record),
@@ -1345,7 +1366,7 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
     telemetry,
     pid,
     processLiveness: lifecycleRun.report.pass === true,
-    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt, readyAt: lifecycleRun.startedAt, firstFrameAt: lifecycleRun.startedAt, frame300At: lifecycleRun.completedAt },
+    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt },
     artifactPaths,
     gateEvidence: readGateEvidence(options.gateEvidence),
   });
@@ -1437,7 +1458,7 @@ function runIosQualification(options, preflightResult, artifact, dependencies = 
     telemetry,
     pid,
     processLiveness: lifecycleRun.report.pass === true,
-    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt: lifecycleRun.startedAt, readyAt: lifecycleRun.startedAt, firstFrameAt: lifecycleRun.startedAt, frame300At: lifecycleRun.completedAt },
+    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt: lifecycleRun.startedAt },
     artifactPaths,
     gateEvidence: readGateEvidence(options.gateEvidence),
   });
