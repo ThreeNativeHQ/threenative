@@ -19,6 +19,7 @@ import {
   hashServedModuleGraph,
   hashWorkloadModuleGraph,
   isBenchmarkWorkloadModule,
+  sha256,
 } from "./identity.js";
 import {
   FRAMES_PER_RUNG,
@@ -68,6 +69,8 @@ export interface IRungReport {
   stepMs?: number[];
   mode: RenderMode;
   objectCount: number;
+  /** SHA-256 of every initial position read from the built scene, before animation or projection. */
+  initialPlacementSha256: string;
   positionHash: string;
   repeat: number;
   triangles: number;
@@ -203,6 +206,7 @@ export async function measureRung(
   if (knobs.warmup >= knobs.frames)
     throw new Error(`TN_BENCH_WARMUP_GE_FRAMES:${knobs.warmup}/${knobs.frames}`);
   harness.setRung(rung);
+  const initialPlacementSha256 = await sha256(harness.placementBytes);
   // L3 bakes across frames. Drive it to "applied" before a single sample is taken, or the rung
   // times the bake and reports it as the steady-state cost.
   if (rung.mode === "L3") {
@@ -308,6 +312,7 @@ export async function measureRung(
     stepMs,
     mode: rung.mode,
     objectCount: rung.objectCount,
+    initialPlacementSha256,
     positionHash: harness.positionHash,
     repeat,
     triangles,

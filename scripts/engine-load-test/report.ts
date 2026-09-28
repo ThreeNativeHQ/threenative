@@ -70,6 +70,8 @@ export interface IRunReportRung {
   measuredFrames?: number;
   mode: RenderMode;
   objectCount: number;
+  /** Optional on legacy/native reports; every initial built placement on new browser reports. */
+  initialPlacementSha256?: string;
   positionHash: string;
   repeat: number;
   stepMs?: number[];
@@ -547,6 +549,16 @@ export function parseRunReport(value: unknown): IRunReport {
         );
       timingSeries[field] = samples as number[];
     }
+    const initialPlacementSha256 = rung.initialPlacementSha256;
+    if (
+      initialPlacementSha256 !== undefined &&
+      (typeof initialPlacementSha256 !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(initialPlacementSha256))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.initialPlacementSha256 must be a lowercase SHA-256 digest`,
+      );
     return {
       ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
@@ -554,6 +566,7 @@ export function parseRunReport(value: unknown): IRunReport {
       ...timingSeries,
       mode: mode as RenderMode,
       objectCount: requireNumber(rung, "objectCount", path),
+      ...(initialPlacementSha256 === undefined ? {} : { initialPlacementSha256 }),
       positionHash: requireString(rung, "positionHash", path),
       repeat: requireNumber(rung, "repeat", path),
       triangles: requireNumber(rung, "triangles", path),
@@ -1514,6 +1527,18 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
       );
     } else if ([...leftHashSet][0] !== [...rightHashSet][0]) {
       push("positionHash", [...leftHashSet][0], [...rightHashSet][0], key);
+    }
+    const leftPlacements = new Set(leftRungs.map((entry) => entry.initialPlacementSha256));
+    const rightPlacements = new Set(rightRungs.map((entry) => entry.initialPlacementSha256));
+    if (leftPlacements.size > 1 || rightPlacements.size > 1) {
+      push(
+        "initialPlacementSha256 (repeats disagree within an arm)",
+        [...leftPlacements],
+        [...rightPlacements],
+        key,
+      );
+    } else if ([...leftPlacements][0] !== [...rightPlacements][0]) {
+      push("initialPlacementSha256", [...leftPlacements][0], [...rightPlacements][0], key);
     }
     if (leftSummary.sampleCount !== rightSummary.sampleCount)
       push("sampleCount", leftSummary.sampleCount, rightSummary.sampleCount, key);

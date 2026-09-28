@@ -12,6 +12,7 @@ import {
 } from "../../examples/engine-load-test/src/workload.js";
 import { runPerformanceRegressionCli } from "../performance-regression/compare.js";
 import {
+  assertBrowserPlacements,
   assertPlainThreePilot,
   driveBenchmarkPage,
   serveDirectory,
@@ -147,7 +148,7 @@ async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> 
       timeoutMs: timeoutFor(options),
       url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
     });
-    return parseRunReport(raw);
+    return assertBrowserPlacements(parseRunReport(raw));
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

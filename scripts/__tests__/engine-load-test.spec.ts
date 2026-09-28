@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -20,6 +21,7 @@ import {
   DEFAULT_AXES,
   type IWorkloadAxes,
   assertRungAxesSupported,
+  canonicalPlacementBytes,
   createLcg,
   createPlacements,
   culledOffsetX,
@@ -344,6 +346,25 @@ describe("engine load test workload", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
     expect(positionHash(createPlacements(1024))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("detects a changed placement after the legacy first-eight window", () => {
+    const original = createPlacements(16);
+    const changed = original.map((placement) => ({ ...placement }));
+    const ninth = changed[9];
+    if (!ninth) throw new Error("expected the tenth placement");
+    ninth.x += 1;
+    expect(positionHash(changed)).toBe(positionHash(original));
+    const digest = (placements: typeof original) =>
+      createHash("sha256")
+        .update(
+          canonicalPlacementBytes(
+            placements.length,
+            (index) => placements[index] as (typeof original)[number],
+          ),
+        )
+        .digest("hex");
+    expect(digest(changed)).not.toBe(digest(original));
   });
 
   it("should reproduce the PRD-117 scene and identity at the default axes", () => {
@@ -2202,6 +2223,17 @@ describe("engine load test equivalence gate", () => {
     expect(() => compare(left, right)).toThrow(/TN_BENCH_NOT_EQUIVALENT.*positionHash/s);
   });
 
+  it("should refuse an initial placement mismatch beyond the legacy hash window", () => {
+    const left = ladderReport(24);
+    const right = ladderReport(24, "godot-web");
+    left.rungs[0] = rung({ ...left.rungs[0], initialPlacementSha256: "a".repeat(64) });
+    right.rungs[0] = rung({ ...right.rungs[0], initialPlacementSha256: "b".repeat(64) });
+    expect(left.rungs[0]?.positionHash).toBe(right.rungs[0]?.positionHash);
+    expect(checkEquivalence(left, right).map((failure) => failure.field)).toContain(
+      "initialPlacementSha256",
+    );
+  });
+
   it("should refuse a nondefault matrix cell against an arm with no axes", () => {
     // `positionHash` covers only the initial placements, so these two hash alike and would publish
     // as equivalent without comparing the axis records.
@@ -2745,6 +2777,11 @@ describe("plain three.js control arm", () => {
     expect(() => parseRunReport(malformed([Number.NaN]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
     expect(() => parseRunReport(malformed(["9"]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
     expect(() => parseRunReport(malformed([8, -1]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() =>
+      parseRunReport(
+        plainReport({ rungs: [{ ...rung(), initialPlacementSha256: "not-a-sha256" }] }),
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
   });
 
   it("refuses a software rasteriser and a scene the collector cannot confirm", () => {
@@ -2761,6 +2798,21 @@ describe("plain three.js control arm", () => {
         parseRunReport(plainReport({ rungs: [rung({ positionHash: "deadbeef" })] })),
       ),
     ).toThrow(/TN_BENCH_SCENE_MISMATCH/u);
+    const objectCount = 4096;
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(
+          plainReport({
+            rungs: [
+              {
+                ...rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) }),
+                initialPlacementSha256: placementDigest(objectCount, 9),
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/TN_BENCH_PLACEMENT_MISMATCH/u);
     expect(() =>
       assertPlainThreePilot(
         parseRunReport(
@@ -2781,9 +2833,33 @@ function plainReport(overrides: Record<string, unknown> = {}): Record<string, un
     display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
     driver: { adapter: "nvidia / turing", renderer: "three/webgpu WebGPURenderer" },
     engine: { name: "three", version: "185" },
-    rungs: [rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) })],
+    rungs: [
+      {
+        ...rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) }),
+        initialPlacementSha256: placementDigest(objectCount),
+      },
+    ],
     ...overrides,
   };
+}
+
+function placementDigest(objectCount: number, mutatedIndex = -1): string {
+  const placements = createPlacements(objectCount);
+  return createHash("sha256")
+    .update(
+      canonicalPlacementBytes(objectCount, (index) => {
+        const placement = placements[index] as (typeof placements)[number];
+        return {
+          x:
+            placement.x +
+            culledOffsetX(index, DEFAULT_AXES.visibleFraction) +
+            (index === mutatedIndex ? 1 : 0),
+          y: placement.y,
+          z: placement.z,
+        };
+      }),
+    )
+    .digest("hex");
 }
 
 // PRD-449 §7.4's primary metric, on the shared driver both web arms run: the wall time for N
@@ -2862,6 +2938,7 @@ describe("the completed-work measurement boundary", () => {
       collapseMs: 0,
       collapseStatus: () => "pending",
       dispose: () => {},
+      placementBytes: new Uint8Array(8),
       positionHash: "00000000",
       render: async () => {
         advance(RENDER_MS);

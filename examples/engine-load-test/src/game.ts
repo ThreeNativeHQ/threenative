@@ -33,6 +33,7 @@ import {
   type RenderMode,
   assertRungAxesSupported,
   cameraPose,
+  canonicalPlacementBytes,
   createPlacements,
   cubeBobY,
   cubeRotationX,
@@ -65,6 +66,8 @@ export interface ILoadTestFrameStats {
 
 export interface ILoadTestHarness {
   adapterLabel: string;
+  /** Initial positions read from the built meshes or instance buffer, before the timed loop. */
+  placementBytes: Uint8Array;
   beginCollapse(): void;
   collapseMovingParts(): number;
   collapseMs: number;
@@ -436,6 +439,23 @@ export async function createLoadTestHarness(
 
   return {
     adapterLabel,
+    get placementBytes() {
+      if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+      const current = state;
+      return canonicalPlacementBytes(current.rung.objectCount, (index) => {
+        if (current.instanced !== undefined) {
+          current.instanced.getMatrixAt(index, instanceMatrix);
+          return {
+            x: instanceMatrix.elements[12] ?? Number.NaN,
+            y: instanceMatrix.elements[13] ?? Number.NaN,
+            z: instanceMatrix.elements[14] ?? Number.NaN,
+          };
+        }
+        const cube = current.cubes[index];
+        if (cube === undefined) throw new Error(`TN_BENCH_PLACEMENT_MISSING:${index}`);
+        return cube.position;
+      });
+    },
     dispose: () => {
       clearRung();
       renderer.dispose();

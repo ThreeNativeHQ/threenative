@@ -1868,7 +1868,7 @@ function serializeModuleGraph(
   return concatenate(chunks);
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
+export async function sha256(bytes: Uint8Array): Promise<string> {
   if (globalThis.crypto?.subtle === undefined)
     throw new Error("TN_BENCH_IDENTITY_HASH_UNAVAILABLE");
   const copy = new Uint8Array(bytes.byteLength);

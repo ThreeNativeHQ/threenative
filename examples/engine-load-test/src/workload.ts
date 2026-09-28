@@ -224,6 +224,36 @@ export function positionHash(placements: readonly ICubePlacement[]): string {
   return hash.toString(16).padStart(8, "0");
 }
 
+/** Full placement input for SHA-256. Version and count are uint32; every object's x/y/z is
+ * float64, all little-endian, in stable object-index order. Negative zero is canonicalized to
+ * zero. This covers all placements, but is not the complete mesh/material/camera fixture hash. */
+export function canonicalPlacementBytes(
+  count: number,
+  placementAt: (index: number) => ICubePlacement,
+): Uint8Array {
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    count > 0xffffffff ||
+    count > (Number.MAX_SAFE_INTEGER - 8) / 24
+  )
+    throw new Error("TN_BENCH_PLACEMENT_COUNT_OVERFLOW");
+  const bytes = new Uint8Array(8 + count * 24);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 1, true);
+  view.setUint32(4, count, true);
+  let offset = 8;
+  for (let index = 0; index < count; index += 1) {
+    const placement = placementAt(index);
+    for (const value of [placement.x, placement.y, placement.z]) {
+      if (!Number.isFinite(value)) throw new Error("TN_BENCH_PLACEMENT_NONFINITE");
+      view.setFloat64(offset, Object.is(value, -0) ? 0 : value, true);
+      offset += 8;
+    }
+  }
+  return bytes;
+}
+
 // A pure function of the frame index — never of elapsed time. A slow arm and a fast arm must
 // frame byte-identical scenes at frame 317 or the slower one is simply measured on a different
 // scene (PRD-117 §3.3).
