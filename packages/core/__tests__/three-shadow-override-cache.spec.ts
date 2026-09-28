@@ -139,7 +139,7 @@ interface IRendererProbe {
   readonly backend: { isWebGPUBackend: true };
   readonly contextNode: { id: number; version: number };
   readonly currentSamples: number;
-  readonly getRenderTarget: () => null;
+  readonly getRenderTarget: () => { samples: number } | null;
 }
 
 function renderObjectsProbe(): {
@@ -147,13 +147,16 @@ function renderObjectsProbe(): {
   makeSource: (alphaTest: number) => MeshStandardNodeMaterial;
   makeObject: (source: NodeMaterial) => Mesh;
   override: InternalNodeMaterial;
+  /** Mimic the engine's `compileAsync()` swap: a non-null framebuffer target while it compiles. */
+  setRenderTargetSamples: (samples: number) => void;
 } {
+  let renderTarget: { samples: number } | null = null;
   const renderer: IRendererProbe = {
     _currentSourceMaterial: null,
     backend: { isWebGPUBackend: true },
     contextNode: { id: 1, version: 0 },
     currentSamples: 0,
-    getRenderTarget: () => null,
+    getRenderTarget: () => renderTarget,
   };
   const nodes = {
     delete: vi.fn(),
@@ -190,6 +193,9 @@ function renderObjectsProbe(): {
     },
     makeObject: (source) => new Mesh(new BoxGeometry(1, 1, 1), source),
     override,
+    setRenderTargetSamples: (samples) => {
+      renderTarget = samples === 0 ? null : { samples };
+    },
   };
 }
 
@@ -346,6 +352,22 @@ describe("three RenderObjects source invalidation", () => {
     expect(refreshedFirst).not.toBe(firstRenderObject);
     expect(unchangedSecond).toBe(secondRenderObject);
     expect(secondGetCacheKey).not.toHaveBeenCalled();
+  });
+
+  it("keeps a render object's key stable while a compile swaps the render target", () => {
+    const probe = renderObjectsProbe();
+    const source = probe.makeSource(0.5);
+    const object = probe.makeObject(source);
+    const renderObject = probe.get(object, source);
+
+    // `compileAsync()` replaces `renderer.getRenderTarget()` with the framebuffer target for the
+    // length of its slice, and a live frame then reads `currentSamples`. A dynamic key that reads
+    // `getRenderTarget()` disagrees between the two, so `RenderObjects.get` disposes this object
+    // and its pipeline is recompiled — the arm64 CI stall that took the playtest screenshot down.
+    probe.setRenderTargetSamples(4);
+    expect(probe.get(object, source)).toBe(renderObject);
+    probe.setRenderTargetSamples(0);
+    expect(probe.get(object, source)).toBe(renderObject);
   });
 
   it("keeps every shipped Three.js patch copy byte-identical", () => {
