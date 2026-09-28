@@ -37,7 +37,7 @@ import type { IRendererLike } from "./renderer.js";
  * so the reference is what is proved against the CPU path; the kernel is compiled in the browser.
  */
 
-/** Words one placement record holds: `mat4` + `centre` (xyz, radius) + `meta` (asset slot, …). */
+/** Words one placement record holds: `mat4` + `centre` (xyz, radius) + `info` (asset slot, …; not `meta`, a reserved WGSL keyword). */
 const PLACEMENT_WORDS = 24;
 /** `DrawIndexedIndirect`: indexCount, instanceCount, firstIndex, baseVertex, firstInstance. */
 const DRAW_ARGS_WORDS = 5;
@@ -55,7 +55,7 @@ const SLOT_NONE = -1;
  * gates pick its level. One stride, so the CPU's `Float32Array` is the GPU's storage buffer with no
  * repacking and no type punning: the radius and the slot are small and exactly representable.
  */
-const PlacementStruct = struct({ matrix: "mat4", centre: "vec4", meta: "vec4" }, "GpuPlacement");
+const PlacementStruct = struct({ matrix: "mat4", centre: "vec4", info: "vec4" }, "GpuPlacement");
 
 /** One resident placement as the source buffer holds it. */
 export interface IGpuPlacement {
@@ -737,7 +737,7 @@ export class WorldGpuScene {
       const placement = source.element(instanceIndex);
       const centre = placement.get("centre");
       const matrix = placement.get("matrix");
-      const slot = placement.get("meta").x;
+      const slot = placement.get("info").x;
       If(slot.lessThan(0.0), () => Return());
       If(slot.greaterThanEqual(counts.y), () => Return());
       const radius = centre.w;
