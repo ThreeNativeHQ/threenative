@@ -14,6 +14,7 @@ import {
 } from "../engine-load-test/monitor.js";
 
 import type { ICampaignRunRecord } from "../engine-load-test/campaign-report.js";
+import type { IRunReport } from "../engine-load-test/report.js";
 
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
@@ -376,4 +377,73 @@ describe("performance iteration evidence", () => {
     expect(result.iterations).toEqual([]);
     expect(result.iterationErrors[0]).toContain("Missing id");
   });
+});
+
+it("plots production hardware pilot samples without claiming iteration improvement", () => {
+  const pilot: IRunReport = {
+    arm: "tn-web",
+    build: { type: "release", notes: "vite production build" },
+    device: { battery: null, label: "desktop" },
+    display: { height: 1080, width: 1920, refreshHz: 60, vsync: false },
+    driver: { adapter: "nvidia / turing", renderer: "three/webgpu WebGPURenderer" },
+    engine: { name: "threenative", version: "0.9.0" },
+    rungs: [
+      {
+        mode: "L1",
+        objectCount: 1024,
+        repeat: 1,
+        frameMs: [2, 4, 3, 5],
+        drawCalls: 1,
+        triangles: 12288,
+        visibleObjects: 1024,
+        positionHash: "fixture",
+      },
+    ],
+  };
+  const attempt = {
+    kind: "attempt" as const,
+    status: "recorded",
+    time: "2026-09-27T10:00:00Z",
+    timeSource: "filesystem" as const,
+    source: "pilots/hardware.json",
+    pilot,
+  };
+  const html = renderProgressHtml(data({ pilots: [attempt] }));
+  expect(html).toContain("Latest hardware pilot frame trace");
+  expect(html).toContain("4 samples · p50 3.000 ms · p95 5.000 ms");
+  const points = html
+    .match(/<polyline points="([^"]+)"/)?.[1]
+    ?.split(" ")
+    .map((point) => point.split(",").map(Number));
+  expect(points).toHaveLength(4);
+  expect(points?.map((point) => point[0])).toEqual([
+    55, 251.66666666666666, 448.3333333333333, 645,
+  ]);
+  expect(points?.[0]?.[1]).toBeCloseTo(127.2727);
+  expect(points?.[3]?.[1]).toBeCloseTo(48.1818);
+  expect(html).toContain('href="pilots/hardware.json"');
+  expect(html).toContain("not completed-work or iteration improvement");
+  expect(html).toContain("No qualified iterations yet");
+  expect(html).toContain("No qualified run");
+  expect(
+    renderProgressHtml(
+      data({
+        pilots: [
+          { ...attempt, pilot: { ...pilot, build: { ...pilot.build, notes: "vite dev build" } } },
+        ],
+      }),
+    ),
+  ).not.toContain("Latest hardware pilot frame trace");
+  expect(
+    renderProgressHtml(
+      data({
+        pilots: [
+          {
+            ...attempt,
+            pilot: { ...pilot, driver: { ...pilot.driver, adapter: "google / swiftshader" } },
+          },
+        ],
+      }),
+    ),
+  ).not.toContain("Latest hardware pilot frame trace");
 });

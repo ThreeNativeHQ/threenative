@@ -391,6 +391,37 @@ function comparisonKey(run: ICampaignRunRecord): string {
   ]);
 }
 
+function renderPilotTrace(data: IMonitorData): string {
+  const latest = (data.pilots ?? [])
+    .filter(
+      (attempt) =>
+        attempt.pilot &&
+        /nvidia/i.test(attempt.pilot.driver.adapter) &&
+        /vite production build/i.test(attempt.pilot.build.notes) &&
+        !/swiftshader|llvmpipe|software/i.test(
+          `${attempt.pilot.driver.adapter} ${attempt.pilot.driver.renderer}`,
+        ),
+    )
+    .at(-1);
+  if (!latest?.pilot) return "";
+  const pilot = latest.pilot;
+  const traces = pilot.rungs
+    .map((rung) => {
+      const samples = rung.frameMs;
+      const maximum = samples.reduce((peak, value) => Math.max(peak, value), 0.001) * 1.1;
+      const points = samples
+        .map(
+          (value, index) =>
+            `${55 + (index * 590) / Math.max(1, samples.length - 1)},${180 - (value / maximum) * 145}`,
+        )
+        .join(" ");
+      const summary = summarize({ ...pilot, rungs: [rung] })[0];
+      return `<div class="trend"><h3>${escapeHtml(rung.mode)} · ${rung.objectCount} objects · repeat ${rung.repeat}</h3><p class="small">${samples.length} samples · p50 ${summary?.p50.toFixed(3)} ms · p95 ${summary?.p95.toFixed(3)} ms</p><svg viewBox="0 0 700 235" role="img" aria-label="Exploratory frame submit time in milliseconds by sample index"><text x="0" y="17">Submit time, ms</text><text x="0" y="42">${maximum.toFixed(1)}</text><text x="25" y="184">0</text><path d="M50 30V180H660" fill="none" stroke="#465040"/><polyline points="${points}"/><text x="55" y="205">1</text><text x="645" y="205" text-anchor="end">${samples.length}</text><text x="350" y="232" text-anchor="middle">Sample index · one pilot, one repeat</text></svg></div>`;
+    })
+    .join("");
+  return `<section class="panel" aria-label="Latest hardware pilot frame trace"><div class="section-head"><h2>Latest hardware pilot frame trace</h2><span class="badge">Exploratory</span></div><p class="note">Frame submit time, ms; exploratory; not completed-work or iteration improvement.</p><p class="small">${escapeHtml(pilot.driver.adapter)} · ${escapeHtml(pilot.build.notes)}</p>${traces}<p class="chart-note">Raw JSON: ${attemptLink(data, latest)} · Selected by retained file time, not iteration order.</p></section>`;
+}
+
 export function renderProgressHtml(data: IMonitorData): string {
   const e = escapeHtml;
   const iterations = data.iterations ?? [];
@@ -521,6 +552,7 @@ export function renderProgressHtml(data: IMonitorData): string {
 <section class="kpis" aria-label="Performance metrics"><div class="kpi"><span class="label">Latest qualified candidate</span><strong class="value ${latestQualified ? "" : "missing"}">${candidateValue}</strong><span class="small">ms/frame · ${metricNote}</span></div><div class="kpi"><span class="label">Δ original baseline</span><strong class="value ${latestQualified ? "" : "missing"}">${baselineDelta}</strong><span class="small">${latestQualified ? "Negative = faster · same experiment" : "No qualified run"}</span></div><div class="kpi"><span class="label">Δ incumbent</span><strong class="value ${latestQualified ? "" : "missing"}">${incumbentDelta}</strong><span class="small">${latestQualified ? "Negative = faster · same experiment" : "No qualified run"}</span></div><div class="kpi"><span class="label">Qualified iterations</span><strong class="value">${qualified.filter((item) => item.comparable).length}</strong><span class="small">Comparable baseline + incumbent + candidate</span></div></section>
 <p class="coverage">Retained attempts: ${data.attempts.filter((attempt) => attempt.kind === "attempt").length + (data.pilots?.length ?? 0)} · Verified v2 runs: ${valid.length} · Invalid / other campaign records: ${data.attempts.length - valid.length} · Unqualified pilots: ${data.pilots?.length ?? 0}</p>
 <section class="panel"><div class="section-head"><h2>Performance trend</h2><span class="badge">Lower is better</span></div>${charts || `<div class="empty-chart"><h3>No qualified iterations yet</h3><p>Baseline, incumbent and candidate runs must be explicitly linked to an iteration and share an experiment, machine, backend and timing scope.</p></div>`}<p class="chart-note">Completed-work mean in ms/frame. Lines connect recorded iteration observations only. A lower point is an observed change, not statistical proof. Software rendering is excluded. PRD activity is not performance improvement.</p></section>
+${renderPilotTrace(data)}
 ${pilotRows ? `<section class="panel"><div class="section-head"><h2>Unqualified pilots</h2><span class="badge">Exploration only</span></div><p class="note">Real observations with no qualified iteration linkage. Different devices, builds and workloads are not comparable; these are not evidence of improvement.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Pilot observations; scroll horizontally for all columns"><table class="pilot-table"><thead><tr><th>Run / build</th><th>GPU / renderer</th><th>Workload</th><th>Frame p95</th></tr></thead><tbody>${pilotRows}</tbody></table></div></section>` : ""}
 <section class="panel"><div class="section-head"><h2>Iteration decisions</h2><span class="badge">${iterations.length} recorded</span></div>${iterationRows ? `<div class="table-wrap"><table><thead><tr><th>Decision</th><th>Experiment</th><th>Candidate</th><th>Δ baseline / incumbent</th><th>Raw run evidence</th></tr></thead><tbody>${iterationRows}</tbody></table></div>` : `<p class="note">No decisions recorded. Keep, reject and invalid outcomes appear here when an iteration links its three run IDs.</p>`}${(data.iterationErrors ?? []).map((error) => `<p class="error">${e(error)}</p>`).join("")}</section>
 <div class="grid"><section class="panel"><h2>Current experiment</h2><div class="state"><div class="label">Bottleneck</div><p>${e(latest?.bottleneck ?? "Not measured yet")}</p></div><div class="state"><div class="label">Next hypothesis</div><p>${e(latest?.nextHypothesis ?? "Awaiting a qualified baseline and an explicit iteration record.")}</p></div><p class="note">${latest ? `From recorded iteration ${e(latest.id)}; statements are recorded hypotheses, not inferred diagnoses.` : "No timing or improvement claim has been invented."}</p></section><section class="panel"><h2>Implementation activity</h2><p class="note" style="margin:8px 0 22px">Chronological commits · activity only</p><ol class="timeline">${commits || `<li>${e(PENDING)}</li>`}</ol>${data.git.baseError ? `<p class="error">${e(data.git.baseError)}</p>` : ""}</section></div>
