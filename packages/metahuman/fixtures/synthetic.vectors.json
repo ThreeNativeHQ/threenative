@@ -1,0 +1,17 @@
+{
+  "comment": "Reference input vectors for fixtures/synthetic.dna. 3 GUI controls (jawOpen, browRaise, smile) and 3 raw controls (raw_jawOpen, raw_browRaise, raw_smile); 2 LODs. Consumed by tn_rl_reference, which writes synthetic.reference.json. Controls in the rig's legal [0, 1] range only. GUI cases prove the rig's own GUI->raw mapping ran, so an adapter that skipped it cannot match these numbers.",
+  "cases": [
+    { "name": "neutral_raw_lod0", "lod": 0, "mode": "raw", "values": [0, 0, 0] },
+    { "name": "neutral_gui_lod0", "lod": 0, "mode": "gui", "values": [0, 0, 0] },
+    { "name": "raw_jawOpen_only", "lod": 0, "mode": "raw", "values": [1, 0, 0] },
+    { "name": "raw_browRaise_only", "lod": 0, "mode": "raw", "values": [0, 1, 0] },
+    { "name": "raw_smile_only", "lod": 0, "mode": "raw", "values": [0, 0, 1] },
+    { "name": "gui_jawOpen_only", "lod": 0, "mode": "gui", "values": [1, 0, 0] },
+    { "name": "gui_browRaise_only", "lod": 0, "mode": "gui", "values": [0, 1, 0] },
+    { "name": "gui_smile_only", "lod": 0, "mode": "gui", "values": [0, 0, 1] },
+    { "name": "mixed_raw_lod0", "lod": 0, "mode": "raw", "values": [0.6, 0.25, 0.8] },
+    { "name": "mixed_gui_lod0", "lod": 0, "mode": "gui", "values": [0.6, 0.25, 0.8] },
+    { "name": "mixed_raw_lod1", "lod": 1, "mode": "raw", "values": [0.5, 0.5, 0.5] },
+    { "name": "mixed_gui_lod1", "lod": 1, "mode": "gui", "values": [0.4, 0.7, 0.2] }
+  ]
+}
