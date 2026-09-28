@@ -22,6 +22,8 @@ import {
   WorldGpuScene,
   cullAndSelect,
   gpuSceneUnsupported,
+  storageElementBytes,
+  validationReport,
 } from "../src/world-gpu-scene.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
 
@@ -1012,5 +1014,245 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
     await flushed(fromFirstFrame);
     expect(on.gpuScene.instances).toBe(fromFirstFrame.stats().gpuScene.instances);
     fromFirstFrame.dispose();
+  });
+});
+
+/**
+ * The cull kernel's bindings, against the sizes WebGPU holds them to.
+ *
+ * A real WebGPU run of `?scene=map-walk&tnGpuScene=1&tnGpuSceneValidate=1` raised a validation error
+ * 956 times a run — `[Buffer (unlabeled)] bound with size 16 at group 0, binding 6 is too small` —
+ * and `TN_WORLD_GPU_SCENE_VALIDATE ok keys=0` printed throughout, because the refused dispatch left
+ * the args buffer holding what the clear pass wrote. The kernel never ran and the check agreed. So:
+ * every buffer holds at least one element of the type the kernel declares it as, and a check that
+ * compared nothing while placements existed is an error rather than a pass.
+ */
+describe("WorldGpuScene storage bindings and its validation verdict", () => {
+  /**
+   * Drive `count` frames of the dispatch and let the readbacks land, so a validation that runs every
+   * thirtieth dispatch has actually run by the time this returns.
+   */
+  async function drive(
+    scene: WorldGpuScene,
+    renderer: IRendererLike,
+    count: number,
+  ): Promise<void> {
+    const { camera } = cameraAt(0, 0);
+    for (let index = 0; index < count; index += 1) {
+      scene.dispatch(renderer, camera);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /** Asserts every buffer the scene owns can be bound as the type the kernel declares it as. */
+  function expectBindable(scene: WorldGpuScene, where: string): void {
+    const footprint = scene.footprint();
+    // Every buffer the class allocates, so a new one cannot join without being checked.
+    expect(Object.keys(footprint).sort()).toEqual([
+      "args",
+      "drawn",
+      "gates",
+      "keys",
+      "levels",
+      "locals",
+      "source",
+    ]);
+    for (const [name, buffer] of Object.entries(footprint)) {
+      const floor = storageElementBytes(buffer.type);
+      expect(buffer.bytes, `${where}: ${name} is under one ${buffer.type}`).toBeGreaterThanOrEqual(
+        floor,
+      );
+      // And the item size the kernel indexes by is the declared element size, not a word count that
+      // happens to divide: `drawn` at four words per `mat4` is 16 bytes against a 64-byte minimum.
+      expect(buffer.count * floor, `${where}: ${name} element count`).toBe(buffer.bytes);
+    }
+  }
+
+  it("holds every storage binding to at least one element of its declared type", () => {
+    const scene = new WorldGpuScene();
+    scene.enable({ kind: "webgpu", raw: { backend: { hasFeature: () => true } } } as never, true);
+    // Nothing is bound before a slot or a key exists, so there is nothing that can be too small.
+    expect(scene.footprint()).toEqual({});
+
+    // Empty: a slot and no key and no placement. The smallest set of bindings there is, and the
+    // state the real run failed in — the one-element `drawn` buffer was 16 bytes against the 64 a
+    // `mat4` needs.
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 0 }] });
+    expectBindable(scene, "empty");
+
+    // One key and one placement — the first structural change a real ring makes.
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+    expectBindable(scene, "one-key");
+
+    // A regrow: the key outgrows its region and is re-minted at the tail, which replaces `keys`,
+    // `locals`, `args` and `drawn` in one go.
+    scene.key("pine:0:0", LOCAL, 4096);
+    expectBindable(scene, "regrown");
+    expect(scene.footprint().drawn?.count).toBeGreaterThan(1);
+  });
+
+  it("keeps the gate table whole when it is written", () => {
+    // Two assets, three levels each: the table is sized before it is written, so the second asset's
+    // first `vec4` is a value and not a hole the `Float32Array` swallowed.
+    const scene = wired(
+      [
+        { cull: 120, levels: DISTANCES, name: "pine" },
+        { cull: 40, levels: DISTANCES, name: "rock" },
+      ],
+      1,
+      4,
+    );
+    const gates = scene.footprint().gates;
+    expect(gates?.count).toBeGreaterThanOrEqual(2);
+    // `wired` adopts both assets, and the second one's gate is only there if the table was sized
+    // first; a table written at one `vec4` and grown afterwards leaves the tail zero.
+    expect(scene.gates()).toHaveLength(2);
+    const levels = scene.footprint().levels;
+    expect((levels?.count ?? 0) * 4).toBeGreaterThanOrEqual(6);
+  });
+
+  it("keeps every regrown binding as wide as the kernel declares it", () => {
+    // 40 keys, then one regrown past all of them: a regrow must re-allocate through the same
+    // declared type, and a stride written at the call site is how `drawn` lost 48 bytes.
+    const scene = wired([{ name: "pine", levels: DISTANCES }], 1, 8);
+    scene.key("pine:2:0", LOCAL, 64);
+    expectBindable(scene, "grown");
+    const drawn = scene.footprint().drawn;
+    expect(drawn?.type).toBe("mat4");
+    expect(drawn?.bytes).toBe((drawn?.count ?? 0) * 64);
+  });
+
+  it("names what a device error and an empty comparison do to the verdict", () => {
+    const base = {
+      compared: 6,
+      deviceError: "",
+      instancesCpu: 120,
+      instancesGpu: 120,
+      mismatched: 0,
+      mismatches: [] as readonly string[],
+      placed: 400,
+    };
+    const agreed = validationReport(base);
+    expect(agreed.verdict).toBe("ok");
+    expect(agreed.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=6 instancesGpu=120 instancesCpu=120 mismatched=0",
+    );
+    expect(agreed.lines).toEqual([]);
+
+    // The run that shipped: a kernel the device refused, and a check that reported success anyway.
+    const nothing = validationReport({
+      ...base,
+      compared: 0,
+      instancesCpu: 0,
+      instancesGpu: 0,
+      placed: 0,
+    });
+    expect(nothing.verdict).toBe("ok");
+    expect(nothing.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+    );
+
+    // Compared nothing with placements resident: nothing was checked, so it is not a pass.
+    const blind = validationReport({
+      ...base,
+      compared: 0,
+      instancesCpu: 0,
+      instancesGpu: 0,
+      placed: 812,
+    });
+    expect(blind.verdict).toBe("error");
+    expect(blind.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+    );
+    expect(blind.lines).toEqual(["reason=compared-0-with-placed=812"]);
+
+    // A refused dispatch, however good the counts look.
+    const refused = validationReport({
+      ...base,
+      deviceError: "GPUValidationError: bound with size 16 is too small",
+    });
+    expect(refused.verdict).toBe("error");
+    expect(refused.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0",
+    );
+    expect(refused.lines).toEqual([
+      "device-error GPUValidationError: bound with size 16 is too small",
+    ]);
+
+    const differing = validationReport({
+      ...base,
+      instancesGpu: 96,
+      mismatched: 2,
+      mismatches: ["pine:0:0 gpu=40 cpu=48", "pine:1:0 gpu=56 cpu=48"],
+    });
+    expect(differing.verdict).toBe("mismatch");
+    expect(differing.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=6 instancesGpu=96 instancesCpu=120 mismatched=2",
+    );
+    expect(differing.lines).toEqual(["pine:0:0 gpu=40 cpu=48", "pine:1:0 gpu=56 cpu=48"]);
+  });
+
+  it("reports the device's own uncaptured error instead of the counts", async () => {
+    // The device three's backend wrapped, raising exactly the error the real run raised.
+    let raise: ((event: unknown) => void) | null = null;
+    const device: { onuncapturederror?: ((event: unknown) => void) | null } = {};
+    const lines: string[] = [];
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      // three chains its own handler onto the device, printing the message; ours must add to it, not
+      // replace it, or the console line the evidence came from would go quiet.
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: {
+        backend: {
+          device,
+          hasFeature: (): boolean => true,
+        },
+      },
+      readback: async (attribute: unknown): Promise<ArrayBuffer> =>
+        (attribute as { array: Uint32Array }).array.buffer.slice(0) as ArrayBuffer,
+    } as unknown as IRendererLike;
+    device.onuncapturederror = (): void => {
+      raise = device.onuncapturederror ?? null;
+    };
+    const scene = new WorldGpuScene();
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    raise = device.onuncapturederror ?? null;
+    expect(typeof raise).toBe("function");
+
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    // One dispatched frame, then the readback lands with the GPU half of the counts still zero —
+    // and a device error in between, which is the whole point.
+    (raise as unknown as (event: unknown) => void)({
+      error: {
+        constructor: { name: "GPUValidationError" },
+        message:
+          "[Buffer (unlabeled)] bound with size 16 at group 0, binding 6 is too small. The pipeline requires a buffer binding which is at least 64 bytes.",
+      },
+    });
+    await drive(scene, renderer, 30);
+    const reported = lines.filter((line) => line.startsWith("TN_WORLD_GPU_SCENE_VALIDATE"));
+    expect(reported.length).toBeGreaterThan(0);
+    expect(reported.some((line) => line.includes(" error "))).toBe(true);
+    expect(
+      reported.some((line) => line.includes("GPUValidationError") && line.includes("binding 6")),
+    ).toBe(true);
+    expect(scene.validation.verdict).toBe("error");
+    expect(scene.validation.compared).toBe(1);
+
+    // Reported once: the next check with no new error is a check of its own, and a cleared message
+    // does not come back to claim a second one.
+    lines.length = 0;
+    await drive(scene, renderer, 30);
+    expect(lines.some((line) => line.includes("device-error"))).toBe(false);
+    expect(scene.validation.verdict).not.toBe("error");
   });
 });

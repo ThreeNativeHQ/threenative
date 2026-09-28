@@ -1,4 +1,4 @@
-import { type Camera, Frustum, Matrix4, Vector3, Vector4 } from "three";
+import { type BufferAttribute, type Camera, Frustum, Matrix4, Vector3, Vector4 } from "three";
 import {
   Fn,
   If,
@@ -48,6 +48,57 @@ const VEC4_WORDS = 4;
 const LOCAL_WORDS = 16;
 /** Slots a placement may name before the kernel is refused rather than read out of bounds. */
 const SLOT_NONE = -1;
+
+/**
+ * One element of every WGSL type this module declares a storage buffer as, in array words.
+ *
+ * A storage binding's minimum size is one element of its declared type: a `mat4` buffer is 64 bytes
+ * whether it holds one matrix or a thousand, and a bound buffer under that is not a wrong picture but
+ * a refused pipeline — every dispatch on it is invalid, silently, and only the device complains. So
+ * the element count and the element size are not two independent numbers here: they are written down
+ * together, once, and every buffer is allocated from this table and nowhere else.
+ */
+const STORAGE_WORDS = {
+  /** `mat4` + `centre` (vec4) + `info` (vec4), so one placement is 96 bytes and one stride. */
+  // biome-ignore lint/style/useNamingConvention: the key is the WGSL type, spelled as the kernel declares it.
+  GpuPlacement: PLACEMENT_WORDS,
+  /** `mat4`, one per key: the part's own offset inside the model, the same one the CPU composes. */
+  mat4: LOCAL_WORDS,
+  /** `DrawIndexedIndirect`'s five words; `uint` is one word, so the element count is the word count. */
+  uint: 1,
+  /** One `vec4` per key, per asset slot and per level gate. */
+  vec4: VEC4_WORDS,
+} as const;
+
+/** A WGSL type the cull kernel declares a storage buffer as, and {@link STORAGE_WORDS}'s key. */
+export type StorageType = keyof typeof STORAGE_WORDS;
+
+/** Bytes one element of `type` occupies, which is what a storage binding of it must be at least. */
+export function storageElementBytes(type: StorageType): number {
+  return STORAGE_WORDS[type] * 4;
+}
+
+/**
+ * One storage attribute holding `count` elements — at least one, because a zero-element binding is
+ * a zero-byte buffer and zero bytes is under every declared type — of the WGSL `type` the kernel
+ * binds it as.
+ *
+ * The class and the array class are parameters because three's three storage attributes differ only
+ * in what the renderer does with them, and this module needs all three: a plain one, the instanced
+ * buffer a dressed batch's `instanceMatrix` is, and the indirect records `BufferGeometry.setIndirect`
+ * reads. Handing the item size in by hand is how `drawn` was allocated four words wide and bound as
+ * a `mat4`: a one-element, 16-byte buffer against a 64-byte requirement, so the cull kernel never
+ * ran on a real GPU at all. The size is not a free choice here, so it is not written at a call site.
+ */
+function storageAttribute<A extends BufferAttribute>(
+  ctor: new (count: Float32Array | Uint32Array, itemSize: number) => A,
+  type: StorageType,
+  count: number,
+  array: Float32ArrayConstructor | Uint32ArrayConstructor = Float32Array,
+): A {
+  const words = STORAGE_WORDS[type];
+  return new ctor(new array(Math.max(1, count) * words), words);
+}
 /** Dispatches between readbacks: a mapped buffer is a queue submission, so not every frame. */
 const VALIDATE_EVERY = 30;
 /** Keys a mismatch line names before the rest are counted and not printed. */
@@ -234,6 +285,68 @@ function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
     }
 }
 
+/** What one landed readback concluded, in the three words a log line can carry. */
+export type GpuSceneVerdict = "ok" | "mismatch" | "error";
+
+/** One landed readback's verdict, its one line, and the detail lines under it. */
+export interface IGpuSceneValidation {
+  readonly verdict: GpuSceneVerdict;
+  readonly line: string;
+  readonly lines: readonly string[];
+}
+
+/** What a landed readback is judged on, gathered from the scene before it is formatted. */
+export interface IGpuSceneComparison {
+  /** Keys whose GPU instance count was read back and held against the reference. */
+  readonly compared: number;
+  readonly instancesGpu: number;
+  readonly instancesCpu: number;
+  /** Up to {@link VALIDATE_REPORTED_KEYS} `name gpu=… cpu=…` lines; the count is the whole total. */
+  readonly mismatches: readonly string[];
+  readonly mismatched: number;
+  /** Resident placements the scene held when the readback was issued. */
+  readonly placed: number;
+  /** The device's last uncaptured error, or `""` for none since the last check reported one. */
+  readonly deviceError: string;
+}
+
+/**
+ * The verdict and the lines one landed readback reports, as `TN_WORLD_GPU_SCENE_VALIDATE`.
+ *
+ * `ok` is a claim that the GPU drew what the reference draws, so it takes two things: every key's
+ * count landing equal, and something to land. A dispatch the device refused leaves the args buffer
+ * holding what the clear pass wrote, which compares equal to a scene with nothing in it — a real
+ * WebGPU run printed `ok keys=0` 956 times while the cull pipeline was being refused for a binding
+ * 48 bytes short, which is a check that reports success precisely when the kernel does nothing. So
+ * comparing nothing while placements exist is an `error`, and a device that raised anything
+ * uncaptured is an `error` whatever the counts say, because every count in a buffer the device has
+ * already invalidated is not evidence of anything.
+ */
+export function validationReport(input: IGpuSceneComparison): IGpuSceneValidation {
+  const verdict: GpuSceneVerdict =
+    input.deviceError !== "" || (input.compared === 0 && input.placed > 0)
+      ? "error"
+      : input.mismatched > 0
+        ? "mismatch"
+        : "ok";
+  const line =
+    `TN_WORLD_GPU_SCENE_VALIDATE ${verdict} compared=${String(input.compared)} ` +
+    `instancesGpu=${String(input.instancesGpu)} instancesCpu=${String(input.instancesCpu)} ` +
+    `mismatched=${String(input.mismatched)}`;
+  const lines: string[] = [...input.mismatches];
+  if (verdict === "error" && input.deviceError === "")
+    lines.push(`reason=compared-0-with-placed=${String(input.placed)}`);
+  if (input.deviceError !== "") lines.push(`device-error ${input.deviceError}`);
+  return { verdict, line, lines };
+}
+
+/** The message an uncaptured WebGPU error event carries, flattened to one line. */
+function uncapturedMessage(event: unknown): string {
+  const error = (event as { error?: { message?: string; constructor?: { name?: string } } }).error;
+  const kind = error?.constructor?.name ?? "GPUError";
+  return `${kind}: ${(error?.message ?? "no message").replace(/\s+/gu, " ").trim()}`;
+}
+
 /** What `TN_WORLD_GPU_SCENE` reports, and what `stats().gpuScene` carries. */
 export interface IWorldGpuSceneReport {
   readonly dispatches: number;
@@ -253,6 +366,38 @@ interface IGpuSceneBuffers {
   readonly source: StorageBufferAttribute;
 }
 
+/** One of the scene's own storage buffers, by the name it is allocated and grown under. */
+type BufferName = keyof IGpuSceneBuffers;
+
+/**
+ * The declared WGSL type of every buffer that is a plain `StorageBufferAttribute` in
+ * {@link IGpuSceneBuffers}. `args` and `drawn` are absent because each needs a three class of its own,
+ * so `#growOf` names those two literally; the other five share one.
+ */
+const STORAGE_PLAIN: Record<Exclude<BufferName, "args" | "drawn">, StorageType> = {
+  gates: "vec4",
+  keys: "vec4",
+  levels: "vec4",
+  locals: "mat4",
+  source: "GpuPlacement",
+};
+
+/** Resident placements the source buffer is sized to hold before the first reallocation. */
+const SOURCE_FLOOR = 16;
+
+/** One storage buffer as the check reads it: the type the kernel declares and what was allocated. */
+export interface IGpuSceneBufferFootprint {
+  readonly type: StorageType;
+  readonly count: number;
+  /** `array.byteLength` — the size WebGPU compares against one element of `type`. */
+  readonly bytes: number;
+}
+
+/** The slice of a `GPUDevice` the validation seam reads, so a test can stand in a fake. */
+interface IDeviceLike {
+  onuncapturederror?: ((event: unknown) => void) | null;
+}
+
 /**
  * Why the GPU scene is not on, when it is not.
  *
@@ -262,7 +407,9 @@ interface IGpuSceneBuffers {
  */
 export function gpuSceneUnsupported(renderer: IRendererLike): string {
   if (renderer.kind !== "webgpu") return `backend=${renderer.kind}`;
-  const raw = renderer.raw as { backend?: { hasFeature?: (name: string) => boolean } };
+  const raw = renderer.raw as {
+    backend?: { device?: IDeviceLike; hasFeature?: (name: string) => boolean };
+  };
   const backend = raw?.backend;
   if (backend === undefined || typeof backend.hasFeature !== "function")
     return "backend=webgpu-without-hasFeature";
@@ -425,8 +572,30 @@ export class WorldGpuScene {
     }
     this.#on = true;
     this.#reason = "on";
+    this.#watchDevice(renderer);
     this.#report(renderer);
     return true;
+  }
+
+  /**
+   * Hold the device's uncaptured errors, so a check can read them instead of the console.
+   *
+   * Three already chains its own `onuncapturederror` onto the same device and prints the message,
+   * which is the whole reason a refused pipeline reads as a healthy run: the evidence was on screen
+   * as a console line nothing compared against the counts. This wraps that handler rather than
+   * replacing it, so three's own reporting still fires, and the last message is folded into the next
+   * `TN_WORLD_GPU_SCENE_VALIDATE` line. Nothing is cleared except by a check that has reported it,
+   * so an error that arrives between two checks still lands on the one after.
+   */
+  #watchDevice(renderer: IRendererLike): void {
+    const device = (renderer.raw as { backend?: { device?: IDeviceLike } })?.backend?.device;
+    if (device === undefined || this.#watched) return;
+    this.#watched = true;
+    const previous = device.onuncapturederror;
+    device.onuncapturederror = (event: unknown): void => {
+      this.#deviceError = uncapturedMessage(event);
+      if (typeof previous === "function") previous.call(device, event);
+    };
   }
 
   get on(): boolean {
@@ -450,6 +619,30 @@ export class WorldGpuScene {
   /** The one indirect record buffer every main key's `setIndirect` points into. */
   get args(): IndirectStorageBufferAttribute | undefined {
     return this.#buffers?.args;
+  }
+
+  /**
+   * Every storage buffer with the WGSL type the kernel binds it as, so the allocation can be held
+   * against the declaration without reading a pipeline.
+   *
+   * WebGPU refuses a bind whose buffer is under one element of its declared type, and the refusal is
+   * an uncaptured validation error: the dispatch is invalid, the counts stay whatever the clear pass
+   * wrote, and nothing downstream of it is measurable. The check is here because a run proved the
+   * other way that a validation line reading `ok` over a kernel that had never run is worth less than
+   * no line at all.
+   */
+  footprint(): Record<string, IGpuSceneBufferFootprint> {
+    const out: Record<string, IGpuSceneBufferFootprint> = {};
+    if (this.#buffers === undefined) return out;
+    for (const [name, type] of [
+      ...Object.entries(STORAGE_PLAIN),
+      ["args", "uint"],
+      ["drawn", "mat4"],
+    ] as [BufferName, StorageType][]) {
+      const buffer = this.#buffers[name] as BufferAttribute;
+      out[name] = { type, count: buffer.count, bytes: buffer.array.byteLength };
+    }
+    return out;
   }
 
   report(): IWorldGpuSceneReport {
@@ -484,9 +677,9 @@ export class WorldGpuScene {
       this.#regions.push({ ...region, name, start: this.#drawnCapacity, capacity });
       this.#drawnCapacity += capacity;
       const regrown = this.#regions.length - 1;
-      this.#growOf("keys", regrown + 1, VEC4_WORDS);
-      this.#growOf("locals", regrown + 1, LOCAL_WORDS);
-      this.#growOf("args", (regrown + 1) * DRAW_ARGS_WORDS, 1);
+      this.#growOf("keys", regrown + 1);
+      this.#growOf("locals", regrown + 1);
+      this.#growOf("args", (regrown + 1) * DRAW_ARGS_WORDS);
       this.#growDrawn();
       this.#writeKey(this.#regions.length - 1);
       return this.#regions.length - 1;
@@ -496,9 +689,9 @@ export class WorldGpuScene {
     this.#keysByName.set(name, index);
     this.#regions.push({ argsIndex: index, capacity, local, name, start: this.#drawnCapacity });
     this.#drawnCapacity += capacity;
-    this.#growOf("keys", index + 1, VEC4_WORDS);
-    this.#growOf("locals", index + 1, LOCAL_WORDS);
-    this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS, 1);
+    this.#growOf("keys", index + 1);
+    this.#growOf("locals", index + 1);
+    this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS);
     this.#growDrawn();
     this.#writeKey(index);
     return index;
@@ -537,9 +730,9 @@ export class WorldGpuScene {
         name,
         start: this.#drawnCapacity,
       });
-      this.#growOf("keys", index + 1, VEC4_WORDS);
-      this.#growOf("locals", index + 1, LOCAL_WORDS);
-      this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS, 1);
+      this.#growOf("keys", index + 1);
+      this.#growOf("locals", index + 1);
+      this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS);
     }
     held.parts.set(level.part, index);
     this.#drawnCapacity = this.#layoutGroup(held);
@@ -686,15 +879,33 @@ export class WorldGpuScene {
       this.#compare(renderer);
   }
 
-  /** What the last landed readback found, so a harness can read the answer without the log. */
-  get validation(): { readonly mismatched: number; readonly lines: readonly string[] } {
-    return { mismatched: this.#mismatches, lines: this.#lines };
+  /**
+   * What the last landed readback found, so a harness can read the answer without the log: the
+   * verdict, how many keys it actually compared, how many keys disagreed, and the detail lines.
+   */
+  get validation(): {
+    readonly verdict: GpuSceneVerdict;
+    readonly compared: number;
+    readonly mismatched: number;
+    readonly lines: readonly string[];
+  } {
+    return {
+      verdict: this.#verdict,
+      compared: this.#compared,
+      mismatched: this.#mismatches,
+      lines: this.#lines,
+    };
   }
 
   #mismatches = 0;
+  #compared = 0;
+  #verdict: GpuSceneVerdict = "ok";
   #lines: string[] = [];
   #validate = false;
   #validating = false;
+  #watched = false;
+  /** The device's last uncaptured error, reported by the next check and then cleared. */
+  #deviceError = "";
 
   /**
    * Read the indirect args back and hold them against the reference, over the same placements, the
@@ -722,6 +933,7 @@ export class WorldGpuScene {
       slots: this.gates(),
     });
     const issued = this.#dispatched;
+    const version = this.#version;
     this.#validating = true;
     renderer
       .readback(buffers.args)
@@ -729,6 +941,10 @@ export class WorldGpuScene {
         this.#validating = false;
         // A readback that lands more than its own window later describes a walk, not this frame.
         if (this.#dispatched - issued > VALIDATE_EVERY) return;
+        // Nor one that lands after a structural change: a key minted, a buffer regrown or a gate
+        // table rewritten in between means this reference describes neither the region set nor the
+        // attribute the bytes came from, and a comparison over it says nothing.
+        if (this.#version !== version) return;
         this.#reportMismatch(renderer, new Uint32Array(bytes), reference);
       })
       .catch(() => {
@@ -737,26 +953,42 @@ export class WorldGpuScene {
   }
 
   #reportMismatch(renderer: IRendererLike, gpu: Uint32Array, reference: IKernelResult): void {
-    const mismatched: string[] = [];
+    const mismatches: string[] = [];
+    let mismatched = 0;
+    let instancesGpu = 0;
+    let instancesCpu = 0;
     for (const [index, region] of this.#regions.entries()) {
       const landed = gpu[region.argsIndex * DRAW_ARGS_WORDS + 1] as number;
       const expected = reference.counts[index] as number;
+      instancesGpu += landed;
+      instancesCpu += expected;
       if (landed === expected) continue;
-      if (mismatched.length < VALIDATE_REPORTED_KEYS)
-        mismatched.push(
+      mismatched += 1;
+      if (mismatches.length < VALIDATE_REPORTED_KEYS)
+        mismatches.push(
           `${region.name ?? `#${String(index)}`} gpu=${String(landed)} cpu=${String(expected)}`,
         );
     }
-    this.#mismatches = mismatched.length;
-    this.#lines = mismatched;
+    const report = validationReport({
+      compared: this.#regions.length,
+      deviceError: this.#deviceError,
+      instancesGpu,
+      instancesCpu,
+      mismatched,
+      mismatches,
+      placed: this.#live,
+    });
+    this.#verdict = report.verdict;
+    this.#compared = this.#regions.length;
+    this.#mismatches = mismatched;
+    this.#lines = [...report.lines];
+    // Reported, so cleared: an error is folded into exactly the check that saw it.
+    this.#deviceError = "";
     const name =
       "log" in renderer ? (renderer.log as ((message: string) => void) | undefined) : undefined;
     const say = typeof name === "function" ? name : console.info.bind(console);
-    say(
-      `TN_WORLD_GPU_SCENE_VALIDATE ${mismatched.length === 0 ? "ok" : "mismatch"} ` +
-        `keys=${String(mismatched.length)}`,
-    );
-    for (const line of mismatched) say(`TN_WORLD_GPU_SCENE_VALIDATE ${line}`);
+    say(report.line);
+    for (const line of report.lines) say(`TN_WORLD_GPU_SCENE_VALIDATE ${line}`);
   }
 
   dispose(): void {
@@ -781,78 +1013,64 @@ export class WorldGpuScene {
   #ensure(): IGpuSceneBuffers | undefined {
     if (this.#buffers !== undefined) return this.#buffers;
     this.#buffers = {
-      args: new IndirectStorageBufferAttribute(new Uint32Array(DRAW_ARGS_WORDS), 1),
-      drawn: new StorageInstancedBufferAttribute(1, 4),
-      gates: new StorageBufferAttribute(1, VEC4_WORDS),
-      keys: new StorageBufferAttribute(1, VEC4_WORDS),
-      levels: new StorageBufferAttribute(1, VEC4_WORDS),
-      locals: new StorageBufferAttribute(1, LOCAL_WORDS),
-      source: new StorageBufferAttribute(16, PLACEMENT_WORDS),
+      args: storageAttribute(IndirectStorageBufferAttribute, "uint", DRAW_ARGS_WORDS, Uint32Array),
+      // One whole `mat4` per instance, which is also what a dressed batch's `instanceMatrix` has to
+      // be: this attribute is four words per instance, the kernel bound it as a `mat4`, and a
+      // one-instance buffer of it was 16 bytes against a 64-byte minimum, so the device refused
+      // every dispatch and the kernel never ran. See `storageAttribute`.
+      drawn: storageAttribute(StorageInstancedBufferAttribute, "mat4", 1),
+      gates: storageAttribute(StorageBufferAttribute, "vec4", 1),
+      keys: storageAttribute(StorageBufferAttribute, "vec4", 1),
+      levels: storageAttribute(StorageBufferAttribute, "vec4", 1),
+      locals: storageAttribute(StorageBufferAttribute, "mat4", 1),
+      source: storageAttribute(StorageBufferAttribute, "GpuPlacement", SOURCE_FLOOR),
     };
     this.#version += 1;
     return this.#buffers;
   }
 
   /**
-   * Grow one per-key buffer by doubling, or leave it when it already has room.
+   * Grow one of the scene's own storage buffers by doubling, or leave it when it already has room.
    *
-   * Each of these is read by a built kernel or named by a geometry's `setIndirect`, so a swap is
-   * structural: the kernel is a new pipeline and the main meshes are re-dressed against the new
-   * attribute. That is why the buffers start at one and double — a key arriving is the event, and a
-   * frame never reallocates.
+   * `needed` is a count of elements of the type the kernel declares that buffer as, never a word
+   * count and never a stride: the element size comes from {@link storageAttribute} and the count is
+   * the only thing a caller may choose. Each of these is read by a built kernel or named by a
+   * geometry's `setIndirect`, so a swap is structural — the kernel is a new pipeline and the main
+   * meshes are re-dressed against the new attribute. That is why the buffers start at one and
+   * double: a key or a placement arriving is the event, and a frame never reallocates.
    */
-  #growOf(
-    name: "args" | "keys" | "locals" | "levels" | "gates",
-    needed: number,
-    stride: number,
-  ): boolean {
+  #growOf(name: BufferName, needed: number): boolean {
     const buffers = this.#buffers;
     if (buffers === undefined) return false;
-    const current = buffers[name] as StorageBufferAttribute;
+    const current = buffers[name] as BufferAttribute;
     if (current.count >= needed) return true;
     let capacity = Math.max(1, current.count);
     while (capacity < needed) capacity *= 2;
+    // The allocation `#ensure` made, at the new count, so a regrow cannot land a different class or
+    // a different element size than the pipeline the kernel was built against.
     const grown =
       name === "args"
-        ? new IndirectStorageBufferAttribute(new Uint32Array(capacity), 1)
-        : new StorageBufferAttribute(capacity, stride);
+        ? storageAttribute(IndirectStorageBufferAttribute, "uint", capacity, Uint32Array)
+        : name === "drawn"
+          ? storageAttribute(StorageInstancedBufferAttribute, "mat4", capacity)
+          : storageAttribute(StorageBufferAttribute, STORAGE_PLAIN[name], capacity);
     grown.array.set(current.array as Uint32Array);
     grown.addUpdateRange(0, current.array.length);
     this.#buffers = { ...buffers, [name]: grown };
+    // The attributes the kernel is built from changed, so the kernel is a new pipeline: a structural
+    // event, and the only one this class pays a compile for.
     this.#kernel = undefined;
     this.#version += 1;
     return true;
   }
 
   #growDrawn(): void {
-    const buffers = this.#buffers;
-    if (buffers === undefined) return;
-    const needed = Math.max(1, this.#drawnCapacity);
-    if (buffers.drawn.count >= needed) return;
-    let capacity = Math.max(1, buffers.drawn.count);
-    while (capacity < needed) capacity *= 2;
-    const grown = new StorageInstancedBufferAttribute(capacity, 4);
-    grown.array.set(buffers.drawn.array as Uint32Array);
-    this.#buffers = { ...buffers, drawn: grown };
-    // The attributes the kernel is built from changed, so the kernel is a new pipeline: a structural
-    // event, and the only one this class pays a compile for.
-    this.#kernel = undefined;
-    this.#version += 1;
+    this.#growOf("drawn", this.#drawnCapacity);
   }
 
   #reserve(count: number): boolean {
-    const buffers = this.#buffers;
-    if (buffers === undefined) return false;
-    if (count <= buffers.source.count) return true;
-    let capacity = Math.max(16, buffers.source.count);
-    while (capacity < count) capacity *= 2;
-    const grown = new StorageBufferAttribute(capacity, PLACEMENT_WORDS);
-    grown.array.set(buffers.source.array as Uint32Array);
-    grown.addUpdateRange(0, buffers.source.array.length);
-    this.#buffers = { ...buffers, source: grown };
-    this.#kernel = undefined;
-    this.#version += 1;
-    return true;
+    // A ring-sized floor, so the first few placements do not each pay a reallocation.
+    return this.#growOf("source", Math.max(SOURCE_FLOOR, count));
   }
 
   #writePlacement(index: number): void {
@@ -893,22 +1111,35 @@ export class WorldGpuScene {
     buffers.args.needsUpdate = true;
   }
 
-  /** Write the whole gate table, which only changes when an asset's levels are adopted. */
+  /**
+   * Write the whole gate table, which only changes when an asset's levels are adopted.
+   *
+   * Sized before it is written, not after: the table holds one `vec4` per asset and per level, and
+   * a write past the end of a `Float32Array` is a silent no-op. Growing afterwards and copying the
+   * short array over the long one kept the first element and dropped the rest, which is a gate table
+   * that reads as every asset having no levels and no cull distance.
+   */
   #writeSlots(): void {
-    const buffers = this.#buffers;
-    if (buffers === undefined) return;
-    const gates = buffers.gates.array as Float32Array;
-    const levels = buffers.levels.array as Float32Array;
+    if (this.#buffers === undefined) return;
+    let levels = 0;
+    for (const asset of this.#order)
+      levels += (this.#slotsByAsset.get(asset) as IAssetSlot).levels.length;
+    this.#growOf("gates", Math.max(1, this.#order.length));
+    this.#growOf("levels", Math.max(1, levels));
+    const live = this.#buffers;
+    if (live === undefined) return;
+    const gates = live.gates.array as Float32Array;
+    const levelTable = live.levels.array as Float32Array;
     let level = 0;
     for (const [slot, asset] of this.#order.entries()) {
       const definition = this.#slotsByAsset.get(asset) as IAssetSlot;
       const first = level;
       for (const [index, gate] of definition.levels.entries()) {
         const at = level * VEC4_WORDS;
-        levels[at] = definition.distances[index] ?? 0;
-        levels[at + 1] = gate.firstKey;
-        levels[at + 2] = gate.parts;
-        levels[at + 3] = 0;
+        levelTable[at] = definition.distances[index] ?? 0;
+        levelTable[at + 1] = gate.firstKey;
+        levelTable[at + 2] = gate.parts;
+        levelTable[at + 3] = 0;
         level += 1;
       }
       const at = slot * VEC4_WORDS;
@@ -917,16 +1148,8 @@ export class WorldGpuScene {
       gates[at + 2] = definition.cull ?? 0;
       gates[at + 3] = definition.cull === undefined ? 0 : 1;
     }
-    this.#growOf("gates", Math.max(1, this.#order.length), VEC4_WORDS);
-    this.#growOf("levels", Math.max(1, level), VEC4_WORDS);
-    const live = this.#buffers;
-    if (live === undefined) return;
     live.gates.needsUpdate = true;
     live.levels.needsUpdate = true;
-    (live.gates.array as Float32Array).set(gates);
-    (live.levels.array as Float32Array).set(
-      levels.subarray(0, Math.min(levels.length, level * VEC4_WORDS)),
-    );
   }
 
   /**
