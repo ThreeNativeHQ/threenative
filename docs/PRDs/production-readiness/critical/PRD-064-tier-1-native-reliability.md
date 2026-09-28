@@ -609,6 +609,20 @@ but the workload playtest closed its page mid-run (`TN_PLAYTEST_PAGE_CLOSED`). I
 series or adapter identity and exited `BLOCKED`; the startup sample alone does not certify the
 performance or adapter requirement. No additional code change or passing profile is inferred.
 
+**Native-only pacing split at clean source `141ed9d2e` (2026-09-28):** The 1920×1080 live-clock
+collections at `.runtime/prd064/production/native-gap-capped/production-evidence.json` and
+`.runtime/prd064/production/native-gap-uncapped/production-evidence.json`
+used the same 30-second request, with only the existing `THREENATIVE_PRESENT_UNCAPPED=1` switch
+changed. Capped retained 1,888 presented intervals, 57.82 FPS mean, 16.93 ms p50 and 18.53 ms p95;
+its separate startup probe missed a host tick, so the overall result is `BLOCKED`. Uncapped retained
+1,925 intervals, 59.28 FPS mean, 16.67 ms p50 and 17.13 ms p95; all markers are present and only
+`TN_PROD_PERFORMANCE_BUDGET` fails. The uncapped intervals below 30 ms average 16.674 ms, but
+the raw series also contains 99.54 and 312.72 ms gaps. The latter follows the native screenshot
+log immediately and coincides with `TN_SLOW_PHASE pollEvents` at 312.79 ms; the capped run likewise
+has a 358.26 ms gap after its screenshot log. This identifies capture overhead in the measured
+series, not permission to discard it: no score was adjusted, and neither the web floor nor native
+parity is proven. The performance box stays open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:
