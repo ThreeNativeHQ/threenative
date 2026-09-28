@@ -40,21 +40,23 @@ const UNREAD_PROPERTIES: ReadonlySet<string> = new Set([
   "version",
 ]);
 
-/** How a value at one position of a material's own value list is judged. */
-const COMPARE_IDENTITY = 0;
-const COMPARE_COMPONENTS = 1;
-const COMPARE_SKIP = 2;
+/** How a component-compared value's own numeric fields are read back per frame. */
+const READ_KEYED = 0;
+const READ_RGB = 1;
+const READ_XY = 2;
+const READ_UNDERSCORE_XYZ = 3;
 
 interface IUniformRecord {
-  /** How to judge each of the material's own values, by position. */
-  kinds: Uint8Array;
-  /** The values as of the last classification, by the same position. */
+  /** The values as of the last classification, by the position they were enumerated at. */
   values: unknown[];
+  /** Flat `[start, end)` pairs covering the positions judged by identity, skips excluded. */
+  identityRanges: Int32Array;
   /** Positions of the component-compared values, in enumeration order. */
   vectorSlots: number[];
-  /** How many fields each component-compared value is read through, in the same order. */
-  vectorWidths: number[];
-  /** The own field names of every component-compared value, flattened, and what each held. */
+  /** How each of those values is read back, and how many fields of it there are. */
+  vectorReads: Uint8Array;
+  vectorWidths: Uint8Array;
+  /** The own numeric field names of every component-compared value, flattened. */
   vectorFields: string[];
   components: number[];
   /** `defines` keys, in enumeration order, and the value each held. */
@@ -83,28 +85,50 @@ function isTextureValue(value: unknown): boolean {
 }
 
 /**
- * The own field names of a value three clones per material and a game then mutates in place — a
- * `Color`, a `Vector2`, an `Euler` — or `undefined` when the value is not one of those.
+ * The own **numeric** field names of a value three clones per material and a game then mutates in
+ * place — a `Color`, a `Vector2`, an `Euler` — or `undefined` when the value is not one of those.
  *
  * Recognised structurally, by "every own value is a primitive and at least one is a number", rather
  * than by naming each class: that is what a clone of a `MeshStandardMaterial` actually holds, it
  * covers the classes a future three adds, and it refuses anything it cannot read — a `Texture`,
- * which is compared by identity, and anything else, which is opaque. The *names* are recorded
- * rather than the values so the per-frame read is a handful of field reads: a material animating
- * `normalScale` or an `envMapRotation` is caught, and one that set `needsUpdate` is not mistaken for
- * one that did.
+ * which is compared by identity, and anything else, which is opaque. The *numbers* are what come
+ * back, because a boolean or a string field is not something the compare could ever see move: a
+ * `Color`'s `isColor` reads as `0` before and after, so recording it would cost a read per frame to
+ * compare a value against itself. The *names* are recorded rather than the objects so the per-frame
+ * read is a handful of field reads: a material animating `normalScale` or an `envMapRotation` is
+ * caught, and one that set `needsUpdate` is not mistaken for one that did.
  */
 function componentFieldsOf(value: unknown): string[] | undefined {
   if (value === null || typeof value !== "object" || isTextureValue(value)) return undefined;
   const fields = Object.keys(value);
   if (fields.length === 0) return undefined;
-  let numbers = 0;
+  const numbers: string[] = [];
   for (const field of fields) {
     const kind = typeof (value as Record<string, unknown>)[field];
-    if (kind === "number") numbers += 1;
+    if (kind === "number") numbers.push(field);
     else if (kind !== "boolean" && kind !== "string") return undefined;
   }
-  return numbers === 0 ? undefined : fields;
+  return numbers.length === 0 ? undefined : numbers;
+}
+
+/**
+ * How the recorded fields of one component-compared value are read back each frame.
+ *
+ * A field read by name through a variable — `value[name]` — is a dictionary lookup the engine
+ * cannot fold, and it is the single most expensive thing a settled frame did: four small objects
+ * per material, and every one of them looked up field by field. Naming the field instead makes it
+ * a fixed offset, so the three shapes three actually clones (`Color`, `Vector2`, `Euler`) are read
+ * directly and anything a future material brings falls back to the general path rather than being
+ * assumed a shape it is not.
+ */
+function readKindOf(fields: string[]): number {
+  if (fields.length === 3) {
+    if (fields[0] === "r" && fields[1] === "g" && fields[2] === "b") return READ_RGB;
+    if (fields[0] === "_x" && fields[1] === "_y" && fields[2] === "_z") return READ_UNDERSCORE_XYZ;
+    return READ_KEYED;
+  }
+  if (fields.length === 2 && fields[0] === "x" && fields[1] === "y") return READ_XY;
+  return READ_KEYED;
 }
 
 /** The base colour a tinted group carries per instance, or `undefined` when the material has none. */
@@ -125,16 +149,6 @@ function opaqueIdOf(value: object): number {
   nextOpaqueId += 1;
   opaqueIds.set(value, id);
   return id;
-}
-
-/**
- * A value as the component compare can carry it: a number as itself, and a boolean or a string
- * collapsed to 0. That is all `componentFieldsOf` admits, so the compare never has to look at a
- * type — and two values of different types cannot be confused for each other here, because the
- * field that would have to hold them is not admitted at all unless it agrees with its neighbours.
- */
-function scalarOf(value: unknown): number {
-  return typeof value === "number" ? value : 0;
 }
 
 /** How a value speaks for itself in a signature, which is built once per classification. */
@@ -162,10 +176,11 @@ export function uniformSignatureOf(material: Material): string | undefined {
   let record = records.get(material);
   if (record === undefined) {
     record = {
-      kinds: new Uint8Array(0),
       values: [],
+      identityRanges: new Int32Array(0),
       vectorSlots: [],
-      vectorWidths: [],
+      vectorReads: new Uint8Array(0),
+      vectorWidths: new Uint8Array(0),
       vectorFields: [],
       components: [],
       defineKeys: [],
@@ -174,35 +189,44 @@ export function uniformSignatureOf(material: Material): string | undefined {
     };
     records.set(material, record);
   }
-  const { kinds, vectorSlots, vectorWidths, vectorFields, components, defineKeys, defineValues } =
-    record;
-  const marks = kinds.length === keys.length ? kinds : new Uint8Array(keys.length);
+  const { vectorSlots, vectorFields, components, defineKeys, defineValues } = record;
+  const reads: number[] = [];
+  const widths: number[] = [];
   vectorSlots.length = 0;
-  vectorWidths.length = 0;
   vectorFields.length = 0;
   components.length = 0;
+  const ranges: number[] = [];
+  let open = -1;
   let signature = "";
   for (let index = 0; index < keys.length; index += 1) {
     const key = keys[index] as string;
-    if (UNREAD_PROPERTIES.has(key)) {
-      marks[index] = COMPARE_SKIP;
-      continue;
-    }
     const value = values[index];
-    const fields = componentFieldsOf(value);
-    marks[index] = fields === undefined ? COMPARE_IDENTITY : COMPARE_COMPONENTS;
-    if (fields !== undefined) {
+    const fields = UNREAD_PROPERTIES.has(key) ? undefined : componentFieldsOf(value);
+    if (fields === undefined) {
+      // The unread and the component-compared are both left out of the identity walk, and either
+      // one ends a run of it: the run is only worth having while the positions are consecutive.
+      if (UNREAD_PROPERTIES.has(key)) continue;
+      if (open === -1) open = index;
+    } else {
+      if (open !== -1) {
+        ranges.push(open, index);
+        open = -1;
+      }
       vectorSlots.push(index);
-      vectorWidths.push(fields.length);
+      reads.push(readKindOf(fields));
+      widths.push(fields.length);
       for (const field of fields) {
         vectorFields.push(field);
-        components.push(scalarOf((value as Record<string, unknown>)[field]));
+        components.push((value as Record<string, number>)[field] as number);
       }
     }
     signature += `${key}=${signatureTextOf(value, fields, components)}|`;
   }
-  record.kinds = marks;
+  if (open !== -1) ranges.push(open, keys.length);
   record.values = values;
+  record.identityRanges = Int32Array.from(ranges);
+  record.vectorReads = Uint8Array.from(reads);
+  record.vectorWidths = Uint8Array.from(widths);
   defineKeys.length = 0;
   defineValues.length = 0;
   const defines = material.defines as Record<string, unknown> | undefined;
@@ -217,6 +241,18 @@ export function uniformSignatureOf(material: Material): string | undefined {
   return signature;
 }
 
+/** The three shapes three clones per material, read by name rather than through a variable. */
+interface IComponents {
+  r: number;
+  g: number;
+  b: number;
+  x: number;
+  y: number;
+  _x: number;
+  _y: number;
+  _z: number;
+}
+
 /**
  * Whether the material still holds every value its group's shared draw was built from.
  *
@@ -229,25 +265,61 @@ export function uniformUnchanged(material: Material): boolean {
   // No fingerprint means no group was ever derived from this material, so nothing to have drifted
   // from. Re-deriving the classification is what establishes one.
   if (record === undefined) return true;
+  // One read of the material's own values, and the count that says whether a property appeared or
+  // disappeared comes with it. Reading each value by name instead is what this replaced, and it is
+  // several times slower: an engine cannot fold a lookup through a variable, so eighty-one of
+  // them per material is eighty-one dictionary probes, against one copy of eighty-one slots.
   const current = Object.values(material as unknown as Record<string, unknown>);
-  // A property appearing or disappearing changes what the draw reads, and the count is what says so.
-  if (current.length !== record.values.length) return false;
-  const { kinds, values, vectorSlots, vectorWidths, vectorFields, components } = record;
-  for (let index = 0; index < current.length; index += 1) {
-    if ((kinds[index] as number) === COMPARE_IDENTITY && current[index] !== values[index])
-      return false;
+  const {
+    values,
+    identityRanges,
+    vectorSlots,
+    vectorReads,
+    vectorWidths,
+    vectorFields,
+    components,
+  } = record;
+  if (current.length !== values.length) return false;
+  for (let range = 0; range < identityRanges.length; range += 2) {
+    const end = identityRanges[range + 1] as number;
+    for (let index = identityRanges[range] as number; index < end; index += 1) {
+      if (current[index] !== values[index]) return false;
+    }
   }
   let read = 0;
   for (let slot = 0; slot < vectorSlots.length; slot += 1) {
     const value = current[vectorSlots[slot] as number];
     if (value === null || typeof value !== "object") return false;
-    const fields = value as Record<string, unknown>;
-    const width = vectorWidths[slot] as number;
-    for (let part = 0; part < width; part += 1) {
-      if (scalarOf(fields[vectorFields[read + part] as string]) !== components[read + part])
-        return false;
+    const parts = value as IComponents;
+    switch (vectorReads[slot]) {
+      case READ_RGB:
+        if (
+          parts.r !== components[read] ||
+          parts.g !== components[read + 1] ||
+          parts.b !== components[read + 2]
+        )
+          return false;
+        break;
+      case READ_XY:
+        if (parts.x !== components[read] || parts.y !== components[read + 1]) return false;
+        break;
+      case READ_UNDERSCORE_XYZ:
+        if (
+          parts._x !== components[read] ||
+          parts._y !== components[read + 1] ||
+          parts._z !== components[read + 2]
+        )
+          return false;
+        break;
+      default: {
+        const fields = value as Record<string, number>;
+        const width = vectorWidths[slot] as number;
+        for (let part = 0; part < width; part += 1) {
+          if (fields[vectorFields[read + part] as string] !== components[read + part]) return false;
+        }
+      }
     }
-    read += width;
+    read += vectorWidths[slot] as number;
   }
   const defines = material.defines as Record<string, unknown> | undefined;
   const defineKeys = record.defineKeys;

@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   Color,
   type InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
@@ -9,6 +10,7 @@ import {
   type Texture,
 } from "three";
 import { describe, expect, it } from "vitest";
+import { uniformUnchanged } from "../src/projection-uniform.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -171,6 +173,33 @@ describe("uniform-colour instanced batches", () => {
         material.opacity = 0.5;
       },
     ],
+    // A `Color` and a `Vector2` are mutated in place rather than swapped, so they are read field
+    // by field instead of by identity. Both are read by name, which is the fast path; a field
+    // neither knows falls back to reading whatever names were recorded.
+    [
+      "an emissive colour in place",
+      (material: MeshStandardMaterial) => {
+        material.emissive.setHex(0x00ff00);
+      },
+    ],
+    [
+      "a normal scale in place",
+      (material: MeshStandardMaterial) => {
+        material.normalScale.set(0.25, 0.75);
+      },
+    ],
+    [
+      "an environment rotation in place",
+      (material: MeshStandardMaterial) => {
+        material.envMapRotation.z = 0.5;
+      },
+    ],
+    [
+      "a numeric field turned into a string",
+      (material: MeshStandardMaterial) => {
+        (material.normalScale as unknown as { x: unknown }).x = "0.5";
+      },
+    ],
   ])("ejects a member whose material gained %s after it was batched", (_label, mutate) => {
     const { scene, meshes } = uniformLattice(64);
     const projection = project(scene, 3);
@@ -286,6 +315,35 @@ describe("uniform-colour instanced batches", () => {
     // number is the measured reconcile time, which the benchmark arm reports per run.
     process.stdout.write(
       `\nuniform reconcile mean over 30 frames: ${(elapsed / 30).toFixed(3)} ms\n`,
+    );
+  });
+
+  it("times the per-material drift check itself on a settled 4,096-material frame", () => {
+    const { scene, meshes } = uniformLattice(4096);
+    // Two frames settle the classification; the check only has a record to compare against once
+    // one exists, so the first of them is where `uniformSignatureOf` runs.
+    const projection = project(scene, 2);
+    expect(projection.report.batches).toBe(1);
+    const materials = meshes.map((mesh) => mesh.material as Material);
+
+    let unchanged = 0;
+    for (let round = 0; round < 5; round += 1) {
+      for (const material of materials) if (uniformUnchanged(material)) unchanged += 1;
+    }
+    const frames = 30;
+    const startedAt = performance.now();
+    for (let frame = 0; frame < frames; frame += 1) {
+      for (const material of materials) if (uniformUnchanged(material)) unchanged += 1;
+    }
+    const elapsed = performance.now() - startedAt;
+
+    // A settled frame's whole job is to prove nothing moved, so every material must come back
+    // unchanged — the timing above is a report, never a threshold a slower machine can fail.
+    expect(unchanged).toBe((frames + 5) * materials.length);
+    process.stdout.write(
+      `\nuniform drift check: ${((elapsed * 1000) / frames / materials.length).toFixed(
+        3,
+      )} us per material\n`,
     );
   });
 });
