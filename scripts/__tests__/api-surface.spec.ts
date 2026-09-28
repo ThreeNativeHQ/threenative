@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   API_SURFACE_RELATIVE_PATH,
   type IApiSurface,
@@ -9,6 +11,7 @@ import {
   apiSurfaceFindings,
   compareApiSurface,
   deriveApiSurface,
+  recordApiSurface,
   unannouncedBreaks,
 } from "../check-api-surface.js";
 import { publicWorkspacePackages } from "../workspace-packages.js";
@@ -211,6 +214,60 @@ describe("stable public API surface (PRD-446)", () => {
 
   it("keeps the committed snapshot current", () => {
     expect(apiSurfaceFindings(repo)).toEqual([]);
-    expect(compareApiSurface(snapshot(), deriveApiSurface(repo)).removedSymbols).toEqual([]);
+    // Currency is equality, not "no removals": a snapshot lagging behind the tree cannot notice
+    // the next removal of a symbol it never recorded, which is a silent break by construction.
+    expect(deriveApiSurface(repo)).toEqual(snapshot());
+  });
+
+  it("refuses to re-record a snapshot while a removal is still unannounced", async () => {
+    const root = await makeTempDir("tn-api-surface-");
+    const symbol: IApiSurfacePackage = {
+      exports: ["."],
+      symbols: { "@threenative/kept#kept": "export function kept(): void { … }" },
+    };
+    const recorded = `${JSON.stringify({ packages: { "@threenative/kept": symbol } }, null, 2)}\n`;
+    const manifestPath = path.join(root, "packages", "create-threenative", "capabilities.json");
+    const snapshotPath = path.join(root, API_SURFACE_RELATIVE_PATH);
+    const changelogPath = path.join(root, "CHANGELOG.md");
+    await mkdir(path.join(root, "packages", "kept"), { recursive: true });
+    await mkdir(path.dirname(manifestPath), { recursive: true });
+    await mkdir(path.dirname(snapshotPath), { recursive: true });
+    await writeFile(
+      path.join(root, "packages", "kept", "package.json"),
+      JSON.stringify({
+        exports: { ".": "./dist/index.js" },
+        name: "@threenative/kept",
+        version: "0.1.0",
+      }),
+    );
+    const manifest = (entries: readonly unknown[]): string =>
+      JSON.stringify({ entries, notOwned: [], version: "1" });
+    await writeFile(
+      manifestPath,
+      manifest([
+        {
+          importPath: "@threenative/kept",
+          package: "@threenative/kept",
+          signature: symbol.symbols["@threenative/kept#kept"],
+          symbol: "kept",
+        },
+      ]),
+    );
+    await writeFile(snapshotPath, recorded);
+    await writeFile(changelogPath, CHANGELOG);
+    // `pnpm build` regenerates the manifest without the symbol, so the removal is simply absent.
+    await writeFile(manifestPath, manifest([]));
+    // The one command an author reaches for when the check is red must not silence the removal.
+    expect(() => recordApiSurface(root)).toThrow(/TN_API_SURFACE_UNANNOUNCED_BREAK/u);
+    expect(await readFile(snapshotPath, "utf8")).toBe(recorded);
+    // Announced where the next release would carry it, the same removal re-records.
+    await writeFile(changelogPath, breaking("`kept` is no longer exported."));
+    expect(recordApiSurface(root).packages["@threenative/kept"]).toEqual({
+      exports: ["."],
+      symbols: {},
+    });
+    expect(JSON.parse(await readFile(snapshotPath, "utf8"))).toEqual({
+      packages: { "@threenative/kept": { exports: ["."], symbols: {} } },
+    });
   });
 });

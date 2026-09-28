@@ -262,21 +262,36 @@ function surfaceCounts(surface: IApiSurface): string {
   return `${Object.keys(surface.packages).length} published packages, ${symbols} symbols`;
 }
 
+function unannouncedBreakMessage(findings: readonly string[]): string {
+  return `TN_API_SURFACE_UNANNOUNCED_BREAK:\n${findings.map((finding) => `- ${finding}`).join("\n")}\nName each break in a CHANGELOG.md \`Breaking\` entry, then re-record with \`pnpm api:surface:sync\`.`;
+}
+
+/**
+ * Re-record the surface. `--update` is the deliberate act, so it refuses while the committed
+ * snapshot still shows a break the next release does not announce: without that refusal the one
+ * command an author reaches for when the check is red would re-record the removal and silence it,
+ * which is how an unannounced removal reaches `develop`.
+ */
+export function recordApiSurface(root = REPO): IApiSurface {
+  const snapshotPath = path.join(root, API_SURFACE_RELATIVE_PATH);
+  // A first record has nothing to be compared against; every later one has to earn its write.
+  if (existsSync(snapshotPath)) {
+    const findings = apiSurfaceFindings(root);
+    if (findings.length > 0) throw new Error(unannouncedBreakMessage(findings));
+  }
+  const surface = deriveApiSurface(root);
+  writeFileSync(snapshotPath, `${JSON.stringify(surface, null, 2)}\n`);
+  return surface;
+}
+
 function main(): void {
   if (process.argv.includes("--update")) {
-    const surface = deriveApiSurface(REPO);
-    writeFileSync(
-      path.join(REPO, API_SURFACE_RELATIVE_PATH),
-      `${JSON.stringify(surface, null, 2)}\n`,
-    );
-    console.log(`api surface recorded: ${surfaceCounts(surface)}`);
+    console.log(`api surface recorded: ${surfaceCounts(recordApiSurface(REPO))}`);
     return;
   }
   const findings = apiSurfaceFindings(REPO);
   if (findings.length > 0) {
-    console.error(
-      `TN_API_SURFACE_UNANNOUNCED_BREAK:\n${findings.map((finding) => `- ${finding}`).join("\n")}\nName each break in a CHANGELOG.md \`Breaking\` entry, then re-record with \`pnpm api:surface:sync\`.`,
-    );
+    console.error(unannouncedBreakMessage(findings));
     process.exitCode = 1;
     return;
   }
