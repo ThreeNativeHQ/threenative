@@ -25,6 +25,6 @@ Textures, physical materials, BackSide, morph targets and interleaved buffers ar
 
 `npm test` builds strict TypeScript, runs 13 dependency-free contracts and then the 31 configured donor/export/CLI cases. These include Khronos GLB validation, actual Three.js GLTFLoader readback, reflected winding, indexed/nonindexed active material groups, normalized colors, invalid-input diagnostics and failure/disposal paths. Missing dependencies fail, never skip. `npm run test:contracts` can run the CPU-only subset without downloading the donor.
 
-The dedicated workflow runs on relevant PRs and pushes because root Vitest excludes examples. Current execution evidence and open gates live in the [PRD](../../../docs/PRDs/threejs-integrations/PRD-threejs-csg-cook.md): configured cases are not a claim that they passed. Generate/review the lockfile and qualify inside the actual framework before merging. This standalone Three pin does not apply the framework renderer patch.
+The dedicated workflow runs on relevant PRs and pushes because root Vitest excludes examples. Every phase and acceptance box of the [PRD](../../../docs/PRDs/done/PRD-threejs-csg-cook.md) is ticked with its evidence; the lockfile is committed. The standalone Three pin does not apply the framework renderer patch.
 
 The installed dependencies retain their own license notices. No demo assets were copied; the geometry fixtures are authored here. The Khronos validator is a development dependency, not part of asset generation or runtime loading.
