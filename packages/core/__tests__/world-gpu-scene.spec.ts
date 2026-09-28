@@ -285,6 +285,70 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/**
+ * A scene wired the way the package's own assets wire it, and the reference that says what each key
+ * must draw.
+ *
+ * The shapes below are the ones a real package is made of: authored `lods` with a `maxDistance`, an
+ * asset whose model is several parts, a key a walk outgrows, and a prop whose model does not
+ * straddle the origin. Each is compared against `cpuReference` — the CPU path's own level and cull
+ * tests, written out in this file — key for key and placement for placement.
+ */
+
+/** The region index one main key owns, which is what a gate table and the kernel both address. */
+function keyOf(scene: WorldGpuScene, name: string): number {
+  const at = scene.regions.findIndex((one) => one.name === name);
+  if (at < 0) throw new Error(`the scene has no region for ${name}.`);
+  return at;
+}
+
+/** A scene with one asset per name, every level's `parts` keys minted in part order. */
+function wired(
+  assets: readonly {
+    readonly name: string;
+    readonly levels: readonly number[];
+    readonly cull?: number;
+  }[],
+  parts: number,
+  capacity: number,
+): WorldGpuScene {
+  const scene = new WorldGpuScene();
+  scene.enable(
+    { kind: "webgpu", raw: { backend: { hasFeature: () => true } }, compute: () => {} } as never,
+    true,
+  );
+  for (const asset of assets) {
+    const gates: { firstKey: number; parts: number }[] = [];
+    for (const [level, distance] of asset.levels.entries()) {
+      const group = `${asset.name}:${String(level)}`;
+      for (let part = 0; part < parts; part += 1)
+        scene.key(`${group}:${String(part)}`, LOCAL, capacity, { group, part });
+      gates.push(scene.levelKeys(group) ?? { firstKey: 0, parts: 0 });
+    }
+    scene.slot(asset.name, { cull: asset.cull, distances: asset.levels, levels: gates });
+  }
+  return scene;
+}
+
+/** `n` placements of `slot` spread along +Z from the origin, at the given spacing. */
+function placed(
+  scene: WorldGpuScene,
+  slot: number,
+  n: number,
+  spacing: number,
+  radius = 0.5,
+): void {
+  for (let index = 0; index < n; index += 1)
+    scene.place(
+      slot,
+      new Matrix4().makeTranslation(0, 0, 12 + index * spacing),
+      0,
+      0,
+      12 + index * spacing,
+      radius,
+    );
+}
+
 describe("WorldCells GPU-driven main pass", () => {
   it("draws the same set per key as the CPU path, over a 50-pose walk", () => {
     const slots = [
@@ -695,5 +759,258 @@ describe("WorldCells with the GPU-driven main pass", () => {
     expect((main.geometry as BufferGeometry & { indirect: unknown }).indirect).toBeNull();
     expect(mainMesh(world).count).toBe(pineIn("0,0", "0,1", "0,2", "1,0", "1,1", "1,2"));
     world.dispose();
+  });
+});
+
+describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set", () => {
+  it("draws every part of a multi-part asset into the level's own contiguous run", () => {
+    // A tree is three parts at two levels — a trunk and two canopies, each with a coarser shape of
+    // its own. The gate table addresses a level's parts as `firstKey + part`, so the run has to be
+    // the level's own and start at its *first* part: a table that recorded the key it saw last named
+    // the last part as the first, and the whole asset then drew into its neighbour's regions.
+    const scene = wired([{ name: "oak", levels: [0, 40] }], 3, 64);
+    const origin = { x: 0, z: 0, planes: cameraAt(0, 0).planes };
+    placed(scene, 0, 12, 8);
+    const input: IKernelInput = {
+      camera: { planes: origin.planes, x: 0, y: 0, z: 0 },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+    const fromKernel = kernelDrawn(cullAndSelect(input), input);
+    // The run each level's parts occupy, from the first part and as wide as the asset's parts.
+    expect(scene.levelKeys("oak:0")).toEqual({ firstKey: keyOf(scene, "oak:0:0"), parts: 3 });
+    expect(scene.levelKeys("oak:1")).toEqual({ firstKey: keyOf(scene, "oak:1:0"), parts: 3 });
+    // `cpuReference` is a single-part model — one key per level — so it is asked for the level's
+    // first key, and every part of that level must carry the same placements as it.
+    for (const level of [0, 1]) {
+      // In the reference's own key space, where a level is `firstKey + level * parts`; from zero with
+      // one part, level `n` is key `n`. The scene's region for it is the level's own run.
+      const wanted = cpuReference(scene.placements, origin, 0, [0, 40], undefined, 0, 1).get(
+        level,
+      ) as number[];
+      expect(wanted.length).toBeGreaterThan(0);
+      for (let part = 0; part < 3; part += 1) {
+        const key = keyOf(scene, `oak:${String(level)}:${String(part)}`);
+        expect([...(fromKernel.get(key) as number[])].sort((a, b) => a - b)).toEqual(
+          [...wanted].sort((a, b) => a - b),
+        );
+      }
+    }
+    // 12 m to 36 m at level 0, 44 m to 100 m at level 1: three parts each, nothing drawn nowhere.
+    expect(fromKernel.get(keyOf(scene, "oak:0:2"))).toHaveLength(4);
+    expect(fromKernel.get(keyOf(scene, "oak:1:2"))).toHaveLength(8);
+    scene.dispose();
+  });
+
+  it("culls authored ground cover at its maxDistance and switches its lods inside it", () => {
+    // `ground_cover` as the committed package writes it: a `lods` entry at 60 m under a `maxDistance`
+    // of 30 m, so `assetLevels` drops the level outright — an instance that far out is culled, so
+    // its shape is never asked for — and the asset is one level culled at 30 less its eighth.
+    const ground = wired([{ name: "gc", levels: [0], cull: 26.25 }], 1, 64);
+    const origin = { x: 0, z: 0, planes: cameraAt(0, 0).planes };
+    placed(ground, 0, 4, 7);
+    // 10 m, 17 m, 24 m inside the cull; 31 m past it.
+    const input: IKernelInput = {
+      camera: { planes: origin.planes, x: 0, y: 0, z: 0 },
+      count: ground.placements.length,
+      placements: ground.placements,
+      regionCount: ground.regions.length,
+      regions: ground.regions,
+      slots: ground.gates(),
+    };
+    const fromKernel = kernelDrawn(cullAndSelect(input), input);
+    const expected = cpuReference(ground.placements, origin, 0, [0], 26.25, 0, 1);
+    expect([...(fromKernel.get(keyOf(ground, "gc:0:0")) as number[])]).toEqual([
+      ...(expected.get(keyOf(ground, "gc:0:0")) as number[]),
+    ]);
+    expect(fromKernel.get(keyOf(ground, "gc:0:0"))).toHaveLength(3);
+    ground.dispose();
+
+    // The same asset with a `lods` entry inside its `maxDistance`: two levels, the switch at 20 m,
+    // and the cull still at 26.25 m — a level the package named is the one that takes over.
+    const both = wired([{ name: "gc", levels: [0, 20], cull: 26.25 }], 1, 64);
+    placed(both, 0, 4, 7);
+    const second: IKernelInput = {
+      camera: { planes: origin.planes, x: 0, y: 0, z: 0 },
+      count: both.placements.length,
+      placements: both.placements,
+      regionCount: both.regions.length,
+      regions: both.regions,
+      slots: both.gates(),
+    };
+    const drawn = kernelDrawn(cullAndSelect(second), second);
+    const wanted = cpuReference(both.placements, origin, 0, [0, 20], 26.25, 0, 1);
+    for (const [key, indexes] of wanted)
+      expect([...(drawn.get(key) as number[])].sort((a, b) => a - b)).toEqual(
+        [...indexes].sort((a, b) => a - b),
+      );
+    // 10 m and 17 m at level 0, 24 m at level 1, 31 m culled.
+    expect(drawn.get(keyOf(both, "gc:0:0"))).toHaveLength(2);
+    expect(drawn.get(keyOf(both, "gc:1:0"))).toHaveLength(1);
+    both.dispose();
+  });
+
+  it("regrows a level whole when its placements outgrow the region, and draws all of them", () => {
+    const scene = wired([{ name: "gc", levels: [0] }], 2, 2);
+    const origin = { x: 0, z: 0, planes: cameraAt(0, 0).planes };
+    const run = (): Map<number, number[]> => {
+      const input: IKernelInput = {
+        camera: { planes: origin.planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      };
+      return kernelDrawn(cullAndSelect(input), input);
+    };
+    placed(scene, 0, 5, 4);
+    // The capacity guard drops what does not fit, and says so in the count rather than writing past
+    // the region: two of five in each part.
+    expect(run().get(keyOf(scene, "gc:0:0"))).toHaveLength(2);
+
+    // A walk that brings the rest in: the level is regrown whole, both parts with it, and the run
+    // the gate table addresses is still the two keys side by side.
+    for (const part of [0, 1]) scene.key(`gc:0:${String(part)}`, LOCAL, 8, { group: "gc:0", part });
+    expect(scene.levelKeys("gc:0")).toEqual({ firstKey: keyOf(scene, "gc:0:0"), parts: 2 });
+    const grown = run();
+    expect(grown.get(keyOf(scene, "gc:0:0"))).toHaveLength(5);
+    expect(grown.get(keyOf(scene, "gc:0:1"))).toHaveLength(5);
+    // The regrown region starts at the tail and the draw's own `firstInstance` says so.
+    const region = scene.regionOf("gc:0:0") as IRegion;
+    expect(region.capacity).toBe(8);
+    expect(region.start).toBeGreaterThanOrEqual(4);
+    expect(scene.regionOf("gc:0:1")?.start).toBe((region.start ?? 0) + 8);
+    scene.dispose();
+  });
+
+  it("selects a level deeper than eight, which the kernel's own unrolled bound could not reach", () => {
+    // A baked AutoLOD chain is not eight levels long by construction, and an unrolled loop bounded
+    // by a fixed count drew everything past its last one at the wrong shape. The reference is the
+    // branch the kernel mirrors, and it has no such bound.
+    const distances = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120];
+    const scene = wired([{ name: "pine", levels: distances }], 1, 64);
+    const origin = { x: 0, z: 0, planes: cameraAt(0, 0).planes };
+    placed(scene, 0, 3, 45);
+    const input: IKernelInput = {
+      camera: { planes: origin.planes, x: 0, y: 0, z: 0 },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+    const fromKernel = kernelDrawn(cullAndSelect(input), input);
+    const expected = cpuReference(scene.placements, origin, 0, distances, undefined, 0, 1);
+    for (const [key, indexes] of expected)
+      expect([...(fromKernel.get(key) as number[])].sort((a, b) => a - b)).toEqual(
+        [...indexes].sort((a, b) => a - b),
+      );
+    // 10 m at level 1, 55 m at level 5, 100 m at level 10: past every fixed count a loop could hold.
+    expect(fromKernel.get(keyOf(scene, "pine:1:0"))).toHaveLength(1);
+    expect(fromKernel.get(keyOf(scene, "pine:5:0"))).toHaveLength(1);
+    expect(fromKernel.get(keyOf(scene, "pine:10:0"))).toHaveLength(1);
+    scene.dispose();
+  });
+
+  it("keeps a prop whose model reaches away from its placement point, the way the CPU path does", () => {
+    // A 20 m pole: bounds from y 0 to y 20 and a hand's width across, so a sphere at the placement
+    // with the bounds' half-diagonal as its radius covers the first ten metres and no more. A camera
+    // above it looking down sees metres 10.8 to 20 of it and none of the placement, and a point
+    // sphere culls the whole pole. The CPU path's own gate is the cell's box over the same widened
+    // bounds, so it draws it; the dispatch has to.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 20, 0);
+    camera.lookAt(0, 0, 80);
+    camera.updateMatrixWorld(true);
+    const frustum = new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    const planes = new Float32Array(24);
+    for (const [index, plane] of frustum.planes.entries()) {
+      const at = index * 4;
+      planes[at] = plane.normal.x;
+      planes[at + 1] = plane.normal.y;
+      planes[at + 2] = plane.normal.z;
+      planes[at + 3] = plane.constant;
+    }
+    const scene = wired([{ name: "pole", levels: [0] }], 1, 8);
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 4), 0, 10, 4, 10);
+    const input: IKernelInput = {
+      camera: { planes, x: 0, y: 20, z: 0 },
+      count: 1,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+    // The bounds' own sphere, which is what `#addPlacements` places: centred where the bounds' centre
+    // lands, with the same radius.
+    expect(cullAndSelect(input).counts[keyOf(scene, "pole:0:0")]).toBe(1);
+    // The same placement with a sphere at its own point, which is what the wiring used to place: the
+    // pole's upper half is on screen and the placement is not.
+    const atPoint: IGpuPlacement[] = [
+      { ...(scene.placements[0] as IGpuPlacement), centre: new Float32Array([0, 0, 4, 10]) },
+    ];
+    expect(cullAndSelect({ ...input, placements: atPoint }).counts[keyOf(scene, "pole:0:0")]).toBe(
+      0,
+    );
+    scene.dispose();
+  });
+});
+
+describe("WorldCells whose GPU scene comes up under a built ring", () => {
+  /** A world over the same package, the same ring and the same camera, built the way the test asks. */
+  async function build(framesWithoutARenderer: number): Promise<WorldCells> {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    for (let index = 0; index < framesWithoutARenderer; index += 1) {
+      world.update();
+      await flush();
+    }
+    await flushed(world);
+    return world;
+  }
+
+  it("gives the dispatch the ring it built before the scene came up", async () => {
+    // The frames before the world has a renderer: the ring is admitted, decoded and swapped into the
+    // CPU path's own batches, and not one of those placements has a source record. Nothing else in
+    // the class would ever hand them over — a cell is only rebuilt when its records change, and
+    // theirs have not.
+    const late = await build(20);
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    late.update(renderer, playerCamera());
+    await flushed(late);
+    const on = late.stats();
+    expect(on.gpuScene.on).toBe(true);
+    expect(on.gpuScene.instances).toBeGreaterThan(0);
+    expect(on.failures).toBe(0);
+    late.dispose();
+
+    // And it is the same set a world whose scene was on from its first frame holds: the ring is not
+    // half given over, it is all of it.
+    const fromFirstFrame = await build(0);
+    fromFirstFrame.update(renderer, playerCamera());
+    await flushed(fromFirstFrame);
+    expect(on.gpuScene.instances).toBe(fromFirstFrame.stats().gpuScene.instances);
+    fromFirstFrame.dispose();
   });
 });

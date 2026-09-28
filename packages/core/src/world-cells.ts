@@ -41,6 +41,7 @@ import {
   type IAssetSlot,
   WorldGpuScene,
   gpuSceneRequested,
+  gpuSceneValidationRequested,
 } from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
@@ -461,6 +462,15 @@ export interface IWorldCellsLoadOptions {
    * `TN_WORLD_GPU_SCENE` line say which path a run took.
    */
   readonly gpuScene?: boolean;
+  /**
+   * Hold every dispatch's indirect args against the pure `cullAndSelect` reference and print the keys
+   * that disagree. `false` by default, and `TN_GPU_SCENE_VALIDATE=1` or `?tnGpuSceneValidate=1` turns
+   * it on.
+   *
+   * A readback is a queue submission and a mapped buffer, so this is a mode for answering "which key
+   * draws fewer instances than the CPU path" and never a walk to be measured with.
+   */
+  readonly gpuSceneValidate?: boolean;
 }
 
 export interface IWorldCellsStats {
@@ -2858,8 +2868,12 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   readonly #gpuScene = new WorldGpuScene();
   readonly #gpuWanted: boolean;
-  /** Scene key index per `asset:level`, which is what an asset's gate table is built from. */
-  readonly #gpuFirst = new Map<string, Map<number, number>>();
+  /** `gpuSceneValidate` as the load asked for it, before the query string and the environment. */
+  readonly #gpuValidate: boolean | undefined;
+  /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
+  readonly #gpuResident = new Map<string, number>();
+  /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
+  #gpuSeeded = false;
 
   private constructor(init: IWorldCellsInit) {
     super();
@@ -2915,6 +2929,7 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
+    this.#gpuValidate = init.gpuSceneValidate;
     this.#castShadowLevels =
       init.shadows?.cast === true
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
@@ -3097,7 +3112,19 @@ export class WorldCells extends Group implements IComputeDriven {
     // The first frame that hands over a renderer is the only one that can answer whether this
     // backend can run the GPU scene, and it prints its answer once: `enable` reports, then returns
     // early for the rest of the world's life.
-    if (renderer !== undefined) this.#gpuScene.enable(renderer, this.#gpuWanted);
+    if (renderer !== undefined)
+      this.#gpuScene.enable(
+        renderer,
+        this.#gpuWanted,
+        this.#gpuValidate ?? gpuSceneValidationRequested(),
+      );
+    // The scene coming up under a ring that was already built: every placement swapped in before it
+    // was on has no source record, and the dispatch draws nothing it is not given. One rebuild of the
+    // resident ring puts them in, through the same build every first-seen asset takes.
+    if (this.#gpuScene.on && this.#gpuSeeded === false) {
+      this.#gpuSeeded = true;
+      this.#seedGpuSources();
+    }
     // A new upload epoch, so no batch's pending span outlives the render that consumed it. See
     // `SharedBatch#touched`.
     advanceWriteEpoch();
@@ -3719,7 +3746,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#renderer = undefined;
     this.#camera = undefined;
     this.#gpuScene.dispose();
-    this.#gpuFirst.clear();
+    this.#gpuResident.clear();
     if (this.#drainShared() > 0) this.#failures += 1;
     // The batches `#drainShared` just retired. Their geometry and material were released by the
     // refcount path above, which is why they are disposed and not reused.
@@ -3980,6 +4007,11 @@ export class WorldCells extends Group implements IComputeDriven {
       same.lastFilterZ = fresh.lastFilterZ;
       this.#widenFilterRange(cell, fresh.lastFilterX, fresh.lastFilterZ);
       job.fresh.splice(index, 1);
+      // The batch that stays is the one that was already drawing, so its source records are its own
+      // — and a cell the ring built before the scene came up has none. This is the only path that
+      // hands them over for a rebuild whose records came out identical, which is every one of them:
+      // the records are the same, so the fast path is always the one taken.
+      if (this.#gpuScene.on && same.gpu === undefined) same.gpu = this.#placeSources(job, same);
     }
     // Every segment first, so a frame out of fresh meshes leaves the old batches drawing whole.
     for (const entry of job.fresh) {
@@ -4085,7 +4117,12 @@ export class WorldCells extends Group implements IComputeDriven {
     // The source records go back with the block that held them, on every path a cell's records leave:
     // a refilter's replacement, an eviction, and a queued build dropped with its cell. Releasing one
     // twice is a no-op, which is what lets a level's parts share a single list.
-    if (entry.gpu !== undefined) for (const at of entry.gpu) this.#gpuScene.release(at);
+    if (entry.gpu !== undefined) {
+      for (const at of entry.gpu) this.#gpuScene.release(at);
+      const left = (this.#gpuResident.get(entry.asset) ?? 0) - entry.gpu.length;
+      if (left > 0) this.#gpuResident.set(entry.asset, left);
+      else this.#gpuResident.delete(entry.asset);
+    }
     entry.gpu = undefined;
     if (entry.caster !== undefined && entry.casterSegment >= 0)
       entry.caster.clear(entry.casterSegment);
@@ -4241,35 +4278,42 @@ export class WorldCells extends Group implements IComputeDriven {
       // The placement transform, then the part's own offset inside the model: a bark primitive at
       // the trunk and a needles primitive higher up both land in the one instance matrix.
       const level = levelAt(asset.distances, distance);
+      // The record's own world bounds: the placement widened by the asset's authored bounds at the
+      // scale it is drawn at. Read here because this loop already holds the placement and the scale,
+      // and it is the one number the shadow levels' invalidation is tested against — the cell box is
+      // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
+      const bounds = asset.definition.bounds;
+      const scale = this.#scale.x;
       // The GPU scene's source record for this placement: the placement's own transform, the level it
       // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
       // key's own, so one record serves every part of the level — see `#placeSources`.
       if (this.#gpuScene.on) {
         const list = job.sources ?? [];
         job.sources = list;
+        // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
+        // lands: a sphere at the placement instead is not a bound of the placement, and every prop
+        // whose model does not straddle the origin lost the half of itself that reaches away from it
+        // — a post, a stump, a fern, all of them culled at the edge of the view with their bases
+        // outside it. The CPU path's own gate is the cell's box over the same widened bounds, and it
+        // is conservative in exactly the way this is now.
+        const at = scale;
         list.push({
           level,
           matrix: this.#matrix.clone(),
-          radius: 0.5 * boundsRadius * Math.abs(this.#scale.x),
-          x,
-          y,
-          z,
+          radius: 0.5 * boundsRadius * Math.abs(at),
+          x: x + ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5 * at,
+          y: y + ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5 * at,
+          z: z + ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5 * at,
         });
       }
       const parts = asset.levels[level] as readonly IAssetPart[];
       const levelBatches = job.batches?.[level] as InstancedBatch[];
       const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
-      // The record's own world bounds: the placement widened by the asset's authored bounds at the
-      // scale it is drawn at. Read here because this loop already holds the placement and the scale,
-      // and it is the one number the shadow levels' invalidation is tested against — the cell box is
-      // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
-      const bounds = asset.definition.bounds;
       for (const [part, entry] of parts.entries()) {
         this.#instance.multiplyMatrices(this.#matrix, entry.local);
         (levelBatches[part] as InstancedBatch).add(this.#instance);
         const box = levelBoxes?.[part];
         if (box === undefined) continue;
-        const scale = this.#scale.x;
         this.#recordPoint.set(
           x + (bounds.min[0] as number) * scale,
           y + (bounds.min[1] as number) * scale,
@@ -4545,6 +4589,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * planes, and the mesh's own bounds are the whole resident ring. Idempotent: a settled frame's
    * buffers are the ones it was dressed against, and a regrow, a rebind or a `grow` replaces them,
    * which is the only thing that brings a dressed mesh back through here.
+   *
+   * A key whose placements outgrew its region is regrown here rather than silently dropping instances
+   * against the capacity guard, which is what a fixed ceiling did to any key a walk filled past.
    */
   #dressGpu(
     shared: SharedBatch,
@@ -4559,11 +4606,23 @@ export class WorldCells extends Group implements IComputeDriven {
     const drawn = scene.drawn;
     const args = scene.args;
     if (drawn === undefined || args === undefined) return;
-    if (shared.mesh.instanceMatrix === drawn && shared.mesh.frustumCulled === false) return;
+    // The asset's own resident placements, not one level's share of them: a placement's level is
+    // decided per frame from where the camera is, so every level's region has to hold all of them.
+    const capacity = Math.max(shared.liveCeiling, this.#gpuResident.get(key.asset) ?? 0);
+    const held = scene.regionOf(key.key);
+    if (
+      shared.mesh.instanceMatrix === drawn &&
+      shared.mesh.frustumCulled === false &&
+      (held?.capacity ?? 0) >= capacity
+    )
+      return;
     const asset = this.#assets.get(key.asset);
     const part = asset?.levels[key.level]?.[key.part];
     if (asset === undefined || part === undefined) return;
-    const region = scene.key(key.key, new Float32Array(part.local.elements), shared.liveCeiling);
+    const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
+      group: `${key.asset}:${String(key.level)}`,
+      part: key.part,
+    });
     if (region === undefined) return;
     const args2 = scene.regionOf(key.key);
     if (args2 === undefined) return;
@@ -4579,13 +4638,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.
-    const id = key.asset;
-    const first = this.#gpuFirst.get(id) ?? new Map<number, number>();
-    if (first.get(key.level) !== args2.argsIndex) {
-      first.set(key.level, args2.argsIndex);
-      this.#gpuFirst.set(id, first);
-    }
-    scene.slot(id, this.#gatesOf(id, asset));
+    scene.slot(key.asset, this.#gatesOf(key.asset, asset));
   }
 
   /**
@@ -4594,18 +4647,39 @@ export class WorldCells extends Group implements IComputeDriven {
    * so the dispatch draws nothing at that level rather than reading a key that is not there.
    */
   #gatesOf(id: string, asset: IAssetState): IAssetSlot {
-    const first = this.#gpuFirst.get(id);
     const gates: { firstKey: number; parts: number }[] = [];
-    for (const [level, parts] of asset.levels.entries())
-      gates.push({
-        firstKey: first?.get(level) ?? 0,
-        parts: first?.has(level) === true ? parts.length : 0,
-      });
+    // The level's own contiguous run, which is what the kernel's `firstKey + part` addresses. Read
+    // back from the scene rather than remembered here: a table that recorded the key index it saw
+    // last named the wrong part as the first, and a multi-part asset then drew nothing anywhere.
+    for (const [level] of asset.levels.entries())
+      gates.push(this.#gpuScene.levelKeys(`${id}:${String(level)}`) ?? { firstKey: 0, parts: 0 });
     return {
       cull: cullDistance(asset.definition.maxDistance),
       distances: asset.distances,
       levels: gates,
     };
+  }
+
+  /**
+   * Rebuild every resident run once, so a scene that came up after the ring was built is given the
+   * source records it was built without.
+   *
+   * `WorldCells.update` can be called before it has a renderer, and a renderer that is not WebGPU
+   * never turns the scene on at all; either way the cells that were swapped in while it was off hold
+   * placements the dispatches have never heard of, and nothing else in the class would ever hand them
+   * over. One rebuild of the ring is the whole fix, and it is the same build every first-seen asset
+   * takes: `replace` keeps the old batches drawn until each new one is attached, so the rebuild is
+   * not a frame of holes.
+   */
+  #seedGpuSources(): void {
+    for (const cell of this.#resident.values())
+      for (const batch of cell.batches) {
+        const asset = this.#assets.get(batch.asset);
+        if (asset === undefined || asset.levels.length === 0) continue;
+        // One rebuild per run, not per batch: a run's placements are one build, and queueing it per
+        // batch would rebuild the same placements once per level and part.
+        this.#queueBuild(asset, cell, batch.run, true);
+      }
   }
 
   /**
@@ -4639,6 +4713,8 @@ export class WorldCells extends Group implements IComputeDriven {
         if (at >= 0) records.push(at);
       }
     byLevel.set(entry.level, records);
+    // What a key of this asset has to be able to hold, on any level: see `#dressGpu`.
+    this.#gpuResident.set(entry.asset, (this.#gpuResident.get(entry.asset) ?? 0) + records.length);
     return records;
   }
 

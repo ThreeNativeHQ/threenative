@@ -5,7 +5,6 @@ import {
   Loop,
   Return,
   atomicAdd,
-  float,
   instanceIndex,
   int,
   length,
@@ -49,6 +48,10 @@ const VEC4_WORDS = 4;
 const LOCAL_WORDS = 16;
 /** Slots a placement may name before the kernel is refused rather than read out of bounds. */
 const SLOT_NONE = -1;
+/** Dispatches between readbacks: a mapped buffer is a queue submission, so not every frame. */
+const VALIDATE_EVERY = 30;
+/** Keys a mismatch line names before the rest are counted and not printed. */
+const VALIDATE_REPORTED_KEYS = 10;
 
 /**
  * A `mat4` world matrix, the placement's bounding-sphere centre and radius, and the asset slot whose
@@ -78,11 +81,34 @@ export interface IAssetSlot {
 
 /** One key's region of the shared drawn buffer, and the args record that counts it. */
 export interface IRegion {
-  readonly start: number;
-  readonly capacity: number;
+  /** Where this key's survivors are written. Moves only in a re-layout, which rewrites every record. */
+  start: number;
+  /** Instances this region holds. Grows only in a re-layout, which resizes the whole level. */
+  capacity: number;
   readonly argsIndex: number;
   /** The part's own offset inside the model; drawn as `placement * local`, as the CPU does. */
   readonly local: Float32Array;
+  /** The main key this region is, which is what the validation marker names a mismatch by. */
+  readonly name?: string;
+}
+
+/** One level's parts and the single capacity all of them are sized from. */
+interface ILevelGroup {
+  capacity: number;
+  /** Part index to the region that part draws into; laid out in this order. */
+  readonly parts: Map<number, number>;
+}
+
+/**
+ * Which of a level's parts a key is, so the parts of one level stay the contiguous run the kernel
+ * and the gate table both address as `firstKey + part`. `undefined` mints a key of its own, which
+ * is every key a caller that has no level to be a part of wants.
+ */
+export interface ILevelKey {
+  /** The level this part belongs to — one group, however many parts it has. */
+  readonly group: string;
+  /** The part's own index in that level, which is the order the group is laid out in. */
+  readonly part: number;
 }
 
 /** What the kernel reads, and the whole of what a dispatch touches. */
@@ -309,6 +335,37 @@ export function gpuSceneRequested(): boolean {
   return host.__tnGpuScene === true || host.__tnGpuScene === "1";
 }
 
+/** The validation flag. */
+export const GPU_SCENE_VALIDATE_FLAG = "TN_GPU_SCENE_VALIDATE";
+
+/**
+ * Whether the GPU scene should hold every dispatch's indirect args against the CPU reference.
+ *
+ * @situation find the keys a real WebGPU dispatch draws fewer instances of than `cullAndSelect` does
+ * @constraint off by default and never on a measured walk: a readback is a queue submission and a
+ *   mapped buffer, so the mode exists to answer "which key" and not to be fast
+ * @example WorldCells.load({ ...options, gpuScene: true, gpuSceneValidate: gpuSceneValidationRequested() });
+ *
+ * Read the way `gpuSceneRequested` reads its own: a native launch sets the environment variable, a
+ * browser asks with `?tnGpuSceneValidate=1`, and a test sets the global.
+ */
+export function gpuSceneValidationRequested(): boolean {
+  const host = globalThis as {
+    process?: { env?: Record<string, unknown> };
+    __tnGpuSceneValidate?: unknown;
+  };
+  const fromEnv = host.process?.env?.[GPU_SCENE_VALIDATE_FLAG];
+  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
+    return true;
+  const query = globalThis.location?.search;
+  if (
+    typeof query === "string" &&
+    /[?&]tnGpuSceneValidate=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query)
+  )
+    return true;
+  return host.__tnGpuSceneValidate === true || host.__tnGpuSceneValidate === "1";
+}
+
 /**
  * The GPU scene, owned by one `WorldCells`.
  *
@@ -322,6 +379,8 @@ export class WorldGpuScene {
   readonly #regions: IRegion[] = [];
   readonly #keysByName = new Map<string, number>();
   readonly #slotsByAsset = new Map<string, IAssetSlot>();
+  /** One level's parts per `asset:level`, which is what keeps them the run the kernel addresses. */
+  readonly #groups = new Map<string, ILevelGroup>();
   /** Slot order, so a slot index is a position the `gates` buffer and the reference agree on. */
   readonly #order: string[] = [];
   /** Source records whose cell has left the ring, handed back before the buffer grows. */
@@ -342,9 +401,11 @@ export class WorldGpuScene {
 
   /**
    * Turn the GPU scene on if this backend can run it, and say why not when it cannot. One line,
-   * once, and never silent.
+   * once, and never silent. `validate` holds every dispatch's args against the CPU reference; see
+   * {@link gpuSceneValidationRequested}.
    */
-  enable(renderer: IRendererLike | undefined, wanted: boolean): boolean {
+  enable(renderer: IRendererLike | undefined, wanted: boolean, validate = false): boolean {
+    this.#validate = validate;
     if (this.#on) return true;
     if (this.#reported) return false;
     if (renderer === undefined) {
@@ -405,11 +466,14 @@ export class WorldGpuScene {
    * The main pass's one key per `asset:level:part`: give it a region of the drawn buffer and an args
    * record, or hand back the ones it already has.
    *
-   * A region is assigned once and never moves, because `firstInstance` is written into the args
-   * record on the CPU and read by the draw. A key whose placements outgrew its region is regrown
-   * into a larger one at the tail, which is the only structural change a walk makes.
+   * A region is assigned once and never moves its args record, because `firstInstance` is written
+   * into that record on the CPU and read by the draw. A key that outgrew its region is regrown into
+   * a larger one at the tail, which is the only structural change a walk makes — and a key that is
+   * one of a level's parts is regrown with its siblings, because the kernel addresses a level's parts
+   * as one contiguous run and a part that moved alone would break that run. See {@link levelKeys}.
    */
-  key(name: string, local: Float32Array, capacity: number): number | undefined {
+  key(name: string, local: Float32Array, capacity: number, level?: ILevelKey): number | undefined {
+    if (level !== undefined) return this.#levelKey(name, local, capacity, level);
     const existing = this.#keysByName.get(name);
     if (existing !== undefined) {
       const region = this.#regions[existing] as IRegion;
@@ -417,7 +481,7 @@ export class WorldGpuScene {
       // A regrow: the old region is abandoned, the new one is the tail, and the args record's
       // `firstInstance` moves with it. Structural, so a bundle version may be bumped for it.
       this.#keysByName.set(name, this.#regions.length);
-      this.#regions.push({ ...region, start: this.#drawnCapacity, capacity });
+      this.#regions.push({ ...region, name, start: this.#drawnCapacity, capacity });
       this.#drawnCapacity += capacity;
       const regrown = this.#regions.length - 1;
       this.#growOf("keys", regrown + 1, VEC4_WORDS);
@@ -430,7 +494,7 @@ export class WorldGpuScene {
     this.#ensure();
     const index = this.#regions.length;
     this.#keysByName.set(name, index);
-    this.#regions.push({ argsIndex: index, capacity, local, start: this.#drawnCapacity });
+    this.#regions.push({ argsIndex: index, capacity, local, name, start: this.#drawnCapacity });
     this.#drawnCapacity += capacity;
     this.#growOf("keys", index + 1, VEC4_WORDS);
     this.#growOf("locals", index + 1, LOCAL_WORDS);
@@ -438,6 +502,83 @@ export class WorldGpuScene {
     this.#growDrawn();
     this.#writeKey(index);
     return index;
+  }
+
+  /**
+   * One part of a level, in the level's own group: minted into the run its siblings occupy, and
+   * regrown with them.
+   *
+   * The run is what makes `firstKey + part` mean the right key, so it is laid out here and read back
+   * through {@link levelKeys} rather than by the caller remembering which index it saw first. A
+   * group holds every part minted so far in part order, one capacity for all of them, and any change
+   * — a new part, a larger capacity — re-lays the whole run out at the tail. Each part keeps its own
+   * args record, so a re-layout moves no geometry's indirect record and re-dresses no mesh.
+   */
+  #levelKey(
+    name: string,
+    local: Float32Array,
+    capacity: number,
+    level: ILevelKey,
+  ): number | undefined {
+    if (this.#ensure() === undefined) return undefined;
+    const held =
+      this.#groups.get(level.group) ??
+      ({ capacity, parts: new Map<number, number>() } as ILevelGroup);
+    this.#groups.set(level.group, held);
+    if (capacity > held.capacity) held.capacity = capacity;
+    let index = this.#keysByName.get(name);
+    if (index === undefined) {
+      index = this.#regions.length;
+      this.#keysByName.set(name, index);
+      this.#regions.push({
+        argsIndex: index,
+        capacity: held.capacity,
+        local,
+        name,
+        start: this.#drawnCapacity,
+      });
+      this.#growOf("keys", index + 1, VEC4_WORDS);
+      this.#growOf("locals", index + 1, LOCAL_WORDS);
+      this.#growOf("args", (index + 1) * DRAW_ARGS_WORDS, 1);
+    }
+    held.parts.set(level.part, index);
+    this.#drawnCapacity = this.#layoutGroup(held);
+    this.#growDrawn();
+    // The live buffers, not the ones this method read: a regrow above may have replaced them.
+    for (const at of held.parts.values()) this.#writeKey(at);
+    return index;
+  }
+
+  /** The keys one level's parts draw into, which is what the gate table needs and the kernel assumes. */
+  levelKeys(group: string): { readonly firstKey: number; readonly parts: number } | undefined {
+    const held = this.#groups.get(group);
+    if (held === undefined || held.parts.size === 0) return undefined;
+    let first = Number.POSITIVE_INFINITY;
+    let last = -1;
+    for (const index of held.parts.values()) {
+      if (index < first) first = index;
+      if (index > last) last = index;
+    }
+    return { firstKey: first, parts: last - first + 1 };
+  }
+
+  /**
+   * Lay one level's parts out contiguously at the tail, and answer where the buffer now ends.
+   *
+   * Every part moves together, so `firstKey + part` names the right region however many parts the
+   * level has and in whatever order they were minted. A part already where the layout puts it is
+   * left alone, which is every frame of a settled walk.
+   */
+  #layoutGroup(held: ILevelGroup): number {
+    const ordered = [...held.parts.entries()].sort((one, other) => one[0] - other[0]);
+    let start = this.#drawnCapacity;
+    for (const [, index] of ordered) {
+      const region = this.#regions[index] as IRegion;
+      region.start = start;
+      region.capacity = held.capacity;
+      start += held.capacity;
+    }
+    return start;
   }
 
   /** The region one key draws from, for the counters and the tests. */
@@ -537,6 +678,85 @@ export class WorldGpuScene {
     renderer.compute(kernel.clear);
     renderer.compute(kernel.cull);
     this.#dispatched += 1;
+    if (
+      this.#validate === true &&
+      this.#validating === false &&
+      this.#dispatched % VALIDATE_EVERY === 0
+    )
+      this.#compare(renderer);
+  }
+
+  /** What the last landed readback found, so a harness can read the answer without the log. */
+  get validation(): { readonly mismatched: number; readonly lines: readonly string[] } {
+    return { mismatched: this.#mismatches, lines: this.#lines };
+  }
+
+  #mismatches = 0;
+  #lines: string[] = [];
+  #validate = false;
+  #validating = false;
+
+  /**
+   * Read the indirect args back and hold them against the reference, over the same placements, the
+   * same camera and the same gate table the dispatch just read.
+   *
+   * The reference is {@link cullAndSelect} on the CPU, so this is the kernel measured against the
+   * loop it mirrors — the only place the TSL itself is ever checked. It costs a queue submission and
+   * a mapped buffer every {@link VALIDATE_EVERY} dispatches, which is why it is a mode and not a
+   * default: a game never pays for it and a walk is never measured with it on.
+   */
+  #compare(renderer: IRendererLike): void {
+    const buffers = this.#buffers;
+    if (buffers === undefined) return;
+    const reference = cullAndSelect({
+      camera: {
+        planes: this.#planes,
+        x: this.#eye.value.x,
+        y: this.#eye.value.y,
+        z: this.#eye.value.z,
+      },
+      count: this.placements.length,
+      placements: this.placements,
+      regionCount: this.#regions.length,
+      regions: this.#regions,
+      slots: this.gates(),
+    });
+    const issued = this.#dispatched;
+    this.#validating = true;
+    renderer
+      .readback(buffers.args)
+      .then((bytes) => {
+        this.#validating = false;
+        // A readback that lands more than its own window later describes a walk, not this frame.
+        if (this.#dispatched - issued > VALIDATE_EVERY) return;
+        this.#reportMismatch(renderer, new Uint32Array(bytes), reference);
+      })
+      .catch(() => {
+        this.#validating = false;
+      });
+  }
+
+  #reportMismatch(renderer: IRendererLike, gpu: Uint32Array, reference: IKernelResult): void {
+    const mismatched: string[] = [];
+    for (const [index, region] of this.#regions.entries()) {
+      const landed = gpu[region.argsIndex * DRAW_ARGS_WORDS + 1] as number;
+      const expected = reference.counts[index] as number;
+      if (landed === expected) continue;
+      if (mismatched.length < VALIDATE_REPORTED_KEYS)
+        mismatched.push(
+          `${region.name ?? `#${String(index)}`} gpu=${String(landed)} cpu=${String(expected)}`,
+        );
+    }
+    this.#mismatches = mismatched.length;
+    this.#lines = mismatched;
+    const name =
+      "log" in renderer ? (renderer.log as ((message: string) => void) | undefined) : undefined;
+    const say = typeof name === "function" ? name : console.info.bind(console);
+    say(
+      `TN_WORLD_GPU_SCENE_VALIDATE ${mismatched.length === 0 ? "ok" : "mismatch"} ` +
+        `keys=${String(mismatched.length)}`,
+    );
+    for (const line of mismatched) say(`TN_WORLD_GPU_SCENE_VALIDATE ${line}`);
   }
 
   dispose(): void {
@@ -546,6 +766,7 @@ export class WorldGpuScene {
     this.#regions.length = 0;
     this.#keysByName.clear();
     this.#slotsByAsset.clear();
+    this.#groups.clear();
     this.#order.length = 0;
     this.#free.length = 0;
     this.#live = 0;
@@ -747,19 +968,15 @@ export class WorldGpuScene {
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
       If(gate.w.greaterThan(0.5).and(distance.greaterThan(gate.z)), () => Return());
       // The level, by the same ascending test the CPU runs: the last gate the placement is past.
-      // Eight is the deepest chain a baked level set reaches, and `gate.y` bounds the loop, so a
-      // deeper one would read the level above its own.
+      // The loop is bounded by `gate.y` rather than unrolled, because a baked chain can carry more
+      // levels than any fixed count, and a level the loop stopped short of is a placement drawn at
+      // the wrong shape by however many levels it missed.
       const level = int(0).toVar();
-      for (let index = 1; index < 8; index += 1) {
-        If(
-          float(index)
-            .lessThan(gate.y)
-            .and(distance.greaterThan(levels.element(gate.x.add(index)).x)),
-          () => {
-            level.assign(int(index));
-          },
-        );
-      }
+      Loop({ start: int(1), end: gate.y, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
+        If(distance.greaterThan(levels.element(gate.x.add(i as never)).x), () => {
+          level.assign(i as never);
+        });
+      });
       const at = levels.element(gate.x.add(level));
       Loop({ start: int(0), end: at.z, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
         const keyIndex = at.y.add(i as never);
