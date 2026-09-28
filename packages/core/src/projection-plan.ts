@@ -127,13 +127,21 @@ export function hasMorphAttributes(geometry: BufferGeometry): boolean {
 /**
  * True when the material already moves its own vertices: `positionNode`, the shadow path's
  * `castShadowPositionNode`, or a `displacementMap`. Read through `Reflect` because a plain
- * `MeshStandardMaterial` has none of them.
+ * `MeshStandardMaterial` has none of them, and they are read as plain properties rather than through
+ * `Reflect` because the structure proof asks this of every material in the scene on every frame:
+ * `Reflect.get` is a runtime call on a key the engine cannot fold, and the direct read is a load it
+ * can.
  */
 export function displacesVertices(material: Material): boolean {
+  const candidate = material as {
+    positionNode?: unknown;
+    castShadowPositionNode?: unknown;
+    displacementMap?: unknown;
+  };
   return (
-    Reflect.get(material, "positionNode") != null ||
-    Reflect.get(material, "castShadowPositionNode") != null ||
-    Reflect.get(material, "displacementMap") != null
+    candidate.positionNode != null ||
+    candidate.castShadowPositionNode != null ||
+    candidate.displacementMap != null
   );
 }
 
