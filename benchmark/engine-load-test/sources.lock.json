@@ -342,6 +342,7 @@
         {
           "path": "benchmarks/rendering/lights_and_meshes.gd",
           "gitBlobSha1": "e9ded113e727529965fcc172d23062e0e13948a7",
+          "sha256": "2b1b4088876a6fac0332a14b27d004634360786c7746133360ba35cf9f003a6c",
           "bytes": 4366,
           "family": "godot-lights-meshes"
         },
