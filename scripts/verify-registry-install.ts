@@ -17,10 +17,18 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { inflateRawSync } from "node:zlib";
 import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
+import {
+  type IZipArchive,
+  type IZipEntry,
+  readZipEntries,
+} from "../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 
 /** `link:` is pnpm's workspace link; `file:` is a local tarball or directory. Neither ships. */
 const LOCAL_SPECIFIER = /(?:^|["'\s:])(?:file|link):/mu;
@@ -41,6 +49,12 @@ export interface IRegistryInstallStep {
   readonly detail: string;
   readonly name: string;
   readonly ok: boolean;
+}
+
+/** One published prebuilt release key, and the APK archive entry that has to carry its bytes. */
+export interface IAndroidPrebuiltProof {
+  readonly entry: string;
+  readonly key: string;
 }
 
 /**
@@ -564,17 +578,29 @@ function step(name: string, work: () => string): IRegistryInstallStep {
   }
 }
 
-function nativeOutput(project: string): string {
+/** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
+async function stepAsync(name: string, work: () => Promise<string>): Promise<IRegistryInstallStep> {
+  try {
+    return { detail: (await work()).trim().slice(-400) || "(no output)", name, ok: true };
+  } catch (error) {
+    return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
+  }
+}
+
+function artifactName(project: string): string {
   const manifest = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf8")) as {
     name?: unknown;
   };
   if (typeof manifest.name !== "string" || manifest.name.length === 0)
-    throw new Error("Native build produced no project name to resolve its executable.");
-  const name = manifest.name.replace(/^@[^/]+\//u, "").replace(/[^a-zA-Z0-9._-]/gu, "-");
+    throw new Error("Native build produced no project name to resolve its artifact.");
+  return manifest.name.replace(/^@[^/]+\//u, "").replace(/[^a-zA-Z0-9._-]/gu, "-");
+}
+
+function nativeOutput(project: string): string {
   const executable = path.join(
     project,
     "dist-native",
-    `${name}${process.platform === "win32" ? ".exe" : ""}`,
+    `${artifactName(project)}${process.platform === "win32" ? ".exe" : ""}`,
   );
   if (!fs.existsSync(executable))
     throw new Error(`Native build produced no executable at ${executable}.`);
@@ -582,6 +608,165 @@ function nativeOutput(project: string): string {
   if (process.platform !== "win32" && (mode & 0o111) === 0)
     throw new Error(`Native build output is not executable: ${executable}.`);
   return executable;
+}
+
+function androidOutput(project: string): string {
+  const apk = path.join(project, "dist-native", `${artifactName(project)}.apk`);
+  if (!fs.existsSync(apk)) throw new Error(`Android build produced no APK at ${apk}.`);
+  if (fs.statSync(apk).size === 0)
+    throw new Error(`Android build produced an empty APK at ${apk}.`);
+  return apk;
+}
+
+/** The ABI this gate's Android criterion names, and the one the published cohort is proved on. */
+export const ANDROID_PROOF_ABI = "arm64-v8a";
+
+/**
+ * The rows of the *installed* packager's prebuilt table this ABI must reach the APK as, named the
+ * way the archive names them.
+ *
+ * Read from the installed package rather than restated here: that table is what the build staged
+ * from, and a second copy of it here is a second thing to drift. A `jniLibs/` source directory
+ * becomes `lib/` in the archive, while a staged asset keeps its own path. The `.aar` row is a build
+ * input rather than an APK entry and names no ABI, so the ABI filter already excludes it.
+ */
+export function androidApkPrebuiltProofs(
+  assets: Readonly<Record<string, string>>,
+  abi: string = ANDROID_PROOF_ABI,
+): readonly IAndroidPrebuiltProof[] {
+  const proofs = Object.entries(assets)
+    .filter(([, staged]) => staged.includes(`/${abi}/`))
+    .map(([key, staged]) => ({
+      entry: staged.startsWith("jniLibs/") ? `lib/${staged.slice("jniLibs/".length)}` : staged,
+      key,
+    }));
+  if (proofs.length === 0)
+    throw new Error(
+      `TN_REGISTRY_INSTALL_ANDROID_NO_PREBUILT_ROWS: the installed packager stages no ${abi} library, so its APK cannot be checked against the published cohort.`,
+    );
+  return proofs;
+}
+
+/** A ZIP entry is either stored verbatim or deflated; both read without a dependency. */
+const ZIP_STORED = 0;
+
+function entrySha256(archive: IZipArchive, entry: IZipEntry): string {
+  const raw = archive.bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize);
+  const contents = entry.compression === ZIP_STORED ? raw : inflateRawSync(raw);
+  return createHash("sha256").update(contents).digest("hex");
+}
+
+/**
+ * Require every named prebuilt to be inside the APK, byte-identical to what the release published.
+ *
+ * A stub key, a `.so` compiled on the machine instead of downloaded, or an APK missing one ABI's
+ * runtime all fail here. `build --target android` exiting 0 says none of that: the claim is that
+ * these are the published bytes, and only a checksum against the published release says so.
+ */
+export function assertPublishedApkPrebuilts(
+  apk: string,
+  archive: IZipArchive,
+  artifacts: Readonly<Record<string, { readonly sha256: string }>>,
+  proofs: readonly IAndroidPrebuiltProof[],
+): string {
+  const verified: string[] = [];
+  for (const { entry, key } of proofs) {
+    const expected = artifacts[key]?.sha256;
+    if (typeof expected !== "string" || expected.length === 0)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_NOT_PUBLISHED: the published release manifest carries no '${key}', so ${entry} in ${apk} cannot be proven published.`,
+      );
+    const stored = archive.entries.find((candidate) => candidate.name === entry);
+    if (stored === undefined)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_ENTRY_MISSING: ${apk} carries no ${entry} for prebuilt '${key}'.`,
+      );
+    const actual = entrySha256(archive, stored);
+    if (actual !== expected)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH: ${entry} in ${apk} hashes to ${actual}, not the published ${expected} for '${key}'.`,
+      );
+    verified.push(`${key} -> ${entry}`);
+  }
+  return `Published ${verified.length} ${ANDROID_PROOF_ABI} prebuilt(s) verified byte-for-byte in ${apk}: ${verified.join(", ")}.`;
+}
+
+/**
+ * Read the prebuilt table out of the installed package, the way a consumer's build read it.
+ *
+ * A gate that restates the table is a gate that checks last release's contract, and a gate that
+ * imports this checkout's copy checks a package the consumer never installed. `curl` is the repo's
+ * existing synchronous HTTP idiom (`check-publish-state.ts` heads every release URL with it).
+ */
+async function installedAndroidPrebuilts(
+  project: string,
+  run: CommandRunner,
+): Promise<{
+  artifacts: Record<string, { sha256: string }>;
+  proofs: readonly IAndroidPrebuiltProof[];
+}> {
+  const root = path.join(project, "node_modules", "@threenative", "runtime-native");
+  const scripts = path.join(root, "scripts");
+  const read = async <T>(file: string): Promise<T> => {
+    const modulePath = path.join(scripts, file);
+    if (!fs.existsSync(modulePath))
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_NO_RUNTIME_SCRIPTS: the installed runtime-native ships no scripts/${file}, so the Android leg cannot read the prebuilt contract it built with.`,
+      );
+    return (await import(pathToFileURL(modulePath).href)) as T;
+  };
+  const version = (
+    JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      version?: unknown;
+    }
+  ).version;
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(
+      "TN_REGISTRY_INSTALL_ANDROID_NO_RUNTIME_VERSION: the installed runtime-native has no version.",
+    );
+  const manifestUrl = (
+    await read<{ releaseManifestUrl: (version?: string) => string }>("install-prebuilt.mjs")
+  ).releaseManifestUrl(version);
+  // `--fail`, so a version with no published release is reported as a missing release rather than as
+  // the 404 page failing to parse. Both fail the step; only one of them says what to go and fix.
+  const lock = run(
+    "curl",
+    ["--silent", "--show-error", "--fail", "--location", manifestUrl],
+    project,
+  );
+  let manifest: { artifacts?: Record<string, { sha256?: unknown }> };
+  try {
+    manifest = JSON.parse(lock) as { artifacts?: Record<string, { sha256?: unknown }> };
+  } catch (error) {
+    throw new Error(
+      `TN_REGISTRY_INSTALL_ANDROID_MANIFEST: the installed runtime-native ${version} published no readable prebuilt release at ${manifestUrl}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const artifacts = manifest.artifacts ?? {};
+  const proofs = androidApkPrebuiltProofs(
+    (await read<{ ANDROID_PREBUILT_V8_ASSETS: Record<string, string> }>("package-android.mjs"))
+      .ANDROID_PREBUILT_V8_ASSETS,
+  );
+  return { artifacts: artifacts as Record<string, { sha256: string }>, proofs };
+}
+
+/**
+ * The consumer's Android leg: build the APK, then prove it carries the published prebuilt cohort.
+ *
+ * No engine checkout, no `THREENATIVE_RUNTIME_SOURCE`, and the release URL comes from the installed
+ * package's own function, so the step fails if the version a stranger installed has no published
+ * Android arm64 prebuilt.
+ */
+export async function androidStep(
+  project: string,
+  run: CommandRunner,
+  command: string,
+  build: readonly string[],
+): Promise<string> {
+  const output = await run(command, build, project);
+  const apk = androidOutput(project);
+  const { artifacts, proofs } = await installedAndroidPrebuilts(project, run);
+  return `${output}\nAPK: ${apk}\n${assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)}`;
 }
 
 function assertDoctorTargetCensus(output: string): string {
@@ -794,9 +979,9 @@ function mcpStep(project: string, runner: McpRunner): string {
   return results.join("; ");
 }
 
-export function verifyRegistryInstall(
+export async function verifyRegistryInstall(
   options: IVerifyRegistryInstallOptions = {},
-): IRegistryInstallReport {
+): Promise<IRegistryInstallReport> {
   const template = options.template ?? "starter";
   const managers = [...new Set(options.packageManagers ?? REGISTRY_PACKAGE_MANAGERS)];
   if (managers.length === 0)
@@ -864,6 +1049,7 @@ export function verifyRegistryInstall(
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ])
           notRun(name, "the scaffold step never produced a project.");
@@ -880,6 +1066,7 @@ export function verifyRegistryInstall(
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ])
           notRun(
@@ -954,6 +1141,11 @@ export function verifyRegistryInstall(
           return `${output}\nExecutable: ${executable}\n${proof}${targets.length > 0 ? `\nConsumer targets: ${targets}` : ""}`;
         }),
       );
+      steps.push(
+        await stepAsync(prefix("android"), () =>
+          androidStep(project, run, command, script("build:android")),
+        ),
+      );
       steps.push(step(prefix("mcp"), () => mcpStep(project, mcp)));
     }
   } finally {
@@ -967,8 +1159,8 @@ export function verifyRegistryInstall(
   };
 }
 
-function main(): void {
-  const report = verifyRegistryInstall();
+async function main(): Promise<void> {
+  const report = await verifyRegistryInstall();
   for (const item of report.steps)
     process.stdout.write(`${item.ok ? "pass" : "FAIL"}  ${item.name}\n      ${item.detail}\n`);
   process.stdout.write(
@@ -979,4 +1171,7 @@ function main(): void {
   process.exitCode = report.exitCode;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// `void`, not a top-level `await`: this file is also loaded as CommonJS by a scoped caller, and
+// esbuild refuses top-level await in that output format. The process stays alive until the promise
+// settles, and every await inside is a resolved module read rather than an open handle.
+if (import.meta.url === `file://${process.argv[1]}`) void main();
