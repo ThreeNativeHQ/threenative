@@ -107,6 +107,9 @@ async function makeWorld(): Promise<{
     follow,
     loadModel: async () => model(),
     ring: 1,
+    // Both halves stream: the caster clusters are keys too, and one that re-mints costs the same
+    // node build twice.
+    shadows: { cast: true },
     surface,
     url: "/world/world.json",
   });
@@ -131,8 +134,7 @@ function settle(world: WorldCells, limit = 4000): void {
 function batches(world: WorldCells): Map<string, InstancedMesh> {
   const meshes = new Map<string, InstancedMesh>();
   world.traverse((object) => {
-    if (object instanceof InstancedMesh && !object.name.endsWith(":caster"))
-      meshes.set(object.name, object);
+    if (object instanceof InstancedMesh) meshes.set(object.name, object);
   });
   return meshes;
 }
@@ -209,6 +211,7 @@ describe("WorldCells streaming performance", () => {
   it("draws only live records, and never gives one key a second mesh across a residency cycle", async () => {
     const { follow, world } = await makeWorld();
     const seen = new Set<string>();
+    const uuidByKey = new Map<string, string>();
     const reminted: string[] = [];
     let now = 0;
 
@@ -222,13 +225,18 @@ describe("WorldCells streaming performance", () => {
         world.update();
         if (frame % 4 === 0) await flush(1);
         for (const [name, mesh] of batches(world)) {
-          if (seen.has(mesh.uuid)) {
-            if (!seen.has(name)) reminted.push(name);
-            seen.add(name);
+          // A key keeps one uuid for the whole walk, on the main half and on the caster clusters
+          // alike: a second mesh is a node three built twice, in the main pass and in every shadow
+          // pass. Compared frame by frame, because `grow` swaps a fresh mesh in under the same name
+          // inside a settle — two quiescent snapshots never see it.
+          const held = uuidByKey.get(name);
+          if (held !== undefined) {
+            if (held !== mesh.uuid) reminted.push(name);
             continue;
           }
+          uuidByKey.set(name, mesh.uuid);
+          if (seen.has(mesh.uuid)) reminted.push(`${name} took a mesh another key already had`);
           seen.add(mesh.uuid);
-          seen.add(name);
           // A prewarmed batch is minted empty and only filled when a placement wants the key, so
           // `count` 0 is a mesh waiting rather than a hole.
           if (mesh.count === 0) continue;

@@ -2133,15 +2133,20 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     // Every segment first, so a frame out of fresh meshes leaves the old batches drawing whole.
     for (const entry of job.fresh) {
-      if (entry.batch.count === 0 || entry.segment >= 0) continue;
-      const shared = this.#sharedFor(job.asset.id, entry, cell);
-      const segment = shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
-      if (shared === undefined || segment === undefined) {
-        this.#meshStalled = true;
-        return false;
+      if (entry.batch.count === 0) continue;
+      // Both halves for every fresh entry, whether or not a stalled frame already claimed one:
+      // skipping an entry that has its main block meant the retry never asked for its cluster, so
+      // those records reached the main pass and no shadow map.
+      if (entry.segment < 0) {
+        const shared = this.#sharedFor(job.asset.id, entry, cell);
+        const segment = shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
+        if (shared === undefined || segment === undefined) {
+          this.#meshStalled = true;
+          return false;
+        }
+        entry.shared = shared;
+        entry.segment = segment;
       }
-      entry.shared = shared;
-      entry.segment = segment;
       // The caster cluster, when this level casts. A frame that runs out of fresh meshes between
       // the main mesh and its cluster leaves the main one drawing whole and takes the cluster next
       // frame, which is the same no-hole rule as above: never half a replacement.
@@ -2335,13 +2340,14 @@ export class WorldCells extends Group implements IComputeDriven {
    * a frame. A caster batch carries the shadow flags and the caster layer; a main batch casts
    * nothing, because its records reach the shadow maps through the caster cluster.
    *
-   * The buffer starts one block per resident cell plus the one a refilter holds alongside the
-   * blocks it replaces, not the eight it used to start with. Eight is below the number of cells
-   * that can hold one asset, so a walk that streams in ground cover filled the buffer, `grow` minted
-   * a fresh mesh — a uuid three had never built a node for, in every shadow pass too — and put the
-   * old one in an array nothing ever read. The ring is the ceiling the block count can reach, so
-   * this is the size that stops growing. Cost: the buffer's `instanceMatrix` is ring-sized for
-   * assets that never fill it; give `residentCells` a smaller value if that outweighs a re-mint.
+   * The buffer starts with a block per cell that can hold this key, plus the one a refilter holds
+   * alongside the blocks it replaces — the cluster's own cells for a caster cluster, the whole ring
+   * for the main pass's one mesh per key — not the eight it used to start with. Sizing a main batch
+   * by its cluster's cells left it with two blocks for a ring of dozens, so a walk filled the
+   * buffer, `grow` minted a fresh mesh — a uuid three had never built a node for, in every shadow
+   * pass too — and put the old one in an array nothing ever read. Those two sizes are ceilings, so
+   * this is what stops growing. Cost: a main buffer is ring-sized for assets that never fill it;
+   * give `residentCells` a smaller value if that outweighs a re-mint.
    */
   #batchFor(
     assetId: string,
@@ -2372,9 +2378,11 @@ export class WorldCells extends Group implements IComputeDriven {
       entry.batch.geometry,
       entry.batch.material,
       this.#runMax.get(assetId) ?? entry.batch.count,
-      // One block per cell of this cluster, plus the one a refilter holds beside the block it
-      // replaces: the ring no longer bounds a cluster's block count, the cluster's own cells do.
-      this.#cellsPerCluster * this.#cellsPerCluster + 1,
+      // A caster cluster's block count is bounded by the cluster's own cells, the main pass's one
+      // mesh per key by the ring; either way the one a refilter holds beside the block it replaces.
+      caster
+        ? this.#cellsPerCluster * this.#cellsPerCluster + 1
+        : this.#budgets.residentCells + 1,
       key,
       this.#extentBounds,
     );
@@ -2722,6 +2730,12 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#jobs = this.#jobs.filter((job) => {
       if (job.cell !== cell) return true;
       this.#queued.delete(`${cell.key}|${job.asset.id}`);
+      // A swap that ran out of fresh meshes leaves its claims in `fresh`, which is not in
+      // `cell.batches` until the swap completes. Dropping the job without handing those blocks back
+      // keeps them reserved and unwritten, so `mesh.count` never falls to zero, the asset's release
+      // retires a batch that still counts records and drops the key outright, and the walk back
+      // mints a second mesh for it.
+      for (const entry of job.fresh) this.#clearSegment(entry);
       return false;
     });
     for (const entry of cell.batches) this.#clearSegment(entry);
