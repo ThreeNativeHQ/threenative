@@ -27,6 +27,30 @@ import {
   type FramePassKind,
   type IRenderPassSample,
 } from "./render-pass-budget.js";
+import type { ITargetFps, TargetFpsSource } from "./target-fps.js";
+
+const TARGET_FPS_SOURCES: readonly TargetFpsSource[] = [
+  "config",
+  "display",
+  "fallback",
+  "mobile-default",
+];
+
+/**
+ * Fail closed: a resolved budget nobody can act on is not a budget. A rate that is not a
+ * non-negative number, or a source that names no rule, would be read as an answer.
+ */
+function requireTarget(target: ITargetFps): ITargetFps {
+  if (!Number.isFinite(target.targetFps) || target.targetFps < 0)
+    throw new Error(
+      `Frame budget targetFps must be a non-negative number, received ${String(target.targetFps)}.`,
+    );
+  if (!TARGET_FPS_SOURCES.includes(target.source))
+    throw new Error(
+      `Frame budget targetSource must name how the target was chosen, received ${String(target.source)}.`,
+    );
+  return target;
+}
 
 /** Marker printed once per report window. */
 export const FRAME_BUDGET_MARKER = "TN_FRAME_BUDGET";
@@ -237,6 +261,15 @@ export interface IFrameBudgetWindow {
    */
   readonly surface?: IFrameSurfaceState;
   /**
+   * The rate the loop is holding, and what decided it, when the engine resolved one.
+   *
+   * Two fields rather than an object, and a harness reads them without unwrapping anything: a
+   * number nobody can place (`targetSource: "fallback"`) is the difference between a game holding
+   * its panel and a game settling for 60, and only this line says which one happened.
+   */
+  readonly targetFps?: number;
+  readonly targetSource?: TargetFpsSource;
+  /**
    * GPU milliseconds per resolved frame in this window, from `timestamp-query`, summarised like a
    * phase — mean/p50/p95/p99/max over the frames the device actually reported.
    *
@@ -299,6 +332,13 @@ export interface IFrameBudgetOptions {
    * loop, which is the only place that knows both the renderer and the window boundary.
    */
   readonly readSurface?: () => IFrameSurfaceState;
+  /**
+   * The engine's resolved frame budget, read once per reported window.
+   *
+   * Wired by the game, which owns the rule and the panel measurement behind it. A window with no
+   * resolver reports no target rather than a default that looks measured.
+   */
+  readonly readTarget?: () => ITargetFps | undefined;
   /**
    * Frames the display has presented so far, when the platform can say.
    *
@@ -424,6 +464,7 @@ export class FrameBudget {
   #wallClock: () => number;
   #onWindow: ((window: IFrameBudgetWindow) => void) | undefined;
   #readSurface: (() => IFrameSurfaceState) | undefined;
+  #readTarget: (() => ITargetFps | undefined) | undefined;
   #readGpuAgeFrames: (() => number | undefined) | undefined;
   #scratch: Float64Array;
   #presented: Ring;
@@ -479,6 +520,7 @@ export class FrameBudget {
     this.#wallClock = options.wallClock ?? (() => Date.now());
     this.#onWindow = options.onWindow;
     this.#readSurface = options.readSurface;
+    this.#readTarget = options.readTarget;
     this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
     this.#scratch = new Float64Array(capacity);
@@ -763,6 +805,8 @@ export class FrameBudget {
           };
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
+    const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
+    const resolvedTarget = target === undefined ? undefined : requireTarget(target);
     return {
       fps: presented.mean === 0 ? 0 : round(1_000 / presented.mean),
       frame: this.#frame.summarize(this.#scratch),
@@ -790,6 +834,9 @@ export class FrameBudget {
       gpuStale: this.#gpuStaleInWindow,
       ...(gpu === undefined ? {} : { gpuMs: gpu.mean }),
       ...(gpuAgeFrames === undefined ? {} : { gpuAgeFrames }),
+      ...(resolvedTarget === undefined
+        ? {}
+        : { targetFps: resolvedTarget.targetFps, targetSource: resolvedTarget.source }),
       ...(surface === undefined ? {} : { surface }),
       ...(counters === undefined ? {} : { counters }),
       window: this.#windowIndex + 1,

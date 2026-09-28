@@ -99,6 +99,7 @@ import {
   staticRoots,
   staticTransformCensus,
 } from "./static-transform.js";
+import { resolveTargetFps } from "./target-fps.js";
 import {
   type IUiBridge,
   UI_DEV_METRICS_MESSAGE,
@@ -318,8 +319,6 @@ export type GamePlugin<
   TPhysics = undefined,
 > = GamePluginFunction<TState, TPhysics> | IGamePluginHooks<TState, TPhysics>;
 
-/** The `display.maxFps` a game gets when its config does not name one. */
-const DEFAULT_TARGET_FPS = 60;
 /**
  * The global a native host reads to know the world is on screen. Named here rather than written
  * inline so the host and the framework agree on one spelling.
@@ -1346,10 +1345,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
     // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
+    // `maxFps: 0` removes the ceiling, and a scaler with no budget is not a scaler with a loose
+    // one, so an uncapped game simply does not get adaptive scaling.
+    const initialTarget = resolveTargetFps(this.#config, getPlatform());
+    let heldTargetFps = initialTarget.targetFps;
     const scaler =
-      renderer.surface().scaleSource === "auto"
-        ? new ResolutionScaler({ targetFps: this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS })
+      renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
+        ? new ResolutionScaler({ targetFps: initialTarget.targetFps })
         : undefined;
+    // The panel's own rate, once a window of presented frames can say it. The native host's
+    // present counter is the only series there that counts displays rather than loop iterations;
+    // on the web one rAF callback is one vblank, so the median presented interval is the period.
+    let measuredRefreshHz: number | undefined;
     // The world pass's own draw-call count, kept from the last frame of the window so the
     // projection line can report what the renderer was handed beside what the plan predicted.
     // A plan and a measurement that disagree is the finding; one number pretending to be both
@@ -1379,6 +1386,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               observeCompilation();
               const compileObserved = compilingInWindow;
               compilingInWindow = false;
+              // The display's own rate, read once per window from the cadence the loop already
+              // measured: the host's present counter where there is one, else the median presented
+              // interval, which on the web is the vblank period because rAF is the presentation.
+              measuredRefreshHz =
+                reported.presentedFps ??
+                (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
+              const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              if (
+                scaler !== undefined &&
+                target.targetFps > 0 &&
+                target.targetFps !== heldTargetFps
+              ) {
+                heldTargetFps = target.targetFps;
+                scaler.retarget(heldTargetFps);
+              }
               renderer.observeRenderChainBudget?.(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
@@ -1412,7 +1434,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               const warning = sceneWarning(
                 reported,
                 describeSceneShape(reported, this.#cameraCull?.report),
-                this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS,
+                target.targetFps,
               );
               lastSceneWarning = warning;
               if (warning !== undefined) console.warn(formatSceneWarning(warning));
@@ -1440,6 +1462,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
+            // The resolved budget rides the window rather than a marker of its own, so a harness
+            // reads the target and the frames it was judged against out of one line. It lags the
+            // window by one, because the window is built before this callback runs.
+            readTarget: () => resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz),
             readSurface: () => {
               observeCompilation();
               return {

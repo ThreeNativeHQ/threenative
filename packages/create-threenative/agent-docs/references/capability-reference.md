@@ -2005,6 +2005,21 @@ export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): 
 const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
 ```
 
+### `resolveTargetFps`
+
+`function` — Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.
+
+```ts
+export function resolveTargetFps( config: ITargetFpsConfig | undefined, platform: ITargetFpsPlatform | undefined, measuredRefreshHz?: number, ): ITargetFps { … }
+```
+
+- **Use when:** my game does frame-rate-dependent work and must not hardcode 60
+- **Constraints:** pass the measured display rate when you have one; without it the answer is the 60 fallback and says so
+
+```ts
+resolveTargetFps(config, getPlatform()).targetFps;
+```
+
 ### `RippleField`
 
 `class` — Propagate a disturbance across a patch of water surface and let it fade. step is 1/60s or the CFL stability limit for the given resolution and speed, whichever is smaller
@@ -2152,6 +2167,21 @@ export function skeletonBones(root: Object3D): readonly string[] { … }
 ```ts
 import { skeletonBones } from "@threenative/core";
 const bones = skeletonBones(character);
+```
+
+### `snapRefreshRate`
+
+`function` — Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.
+
+```ts
+export function snapRefreshRate(refreshHz: number): number { … }
+```
+
+- **Use when:** my game does frame-rate-dependent work and must not hardcode 60
+- **Constraints:** pass the measured display rate when you have one; without it the answer is the 60 fallback and says so
+
+```ts
+resolveTargetFps(config, getPlatform()).targetFps;
 ```
 
 ### `SoftBody3D`

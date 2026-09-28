@@ -141,16 +141,18 @@ export interface IScalerWindow {
 }
 
 export class ResolutionScaler {
-  /** fps at or above this is meeting the target. */
-  readonly targetFps: number;
+  /** fps at or above this is meeting the target. Mutable only through `retarget`. */
+  // The three budget fields are placeholders the constructor overwrites before anything can read
+  // them; TypeScript cannot see that through the `retarget` call every constructor makes.
+  targetFps = 0;
   /**
    * A presented interval above this is a frame that cost more than the target allows: the same
    * bar `targetFps` is, read as a period instead of a rate. Nothing new is chosen here — it is
    * `targetFpsFraction` again, applied to the statistic a mean cannot speak for.
    */
-  readonly budgetMs: number;
+  budgetMs = 0;
   /** presented p95 above this is dropping frames, whatever the mean says. */
-  readonly tailMs: number;
+  tailMs = 0;
   #index: number;
   #scaleSource: Exclude<ScaleSource, "pinned"> = "auto";
   #cleanWindows = 0;
@@ -178,6 +180,24 @@ export class ResolutionScaler {
 
   constructor(options: IResolutionScalerOptions) {
     const { start, targetFps } = options;
+    this.retarget(targetFps);
+    const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
+    if (index < 0)
+      throw new Error(
+        `ResolutionScaler start must be one of the pre-registered rung values, received ${String(start)}.`,
+      );
+    this.#index = index;
+  }
+
+  /**
+   * Re-reads the budget when the engine's resolved display target changes.
+   *
+   * The web cannot know a panel's rate before it has presented a window's worth of frames, so a
+   * 120 Hz display starts on the 60 fallback and moves. The rungs and every decision already made
+   * stay: only the bar the next window is judged against changes, and a target that is not a
+   * positive rate throws exactly as it does in the constructor.
+   */
+  retarget(targetFps: number): void {
     if (!Number.isFinite(targetFps) || targetFps <= 0)
       throw new Error(
         `ResolutionScaler targetFps must be a finite number greater than zero, received ${String(targetFps)}.`,
@@ -185,12 +205,6 @@ export class ResolutionScaler {
     this.targetFps = targetFps * RESOLUTION_SCALER.targetFpsFraction;
     this.budgetMs = 1000 / this.targetFps;
     this.tailMs = (1000 / targetFps) * RESOLUTION_SCALER.upTailFraction;
-    const index = start === undefined ? 0 : RESOLUTION_SCALER.rungs.indexOf(start as never);
-    if (index < 0)
-      throw new Error(
-        `ResolutionScaler start must be one of the pre-registered rung values, received ${String(start)}.`,
-      );
-    this.#index = index;
   }
 
   /** The scale the renderer should be applying right now. */

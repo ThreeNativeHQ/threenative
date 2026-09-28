@@ -509,6 +509,25 @@ export type {
 } from "./frame-budget.js";
 export type { FramePassKind, IRenderPassSample } from "./render-pass-budget.js";
 /**
+ * Read what frame rate a game gets when its config does not say, and why.
+ *
+ * `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather
+ * than the 60 every template used to ship, and an explicit number still wins with `0` still
+ * uncapping. The engine calls this itself; a game calls it when it needs the same number for its
+ * own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source
+ * on every window.
+ * @situation my game does frame-rate-dependent work and must not hardcode 60
+ * @constraint pass the measured display rate when you have one; without it the answer is the 60 fallback and says so
+ * @example resolveTargetFps(config, getPlatform()).targetFps;
+ */
+export {
+  DEFAULT_TARGET_FPS,
+  MAX_TARGET_FPS,
+  resolveTargetFps,
+  snapRefreshRate,
+} from "./target-fps.js";
+export type { ITargetFps, TargetFpsSource } from "./target-fps.js";
+/**
  * Attribute the render phase to 100% with a nested span tree, off unless `TN_FRAME_SPANS` asks.
  * Every non-leaf reports its own time minus the spans inside it, so an unmeasured part shows up as
  * a residual instead of being filed under "other"; a child that outlives its parent reports a

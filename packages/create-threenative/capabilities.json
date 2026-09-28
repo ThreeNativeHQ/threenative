@@ -2575,6 +2575,22 @@
     {
       "aliases": [],
       "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resolveTargetFps( config: ITargetFpsConfig | undefined, platform: ITargetFpsPlatform | undefined, measuredRefreshHz?: number, ): ITargetFps { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "resolveTargetFps"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "add its height to an analytic swell, never in place of one",
         "the patch is finite and its rim absorbs; call recenter to keep it over the action",
@@ -2761,6 +2777,22 @@
       "summary": "List the names of every bone in a character hierarchy.",
       "supersedes": [],
       "symbol": "skeletonBones"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function snapRefreshRate(refreshHz: number): number { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "snapRefreshRate"
     },
     {
       "aliases": [],

@@ -325,7 +325,10 @@ export interface IThreeNativeConfig {
     readonly fullscreen?: boolean;
     readonly keepScreenOn?: boolean;
     /**
-     * Maximum native presentation rate in frames per second. Defaults to 60; `0` removes the
+     * Maximum native presentation rate in frames per second. Left out, it follows the display's own
+     * refresh rate capped at 120 on desktop and web, and stays 60 on mobile where the ceiling is
+     * power and heat; the resolved value and its source are reported on every `TN_FRAME_BUDGET`
+     * line as `targetFps` and `targetSource`. A number set here wins outright, and `0` removes the
      * software ceiling. Android also submits this value as the surface's preferred frame rate,
      * which the display policy may decline because of hardware, power, or thermal state. Android
      * uses non-blocking presentation above 60 fps so a missed high-refresh interval does not fall
