@@ -277,15 +277,20 @@ test("should apply the packed Three.js patch in a clean consumer and remain idem
     expect(patched.get("src/renderers/common/RenderObject.js")).toContain(
       "this.context.sampleCount",
     );
-    expect(patched.get("src/renderers/common/RenderObject.js")).toContain(
-      "this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples",
+    // The dynamic cache key must NOT read `getRenderTarget()`: the engine swaps it for the length
+    // of a `compileAsync()` slice, so the key would disagree with a live frame, the render object
+    // would be disposed and its pipeline recompiled. On the arm64 CI lane (QuickJS + wgpu +
+    // llvmpipe, ~330 ms per frame) those recompiles stalled every window-reaching frame for more
+    // than the playtest screenshot budget. `this.context.sampleCount` already keys the samples.
+    expect(patched.get("src/renderers/common/RenderObject.js")).not.toContain(
+      "this.renderer.getRenderTarget()?.samples",
     );
     expect(patched.get("src/renderers/webgpu/utils/WebGPUBindingUtils.js")).toContain(
       "bindingsData.layoutKey === bindGroupLayoutKey",
     );
     expect(patched.get("build/three.webgpu.js")).toContain("this.context.sampleCount");
-    expect(patched.get("build/three.webgpu.js")).toContain(
-      "this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples",
+    expect(patched.get("build/three.webgpu.js")).not.toContain(
+      "this.renderer.getRenderTarget()?.samples",
     );
     expect(patched.get("build/three.webgpu.js")).toContain(
       "bindingsData.layoutKey === bindGroupLayoutKey",

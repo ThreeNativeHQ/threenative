@@ -10,7 +10,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -85,8 +85,6 @@ import {
 } from "./browserSession.js";
 import { startBrowserCpuProfile, type IBrowserCpuProfile } from "./cpuProfile.js";
 
-/** How long a single screenshot may take before the runner calls it a failure. */
-const SCREENSHOT_TIMEOUT_MS = 120_000;
 const TOUCH_BROWSER_USER_AGENT =
   "Mozilla/5.0 (Linux; Android 13; Pixel 8) AppleWebKit/537.36 Chrome/151.0 Mobile Safari/537.36";
 
