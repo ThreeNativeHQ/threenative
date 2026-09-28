@@ -462,6 +462,38 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
   }
 });
 
+// Arm64 llvmpipe serves endDawnFrame at p50 333ms and max 4.3s, so the host picks the request up
+// inside the short wait and then needs far longer than it for the readback and the present. One
+// deadline for both phases reported that healthy host as TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE.
+test.skipIf(process.platform === "win32")("desktop screenshot outlives the unpicked-request wait", async () => {
+  const root = await makeTempDir("playtest-desktop-slow-screenshot-");
+  const executable = join(root, "native-test.mjs");
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { env } from "node:process";
+const request = \`\${env.TN_PLAYTEST_MAILBOX_ROOT}/tn-playtest-screenshot-request.txt\`;
+setInterval(() => {
+  if (!existsSync(request)) return;
+  unlinkSync(request);
+  setTimeout(() => writeFileSync(env.TN_PLAYTEST_CAPTURE, Buffer.from("${nonBlankPngBase64()}", "base64")), 800);
+}, 5);
+`);
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({
+    env: { TN_PLAYTEST_CAPTURE: join(root, "capture.png") },
+    executable,
+    mailboxRoot: root,
+    screenshotTimeoutMs: 200,
+  });
+  try {
+    await driver.prepare("unused");
+    await driver.screenshot(join(root, "capture.png"));
+  } finally {
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 interface IDesktopScenarioOptions {
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;

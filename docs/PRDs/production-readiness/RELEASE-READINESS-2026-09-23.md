@@ -10,9 +10,8 @@ PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pn
 
 **Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 final
 cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
-controls and web/native parity · PRD-375 branding remains open (PRD-365 is closed: 2026-09-27, its CI
-signing proof green and its registry-consumer run passed; public Authenticode/notarization superseded
-because each developer signs their own) · PRD-445 is filed in
+controls and web/native parity. PRD-365 and PRD-375 are closed; PRD-375's owner visual check and
+PR #271 merge completed on 2026-09-28. PRD-445 is filed in
 [`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
 20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
 `threenative-sculpt-mcp` release and three owner calls remain).
@@ -27,8 +26,7 @@ packed journey passed all ten discovered templates and its mutated-package negat
 **Completion scope:** the owner asked to include R3 production 1.0, not stop at the R2 beta.
 PRD-446's stable-API draft is at 11/14 phase boxes, while its real N-1 upgrade and 1.0 release
 acceptance remain open. The R3 physical, parity and distribution PRDs below remain release
-blockers until their own evidence passes. PRD-375 is done in its draft branch after owner visual
-confirmation, but PR #271 is still awaiting CI and merge.
+blockers until their own evidence passes. PRD-375 is merged after owner visual confirmation.
 
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
 alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
@@ -48,10 +46,9 @@ target, and no public text may claim iOS until a later decision adds it.
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
-**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/): six files**
-(nine on 2026-09-23; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25 because
-its only remaining work is blocked, and PRD-365 moved to `done/` on 2026-09-27 because its last box —
-the public-registry consumer launch — passed).
+**The PRDs blocking R1 and R2 — the public beta — live in [`critical/`](critical/) or in their
+explicit `BLOCKED/` folders when only external work remains.** PRD-365 and PRD-375 are now in
+`done/`; PRD-445 moved to `BLOCKED/requires-release-credentials/` on 2026-09-25.
 The 1.0 PRDs under R3 stay in their own folders; independent work can proceed now, and the
 final 1.0 qualification depends on the immutable R2 consumer cohort.
 
@@ -137,8 +134,8 @@ to 0.3.3 and not released.
 Also in R2, nearly done and worth finishing rather than re-planning:
 [PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop containers is **done** (closed
 2026-09-27, 24/24 phase boxes and 20/20 acceptance — the public-registry consumer launch in its last
-box), and [PRD-375](critical/PRD-375-release-artifacts-carry-the-game-brand.md) branding is the open
-one (11/12, 3/5).
+box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) branding closed 2026-09-27
+(18/18 phase boxes, 5/5 acceptance, owner-confirmed on the operator-backed Linux container).
 
 ### R3 — production 1.0 (after the beta; not in `critical/`)
 

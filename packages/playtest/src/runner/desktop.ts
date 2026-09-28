@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 
 import { assertCaptureNotBlank } from "../capture.js";
 import type { IDevicePlaytestDriver } from "./androidRunner.js";
+import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 
+/** How long the host may leave a screenshot request untouched before the app counts as hung. */
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_REQUEST_FILE = "tn-playtest-screenshot-request.txt";
 const SCREENSHOT_REQUEST_TEMP_FILE = `${SCREENSHOT_REQUEST_FILE}.tmp`;
@@ -126,7 +128,16 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     await rm(path, { force: true });
     const request = join(root, SCREENSHOT_REQUEST_FILE);
     await new LocalDeviceMailbox().write(request, path);
-    const deadline = Date.now() + (this.options.screenshotTimeoutMs ?? SCREENSHOT_TIMEOUT_MS);
+    // Two phases, because two different things bound them. The host deletes the request file the
+    // moment it accepts the request (processPlaytestScreenshotRequest in runtime.cpp), so a file
+    // still sitting there past the short wait means an app that never serviced the mailbox at all.
+    // Once it is gone the host is inside its own budget — up to 120 polled frames plus a 5s buffer
+    // map — which a software adapter's present outlasts (endDawnFrame p50 333ms, max 4.3s on arm64
+    // llvmpipe), so only that phase gets the harness's overall screenshot budget. The sum is the
+    // absolute cap, and isAlive() still fails fast inside both.
+    const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? SCREENSHOT_TIMEOUT_MS);
+    const deadline = pickupDeadline + OVERALL_SCREENSHOT_TIMEOUT_MS;
+    let accepted = false;
     let lastReadError: unknown;
     while (Date.now() < deadline) {
       try {
@@ -139,6 +150,10 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       }
       if (!(await this.isAlive())) {
         throw new Error("Desktop playtest executable exited before screenshot capture.");
+      }
+      if (!accepted) {
+        accepted = (await new LocalDeviceMailbox().read(request)) === undefined;
+        if (!accepted && Date.now() >= pickupDeadline) break;
       }
       await delay(25);
     }
