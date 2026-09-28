@@ -30,6 +30,17 @@ function nextFrame(): Promise<number> {
 }
 
 async function main(): Promise<void> {
+  const presentMode =
+    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
+      ?.presentMode ?? "fifo";
+  // The desktop collector requests immediate presentation. The host's separate 60 FPS ceiling
+  // otherwise still paces the run, so require its existing diagnostic uncapped mode as well.
+  if (__TN_PLATFORM__ !== "android" && presentMode !== "fifo") {
+    const presentationCap = (globalThis as { __tnPresentationCap?: (hz: number) => number })
+      .__tnPresentationCap;
+    if (typeof presentationCap !== "function" || presentationCap(0) !== 0)
+      throw new Error("TN_BENCH_PRESENTATION_CAP_NOT_DISABLED");
+  }
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
   // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
@@ -135,9 +146,6 @@ async function main(): Promise<void> {
   // property access like `scope.__TN_PLATFORM__` is never replaced and silently reads undefined —
   // which filed every phone run as `tn-desktop`.
   const onAndroid = __TN_PLATFORM__ === "android";
-  const presentMode =
-    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
-      ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
     axes,
