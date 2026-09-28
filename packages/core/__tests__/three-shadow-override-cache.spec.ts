@@ -138,6 +138,8 @@ interface IRendererProbe {
   _currentSourceMaterial: NodeMaterial | null;
   readonly backend: { isWebGPUBackend: true };
   readonly contextNode: { id: number; version: number };
+  readonly currentSamples: number;
+  readonly getRenderTarget: () => null;
 }
 
 function renderObjectsProbe(): {
@@ -150,6 +152,8 @@ function renderObjectsProbe(): {
     _currentSourceMaterial: null,
     backend: { isWebGPUBackend: true },
     contextNode: { id: 1, version: 0 },
+    currentSamples: 0,
+    getRenderTarget: () => null,
   };
   const nodes = {
     delete: vi.fn(),
