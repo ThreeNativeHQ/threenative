@@ -250,7 +250,7 @@ importers:
         version: link:../../packages/core
       three:
         specifier: 'catalog:'
-        version: 0.185.1(patch_hash=7b22780379fcb9ecbcf99a640b328c347f3d6d9a26721efa1503f6f7881bdcdc)
+        version: 0.185.1(patch_hash=db717f88feeab86d42f562bda2eed11a1a52acc5a5a8462859c383e30415eae3)
     devDependencies:
       '@types/three':
         specifier: 0.185.3
