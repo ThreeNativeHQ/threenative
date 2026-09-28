@@ -1,103 +1,146 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// The prototype look every engine ships a new project with: a metre grid on neutral greys, one
-// saturated colour for things you can touch, and a metal figure. It reads as "a real engine" only
-// because `sky.ts` gives every surface an environment to reflect — roughness then decides how much
-// sky a surface mirrors, so keep it varied between neighbours.
+// The look, in one place: the grid the ground is measured against and the two node materials that
+// tint it. `terrain.ts` builds the ground; everything that decides what the ground *is* lives here,
+// so a rebalance is one file rather than a hunt through the scene.
 import {
   type BufferGeometry,
+  CircleGeometry,
   DataTexture,
   Float32BufferAttribute,
+  LinearFilter,
   LinearMipmapLinearFilter,
-  MeshStandardMaterial,
   RepeatWrapping,
   SRGBColorSpace,
   Vector3,
 } from "three";
+import {
+  color,
+  float,
+  length,
+  mix,
+  normalWorld,
+  oneMinus,
+  positionWorld,
+  smoothstep,
+  texture,
+  uv,
+} from "three/tsl";
+import { MeshStandardNodeMaterial } from "three/webgpu";
+import { HALF, WORLD } from "../sim/terrain.js";
 import { palette } from "./palette.js";
 
 /**
- * One metre of grid: a heavy line on the metre, faint lines every 25 cm, a faint per-texel grain so
- * large areas do not band. Built from bytes rather than a canvas so it runs the same in the browser
- * and in the native host.
+ * How many metres one grid tile covers. Four, not one: at a 30 m tactical zoom a metre is a dozen
+ * pixels, and a metre tile's line is a tenth of a pixel of it — the grid mips itself into a flat
+ * wash. Four metres is a 48-pixel tile, which is where a grid reads as a grid.
  */
-function gridTexture(base: number, line: number, size = 256): DataTexture {
+const TILE = 4;
+const MAJOR_EVERY = 4;
+const MINOR_EVERY = 16;
+
+/**
+ * One tile of grid: a heavy line every `TILE` metres, a faint one every metre, and nothing else.
+ * White where there is no line, so the terrain material can tint the same tile light ground and
+ * dark cliff — the grid is the look, the tint is the terrain's.
+ */
+function gridTexture(size = 256): DataTexture {
+  const LINE = 64; // The line darkens its tile to a quarter: a grid, not a stain.
+  const heavy = Math.round((size / MAJOR_EVERY) * 0.045);
+  const light = Math.max(2, Math.round(heavy / 3));
   const data = new Uint8Array(size * size * 4);
-  const minorEvery = size / 4;
-  let seed = 7;
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const major = x < 3 || y < 3;
-      const minor = x % minorEvery < 1 || y % minorEvery < 1;
-      const weight = major ? 0.92 : minor ? 0.22 : 0;
-      seed = (seed * 16807) % 2147483647;
-      const grain = 1 + (seed / 2147483647 - 0.5) * 0.04;
+      const major = x % (size / MAJOR_EVERY) < heavy || y % (size / MAJOR_EVERY) < heavy;
+      const minor = x % MINOR_EVERY < light || y % MINOR_EVERY < light;
+      const weight = major ? 0.95 : minor ? 0.4 : 0;
+      const value = Math.round(255 * (1 - weight) + LINE * weight);
       const index = (y * size + x) * 4;
-      for (let channel = 0; channel < 3; channel += 1) {
-        const shift = 16 - channel * 8;
-        const from = ((base >> shift) & 0xff) * grain;
-        const to = (line >> shift) & 0xff;
-        data[index + channel] = Math.min(255, Math.round(from * (1 - weight) + to * weight));
-      }
+      data[index] = value;
+      data[index + 1] = value;
+      data[index + 2] = value;
       data[index + 3] = 255;
     }
   }
-  const texture = new DataTexture(data, size, size);
-  texture.colorSpace = SRGBColorSpace;
-  texture.wrapS = RepeatWrapping;
-  texture.wrapT = RepeatWrapping;
-  texture.generateMipmaps = true;
-  texture.minFilter = LinearMipmapLinearFilter;
-  texture.anisotropy = 16;
-  texture.needsUpdate = true;
-  return texture;
+  const grid = new DataTexture(data, size, size);
+  grid.colorSpace = SRGBColorSpace;
+  grid.wrapS = RepeatWrapping;
+  grid.wrapT = RepeatWrapping;
+  grid.generateMipmaps = true;
+  grid.minFilter = LinearMipmapLinearFilter;
+  grid.needsUpdate = true;
+  return grid;
 }
 
-const _normal = new Vector3();
-
 /**
- * Rewrites a geometry's UVs as world metres, projected along each face's dominant axis, so one grid
- * tile is one metre on every face of every prop regardless of its size. Call it after the geometry
- * is translated into place (merged geometry included), before it is given to a mesh.
+ * Rewrites a geometry's UVs as world metres, projected along each face's dominant axis, so a tile
+ * covers the same ground on a slope as on the flat. Call it after the geometry has been displaced
+ * and its normals recomputed.
  */
-export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
+export function worldMetreUVs<T extends BufferGeometry>(geometry: T): T {
   const position = geometry.getAttribute("position");
   const normal = geometry.getAttribute("normal");
-  const uv = new Float32Array(position.count * 2);
+  const metres = new Float32Array(position.count * 2);
+  const face = new Vector3();
   for (let index = 0; index < position.count; index += 1) {
-    _normal.fromBufferAttribute(normal, index);
+    face.fromBufferAttribute(normal, index);
     const x = position.getX(index);
     const y = position.getY(index);
     const z = position.getZ(index);
-    const ax = Math.abs(_normal.x);
-    const ay = Math.abs(_normal.y);
-    const az = Math.abs(_normal.z);
+    const ax = Math.abs(face.x);
+    const ay = Math.abs(face.y);
+    const az = Math.abs(face.z);
     const [u, v] = ay >= ax && ay >= az ? [x, z] : ax >= az ? [z, y] : [x, y];
-    uv[index * 2] = u;
-    uv[index * 2 + 1] = v;
+    metres[index * 2] = u;
+    metres[index * 2 + 1] = v;
   }
-  geometry.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  geometry.setAttribute("uv", new Float32BufferAttribute(metres, 2));
   return geometry;
 }
 
-/** Light grid: floors and the ground. */
-export const floorMaterial = new MeshStandardMaterial({
-  map: gridTexture(palette.floor, palette.gridLine),
-  roughness: 0.62,
-  metalness: 0,
-});
+/**
+ * The ground: minimal's metre grid, tilted to the terrain, with the fog of war sampled in the same
+ * material rather than painted over it.
+ *
+ * An overlay plane is one more full-map draw, and it cannot be depth-tested against the very slope
+ * it is drawn on without z-fighting it. One material, one texture, one draw — and the fog is lit
+ * with the ground, so a shadow crossing unexplored ground darkens both together.
+ */
+export function createTerrainMaterial(fog: DataTexture): MeshStandardNodeMaterial {
+  const grid = gridTexture();
+  // `worldMetreUVs` writes metres; the tile is `TILE` of them.
+  const tile = uv().div(TILE);
+  // A slope is a cliff: the same grid, a long way darker, decided by the surface normal rather
+  // than by a second painted texture, so it follows any height the simulation grows.
+  const stone = mix(
+    color(palette.cliff),
+    color(palette.ground),
+    smoothstep(0.55, 0.92, normalWorld.y),
+  ).mul(texture(grid, tile).rgb);
+  const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.9 });
+  material.colorNode = mix(
+    color(palette.unseen).mul(2.2),
+    stone,
+    texture(fog, positionWorld.xz.add(HALF).div(WORLD)).r,
+  );
+  return material;
+}
 
-/** Dark grid: walls, pillars, anything structural. */
-export const structureMaterial = new MeshStandardMaterial({
-  map: gridTexture(palette.structure, palette.gridLine),
-  roughness: 0.7,
-  metalness: 0,
-});
+/** The pools the simulation refuses to path across, faded at their own rim so they meet a bank. */
+export function createWaterMaterial(): MeshStandardNodeMaterial {
+  const water = new MeshStandardNodeMaterial({
+    depthWrite: false,
+    metalness: 0.1,
+    roughness: 0.14,
+    transparent: true,
+  });
+  water.colorNode = color(0x2b5f5c);
+  water.opacityNode = float(0.88).mul(oneMinus(smoothstep(0.43, 0.5, length(uv().sub(0.5)))));
+  return water;
+}
 
-/** The one saturated colour: things you can push, pick up or stand on. */
-export const propMaterial = new MeshStandardMaterial({
-  color: palette.prop,
-  roughness: 0.45,
-  metalness: 0,
-});
+/** The unit disc the water instances: a circle, already flat, already facing up. */
+export function waterDisc(): BufferGeometry {
+  return new CircleGeometry(1, 48).rotateX(-Math.PI / 2);
+}

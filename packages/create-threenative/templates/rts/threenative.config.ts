@@ -26,7 +26,7 @@ const config: IThreeNativeConfig = {
     backgroundColor: "#0d1b2a",
   },
   nativeEntry: "src/game.ts",
-  ui: { renderer: "native" }, // This template draws its HUD in the scene and has no src/ui/.
+  ui: { renderer: "native" }, // src/ui/ is the HUD on every target; this selects the native web view.
   // One asset tree, one compiler, one representation per artifact. Uncomment, then cook:
   //   threenative build --target android   # cooks defaults.android; --profile <name> beats it
   // buildProfiles: {

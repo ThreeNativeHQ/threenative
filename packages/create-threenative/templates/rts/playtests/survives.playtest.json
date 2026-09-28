@@ -6,20 +6,26 @@
     "width": 1280,
     "height": 720
   },
-  "warmupFrames": 10,
-  "subject": "player",
+  "warmupFrames": 20,
+  "subject": "camera.main",
   "steps": [
     {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
       "kind": "input",
-      "label": "move",
+      "label": "pan",
       "press": "ArrowUp",
       "holdTicks": 60,
       "release": true
     },
     {
       "kind": "wait",
-      "label": "settle",
-      "waitTicks": 10,
+      "label": "after-pan",
+      "waitTicks": 30,
       "release": true
     }
   ],
@@ -30,46 +36,22 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
-    "components": [
-      {
-        "entity": "player",
-        "component": "groundCorrectionEnabled",
-        "equals": false,
-        "allowTrivial": "The disabled correction is intentional while its measurement remains live."
-      },
-      {
-        "entity": "player",
-        "component": "groundClearance",
-        "lte": 0,
-        "allowTrivial": "The authored pose is intentionally below the floor so clearance stays observable."
-      },
-      {
-        "entity": "player",
-        "component": "normaliseFactor",
-        "allowTrivial": "The figure is authored taller than the template's 1.1 m convention and normalised down, so the retained factor is below one; either side of one proves normaliseToMetres ran in generated source.",
-        "lte": 0.99
-      }
-    ],
     "movement": {
-      "entity": "player",
+      "entity": "camera.main",
       "minDistance": 0.5
     },
-    "visibility": [
+    "resources": [
       {
-        "entity": "touch-controls",
-        "present": false,
-        "allowTrivial": "Desktop keyboard lanes intentionally omit touch controls while movement proves the scene is active."
-      }
-    ],
-    "visual": [
+        "id": "state",
+        "path": "simTime",
+        "gte": 30,
+        "allowTrivial": "The clock only advances while the simulation is running, so a positive value after the settle proves the rules stepped; zero would be a frozen scene."
+      },
       {
-        "region": {
-          "x": 0,
-          "y": 0,
-          "width": 1280,
-          "height": 720,
-          "minNonblankPixelRatio": 0.01
-        }
+        "id": "state",
+        "path": "gathered",
+        "gte": 1,
+        "allowTrivial": "The ten Surveyors the world seeds are already mining, so any banked ore proves the harvest cycle ran rather than a counter being painted."
       }
     ]
   }

@@ -35,7 +35,10 @@ export function setupSky(scene: Scene, sky: Texture): void {
   // misses, and a sky to reflect, sharper as roughness drops.
   scene.environment = sky;
   scene.environmentIntensity = SKY_RANGE;
-  // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
-  // a kilometre — so the floor meets the sky instead of ending at a line.
-  scene.fog = new FogExp2(palette.horizon, 0.003);
+  // Tuned for a 224 m battlefield rather than a 36 m arena, and then tuned again: the first
+  // value meant to hide the map's far edge (0.0075) hazed the fog of war away with it, because a
+  // cell the player has never seen is 60 m away and a distant cell is 150. At 0.0035 the far corner
+  // is a quarter hazed and an unexplored cell next to the camera is 4% — the haze stays a horizon
+  // instead of becoming the map.
+  scene.fog = new FogExp2(palette.horizon, 0.0035);
 }

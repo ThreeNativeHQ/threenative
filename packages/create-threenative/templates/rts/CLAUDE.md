@@ -2,13 +2,13 @@
 
 # AGENTS.md — __PROJECT_NAME__ rts
 
-Instructions for the AI agent in this game. This template has no React or Tailwind.
-`CLAUDE.md` mirrors this file; edit `AGENTS.md`.
+Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state store. This repository owns `src/render/`, `src/entities/`, and `src/scenes/`; all are
-ordinary user code, and nothing in `@threenative/*` reads or chooses their appearance. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, and the state bridge. This repository owns the rules in `src/sim/`, every visible choice in
+`src/render/`, the scene in `src/scenes/`, and the HUD in `src/ui/`; `src/game.ts` is portable and React mounts from `src/main.ts`. Nothing in `@threenative/*` reads or chooses
+their appearance, and this kit loads no physics plugin: `src/sim/` does its own collision and A*, which is what makes a match replayable and headless-testable. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
 
 ## Start every change
 
@@ -51,22 +51,26 @@ pnpm build --target desktop
 pnpm test
 ```
 
-`src/main.ts` boots the canvas; `src/scenes/Play.ts` owns the lifecycle; `src/entities/Player.ts`
-drives `assets/mannequin.glb` (Quaternius, CC0) through `SkeletalMesh3D`; the arena is one `Group`
-handed to `buildStaticColliders`; `render/camera.ts` follows from `afterPhysics`. No HUD;
-`playtests/survives.playtest.json` is the durable smoke proof.
-
-On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
-`src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
-passes its returned input to `Player`; keep the keyboard mapping as the desktop fallback.
+`src/sim/` is the whole ruleset — terrain, A*, economy, construction, production, combat, vision
+and a four-state AI — as plain TypeScript with no renderer import, so it runs headless in
+`pnpm test` and replays from a seed. `src/scenes/Play.ts` steps it on a 0.05 s accumulator inside
+the engine's frame and reads every gesture through `ctx.input`; `src/render/` draws it (terrain
+displaced by the simulation's own `terrainHeight`, instanced models per (type, team), selection
+rings and health bars as instanced geometry, fog of war sampled in the terrain material);
+`src/ui/` is the React HUD and the minimap. `playtests/survives.playtest.json` is the durable smoke
+proof and `playtests/rts-orders.playtest.json` proves box-select, a gather and a move. Add a unit
+by adding a row to `TYPES` and a shape to `render/models.ts`: the rules table is the only place a
+cost or a radius is written, and `src/ui/` reads it rather than quoting it. Match the model's
+footprint to the table's `r`, so what you see is what the pathfinder refuses to walk through.
 
 ## Portable authoring contracts
 
 Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models.compact` (default `{ flatten: true, join: true, instance: true }`) flattens the scene graph, merges primitives by material and batches a mesh shared by several nodes as `EXT_mesh_gpu_instancing` — all lossless, keeping any node matching `protectedPattern` (or named in `protectedNames`), an animation target, or a skin joint individually addressable; `compact: false` ships the scene graph as authored. `models: "none"` / `textures: "none"` / `audio: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
+Scenes use `load`, `enter`, `update`, `exit`, `render`. A scene that returns a frame function from
+`enter()` gets that function instead of `update()`, and it runs on the fixed step, not once per
+drawn frame: put per-frame work there, and do not expect a variable frame delta.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from
 a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
@@ -74,24 +78,19 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 `src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
-colour (re-aim `SUN_DIRECTION` when you swap it); WebGPU adds a `VirtualShadowNode`. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
+colour (re-aim `SUN_DIRECTION` when you swap it, and re-tune the fog density: it is set for a 224 m
+map); WebGPU adds a `VirtualShadowNode`. Every model is a custom TSL material, so an instanced
+batch's geometry is what you see — change `render/models.ts`, not the material. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
 chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers
 throw and `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
-caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
-(the `<bone>.undefined` failure that plays the bind pose instead of the animation),
-`clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
-clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is
-supposed to be touching. Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
+Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.
 
 ## Budget real time for the look
 
 Reference-driven authoring starts at `node_modules/create-threenative/agent-docs/references/dream-loop.md`.
 
-Open a capture after visual changes. A scenario with no assertions or missing observations fails. The engine warns you before a human does: `TN_SCENE_WARNING` fires when the GPU used under a third of the frame while the JS render phase ran longer than the display's own period, and names the census behind it — objects considered, draws per pass, triangles per draw, shadow-exempt casters. It is a scene-shape verdict, so answer it by moving the draw and object counts, not the engine: read the bucket census before promising a merge. `npx threenative doctor` repeats the last verdict and the `DEV_MODE=true` chip shows it beside the frame rate; `TN_FRAME_SPANS=1` adds the render phase's own span tree when you need to know which part costs the milliseconds. The cheapest static object is one whose transform you never write: measured on 1,561 objects, leaving them alone costs 10.10 ms of render phase against 17.45 ms when the game rewrites every transform each frame, because three skips the per-object binding update when nothing changed. So do not touch a transform you do not need to — that is worth ~7 ms where `markStatic(root)`, which additionally composes a never-moving subtree once, measured 0.009 ms. Use it for scenery you are sure of, and `invalidateStatic(object)` to announce a write inside one; it deletes matrix arithmetic, not the walk. `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way each frame and throws on the first that disagrees, which is how you prove a freeze did not leave something stale on screen.
+Open a capture after visual changes. A scenario with no assertions or missing observations fails. The engine warns you before a human does: `TN_SCENE_WARNING` fires when the GPU used under a third of the frame while the JS render phase ran longer than the display's own period, and names the census behind it — objects considered, draws per pass, triangles per draw, shadow-exempt casters. It is a scene-shape verdict, so answer it by moving the draw and object counts, not the engine. `npx threenative doctor` repeats the last verdict; `TN_FRAME_SPANS=1` adds the render phase's own span tree. The cheapest static object is one whose transform you never write, so do not touch a transform you do not need to; `markStatic(root)` freezes a subtree that is sure of and `invalidateStatic(object)` announces a write inside one. The terrain here is the one such subtree. The battlefield's other cost is its *materials*: every distinct material configuration compiles at boot, and boot is what a commander waits through.
 
 Recipes in the installed create-threenative: `node_modules/create-threenative/agent-docs/references/assertion-reference.md`, `node_modules/create-threenative/agent-docs/references/build-profiles.md`, `node_modules/create-threenative/agent-docs/references/capability-reference.md`, `node_modules/create-threenative/agent-docs/references/capture-the-frame.md`, `node_modules/create-threenative/agent-docs/references/creating-creatures.md`, `node_modules/create-threenative/agent-docs/references/ctx-cookbook.md`, `node_modules/create-threenative/agent-docs/references/debug-surface.md`, `node_modules/create-threenative/agent-docs/references/finding-assets.md`, `node_modules/create-threenative/agent-docs/references/gameplay-recipes.md`, `node_modules/create-threenative/agent-docs/references/menu-screens.md`, `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`, `node_modules/create-threenative/agent-docs/references/performance-basics.md`, `node_modules/create-threenative/agent-docs/references/rigging-characters.md`, `node_modules/create-threenative/agent-docs/references/sculpt-from-a-reference.md`, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md`, `node_modules/create-threenative/agent-docs/references/visual-baseline.md`, and `node_modules/create-threenative/agent-docs/references/webview-ui.md`.
 ## Optional multiplayer transport
