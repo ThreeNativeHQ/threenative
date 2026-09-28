@@ -518,7 +518,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
   // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
   // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
-  rts: "30c5b7c6e5f6cd9da9b579dbc185bb46c2709dc73dab1bbd1ae7102635159719",
+  rts: "3e1d8e6ff07f366f477aaee286d5aaa9ba5d30596304f90f3893e77a8e09dc73",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
