@@ -1,6 +1,6 @@
 # PRD-471 — an RTS template, ported from AstraCraft
 
-**Status: NOT STARTED** · filed 2026-09-28 against `73fe6245d` · owner: "we have this for a RTS template
+**Status: PARTIAL** · phase 1 landed 2026-09-28 · filed 2026-09-28 against `73fe6245d` · owner: "we have this for a RTS template
 (should be refactored for our engine)".
 
 ## Why
@@ -30,8 +30,8 @@ simulation step. Worldgen is seeded (mulberry32) with exactly one `Math.random` 
 
 ### Phase 1 — the simulation runs headless
 
-- [ ] `src/sim/` holds types, nav (A*), economy, construction, production, combat, vision and the AI, with no three.js import. proof: `pnpm exec vitest run` on the kit's sim specs
-- [ ] A seeded 5-minute AI-vs-AI match replays to the same final state twice. proof: determinism spec
+- [x] `src/sim/` holds types, nav (A*), economy, construction, production, combat, vision and the AI, with no three.js import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/rts-sim.spec.ts` — 8/8 green, `pnpm exec biome check packages/create-threenative` — 0 errors (68 pre-existing complexity warnings)
+- [x] A seeded 5-minute AI-vs-AI match replays to the same final state twice. proof: the same spec's determinism case — 6000 fixed 0.05 s steps, seed 18 byte-identical at step 2000 and at 6000, seed 19 diverges, green in 25.7 s. The seeded start leaves team 0 to the player and it falls at 222 s, so the tail is frozen and the mid-match comparison is what carries the claim
 
 ### Phase 2 — it plays in the engine
 
