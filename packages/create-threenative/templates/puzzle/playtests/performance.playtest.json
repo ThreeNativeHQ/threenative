@@ -5,10 +5,10 @@
   },
   "assert": {
     "performance": {
-      "maxDrawCalls": 100000,
-      "maxFrameMsP95": 1000,
-      "maxTriangles": 1000000,
-      "minFps": 1
+      "maxDrawCalls": 300,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 45000,
+      "minFps": 30
     },
     "renderChain": {
       "tier": "high"

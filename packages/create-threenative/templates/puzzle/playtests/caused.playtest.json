@@ -7,8 +7,20 @@
   "subject": "player",
   "steps": [
     { "kind": "wait", "label": "vault-drops", "waitTicks": 400, "release": true },
-    { "kind": "input", "label": "cross-the-vault", "press": "ArrowRight", "holdTicks": 200, "release": true },
-    { "kind": "input", "label": "reach-the-seal", "press": "ArrowUp", "holdTicks": 200, "release": true },
+    {
+      "kind": "input",
+      "label": "cross-the-vault",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reach-the-seal",
+      "press": "ArrowUp",
+      "holdTicks": 200,
+      "release": true
+    },
     { "kind": "wait", "label": "after-the-contact", "waitTicks": 60, "release": true }
   ],
   "assert": {
@@ -41,7 +53,13 @@
       }
     ],
     "contacts": [
-      { "entity": "player", "with": "seal", "kind": "trigger", "minCount": 1, "atStep": "reach-the-seal" }
+      {
+        "entity": "player",
+        "with": "seal",
+        "kind": "trigger",
+        "minCount": 1,
+        "atStep": "reach-the-seal"
+      }
     ]
   }
 }

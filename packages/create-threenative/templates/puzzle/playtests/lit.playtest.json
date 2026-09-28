@@ -50,16 +50,16 @@
           "y": 215,
           "width": 90,
           "height": 60,
-          "maxDarkPixelRatio": 0.3
+          "maxDarkPixelRatio": 0.5
         }
       },
       {
         "region": {
-          "x": 470,
-          "y": 520,
-          "width": 300,
+          "x": 880,
+          "y": 250,
+          "width": 140,
           "height": 120,
-          "minDarkPixelRatio": 0.5
+          "maxDarkPixelRatio": 0.35
         }
       },
       {

@@ -4,6 +4,11 @@ import type { GameState } from "../state.js";
 /**
  * The HUD. Plain Tailwind, plain DOM, and the same file on every target.
  *
+ * Every block that floats over the scene carries the panel background. This room is lit by a
+ * photographed sky, so half the frame is bright: light HUD text straight onto the frame is
+ * invisible exactly where the numbers are, and no assertion sees that — the scenarios read the
+ * published state, not the pixels.
+ *
  * `useUiState` reads the game's *published* state, which moves at about 10 Hz rather than at the
  * frame rate, and is undefined until the game publishes its first snapshot — so nothing is drawn
  * until there is something true to draw.
@@ -16,7 +21,7 @@ export function Hud() {
 
   return (
     <>
-      <div className="pointer-events-none absolute left-6 top-6 w-56 select-none">
+      <div className="pointer-events-none absolute left-6 top-6 w-56 select-none border border-line bg-panel/75 px-3 py-2">
         <div className="text-[10px] uppercase tracking-[0.22em] text-dim">warden vault</div>
         <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-dim">
           seed <b className="font-normal tabular-nums text-text">{state.seed}</b>
@@ -64,7 +69,7 @@ export function Hud() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-6 left-6 select-none text-[10px] uppercase leading-relaxed tracking-[0.14em] text-dim">
+      <div className="pointer-events-none absolute bottom-6 left-6 select-none border border-line bg-panel/75 px-3 py-2 text-[10px] uppercase leading-relaxed tracking-[0.14em] text-dim">
         <div>arrows or wasd — shove the crates</div>
         <div>v — run the vault twice and compare</div>
         <div>r — reset the vault</div>

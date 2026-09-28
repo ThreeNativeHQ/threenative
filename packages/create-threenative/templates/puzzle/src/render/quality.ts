@@ -80,6 +80,9 @@ export function resolveQualityTier(
  * separates a crate *resting on* a crate from a crate painted next to one.
  */
 const shared: IWorldEnvironmentOptions = {
+  // Off, and it defaults to ON: `worldEnvironment.ts` resolves an absent flag to `true`, so
+  // leaving it out is not the same as turning it off.
+  bloomEnabled: false,
   exposure: 0.62,
   tonemapMode: "aces",
   vignetteAmount: 0.22,

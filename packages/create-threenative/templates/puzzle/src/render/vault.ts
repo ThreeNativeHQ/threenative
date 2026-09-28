@@ -156,8 +156,10 @@ export function createVaultRoom(): IVaultRoom {
   }
 
   // --- pillars ---------------------------------------------------------------------------
-  // Corners and mid-spans, each with a lighter diamond inset turned 45 degrees on its face. The
-  // insets are the only small detail in the room and they are what stops the walls reading flat.
+  // Corners and mid-spans, and nothing else. They break the wall run into bays, which is the one
+  // thing a wall this long needs; the diamond insets the painterly room wore on each face are
+  // gone, because a face turned 45 degrees projects the metre grid into a diamond and the room
+  // reads as a texture error rather than as carpentry.
   const pillarSpots: readonly { readonly x: number; readonly z: number }[] = [
     { x: -outerX + 0.42, z: -outerZ + 0.42 },
     { x: outerX - 0.42, z: -outerZ + 0.42 },
@@ -168,23 +170,8 @@ export function createVaultRoom(): IVaultRoom {
     { x: -outerX + 0.3, z: 0.6 },
     { x: outerX - 0.3, z: 0.9 },
   ];
-  for (const spot of pillarSpots) {
-    const pillar = block(0.9, 2.24, 0.9, structureMaterial, { radius: 0.09 });
-    pillar.position.set(spot.x, 1.12, spot.z);
-    root.add(pillar);
-    for (const height of [0.62, 1.62]) {
-      const inset = block(0.3, 0.3, 0.3, structureMaterial, { radius: 0.05 });
-      inset.rotation.set(0, Math.PI / 4, Math.PI / 4);
-      inset.scale.set(1, 1, 0.5);
-      inset.position.set(spot.x, height, spot.z + 0.44);
-      root.add(inset);
-      const side = inset.clone();
-      side.rotation.set(Math.PI / 4, 0, Math.PI / 4);
-      side.scale.set(0.5, 1, 1);
-      side.position.set(spot.x + 0.44, height, spot.z);
-      root.add(side);
-    }
-  }
+  for (const spot of pillarSpots)
+    root.add(gridBlock(0.9, 2.24, 0.9, structureMaterial, [spot.x, 1.12, spot.z], 0.09));
 
   // --- the seal --------------------------------------------------------------------------
   const seal = new Group();
