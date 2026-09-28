@@ -18,7 +18,7 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | defense | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | minimal | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Player.ts`), which extends AnimationPlayer |
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
-| puzzle | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
+| puzzle | N/A — the warden is a `CharacterBody3D` capsule with `autostep`, so the solver owns floor contact, and the crates are `RigidBody3D`s resting on each other | N/A — every mesh in the vault is procedural geometry authored in metres, so there is no imported model to scale | N/A — the warden pushes crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | rts | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Player.ts`), which extends AnimationPlayer |
 | runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
@@ -29,6 +29,8 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs
 the player sees when they look down rather than a third-person body, and `normaliseToMetres` and
 `attachToBone` size and hold the camera-space viewmodel. Same three calls, same file, new lines.
+
+Updated 2026-09-28: the `puzzle` kit became the warden vault. Its conventions file is gone — the warden is a `CharacterBody3D` capsule with `autostep` rather than a claw that carries crates through physics velocity, so nothing in the game needs a ground-snap wrapper, and every mesh is procedural geometry in metres rather than an imported model with an unknown scale. Both cells are now `N/A` with the reason, which is what the two waterborne and vehicle kits already record.
 
 ## Observable call evidence
 
