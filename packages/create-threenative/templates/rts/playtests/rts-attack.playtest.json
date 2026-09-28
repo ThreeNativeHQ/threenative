@@ -1,0 +1,78 @@
+{
+  "name": "rts-attack",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "selection",
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true },
+    { "kind": "input", "label": "alt-down", "press": "Alt", "holdTicks": 2, "release": false },
+    {
+      "kind": "input",
+      "label": "box-start",
+      "pointerPosition": { "buttons": 1, "x": 0.08, "y": 0.28 },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "box-end",
+      "pointerPosition": { "buttons": 1, "x": 0.94, "y": 0.96 },
+      "holdTicks": 6,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "box-release",
+      "pointerPosition": { "buttons": 0, "x": 0.94, "y": 0.96 },
+      "holdTicks": 2,
+      "release": false
+    },
+    { "kind": "input", "label": "alt-up", "press": [], "holdTicks": 2, "release": true },
+    { "kind": "input", "label": "attack-mode", "press": "KeyA", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "armed", "waitTicks": 4, "release": true },
+    {
+      "kind": "input",
+      "label": "order-attack",
+      "pointerPosition": { "buttons": 2, "x": 0.88, "y": 0.3 },
+      "holdTicks": 4,
+      "release": true
+    },
+    { "kind": "wait", "label": "ordered", "waitTicks": 20, "release": true },
+    {
+      "label": "first-kill",
+      "release": true,
+      "timeoutMs": 90000,
+      "waitForResource": { "id": "state", "path": "kills", "gte": 1 }
+    },
+    { "kind": "wait", "label": "engaged", "waitTicks": 30, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "selection",
+        "component": "order",
+        "atSteps": [
+          { "label": "armed", "equals": "attackMove" },
+          { "label": "engaged", "equals": "attack" }
+        ]
+      }
+    ],
+    "resources": [
+      { "id": "state", "path": "kills", "gte": 1 },
+      {
+        "id": "state",
+        "path": "selectionOrder",
+        "atSteps": [{ "label": "engaged", "textIncludes": "attack" }]
+      }
+    ],
+    "renderChain": { "tier": "high" }
+  }
+}
