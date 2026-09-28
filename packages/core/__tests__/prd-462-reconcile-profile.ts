@@ -6,7 +6,7 @@
  * 0.8 ms there. This harness reproduces both lanes without a browser, a renderer or a GPU, so the
  * difference is attributable to JavaScript: same scene, same mutation rate, one difference.
  *
- *     node --import tsx packages/core/__tests__/prd-462-reconcile-profile.ts [shared|uniform] [frames] [out.cpuprofile]
+ *     node --import tsx packages/core/__tests__/prd-462-reconcile-profile.ts [shared|uniform] [frames] [out.cpuprofile] [spread|everyFrame]
  *
  * The profiler is started around the measured loop and not the process, so building 4,096 materials
  * cannot be mistaken for the cost of reconciling them. The per-frame milliseconds it prints and the
@@ -54,10 +54,14 @@ function mutate(scene: Scene, frame: number): void {
 const lane = process.argv[2] === "shared" ? "shared" : "uniform";
 const frames = Number(process.argv[3] ?? 200);
 const out = process.argv[4];
+// The colour lane's material proof, the two modes PRD-462 shipped: omitted takes the default
+// (`spread`), and naming `everyFrame` measures the per-member poll it replaced.
+const materialChecks = process.argv[5];
 const scene = lattice(lane, COUNT);
 const projection = new SceneRenderProjection(scene, {
   minMeshes: 8,
   onReport: () => undefined,
+  ...(materialChecks === undefined ? {} : { projection: { materialChecks } }),
 });
 // One settle pass before the profiler opens, so the plan is retained and the frames it samples are
 // the steady ones the GPU arm measures.
@@ -90,6 +94,8 @@ process.stdout.write(
     lane,
     count: COUNT,
     frames,
+    materialChecks: projection.report.materialChecks,
+    staleFrames: projection.report.materialCheckStaleFrames,
     meanMs: Number(mean.toFixed(3)),
     medianMs: Number(median.toFixed(3)),
     batches: projection.report.batches,
