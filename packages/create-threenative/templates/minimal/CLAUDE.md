@@ -52,9 +52,8 @@ pnpm test
 ```
 
 `src/main.ts` boots the canvas; `src/scenes/Play.ts` owns the lifecycle; `src/entities/Player.ts`
-drives the rigged `assets/mannequin.glb` (Quaternius, CC0) through `SkeletalMesh3D`; the arena in
-`Play.ts` is one `Group` handed to `buildStaticColliders`, and `render/camera.ts` follows from
-`afterPhysics`. There is no HUD. `playtests/survives.playtest.json` is the durable smoke proof.
+drives `assets/mannequin.glb` (Quaternius, CC0) through `SkeletalMesh3D`; the arena is one `Group`
+handed to `buildStaticColliders`; `render/camera.ts` follows from `afterPhysics`. No HUD.
 
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
 `src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene
@@ -73,9 +72,8 @@ a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's 
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-`src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) the background, the environment light
-and the fog colour; re-aim `SUN_DIRECTION` when you swap it. On WebGPU `Play.ts` gives the sun a
-`VirtualShadowNode`. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
+`src/render/sky.ts` makes `assets/sky.jpg` (Poly Haven, CC0) background, environment light and fog
+colour (re-aim `SUN_DIRECTION` when you swap it); WebGPU adds a `VirtualShadowNode`. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()`
 chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers
 throw and `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look.
 
