@@ -222,6 +222,17 @@ export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
  * so whichever a level picks is there; the main camera renders neither.
  */
 export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
+/**
+ * The wide casters too small to resolve anywhere but the finest level's own window: a fern, a tuft
+ * of grass, a bush. `WorldCells` puts the wide half of any asset whose authored bounds are shorter
+ * than `shadows.smallCasterMetres` here instead of on the wide layer, so a wide level submits one
+ * caster draw per tree and none per tuft — the coarse levels' bill was hundreds of draws for
+ * shadows a 192 m window cannot hold. Only the finest level renders this layer, and it renders it
+ * beside whichever of the two caster granularities it picked, because a fern 4 m from the player
+ * does have a shadow. Not on the main camera, and not a layer a game has to know about: nothing
+ * chooses it but `WorldCells`.
+ */
+export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
@@ -751,7 +762,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * the key-wide meshes waiting for it. A cluster's own sphere is its whole grid square, so the
    * window test is on its centre, which is where the records actually are.
    */
-  #probe(level: ILevel, centre: IVector3Like): void {
+  #probe(level: ILevel, centre: IVector3Like, index: number): void {
     const gate = (this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize;
     const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
     const wideLayer = 1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
@@ -870,6 +881,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       clustered || prewarming ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
     );
     if (prewarming) level.shadow.camera.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+    // The small casters are not in either bill above, and deliberately so: a wide level renders
+    // neither this layer nor the meshes on it, and a fine level renders it beside whichever
+    // granularity it picked, so counting them would only skew a choice they do not take part in.
+    // Finest-first order is the node's own contract, so index 0 is the level whose window is a
+    // player's reach; the prewarm owes their draw too, exactly as it owes both caster layers'.
+    if (index === 0 || prewarming)
+      level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
   }
 
   /** Put back every caster `#probe` hid, so the next camera sees the world as it was. */
@@ -1345,7 +1363,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // the level needs to cover what can actually shadow it, and the casters too small for its
           // texels. Both are undone the moment the render is over — the hidden casters by
           // `#restoreHidden`, which the mover maps and the main pass both need back.
-          this.#probe(level, centre);
+          this.#probe(level, centre, index);
           if (this.#autoDepth) this.#deriveDepth(level, centre);
           this.#place(level, centre);
           try {

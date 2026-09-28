@@ -512,6 +512,7 @@ export type {
 
 export { WorldCells } from "./world-cells.js";
 export type {
+  IShadowRegion,
   IWorldCellsBudget,
   IWorldCellsFollow,
   IWorldCellsLoadOptions,

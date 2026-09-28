@@ -18,6 +18,7 @@ import type { NodeBuilder, NodeFrame } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_SMALL_CASTER_LAYER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
 } from "../src/render/virtual-shadow.js";
@@ -231,7 +232,10 @@ describe("a streamed world's caster prewarm", () => {
      * drawn by the main pass and is not what this spec is about.
      */
     const pending = (): string[] => {
-      const casters = (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      const casters =
+        (1 << VIRTUAL_SHADOW_CASTER_LAYER) |
+        (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER) |
+        (1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
       const names: string[] = [];
       const walk = (object: Object3D): void => {
         if (

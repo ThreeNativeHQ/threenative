@@ -257,7 +257,9 @@ function split(world: WorldCells): {
   const wide: [string, InstancedMesh][] = [];
   for (const [name, mesh] of clusters(world)) {
     if (mesh.layers.mask === 1 << 28) casters.push([name, mesh]);
-    else if (mesh.layers.mask === 1 << 27) wide.push([name, mesh]);
+    // The wide half is one mesh per key on either wide layer: 27 for an asset a wide level can
+    // resolve, 26 for ground cover only the finest level renders.
+    else if (mesh.layers.mask === 1 << 27 || mesh.layers.mask === 1 << 26) wide.push([name, mesh]);
     else main.push([name, mesh]);
   }
   return { casters, main, wide };

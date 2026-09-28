@@ -222,6 +222,16 @@ const VIRTUAL_SHADOW_CASTER_LAYER = 28;
  * granularity or the other and never both.
  */
 const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
+/**
+ * The wide casters only the finest level renders: a fern's or a grass tuft's, whose shadow is
+ * sub-texel noise past a few metres and whose per-key draw a 192 m or 640 m window was paying
+ * hundreds of times for nothing. Duplicated from `virtual-shadow.ts` like the two layers above, and
+ * chosen from the asset's own authored bounds rather than from what a game says, so a package
+ * nobody has annotated still gets the cull. `shadows.smallCasterMetres` is the override.
+ */
+const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
+/** An asset shorter than this casts into the finest level only; see the layer above. */
+const SMALL_CASTER_METRES = 1.5;
 /** The whole ring, as one caster cluster: `@*` is every square's records in one mesh. */
 const WIDE_CLUSTER = "*";
 /**
@@ -318,8 +328,23 @@ export interface IWorldCellsLoadOptions {
      * Called at most once a second after streamed records changed, so the shadow levels that read
      * them redraw. `VirtualShadowNode.invalidateAll` is the whole of it, and a call with no region
      * is exactly that. Not called per frame, and not called at all when nothing changed.
+     *
+     * When it is called about records, it is called with the union of the bounds of the records
+     * that changed — the placement position widened by the asset's own bounds, unioned over the
+     * records of this update and nothing else, so a hook that forwards it to
+     * `VirtualShadowNode.invalidateRegion` redraws the levels whose window covers them and leaves
+     * the rest of the cascade holding its maps. A call with no region is still a blanket one: the
+     * prewarm passes it while a caster's first draw is owed, and there is no region for that.
      */
     readonly invalidate?: (region?: IShadowRegion) => void;
+    /**
+     * An asset whose authored bounds are shorter than this casts into the finest shadow level only,
+     * default 1.5 m. Ground cover below it — ferns, grass, bushes — casts a shadow that is sub-texel
+     * noise at every range a wide level covers, and costs one draw per key per level there. Raise it
+     * to draw everything at every range, lower it to cull more. Measured on the authored bounds, so
+     * a package that scales a fern up four times is judged on the un-scaled fern.
+     */
+    readonly smallCasterMetres?: number;
   };
   /**
    * Triangles a hand-placed chunk's merged material group may reach before one of its
@@ -522,6 +547,13 @@ interface ICellBatch {
    */
   wide: SharedBatch | undefined;
   wideSegment: number;
+  /**
+   * The world bounds of the records this entry holds, from the filter that built it. The shadow
+   * invalidation is the union of these over the entries a swap moved in and out, which is the point
+   * of measuring them per record rather than per cell: a 48 m level's window is smaller than the
+   * cell box, so the cell box always covered it and always redrew it.
+   */
+  shadowBounds: Box3 | undefined;
   lastFilterX: number;
   lastFilterZ: number;
 }
@@ -628,6 +660,13 @@ class SharedBatch {
   mesh: ICasterScaleMesh;
   /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
   readonly role: "cluster" | "main" | "wide";
+  /**
+   * Set by `WorldCells` from the asset's own bounds: a wide caster of ground cover goes on the
+   * finest level's small-caster layer rather than the wide one. Written after construction because
+   * `#segmentIn` re-dresses a grown mesh with nothing but the batch to hand, and a flag the batch
+   * carries is the one thing that survives that.
+   */
+  smallCaster = false;
   readonly #clustered: boolean;
   readonly #segmentSize: number;
   /** Block handle -> the block's first instance record. */
@@ -1422,6 +1461,8 @@ interface IBuildJob {
   /** Next placement to filter; the filter is complete when it reaches `run.count`. */
   next: number;
   batches: InstancedBatch[][] | undefined;
+  /** One world-bounds box per `(level, part)` batch, filled by `#addPlacements` and read on swap. */
+  boxes: Box3[][] | undefined;
   /** How many of the (level, part) meshes have been built. */
   published: number;
 }
@@ -1981,6 +2022,21 @@ function publishCount(batches: readonly InstancedBatch[][]): number {
 }
 
 /**
+ * One empty bounds box per `(level, part)`, beside the batches `#addPlacements` measures. Written
+ * as a loop because this file is held to a rule that the array method's name is a material's
+ * texture property.
+ */
+function newBoxes(batches: readonly InstancedBatch[][]): Box3[][] {
+  const boxes: Box3[][] = [];
+  for (const levelBatches of batches) {
+    const level: Box3[] = [];
+    for (const _batch of levelBatches) level.push(new Box3());
+    boxes.push(level);
+  }
+  return boxes;
+}
+
+/**
  * The distance a `maxDistance` prop actually culls at, one eighth short of itself: the slack
  * `#addPlacements` leaves, so a follow point that has not moved a whole eighth of the cull distance
  * cannot have culled a placement it had not already culled.
@@ -2262,6 +2318,13 @@ function nonNegativeInteger(value: number, name: string): number {
   return value;
 }
 
+/** A metre threshold, unlike the counts above: 1.5 m is the whole point of the option. */
+function positiveMetres(value: number, name: string): number {
+  if (!Number.isFinite(value) || value <= 0)
+    throw new Error(`WorldCells ${name} must be a finite number greater than 0.`);
+  return value;
+}
+
 /**
  * The admission budget: a positive number of milliseconds, or `Infinity` for no ceiling at all —
  * which is what a game that wants one `update` to admit everything it can asks for. Zero is refused
@@ -2539,6 +2602,8 @@ export class WorldCells extends Group implements IComputeDriven {
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
   readonly #receiveShadow: boolean;
+  /** Asset bounds height under which a wide caster goes on the finest level's layer only. */
+  readonly #smallCasterMetres: number;
   /** The triangle cap a chunk's instanced meshes are expanded under; see the load option. */
   readonly #chunkMergeMaxTriangles: number;
   /**
@@ -2570,6 +2635,12 @@ export class WorldCells extends Group implements IComputeDriven {
   // world has admitted nothing.
   #shadowMoved = true;
   #shadowToldAt = Number.NEGATIVE_INFINITY;
+  /**
+   * The union of the bounds of the records that moved since the levels were last told, so the tell
+   * carries the region rather than the whole cascade. `undefined` is a change with no region to
+   * name — the prewarm's blanket ask — and is handed on as no argument at all.
+   */
+  #shadowRegion: IShadowRegion | undefined;
   /** When `TN_WORLD_MAIN_CULL` was last printed; see {@link #reportMainCull}. */
   #mainCullToldAt = 0;
   /** Window repacks since the last marker; see {@link #reportMainCull}. */
@@ -2614,6 +2685,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #scale = new Vector3();
   readonly #matrix = new Matrix4();
   readonly #instance = new Matrix4();
+  /** The corner `#addPlacements` widens one batch's bounds box with, twice per record. */
+  readonly #recordPoint = new Vector3();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   readonly #budgetMs: number;
   readonly #now: () => number;
@@ -2695,6 +2768,10 @@ export class WorldCells extends Group implements IComputeDriven {
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
         : 0;
     this.#receiveShadow = init.shadows?.receive === true;
+    this.#smallCasterMetres = positiveMetres(
+      init.shadows?.smallCasterMetres ?? SMALL_CASTER_METRES,
+      "shadows.smallCasterMetres",
+    );
     this.#chunkMergeMaxTriangles = positiveInteger(
       init.chunkMergeMaxTriangles ?? CHUNK_MERGE_MAX_TRIANGLES,
       "chunkMergeMaxTriangles",
@@ -3198,6 +3275,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#extentBounds,
       entry.role,
     );
+    shared.smallCaster = this.#smallCaster(entry.asset);
     this.#dressMesh(shared, entry.role === "main" && this.#receiveShadow);
     this.#shared.set(entry.key, shared);
     this.add(shared.mesh);
@@ -3597,6 +3675,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#jobs.push({
       asset,
       batches: undefined,
+      boxes: undefined,
       cell,
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
@@ -3666,6 +3745,9 @@ export class WorldCells extends Group implements IComputeDriven {
   #step(job: IBuildJob): boolean {
     if (job.next < job.run.count) {
       job.batches ??= newBatches(job.asset);
+      // One box per `(level, part)` beside the batches it measures, so the swap that hands the
+      // records to the renderer can name where they are; see `#addPlacements`.
+      job.boxes ??= newBoxes(job.batches);
       const end = Math.min(job.next + ADMISSION_SLICE_PLACEMENTS, job.run.count);
       this.#addPlacements(job, job.next, end);
       job.next = end;
@@ -3757,8 +3839,26 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
-    if (job.fresh.length > 0 || job.replaced.length > 0) this.#shadowRecordsMoved();
+    if (job.fresh.length > 0 || job.replaced.length > 0)
+      this.#shadowRecordsMoved(this.#changedBounds(job.fresh, job.replaced));
     return true;
+  }
+
+  /**
+   * The world bounds of the records these groups moved: the union of what each batch held, in and
+   * out. Both sides, because a record that leaves is ground a level was drawing; `undefined` when
+   * neither held one, and then the tell is the blanket one.
+   */
+  #changedBounds(fresh: readonly ICellBatch[], replaced: readonly ICellBatch[]): Box3 | undefined {
+    let union: Box3 | undefined;
+    for (const group of [fresh, replaced])
+      for (const entry of group) {
+        const box = entry.shadowBounds;
+        if (box === undefined) continue;
+        if (union === undefined) union = box.clone();
+        else union.union(box);
+      }
+    return union;
   }
 
   /**
@@ -3808,9 +3908,28 @@ export class WorldCells extends Group implements IComputeDriven {
    * One cell's records changed, so the shadow levels that cover it redraw — at most once a second,
    * and only for a game that passed the hook. The levels cull clusters themselves now, so nothing
    * has to be copied for them; the flag only says "what you last drew is out of date".
+   *
+   * `bounds` is the records that changed and is kept until the tell, unioned with whatever else
+   * changed in the same second. A change with no bounds is a blanket one: it has to be, because
+   * there is nothing narrower to say.
    */
-  #shadowRecordsMoved(): void {
+  #shadowRecordsMoved(bounds?: Box3): void {
     this.#shadowMoved = true;
+    if (bounds === undefined || bounds.isEmpty()) return;
+    const current = this.#shadowRegion;
+    if (current === undefined) {
+      this.#shadowRegion = {
+        max: { x: bounds.max.x, y: bounds.max.y, z: bounds.max.z },
+        min: { x: bounds.min.x, y: bounds.min.y, z: bounds.min.z },
+      };
+      return;
+    }
+    current.min.x = Math.min(current.min.x, bounds.min.x);
+    current.min.y = Math.min(current.min.y, bounds.min.y);
+    current.min.z = Math.min(current.min.z, bounds.min.z);
+    current.max.x = Math.max(current.max.x, bounds.max.x);
+    current.max.y = Math.max(current.max.y, bounds.max.y);
+    current.max.z = Math.max(current.max.z, bounds.max.z);
   }
 
   /**
@@ -3818,7 +3937,9 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * The companions used to make this the expensive call it still is; the levels redraw from
    * scratch, so the cadence is the only lever and once a second is the one that keeps a walk's
-   * frames off the shadow lane without leaving the ground stale behind a player.
+   * frames off the shadow lane without leaving the ground stale behind a player. The region is
+   * what the changed records' own bounds add: a hook that forwards it redraws the levels whose
+   * window covers them, which for a streaming world is usually the finest one alone.
    */
   #tellShadows(): void {
     if (!this.#shadowMoved) return;
@@ -3827,13 +3948,17 @@ export class WorldCells extends Group implements IComputeDriven {
     // nothing left to do.
     if (this.#invalidateShadows === undefined) {
       this.#shadowMoved = false;
+      this.#shadowRegion = undefined;
       return;
     }
     const now = this.#now();
     if (now - this.#shadowToldAt < 1e3) return;
     this.#shadowToldAt = now;
     this.#shadowMoved = false;
-    this.#invalidateShadows();
+    const region = this.#shadowRegion;
+    this.#shadowRegion = undefined;
+    if (region === undefined) this.#invalidateShadows();
+    else this.#invalidateShadows(region);
   }
 
   /**
@@ -3914,9 +4039,30 @@ export class WorldCells extends Group implements IComputeDriven {
       const level = levelAt(asset.distances, distance);
       const parts = asset.levels[level] as readonly IAssetPart[];
       const levelBatches = job.batches?.[level] as InstancedBatch[];
+      const levelBoxes = job.boxes?.[level] as Box3[] | undefined;
+      // The record's own world bounds: the placement widened by the asset's authored bounds at the
+      // scale it is drawn at. Read here because this loop already holds the placement and the scale,
+      // and it is the one number the shadow levels' invalidation is tested against — the cell box is
+      // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
+      const bounds = asset.definition.bounds;
       for (const [part, entry] of parts.entries()) {
         this.#instance.multiplyMatrices(this.#matrix, entry.local);
         (levelBatches[part] as InstancedBatch).add(this.#instance);
+        const box = levelBoxes?.[part];
+        if (box === undefined) continue;
+        const scale = this.#scale.x;
+        this.#recordPoint.set(
+          x + (bounds.min[0] as number) * scale,
+          y + (bounds.min[1] as number) * scale,
+          z + (bounds.min[2] as number) * scale,
+        );
+        box.expandByPoint(this.#recordPoint);
+        this.#recordPoint.set(
+          x + (bounds.max[0] as number) * scale,
+          y + (bounds.max[1] as number) * scale,
+          z + (bounds.max[2] as number) * scale,
+        );
+        box.expandByPoint(this.#recordPoint);
       }
     }
   }
@@ -3951,6 +4097,7 @@ export class WorldCells extends Group implements IComputeDriven {
         part -= levelBatches.length;
         continue;
       }
+      const box = job.boxes?.[level]?.[part];
       job.fresh.push({
         asset: asset.id,
         batch: levelBatches[part] as InstancedBatch,
@@ -3965,6 +4112,8 @@ export class WorldCells extends Group implements IComputeDriven {
         run: job.run,
         segment: -1,
         shared: undefined,
+        // Where these records are, for the shadow invalidation this entry's swap hands over.
+        shadowBounds: box === undefined || box.isEmpty() ? undefined : box,
         threshold: asset.threshold,
       });
       job.published += 1;
@@ -4071,6 +4220,7 @@ export class WorldCells extends Group implements IComputeDriven {
     const existing = this.#shared.get(key);
     if (existing !== undefined) return existing;
     const shape = this.#shapeFor(entry, role);
+    const smallCaster = this.#smallCaster(assetId);
     // The batch released when this asset's last cell left the ring is the one to draw into again,
     // so the mesh keeps the uuid and the node three built for it. It costs no fresh allowance,
     // because it is not a fresh mesh.
@@ -4080,6 +4230,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#retiredBytes -= this.#heldBytes(released);
       released.rebind(shape.geometry, shape.material);
       released.mesh.name = key;
+      released.smallCaster = smallCaster;
       this.#dressMesh(released, receiveShadow);
       this.#shared.set(key, released);
       this.add(released.mesh);
@@ -4101,6 +4252,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#extentBounds,
       role,
     );
+    shared.smallCaster = smallCaster;
     this.#dressMesh(shared, receiveShadow);
     this.#shared.set(key, shared);
     this.add(shared.mesh);
@@ -4128,7 +4280,11 @@ export class WorldCells extends Group implements IComputeDriven {
     markStatic(mesh);
     if (role !== "main") {
       mesh.layers.set(
-        role === "cluster" ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+        role === "cluster"
+          ? VIRTUAL_SHADOW_CASTER_LAYER
+          : shared.smallCaster
+            ? VIRTUAL_SHADOW_SMALL_CASTER_LAYER
+            : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
       );
       mesh.castShadow = true;
       mesh.receiveShadow = false;
@@ -4188,11 +4344,22 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Whether a level's own batches cast. Only the caster clusters ask; a main mesh never casts, so
+   * Whether this level's own batches cast. Only the caster clusters ask; a main mesh never casts, so
    * the shadow map holds exactly the cluster meshes a level's window covers.
    */
   #casts(level: number): boolean {
     return this.#castShadowLevels > level;
+  }
+
+  /**
+   * An asset too small to resolve in any window but the finest one's, so its wide caster goes on
+   * that level's layer alone. Measured on the authored bounds the package carries, which is the one
+   * number a world has for every asset it never loaded a tree for.
+   */
+  #smallCaster(assetId: string): boolean {
+    const bounds = this.#manifest.assets[assetId]?.bounds;
+    if (bounds === undefined) return false;
+    return bounds.max[1] - bounds.min[1] < this.#smallCasterMetres;
   }
 
   /**
@@ -4672,8 +4839,10 @@ export class WorldCells extends Group implements IComputeDriven {
         // the levels are told a caster arrived, exactly as a prewarmed caster cluster tells them:
         // the first level whose window covers the chunk submits the proxy and builds it. With one
         // material per `side` world-wide, that is one pipeline for the world's first chunk of each
-        // side and a node binding for every chunk after it, not a compile per chunk.
-        if (proxies > 0) this.#shadowRecordsMoved();
+        // side and a node binding for every chunk after it, not a compile per chunk. The chunk's
+        // own box is the region, from the merged geometry's boxes rather than its vertices: a chunk
+        // is loaded once and the region is only asked to be no wider than the chunk.
+        if (proxies > 0) this.#shadowRecordsMoved(new Box3().setFromObject(object, false));
         attached += 1;
       }
     } catch {
@@ -4700,8 +4869,8 @@ export class WorldCells extends Group implements IComputeDriven {
     });
     for (const entry of cell.batches) this.#clearSegment(entry);
     // The same invalidation `#swap` makes, for the eviction path: the records that just left the
-    // ring are ground the levels were drawing.
-    this.#shadowRecordsMoved();
+    // ring are ground the levels were drawing, and they are named one batch at a time.
+    this.#shadowRecordsMoved(this.#changedBounds(cell.batches, []));
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();

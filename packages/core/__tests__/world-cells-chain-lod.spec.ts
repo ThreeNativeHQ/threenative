@@ -220,6 +220,8 @@ function levelMesh(
 /** The caster layer masks, from `render/virtual-shadow.ts`; the main camera renders neither. */
 const CLUSTER_LAYER = 1 << 28;
 const WIDE_LAYER = 1 << 27;
+/** The wide half for ground cover, which only the finest level renders; see `smallCasterMetres`. */
+const SMALL_WIDE_LAYER = 1 << 26;
 
 /** Every batch mesh on one caster layer, by name. */
 function castersOn(world: WorldCells, mask: number): Map<string, InstancedMesh> {
@@ -233,7 +235,10 @@ function castersOn(world: WorldCells, mask: number): Map<string, InstancedMesh> 
 
 /** The one mesh a key drew as a wide caster, `key@*`. */
 function wideCaster(world: WorldCells, key: string): InstancedMesh | undefined {
-  return castersOn(world, WIDE_LAYER).get(`${key}@*`);
+  return (
+    castersOn(world, WIDE_LAYER).get(`${key}@*`) ??
+    castersOn(world, SMALL_WIDE_LAYER).get(`${key}@*`)
+  );
 }
 
 /** The live caster cluster of a key, `key@x,z`, in the square one shadow level's window covers. */
