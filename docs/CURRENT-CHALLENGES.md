@@ -9,7 +9,7 @@ Nothing here is hidden elsewhere, and nothing elsewhere contradicts it. If you f
 this file does not name, that is a bug in this file — please
 [open an issue](https://github.com/ThreeNativeHQ/threenative/issues).
 
-**Last reviewed:** 2026-09-23.
+**Last reviewed:** 2026-09-28.
 
 ## At a glance
 
@@ -22,6 +22,7 @@ this file does not name, that is a bug in this file — please
 | 5 | The agent head-to-head benchmark has never been run | Apparatus built and wired to CI | Execute six repeats against the sealed prompt |
 | 6 | Nobody outside the project has played a game for five minutes | Protocol written | Run the stranger test |
 | 7 | The API is `0.x` | Alpha, deliberately | Freeze after the criteria in the Charter's §12 are met |
+| 8 | The supported envelope is narrower than "any game" | Inventoried below, enforced by failing-closed guards | Keep the inventory true to the guards; name what changes here when one moves |
 
 ---
 
@@ -111,6 +112,52 @@ in minor versions and are recorded in [`../CHANGELOG.md`](../CHANGELOG.md).
 does not look worse than the vanilla control, one codebase runs on web, desktop and a physical
 phone, the native arm is not slower than the browser arm, and a stranger has played it. A `1.0`
 follows those, not a calendar.
+
+## 8. What "portable" does not mean
+
+**Where it stands.** ThreeNative is an alpha general-purpose framework with useful game systems, not
+a guarantee that every browser library, asset codec, extension, workload or third-party SDK is
+portable. The claims this project makes are the games it ran, and **no document claims "any game"**.
+The envelope, as the code enforces it today:
+
+- **Targets.** Web (WebGPU, with a WebGL2 path where the render path allows it), desktop hosts for
+  Linux, Windows and macOS, and Android `arm64-v8a` / `x86_64`. iOS is not a supported target
+  (row 3). None of this is a store-readiness claim: signing, store listings and game-specific SDKs
+  stay the developer's.
+- **Compressed assets on mobile native.** Android QuickJS and iOS JSC have no WebAssembly engine, so
+  Three.js's Basis/KTX2 transcoder, its Meshopt decoder and Draco's WASM decoder cannot run there.
+  `threenative build` refuses such a bundle before one exists — `TN_NATIVE_KTX2_UNSUPPORTED`,
+  `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED` — and desktop keeps the real decoders. Web is refused by
+  `TN_ASSETS_KTX2_UNSUPPORTED` when the renderer supports no compressed format.
+  (`packages/runtime-native/AGENTS.md`, `packages/create-threenative/src/build.ts`)
+- **Native audio codecs.** Native `decodeAudioData` sniffs the container: `OggS` goes to stb_vorbis
+  (Ogg Vorbis), everything else to RIFF/WAVE through SDL. Opus, FLAC, MP3 and AAC are not
+  implemented, and an Ogg carrying Opus or FLAC is refused rather than mis-decoded — it arrives as
+  the same rejected promise a corrupt WAV produces.
+  (`packages/runtime-native/src/audio/audio_context.cpp:911`)
+- **Browser globals in the portable graph.** The owned runtime shims the browser globals a game
+  reaches for, and a global it does not shim breaks native — which is why the shim list is the
+  contract. The portable graph may not reach browser UI at all: `TN_NATIVE_WEB_ONLY_UI` rejects DOM
+  or React mounting in `src/game.ts`, and `TN_NATIVE_WASM_ON_MOBILE` rejects WebAssembly imports
+  there on Android and iOS. DOM work belongs in `src/main.ts`; web-only WASM needs a
+  `threenative-native` conditional backend. See
+  [THREEJS-CONSTRAINTS](architecture/THREEJS-CONSTRAINTS.md).
+- **Software adapters and virtual displays.** WebGPU reaching SwiftShader, llvmpipe or another CPU
+  rasteriser answers normally, so its numbers look healthy while describing software rendering. The
+  runner reads `adapter.info`, names the software adapter and refuses the result unless the caller
+  opts in (`TN_CAPTURE_SESSION_ADAPTER_REJECTED`, `TN_TRACE_SOFTWARE_ADAPTER`), and a virtual display
+  is blocked for frame-rate claims because it has no vsync (`TN_TRACE_VIRTUAL_DISPLAY`). An emulator
+  frame rate is therefore not a frame rate (row 1).
+- **Workload and artifact limits.** `threenative build` fails closed on an artifact over its size
+  budget rather than replacing a good artifact (`TN_BUILD_ARTIFACT_BUDGET_EXCEEDED`). Draw-call and
+  texture-memory targets are reported as a verdict by the render-workload advisor and asserted
+  through the playtest `performance` assertion — measured against the game, not enforced by the
+  framework. See [PERFORMANCE-BUDGETS](product/PERFORMANCE-BUDGETS.md).
+
+**The plan.** The platform claim is the per-target consumer rows this project actually ran — browser
+on Linux, Linux x64 desktop, and Android on both a physical Pixel 8 and an emulator, all one game
+and one scenario. Keep this section true to the guards, and add the row here whenever a guard moves
+in either direction. A limitation missing from this list is a bug in this file.
 
 ---
 

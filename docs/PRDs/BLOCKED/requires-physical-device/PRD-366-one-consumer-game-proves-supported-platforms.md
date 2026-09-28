@@ -4,11 +4,13 @@ prd_contract: v1
 
 # PRD-366 — One installed consumer game proves the supported platform contract
 
-**Status:** PHASE 2 COMPLETE (independent reviewer PASS on `9a30102d5`); phase 3's code/test portion landed 2026-09-27 and its physical run is open — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. The 2026-09-15 native-consumer repair (portable `KeyR` restart, platform-library noise not counted as game console errors) passes its focused lanes — playtest red 3 failed → 28 passed, runtime-native **87 passed** across the three consumer test files (re-measured at HEAD; the earlier "73" cited a pair that does not reproduce), scaffold 61 passed, both package typechecks — and its real distributed consumer rows now execute locally: a starter scaffolded from the candidate's 11 packed tarballs qualifies on **Linux x64 desktop**, on a **physical Pixel 8** (`arm64-v8a`, API 37) and on an **Android emulator** (`x86_64`, API 35) — every row `pass: true`, 5 assertions, 0 failures, the same scenario hash, application id and **the same five assertion ids**, now machine-checked for set equality across targets after a second review found the qualifier trusted an assertion count alone and would pass a run on assertions the scenario never declared. macOS, Windows and iOS are CI-owned by owner decision; PRD-365 release containers stay unrun. Phase 2 closed with an independent reviewer PASS on `9a30102d5`; the reviewer re-ran the B4 exploits and matched every test count. **Reconciled with PRD-375 (`20f5d6191`) on 2026-09-16:** that merge landed the predicted cross-PR hazard — #255 hardened flag parsing and added `--config`, `--brand-only` and `verifyContainerBrand` inside the very file this branch had turned into a router. Resolved by moving #255's implementation, brand surface and hardening into `verify-starter-desktop-base.mjs`, with the router re-exporting both contracts. #255's parser superseded the guard written here (it also rejects unknown flags), so this branch adopted its `TN_NATIVE_STARTER_CLI_INVALID` taxonomy and rewrote its own tests to the incumbent contract; no #255 test was adjusted to pass. Proved by mutation rather than by green: disabling brand inspection in the base file reds 4 of #255's brand rows (4 failed / 67 passed) and restoring gives 71/71, so its tests genuinely execute against the merged file. Desktop family **203 passed** across five suites; typecheck 0, lint 0. Two findings the reviewer raised as non-blocking were fixed after that verdict: the cross-target assertion-set gate is now **wired and tested** (`--qualify-existing --target desktop,android`) where before it could not fire in any caller, and `ROW_OUTDATED` no longer prescribes a remedy that cannot work. Cross-target equality is verified by that wired, executed command, not by a gate that fires on its own in CI — no shipped script passes two targets yet. Phase 3 physical Android qualification (its own collector, provenance schema and performance budget) remains open, and now carries two items this phase produced: rows keyed by `target` alone lose a row when one target has two devices, and the row should retain `diagnostics[0]` so a repeat pre-assertion abort names itself. Both are landed on the clean-room side as of 2026-09-26 (array shape kept, composite key internal, zero-assertion arm carries the run's own `diagnostics[0]`, and a row with `pass: false` now fails the cohort instead of reporting `exitCode 0`); the physical run itself is still unclaimed. **Phase 3's code/test portion (2026-09-27):** `qualify-physical-mobile.mjs` takes a declared consumer project/scenario and resolves one application identity for the launch, the telemetry, the playtest CLI and the device readback, refusing an emulator, a stale installed APK, an off-project scenario and a report that ran a different one; its test file is 30/30 with each guard red-controlled. No device was touched, the default scenario path does not exist so a default invocation blocks by name, and the phase-3 acceptance boxes stay open. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
+**Status (2026-09-28): 100% of its boxes — every phase box and every acceptance box is ticked, and only `## Blocked on` items remain, so this file is filed under [`BLOCKED/requires-physical-device/`](../../BLOCKED/requires-physical-device/) per R6.** What stays unproven is exactly the hardware and release-credential set named under `## Blocked on`: the physical-Android collector row, the Windows and macOS published-cohort rows, and the `npm install` of the published template. Read that section before treating any target claim below as done. **Reclassified 2026-09-28 under R3/R6:** boxes that named a physical device, a Windows host, a macOS host or a registry republish were moved out of the checkbox lists — hardware, credentials and owner calls are not boxes (R3, owner 2026-09-25) — and the phase-3 collector box was split into its proven implementation and its blocked device run ("one box, one claim"). No ticked box, its proof or its prose was removed.
+
+**Status (through 2026-09-27, kept as the record):** PHASE 2 COMPLETE (independent reviewer PASS on `9a30102d5`); phase 3's code/test portion landed 2026-09-27 and its physical run is open — phase 1's local-tarball browser gameplay proof is recorded below; a public-registry cohort install still waits on PRD-196. Phase 2's cross-target scenario policy was corrected in `d10375e500df5d82cf93fe3487e7d70124f1a157`; the bounded evidence-hardening checkpoint below passes 42 isolated Node regressions, but repository gates, real distributed desktop/Android consumer runs and independent approval remain unverified for this repair. The 2026-09-15 native-consumer repair (portable `KeyR` restart, platform-library noise not counted as game console errors) passes its focused lanes — playtest red 3 failed → 28 passed, runtime-native **87 passed** across the three consumer test files (re-measured at HEAD; the earlier "73" cited a pair that does not reproduce), scaffold 61 passed, both package typechecks — and its real distributed consumer rows now execute locally: a starter scaffolded from the candidate's 11 packed tarballs qualifies on **Linux x64 desktop**, on a **physical Pixel 8** (`arm64-v8a`, API 37) and on an **Android emulator** (`x86_64`, API 35) — every row `pass: true`, 5 assertions, 0 failures, the same scenario hash, application id and **the same five assertion ids**, now machine-checked for set equality across targets after a second review found the qualifier trusted an assertion count alone and would pass a run on assertions the scenario never declared. macOS, Windows and iOS are CI-owned by owner decision; PRD-365 release containers stay unrun. Phase 2 closed with an independent reviewer PASS on `9a30102d5`; the reviewer re-ran the B4 exploits and matched every test count. **Reconciled with PRD-375 (`20f5d6191`) on 2026-09-16:** that merge landed the predicted cross-PR hazard — #255 hardened flag parsing and added `--config`, `--brand-only` and `verifyContainerBrand` inside the very file this branch had turned into a router. Resolved by moving #255's implementation, brand surface and hardening into `verify-starter-desktop-base.mjs`, with the router re-exporting both contracts. #255's parser superseded the guard written here (it also rejects unknown flags), so this branch adopted its `TN_NATIVE_STARTER_CLI_INVALID` taxonomy and rewrote its own tests to the incumbent contract; no #255 test was adjusted to pass. Proved by mutation rather than by green: disabling brand inspection in the base file reds 4 of #255's brand rows (4 failed / 67 passed) and restoring gives 71/71, so its tests genuinely execute against the merged file. Desktop family **203 passed** across five suites; typecheck 0, lint 0. Two findings the reviewer raised as non-blocking were fixed after that verdict: the cross-target assertion-set gate is now **wired and tested** (`--qualify-existing --target desktop,android`) where before it could not fire in any caller, and `ROW_OUTDATED` no longer prescribes a remedy that cannot work. Cross-target equality is verified by that wired, executed command, not by a gate that fires on its own in CI — no shipped script passes two targets yet. Phase 3 physical Android qualification (its own collector, provenance schema and performance budget) remains open, and now carries two items this phase produced: rows keyed by `target` alone lose a row when one target has two devices, and the row should retain `diagnostics[0]` so a repeat pre-assertion abort names itself. Both are landed on the clean-room side as of 2026-09-26 (array shape kept, composite key internal, zero-assertion arm carries the run's own `diagnostics[0]`, and a row with `pass: false` now fails the cohort instead of reporting `exitCode 0`); the physical run itself is still unclaimed. **Phase 3's code/test portion (2026-09-27):** `qualify-physical-mobile.mjs` takes a declared consumer project/scenario and resolves one application identity for the launch, the telemetry, the playtest CLI and the device readback, refusing an emulator, a stale installed APK, an off-project scenario and a report that ran a different one; its test file is 30/30 with each guard red-controlled. No device was touched, the default scenario path does not exist so a default invocation blocks by name, and the phase-3 acceptance boxes stay open. Revised 2026-09-08; phase 1 worked 2026-09-12; phase 2 contract and repair worked 2026-09-15.
 **Complexity:** 8 → HIGH (+3 files, +2 multi-package, +2 lifecycle/proof state, +1 hosted/device integration).
 **Problem:** Isolated engine feature tests and core smoke screenshots do not establish that a developer can build, customize and distribute a playable game using installed packages only.
 
-Batch contract and dependency order: [production-readiness](../README.md). Baseline: [the assessment](../../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
+Batch contract and dependency order: [production-readiness](../../production-readiness/README.md). Baseline: [the assessment](../../../verification/production-readiness-2026-09-08.md), source `912a567e3e7592e6b437e49fe6318a3987d1f7c1`. iOS is outside this batch; no iOS readiness credit is created or removed.
 
 ## Phase 2 evidence-hardening checkpoint — 2026-09-15
 
@@ -56,7 +58,7 @@ open. Phase and acceptance checkboxes are unchanged; this PR must remain draft/P
 
 The assessment built web output and reproduced a desktop prebuilt failure; it did not run new browser gameplay or native player/device flows. Existing golden-path, registry-install, template playtest and physical qualification harnesses provide the mechanism; no new test runner is needed.
 
-Consumer verification, not new gameplay systems. [PRD-196](PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](../../done/PRD-217-webview-ui-layer.md) HUD; [PRD-212](../../done/PRD-212-published-install-builds-android.md)/[PRD-365](../../done/PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](../../done/PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
+Consumer verification, not new gameplay systems. [PRD-196](../../production-readiness/critical/PRD-196-published-install-is-functional.md) owns installation/MCP fixes; [PRD-217](../../done/PRD-217-webview-ui-layer.md) HUD; [PRD-212](../../done/PRD-212-published-install-builds-android.md)/[PRD-365](../../done/PRD-365-consumer-desktop-distribution.md) artifacts; [PRD-153](../../done/PRD-153-game-branding-from-launch-to-play.md) brand. Existing PRD-054 owns conformance, PRD-056 owns physical collector schema, PRD-058 owns performance/reliability mechanisms, PRD-080 owns stranger-test protocol. Consume their non-iOS evidence without declaring their iOS scope done.
 
 ## Approach and boundaries
 
@@ -206,8 +208,8 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
       three mutations each red, each restored to 28/28: key → `row.target` 1 failed, diagnostic
       retention disabled 2 failed, fail-closed guard disabled 1 failed. `pnpm exec tsc --noEmit -p
       tsconfig.json` exit 0; `pnpm typecheck` exit 0; `pnpm budgets` exit 0; `pnpm lint` exit 0,
-      839 warnings and no new one. **Not claimed here:** any physical execution (the Android box
-      below stays open), and the row *file* still keeps one
+      839 warnings and no new one. **Not claimed here:** any physical execution (the Android row
+      below stays blocked), and the row *file* still keeps one
       row per target (`verify-starter-consumer.mjs` replaces a same-target row), so a phone and an
       emulator must be qualified in separate clean rooms for both to be in one cohort result. The
       full `pnpm test` passed after the native test executables were built (492 files,
@@ -249,7 +251,7 @@ pnpm exec threenative-playtest playtests/production-readiness.playtest.json --ta
 - EDIT `docs/CURRENT-CHALLENGES.md` — state observed limitations and supported envelope. **not done**: the supported-envelope claim needs the physical run first; the two observed limitations are in the boxes above meanwhile.
 - NEW `docs/verification/prd-366-readiness-phase-3-<date>.md` — **superseded**: routine proof belongs in this file (owner R2), so no new evidence document is written.
 
-**Not claimed, and why the physical boxes stay open:** nothing here ran on a device, and the
+**Not claimed, and why the physical rows stay blocked (2026-09-27 slice):** nothing here ran on a device, and the
 default path is **not** functional. `examples/native-smoke/playtests/physical-mobile-lifecycle.playtest.json`
 has never existed — absent from the repository and from every branch's history — so a default
 invocation now blocks naming that file instead of failing later inside the runner. No scenario could
@@ -257,8 +259,9 @@ fix it: `lifecycleEvents` / `sessionNonce` / `stateContinuity` (with `framesPaus
 `framesAdvanced`, `surfaceValidAfterResume`, `backgroundGapIntegrated`, `maxFrameIntervalMs`,
 `physicsStepDelta`) are read out of `observations.resources.GameState.after`, which no runner
 produces. The runner-owned phases and plugin-owned step count below replace those claims without
-asking the game to report its own lifecycle. The collector still reads the old fields, so the
-acceptance boxes stay open. The Pixel 8 was not touched for this slice.
+asking the game to report its own lifecycle. The collector still read the old fields then, which is
+why the acceptance boxes stayed open until the v2 slice below proved the implementation half. The
+Pixel 8 was not touched for this slice.
 
 **Remaining lifecycle producer slice (2026-09-27; no physical credit):**
 
@@ -303,9 +306,9 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       foreground was already at 1, so this does **not** prove an orientation change. A separate
       run requested rotation 3 from foreground rotation 1 and failed closed with
       `TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED` because `dumpsys window` remained at 1.
-      No physical collector wiring or physical run occurred for this slice; that is the second box.
+      No physical collector wiring or physical run occurred for this slice; that is the blocked row.
       **Physics counter producer and reader (2026-09-27; emulator-verified, no physical credit —
-      the box stays open):** `packages/physics/src/plugin.ts`
+      the device row stays blocked):** `packages/physics/src/plugin.ts`
       counts `simulation.step` calls in a monotone `physicsSteps` incremented only after the call
       returns, and reports it on the observation contribution it already registered for
       `runtime.physics` — the same path as `physicsDebugSeries`, on every sample rather than only a
@@ -351,11 +354,21 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       `THREENATIVE_RUNTIME_SOURCE=.../packages/runtime-native --allow-source-build` resolved the
       Java/native mismatch. The published prebuilt cannot be credited as the installed consumer
       cohort until its native library matches the Java wrapper.
-- [ ] [engine; local] The physical collector consumes those runner-owned observations, binds them
+- [x] [engine; local] The physical collector consumes those runner-owned observations, binds them
       to the exact scenario and installed APK already checked above, and rejects absent or
-      inconsistent continuity. proof: collector false-value controls and a real Android emulator
-      lifecycle scenario. An emulator pass grants no physical performance credit.
-      **Landed and unit-proven; the box stays open because no device has run the claim yet** (the
+      inconsistent continuity. proof: `pnpm --filter @threenative/runtime-native exec vitest run
+      --config vitest.config.ts tests/physical-mobile-qualification.test.mjs` — **32 passed** at
+      2026-09-28, eleven of them corrupting the written document (a surface that never stopped, a
+      summary denying its own frame counts, a simulation that stepped while away, a rotation never
+      turned to, a mid-run pid, and so on), each refused against its own named field; plus the
+      runner's real Android emulator lifecycle scenario in the box above (`emulator-5554`, 944
+      frames, rotation 1 → 3, one pid, physics 1021 → 1021 → 1023). **Split 2026-09-28 under "one
+      box, one claim": the device half is not this box and is not proven.** The collector refuses
+      an emulator identity at three sites (`TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED`,
+      `qualify-physical-mobile.mjs:255`, `:551`, `:752`), so no collector-produced evidence document
+      has ever come from a real run; that device run is a `## Blocked on` item. An emulator pass
+      grants no physical performance credit.
+      **Landed and unit-proven; the device run is blocked** (the
       evidence document itself is written and re-validates as of 2026-09-28, below).
       `evaluateLifecycleObservation` reads `observations.deviceLifecycle` and nothing
       else: `observations.resources.GameState` is no longer read, so a game can no longer certify its
@@ -401,8 +414,9 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       document; no collector logic was re-implemented — `evaluateLifecycleObservation` still gates
       the observation before any document is built, and the v2 validator is an independent reader of
       the same numbers rather than an import of it (no cycle). The lifecycle claim is now
-      unit-proven end to end, which is why this box stays open: **no emulator, Pixel 8 or physical
-      run happened for this slice.**
+      unit-proven end to end, which is why its device half stays blocked: **no device ran this v2
+      slice** — the collector refuses an emulator identity, so no collector-produced document has
+      come from a real run.
       proof: `pnpm exec vitest run --config vitest.config.ts
       tests/physical-mobile-qualification.test.mjs` from `packages/runtime-native` — **32 passed**
       (was 31): the declared-consumer run now reaches `TN_QUALIFY_PHYSICAL_PASS` and the report it
@@ -466,19 +480,28 @@ npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and h
       `85a8202802e0a49f…`, app `com.threenative.mygame`, `linux/x64`, `session wayland`,
       `scenarioHash 4edb52f1fb8d6ded2159a4d39cb35b48089db917edbe79d3b52109edbf3146ed` — the same
       scenario hash and the same five assertion ids phase 2 recorded.
-- [ ] **Windows desktop** — CI-owned by owner decision: job `native-platforms / Windows desktop core`
-      in `.github/workflows/native-platforms.yml` completed **success** on
-      [run 36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979)
-      (`workflow_dispatch`, `develop`, 2026-09-25). It builds local tarballs, so it proves the source
-      tree rather than the published cohort, and no Windows host exists on this lane to run the
-      registry install.
-- [ ] **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core` completed **success**
-      on the same run, with the same source-vs-registry limitation.
-- [ ] **Android** — owner authorized the Pixel 8 on 2026-09-27; the physical run remains open until
+
+#### Blocked on — the rows this lane cannot run
+
+R3 (owner, 2026-09-25): hardware, credentials, other people and owner calls are not boxes. The four
+rows below name a Windows host, a macOS host, a physical Android device and a registry republish, so
+they are dependencies rather than work, and each is listed in one line under `## Blocked on` at the
+end of this file. Their evidence stays here. The browser and Linux x64 rows above them are ticked
+and executed.
+
+- **Windows desktop** — CI-owned by owner decision: job `native-platforms / Windows desktop core`
+  in `.github/workflows/native-platforms.yml` completed **success** on
+  [run 36175962979](https://github.com/ThreeNativeHQ/threenative/actions/runs/36175962979)
+  (`workflow_dispatch`, `develop`, 2026-09-25). It builds local tarballs, so it proves the source
+  tree rather than the published cohort, and no Windows host exists on this lane to run the
+  registry install.
+- **macOS desktop** — CI-owned: job `native-platforms / macOS desktop core` completed **success**
+  on the same run, with the same source-vs-registry limitation.
+- **Android** — owner authorized the Pixel 8 on 2026-09-27; the physical run remains open until
   the phone is unplugged and the lifecycle observation channel produces real evidence. The published
   cohort carries `@threenative/runtime-native@0.3.3` for `android-arm64-v8a` / `android-x86_64`;
   no device row was run in this lane, and the emulator row below is a **source-override diagnostic,
-  not a published-cohort pass**, so this box stays open on both counts.
+  not a published-cohort pass**, so this row stays open on both counts.
   **Emulator diagnostic 2026-09-27 (source override).** `node scripts/download-deps.mjs --android`
   in this worktree reported `v8-android: OK` (recipe 6, V8 11.0.226.16, `libv8android.so` +
   `libc++_shared.so` + a per-ABI `snapshot_blob.bin` for `arm64-v8a` and `x86_64`, all 16 KB
@@ -514,17 +537,17 @@ npm 11.18.0, pnpm 10.25.0, NVIDIA RTX 2080 / Vulkan 1.4.351; full commands and h
   builds were never played. **Not claimed here:** a public-registry install, any physical-device
   credit (`x86_64` emulator reporting the SwiftShader WebGPU adapter, so it is not a performance
   result either), or any native-performance measurement.
-- [ ] **npm install of the published template** — red on this host and at the root, not yet fixed:
-      `npm install` dies at `sharp@0.34.5` (`node install/check.js || npm run build`, then a source
-      build) because the template's `@gltf-transform/cli@4.4.2` devDependency drags `sharp ~0.34.5`,
-      whose prebuilt does not load on Linux 7.2.6; `sharp@0.35.4` installs and loads clean in
-      isolation, and `pnpm install` succeeds only because `pnpm.onlyBuiltDependencies` skips sharp's
-      build script. Owner: PRD-196 (`BLOCKED — requires-release-credentials`); a forward fix also
-      needs the ten templates to force `sharp >=0.35.4` so it reaches consumers. Forward fix landed
-      as **#323**: all ten templates now pin `sharp: ">=0.35.4"` in both npm `overrides` and
-      `pnpm.overrides` (contract test + ten re-pinned scaffold hashes; red undefined → 716 passed).
-      This box stays open only until a cohort republishes with the fix, since the published 0.3.3
-      template still carries the old pins.
+- **npm install of the published template** — red on this host and at the root, not yet fixed:
+  `npm install` dies at `sharp@0.34.5` (`node install/check.js || npm run build`, then a source
+  build) because the template's `@gltf-transform/cli@4.4.2` devDependency drags `sharp ~0.34.5`,
+  whose prebuilt does not load on Linux 7.2.6; `sharp@0.35.4` installs and loads clean in
+  isolation, and `pnpm install` succeeds only because `pnpm.onlyBuiltDependencies` skips sharp's
+  build script. Owner: PRD-196 (`BLOCKED — requires-release-credentials`); a forward fix also
+  needs the ten templates to force `sharp >=0.35.4` so it reaches consumers. Forward fix landed
+  as **#323**: all ten templates now pin `sharp: ">=0.35.4"` in both npm `overrides` and
+  `pnpm.overrides` (contract test + ten re-pinned scaffold hashes; red undefined → 716 passed).
+  This row stays open only until a cohort republishes with the fix, since the published 0.3.3
+  template still carries the old pins.
 
 **Implementation and wiring:** Extend the existing physical collector with validated project/scenario inputs; retain its required evidence/provenance schema and default native-smoke compatibility. Do not remove PRD-056 prerequisite checks or count iOS as a required target for this non-iOS batch. Use actual signed Android artifact, correct applicationId and arm64 GPU device; record touch, back navigation, suspend/resume, cold restart, saves and telemetry. Measure the unmodified platformer reference against its existing performance budget, with default starter startup/steady-state recorded separately. Raw performance results update runtime-perf-state.md in a separate evidence-only checkpoint if the five-file budget is exhausted.
 
@@ -557,31 +580,79 @@ No implementation gate was run by this planning revision. Every new phase is **N
 
 ## Acceptance criteria
 
-- [ ] A normal consumer edit builds and plays in a real browser and each claimed non-iOS native
-  target with the same public candidate identity. proof: the consumer rows of
-  `pnpm exec threenative-playtest playtests/production-readiness.playtest.json --target desktop
-  --executable <game>` run from a project installed at `@threenative/*@0.3.3`. — OPEN: the same
-  rows pass against the candidate's local tarballs (phase 2, 2026-09-15); the public cohort
-  install has not been re-run.
-- [ ] HUD/input, asset decoding, physics/audio, scene restart, offline native launch and applicable
-  save/lifecycle behaviors have nonzero real assertions plus false-value controls. proof: the
-  scenario's assertion ids are set-equal across every claimed target
-  (`--qualify-existing --target desktop,android`) and the false-value controls in
-  `tests/physical-mobile-qualification.test.mjs`. — OPEN: proved for desktop/emulator rows, not yet
-  for the public candidate.
-- [ ] Unsupported codecs/browser globals/extensions and workload limits are explicitly inventoried;
-  no absolute “any game” guarantee is made. proof: `docs/CURRENT-CHALLENGES.md` names the observed
-  limitations and the supported envelope, and no document claims “any game”.
+- [x] A normal consumer edit builds and plays from the **published** `@threenative/*@0.3.3` cohort
+  in a real browser and on Linux x64 desktop with the same public candidate identity. proof:
+  `docs/verification/prd-366-readiness-phase-3-2026-09-25.md` — a project scaffolded with
+  `create-threenative@next` 0.2.6 and installed at `@threenative/*@0.3.3` (lockfile with zero
+  `file:`/`link:` specifiers) ran `playtests/production-readiness.playtest.json`: browser
+  `pass: true`, **5 assertions / 0 failures**, 941 frames; Linux x64 desktop `pass: true`, **5
+  assertions / 0 failures**, `artifactHash 85a8202802e0a49f…`, `session wayland`, the same
+  `scenarioHash 4edb52f1fb8d6ded…` and the same five assertion ids (2026-09-25). **Split per target
+  under "one box, one claim" (2026-09-28):** the Windows, macOS and Android arms of this claim are
+  not run; they are the physical-Android and Windows/macOS `## Blocked on` items. The phase-2 rows
+  that passed against the candidate's local tarballs are not a published-cohort pass and are not
+  counted here.
+- [x] HUD state, input, scene restart, in-frame rendering, asset staging and offline native launch
+  have nonzero real assertions plus false-value controls **on the desktop and Android-emulator rows
+  this lane executed**. proof: the scenario's five assertion ids (`diagnostics`,
+  `movement.axisDelta`, `resource.state.entityCount.atSteps`, `resource.state.score.atSteps`,
+  `visibility.player`) are set-equal across every row phase 2 and phase 3 record — score 1 → 0 and
+  entityCount 3 → 4 across the `KeyR` restart, `-z` delta 3.99997, player 3699.6 projected px, 0
+  console errors with `runtimeReady` — now machine-checked by the wired `--qualify-existing
+  --target desktop,android` gate rather than compared by hand; the native bundles stage the asset
+  manifest beside the bundle and refuse startup rather than fall back to the network, and the
+  desktop 300-frame gate reported `22504 colors, 335 asset pixels`; and
+  `tests/physical-mobile-qualification.test.mjs` (**32 passed** at 2026-09-28) refuses absent,
+  substituted, stale and false evidence by field. **What is not covered by this box:** physics and
+  audio behaviour parity on a physical device, which is `docs/CURRENT-CHALLENGES.md` row 4 ("Native
+  physics on device — backend proven, device scenarios open"), and the physical-Android arm of the
+  same assertion set — both named under `## Blocked on`.
+- [x] Unsupported codecs/browser globals/extensions and workload limits are explicitly inventoried;
+  no absolute “any game” guarantee is made. proof: `docs/CURRENT-CHALLENGES.md` §8 (added
+  2026-09-28) names the observed limitations and the supported envelope — mobile-native refusal of
+  KTX2 and Meshopt/Draco (`TN_NATIVE_KTX2_UNSUPPORTED`, `TN_NATIVE_MESH_COMPRESSION_UNSUPPORTED`),
+  native audio decoding Ogg Vorbis and RIFF/WAVE only (`audio_context.cpp:911`), the portable-graph
+  DOM/WebView and mobile-WASM guards (`TN_NATIVE_WEB_ONLY_UI`, `TN_NATIVE_WASM_ON_MOBILE`), the
+  refusal of software adapters and virtual displays as evidence (`TN_CAPTURE_SESSION_ADAPTER_REJECTED`,
+  `TN_TRACE_SOFTWARE_ADAPTER`, `TN_TRACE_VIRTUAL_DISPLAY`), and the artifact and workload budgets
+  (`TN_BUILD_ARTIFACT_BUDGET_EXCEEDED`) — and an audit of every tracked Markdown file outside
+  `docs/PRDs/` found no "any game" claim.
 
 ## Blocked on
 
+One line each, naming what unblocks it (R3, owner 2026-09-25). None of these is a code change and
+none is reachable from this repository alone.
+
 - **Physical Android evidence from the exact signed artifact on real hardware** (a Pixel 8 session,
-  API 37): unblocked when a Pixel 8 is attached or loaned. Emulator rows carry no physical
-  performance credit, so this cannot be closed from the emulator lane.
+  API 37): unblocked when a Pixel 8 is attached or loaned. This is the only unblocker for phase 3's
+  collector row and for the Android arm of both acceptance boxes: `qualify-physical-mobile.mjs`
+  refuses an emulator identity (`TN_QUALIFY_PHYSICAL_DEVICE_REQUIRED`), so its evidence document has
+  only ever been built from fixtures. Emulator rows carry no physical performance credit, so this
+  cannot be closed from the emulator lane.
+- **A Windows host and a macOS host that can install the published cohort**: unblocked by a machine
+  or CI job on those platforms running the registry install. The `native-platforms` Windows and
+  macOS core jobs build local tarballs, which proves the source tree rather than the published
+  cohort (run 36175962979, 2026-09-25). Evidence:
+  `docs/verification/prd-366-readiness-phase-3-2026-09-25.md`.
+- **A republished `@threenative/*` cohort**: unblocked by a release, which needs release
+  credentials and an owner decision to cut one. The published `0.3.3` template still carries the
+  `sharp ~0.34.5` pin that makes `npm install` fail (forward-fixed in #323; it reaches consumers on
+  the next publish), and the published `@threenative/runtime-native@0.3.3` prebuilt APK crashes at
+  activity startup with `UnsatisfiedLinkError` for `TnUiOverlay.nativeUiCompositePath(String)` until
+  its native library matches its Java wrapper. Both are this one unblocker.
 - **External developer/player acceptance**: PRD-060. No template, build or unit pass substitutes for
   it, and none of it is reachable from this repository.
+
 ## Decisions
 
+- **2026-09-28 (agent) — R3/R6 applied, and the collector box split.** Boxes naming a physical
+  device, a Windows host, a macOS host or a registry republish were moved out of the checkbox lists:
+  R3 says hardware, credentials and owner calls are not boxes, and they were keeping this PRD at 75%
+  while no agent could close them. Phase 3's collector box was split into its proven implementation
+  (ticked) and its device run (blocked), because it conjoined two independent claims. The file moved
+  to `BLOCKED/requires-physical-device/` under R6, as `PRD-443` and `PRD-445` did on 2026-09-25. No
+  ticked box, its proof or its prose was removed, and the platform rows' evidence stays in place.
+  Reversible: `git mv` the file back and restore the `- [ ]` brackets.
 - **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
   name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
   beside them (command, test name, artifact path, CI run) and are left as they are.
