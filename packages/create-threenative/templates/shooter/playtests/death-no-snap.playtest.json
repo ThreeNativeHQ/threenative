@@ -71,8 +71,8 @@
       {
         "entity": "enemy",
         "component": "deathClip",
-        "equals": "DeathHeadshot",
-        "allowTrivial": "the death clip name rests empty until the shot lands"
+        "equals": "Death01",
+        "allowTrivial": "the death clip name rests empty until the shot lands; the mannequin ships one death, so this is the only one a kill can play"
       },
       {
         "entity": "enemy",

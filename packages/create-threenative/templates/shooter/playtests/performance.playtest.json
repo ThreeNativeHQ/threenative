@@ -1,0 +1,74 @@
+{
+  "name": "performance",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "advance",
+      "press": "KeyW",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "firefight",
+      "press": "Space",
+      "holdTicks": 180,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "measure",
+      "waitTicks": 240,
+      "screenshot": "performance"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "renderChain": {
+      "tier": "high"
+    },
+    "performance": {
+      "maxDrawCalls": 400,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 400000,
+      "minFps": 30
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

@@ -1,4 +1,3 @@
-import { softCircleDataTexture } from "@threenative/core";
 import type { ImpactSurface } from "../surfaces.js";
 import {
   AdditiveBlending,
@@ -17,6 +16,37 @@ import {
   UnsignedByteType,
   Vector3,
 } from "three";
+
+/**
+ * A white disc that falls off to nothing at the rim: the smoke and dust sprite.
+ *
+ * Written here rather than imported from `@threenative/core` because nothing under
+ * `src/render/` may import a package — this file is the user's to rewrite, and a
+ * framework call in it is one more thing to unlearn when the look changes. It is the
+ * same 20 lines the framework ships, and the reason it exists at all is in
+ * `particles.ts`: `CanvasTexture` samples black under `WebGPURenderer`.
+ */
+export function softCircleTexture(size = 64, hardness = 0.05): Texture {
+  const data = new Uint8Array(size * size * 4);
+  const centre = (size - 1) / 2;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = (x - centre) / centre;
+      const dy = (y - centre) / centre;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const falloff =
+        distance >= 1 ? 0 : Math.min(1, (1 - distance) / (1 - hardness)) ** 1.6;
+      const index = (y * size + x) * 4;
+      data[index] = 255;
+      data[index + 1] = 255;
+      data[index + 2] = 255;
+      data[index + 3] = Math.round(falloff * 255);
+    }
+  }
+  const texture = new DataTexture(data, size, size, RGBAFormat, UnsignedByteType);
+  texture.needsUpdate = true;
+  return texture;
+}
 
 /**
  * Gunshot feedback, built as pixel data rather than painted canvases.
@@ -237,7 +267,7 @@ export class ImpactBursts {
   constructor(parent: Object3D, rng: () => number) {
     this.#rng = rng;
     this.#streakMap = streakTexture();
-    this.#dustMap = softCircleDataTexture(64, 0.05);
+    this.#dustMap = softCircleTexture(64, 0.05);
     const quad = new PlaneGeometry(1, 1);
     const buildPool = (
       count: number,

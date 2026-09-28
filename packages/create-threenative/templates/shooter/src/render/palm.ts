@@ -36,6 +36,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { worldGridUVs } from "./materials.js";
 import { makeRandom } from "./shapes.js";
 
 /** The two town materials a palm is allowed to ask for; the rest are derived. */
@@ -367,7 +368,9 @@ function buildPalm(seed: number): PalmParts {
     const merged = mergeGeometries(parts, false);
     if (merged === null) throw new Error("Palm geometry failed to merge.");
     merged.computeVertexNormals();
-    return merged;
+    // One metre of grid, in the tree's own frame — the prototypes are authored at metre
+    // scale, so this is the same tile the walls and the street get.
+    return worldGridUVs(merged);
   };
   return { trunk: merge(trunk), live: merge(live), dead: merge(dead), fruit: merge(fruit) };
 }

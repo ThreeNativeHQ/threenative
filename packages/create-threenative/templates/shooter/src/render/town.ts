@@ -41,7 +41,9 @@ import {
   type Face,
 } from "./facade.js";
 import { addPalms, type PalmPlacement } from "./palm.js";
-import { unitBox, unitCylinder } from "./shapes.js";
+import { unitCylinder } from "./shapes.js";
+import { gridSolid } from "./townMaterials.js";
+import { worldGridUVs } from "./materials.js";
 // Impact surfaces are stamped here at construction so audio, VFX and any later
 // consumer read one tag off the mesh instead of re-deriving name tables.
 import { tagSurfaces } from "../surfaces.js";
@@ -329,12 +331,13 @@ function addSolid(
   at: readonly [number, number, number],
   name?: string,
 ): Mesh {
-  // Shared unit geometry, dimensions through scale: solids are what the
-  // projection instances, and instancing keys on geometry identity.
-  const mesh = new Mesh(unitBox(), material);
-  mesh.scale.set(size[0], size[1], size[2]);
+  // Its own geometry, in world space, with world-metre UVs. A shared unit box
+  // scaled per mesh is what let the projection instance these, and a grid cannot
+  // ride that: one unit box has one set of UVs, so a 30 m wall and a 0.78 m crate
+  // would show the same single tile. `worldGridUVs` needs world positions, so the
+  // box is built at size and translated rather than scaled.
+  const mesh = new Mesh(gridSolid(size, at), material);
   if (name !== undefined) mesh.name = name;
-  mesh.position.set(at[0], at[1], at[2]);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   group.add(mesh);
@@ -354,10 +357,8 @@ function addProp(
   at: readonly [number, number, number],
   name?: string,
 ): Mesh {
-  const mesh = new Mesh(unitBox(), material);
-  mesh.scale.set(size[0], size[1], size[2]);
+  const mesh = new Mesh(gridSolid(size, at), material);
   if (name !== undefined) mesh.name = name;
-  mesh.position.set(at[0], at[1], at[2]);
   mesh.castShadow = false;
   group.add(mesh);
   return mesh;
@@ -396,11 +397,15 @@ function addCylinderProp(
   // A straight cylinder is a shared unit cylinder scaled by (r, h, r); a
   // frustum (top radius ≠ bottom) has no scale form and keeps its own geometry.
   const frustum = radiusTop !== radiusBottom;
+  const source = frustum
+    ? frustumCylinder(radiusTop, radiusBottom, height, segments)
+    : unitCylinder(segments);
   const mesh = new Mesh(
-    frustum ? frustumCylinder(radiusTop, radiusBottom, height, segments) : unitCylinder(segments),
+    worldGridUVs(
+      frustum ? source : source.clone().scale(radiusTop, height, radiusTop),
+    ),
     material,
   );
-  if (!frustum) mesh.scale.set(radiusTop, height, radiusTop);
   if (name !== undefined) mesh.name = name;
   mesh.position.set(at[0], at[1], at[2]);
   mesh.castShadow = castsShadow;
@@ -433,8 +438,7 @@ function addSiteMark(
     at: readonly [number, number],
     tilt = 0,
   ): void => {
-    const leg = new Mesh(unitBox(), materials.siteMark);
-    leg.scale.set(size[0], size[1], 0.03);
+    const leg = new Mesh(worldGridUVs(new BoxGeometry(size[0], size[1], 0.03)), materials.siteMark);
     leg.rotation.x = -Math.PI / 2;
     leg.rotation.z = tilt;
     leg.position.set(at[0], 0.026, at[1]);
@@ -496,10 +500,11 @@ function addStairs(
       height,
       uz !== 0 ? depth : width,
     ];
-    const mesh = new Mesh(unitBox(), material);
-    mesh.scale.set(size[0], size[1], size[2]);
+    const mesh = new Mesh(
+      gridSolid(size, [centreX, baseY + height / 2, centreZ]),
+      material,
+    );
     mesh.name = "stair-step";
-    mesh.position.set(centreX, baseY + height / 2, centreZ);
     mesh.castShadow = false;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -621,8 +626,10 @@ export function buildTown(materials: TownMaterials): Town {
   const colliders: TownCollider[] = [];
 
   // Street deck.
-  const deck = new Mesh(new PlaneGeometry(TOWN, TOWN), materials.ground);
-  deck.rotation.x = -Math.PI / 2;
+  const deck = new Mesh(
+    worldGridUVs(new PlaneGeometry(TOWN, TOWN).rotateX(-Math.PI / 2)),
+    materials.ground,
+  );
   deck.receiveShadow = true;
   // Named "street", not "deck": the wood name rule exists for the pier and catwalk planking and
   // matches any name containing "deck", so calling the stone street deck tagged the whole town
@@ -634,14 +641,14 @@ export function buildTown(materials: TownMaterials): Town {
   // Plaza tints read a shade apart from the lanes — kerb-edged slabs, never
   // painted bitmaps (CanvasTexture samples black under WebGPURenderer).
   for (const plaza of PLAZAS) {
-    const slab = new Mesh(unitBox(), materials[plaza.finish]);
-    slab.scale.set(plaza.x[1] - plaza.x[0], 0.03, plaza.z[1] - plaza.z[0]);
-    slab.name = "plaza";
-    slab.position.set(
-      (plaza.x[0] + plaza.x[1]) / 2,
-      0.015,
-      (plaza.z[0] + plaza.z[1]) / 2,
+    const slab = new Mesh(
+      gridSolid(
+        [plaza.x[1] - plaza.x[0], 0.03, plaza.z[1] - plaza.z[0]],
+        [(plaza.x[0] + plaza.x[1]) / 2, 0.015, (plaza.z[0] + plaza.z[1]) / 2],
+      ),
+      materials[plaza.finish],
     );
+    slab.name = "plaza";
     slab.receiveShadow = true;
     group.add(slab);
     // Hittable, or a round fired at a plaza passes straight through the paving the player can
@@ -656,9 +663,7 @@ export function buildTown(materials: TownMaterials): Town {
   water.rotation.x = -Math.PI / 2;
   water.position.set(WATER_X + 108, -1.1, -10);
   group.add(water);
-  const shallows = new Mesh(unitBox(), materials.shallow);
-  shallows.scale.set(5.5, 0.04, 260);
-  shallows.position.set(WATER_X + 2.75, -0.96, -10);
+  const shallows = new Mesh(gridSolid([5.5, 0.04, 260], [WATER_X + 2.75, -0.96, -10]), materials.shallow);
   group.add(shallows);
 
   // Quay wall along the east edge, with the dock gap z −10…−2 left open.
@@ -671,10 +676,11 @@ export function buildTown(materials: TownMaterials): Town {
   // Dock pier: plank deck on posts, running east into the water at the
   // north-east waterfront from the PIER span above — the same numbers the
   // schematic's centre-line draws.
-  const pierDeck = new Mesh(unitBox(), materials.deckWood);
-  pierDeck.scale.set(PIER.x1 - PIER.x0, 0.24, 4.4);
+  const pierDeck = new Mesh(
+    gridSolid([PIER.x1 - PIER.x0, 0.24, 4.4], [(PIER.x0 + PIER.x1) / 2, 0.12, PIER.z]),
+    materials.deckWood,
+  );
   pierDeck.name = "pier-deck";
-  pierDeck.position.set((PIER.x0 + PIER.x1) / 2, 0.12, PIER.z);
   pierDeck.castShadow = true;
   pierDeck.receiveShadow = true;
   group.add(pierDeck);
@@ -685,7 +691,10 @@ export function buildTown(materials: TownMaterials): Town {
   });
   for (let index = 0; index < 4; index += 1) {
     for (const side of [-1, 1]) {
-      const post = new Mesh(frustumCylinder(0.18, 0.22, 2.4, 6), materials.deckWood);
+      const post = new Mesh(
+        worldGridUVs(frustumCylinder(0.18, 0.22, 2.4, 6)),
+        materials.deckWood,
+      );
       post.name = "pier-post";
       post.position.set(PIER.x0 + 2.5 + index * 5, -1.08, PIER.z + side * 1.9);
       post.castShadow = true;
@@ -693,10 +702,14 @@ export function buildTown(materials: TownMaterials): Town {
     }
   }
   for (const side of [-1, 1]) {
-    const railBeam = new Mesh(unitBox(), materials.steelMast);
-    railBeam.scale.set(PIER.x1 - PIER.x0, 0.07, 0.07);
+    const railBeam = new Mesh(
+      gridSolid(
+        [PIER.x1 - PIER.x0, 0.07, 0.07],
+        [(PIER.x0 + PIER.x1) / 2, 1.16, PIER.z + side * 2.05],
+      ),
+      materials.steelMast,
+    );
     railBeam.name = "pier-rail";
-    railBeam.position.set((PIER.x0 + PIER.x1) / 2, 1.16, PIER.z + side * 2.05);
     group.add(railBeam);
     for (let index = 0; index < 5; index += 1) {
       addCylinderProp(
@@ -790,18 +803,22 @@ export function buildTown(materials: TownMaterials): Town {
   addStairs(group, colliders, hittable, materials.deckWood, 3.2, [17.5, 0, -25], [20, 4.8, -25]);
 
   // Catwalk bridge on posts from the back plat's south-east corner to B site.
-  const catwalkDeck = new Mesh(unitBox(), materials.deckWood);
-  catwalkDeck.scale.set(
-    CATWALK_DECK.maxX - CATWALK_DECK.minX,
-    0.22,
-    CATWALK_DECK.maxZ - CATWALK_DECK.minZ,
+  const catwalkDeck = new Mesh(
+    gridSolid(
+      [
+        CATWALK_DECK.maxX - CATWALK_DECK.minX,
+        0.22,
+        CATWALK_DECK.maxZ - CATWALK_DECK.minZ,
+      ],
+      [
+        (CATWALK_DECK.minX + CATWALK_DECK.maxX) / 2,
+        2.29,
+        (CATWALK_DECK.minZ + CATWALK_DECK.maxZ) / 2,
+      ],
+    ),
+    materials.deckWood,
   );
   catwalkDeck.name = "catwalk-deck";
-  catwalkDeck.position.set(
-    (CATWALK_DECK.minX + CATWALK_DECK.maxX) / 2,
-    2.29,
-    (CATWALK_DECK.minZ + CATWALK_DECK.maxZ) / 2,
-  );
   catwalkDeck.castShadow = true;
   catwalkDeck.receiveShadow = true;
   group.add(catwalkDeck);
@@ -812,10 +829,11 @@ export function buildTown(materials: TownMaterials): Town {
   });
   for (const z of [-14.6, -9, -3.4]) {
     for (const side of [-1, 1]) {
-      const post = new Mesh(unitBox(), materials.steelPost);
-      post.scale.set(0.22, 2.18, 0.22);
+      const post = new Mesh(
+        gridSolid([0.22, 2.18, 0.22], [25 + side * 1.1, 1.09, z]),
+        materials.steelPost,
+      );
       post.name = "catwalk-post";
-      post.position.set(25 + side * 1.1, 1.09, z);
       post.castShadow = true;
       group.add(post);
     }
@@ -875,8 +893,10 @@ export function buildTown(materials: TownMaterials): Town {
     }
   });
   for (const [x, z] of BARRELS) {
-    const barrel = new Mesh(unitCylinder(10), materials.barrel);
-    barrel.scale.set(0.32, 0.92, 0.32);
+    const barrel = new Mesh(
+      worldGridUVs(unitCylinder(10).clone().scale(0.32, 0.92, 0.32)),
+      materials.barrel,
+    );
     barrel.name = "barrel";
     barrel.position.set(x, 0.46, z);
     barrel.castShadow = true;

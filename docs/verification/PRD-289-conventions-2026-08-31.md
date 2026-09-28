@@ -16,18 +16,23 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | --- | --- | --- | --- | --- |
 | action-rpg | `src/conventions.ts:27` | `src/conventions.ts:16` | `src/conventions.ts:26` | N/A — no skinned or animated asset is loaded |
 | defense | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
-| minimal | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
+| minimal | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
 | puzzle | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:7` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
-| shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |
+| shooter | N/A — the soldier's floor contact is measured against the town's own collider boxes, and a corpse is settled onto the deck it fell on | `src/entities/Enemy.ts:669` | `src/entities/Enemy.ts:859` | `src/entities/Enemy.ts:765` |
 | starter | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — the native proof asset is static and has no AnimationClip |
 
 Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs
 the player sees when they look down rather than a third-person body, and `normaliseToMetres` and
 `attachToBone` size and hold the camera-space viewmodel. Same three calls, same file, new lines.
+
+Updated 2026-09-28 (PRD-470): the `shooter` kit became the Bayview town firefight. The generated
+`src/conventions.ts` is gone with the arena: the first-person player has no skinned body to ground,
+and the three calls that remain moved to the rig that does — the Quaternius mannequin normalised
+at its `Head` joint, the procedural rifle welded to `hand_r`, and the mixer beside the entity.
 
 ## Observable call evidence
 

@@ -1,6 +1,7 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { BoxGeometry, MathUtils, Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
+import { applyFirstPerson, configureFirstPerson, FIRST_PERSON, firstPersonFov } from "../render/camera.js";
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
 import type { TouchFrame } from "./TouchControls.js";
@@ -15,10 +16,6 @@ const CROUCH_SPEED = 2.6;
 const CROUCH_EYE_DROP = scale.eyeHeight * 0.34;
 /** Seconds-ish to fold and unfold; fast enough to dodge with, slow enough to see. */
 const CROUCH_RATE = 11;
-const FOV_HIP = 70;
-const FOV_AIM = 22;
-const PITCH_MIN = MathUtils.degToRad(-66);
-const PITCH_MAX = MathUtils.degToRad(72);
 const LOOK_SENSITIVITY = 0.0022;
 const CAPSULE_RADIUS = scale.shoulderWidth / 2;
 const CAPSULE_HALF = (scale.humanHeight - CAPSULE_RADIUS * 2) / 2;
@@ -40,7 +37,11 @@ class Look {
   applyDelta(dx: number, dy: number, scale: number): void {
     if (dx === 0 && dy === 0) return;
     this.yaw -= dx * LOOK_SENSITIVITY * scale;
-    this.pitch = MathUtils.clamp(this.pitch - dy * LOOK_SENSITIVITY * scale, PITCH_MIN, PITCH_MAX);
+    this.pitch = MathUtils.clamp(
+      this.pitch - dy * LOOK_SENSITIVITY * scale,
+      FIRST_PERSON.pitchMin,
+      FIRST_PERSON.pitchMax,
+    );
   }
 
   consume(ctx: GameCtx, scale: number): void {
@@ -49,8 +50,8 @@ class Look {
     this.yaw -= delta.x * LOOK_SENSITIVITY * scale;
     this.pitch = MathUtils.clamp(
       this.pitch - delta.y * LOOK_SENSITIVITY * scale,
-      PITCH_MIN,
-      PITCH_MAX,
+      FIRST_PERSON.pitchMin,
+      FIRST_PERSON.pitchMax,
     );
   }
 }
@@ -78,7 +79,7 @@ export class FpsPlayer {
   /** Set by the scene: fired each time a stride completes, so footsteps keep pace with speed. */
   onFootstep: ((sprinting: boolean) => void) | undefined;
   #camera: PerspectiveCamera;
-  #fov = FOV_HIP;
+  #fov: number = FIRST_PERSON.hipFov;
   #lastX: number = SPAWN.x;
   #lastZ: number = SPAWN.z;
   /** Metres accumulated since the last planted foot, measured like `distanceMoved`. */
@@ -107,10 +108,7 @@ export class FpsPlayer {
     // Face down range with the nearest centre-lane plate on the crosshair.
     this.look.yaw = 0;
     this.look.pitch = 0;
-    camera.fov = FOV_HIP;
-    camera.near = 0.02;
-    camera.far = 240;
-    camera.updateProjectionMatrix();
+    configureFirstPerson(camera);
     this.syncCamera();
   }
 
@@ -140,16 +138,13 @@ export class FpsPlayer {
 
   syncCamera(): void {
     const eye = this.eye;
-    // A hit shoves the view; it decays back to the aim within about a third of
-    // a second, so the shake never fights the player for control.
-    const kick = this.#shake * this.#shake;
-    this.#camera.position.set(eye.x, eye.y, eye.z);
-    this.#camera.rotation.set(
-      this.look.pitch + Math.sin(this.#shakePhase * 37) * 0.05 * kick,
-      this.look.yaw + Math.sin(this.#shakePhase * 23) * 0.05 * kick,
-      Math.sin(this.#shakePhase * 17) * 0.04 * kick,
-      "YXZ",
-    );
+    applyFirstPerson(this.#camera, {
+      ...eye,
+      yaw: this.look.yaw,
+      pitch: this.look.pitch,
+      shake: this.#shake,
+      phase: this.#shakePhase,
+    });
   }
 
   update(ctx: GameCtx, dt: number, canAim: boolean): void {
@@ -215,8 +210,7 @@ export class FpsPlayer {
     this.#shake = Math.max(0, this.#shake - dt * 3.2);
     this.#shakePhase += dt;
 
-    const wanted = this.aiming ? FOV_AIM : FOV_HIP;
-    this.#fov = MathUtils.damp(this.#fov, wanted, 14, dt);
+    this.#fov = firstPersonFov(this.#fov, this.aiming, dt);
     if (Math.abs(this.#camera.fov - this.#fov) > 0.01) {
       this.#camera.fov = this.#fov;
       this.#camera.updateProjectionMatrix();

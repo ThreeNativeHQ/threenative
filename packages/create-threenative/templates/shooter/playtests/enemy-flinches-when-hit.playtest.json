@@ -63,12 +63,12 @@
       {
         "entity": "enemy",
         "component": "animation",
-        "atSteps": [{ "label": "flinching", "equals": "HitReaction" }]
+        "atSteps": [{ "label": "flinching", "equals": "Hit_Chest" }]
       },
       {
         "entity": "enemy",
         "component": "animation",
-        "atSteps": [{ "label": "recovered", "equals": "RifleIdle" }]
+        "atSteps": [{ "label": "recovered", "equals": "Idle_Loop" }]
       }
     ]
   }

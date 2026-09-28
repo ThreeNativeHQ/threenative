@@ -46,6 +46,7 @@ import {
   ShapeGeometry,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { worldGridUVs } from "./materials.js";
 import { roundedBox } from "./shapes.js";
 import type { TownCollider } from "./town.js";
 import type { TownMaterials } from "./townMaterials.js";
@@ -200,7 +201,11 @@ function merge(
   name: string,
 ): Mesh | undefined {
   if (geometries.length === 0) return undefined;
-  const geometry = mergeGeometries(geometries as BufferGeometry[], false);
+  // The grid is world-projected, and every piece in this bucket has already been transformed
+  // into world space by `put`, so the merged result is where `worldGridUVs` can be honest:
+  // one grid tile is one metre on every wall, trim and shutter in the town, however the face
+  // was authored and however big the building is.
+  const geometry = worldGridUVs(mergeGeometries(geometries as BufferGeometry[], false));
   for (const source of geometries) source.dispose();
   const mesh = new Mesh(geometry, material);
   mesh.name = name;
@@ -213,8 +218,8 @@ function merge(
  * Merging demands identical attribute sets, and the sources disagree:
  * `roundedBox` deletes its UVs, `ExtrudeGeometry` comes out non-indexed. Bring
  * everything to the same shape — UV-carrying and non-indexed — before it goes
- * into a bucket. The zero UVs are harmless: every material in this file is
- * palette-driven and reads no map.
+ * into a bucket. The UVs are placeholders: `worldGridUVs` rewrites them from world
+ * position once the whole bucket is merged.
  */
 function normalised(source: BufferGeometry): BufferGeometry {
   const geometry = source.clone();

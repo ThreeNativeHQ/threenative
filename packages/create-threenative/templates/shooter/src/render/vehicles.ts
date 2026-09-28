@@ -52,6 +52,7 @@ import {
   type Material,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { worldGridUVs } from "./materials.js";
 import { roundedBox } from "./shapes.js";
 import type { TownMaterials } from "./townMaterials.js";
 
@@ -136,7 +137,9 @@ class PartBatch {
     const meshes: Mesh[] = [];
     for (const [material, geometries] of this.#buckets) {
       if (geometries.length === 0) continue;
-      const geometry = mergeGeometries(geometries, false);
+      // World-projected grid: the parts are already placed in the prop's own space, so this
+      // is one metre per tile on the van's flank exactly as it is on the wall behind it.
+      const geometry = worldGridUVs(mergeGeometries(geometries, false));
       for (const source of geometries) source.dispose();
       const mesh = new Mesh(geometry, material);
       mesh.name = name;

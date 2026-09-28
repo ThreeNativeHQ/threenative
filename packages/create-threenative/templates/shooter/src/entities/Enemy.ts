@@ -16,6 +16,7 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   type Object3D,
   Quaternion,
   Vector3,
@@ -257,40 +258,6 @@ let losStagger = 0;
 /** Blocked-cell bitmaps per collider set, so the squad pays for the nav grid once. */
 const NAV_GRIDS = new WeakMap<object, Map<string, Uint8Array>>();
 
-const squadFrame = { canSee: 0, ground: 0, weapon: 0, animation: 0, brain: 0, opacity: 0 };
-const squadPeak = { canSee: 0, ground: 0, weapon: 0, animation: 0, brain: 0, opacity: 0 };
-type SquadStage = keyof typeof squadFrame;
-const nowMs = (): number => globalThis.performance?.now() ?? 0;
-
-/** Forget the peaks so far. Startup builds raycast trees and compiles pipelines exactly once. */
-export function resetSquadProfile(): void {
-  for (const key of Object.keys(squadPeak) as SquadStage[]) squadPeak[key] = 0;
-}
-
-/** Call once per frame before the squad updates: the per-frame accumulators start again. */
-export function beginSquadFrame(): void {
-  for (const key of Object.keys(squadFrame) as SquadStage[]) {
-    if (squadFrame[key] > squadPeak[key]) squadPeak[key] = squadFrame[key];
-    squadFrame[key] = 0;
-  }
-}
-
-/** Worst single frame each stage has cost across the whole squad, in milliseconds. */
-export function squadProfile(): Record<SquadStage, number> {
-  const out = {} as Record<SquadStage, number>;
-  for (const key of Object.keys(squadPeak) as SquadStage[]) {
-    out[key] = Math.round(squadPeak[key] * 100) / 100;
-  }
-  return out;
-}
-
-function chargeStage<T>(stage: SquadStage, run: () => T): T {
-  const started = nowMs();
-  const value = run();
-  squadFrame[stage] += nowMs() - started;
-  return value;
-}
-
 // Scratch for the per-frame sight test; five soldiers × three vectors × 60 Hz is real garbage.
 const scratchGoal = new Vector3();
 const scratchTo = new Vector3();
@@ -362,91 +329,57 @@ class EasedYaw {
   }
 }
 
-type WeaponPose = {
-  readonly position: readonly [number, number, number];
-  readonly rotation: readonly [number, number, number];
-  readonly scale: readonly [number, number, number];
-};
-
-type WeaponKeyframe = { readonly time: number; readonly transform: WeaponPose };
-type WeaponTrack = {
-  readonly attachment: "attached" | "detached";
-  readonly keyframes: readonly WeaponKeyframe[];
-};
-type WeaponRecipe = {
-  readonly animations: Record<string, WeaponKeyframe | WeaponTrack>;
-  readonly version: 2 | 3;
-};
-const weaponPose = (
-  position: readonly [number, number, number],
-  rotation: readonly [number, number, number],
-  attachment: "attached" | "detached" = "attached",
-): WeaponTrack => ({
-  attachment,
-  keyframes: [{ time: 0, transform: { position, rotation, scale: [1, 1, 1] } }],
-});
-const ENEMY_AK47_RECIPE: WeaponRecipe = {
-  version: 3,
-  animations: {
-    RifleIdle: weaponPose([188.2202, 439.6458, 144.7051], [-111.181, -29.47, -46.122]),
-    RifleWalk: weaponPose([-11.9183, 294.5358, 104.4656], [-90, 0, -90]),
-    RifleCrouchWalk: weaponPose([-23.3305, 274.7849, 53.6152], [-106.891, -21.763, -115.469]),
-    RifleCrouchWalkToIdle: weaponPose(
-      [-23.3305, 274.7849, 53.6152],
-      [-106.673, -21.153, -114.665],
-    ),
-    HitReaction: weaponPose([-23.3305, 274.7849, 53.6152], [-91.054, -11.075, -93.276]),
-    DeathFront: weaponPose(
-      [-23.3305, 274.7849, 53.6152],
-      [-91.054, -11.075, -93.276],
-      "detached",
-    ),
-    DeathBack: weaponPose(
-      [-23.3305, 274.7849, 53.6152],
-      [-91.054, -11.075, -93.276],
-      "detached",
-    ),
-    DeathHeadshot: weaponPose(
-      [-23.3305, 274.7849, 53.6152],
-      [-91.054, -11.075, -93.276],
-      "detached",
-    ),
-    FiringRifle: weaponPose([-23.3305, 274.7849, 53.6152], [-95.123, -0.777, -94.787]),
-  },
-};
-
-function weaponTrack(animation: string): WeaponTrack | undefined {
-  const value = ENEMY_AK47_RECIPE.animations[animation];
-  if (value === undefined) return undefined;
-  if (ENEMY_AK47_RECIPE.version === 3 && "keyframes" in value) return value;
-  if (!("transform" in value)) return undefined;
-  return { attachment: "attached", keyframes: [value] };
+/**
+ * The rifle every soldier carries, built from five boxes.
+ *
+ * ## Why it is written rather than downloaded
+ *
+ * The old rig carried a rigged AK-47 with retargeted Mixamo clips, which meant a second skinned
+ * asset per soldier, a `Grip_Bone` to align against, a magazine bone to read a muzzle from, and
+ * a 90-line pose table translating one weapon's animation into another's. The mannequin has no
+ * weapon socket and no rifle clips, so all of that was solving a problem the template no longer
+ * has — and shipping ~1 MB of AK geometry into every scaffolded project to do it.
+ *
+ * Five boxes read as a rifle at the distances a soldier is ever seen from, cost twelve triangles,
+ * and normalise to `scale.rifleLength` like any other prop. The grip is the holder's own origin,
+ * so the right hand lands on it by construction and there is nothing to align afterwards.
+ *
+ * ## Layout, in metres, along the barrel (+z is the muzzle)
+ *
+ *   receiver   0.42 long, centred at z 0.06   the body and the sight line
+ *   barrel     0.30 long, centred at z 0.40   thin, forward
+ *   magazine   0.14 long, below at z 0.02      the tell that reads as "rifle" from the front
+ *   stock      0.24 long, behind at z -0.26    what puts the shoulder line in the right place
+ *   grip       0.10 long, below at z -0.04     the block the fist closes around
+ */
+function buildRifle(): Group {
+  const rifle = new Group();
+  rifle.name = "enemy-rifle";
+  const part = (
+    name: string,
+    size: readonly [number, number, number],
+    at: readonly [number, number, number],
+  ): void => {
+    const mesh = new Mesh(new BoxGeometry(size[0], size[1], size[2]), rifleMaterial());
+    mesh.name = name;
+    mesh.position.set(at[0], at[1], at[2]);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    rifle.add(mesh);
+  };
+  part("receiver", [0.05, 0.09, 0.42], [0, 0, 0.06]);
+  part("barrel", [0.03, 0.03, 0.3], [0, 0.01, 0.4]);
+  part("magazine", [0.04, 0.14, 0.06], [0, -0.1, 0.02]);
+  part("stock", [0.04, 0.08, 0.24], [0, -0.01, -0.26]);
+  part("grip", [0.04, 0.1, 0.05], [0, -0.08, -0.04]);
+  return rifle;
 }
 
-function interpolateWeaponPose(track: WeaponTrack, time: number): WeaponPose | undefined {
-  const frames = [...track.keyframes].sort((a, b) => a.time - b.time);
-  const first = frames[0];
-  if (first === undefined) return undefined;
-  const last = frames.at(-1) ?? first;
-  if (time <= first.time) return first.transform;
-  if (time >= last.time) return last.transform;
-  const right = frames.find((frame) => frame.time >= time) ?? last;
-  const left = frames[Math.max(0, frames.indexOf(right) - 1)] ?? first;
-  const alpha = (time - left.time) / Math.max(1e-6, right.time - left.time);
-  const mix = (a: number, b: number): number => MathUtils.lerp(a, b, alpha);
-  const angle = (a: number, b: number): number =>
-    a + ((((b - a + 540) % 360) - 180) * alpha);
-  return {
-    position: left.transform.position.map((value, index) =>
-      mix(value, right.transform.position[index] ?? value),
-    ) as [number, number, number],
-    rotation: left.transform.rotation.map((value, index) =>
-      angle(value, right.transform.rotation[index] ?? value),
-    ) as [number, number, number],
-    scale: left.transform.scale.map((value, index) =>
-      mix(value, right.transform.scale[index] ?? value),
-    ) as [number, number, number],
-  };
+/** One shared material: the rifle never changes colour, so five meshes cost one pipeline. */
+let rifleSurface: MeshStandardMaterial | undefined;
+function rifleMaterial(): MeshStandardMaterial {
+  rifleSurface ??= new MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.55, metalness: 0.5 });
+  return rifleSurface;
 }
 
 export type EnemyHooks = {
@@ -533,7 +466,6 @@ export class Enemy {
   #animation: AnimationPlayer | undefined;
   #clips: ReadonlySet<string>;
   #clipDurations = new Map<string, number>();
-  #weaponPoseElapsed = 0;
   #routeIndex = 0;
   #target = new Vector3();
   #lastSeen = new Vector3();
@@ -670,17 +602,6 @@ export class Enemy {
   #body: CharacterBody3D | undefined;
   #weapon: Object3D | undefined;
   #weaponModel: Object3D | undefined;
-  /**
-   * The rifle's longest axis in the holder's own units at unit scale, measured once.
-   *
-   * `#normaliseWeapon` used to re-measure it every frame through `normaliseToMetres`, whose
-   * `axis: "longest"` path runs `new Box3().setFromObject(holder)`. The AK is a rigged asset, so
-   * that is `applyBoneTransform` — four matrix multiplies — on every vertex of the weapon, once
-   * per soldier per frame. It is the same precise-bounds cost `#calibrateSkinEnvelope` was
-   * written to avoid on the body, and it was still being paid on the weapon: measured at 11.6 ms
-   * at p99 across five soldiers, which is most of a frame's budget spent re-deriving a constant.
-   */
-  #weaponUnitLength = 0;
   #weaponDetached = false;
   #weaponSettled = false;
   #weaponVelocity = new Vector3();
@@ -688,8 +609,6 @@ export class Enemy {
   #rifleLocalMaxZ = scale.rifleLength * 0.65;
   #rightHand: Object3D | undefined;
   #leftHand: Object3D | undefined;
-  #grip: Object3D | undefined;
-  #magazine: Object3D | undefined;
   #leftUpLeg: Object3D | undefined;
   #leftFoot: Object3D | undefined;
   #rightUpLeg: Object3D | undefined;
@@ -723,7 +642,6 @@ export class Enemy {
     model: Object3D,
     clips: readonly AnimationClip[],
     colliders: readonly BoxCollider[],
-    weapon?: Object3D,
     options: EnemyOptions = {},
   ) {
     this.#colliders = colliders;
@@ -739,14 +657,19 @@ export class Enemy {
     model.rotation.set(0, 0, 0);
     model.scale.setScalar(1);
     model.updateWorldMatrix(false, true);
-    this.#crown =
-      findBone(model, /headtop|head_end|head.*end/i) ?? findBone(model, /head/i);
-    this.#head = findBone(model, /mixamorigHead$|^head$/i) ?? findBone(model, /head/i);
-    this.#leftKnee = findBone(model, /left.*leg|left.*knee/i);
-    this.#rightKnee = findBone(model, /right.*leg|right.*knee/i);
-    normaliseToMetres(model, { axis: "height", metres: scale.humanHeight, top: this.#crown });
+    // No crown bone on this rig, so the head joint is the top of the body for measurement.
+    this.#crown = findBone(model, /^head$/i) ?? findBone(model, /head/i);
+    this.#head = findBone(model, /^head$/i) ?? findBone(model, /head/i);
+    // The mannequin's knees are its calves: `calf_l` / `calf_r`, no Mixamo `LeftLeg`.
+    this.#leftKnee = findBone(model, /^calf_l$/i) ?? findBone(model, /left.*knee|left.*leg/i);
+    this.#rightKnee = findBone(model, /^calf_r$/i) ?? findBone(model, /right.*knee|right.*leg/i);
+    // `Head` is the base of the skull on this skeleton, not the crown, so 1.545 m at that
+    // joint is the 1.8 m figure the rest of the game is measured against — the same
+    // convention `minimal` opens every project with (see its `src/conventions.ts`).
+    normaliseToMetres(model, { axis: "height", metres: 1.545, top: this.#head ?? this.#crown });
     model.traverse((object) => {
-      if (/hips|upleg|leg|foot|toe|head/i.test(object.name)) this.#poseBones.push(object);
+      if (/pelvis|hips|thigh|upleg|calf|leg|foot|ball|toe|head/i.test(object.name))
+        this.#poseBones.push(object);
       const mesh = object as Mesh;
       if (mesh.isMesh === true) {
         this.#bodyMeshes.push(mesh);
@@ -754,18 +677,19 @@ export class Enemy {
         mesh.receiveShadow = false;
       }
     });
-    this.#hips = findBone(model, /hips/i);
-    // Mixamo names these Spine / Spine1 / Spine2 / Neck. The carriage banks the lower torso,
-    // lags the upper one and leads with the head; missing any of them just drops that cue.
-    this.#spine = findBone(model, /spine1$|spine1_/i) ?? findBone(model, /spine/i);
-    this.#chest = findBone(model, /spine2/i);
+    this.#hips = findBone(model, /^pelvis$/i) ?? findBone(model, /hips/i);
+    // The mannequin numbers its spine `spine_01` (waist) to `spine_03` (chest) and its
+    // neck `neck_01`. The carriage banks the lower torso, lags the upper one and leads with
+    // the head; missing any of them just drops that cue.
+    this.#spine = findBone(model, /^spine_01$/i) ?? findBone(model, /spine/i);
+    this.#chest = findBone(model, /^spine_03$/i) ?? findBone(model, /^spine_02$/i);
     this.#neck = findBone(model, /neck/i);
-    this.#leftUpLeg = findBone(model, /leftupleg/i);
-    this.#leftFoot = findBone(model, /leftfoot/i);
-    this.#rightUpLeg = findBone(model, /rightupleg/i);
-    this.#rightFoot = findBone(model, /rightfoot/i);
+    this.#leftUpLeg = findBone(model, /^thigh_l$/i) ?? findBone(model, /leftupleg/i);
+    this.#leftFoot = findBone(model, /^foot_l$/i) ?? findBone(model, /leftfoot/i);
+    this.#rightUpLeg = findBone(model, /^thigh_r$/i) ?? findBone(model, /rightupleg/i);
+    this.#rightFoot = findBone(model, /^foot_r$/i) ?? findBone(model, /rightfoot/i);
     this.group.add(model);
-    if (weapon !== undefined) this.#equip(model, weapon);
+    this.#equip(model);
     // Before the first draw, not on the first death. `#respawn` also calls this, but `#respawn`
     // only ever runs off the death timer, so a soldier that has never died would otherwise reach
     // his own death still carrying the blend state the asset shipped with — which is both a
@@ -839,7 +763,7 @@ export class Enemy {
     }
     if (clips.length > 0) {
       this.#animation = new AnimationPlayer({ clips, root: this.group });
-      this.#play("RifleWalk");
+      this.#play("Walk_Loop");
     }
   }
 
@@ -899,100 +823,48 @@ export class Enemy {
   /**
    * Put the rifle in the enemy's right hand.
    *
-   * The animation clips are retargeted Mixamo rifle clips, so the arms are already posed around
-   * a weapon that was not in the file — without this the soldier walks and fires holding air.
-   * The bone is found by name because nothing in the asset pipeline reports a socket, and the
-   * offsets are the grip pose measured against the model's own scale.
+   * The mannequin's clips pose a bare figure, so the arms are not already holding anything and
+   * the rifle has to be welded to `hand_r` by hand. The grip block sits at the rifle's own
+   * origin (see `buildRifle`), so attaching the rifle itself to the bone puts the fist around
+   * the grip with no follow-up alignment — which is the whole reason the rifle is five boxes
+   * rather than a model with a `Grip_Bone` in it.
    */
-  #equip(model: Object3D, weapon: Object3D): void {
-    weapon.traverse((object) => {
-      const mesh = object as Mesh;
-      if (mesh.isMesh === true) {
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-      }
-    });
-
-    // Assets are cached across scene restarts. Detach and restore authored transforms before
-    // measuring, or the second run measures the first run's normalised attachment and scales it
-    // again into a giant AK.
-    weapon.removeFromParent();
-    weapon.position.set(0, 0, 0);
-    weapon.rotation.set(0, 0, 0);
-    weapon.scale.setScalar(1);
-    weapon.updateWorldMatrix(false, true);
-
-    const bounds = new Box3().setFromObject(weapon);
-
+  #equip(model: Object3D): void {
     const hand =
-      model.getObjectByName("mixamorigRightHand") ??
-      model.getObjectByName("RightHand") ??
+      model.getObjectByName("hand_r") ??
       findBone(model, /right.*hand|hand.*r$|hand_r/i);
     this.#rightHand = hand;
     this.#leftHand =
-      model.getObjectByName("mixamorigLeftHand") ??
-      model.getObjectByName("LeftHand") ??
-      findBone(model, /left.*hand|hand.*l$|hand_l/i);
+      model.getObjectByName("hand_l") ?? findBone(model, /left.*hand|hand.*l$|hand_l/i);
 
-    // A holder carries the grip offset so the rifle's own transform stays the measured one.
-    const holder = new Group();
-    holder.add(weapon);
-
-    // Line the rifle's own `Grip_Bone` up with the holder origin. Hanging it off the model
-    // origin instead puts the fist around the barrel: this AK is authored with its origin
-    // 22 cm behind the receiver, which `create-threenative inspect` reports along with the
-    // bone. The asset declares where it is held, so read that rather than guessing an offset.
-    const grip = weapon.getObjectByName("Grip_Bone");
-    this.#grip = grip;
-    this.#magazine = findBone(weapon, /magazine|mag[_ -]|clip[_ -]/i);
-    this.#weaponModel = weapon;
-    weapon.traverse((object) => {
-      if (object.name !== "" && this.#weaponNodes.length < 40) {
-        this.#weaponNodes.push(object.name);
-      }
-    });
+    const rifle = buildRifle();
+    this.#weaponModel = rifle;
+    this.#weaponNodes.push("receiver", "barrel", "magazine", "stock", "grip");
+    const bounds = new Box3().setFromObject(rifle);
     this.#rifleLocalMinZ = bounds.min.z;
     this.#rifleLocalMaxZ = bounds.max.z;
 
     if (hand === undefined) {
-      holder.position.set(0.16, 1.24, 0.16);
-      holder.rotation.set(0, Math.PI / 2, 0);
-      this.group.add(holder);
-      this.#weapon = holder;
-      normaliseToMetres(holder, { axis: "longest", metres: scale.rifleLength });
-      this.#alignWeaponGrip();
-      this.#renderedRifleLength = this.#measureRenderedWeapon(weapon);
+      // No hand bone: hang it beside the hip rather than dropping it. A soldier without a
+      // visible arm is already a broken rig; a rifle at his side still reads.
+      rifle.position.set(0.16, 1.0, 0.06);
+      this.group.add(rifle);
+      this.#weapon = rifle;
+      normaliseToMetres(rifle, { axis: "longest", metres: scale.rifleLength });
+      this.#renderedRifleLength = this.#measureRenderedWeapon(rifle);
       return;
     }
-    // The engine's attachment keeps the holder's authored world scale under the hand bone;
+    // The engine's attachment keeps the rifle's authored world scale under the hand bone;
     // the measured re-normalisation below still has the final word on length.
-    attachToBone(model, hand.name, holder);
-    this.#weapon = holder;
-    this.#applyWeaponPose("RifleWalk");
-    normaliseToMetres(holder, { axis: "longest", metres: scale.rifleLength });
-    this.#alignWeaponGrip();
-    this.#renderedRifleLength = this.#measureRenderedWeapon(weapon);
+    attachToBone(model, hand.name, rifle);
+    this.#weapon = rifle;
+    normaliseToMetres(rifle, { axis: "longest", metres: scale.rifleLength });
+    this.#renderedRifleLength = this.#measureRenderedWeapon(rifle);
   }
 
-  #applyWeaponPose(animation: string): void {
+  #detachWeapon(ctx: GameCtx): void {
     const holder = this.#weapon;
-    const track = weaponTrack(animation);
-    const duration = this.#clipDurations.get(animation) ?? 1;
-    const normalized = MathUtils.clamp(this.#weaponPoseElapsed / Math.max(duration, 1e-6), 0, 1);
-    const pose = track === undefined ? undefined : interpolateWeaponPose(track, normalized);
-    if (holder === undefined || pose === undefined) return;
-    holder.rotation.set(
-      MathUtils.degToRad(pose.rotation[0]),
-      MathUtils.degToRad(pose.rotation[1]),
-      MathUtils.degToRad(pose.rotation[2]),
-    );
-    holder.scale.fromArray(pose.scale);
-    holder.updateWorldMatrix(false, true);
-  }
-
-  #detachWeapon(ctx: GameCtx, animation: string): void {
-    const holder = this.#weapon;
-    if (holder === undefined || weaponTrack(animation)?.attachment !== "detached") return;
+    if (holder === undefined) return;
     ctx.scene.attach(holder);
     this.#weaponDetached = true;
     this.#weaponSettled = false;
@@ -1026,39 +898,12 @@ export class Enemy {
     this.#weaponDetached = false;
     this.#weaponSettled = false;
     this.#weaponVelocity.set(0, 0, 0);
-    this.#weaponPoseElapsed = 0;
-    this.#applyWeaponPose("RifleWalk");
   }
 
   #measureRenderedWeapon(weapon: Object3D): number {
     weapon.updateWorldMatrix(true, true);
     const size = new Box3().setFromObject(weapon).getSize(new Vector3());
     return Math.max(size.x, size.y, size.z);
-  }
-
-  /** Re-anchor the measured grip after pose or parent-bone scale changes. */
-  #alignWeaponGrip(): void {
-    const holder = this.#weapon;
-    const grip = this.#grip;
-    const parent = holder?.parent;
-    const hand = this.#rightHand;
-    if (
-      this.#weaponDetached ||
-      holder === undefined ||
-      grip === undefined ||
-      parent === null ||
-      parent === undefined ||
-      hand === undefined
-    ) {
-      return;
-    }
-    holder.updateWorldMatrix(true, true);
-    const gripWorld = grip.getWorldPosition(new Vector3());
-    const desiredLocal = parent.worldToLocal(hand.getWorldPosition(new Vector3()));
-    const gripLocal = holder.worldToLocal(gripWorld);
-    const offset = gripLocal.multiply(holder.scale).applyQuaternion(holder.quaternion);
-    holder.position.copy(desiredLocal.sub(offset));
-    holder.updateWorldMatrix(false, true);
   }
 
   /**
@@ -1182,22 +1027,6 @@ export class Enemy {
     if (truth !== undefined) this.#envelopeBias = truth - this.#lowestSkinY();
   }
 
-  /**
-   * Signed error of the skin envelope against a real precise-bounds measurement, in metres.
-   * Positive means the envelope reads high and the body is actually sunk into the deck.
-   *
-   * Returns null unless `globalThis.__FPS_GROUNDING_AUDIT__` is set, because computing it
-   * is exactly the per-vertex walk that made this game run at 9 FPS.
-   */
-  #groundingAudit(): number | null {
-    const host = globalThis as { __FPS_GROUNDING_AUDIT__?: boolean };
-    if (host.__FPS_GROUNDING_AUDIT__ !== true) return null;
-    if (this.#envelopeBones.length === 0) return null;
-    this.#syncWorldMatrices();
-    const truth = this.#measureBodyPose().bounds?.min[1];
-    if (truth === undefined) return null;
-    return this.#lowestSkinY() - truth;
-  }
 
   /**
    * Lowest posed point of the body, in world Y. O(bones) with no allocation, against the
@@ -1307,8 +1136,6 @@ export class Enemy {
     if (this.#animation === undefined || !this.#clips.has(name)) return;
     if (!override && this.#reactionHold > 0) return;
     if (this.#animation.current === name) return;
-    this.#weaponPoseElapsed = 0;
-    this.#applyWeaponPose(name);
     this.#animation.play(name, { fade, mode });
   }
 
@@ -1477,21 +1304,21 @@ export class Enemy {
       // the same foot slide `#clipPaceCap` exists to prevent — so the clip waits for the legs.
       const creeping = this.#groundSpeed <= this.#clipPaceCap(true) * 1.02;
       wanted =
-        crouched && creeping && this.#clips.has("RifleCrouchWalk")
-          ? "RifleCrouchWalk"
-          : "RifleWalk";
-    } else if (this.#crouchMoving && this.#clips.has("RifleCrouchWalkToIdle")) {
+        crouched && creeping && this.#clips.has("Crouch_Fwd_Loop")
+          ? "Crouch_Fwd_Loop"
+          : "Walk_Loop";
+    } else if (this.#crouchMoving && this.#clips.has("Crouch_Idle_Loop")) {
       // Standing up runs its authored transition, and owns the pose until it finishes.
       this.#crouchMoving = false;
-      this.#standUp = this.#clipDurations.get("RifleCrouchWalkToIdle") ?? 0.5;
-      this.#locomotion = "RifleCrouchWalkToIdle";
+      this.#standUp = this.#clipDurations.get("Crouch_Idle_Loop") ?? 0.5;
+      this.#locomotion = "Crouch_Idle_Loop";
       this.#locomotionHold = this.#standUp;
-      this.#play("RifleCrouchWalkToIdle", LOCOMOTION_FADE, "once");
-      this.#applyLocomotionRate("RifleCrouchWalkToIdle");
+      this.#play("Crouch_Idle_Loop", LOCOMOTION_FADE, "once");
+      this.#applyLocomotionRate("Crouch_Idle_Loop");
       return;
     } else {
       if (this.#standUp > 0) return;
-      wanted = "RifleIdle";
+      wanted = "Idle_Loop";
     }
 
     // Commit to a locomotion clip for a beat. Crouch state can flicker as suppression decays
@@ -1499,7 +1326,7 @@ export class Enemy {
     if (wanted !== this.#locomotion && this.#locomotionHold > 0) return;
     if (wanted !== this.#locomotion) this.#locomotionHold = LOCOMOTION_HOLD_SECONDS;
     this.#locomotion = wanted;
-    this.#crouchMoving = wanted === "RifleCrouchWalk";
+    this.#crouchMoving = wanted === "Crouch_Fwd_Loop";
     this.#standUp = travelling ? 0 : this.#standUp;
     this.#play(wanted, LOCOMOTION_FADE);
     this.#applyLocomotionRate(wanted);
@@ -1550,19 +1377,16 @@ export class Enemy {
     hooks.onFootstep(this.group.position);
   }
 
-  /** Which death animation reads as true for the round that killed him. */
+  /**
+   * The one clip a killed soldier plays.
+   *
+   * The old rig carried three retargeted Mixamo deaths and chose between them by the direction
+   * the killing round travelled. The mannequin ships one (`Death01`), so the choice is gone and
+   * only the fall direction is still measured: the corpse must travel away from the shooter
+   * whichever way it was hit, and that is what `deathFallDot` scores.
+   */
   #deathClipFor(): string {
-    const fallback = this.#clips.has("DeathFront") ? "DeathFront" : "DeathBack";
-    // A head hit is unmistakable on screen and outranks direction.
-    if (this.#lastHitMultiplier >= 4 && this.#clips.has("DeathHeadshot")) return "DeathHeadshot";
-    const round = this.#lastHitDirection;
-    if (round === null) return fallback;
-    const forward = new Vector3(0, 0, 1).applyEuler(this.group.rotation);
-    // A round travelling the way he faces reached him from behind, so the body pitches
-    // forward, away from the shooter. Facing into the round drops him backward instead.
-    const struckFromBehind = round.dot(forward) > 0;
-    const wanted = struckFromBehind ? "DeathFront" : "DeathBack";
-    return this.#clips.has(wanted) ? wanted : fallback;
+    return "Death01";
   }
 
   #occupied(x: number, z: number, padding: number): boolean {
@@ -1857,7 +1681,7 @@ export class Enemy {
    * bounded by the same clip as the slowest.
    */
   #clipPaceCap(crouched: boolean): number {
-    const name = crouched && this.#clips.has("RifleCrouchWalk") ? "RifleCrouchWalk" : "RifleWalk";
+    const name = crouched && this.#clips.has("Crouch_Fwd_Loop") ? "Crouch_Fwd_Loop" : "Walk_Loop";
     const clipSpeed = this.#clipGroundSpeed.get(name) ?? 0;
     // A clip with no measurable stride cannot bound anything; leave the caller's speed alone.
     return clipSpeed <= 0.05 ? Number.POSITIVE_INFINITY : clipSpeed * LOCOMOTION_RATE_MAX;
@@ -2013,7 +1837,7 @@ export class Enemy {
       const clip = this.#deathClipFor();
       this.#deathClip = this.#clips.has(clip) ? clip : null;
       this.#play(clip, DEATH_FADE, "once", true);
-      this.#detachWeapon(ctx, clip);
+      this.#detachWeapon(ctx);
       ctx.after(RESPAWN_SECONDS, () => this.#respawn());
       return earned + 300;
     }
@@ -2023,8 +1847,8 @@ export class Enemy {
     this.voice?.pain(this.group.position);
     // "once", and held: the clip is a one-shot flinch, and the hold is what stops locomotion
     // reclaiming the rig before a single frame of it has been drawn.
-    this.#reactionHold = Math.min(this.#clipDurations.get("HitReaction") ?? 0.4, 0.45);
-    this.#play("HitReaction", REACTION_FADE, "once", true);
+    this.#reactionHold = Math.min(this.#clipDurations.get("Hit_Chest") ?? 0.4, 0.45);
+    this.#play("Hit_Chest", REACTION_FADE, "once", true);
     // A frozen sentry flinches at the impact but holds his ground: engaging here
     // would walk him out of a scenario-placed spawn on the first non-killing round.
     if (!this.#frozen && this.phase !== "engage") this.phase = "engage";
@@ -2093,7 +1917,7 @@ export class Enemy {
     this.#paceRate = 0;
     this.#carriageTurn = 0;
     this.#carriagePush = 0;
-    this.#play("RifleWalk", LOCOMOTION_FADE, "loop", true);
+    this.#play("Walk_Loop", LOCOMOTION_FADE, "loop", true);
   }
 
   /**
@@ -2175,12 +1999,8 @@ export class Enemy {
         this.#deathFallMeasured = fall;
       }
       if (this.#deathClipFinished) this.#settleDeath(dt, deckY);
-      this.#weaponPoseElapsed += dt;
-      if (!this.#weaponDetached) this.#applyWeaponPose(this.#animation?.current ?? "");
       this.#updateDetachedWeapon(dt, deckY);
       this.#groundToDeck(deckY, dt);
-      this.#normaliseWeapon();
-      this.#alignWeaponGrip();
       this.#syncCollisionBody();
       if (this.#deadFor > RESPAWN_SECONDS - 0.35) {
         this.#setOpacity(MathUtils.clamp((RESPAWN_SECONDS - this.#deadFor) / 0.35, 0, 1));
@@ -2189,10 +2009,7 @@ export class Enemy {
     }
     this.#spawnGrace = Math.max(0, this.#spawnGrace - dt);
     this.#reactionHold = Math.max(0, this.#reactionHold - dt);
-    const sees =
-      !this.#frozen &&
-      this.#spawnGrace <= 0 &&
-      chargeStage("canSee", () => this.#canSee(playerEye, hooks));
+    const sees = !this.#frozen && this.#spawnGrace <= 0 && this.#canSee(playerEye, hooks);
     if (sees) {
       // Entering combat from anywhere else starts the reaction clock, so the player gets a
       // moment to react rather than taking a burst the instant they step into the open.
@@ -2206,12 +2023,11 @@ export class Enemy {
       this.#alertTimer = 0;
     }
 
-    const brainStarted = nowMs();
     this.#stepped = false;
     switch (this.phase) {
       case "patrol": {
         if (this.#spawnGrace > 0) {
-          this.#play("RifleIdle");
+          this.#play("Idle_Loop");
           break;
         }
         if (this.#patrolPause > 0) {
@@ -2283,7 +2099,6 @@ export class Enemy {
         break;
       }
     }
-    squadFrame.brain += nowMs() - brainStarted;
     // A branch that never called `#step` — a patrol pause, a burst, standing and listening —
     // is a soldier coming to a halt, not one who was never moving. Coast the pace down.
     if (!this.#stepped) {
@@ -2294,26 +2109,18 @@ export class Enemy {
     this.#standUp = Math.max(0, this.#standUp - dt);
     this.#suppressed = Math.max(0, this.#suppressed - dt);
     this.#locomotionHold = Math.max(0, this.#locomotionHold - dt);
-    chargeStage("animation", () => {
+    {
       this.#animation?.update(dt);
       // Straight after the mixer writes the pose and before anything reads the bones: the
       // carriage is a delta on top of the clip, and the clip is rewritten every frame.
       this.#applyCarriage(dt);
       this.#countClipFrame();
       this.#updateFootsteps(hooks);
-    });
-    this.#weaponPoseElapsed += dt;
-    chargeStage("weapon", () => {
-      if (!this.#weaponDetached) this.#applyWeaponPose(this.#animation?.current ?? "");
-    });
-    chargeStage("ground", () => this.#groundToDeck(deckY, dt));
-    chargeStage("weapon", () => {
-      this.#normaliseWeapon();
-      this.#alignWeaponGrip();
-      this.#syncCollisionBody();
-    });
+    }
+    this.#groundToDeck(deckY, dt);
+    this.#syncCollisionBody();
     if (this.#fade < 1) {
-      chargeStage("opacity", () => this.#setOpacity(MathUtils.clamp(this.#fade + dt / 0.35, 0, 1)));
+      this.#setOpacity(MathUtils.clamp(this.#fade + dt / 0.35, 0, 1));
     }
   }
 
@@ -2327,7 +2134,7 @@ export class Enemy {
   get #deathClipFinished(): boolean {
     if (this.phase !== "dead") return false;
     if (this.#animation === undefined) return true;
-    return this.#animation.finished || this.#deadFor >= (this.#clipDurations.get("DeathFront") ?? 0);
+    return this.#animation.finished || this.#deadFor >= (this.#clipDurations.get("Death01") ?? 0);
   }
 
   /**
@@ -2337,25 +2144,6 @@ export class Enemy {
    * varies. So the vertex walk happens once, and every frame after that is one division: the
    * local scale that cancels the parent's current world scale and lands on `rifleLength`.
    */
-  #normaliseWeapon(): void {
-    const holder = this.#weapon;
-    if (holder === undefined) return;
-    if (this.#weaponUnitLength <= 0) {
-      holder.scale.setScalar(1);
-      holder.updateWorldMatrix(true, true);
-      const bounds = new Box3().setFromObject(holder);
-      if (bounds.isEmpty()) return;
-      const size = bounds.getSize(new Vector3());
-      const parentScale = holder.parent === null ? 1 : worldScaleOf(holder.parent);
-      const longest = Math.max(size.x, size.y, size.z);
-      if (longest <= 0 || parentScale <= 0) return;
-      // Back the parent's contribution out, so what is stored is the asset's own length.
-      this.#weaponUnitLength = longest / parentScale;
-    }
-    const parentScale = holder.parent === null ? 1 : worldScaleOf(holder.parent);
-    if (parentScale <= 0) return;
-    holder.scale.setScalar(scale.rifleLength / (this.#weaponUnitLength * parentScale));
-  }
 
   /**
    * Lowest posed body point for a corpse, measured precisely rather than estimated.
@@ -2550,7 +2338,7 @@ export class Enemy {
         hooks.onMuzzleFlash(muzzle, missDirection, playerEye.distanceTo(muzzle));
         // `#play` declines while a flinch is held, so a soldier hit mid-burst keeps the reaction
         // rather than having it stomped by the very next round 110 ms later.
-        this.#play("FiringRifle", FIRE_FADE);
+        this.#play("Pistol_Shoot", FIRE_FADE);
         if (this.#burstLeft === 0) {
           // Break contact for an irregular beat, longer when he is rattled. A fixed 3.2 s
           // gap between bursts is learnable within two engagements.
@@ -2612,7 +2400,6 @@ export class Enemy {
     deathClip: string | null;
     deathClipFrames: number;
     clips: string[];
-    envelopeErrorM: number | null;
     maxEnvelopeRadius: number;
     lastHitMultiplier: number;
     navigation: { goal: number[]; next: number[] | null; remaining: number };
@@ -2635,9 +2422,12 @@ export class Enemy {
     const enemyForward = new Vector3(0, 0, 1)
       .applyQuaternion(this.group.getWorldQuaternion(this.group.quaternion.clone()))
       .normalize();
-    const gripPosition = this.#grip?.getWorldPosition(new Vector3()) ?? null;
+    // The grip is the rifle's own origin, so the hand's distance to it is the whole check:
+    // a soldier holding his rifle anywhere else is a bug, and there is no bone to compare with.
+    const gripPosition = this.#weapon?.getWorldPosition(new Vector3()) ?? null;
     const rightHandPosition = this.#rightHand?.getWorldPosition(new Vector3()) ?? null;
-    const magazinePosition = this.#magazine?.getWorldPosition(new Vector3()) ?? null;
+    const magazinePosition = this.#weaponModel?.getObjectByName("magazine")
+      ?.getWorldPosition(new Vector3()) ?? null;
     const leftHandPosition = this.#leftHand?.getWorldPosition(new Vector3()) ?? null;
     const rifleStart = this.#weapon?.localToWorld(new Vector3(0, 0, this.#rifleLocalMinZ)) ?? null;
     const rifleEnd = this.#weapon?.localToWorld(new Vector3(0, 0, this.#rifleLocalMaxZ)) ?? null;
@@ -2665,7 +2455,7 @@ export class Enemy {
       // clip actually advanced and let a scenario require that it played.
       wounded: this.wounded,
       suppressedPeak: this.#suppressedPeak,
-      crouchClipFrames: this.#clipFrames.get("RifleCrouchWalk") ?? 0,
+      crouchClipFrames: this.#clipFrames.get("Crouch_Fwd_Loop") ?? 0,
       // Every clip the rig has actually run, so an unused animation is visible to a scenario.
       clipsPlayed: [...this.#clipFrames.keys()].sort(),
       groundSnap: this.groundSnap,
@@ -2700,7 +2490,6 @@ export class Enemy {
       // Ground truth for `footClearance`, which is otherwise reported from the cheap skin
       // envelope and would happily agree with itself. Off unless a probe asks: this is the
       // per-vertex `Box3` pass the envelope exists to avoid, and it costs a whole frame.
-      envelopeErrorM: this.#groundingAudit(),
       maxEnvelopeRadius: this.#maxEnvelopeRadius,
       lastHitMultiplier: this.#lastHitMultiplier,
       navigation: {

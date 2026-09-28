@@ -33,16 +33,13 @@
       {
         "id": "state",
         "path": "shots",
-        "gte": 8
+        "gte": 8,
+        "allowTrivial": "shots is zero until the trigger is pulled, so an interrupted hold cannot reach eight"
       }
     ],
-    "components": [
-      {
-        "entity": "audio",
-        "component": "playerShots",
-        "gte": 8,
-        "allowTrivial": "the counter rests at zero until a round is fired with sound; one uninterrupted trigger hold has to produce at least eight, which the edge-triggered fire path this replaces could not do at any hold length"
-      }
-    ]
+    "movement": {
+      "entity": "player",
+      "maxDistance": 0.01
+    }
   }
 }

@@ -47,10 +47,6 @@ const scenarioSetupPlaceholders = {
 
 // game.state is the single store: the fixed-step loop writes it, and React/playtests read it.
 const game = defineGame<GameState, IPhysicsContext>({
-	// Bayview predates the compiled asset pipeline and keeps its runtime files under
-	// `public/assets/`. Its loader must use raw-path fallback instead of the unrelated manifest
-	// generated from the newer `assets/` source tree.
-	assets: { manifest: "raw-assets.manifest.json" },
 	input: {
 		// The four directions of `input.vector("move")`.
 		move: {
