@@ -1,4 +1,4 @@
-# PRD-462 — Streamed open worlds hold 120 fps: a GPU-driven world
+# PRD-473 — Streamed open worlds hold 120 fps: a GPU-driven world
 
 **Status:** PROPOSED — filed 2026-09-28.
 **Complexity:** 9 (HIGH): compute culling, indirect draws, cached draw commands, runtime impostor bake and cook-time HLOD across core, assets and the three patch. Risk override: none.
