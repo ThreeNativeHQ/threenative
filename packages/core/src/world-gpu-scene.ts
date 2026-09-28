@@ -931,6 +931,9 @@ export class WorldGpuScene {
     const index = this.#keysByName.get(name);
     if (index === undefined) return;
     (this.#regions[index] as IRegion).indexCount = count;
+    // The record is what the GPU draws from: a count kept only for validation left every indirect
+    // draw at `indexCount` 0, submitted and counted, drawing nothing.
+    this.#writeKey(index);
   }
 
   /**
@@ -1361,8 +1364,12 @@ export class WorldGpuScene {
     buffers.locals.addUpdateRange(index * LOCAL_WORDS, LOCAL_WORDS);
     buffers.locals.needsUpdate = true;
     const args = buffers.args.array as Uint32Array;
-    args[region.argsIndex * DRAW_ARGS_WORDS + 1] = 0;
-    args[region.argsIndex * DRAW_ARGS_WORDS + 4] = region.start;
+    const record = region.argsIndex * DRAW_ARGS_WORDS;
+    args[record] = region.indexCount;
+    args[record + 1] = 0;
+    args[record + 2] = 0;
+    args[record + 3] = 0;
+    args[record + 4] = region.start;
     buffers.args.needsUpdate = true;
   }
 

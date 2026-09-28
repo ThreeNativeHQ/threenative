@@ -770,6 +770,15 @@ describe("WorldCells with the GPU-driven main pass", () => {
       ).toBe(true);
       expect((mesh.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
       expect(mesh.frustumCulled).toBe(false);
+      // The record the GPU draws from names the dressed shape's triangles. It said 0 in the real
+      // run: every key submitted, counted and drew nothing.
+      const geometry = mesh.geometry as BufferGeometry & {
+        indirect: { array: Uint32Array };
+        indirectOffset: number;
+      };
+      const record = geometry.indirectOffset / 4;
+      expect(geometry.indirect.array[record]).toBe(geometry.index?.count);
+      expect(geometry.indirect.array[record]).toBeGreaterThan(0);
     }
     expect(world.stats().gpuScene.keys).toBe(main.length);
     // And the marker names it, because a browser run reads the line and nothing else.
