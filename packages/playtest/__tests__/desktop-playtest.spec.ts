@@ -486,6 +486,12 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
     '    console.log("[Screenshot] request consumed, no png written");',
     "  }, 200);",
     "}",
+    'if (process.argv[2] === "error") {',
+    '  console.log("[Screenshot] request pending");',
+    '  console.log("platform noise the reader does not need");',
+    // Untagged, so a tag-only tail drops the one line that says why the frame never came.
+    '  console.error("eglInitialize failed: no display");',
+    "}",
     "setInterval(() => {}, 1000);",
     "",
   ].join("\n"));
@@ -523,28 +529,68 @@ test.skipIf(process.platform === "win32")("desktop screenshot timeout fails clos
     expect(mute).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
     expect(mute).toContain("request file still present");
     expect(mute).toContain("native host output: none captured");
+
+    // An untagged error is the root cause in most real timeouts (TN_FRAME_NOT_PRESENTED, a lost
+    // EGL context), so the tail carries it beside the tagged lines — and still drops the noise.
+    const errored = await driveTimeout(["error"]);
+    expect(errored).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(errored).toContain("[Screenshot] request pending");
+    expect(errored).toContain("eglInitialize failed: no display");
+    expect(errored).not.toContain("platform noise the reader does not need");
   } finally {
     await rm(root, { force: true, recursive: true });
   }
 });
 
+test("a failed desktop screenshot still leaves the host console in the artifact directory", async () => {
+  // A screenshot that never arrives reports its own tail, but the timing and error lines printed
+  // before it were thrown away with the host — TN_FRAME_NOT_PRESENTED with nothing to explain it.
+  // The original failure must still be what propagates; the artifact is written beside it.
+  const console = [
+    { text: "[Playtest] mailbox ready", type: "log" },
+    { text: "[Screenshot] request consumed, no png written", type: "log" },
+    { text: "TN_FRAME_NOT_PRESENTED (texture=false)", type: "error" },
+  ];
+  const screenshotError = new Error(
+    "TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: request timed out; request file consumed",
+  );
+  const projectPath = await makeTempDir("playtest-desktop-console-artifact-");
+  try {
+    await expect(runDesktopScenario(2, { console, projectPath, screenshotError }))
+      .rejects.toThrow(screenshotError.message);
+    expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual(console);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
 interface IDesktopScenarioOptions {
+  console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
   onPrepare?: () => void;
+  /** A caller-owned root the caller also removes, so its artifacts outlive the run. */
+  projectPath?: string;
+  screenshotError?: Error;
   signalBeforeStart?: boolean;
   stopError?: Error;
 }
 
 async function runDesktopScenario(minDistance: number, options: IDesktopScenarioOptions = {}) {
-  const projectPath = await makeTempDir("playtest-desktop-scenario-");
+  const ownsProjectPath = options.projectPath === undefined;
+  const projectPath = options.projectPath ?? await makeTempDir("playtest-desktop-scenario-");
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: false },
     assert: { movement: { entity: "player", minDistance } },
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
-    steps: [{ holdFrames: 3, press: "KeyW", release: true }],
+    steps: [{
+      holdFrames: 3,
+      press: "KeyW",
+      release: true,
+      ...(options.screenshotError === undefined ? {} : { screenshot: "frame" }),
+    }],
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
@@ -552,7 +598,13 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   }));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   const moving = movingBridge();
-  const driver = new FakeDesktopDriver(moving.bridge, options.stopError, options.onPrepare);
+  const driver = new FakeDesktopDriver(
+    moving.bridge,
+    options.stopError,
+    options.onPrepare,
+    options.screenshotError,
+    options.console,
+  );
   options.onDriver?.(driver);
   const mailboxRoot = options.mailboxFile ? join(projectPath, "mailbox-root-file") : undefined;
   if (mailboxRoot !== undefined) await writeFile(mailboxRoot, "not a directory");
@@ -588,7 +640,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   } finally {
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
     else host.__THREENATIVE_NATIVE__ = previous;
-    await rm(projectPath, { force: true, recursive: true });
+    if (ownsProjectPath) await rm(projectPath, { force: true, recursive: true });
   }
 }
 
@@ -639,16 +691,20 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
     private readonly bridge: IPlaytestBridgeV1,
     private readonly stopError?: Error,
     private readonly onPrepare?: () => void,
+    private readonly screenshotError?: Error,
+    private readonly console: { text: string; type: string }[] = [],
   ) {}
 
-  async captureConsole() { return []; }
+  async captureConsole() { return this.console; }
   async isAlive() { return !this.stopped; }
   async prepare(endpoint: string) {
     this.prepareCalls += 1;
     this.installation = connectDevicePlaytestBridge(this.bridge, endpoint);
     this.onPrepare?.();
   }
-  async screenshot() {}
+  async screenshot() {
+    if (this.screenshotError !== undefined) throw this.screenshotError;
+  }
   async stop() {
     this.stopped = true;
     try {

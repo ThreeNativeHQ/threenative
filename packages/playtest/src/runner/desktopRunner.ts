@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -16,7 +16,7 @@ import {
   type IDevicePlaytestTransport,
 } from "./deviceTransport.js";
 import { interruptedPlaytestError } from "./shared.js";
-import type { IStandalonePlaytestReport } from "./runner.js";
+import { writeObservationArtifacts, type IStandalonePlaytestReport } from "./runner.js";
 
 export interface IDesktopPlaytestDependencies {
   driver?: IDevicePlaytestDriver;
@@ -121,6 +121,22 @@ export async function runDesktopPlaytest(
   } catch (error) {
     executionFailed = true;
     executionError = error;
+    if (driver !== undefined) {
+      // A failure used to throw away every console line the host had written, so a screenshot
+      // that never arrived left only its own tail as evidence. The entries are written to
+      // the same `console.json` a passing run writes, and a capture or write failure is dropped
+      // rather than replacing the failure the operator is chasing.
+      try {
+        await mkdir(config.artifactDirectory, { recursive: true });
+        await writeObservationArtifacts(config.artifactDirectory, undefined, {
+          console: await driver.captureConsole(),
+          network: [],
+          runtimeTrace: undefined,
+        });
+      } catch {
+        // Reported as nothing: the thrown error is the report.
+      }
+    }
   } finally {
     process.off("SIGINT", handleSignal);
     process.off("SIGTERM", handleSignal);

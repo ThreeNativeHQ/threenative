@@ -150,19 +150,23 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
   }
 
   /**
-   * Why a screenshot produced no file. The host's own tagged lines are the only place that answer
-   * is written, and the request file's presence splits the failure in two: left behind means the
-   * host never looked, consumed means it read the request and the capture never landed. A bounded
-   * tail, never the whole log — a 40k-line dump is how a timeout becomes unreadable.
+   * Why a screenshot produced no file. The host's own lines are the only place that answer is
+   * written, and the request file's presence splits the failure in two: left behind means the host
+   * never looked, consumed means it read the request and the capture never landed. A bounded tail,
+   * never the whole log — a 40k-line dump is how a timeout becomes unreadable. The tail keeps the
+   * host's tagged lines and the entries classified as errors, because the root cause (an EGL
+   * failure, a texture that never arrived) is usually an untagged line the tag filter alone drops.
    */
   private async describeScreenshotTimeout(request: string, lastReadError: unknown): Promise<string> {
     this.flushOutput("stdout");
     this.flushOutput("stderr");
     const cause = lastReadError instanceof Error ? lastReadError.message : "request timed out";
     const requestState = await requestFileState(request);
-    const lines = this.consoleEntries.map((entry) => entry.text);
-    const tagged = lines.filter((line) => HOST_DIAGNOSTIC_LINE.test(line));
-    const tail = (tagged.length > 0 ? tagged : lines).slice(-HOST_TAIL_LINES);
+    const diagnostic = this.consoleEntries.filter((entry) =>
+      entry.type === "error" || HOST_DIAGNOSTIC_LINE.test(entry.text));
+    const tail = (diagnostic.length > 0 ? diagnostic : this.consoleEntries)
+      .slice(-HOST_TAIL_LINES)
+      .map((entry) => entry.text);
     return `${cause}; ${requestState}; native host output: ${tail.length > 0 ? tail.join(" | ") : "none captured"}`;
   }
 
