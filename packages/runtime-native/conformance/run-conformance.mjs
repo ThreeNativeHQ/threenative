@@ -2606,6 +2606,7 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
+      const rowStarted = Date.now();
       const hardwareReferenceBlocker =
         !dryRun && ["android", "android-hardware", "desktop"].includes(target)
           ? missingHardwareReferenceBlocker(
@@ -2719,6 +2720,10 @@ async function main(argv = process.argv.slice(2)) {
           runIos(test, result);
         }
       }
+      // Per-row wall time on stderr (stdout carries the JSON summary): the only way to tell which
+      // rows a lane's minutes go to without re-running it.
+      if (!dryRun && result.status !== "blocked")
+        console.error(`[conformance] ${test.id} ${result.status} ${((Date.now() - rowStarted) / 1000).toFixed(1)}s`);
       report.summary[result.status] += 1;
       report.results.push(result);
     }
