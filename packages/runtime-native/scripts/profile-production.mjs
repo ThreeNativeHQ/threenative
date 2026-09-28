@@ -1185,6 +1185,45 @@ tnProductionInstallPace();
 `;
 }
 
+/**
+ * The warmup boundary both arms share: the frame count *and* the wall time those frames were asked
+ * to cover.
+ *
+ * A frame count only names a duration on a host that presents at 60 Hz, and neither host is one. The
+ * native host ran 120 frames — the whole `--warmup 2` budget — in 1.18 s of a requested 2 s while it
+ * booted at 100-170 Hz, so the measured window started at the last first-use pipeline compile and
+ * published boot as a frame rate: native 26.29 mean fps, 306.04 ms p95, beside
+ * `execution.warmupSeconds: 2`. The frame bound stays, because a host *slower* than 60 Hz needs it
+ * more than a host that runs ahead, and the two are the same number on a 60 Hz browser.
+ */
+function productionWarmupBoundary(warmupFrames = 0) {
+  return `
+const tnProductionWarmupMs = ${Math.max(0, Math.floor(warmupFrames)) / 60 * 1_000};
+let tnProductionStartedAtMs;
+const tnProductionInWarmup = (frameIndex, now) => {
+  tnProductionStartedAtMs ??= now;
+  return frameIndex < tnProductionWarmupFrames || now - tnProductionStartedAtMs < tnProductionWarmupMs;
+};
+`;
+}
+
+/**
+ * The measurement reset, on the transition rather than on the frame count the boundary also checks.
+ *
+ * The frame count is only one of the two bounds, and a host that presents slower than 60 Hz reaches
+ * the wall time later. Clearing the carry on the frame count left the last warmup frame still holding
+ * the previous frame's clock, so the first measured frame reported the interval that spanned the
+ * boundary — the crossing stall, or the whole warmup tail — as gameplay. Both arms warm up
+ * monotonically, so the transition happens once and the flag keeps it to once.
+ */
+function tnProductionMeasurementStart() {
+  return `if (!inWarmup && !tnProductionMeasuring) {
+  tnProductionMeasuring = true;
+  tnProductionPreviousFrame = undefined;
+  tnProductionSamples = [];
+}`;
+}
+
 export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
@@ -1199,23 +1238,22 @@ let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
 let tnProductionPresentation;
 let tnProductionSamples = [];
+let tnProductionMeasuring = false;
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
   const deadline = performance.now() + milliseconds;
   while (performance.now() < deadline) {}
 };
+${productionWarmupBoundary(warmupFrames)}
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
   tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
-  const inWarmup = frameIndex < tnProductionWarmupFrames;
-  if (frameIndex === tnProductionWarmupFrames) {
-    tnProductionPreviousFrame = undefined;
-    tnProductionSamples = [];
-  }
   if (tnProductionFirstFrame && tnProductionControl === "slow-startup") tnProductionBusyWait(${SLOW_STARTUP_DELAY_MS});
   const now = performance.now();
+  const inWarmup = tnProductionInWarmup(frameIndex, now);
+  ${tnProductionMeasurementStart()}
   const frameMs = inWarmup || tnProductionPreviousFrame === undefined ? undefined : now - tnProductionPreviousFrame;
   tnProductionPreviousFrame = now;
   callback(timestamp);
@@ -1265,11 +1303,13 @@ let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
 let tnProductionPresentation;
 let tnProductionSamples = [];
+let tnProductionMeasuring = false;
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
   const deadline = performance.now() + milliseconds;
   while (performance.now() < deadline) {}
 };
+${productionWarmupBoundary(warmupFrames)}
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
@@ -1284,13 +1324,10 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
   }
   tnProductionPresentation = Number.isFinite(timestamp) ? timestamp : undefined;
   const frameIndex = tnProductionFrameIndex++;
-  const inWarmup = frameIndex < tnProductionWarmupFrames;
-  if (frameIndex === tnProductionWarmupFrames) {
-    tnProductionPreviousFrame = undefined;
-    tnProductionSamples = [];
-  }
   if (tnProductionFirstFrame && tnProductionControl === "slow-startup") tnProductionBusyWait(${SLOW_STARTUP_DELAY_MS});
   const now = performance.now();
+  const inWarmup = tnProductionInWarmup(frameIndex, now);
+  ${tnProductionMeasurementStart()}
   const frameMs = inWarmup || tnProductionPreviousFrame === undefined ? undefined : now - tnProductionPreviousFrame;
   tnProductionPreviousFrame = now;
   callback(timestamp);

@@ -1675,6 +1675,90 @@ test('scaffolded native profile paces the fixed step so the host renders the mea
   assert.match(readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8'), /const tnProductionPaceEnabled = true;/u);
 });
 
+test('the warmup is the requested wall time, not a frame count read as 60fps', async () => {
+  // A frame count only names a duration on a host that presents at 60 Hz. The native host runs its
+  // loop at 100-170 Hz while it boots, so a 120-frame warmup elapsed in 1.18 s of a requested 2 s
+  // and the measured window started inside first-use pipeline compilation: native read 26.29 mean
+  // fps and 306.04 ms p95 for boot, and published `warmupSeconds: 2` beside it. Both arms warm up on
+  // the host's own clock, and the frame bound stays because a host slower than 60 Hz needs it more.
+  for (const source of [nativeFrameInstrumentation(undefined, 120), webFrameInstrumentation(undefined, 120)]) {
+    let scheduled;
+    let now = 0;
+    const samples = [];
+    const context = {
+      cancelAnimationFrame: () => undefined,
+      console: {
+        log: (line) => {
+          const prefix = 'TN_PROD_FRAME_SAMPLES:';
+          if (typeof line === 'string' && line.startsWith(prefix)) samples.push(...JSON.parse(line.slice(prefix.length)));
+        },
+      },
+      performance: { now: () => now },
+      requestAnimationFrame: (callback) => { scheduled = callback; return 1; },
+    };
+    runInNewContext(source, context);
+    const schedule = context.requestAnimationFrame;
+    const pump = async (frame, frameMs) => {
+      for (let index = 0; index < frame; index += 1) {
+        scheduled = undefined;
+        schedule(() => undefined);
+        now += frameMs;
+        scheduled(now);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+    // 120 frames at 8 ms is the whole frame budget spent in 0.96 s: the seconds are not.
+    await pump(120, 8);
+    assert.equal(samples.length, 0);
+    // 2.05 s of host time, five native batches later, and the measurement is collecting.
+    await pump(200, 8);
+    assert.ok(samples.length > 0);
+    assert.ok(samples.every((sample) => sample.clockMs >= 2_000));
+  }
+});
+
+test('the first measured frame starts the window, so a crossing stall is not reported as gameplay', async () => {
+  // The wall-time bound is only reached once the frame count is, and the host can take a large step
+  // on the way. Clearing the carry on the frame count left the last warmup frame still holding its
+  // clock, so the first measured sample carried the whole crossing as its frame time.
+  for (const source of [nativeFrameInstrumentation(undefined, 3), webFrameInstrumentation(undefined, 3)]) {
+    let scheduled;
+    let now = 0;
+    const samples = [];
+    const context = {
+      cancelAnimationFrame: () => undefined,
+      console: {
+        log: (line) => {
+          const prefix = 'TN_PROD_FRAME_SAMPLES:';
+          if (typeof line === 'string' && line.startsWith(prefix)) samples.push(...JSON.parse(line.slice(prefix.length)));
+        },
+      },
+      performance: { now: () => now },
+      requestAnimationFrame: (callback) => { scheduled = callback; return 1; },
+    };
+    runInNewContext(source, context);
+    const schedule = context.requestAnimationFrame;
+    const pump = async (frameMs) => {
+      scheduled = undefined;
+      schedule(() => undefined);
+      now += frameMs;
+      scheduled(now);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    // Three frames is the whole 50 ms warmup budget, but they spent only 16 ms of it; five more
+    // frames are still inside the window when the host's clock takes a 500 ms step, and that step is
+    // the crossing. Clearing the carry on the frame count published it as the first measured frame.
+    for (let index = 0; index < 7; index += 1) await pump(8);
+    await pump(500);
+    assert.equal(samples.length, 0);
+    for (let index = 0; index < 40; index += 1) await pump(8);
+    assert.ok(samples.length > 0);
+    // The transition frame is the boundary, not a measurement: the first sample is the frame after it.
+    assert.equal(samples[0].frameIndex, 8);
+    assert.ok(samples.every((sample) => sample.frameMs <= 8), `a ${samples[0].frameMs} ms crossing was measured as gameplay`);
+  }
+});
+
 test('a live-clock profile asks the game for the wall clock and stops pacing its own ticks', async () => {
   const project = makeTempDirSync('tn-profile-live-clock-');
   temporary.push(project);

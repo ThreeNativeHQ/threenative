@@ -447,6 +447,53 @@ at 59.96 mean fps (16.7 ms p95); native averaged 26.29 fps (306.04 ms p95). The 
 minimum, so it verifies the live path but does not qualify either platform's performance. Raw
 artifact: `.runtime/prd064/production/live-smoke/production-evidence.json` (local, ignored).
 
+**2026-09-28, that 306.04 ms p95 was the warmup boundary, not the game — and the box stays open.**
+Read out of the artifacts rather than inferred. The native series is 180 rAF callbacks whose
+*inter-callback* gap has a p50 of 1.13 ms and a p95 of 24.7 ms: the loop was cheap and the *host
+clock* had gaps. `TN_SLOW_PHASE` names where they went — `schedulerCallbacks` 353 ms, one whole
+iteration 439 ms, `animationFrames` 419 ms, another 305 ms — and the last first-use pipeline compile
+is stamped at 1,295 ms, inside the window. **The measurement started at 1,178 ms** (first sample,
+`frameIndex: 121`, `clockMs: 1178.1`) for a run that published `execution.warmupSeconds: 2`. The
+warmup was a frame count (`warmupFramesFor`, `ceil(warmup × 60)`) and the native host ran 120 frames
+in 1.18 s while it booted at 100–170 Hz, so the window measured the tail of boot. It was **not** the
+`setTimeout` in `wallClockAdvance` holding the frame pump: across that wait the loop kept iterating at
+12.5 ms, the mailbox `advance` responses came back one per request, and the stalls landed in host
+segments a pending promise never touches.
+
+The fix is the warmup predicate, in one place both arms share (`productionWarmupBoundary`): warm up
+on the host's own clock **and** on the frame count, because a frame count only names a duration on a
+host that presents at 60 Hz, and the frame bound is what a slower host still needs. Red-green:
+`production-profile.test.mjs` "the warmup is the requested wall time, not a frame count read as
+60fps" drove 120 frames at 8 ms and read **samples at `clockMs` 968** before the fix, and nothing
+before 2,000 ms after it, for both generators. 76/76 in that file, plus
+`packages/runtime-native/__tests__/profile-production.spec.ts` 8/8 and
+`scripts/__tests__/performance-regression.spec.ts` 18/18; `biome check` on both files reports only
+the 10 pre-existing warnings. No scenario, schema, tick contract or default run changed: the default
+(60 Hz) arm crosses both bounds on the same frame, and the paced path is untouched.
+
+**Re-collected, same host, same flags, artifact
+`.runtime/prd064/production/live-smoke-warmclock/production-evidence.json`:** sampling now begins at
+2,608.9 ms (`frameIndex: 189`) instead of 1,178 ms. **Native p95 306.04 → 18.74 ms**, p50 16.66 ms,
+mean 28.56; web unchanged at 59.97 mean / 16.80 p95. `TN_PROD_PERFORMANCE_BUDGET` still returns: the
+native mean is carried by **two** events in a 40-frame window, and both are named in the same
+artifacts — a 447 ms `animationFrames` iteration at 2,187–2,639 ms, immediately after the scenario's
+`input.keyDown` (pump endpoint `requestOrder: 20`) and the 35,955/46,468/53,804-byte `sample`
+responses, which is the first-use node build for the meshes that key press brought into view, and a
+325 ms iteration at 2,753–3,078 ms, immediately after the profile's own `[Screenshot]` 1920×1080
+readback. Excluding those two, the native presented cadence is 15.7 ms/frame (≈63 fps). This is a
+300-frame smoke scenario, so the window is ~1 s and two one-off events own the mean; the 30-second /
+1,000-frame steady-state minimum is still unmet, and the desktop-pair performance box above is
+untouched and open, as are the native pacer, `report.capture.adapter` in `identity`, and the
+contended-GPU live collection. No phone lane was touched; no long or full-suite run was executed.
+
+**Correction to that fix, same commit:** both generators still cleared `tnProductionPreviousFrame` /
+`tnProductionSamples` at `frameIndex === tnProductionWarmupFrames`, so on a host that reaches the
+wall-time bound later the first measured frame reported the interval spanning the boundary — the
+crossing stall — as gameplay. The reset now happens once on the warmup→measurement transition
+(`tnProductionMeasurementStart`), and the focused test crosses the wall time after the frame count with
+a 500 ms step at the crossing: it read the crossing frame itself (index 7) as the first sample before,
+and the frame after it at 8 ms after. 77/77 in that file.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:
