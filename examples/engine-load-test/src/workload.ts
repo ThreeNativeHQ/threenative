@@ -2,7 +2,7 @@
 // is a line-for-line GDScript port of this file; the two are held together by `positionHash`,
 // which the scorer's equivalence gate compares before it will publish any comparison.
 
-import { type RealisticRung, REALISTIC_RUNGS } from "./ladder.js";
+import { REALISTIC_RUNGS, type RealisticRung } from "./ladder.js";
 
 export const LCG_SEED = 1337;
 export const CUBE_SPACING = 2.5;

@@ -96,7 +96,11 @@ function positiveInteger(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1)
-    throw new BenchError("TN_BENCH_BAD_FLAG", `--width/--height must be positive integers, got '${value}'`, 1);
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `--width/--height must be positive integers, got '${value}'`,
+      1,
+    );
   return parsed;
 }
 

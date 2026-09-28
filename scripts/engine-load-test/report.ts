@@ -3,11 +3,13 @@
 // empty sample array is an error here — never a default, never a skip.
 
 import {
-  LADDER_COUNT_KEYS,
+  FRAME_STAT_KEYS,
+  type IFrameStats,
   type ILadderCounts,
+  LADDER_COUNT_KEYS,
   type RealisticRung,
-  ladderCountDiff,
   expectedLadderCounts,
+  ladderCountDiff,
 } from "../../examples/engine-load-test/src/ladder.js";
 import {
   DEFAULT_AXES,
@@ -16,6 +18,7 @@ import {
   type RenderMode,
   isRealisticRung,
 } from "../../examples/engine-load-test/src/workload.js";
+import { blankFrameReason } from "../capture-guard.js";
 
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
@@ -89,6 +92,12 @@ export interface IRunReportRung {
    * that measured nothing, so it fails the run.
    */
   ladder?: ILadderCounts;
+  /**
+   * PRD-464's proof that the rung drew something: what the frame read back after warmup said about
+   * itself. Present exactly on the realistic-scene rungs and gated by `blankFrameReason` above, so a
+   * run carrying one has already passed it.
+   */
+  renderCheck?: IFrameStats;
   mode: RenderMode;
   objectCount: number;
   /** Optional on legacy/native reports; every initial built placement on new browser reports. */
@@ -585,6 +594,7 @@ export function parseRunReport(value: unknown): IRunReport {
     // no counts, or counts that do not match the rung, is a failed run and not a row.
     const objectCount = requireNumber(rung, "objectCount", path);
     let ladder: ILadderCounts | undefined;
+    let renderCheck: IFrameStats | undefined;
     if (isRealisticRung(mode as RenderMode)) {
       // Read exactly the keys the rung spec asserts and nothing else: `ladderCountDiff` compares
       // with `!==`, so a missing key, a string where a number belongs and a count that is simply
@@ -602,10 +612,43 @@ export function parseRunReport(value: unknown): IRunReport {
           "TN_BENCH_LADDER_COUNTS",
           `${path} mode ${mode} does not match its rung spec: ${diff}`,
         );
-    } else if (rung.ladder !== undefined) {
+      // The rung's own proof that it drew something. A fast frame that drew a flat fill is the
+      // dangerous outcome here, not a good one, so a missing read-back, a frame with no draws or no
+      // triangles, and a frame whose pixels carry no variation all fail the run rather than
+      // publishing a number for a scene nobody saw.
+      const stats =
+        rung.renderCheck === undefined
+          ? undefined
+          : requireObject(rung.renderCheck, `${path}.renderCheck`);
+      if (stats === undefined)
+        throw new BenchError(
+          "TN_BENCH_RENDER_CHECK_MISSING",
+          `${path} mode ${mode} recorded no frame read-back`,
+        );
+      const drawCalls = requireNumber(rung, "drawCalls", path);
+      const triangles = requireNumber(rung, "triangles", path);
+      if (drawCalls <= 0 || triangles <= 0)
+        throw new BenchError(
+          "TN_BENCH_NOTHING_DRAWN",
+          `${path} mode ${mode} submitted ${drawCalls} draw call(s) and ${triangles} triangle(s)`,
+        );
+      const readBack = Object.fromEntries(
+        FRAME_STAT_KEYS.map((key) => [
+          key,
+          requireNumber(stats as Record<string, unknown>, key, `${path}.renderCheck`),
+        ]),
+      ) as unknown as IFrameStats;
+      const blank = blankFrameReason(readBack);
+      if (blank !== null)
+        throw new BenchError(
+          "TN_BENCH_BLANK_FRAME",
+          `${path} mode ${mode} read back a blank or uniform frame: ${blank}`,
+        );
+      renderCheck = readBack;
+    } else if (rung.ladder !== undefined || rung.renderCheck !== undefined) {
       throw new BenchError(
         "TN_BENCH_BAD_SHAPE",
-        `${path}.ladder is only meaningful on a realistic-scene rung, not on ${mode}`,
+        `${path}.ladder and .renderCheck are only meaningful on a realistic-scene rung, not on ${mode}`,
       );
     }
     return {
@@ -613,6 +656,7 @@ export function parseRunReport(value: unknown): IRunReport {
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
       ...(ladder === undefined ? {} : { ladder }),
+      ...(renderCheck === undefined ? {} : { renderCheck }),
       ...timingSeries,
       mode: mode as RenderMode,
       objectCount,

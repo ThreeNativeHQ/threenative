@@ -27,6 +27,13 @@ const LADDER_BLOOM_THRESHOLD := 0.9
 const LADDER_CHARACTER_SIDE := 10
 const LADDER_CHARACTER_SPACING := 2.4
 const LADDER_CHARACTER_Y := 4.5
+# `LADDER_SAMPLE_STRIDE` in `examples/engine-load-test/src/ladder.ts`, where the read-back stats and
+# the guard that reads them are defined. A per-pixel walk of a 1920x1080 frame is seconds of engine
+# time; a 32k-pixel sample answers the same question.
+const LADDER_SAMPLE_STRIDE := 8
+# The only key Godot reads a directional shadow map size from. Under `[rendering]` in
+# `project.godot`, which is where the 2048 lives.
+const SHADOW_MAP_SETTING := "rendering/lights_and_shadows/directional_shadow/size"
 
 var _lcg_state: int = LCG_SEED
 
@@ -57,6 +64,11 @@ var _character_template: Node3D = null
 var _fox_bytes: PackedByteArray = PackedByteArray()
 var _character_clip_seconds: float = 1.0
 var _ladder_post := false
+# PRD-464's read-back: taken once per rung, on the last warmup frame, so the frame it stalls the
+# GPU for is never a frame the timed window counts. Empty until it arrives, and an empty read-back
+# is a failed run rather than an unmeasured one.
+var _probed := false
+var _render_check: Dictionary = {}
 
 var _plan: Array = []
 var _plan_index: int = 0
@@ -196,6 +208,9 @@ func _read_query() -> Dictionary:
 func _ready() -> void:
 	Engine.max_fps = 0
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	# Before anything reads it. `_ready` aborted on a null `_window` once, and the window that
+	# resulted was a flat clear colour: no light, no camera, no cubes, nothing to explain it.
+	_window = get_window()
 
 	var query := _read_query()
 	if query.has("frames"):
@@ -214,8 +229,10 @@ func _ready() -> void:
 		_modes = []
 		for part in str(query["modes"]).split(",", false):
 			_modes.append(str(part))
-	# The window the run was given. R1-R4 render smaller inside it — R5 is R4 at 1920x1080 — and
-	# the per-rung `ladder.resolution` is the field that says which was actually drawn.
+	# The window the run was given, which is also the resolution this rung draws at: the runner runs
+	# R1-R4 in a 1280x720 window and R5 in a 1920x1080 one, and `_ladder_counts` reads the viewport
+	# back rather than restating either. A window that came up at another size fails the rung's
+	# asserted resolution instead of being reported as the one that was asked for.
 	if query.has("width") and query.has("height"):
 		_window_width = int(query["width"])
 		_window_height = int(query["height"])
@@ -254,7 +271,6 @@ func _ready() -> void:
 	_camera.far = 4000.0
 	_camera.current = true
 	add_child(_camera)
-	_window = get_window()
 
 	for object_count in _ladder:
 		for mode in _modes:
@@ -313,8 +329,6 @@ func _clear_ladder() -> void:
 				child.queue_free()
 	_ladder_post = false
 	_sun.shadow_enabled = false
-	if _window != null:
-		_window.size = Vector2i(_window_width, _window_height)
 
 
 # The Khronos Fox, read from the pinned file the runner named. A missing or unreadable file stops the
@@ -359,10 +373,15 @@ func _apply_ladder(mode: String) -> void:
 	var extent := _lattice_extent(_object_count)
 	_sun.shadow_enabled = true
 	_sun.directional_shadow_max_distance = extent * 2.0 + 100.0
-	# The map size itself is `rendering/lights_and_shadows/directional_shadow/size` in `project.godot`,
-# where it is declared 2048 to match the ThreeNative arm. Godot reads a shadow map size from nowhere
-# else, and setting it from here instead would re-allocate the shadow atlas mid-run — a setup cost
-# the other arm never pays.
+	# The map size itself is a project setting, declared 2048 in `project.godot` to match the
+	# ThreeNative arm. Godot reads a shadow map size from nowhere else, and setting it from here
+	# instead would re-allocate the shadow atlas mid-run — a setup cost the other arm never pays.
+	# Read back rather than assumed: a project.godot edit that let this fall to the 4096 default
+	# would make R1 a comparison of two resolutions rather than of two renderers.
+	if int(ProjectSettings.get_setting(SHADOW_MAP_SETTING, 0)) != LADDER_SHADOW_MAP_SIZE:
+		print("TN_BENCH_SHADOW_MAP_SIZE:", ProjectSettings.get_setting(SHADOW_MAP_SETTING, 0))
+		get_tree().quit(1)
+		return
 	if rank >= 1:
 		for index in LADDER_POINT_LIGHTS:
 			var point := OmniLight3D.new()
@@ -408,13 +427,6 @@ func _apply_ladder(mode: String) -> void:
 		world.environment = environment
 		add_child(world)
 		_ladder_post = true
-		var size := (
-			Vector2i(LADDER_HEADLINE_WIDTH, LADDER_HEADLINE_HEIGHT)
-			if mode == "R5"
-			else Vector2i(LADDER_WIDTH, LADDER_HEIGHT)
-		)
-		if _window != null:
-			_window.size = size
 
 
 func _find_animation_player(node: Node) -> AnimationPlayer:
@@ -428,17 +440,15 @@ func _find_animation_player(node: Node) -> AnimationPlayer:
 
 
 # The asserted counts, read off the built scene exactly as the ThreeNative arm reads them off its
-# own, so the report parser's comparison means the same thing on both sides.
-func _ladder_counts(mode: String) -> Dictionary:
+# own, so the report parser's comparison means the same thing on both sides. The resolution is the
+# viewport's, read back rather than restated from the rung's name: a window that came up at another
+# size fails the rung's asserted resolution instead of being published as the one that was asked for.
+func _ladder_counts() -> Dictionary:
 	# `ImporterMeshInstance3D` is what a glTF skin arrives as; a `MeshInstance3D` covers the cubes.
 	# Counts are returned rather than accumulated into captured locals because a GDScript lambda
 	# captures by value, and a census that always reads zero is exactly the bug that hides.
 	var census := _census(self)
-	var size := (
-		Vector2i(LADDER_HEADLINE_WIDTH, LADDER_HEADLINE_HEIGHT)
-		if mode == "R5"
-		else Vector2i(LADDER_WIDTH, LADDER_HEIGHT)
-	)
+	var size := get_viewport().get_visible_rect().size
 	return {
 		"pointLights": _point_lights.size(),
 		"postPasses": 1 if _ladder_post else 0,
@@ -449,17 +459,66 @@ func _ladder_counts(mode: String) -> Dictionary:
 	}
 
 
-# x = shadow casters, y = skinned meshes.
+# x = shadow casters, y = skinned meshes. A caster is a mesh that casts, which is the same
+# definition the ThreeNative census uses on `isMesh && castShadow`; a fox's 24 joint nodes are not
+# casters in either engine.
 func _census(node: Node) -> Vector2i:
 	var counts := Vector2i.ZERO
 	if node is MeshInstance3D or node is ImporterMeshInstance3D:
 		if node.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
 			counts.x += 1
-		if node.get("skin") != null:
+		if node is ImporterMeshInstance3D and (node as ImporterMeshInstance3D).skin != null:
 			counts.y += 1
 	for child in node.get_children():
 		counts += _census(child)
 	return counts
+
+
+# What the rung actually drew, in the shape `frameStats` computes in
+# `examples/engine-load-test/src/ladder.ts` and `blankFrameReason` in `scripts/capture-guard.ts`
+# decides on. Awaiting `frame_post_draw` is what makes it the frame just submitted rather than the
+# one before it; a read inside `_process` without it returns the previous frame, and on the first
+# frame there is no previous one, so a rung would report an empty image over a scene that drew.
+func _probe_frame() -> void:
+	await RenderingServer.frame_post_draw
+	var image := get_viewport().get_texture().get_image()
+	var width := image.get_width()
+	var height := image.get_height()
+	var colors := {}
+	var luminance_total := 0.0
+	var luminance_squared_total := 0.0
+	var max_luminance := 0.0
+	var sampled := 0
+	var y := 0
+	while y < height:
+		var x := 0
+		while x < width:
+			var color := image.get_pixel(x, y)
+			colors[
+				(
+					(roundi(color.r * 255.0) << 24)
+					| (roundi(color.g * 255.0) << 16)
+					| (roundi(color.b * 255.0) << 8)
+					| roundi(color.a * 255.0)
+				)
+			] = true
+			if color.a > 0.0:
+				var luminance := 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+				sampled += 1
+				max_luminance = maxf(max_luminance, luminance)
+				luminance_total += luminance
+				luminance_squared_total += luminance * luminance
+			x += LADDER_SAMPLE_STRIDE
+		y += LADDER_SAMPLE_STRIDE
+	var mean := 0.0 if sampled == 0 else luminance_total / float(sampled)
+	_render_check = {
+		"distinctColors": colors.size(),
+		"luminanceStdDev": sqrt(
+			maxf(0.0, 0.0 if sampled == 0 else luminance_squared_total / float(sampled) - mean * mean)
+		),
+		"maxLuminance": max_luminance,
+		"sampledPixels": sampled,
+	}
 
 
 func _begin_rung() -> void:
@@ -505,6 +564,8 @@ func _begin_rung() -> void:
 		add_child(_multimesh_instance)
 	if _mode.begins_with("R"):
 		_apply_ladder(_mode)
+		_probed = false
+		_render_check = {}
 	_last_usec = Time.get_ticks_usec()
 
 
@@ -584,6 +645,13 @@ func _process(_delta: float) -> void:
 				)
 			)
 
+	# The rung's own read-back, on the last warmup frame: after the shader work has settled and
+	# before the timed window opens, so the frame the read-back stalls the GPU for is not one this
+	# rung is measured on. A ladder rung with no read-back when it finishes is a failed run.
+	if _mode.begins_with("R") and not _probed and _frame_index == _warmup:
+		_probed = true
+		_probe_frame()
+
 	if _frame_index >= _frames:
 		_finish_rung()
 		return
@@ -592,7 +660,7 @@ func _process(_delta: float) -> void:
 
 
 func _finish_rung() -> void:
-	var ladder_counts := _ladder_counts(_mode) if _mode.begins_with("R") else {}
+	var ladder_counts := _ladder_counts() if _mode.begins_with("R") else {}
 	_rungs.append(
 		{
 			"drawCalls": _draw_calls,
@@ -602,6 +670,7 @@ func _finish_rung() -> void:
 			"mode": _mode,
 			"objectCount": _object_count,
 			"positionHash": _position_hash(_placements),
+			"renderCheck": _render_check,
 			"repeat": _repeat,
 			"triangles": _triangles,
 			"visibleObjects": _visible_objects,

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { type Plugin, defineConfig } from "vite";
 
 /**
  * PRD-464 R3's character, inlined as base64 so one bundle carries it.

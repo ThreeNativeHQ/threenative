@@ -1,3 +1,6 @@
+// Inlined by the `tn-bench-fox-glb` plugin in `vite.config.ts` from the copy pinned in
+// `benchmark/engine-load-test/sources.lock.json`, hash-checked at build time.
+import foxGlb from "virtual:fox-glb";
 // PRD-464 R3's characters, built with the engine's own path: `createAssetLoader().model()` for the
 // bytes and `SkeletalMesh3D` — the `AnimationPlayer` subclass that clones a rig safely — for the
 // 50 instances. This module is imported by the ThreeNative arms only, never by `plain.ts`, so the
@@ -8,15 +11,11 @@ import { createAssetLoader } from "../../../packages/core/src/assets.js";
 import { SkeletalMesh3D } from "../../../packages/core/src/skeletal-mesh.js";
 import type { ICharacterCrowd } from "./game.js";
 import { LADDER_CHARACTERS, LADDER_CLIP, characterStagger } from "./ladder.js";
-// Inlined by the `tn-bench-fox-glb` plugin in `vite.config.ts` from the copy pinned in
-// `benchmark/engine-load-test/sources.lock.json`, hash-checked at build time.
-import foxGlb from "virtual:fox-glb";
 
 function decodeBase64(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1)
-    bytes[index] = binary.charCodeAt(index);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
 
@@ -36,8 +35,7 @@ export async function createFoxCrowd(): Promise<ICharacterCrowd> {
       }),
   }).model<{ animations: AnimationClip[]; scene: object }>("fox/Fox.glb");
   const clip = gltf.animations.find((animation) => animation.name === LADDER_CLIP);
-  if (clip === undefined)
-    throw new Error("TN_BENCH_FOX_CLIP_MISSING");
+  if (clip === undefined) throw new Error("TN_BENCH_FOX_CLIP_MISSING");
   const clipSeconds = clip.duration;
   const players: SkeletalMesh3D[] = [];
   const staggers: number[] = [];

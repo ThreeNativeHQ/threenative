@@ -16,6 +16,7 @@ import {
   hashWorkloadModuleGraph,
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
+import { expectedLadderCounts } from "../../examples/engine-load-test/src/ladder.js";
 import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
@@ -550,9 +551,32 @@ describe("engine load test workload", () => {
     // One flag, not a new project: L4 is L3's shipped-default projection over L1's one-mesh-per-cube
     // authoring, and only the material changes. L2 stays the single batch, L1 the un-projected
     // control, and the projection still runs over L3 and L4 alone.
-    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4"]);
-    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([true, false, true, true]);
-    expect(RENDER_MODES.map(isProjectedRung)).toEqual([false, false, true, true]);
+    // R1-R5 are PRD-464's realistic-scene ladder on top of the same list: authored and projected
+    // rungs like L3, because a ladder row that quietly measured the un-projected scene would be a
+    // different experiment from the one its name states.
+    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4", "R5"]);
+    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(RENDER_MODES.map(isProjectedRung)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
     // Distinct per cube over the whole ladder, and a pure function of the index, so the two arms
     // compute the same colour and no engine has two materials it could pair.
     const colors = Array.from({ length: 16_384 }, (_, index) => uniqueMaterialColor(index));
@@ -571,13 +595,14 @@ describe("engine load test workload", () => {
 
     // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
     // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
+    // PRD-464's R1-R5 are L3's authoring, so they keep both guards too.
     for (const entry of ["driver.ts", "native.ts"]) {
       const source = await readFile(
         path.join(process.cwd(), "examples/engine-load-test/src", entry),
         "utf8",
       );
       expect(source).toMatch(/if \(isProjectedRung\((rung\.)?mode\)\)/u);
-      expect(source).toMatch(/if \((rung\.)?mode === "L3"\)/u);
+      expect(source).toMatch(/if \((rung\.)?mode === "L3"( \|\| isRealisticRung\(\1?mode\))?\)/u);
     }
     const game = await readFile(
       path.join(process.cwd(), "examples/engine-load-test/src/game.ts"),
@@ -2259,6 +2284,138 @@ describe("engine load test scorer", () => {
   });
 });
 
+// PRD-464's rung gate. A ladder row is a number about a scene, so a run only publishes one when the
+// scene it claims to have built is the scene it built *and* the frame it drew was not a flat fill.
+// Both engines go through this one parser, so neither can pass the other.
+describe("the realistic-scene ladder gate", () => {
+  const OBJECT_COUNT = 4096;
+
+  /** A rung that built exactly what its name says, with a frame that shows something. */
+  function ladderRung(
+    mode: "R1" | "R2" | "R3" | "R4" | "R5",
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      drawCalls: 4097,
+      frameMs: series(12),
+      ladder: expectedLadderCounts(mode, OBJECT_COUNT),
+      mode,
+      objectCount: OBJECT_COUNT,
+      positionHash: "aabbccdd",
+      renderCheck: {
+        distinctColors: 24_912,
+        luminanceStdDev: 0.081,
+        maxLuminance: 0.74,
+        sampledPixels: 32_400,
+      },
+      repeat: 0,
+      triangles: 49_176,
+      visibleObjects: 4096,
+      ...overrides,
+    };
+  }
+
+  function ladderReport(rungOverrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      arm: "tn-web",
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "desktop-chrome-linux" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "test adapter", renderer: "test renderer" },
+      engine: { name: "threenative", version: "workspace" },
+      rungs: [ladderRung("R1", rungOverrides)],
+    };
+  }
+
+  it("accepts a rung whose counts and read-back frame both say what the rung claims", () => {
+    for (const mode of ["R1", "R2", "R3", "R4", "R5"] as const) {
+      const parsed = parseRunReport(
+        ladderReport({ mode, ladder: expectedLadderCounts(mode, OBJECT_COUNT) }),
+      );
+      expect(parsed.rungs[0]?.ladder).toEqual(expectedLadderCounts(mode, OBJECT_COUNT));
+      expect(parsed.rungs[0]?.renderCheck?.luminanceStdDev).toBe(0.081);
+    }
+  });
+
+  it("refuses a rung whose counts do not match the rung it is published under", () => {
+    // R1 published with R3's 50 characters in the scene is the failure this exists for.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "R1", ladder: expectedLadderCounts("R3", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS.*skinnedMeshes|pointLights/u);
+    // A missing count block is a hole in the measurement, not a rung that measured nothing.
+    expect(() => parseRunReport(ladderReport({ ladder: undefined }))).toThrow(
+      /TN_BENCH_MISSING_FIELD|TN_BENCH_BAD_SHAPE/u,
+    );
+    // A string where a count belongs is a wrong count, and fails the same way.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ ladder: { ...expectedLadderCounts("R1", OBJECT_COUNT), pointLights: "8" } }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS/u);
+  });
+
+  it("refuses a rung that drew nothing, and a rung that has no read-back at all", () => {
+    expect(() => parseRunReport(ladderReport({ drawCalls: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    expect(() => parseRunReport(ladderReport({ triangles: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    // A rung with no read-back is unmeasured, which is not the same as measured-and-fine.
+    expect(() => parseRunReport(ladderReport({ renderCheck: undefined }))).toThrow(
+      /TN_BENCH_RENDER_CHECK_MISSING/u,
+    );
+  });
+
+  it("refuses a uniform frame: the flat grey an unlit or unwired window renders as", () => {
+    // One colour and no variation at any brightness: exactly what an empty viewport reads back.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 1,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // A frame with plenty of colours that are all the same brightness is uniform too.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 40_000,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // And a read-back that returned nothing at all is blank, not unmeasured.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 0,
+            luminanceStdDev: 0,
+            maxLuminance: 0,
+            sampledPixels: 0,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+  });
+
+  it("refuses a ladder block on an L rung, where it would mean nothing", () => {
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "L1", ladder: expectedLadderCounts("R1", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/only meaningful on a realistic-scene rung/u);
+  });
+});
+
 describe("engine load test equivalence gate", () => {
   it("should refuse a comparison whose scenes hash differently, naming the field", () => {
     const left = ladderReport(24);
@@ -2806,11 +2963,14 @@ describe("plain three.js control arm", () => {
       }
     }
     // A control that measures nothing is not a control: the harness it shares with the TN arm is
-    // the only reason the two arms frame the same scene.
+    // the only reason the two arms frame the same scene. `ladder.ts` is in that graph because
+    // `workload.ts` imports its rung names from it; it is constants and pure functions, which is
+    // why the framework-import check above passes for it too.
     expect([...seen].sort()).toEqual([
       "examples/engine-load-test/src/driver.ts",
       "examples/engine-load-test/src/game.ts",
       "examples/engine-load-test/src/identity.ts",
+      "examples/engine-load-test/src/ladder.ts",
       "examples/engine-load-test/src/plain.ts",
       "examples/engine-load-test/src/workload.ts",
     ]);
@@ -3003,6 +3163,11 @@ describe("the completed-work measurement boundary", () => {
       ladderCounts: () => undefined,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",
+      // The stub draws no pixels; the driver only probes a rung that asked to be a ladder rung, and
+      // this harness never claims to be one.
+      probeFrame: async () => {
+        throw new Error("TN_BENCH_NO_LADDER_RUNG");
+      },
       render: async () => {
         advance(RENDER_MS);
       },

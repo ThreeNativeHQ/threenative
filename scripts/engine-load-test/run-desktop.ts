@@ -2,13 +2,10 @@
 // report between two markers because a native process has no `window` for the collector to read.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import {
-  FOX_RELATIVE_PATH,
-  FOX_SHA256,
-} from "../../examples/engine-load-test/src/ladder.js";
+import { FOX_RELATIVE_PATH, FOX_SHA256 } from "../../examples/engine-load-test/src/ladder.js";
 import type { IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
@@ -165,7 +162,14 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
 
   const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
   const bundle = path.join(example, "dist/engine-load-test-desktop.js");
-  const hostArgs = ["run", bundle, "--width", String(options.width), "--height", String(options.height)];
+  const hostArgs = [
+    "run",
+    bundle,
+    "--width",
+    String(options.width),
+    "--height",
+    String(options.height),
+  ];
   // Godot's desktop arm reports `vsync off`, so the host has to present uncapped too or the two
   // arms are not comparable: pinned to a 60 Hz display ThreeNative reads 16.6 ms at every rung and
   // its real cost is unknowable. The host refuses to fall back to FIFO, so this fails loudly.
@@ -179,10 +183,14 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
       env: { ...x11Environment(), DISPLAY: display },
     });
   }
-  return runCapturing("xvfb-run", ["-a", "-s", `-screen 0 ${options.width}x${options.height + 180}x24`, binary, ...hostArgs], {
-    cwd: repoRoot,
-    env: x11Environment(),
-  });
+  return runCapturing(
+    "xvfb-run",
+    ["-a", "-s", `-screen 0 ${options.width}x${options.height + 180}x24`, binary, ...hostArgs],
+    {
+      cwd: repoRoot,
+      env: x11Environment(),
+    },
+  );
 }
 
 export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {

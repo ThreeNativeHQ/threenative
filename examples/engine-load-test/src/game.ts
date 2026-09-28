@@ -1,3 +1,5 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
 // The portable half of the PRD-117 ThreeNative arm: it builds the scene, steps it from a frame
 // index, and renders. It touches no browser global other than the canvas handed to it, so the
 // device arms of Phase 4 can drive the same file.
@@ -18,12 +20,11 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
+  RenderTarget,
   Scene,
   Vector2,
   WebGPURenderer,
 } from "three/webgpu";
-import { bloom } from "three/addons/tsl/display/BloomNode.js";
-import { pass } from "three/tsl";
 // Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
 // scene, and a runtime import here would put the framework in the control arm's served graph. The
 // arm that owns the optimizer passes the factory in; an arm that has none has no L3 to measure.
@@ -35,6 +36,8 @@ import type {
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
+  type IFrameStats,
+  type ILadderCounts,
   LADDER_BLOOM_RADIUS,
   LADDER_BLOOM_STRENGTH,
   LADDER_BLOOM_THRESHOLD,
@@ -45,9 +48,9 @@ import {
   LADDER_SHADOW_MAP_SIZE,
   LADDER_TONEMAPPING,
   LADDER_WIDTH,
-  type ILadderCounts,
   type RealisticRung,
   characterPlacement,
+  frameStats,
   pointLightPosition,
   resolutionOf,
   rungAtLeast,
@@ -134,6 +137,12 @@ export interface ILoadTestHarness {
   /** The rung's asserted counts, or undefined outside the realistic-scene ladder. */
   ladderCounts(): ILadderCounts | undefined;
   positionHash: string;
+  /**
+   * PRD-464: render the rung's current frame into a readable target and report what the pixels say.
+   * It draws the same scene the timed loop draws, once, after warmup — the read-back is a GPU stall
+   * and must never land inside a measured window.
+   */
+  probeFrame(): Promise<IFrameStats>;
   render(): Promise<void>;
   renderer: WebGPURenderer;
   setRung(rung: ILoadTestRung): void;
@@ -423,9 +432,7 @@ export async function createLoadTestHarness(
       if (characters === undefined) throw new Error("TN_BENCH_NO_CHARACTER_FACTORY");
       const roots = characters.objects();
       if (characters.skinnedMeshes !== roots.length)
-        throw new Error(
-          `TN_BENCH_CHARACTER_COUNT:${characters.skinnedMeshes}/${roots.length}`,
-        );
+        throw new Error(`TN_BENCH_CHARACTER_COUNT:${characters.skinnedMeshes}/${roots.length}`);
       for (let index = 0; index < roots.length; index += 1) {
         const root = roots[index] as Object3D;
         const placement = characterPlacement(index);
@@ -470,7 +477,10 @@ export async function createLoadTestHarness(
     let shadowCasters = 0;
     let skinnedMeshes = 0;
     scene.traverse((object) => {
-      if ((object as Mesh).castShadow === true) shadowCasters += 1;
+      // `castShadow` is an `Object3D` field in three, so a fox's 24 joint nodes would each count
+      // as a caster. A caster is a mesh that casts: the same definition the Godot census uses on
+      // `MeshInstance3D`, and the only one both arms can agree on.
+      if ((object as Mesh).isMesh === true && object.castShadow === true) shadowCasters += 1;
       if ((object as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh === true)
         skinnedMeshes += 1;
     });
@@ -661,6 +671,35 @@ export async function createLoadTestHarness(
     stepMs = performance.now() - startedAt;
   };
 
+  /** One frame of the rung, into whatever target the renderer currently holds. */
+  const renderFrame = async (): Promise<void> => {
+    // `info.reset()` is only automatic inside three's own animation loop; this harness drives
+    // its own rAF, so the per-frame counters are ours to clear.
+    renderer.info.reset();
+    // The projection's own render input when L3 has one, the authored scene otherwise. Same
+    // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
+    // pass-count axis re-renders the same input; the default is one pass.
+    const root = state?.collapse?.root ?? scene;
+    // The shipped default's frame around that draw, in its order: the projected-size cull writes
+    // `object.visible` and leaves it alone until the draw is submitted, the engine's walk
+    // refreshes the world matrices three is no longer asked to walk, and both are undone
+    // afterwards so the authored scene is exactly as the game left it. Without these L3 measured
+    // a projection on top of three's default frame, which is not the pipeline a ThreeNative game
+    // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
+    const passes = shippedDefaultPasses();
+    if (passes !== undefined) {
+      passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
+      root.matrixWorldAutoUpdate = false;
+      passes.matrixWorld.apply(root);
+    }
+    for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
+    if (passes !== undefined) passes.cameraCull.restore();
+    // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
+    // chain allocates per-object velocity, which this arm has none of — a shipped game with no
+    // post chain resolves the same way, so L3 pays the same commit a shipped game does.
+    state?.collapse?.commit();
+  };
+
   return {
     adapterLabel,
     get placementBytes() {
@@ -690,32 +729,28 @@ export async function createLoadTestHarness(
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },
-    render: async () => {
-      // `info.reset()` is only automatic inside three's own animation loop; this harness drives
-      // its own rAF, so the per-frame counters are ours to clear.
-      renderer.info.reset();
-      // The projection's own render input when L3 has one, the authored scene otherwise. Same
-      // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
-      // pass-count axis re-renders the same input; the default is one pass.
-      const root = state?.collapse?.root ?? scene;
-      // The shipped default's frame around that draw, in its order: the projected-size cull writes
-      // `object.visible` and leaves it alone until the draw is submitted, the engine's walk
-      // refreshes the world matrices three is no longer asked to walk, and both are undone
-      // afterwards so the authored scene is exactly as the game left it. Without these L3 measured
-      // a projection on top of three's default frame, which is not the pipeline a ThreeNative game
-      // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
-      const passes = shippedDefaultPasses();
-      if (passes !== undefined) {
-        passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
-        root.matrixWorldAutoUpdate = false;
-        passes.matrixWorld.apply(root);
+    render: renderFrame,
+    /**
+     * The read-back `examples/engine-load-test/src/skinned-crowd.ts` already uses for its own
+     * capture: draw the rung's current frame into a render target, then read it. The same
+     * `render()` the timed loop calls draws it, so the pixels are the rung's pixels and not a
+     * re-authored scene — a probe that rendered something else would pass a ladder rung that
+     * measured a blank screen.
+     */
+    probeFrame: async () => {
+      if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+      const size = renderer.getDrawingBufferSize(drawingBufferSize);
+      const target = new RenderTarget(size.x, size.y);
+      try {
+        renderer.setRenderTarget(target);
+        await renderFrame();
+        renderer.setRenderTarget(null);
+        const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, size.x, size.y);
+        return frameStats(pixels as ArrayLike<number>, size.x, size.y);
+      } finally {
+        renderer.setRenderTarget(null);
+        target.dispose();
       }
-      for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
-      if (passes !== undefined) passes.cameraCull.restore();
-      // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
-      // chain allocates per-object velocity, which this arm has none of — a shipped game with no
-      // post chain resolves the same way, so L3 pays the same commit a shipped game does.
-      state?.collapse?.commit();
     },
     beginCollapse,
     collapseStatus,
