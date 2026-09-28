@@ -95,14 +95,15 @@ function terrainOf(world: WorldCells): TerrainTiles {
 }
 
 /**
- * The shared mesh an asset's level draws through; every resident cell has a segment in one of them.
- * There is one per world-grid cluster now (PRD-458), and the first is the follow point's own.
+ * The shared mesh an asset's level draws through; every resident cell has a segment in it. One per
+ * key for the main pass (PRD-458); the shadow-caster clusters beside it are one per world-grid
+ * square and are not this lookup's business.
  */
 function batchOf(world: WorldCells, _cell: string, asset: string, level: number): InstancedMesh {
   const key = `${asset}:${String(level)}:0`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
   });
   const mesh = meshes[0];
   if (mesh === undefined) throw new Error(`No batch mesh named '${key}'.`);
@@ -184,7 +185,6 @@ function drain(world: WorldCells, limit = 4000): number[] {
   throw new Error(`WorldCells still owed ${String(world.stats().admission.backlog)} units.`);
 }
 
-/** Every batch mesh the world drew, as `name` to instance count. */
 /** Instances a shared mesh draws: free segment slots are zero matrices and draw nothing. */
 function live(mesh: InstancedMesh): number {
   const array = mesh.instanceMatrix.array as Float32Array;
@@ -193,10 +193,17 @@ function live(mesh: InstancedMesh): number {
   return count;
 }
 
+/**
+ * Every batch mesh the world drew, keyed by `asset:level:part` with the drawn-instance total across
+ * the world-grid clusters that key is split into (PRD-458).
+ */
 function drawn(world: WorldCells): Map<string, number> {
   const meshes = new Map<string, number>();
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh) meshes.set(object.name, live(object));
+    if (object instanceof InstancedMesh) {
+      const key = object.name.split("@")[0] ?? object.name;
+      meshes.set(key, (meshes.get(key) ?? 0) + live(object));
+    }
   });
   return meshes;
 }

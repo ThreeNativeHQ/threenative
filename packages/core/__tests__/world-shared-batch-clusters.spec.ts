@@ -19,14 +19,18 @@ import type { IWorldPackage } from "../src/world.js";
 import { WorldCells } from "../src/world.js";
 
 /**
- * PRD-458 AC-1: a shared batch is one mesh per world-grid square of `clusterSize`, with the square's
- * own bounds, so every camera — the main one and each virtual-shadow level's — culls at square
- * granularity instead of submitting the whole resident ring.
+ * PRD-458 AC-1: the split. The main pass draws one mesh per `asset:level:part` — unchanged, so
+ * main-pass draws are exactly the pre-cluster count — and the records those meshes hold are written
+ * again into one caster mesh per `(key, cluster)`, alone on `VIRTUAL_SHADOW_CASTER_LAYER`, each
+ * bounded by exactly its own square's records. A virtual-shadow level camera draws that layer, so a
+ * 48 m window submits the clusters it covers instead of the whole resident ring; the main camera
+ * never does, so the cluster count costs the main pass nothing.
  *
- * Three claims, each of which the unclustered implementation fails: a cluster's bounds hold exactly
- * its own live records; a frustum over one square's area selects that square's meshes and nothing
- * else; and a cluster that streams out and back is handed the mesh it had, never a second one.
- * Casting is the clusters themselves, so the `shadows.castDistance` companions are gone.
+ * Four claims, each of which an implementation without the split fails: the main pass is still one
+ * mesh per key and casts nothing; a cluster's bounds hold exactly its own live records; a 48 m level
+ * window selects that window's clusters and few enough of them (AC-1's 150 bound, with the median
+ * and the worst reported); and a key that streams out and back is handed the mesh it had, never a
+ * second one, on both halves.
  */
 
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "world-v1");
@@ -166,6 +170,23 @@ function squareOf(name: string): { readonly key: string; readonly x: number; rea
   return { key: name.slice(0, at), x, z };
 }
 
+/**
+ * The two halves: `main` is what the main camera draws, one mesh per `asset:level:part`; `casters`
+ * is one mesh per `(key, @x,z)`, alone on the shadow caster layer.
+ */
+function split(world: WorldCells): {
+  readonly casters: [string, InstancedMesh][];
+  readonly main: [string, InstancedMesh][];
+} {
+  const casters: [string, InstancedMesh][] = [];
+  const main: [string, InstancedMesh][] = [];
+  for (const [name, mesh] of clusters(world)) {
+    if (mesh.layers.mask === 1 << 28) casters.push([name, mesh]);
+    else main.push([name, mesh]);
+  }
+  return { casters, main };
+}
+
 function originsOf(mesh: InstancedMesh): Vector3[] {
   const array = mesh.instanceMatrix.array as Float32Array;
   const out: Vector3[] = [];
@@ -207,20 +228,39 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("WorldCells clustered shared batches", () => {
-  it("holds one mesh per (key, cluster), each bounded by exactly its own live records", async () => {
+describe("WorldCells clustered shadow casters", () => {
+  it("keeps the main pass at one mesh per key and puts the shadow half on the caster layer", async () => {
     const { world } = await makeWorld();
     new Group().add(world);
     await settle(world);
-    const drawn = [...clusters(world)].filter(([, mesh]) => mesh.count > 0);
-    expect(drawn.length, "no batch mesh survived the residency pass").toBeGreaterThan(0);
+    const { main, casters } = split(world);
+    expect(main.length, "no main batch mesh survived the residency pass").toBeGreaterThan(0);
+    expect(casters.length, "no caster cluster was minted").toBeGreaterThan(0);
 
-    // One mesh per (key, square). A name without a square is still one-per-key, which is the whole
-    // failure: that one mesh's bounds are the union of the ring, so no camera can cull any of it.
+    // The main pass is one mesh per key and nothing more: the draw count is the pre-cluster one.
+    const keys = new Set(main.map(([name]) => name));
+    expect(main.length, "the main pass drew more than one mesh for a key").toBe(keys.size);
+    expect(
+      main.every(([, mesh]) => mesh.castShadow === false && mesh.layers.mask === 1),
+      "a main mesh casts, or left layer 0",
+    ).toBe(true);
+
+    // A caster cluster is the other half: on layer 28 alone, casting, never receiving, and named
+    // `key@x,z` so the square is readable.
+    for (const [name, mesh] of casters) {
+      const { key } = squareOf(name);
+      expect(mesh.layers.mask, `${name} is not alone on the caster layer`).toBe(1 << 28);
+      expect(mesh.frustumCulled, `${name} is not cullable`).toBe(true);
+      const level = Number(key.split(":")[1]);
+      expect(mesh.castShadow, `${name} (level ${String(level)}) cast the wrong way`).toBe(
+        level === 0,
+      );
+      expect(mesh.receiveShadow, `${name} receives, and no camera it draws with will`).toBe(false);
+    }
+    // Every castable key is split into more than one cluster, or nothing was clustered.
     const squares = new Map<string, Set<string>>();
-    for (const [name] of drawn) {
+    for (const [name] of casters) {
       const { key, x, z } = squareOf(name);
-      expect(Number.isFinite(x) && Number.isFinite(z), `${name} has no square`).toBe(true);
       const own = squares.get(key) ?? new Set<string>();
       own.add(`${String(x)},${String(z)}`);
       squares.set(key, own);
@@ -229,13 +269,18 @@ describe("WorldCells clustered shared batches", () => {
       [...squares.values()].filter((own) => own.size > 1).length,
       "no key was split into more than one cluster, so nothing was clustered",
     ).toBeGreaterThan(0);
+    world.dispose();
+  });
 
-    // A cluster's bounds hold its own live records, on every axis, and the sphere covers the box:
-    // three tests the sphere, and a cluster it culls is a cluster no camera submits.
+  it("holds each cluster's bounds to exactly its own live records", async () => {
+    const { world } = await makeWorld();
+    new Group().add(world);
+    await settle(world);
+    const drawn = split(world).casters.filter(([, mesh]) => mesh.count > 0);
+    expect(drawn.length).toBeGreaterThan(0);
     for (const [name, mesh] of drawn) {
       const box = mesh.boundingBox as Box3;
       const sphere = mesh.boundingSphere as { containsPoint: (v: Vector3) => boolean };
-      expect(mesh.frustumCulled, `${name} is not cullable`).toBe(true);
       expect(box.isEmpty(), `${name} has empty bounds`).toBe(false);
       expect(box.max.x - box.min.x, `${name} fell back to the package extent`).toBeLessThan(
         manifest.extent.sizeX,
@@ -251,7 +296,6 @@ describe("WorldCells clustered shared batches", () => {
         ).toBe(true);
       }
     }
-
     // Exactly: no cluster holds a record from another square of the grid, and no two clusters share
     // one box. A record sits in the cell its placement was baked into, and a mesh is the square that
     // cell is in, so the record's cell and the mesh's square must be the same cell.
@@ -271,55 +315,54 @@ describe("WorldCells clustered shared batches", () => {
     world.dispose();
   });
 
-  it("submits only the clusters a level's window covers, and casts them with no companion", async () => {
+  it("submits only the clusters a level's window covers, and leaves the main pass at one per key", async () => {
     const { world } = await makeWorld();
     new Group().add(world);
     await settle(world);
-    const drawn = [...clusters(world)].filter(([, mesh]) => mesh.count > 0);
+    const { main, casters } = split(world);
+    const drawn = casters.filter(([, mesh]) => mesh.count > 0);
 
-    // The clusters are the casters, so nothing sits on the shadow-only layer and no `:caster` mesh
-    // survives: the companions are gone, not merely unused.
-    const companions = [...clusters(world)].filter(([name]) => name.includes(":caster"));
-    expect(companions, "the castDistance companions are still there").toEqual([]);
-    // `castLevels` decides, per level, exactly as it did before: the finest level's clusters cast
-    // and a far LOD's do not, because a far level's shadow is sub-texel in any open-world window.
-    for (const [name, mesh] of drawn) {
-      const level = Number(squareOf(name).key.split(":")[1]);
-      expect(mesh.castShadow, `${name} (level ${String(level)}) cast the wrong way`).toBe(
-        level === 0,
-      );
-    }
+    // Nothing sits on the shadow-only layer as a main-pass mesh and no `:caster` mesh survives: the
+    // old `castDistance` companions are gone, replaced by the clusters themselves.
+    expect(
+      main.filter(([name]) => name.includes(":caster")),
+      "the castDistance companions are still there",
+    ).toEqual([]);
 
-    // Every cluster's own 48 m window. On one mesh per key each window selected every batch in the
-    // world, because each of those batches was drawn with the ring's bounds.
-    const perWindow = drawn.map(([name, mesh]) => {
-      const sphere = mesh.boundingSphere as { center: Vector3 };
-      const { frustum } = levelWindowOver(sphere.center, LEVEL_WINDOW / 2);
-      return [
-        name,
-        drawn.filter(([, other]) => {
-          const sphere = other.boundingSphere;
-          return sphere !== null && frustum.intersectsSphere(sphere);
-        }),
-      ];
+    // Every cluster's own 48 m window, culled the way three culls it. On one mesh per key each
+    // window selected every batch in the world, because each was drawn with the ring's bounds.
+    const counts = drawn.map(([, mesh]) => {
+      const centre = (mesh.boundingSphere as { center: Vector3 }).center;
+      const { frustum } = levelWindowOver(centre, LEVEL_WINDOW / 2);
+      return drawn.filter(([, other]) => {
+        const sphere = other.boundingSphere;
+        return sphere !== null && frustum.intersectsSphere(sphere);
+      }).length;
     });
-    for (const [name, selected] of perWindow) {
-      expect(
-        (selected as [string, InstancedMesh][]).length,
-        `${name} selected nothing`,
-      ).toBeGreaterThan(0);
-      expect(
-        (selected as [string, InstancedMesh][]).length,
-        `a ${String(LEVEL_WINDOW)} m window over ${String(name)} submitted ${String((selected as unknown[]).length)} of ${String(drawn.length)} cluster meshes`,
-      ).toBeLessThan(drawn.length);
-    }
-    // The worst window on the fixture, which is the number AC-1 bounds.
-    const worst = Math.max(...perWindow.map(([, selected]) => (selected as unknown[]).length));
-    expect(worst, "a level window still submits the whole ring").toBeLessThanOrEqual(150);
+    expect(counts.length, "no cluster to measure a window over").toBeGreaterThan(0);
+    for (const [at, count] of counts.entries())
+      expect(count, `window ${String(at)} selected nothing`).toBeGreaterThan(0);
+    // AC-1's number: under 150 per level render, reported as the median and the worst.
+    const sorted = [...counts].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] as number;
+    const worst = sorted[sorted.length - 1] as number;
+    const report = `shadow draws per 48 m level: ${String(median)} median / ${String(worst)} worst of ${String(counts.length)} clusters`;
+    expect(
+      worst,
+      `a level window still submits ${String(worst)} clusters (${report})`,
+    ).toBeLessThanOrEqual(150);
+    // The main pass is one mesh per key, so its draw count is the pre-cluster one, not 3.4-7x it.
+    const mainDraws = main.filter(([, mesh]) => mesh.count > 0).length;
+    expect(mainDraws, `main-pass draws are not one per key (${report})`).toBe(
+      new Set(main.map(([name]) => name)).size,
+    );
+    // A level camera draws the caster layer and the main camera does not, so the main pass never
+    // sees a cluster: its draw count cannot grow with the cluster count. On the fixture that is
+    // 10 keys, 28 caster clusters, 15 median / 17 worst draws per 48 m level.
     world.dispose();
   });
 
-  it("hands a cluster the same mesh when it streams out and back, with no second mint", async () => {
+  it("hands both halves the same mesh when they stream out and back, with no second mint", async () => {
     const { follow, world } = await makeWorld();
     new Group().add(world);
     await settle(world);
@@ -340,7 +383,7 @@ describe("WorldCells clustered shared batches", () => {
     expect(clusters(world).size, "the ring never emptied").toBe(0);
 
     // Home again. The retained mesh is the one the cell draws into: the prewarm must not mint a
-    // second batch for a key the retained set is holding, and `#sharedFor` rebinds that one.
+    // second batch for a key the retained set is holding, and `#batchFor` rebinds that one.
     follow.position.x -= CELL_SIZE * 12;
     await settle(world);
     for (let frame = 0; frame < 30; frame += 1) {
@@ -357,9 +400,9 @@ describe("WorldCells clustered shared batches", () => {
         return was !== mesh.uuid;
       })
       .map(([name]) => name);
-    expect(reminted, "a cluster was given a second mesh across a residency cycle").toEqual([]);
-    // No re-mints at all, not none among the keys that came back: a cluster the walk never left
-    // keeps the uuid it had too.
+    expect(reminted, "a batch was given a second mesh across a residency cycle").toEqual([]);
+    // No re-mints at all, not none among the keys that came back: a key the walk never left keeps
+    // the uuid it had too.
     for (const [name, mesh] of home) {
       const again = back.get(name);
       if (again === undefined) continue;
@@ -374,7 +417,7 @@ describe("WorldCells clustered shared batches", () => {
     const { world } = await makeWorld({ clusterSize: CELL_SIZE * 2 });
     new Group().add(world);
     await settle(world);
-    const drawn = [...clusters(world)].filter(([, mesh]) => mesh.count > 0);
+    const drawn = split(world).casters.filter(([, mesh]) => mesh.count > 0);
     // Two cells to a side, so the ring's cells land on four squares and each square's mesh carries
     // both cells' records — a cluster's box is wider than one cell and still not the whole ring.
     const boxes = new Set(

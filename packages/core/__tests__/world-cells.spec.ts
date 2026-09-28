@@ -343,7 +343,7 @@ function levelMesh(
   const key = `${asset}:${String(level)}:${String(part)}`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
   });
   return meshes[0];
 }
@@ -484,7 +484,21 @@ function partsOf(
   const key = `${asset}:${String(level)}:${String(part)}`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
+  });
+  return meshes;
+}
+
+/**
+ * The shadow-caster clusters of one key: the meshes alone on `VIRTUAL_SHADOW_CASTER_LAYER`, one per
+ * world-grid square of `clusterSize` (PRD-458). The main pass's mesh for the same key is
+ * {@link levelMesh}, and it casts nothing.
+ */
+function clustersOf(world: WorldCells, asset: string, level: number, part = 0): InstancedMesh[] {
+  const key = `${asset}:${String(level)}:${String(part)}@`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name.startsWith(key)) meshes.push(object);
   });
   return meshes;
 }
@@ -1354,13 +1368,15 @@ describe("WorldCells", () => {
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
     expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
-    // One cluster mesh per resident cell, and the only other meshes are prewarmed squares no
-    // placement has asked for yet — they draw nothing, and they are why those nodes are built during
-    // loading rather than mid-walk.
+    // One main mesh per key for the whole ring, and one caster cluster per resident cell (PRD-458):
+    // the shadow half is the per-cell one. The rest are the prewarmed square the follow point is in,
+    // one per level and part, minted empty so the walk's first shadow pass builds no node for the
+    // key the walk reaches first.
     expect(world.stats().residentCells).toBe(3);
-    expect(meshes.filter((mesh) => mesh.count > 0)).toHaveLength(3);
-    // The rest are the prewarmed square the follow point is in, one per level, minted empty so the
-    // walk's first shadow pass builds no node for the key the walk reaches first.
+    const live = meshes.filter((mesh) => mesh.count > 0);
+    // Shadows are off in this world, so there is no caster half at all and the whole ring is one
+    // mesh for the key; a world that asks to cast also gets one caster cluster per resident cell.
+    expect(live.map((mesh) => mesh.name)).toEqual(["pine:1:0"]);
     expect(meshes.length).toBeLessThanOrEqual(5);
 
     // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
@@ -1614,10 +1630,17 @@ describe("WorldCells", () => {
     shaded.update();
     await flushed(shaded);
     // Only the finest level casts by default: a far LOD's shadow is sub-texel and every caster is
-    // redrawn per shadow level.
-    expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(true);
-    expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).castShadow).toBe(false);
+    // redrawn per shadow level. The main mesh casts nothing — its records reach the shadow maps
+    // through the caster cluster, which is what a level culls (PRD-458).
+    expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(false);
     expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).receiveShadow).toBe(true);
+    const casters = clustersOf(shaded, "pine", 0, 0);
+    expect(casters.length, "no caster cluster was minted").toBeGreaterThan(0);
+    for (const caster of casters) {
+      expect(caster.castShadow, "the finest level's caster cluster does not cast").toBe(true);
+      expect(caster.layers.mask, "a caster is not alone on the caster layer").toBe(1 << 28);
+    }
+    expect(clustersOf(shaded, "pine", 1, 0), "a far level minted a caster cluster").toEqual([]);
     const terrain: Mesh[] = [];
     shaded.traverse((object) => {
       if ((object as Mesh).isMesh && !(object as InstancedMesh).isInstancedMesh)
@@ -1760,10 +1783,12 @@ describe("WorldCells", () => {
     });
     wide.update();
     await flushed(wide);
-    // Every cell of the ring draws its needles through the one shared mesh and its one cutout.
+    // Every cell of the ring draws through the one shared mesh and its one cutout. Its shadow twin
+    // is a mesh per world-grid cluster, on the caster layer; see the split in `#batchFor`.
     const near = partsOf(wide, "pine", 0, 1);
     expect(near).toHaveLength(1);
-    expect(liveCount(near[0])).toBeGreaterThan(0);
+    expect(liveCount(near[0] as InstancedMesh)).toBeGreaterThan(0);
+    expect(new Set(partsOf(wide, "pine", 0, 1).map((mesh) => mesh.material)).size).toBe(1);
     // Every asset in this package carries the same two materials, so however many GLBs loaded the
     // world draws with two surfaces: one opaque, one cutout. One shader each, not one per asset.
     const drawn = new Set<Material>();

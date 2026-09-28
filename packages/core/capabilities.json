@@ -3739,7 +3739,7 @@
         "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
         "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",
-        "every `asset:level:part` is one InstancedMesh per world-grid square of `clusterSize`, each with its own bounds, so each camera culls clusters and a shadow level submits only the squares it covers",
+        "every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers",
         "`shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed"
       ],
       "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
