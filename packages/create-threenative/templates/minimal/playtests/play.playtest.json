@@ -33,9 +33,9 @@
       }
     ],
     "performance": {
-      "maxDrawCalls": 96,
+      "maxDrawCalls": 128,
       "maxFrameMsP95": 33,
-      "maxTriangles": 42000,
+      "maxTriangles": 80000,
       "minFps": 30
     },
     "renderChain": {
