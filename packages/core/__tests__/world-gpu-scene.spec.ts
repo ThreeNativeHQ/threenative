@@ -18,8 +18,10 @@ import type { IRendererLike } from "../src/renderer.js";
 import {
   type IGpuPlacement,
   type IKernelInput,
+  type IMeshDraw,
   type IRegion,
   WorldGpuScene,
+  compareMeshDraws,
   cullAndSelect,
   gpuSceneUnsupported,
   storageElementBytes,
@@ -116,8 +118,40 @@ function cpuReference(
   return drawn;
 }
 
-/** The reference kernel's drawn placement indexes per key, read back out of its `drawn` buffer. */
-function kernelDrawn(
+/**
+ * The CPU path's own instances for one key, written out from `world-cells.ts` and naming no key at
+ * all: the placements of one asset that its cull distance keeps, whose `distance > gate` level test
+ * reaches the level this key is, each multiplied by the part's own offset as `#addPlacements` does.
+ * A reference built this way cannot agree with a wrong `firstKey`, because it never heard of one.
+ */
+function cpuKeyInstances(
+  placements: readonly IGpuPlacement[],
+  slot: number,
+  level: number,
+  distances: readonly number[],
+  cull: number | undefined,
+  local: Float32Array,
+): Float32Array {
+  const wanted = placements.filter((one) => {
+    if (one.slot !== slot) return false;
+    const distance = Math.hypot(one.centre[0] as number, one.centre[2] as number);
+    if (cull !== undefined && distance > cull) return false;
+    let reached = 0;
+    for (let gate = 1; gate < distances.length; gate += 1)
+      if (distance > (distances[gate] as number)) reached = gate;
+    return reached === level;
+  });
+  const out = new Float32Array(wanted.length * 16);
+  const part = new Matrix4().fromArray(local);
+  for (const [index, one] of wanted.entries())
+    new Matrix4()
+      .fromArray(one.matrix)
+      .multiply(part)
+      .toArray(out, index * 16);
+  return out;
+}
+
+/** The reference kernel's drawn placement indexes per key, read back out of its `drawn` buffer. */ function kernelDrawn(
   result: ReturnType<typeof cullAndSelect>,
   input: IKernelInput,
 ): Map<number, number[]> {
@@ -819,6 +853,11 @@ describe("WorldCells with the GPU-driven main pass", () => {
     const validation = lines.find((one) => one.includes("TN_WORLD_GPU_SCENE_VALIDATE"));
     expect(validation).toBeDefined();
     expect(Number(validation?.match(/compared=(\d+)/u)?.[1])).toBeGreaterThan(0);
+    // And the third family, which the world answers for itself: every dressed main mesh's own
+    // record against the instances its own CPU path composes for that key. The stub readback above is
+    // the zeros a dispatch never wrote, so nothing is holding a foreign instance here — what this
+    // proves is that the world's own records reach the check at all, over a real ring.
+    expect(validation).toContain("meshMismatched=0");
 
     // A key the walk retires into the pool and comes back to: the rebind replaces the instance
     // buffer, so the mesh is no longer the one the scene dressed, and the pool hands back the mesh
@@ -958,6 +997,156 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
     expect(fromKernel.get(keyOf(scene, "oak:1:2"))).toHaveLength(8);
     scene.dispose();
   });
+
+  // `fails` until the mapping this check exists for is fixed: a prewarm-order ring puts another
+  // asset's keys between a level's parts, and the gate table's `firstKey + part` then walks into
+  // them. The check sees it (`meshMismatched=3`); the kernel and its mirror do not, which is the
+  // whole reason it exists.
+  it.fails(
+    "keeps every key's record holding its own instances, over keys minted in prewarm order",
+    async () => {
+      /**
+       * A package the way a real one is made, with the key order a real one mints them in.
+       *
+       * A tree is two parts at one level, a fern is one part across a three-level chain, and a post has
+       * authored lods and a cull distance. The keys are then registered the way a ring that was built
+       * before the scene came up registers them: in the order the prewarm queued them, which is every
+       * level and part of one asset before the next — so a level's parts are NOT a contiguous run of
+       * key indices, because another asset's keys are minted between them. The gate table addresses a
+       * level's parts as `firstKey + part`, so that is the whole question: whose instances land in
+       * whose record.
+       *
+       * The instances on the CPU side are the CPU path's own answer, written out from `world-cells`:
+       * the same ascending `distance > gate` level test over the same gates `assetLevels` builds, the
+       * same cull distance, and the part's own offset multiplied in exactly as `#addPlacements` does —
+       * with no key table, no `firstKey` and no part arithmetic anywhere in it.
+       */
+      // The needles sit three metres up the trunk, so a record holding another part's instances is
+      // caught by their translation and not only by which placements they name.
+      const LOCAL_NEEDLES = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 1]);
+      const ASSETS = [
+        { cull: undefined, distances: [0], name: "pine", parts: [LOCAL, LOCAL_NEEDLES] },
+        { cull: undefined, distances: [0, 40, 120], name: "fern", parts: [LOCAL] },
+        { cull: 70, distances: [0, 60], name: "post", parts: [LOCAL] },
+      ] as const;
+      /** The prewarm's order: asset by asset, level by level, part by part. */
+      const PREWARM = [
+        "pine:0:0",
+        "fern:0:0",
+        "post:0:0",
+        "fern:1:0",
+        "pine:0:1",
+        "fern:2:0",
+        "post:1:0",
+      ];
+      const lines: string[] = [];
+      const { camera, planes } = cameraAt(0, 0);
+      /** The bytes the last readback answered with, which is what the check reads. */
+      const readback: { args: Uint32Array; drawn: Float32Array } = {
+        args: new Uint32Array(0),
+        drawn: new Float32Array(0),
+      };
+      const scene = new WorldGpuScene();
+      const renderer = {
+        compute: (): void => {},
+        kind: "webgpu",
+        log: (line: string): void => {
+          lines.push(line);
+        },
+        raw: { backend: { hasFeature: (): boolean => true } },
+        readback: (attribute: unknown): Promise<ArrayBuffer> => {
+          const result = cullAndSelect({
+            camera: { planes, x: 0, y: 0, z: 0 },
+            count: scene.placements.length,
+            placements: scene.placements,
+            regionCount: scene.regions.length,
+            regions: scene.regions,
+            slots: scene.gates(),
+          });
+          const args = Uint32Array.from(result.args);
+          const drawn = Float32Array.from(result.drawn);
+          for (const region of scene.regions) {
+            args[region.argsIndex * 5] = region.indexCount;
+            args[region.argsIndex * 5 + 4] = region.start;
+          }
+          const words = (attribute as { array: Uint32Array | Float32Array }).array;
+          readback.args = args;
+          readback.drawn = drawn;
+          return Promise.resolve((words instanceof Float32Array ? drawn : args).buffer);
+        },
+      } as unknown as IRendererLike;
+      expect(scene.enable(renderer, true, true)).toBe(true);
+      for (const name of PREWARM) {
+        const asset = ASSETS.find((one) =>
+          name.startsWith(`${one.name}:`),
+        ) as (typeof ASSETS)[number];
+        const [, level, part] = name.split(":");
+        scene.key(name, asset.parts[Number(part)] as Float32Array, 64, {
+          group: `${asset.name}:${level ?? "0"}`,
+          part: Number(part),
+        });
+        scene.indexCount(name, 96);
+      }
+      for (const [slot, asset] of ASSETS.entries()) {
+        const gates = asset.distances.map((_distance, level) => {
+          const group = `${asset.name}:${String(level)}`;
+          return scene.levelKeys(group) ?? { firstKey: 0, parts: 0 };
+        });
+        scene.slot(asset.name, { cull: asset.cull, distances: asset.distances, levels: gates });
+        // Six placements per asset, spread so both the chain's levels and the post's cull are reached.
+        for (let taken = 0; taken < 6; taken += 1) {
+          const z = 8 + taken * 26;
+          scene.place(slot, new Matrix4().makeTranslation(slot, 0, z), slot, 0, z, 0.5);
+        }
+      }
+      // A walk that filled one key's region past its capacity: the regrow re-lays the level's run.
+      const regrown = scene.key("pine:0:1", LOCAL_NEEDLES, 128, { group: "pine:0", part: 1 });
+      expect(regrown).toBe(keyOf(scene, "pine:0:1"));
+      // The CPU path's own records, per key, and the record each dressed mesh reads — which is this
+      // scene's own `argsIndex`, since a unit fixture has no mesh to read the offset off.
+      const draws: IMeshDraw[] = PREWARM.map((name) => {
+        const asset = ASSETS.find((one) =>
+          name.startsWith(`${one.name}:`),
+        ) as (typeof ASSETS)[number];
+        const [, level, part] = name.split(":");
+        const level0 = Number(level);
+        return {
+          instances: cpuKeyInstances(
+            scene.placements,
+            ASSETS.indexOf(asset),
+            level0,
+            asset.distances,
+            asset.cull,
+            asset.parts[Number(part)] as Float32Array,
+          ),
+          name,
+          record: (scene.regionOf(name) as IRegion).argsIndex,
+        };
+      });
+      scene.drawsFrom(() => draws);
+      lines.length = 0;
+      // Thirty dispatches, so the thirtieth asks for its readback.
+      for (let index = 0; index < 30; index += 1) {
+        scene.dispatch(renderer, camera);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Every key drew the instances its own name says, and every one of them in full: the fixture's
+      // camera holds every placement, so a run shorter than its key's records is a mapping fault too,
+      // and containment alone would not see it.
+      expect(scene.validation.meshMismatched).toBe(0);
+      for (const draw of draws) {
+        const region = scene.regionOf(draw.name) as IRegion;
+        expect(region.name).toBe(draw.name);
+        expect(readback.args[region.argsIndex * 5 + 1]).toBe(draw.instances.length / 16);
+      }
+      expect(scene.validation.verdict).toBe("ok");
+      expect(lines.filter((line) => line.includes(" compared=")).at(-1)).toContain(
+        "mismatched=0 matricesMismatched=0 meshMismatched=0",
+      );
+      scene.dispose();
+    },
+  );
 
   it("culls authored ground cover at its maxDistance and switches its lods inside it", () => {
     // `ground_cover` as the committed package writes it: a `lods` entry at 60 m under a `maxDistance`
@@ -1284,6 +1473,8 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       instancesCpu: 120,
       instancesGpu: 120,
       matricesMismatched: 0,
+      meshMismatched: 0,
+      meshMismatches: [] as readonly string[],
       mismatched: 0,
       mismatches: [] as readonly string[],
       matrixMismatches: [] as readonly string[],
@@ -1292,7 +1483,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     const agreed = validationReport(base);
     expect(agreed.verdict).toBe("ok");
     expect(agreed.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(agreed.lines).toEqual([]);
 
@@ -1306,7 +1497,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(nothing.verdict).toBe("ok");
     expect(nothing.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
 
     // Compared nothing with placements resident: nothing was checked, so it is not a pass, and the
@@ -1320,7 +1511,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(blind.verdict).toBe("error");
     expect(blind.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(blind.lines).toEqual(["cause=compared-0-with-placed=812"]);
 
@@ -1331,7 +1522,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(refused.verdict).toBe("error");
     expect(refused.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(refused.lines).toEqual([
       "cause=device-error GPUValidationError: bound with size 16 is too small",
@@ -1366,7 +1557,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(differing.verdict).toBe("mismatch");
     expect(differing.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=6 instancesGpu=96 instancesCpu=120 mismatched=2 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=6 instancesGpu=96 instancesCpu=120 mismatched=2 matricesMismatched=0 meshMismatched=0",
     );
     expect(differing.lines).toEqual(["pine:0:0 gpu=40 cpu=48", "pine:1:0 gpu=56 cpu=48"]);
   });
@@ -1488,7 +1679,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     // reference for the second key did not exist when the dispatch ran.
     expect(scene.regions).toHaveLength(2);
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(scene.validation.verdict).toBe("ok");
     expect(scene.validation.compared).toBe(1);
@@ -1498,7 +1689,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     lines.length = 0;
     await drive(scene, renderer, 30);
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=4 instancesCpu=4 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=4 instancesCpu=4 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(scene.validation.compared).toBe(2);
   });
@@ -1523,7 +1714,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     await drive(scene, renderer, 30);
     expect(scene.validation.verdict).toBe("error");
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(lines).toContain(
       "TN_WORLD_GPU_SCENE_VALIDATE cause=readback-failed: mapAsync: device lost",
@@ -1621,7 +1812,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     const correct = await checked(() => {});
     expect(correct.scene.validation.verdict).toBe("ok");
     expect(report(correct.lines).head).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=0 meshMismatched=0",
     );
     expect(report(correct.lines).detail).toEqual([]);
 
@@ -1636,7 +1827,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(shifted.scene.validation.verdict).toBe("mismatch");
     expect(shifted.scene.validation.mismatched).toBe(0);
     expect(report(shifted.lines).head).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=1",
+      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=1 meshMismatched=0",
     );
     expect(report(shifted.lines).detail[0]).toBe(
       "TN_WORLD_GPU_SCENE_VALIDATE rock:0:0 first gpu=[0.000,0.000,13.000] cpu=[0.000,0.000,12.000] firstInstance gpu=4 expected=4 indexCount gpu=96 expected=96",

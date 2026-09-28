@@ -105,6 +105,8 @@ const VALIDATE_EVERY = 30;
 const VALIDATE_REPORTED_KEYS = 10;
 /** Keys a matrix or indirect-record line names, which carry more numbers than a count line does. */
 const MATRIX_REPORTED_KEYS = 5;
+/** Meshes a `mesh=` line names, on the same budget as the record lines above. */
+const MESH_REPORTED_MESHES = 5;
 /** Two matrices within this of each other are the same one written through a `mat4` product. */
 const MATRIX_TOLERANCE = 1e-3;
 /** Characters of a cause a `cause=` line carries, so one message cannot own the report. */
@@ -377,6 +379,127 @@ function sorted(matrices: Float32Array, start: number, count: number): Float32Ar
     }
 }
 
+/**
+ * One dressed main mesh's draw, as the CPU path's own records say it, and nothing from this file.
+ *
+ * This is the check that cannot be wrong in the same way the kernel is. {@link cullAndSelect}
+ * addresses a level's parts as `levels[gate.x + level].y + part`, and the gate table holds the
+ * `firstKey` the scene itself reported through `levelKeys`, so a key/record/mesh mapping that is
+ * wrong is reproduced on both sides of the comparison and reads as agreement: a real WebGPU walk
+ * printed `ok` over a forest it was drawing with another tree's geometry. The three numbers here
+ * come from the other side of the seam — the mesh's own `geometry.indirect` record, the mesh's own
+ * name, and the per-key instance records the CPU path composes in `world-cells` — so the one
+ * question they can answer is the one that matters: does the record this mesh draws from hold
+ * instances that are its key's, at its part's level, and nothing else.
+ */
+export interface IMeshDraw {
+  /** The dressed mesh's own name, which is the main key: `asset:level:part`. */
+  readonly name: string;
+  /** `geometry.indirectOffset / DRAW_ARGS_BYTES` — the record the draw reads, not one the tables name. */
+  readonly record: number;
+  /** Every instance the CPU path's own records hold for that key, `mat4` after `mat4`. */
+  readonly instances: Float32Array;
+}
+
+/** What the independent per-mesh check found, in the shape the report folds in. */
+export interface IMeshDrawComparison {
+  /** Meshes whose own record was read back and held against the CPU path's records. */
+  readonly compared: number;
+  readonly mismatched: number;
+  readonly mismatches: readonly string[];
+}
+
+/**
+ * Every dressed main mesh's own record, against the instances the CPU path's own records hold for
+ * that mesh's key, as a set rather than a sequence — the kernel appends through an atomic, so a
+ * device's order is not the CPU's.
+ *
+ * The relation is containment and not equality, and the reason is the one coarse thing the GPU
+ * scene does not do: the dispatch culls each placement's own bounding sphere against the camera's
+ * six planes, while the CPU path's records are what its own per-cell filter kept, so a run is
+ * legitimately shorter than the records it draws from and never longer. What must never happen is a
+ * run holding an instance its key never owned — a placement of another asset, at another level,
+ * through another part's offset — and that is a membership question, so this is one.
+ */
+export function compareMeshDraws(
+  gpu: Uint32Array,
+  drawn: Float32Array,
+  draws: readonly IMeshDraw[],
+  regions: readonly IRegion[],
+): IMeshDrawComparison {
+  const mismatches: string[] = [];
+  let mismatched = 0;
+  for (const draw of draws) {
+    const record = draw.record * DRAW_ARGS_WORDS;
+    const landed = word(gpu, record + 1);
+    const first = word(gpu, record + 4);
+    if (
+      holdsAll(
+        drawn,
+        first,
+        landed,
+        draw.instances,
+        draw.instances.length / LOCAL_WORDS,
+        MATRIX_TOLERANCE,
+      )
+    )
+      continue;
+    mismatched += 1;
+    if (mismatches.length >= MESH_REPORTED_MESHES) continue;
+    // The region that owns the record the mesh read, which is the name that says whether the mesh
+    // and the scene ever agreed on which record this key is.
+    const owner = regions.find((region) => region.argsIndex === draw.record);
+    mismatches.push(
+      `mesh=${draw.name} record=${String(draw.record)} ` +
+        `region=${owner?.name ?? "none"} count gpu=${String(landed)} ` +
+        `cpu=${String(draw.instances.length / LOCAL_WORDS)} ` +
+        `firstMatrix gpu=${xyz(drawn, first)} cpu=${xyz(draw.instances, 0)}`,
+    );
+  }
+  return { compared: draws.length, mismatched, mismatches };
+}
+
+/**
+ * Whether every one of `gpuCount` matrices starting at `gpuStart` is one of the `cpuCount` matrices
+ * at the front of `cpu`, within `tolerance`.
+ *
+ * Both runs are ordered by translation, which is what orders a placement, and the walk is a merge:
+ * one pass, no per-instance scan of the other side, because a residency cell's records run to
+ * thousands and there are two hundred dressed meshes.
+ */
+function holdsAll(
+  gpu: Float32Array,
+  gpuStart: number,
+  gpuCount: number,
+  cpu: Float32Array,
+  cpuCount: number,
+  tolerance: number,
+): boolean {
+  const one = sorted(gpu, gpuStart, gpuCount);
+  const other = sorted(cpu, 0, cpuCount);
+  let at = 0;
+  for (const matrix of one) {
+    while (at < other.length && behind(other[at] as Float32Array, matrix, tolerance)) at += 1;
+    const against = other[at];
+    if (against === undefined) return false;
+    if (
+      Math.abs((against[12] as number) - (matrix[12] as number)) > tolerance ||
+      Math.abs((against[13] as number) - (matrix[13] as number)) > tolerance ||
+      Math.abs((against[14] as number) - (matrix[14] as number)) > tolerance
+    )
+      return false;
+  }
+  return true;
+}
+
+/** Whether one translation-sorted matrix sits before `matrix` by more than `tolerance` allows. */
+function behind(one: Float32Array, matrix: Float32Array, tolerance: number): boolean {
+  const x = (one[12] as number) - (matrix[12] as number);
+  if (Math.abs(x) > tolerance) return x < 0;
+  const z = (one[14] as number) - (matrix[14] as number);
+  return Math.abs(z) > tolerance && z < 0;
+}
+
 /** What one landed readback concluded, in the three words a log line can carry. */
 export type GpuSceneVerdict = "ok" | "mismatch" | "error";
 
@@ -403,6 +526,15 @@ export interface IGpuSceneComparison {
    */
   readonly matricesMismatched: number;
   readonly matrixMismatches: readonly string[];
+  /**
+   * Dressed main meshes whose own record was read back and held against the CPU path's own records
+   * for that mesh's key, and up to {@link MESH_REPORTED_MESHES} of them by name. This is the check
+   * the reference above cannot make: a key/record/mesh mapping that is wrong is one both sides
+   * reproduce, and a mesh drawing another asset's placements out of its own record is the picture
+   * that proves it.
+   */
+  readonly meshMismatched: number;
+  readonly meshMismatches: readonly string[];
   /** Resident placements the scene held when the readback was issued. */
   readonly placed: number;
   /** The device's last uncaptured error, or `""` for none since the last check reported one. */
@@ -424,10 +556,13 @@ export interface IGpuSceneComparison {
  * whatever the counts say, because every count in a buffer the device has already invalidated is not
  * evidence of anything.
  *
- * The two mismatch families are counted apart and both are a `mismatch`: a key that drew the right
+ * The three mismatch families are counted apart and all are a `mismatch`: a key that drew the right
  * number of instances at the wrong place or through a record naming no triangle is the failure a
  * count cannot see, and a walk that printed `mismatched=0` over a forest it never drew is what that
- * reads like.
+ * reads like. The third is the one the two above cannot find at all: every key the reference names
+ * and every record it reads is named by this same file, so a key/record/mesh mapping that is wrong is
+ * one they both reproduce, and the dressed mesh's own record, against the CPU path's own records,
+ * is the only pair of numbers here that were not written by the same hand.
  *
  * An `error` always names its cause on one `cause=` line: the checks that fail here fail silently
  * otherwise, and a line reading `error` with nothing after it is the report that hid a refused
@@ -442,14 +577,15 @@ export function validationReport(input: IGpuSceneComparison): IGpuSceneValidatio
   const verdict: GpuSceneVerdict =
     cause !== ""
       ? "error"
-      : input.mismatched > 0 || input.matricesMismatched > 0
+      : input.mismatched > 0 || input.matricesMismatched > 0 || input.meshMismatched > 0
         ? "mismatch"
         : "ok";
   const line =
     `TN_WORLD_GPU_SCENE_VALIDATE ${verdict} compared=${String(input.compared)} ` +
     `instancesGpu=${String(input.instancesGpu)} instancesCpu=${String(input.instancesCpu)} ` +
-    `mismatched=${String(input.mismatched)} matricesMismatched=${String(input.matricesMismatched)}`;
-  const lines: string[] = [...input.mismatches, ...input.matrixMismatches];
+    `mismatched=${String(input.mismatched)} matricesMismatched=${String(input.matricesMismatched)} ` +
+    `meshMismatched=${String(input.meshMismatched)}`;
+  const lines: string[] = [...input.mismatches, ...input.matrixMismatches, ...input.meshMismatches];
   if (cause !== "") lines.push(`cause=${cause.slice(0, CAUSE_CHARS)}`);
   return { verdict, line, lines };
 }
@@ -1038,13 +1174,14 @@ export class WorldGpuScene {
   /**
    * What the last landed readback found, so a harness can read the answer without the log: the
    * verdict, how many keys it actually compared, how many disagreed on the count, how many on what
-   * the draw reads, and the detail lines.
+   * the draw reads, how many dressed meshes drew instances their own key never owned, and the lines.
    */
   get validation(): {
     readonly verdict: GpuSceneVerdict;
     readonly compared: number;
     readonly mismatched: number;
     readonly matricesMismatched: number;
+    readonly meshMismatched: number;
     readonly lines: readonly string[];
   } {
     return {
@@ -1052,12 +1189,30 @@ export class WorldGpuScene {
       compared: this.#compared,
       mismatched: this.#mismatches,
       matricesMismatched: this.#matrixMismatches,
+      meshMismatched: this.#meshMismatches,
       lines: this.#lines,
     };
   }
 
+  /**
+   * Where the independent per-mesh check gets the CPU path's own records, registered once by the
+   * owner and asked only on a check's frame.
+   *
+   * The scene cannot answer this for itself: the records are the owner's, and the meshes whose
+   * indirect offsets are the question are the owner's too. It is asked inside {@link compare}, before
+   * the readback is issued, so the instances it compares are the ones the dispatch just read rather
+   * than whatever the cells hold when the bytes land — the same snapshot rule the rest of the check
+   * is built on, and the reason a walk that streams while a readback is in flight cannot make the
+   * check compare two different worlds.
+   */
+  drawsFrom(provider: () => readonly IMeshDraw[]): void {
+    this.#draws = provider;
+  }
+
+  #draws: (() => readonly IMeshDraw[]) | undefined;
   #mismatches = 0;
   #matrixMismatches = 0;
+  #meshMismatches = 0;
   #compared = 0;
   #verdict: GpuSceneVerdict = "ok";
   #lines: string[] = [];
@@ -1091,10 +1246,18 @@ export class WorldGpuScene {
    * `indexCount` was zero, with the forest it was supposed to draw missing from the picture and its
    * shadows still on the ground. So the matrices are read back too, and the same check that reads
    * them holds the record's two CPU-owned words against what the key's geometry and layout say.
+   *
+   * And the third check reads nothing this file wrote: the owner's own dressed meshes, each with the
+   * indirect record its own geometry points at, against the instances the owner's own CPU path
+   * composes for the key that mesh is named. Both families above can only confirm that the kernel
+   * and the reference agree, which a wrong key-to-record mapping makes them agree on; only these two
+   * were not written by the same hand. See {@link compareMeshDraws}.
    */
   #compare(renderer: IRendererLike): void {
     const snapshot = this.#snapshot();
     const reference = cullAndSelect(snapshot);
+    // Taken now, with the snapshot, and not when the readback lands: see `drawsFrom`.
+    const draws = this.#draws?.() ?? [];
     this.#validating = true;
     Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
       .then(([argsBytes, drawnBytes]) => {
@@ -1106,6 +1269,7 @@ export class WorldGpuScene {
             reference,
             new Uint32Array(argsBytes),
             new Float32Array(drawnBytes),
+            draws,
           ),
         );
       })
@@ -1120,6 +1284,8 @@ export class WorldGpuScene {
           instancesCpu: 0,
           instancesGpu: 0,
           matricesMismatched: 0,
+          meshMismatched: 0,
+          meshMismatches: [],
           mismatched: 0,
           mismatches: [],
           matrixMismatches: [],
@@ -1167,12 +1333,13 @@ export class WorldGpuScene {
     };
   }
 
-  /** One readback's bytes against its own dispatch's reference: the counts, then the draw. */
+  /** One readback's bytes against its own dispatch's reference: the counts, then the draw, then the meshes. */
   #against(
     snapshot: IValidationSnapshot,
     reference: IKernelResult,
     gpu: Uint32Array,
     drawn: Float32Array,
+    draws: readonly IMeshDraw[],
   ): IGpuSceneComparison {
     const mismatches: string[] = [];
     const matrixMismatches: string[] = [];
@@ -1219,12 +1386,18 @@ export class WorldGpuScene {
             `indexCount gpu=${String(indexCount)} expected=${String(region.indexCount)}`,
         );
     }
+    // Off the snapshot's own regions: which key each mesh is, which record it reads and what it
+    // should be holding are the owner's numbers, and the whole point is that nothing in this file
+    // chose them.
+    const meshes = compareMeshDraws(gpu, drawn, draws, snapshot.regions);
     return {
       compared: snapshot.regions.length,
       deviceError: this.#deviceError,
       instancesCpu,
       instancesGpu,
       matricesMismatched,
+      meshMismatched: meshes.mismatched,
+      meshMismatches: meshes.mismatches,
       mismatched,
       mismatches,
       matrixMismatches,
@@ -1239,6 +1412,7 @@ export class WorldGpuScene {
     this.#compared = input.compared;
     this.#mismatches = input.mismatched;
     this.#matrixMismatches = input.matricesMismatched;
+    this.#meshMismatches = input.meshMismatched;
     this.#lines = [...report.lines];
     // Reported, so cleared: an error is folded into exactly the check that saw it.
     this.#deviceError = "";

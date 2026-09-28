@@ -39,6 +39,7 @@ import { within, yieldToHost } from "./warmup.js";
 import {
   DRAW_ARGS_BYTES,
   type IAssetSlot,
+  type IMeshDraw,
   WorldGpuScene,
   gpuSceneRequested,
   gpuSceneValidationRequested,
@@ -3180,6 +3181,12 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#gpuWanted,
         this.#gpuValidate ?? gpuSceneValidationRequested(),
       );
+    // The one check the scene cannot make for itself, and the only one that reads this class's own
+    // numbers rather than the scene's tables: a dressed main mesh's own indirect record, against the
+    // instances this path composes for the key that mesh is named. Registered before the keys are
+    // seeded, because the first check is a whole ring's worth of meshes and every one of them is
+    // already dressed by the time it runs.
+    this.#gpuScene.drawsFrom(() => this.#gpuDraws());
     // The scene coming up under a ring that was already built: every placement swapped in before it
     // was on has no source record, and the dispatch draws nothing it is not given. One rebuild of the
     // resident ring puts them in, through the same build every first-seen asset takes.
@@ -4825,6 +4832,53 @@ export class WorldCells extends Group implements IComputeDriven {
       if (batch.gpu !== undefined) dressed += 1;
     }
     return { dressed, meshes };
+  }
+
+  /**
+   * Every dressed main mesh's own draw, and what this class's own records say it should be holding.
+   *
+   * The scene's own validation mirrors its own kernel, so a key, a record and a mesh that do not
+   * correspond are one both sides reproduce and a check that reports `ok` over a forest drawn with
+   * another tree's geometry. These are the three numbers that are not the scene's: the mesh's own
+   * name, the record its own geometry points at (`indirectOffset`, which a dress wrote), and the
+   * instances this path composed for that key — level chosen by {@link levelAt} over the gates
+   * {@link assetLevels} built, culled by this path's own cull distance, and multiplied by the part's
+   * own offset in `#addPlacements`. The dressed mesh no longer holds those instances (its buffer is
+   * the scene's shared one), which is why they are read back out of the per-cell batches.
+   */
+  #gpuDraws(): readonly IMeshDraw[] {
+    const draws: IMeshDraw[] = [];
+    for (const shared of this.#shared.values()) {
+      if (shared.role !== "main" || shared.gpu === undefined) continue;
+      const geometry = shared.mesh.geometry;
+      // `indirectOffset` is typed as an offset or a list of them; a scene's own record is one
+      // number, and a list is not a record this check can name, so it is not compared.
+      const offset = geometry.indirectOffset;
+      if (geometry.indirect === undefined || typeof offset !== "number") continue;
+      draws.push({
+        instances: this.#cpuRecords(shared.mesh.name),
+        name: shared.mesh.name,
+        record: offset / DRAW_ARGS_BYTES,
+      });
+    }
+    return draws;
+  }
+
+  /**
+   * The CPU path's own instance records for one main key: every resident cell's share of it, in the
+   * order the cells hold them. The key is named, not decomposed, so the cells are matched by the same
+   * string a key is minted under — a check that re-derived the name would be naming its own answer.
+   */
+  #cpuRecords(key: string): Float32Array {
+    let count = 0;
+    for (const cell of this.#resident.values())
+      for (const entry of cell.batches) if (this.#keyOf(entry) === key) count += entry.batch.count;
+    const out = new Float32Array(count * 16);
+    let at = 0;
+    for (const cell of this.#resident.values())
+      for (const entry of cell.batches)
+        if (this.#keyOf(entry) === key) at += entry.batch.writeMatrices(out, at) * 16;
+    return out;
   }
 
   /**
