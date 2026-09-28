@@ -285,9 +285,9 @@ Open one draft implementation PR before starting this phase, following `docs/PRD
 - [ ] Pass foxes conformance with independently animated staggered skeletons.
 - [ ] Retain a real hardware comparison for the foxes family.
 - [ ] Pass Godot culling conformance with the RID authoring distinction documented.
-- [ ] Retain a real hardware comparison for the Godot culling family.
+- [ ] Retain a real hardware comparison for the Godot culling family. Pilot only, 2026-09-27: the pinned Godot 4.7.1 release template visibly ran all 10 upstream culling variants on the physical RTX 2080 using Vulkan Forward+ and reported render CPU/GPU timings. `artifacts/engine-load-test/prd-449/upstream-pilots/godot-upstream-culling-visible-2026-09-27.log.gz` preserves stdout; its 10-result JSON was parsed from the logged JSON line after the process exited 139 during shutdown. There is no paired TN adapter, seven-block protocol or qualified comparison yet.
 - [ ] Pass lights/meshes conformance including requested-versus-actual counts and changing lights.
-- [ ] Retain a real hardware comparison for the Godot lights/meshes family.
+- [ ] Retain a real hardware comparison for the Godot lights/meshes family. Pilot only, 2026-09-27: the same visible Godot Vulkan lane completed and saved 17/17 selected results (13 `lights_and_meshes`, 4 incidental `lights_2d`) with exit 0 at `artifacts/engine-load-test/prd-449/upstream-pilots/godot-upstream-lights-visible-2026-09-27.json`; compressed stdout is beside it. `Box 10000` reported render CPU 5.995 ms/GPU 0.7268 ms; `Sphere 10000` reported CPU 6.073 ms/GPU 13.34 ms. These are single Godot samples, not TN bottleneck or speedup verdicts; paired TN conformance and repeat blocks remain open.
 - [ ] Pass City conformance for both frozen fixture sizes and both movement states.
 - [ ] Retain a real hardware comparison for the City family.
 
