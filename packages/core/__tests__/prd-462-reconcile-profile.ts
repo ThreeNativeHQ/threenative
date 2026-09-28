@@ -15,7 +15,7 @@
 import { writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
 import { BoxGeometry, Mesh, MeshStandardMaterial, Scene } from "three";
-import { SceneRenderProjection } from "../src/renderProjection.js";
+import { type ProjectionMaterialChecks, SceneRenderProjection } from "../src/renderProjection.js";
 
 const COUNT = 4096;
 const WARMUP = 20;
@@ -56,7 +56,7 @@ const frames = Number(process.argv[3] ?? 200);
 const out = process.argv[4];
 // The colour lane's material proof, the two modes PRD-462 shipped: omitted takes the default
 // (`spread`), and naming `everyFrame` measures the per-member poll it replaced.
-const materialChecks = process.argv[5];
+const materialChecks = process.argv[5] as ProjectionMaterialChecks | undefined;
 const scene = lattice(lane, COUNT);
 const projection = new SceneRenderProjection(scene, {
   minMeshes: 8,

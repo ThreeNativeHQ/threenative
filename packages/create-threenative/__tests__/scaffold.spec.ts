@@ -450,7 +450,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
-  starter: "7b74fc2d63e92a6231492e18bbc6604072d3c654582db03d617e6a3feecf5156",
+  // Recomputed 2026-09-28 for PRD-462: the starter's AGENTS.md now documents the projection's
+  // material-check convention, and its mirror moved with it. Only the starter tree moves — the
+  // other nine templates' AGENTS.md do not name the projection at all.
+  starter: "2ac51ef96757c14b570a5617c653b151e769b4bc43c6f2a815c627d003c77229",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
