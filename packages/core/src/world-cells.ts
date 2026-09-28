@@ -28,6 +28,7 @@ import {
   pooledMesh,
 } from "./render/mesh-pool.js";
 import type { IRendererLike } from "./renderer.js";
+import { holdStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
@@ -505,6 +506,9 @@ class SharedBatch {
     const mesh = this.mesh;
     mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
     mesh.count = 0;
+    // A new attribute is a buffer three has not created yet, and it is created by the scan a settled
+    // draw skips, so this is a write like any other.
+    holdStatic(mesh);
     this.#free = [[0, capacity]];
     this.#drawn = 0;
   }
@@ -817,6 +821,9 @@ class SharedBatch {
     matrix.clearUpdateRanges();
     if (high > low) matrix.addUpdateRange(low, high - low);
     matrix.needsUpdate = true;
+    // The upload this announces is a vertex attribute of a settled draw, and three's settled path
+    // skips the attribute scan, so the mesh has to leave it for the frame that draws these records.
+    holdStatic(this.mesh);
     this.mesh.count = this.#drawn;
     this.mesh.visible = this.mesh.count > 0;
     // Records are real, so the bounds are the ones `#rebound` just wrote and the mesh goes back to
@@ -2541,6 +2548,11 @@ export class WorldCells extends Group implements IComputeDriven {
    * reach the shadow maps only through a caster half.
    */
   #dressMesh(mesh: InstancedMesh, role: "cluster" | "main" | "wide", receiveShadow: boolean): void {
+    // Every role's records are written into the instance buffer, never moved in the world, and the
+    // mesh is created and released per role — so this is the one place that covers a fresh mesh, a
+    // rebound one and the three roles. Static here is only safe because every write announces
+    // itself: see `SharedBatch.#touched`.
+    markStatic(mesh);
     if (role !== "main") {
       mesh.layers.set(
         role === "cluster" ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
@@ -2853,6 +2865,9 @@ export class WorldCells extends Group implements IComputeDriven {
             });
           cell.chunks.push(object);
           this.add(object);
+          // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
+          // are the ones the export gave it, so it is the one subtree here with nothing to announce.
+          markStatic(object);
           attached += 1;
         },
         { marker: false, while: live },
