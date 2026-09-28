@@ -2,7 +2,12 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
-import { DEFAULT_AXES, type IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
+import {
+  DEFAULT_AXES,
+  type IWorkloadAxes,
+  RENDER_MODES,
+  type RenderMode,
+} from "../../examples/engine-load-test/src/workload.js";
 
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
@@ -17,7 +22,9 @@ export const ARMS = [
 
 export type Arm = (typeof ARMS)[number];
 type EngineName = "godot" | "threenative" | "three";
-export type RenderMode = "L1" | "L2" | "L3";
+// The scene's own mode list, re-exported rather than restated: a report whose reader and whose
+// writer disagree on what a mode is would reject a run the harness happily produced.
+export type { RenderMode };
 export type BuildType = "release" | "debug";
 export type BenchExitCode = 1 | 2;
 
@@ -523,7 +530,7 @@ export function parseRunReport(value: unknown): IRunReport {
     const path = `report.rungs[${index}]`;
     const rung = requireObject(rawRung, path);
     const mode = requireString(rung, "mode", path);
-    if (mode !== "L1" && mode !== "L2" && mode !== "L3")
+    if (!(RENDER_MODES as readonly string[]).includes(mode))
       throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.mode ${mode} is not a render mode`);
     const frameMs = rung.frameMs;
     if (!Array.isArray(frameMs) || frameMs.length === 0)
@@ -1372,9 +1379,13 @@ function drawCallFailure(
   left: IRungSummary,
   right: IRungSummary,
 ): IEquivalenceFailure | undefined {
-  if (mode === "L1") {
+  // L1 and L4 both draw one call per authored cube — L4 with a material per cube, which is exactly
+  // what stops an engine from folding them — so the "one arm silently batched" guard is the same
+  // check, and the L2 batch check below must not be applied to a rung of 4,096 draws.
+  if (mode === "L1" || mode === "L4") {
     // An arm reporting one draw where the other reports N has silently auto-batched and is not
-    // running L1 at all — the single most likely way this comparison gets published wrong (§5.2).
+    // running this rung at all — the single most likely way this comparison gets published wrong
+    // (§5.2).
     for (const [side, summary] of [
       ["left", left],
       ["right", right],
@@ -1382,7 +1393,7 @@ function drawCallFailure(
       const expected = Math.max(0, summary.visibleObjects);
       if (Math.abs(summary.drawCalls - expected) > 2 && summary.drawCalls < objectCount * 0.5) {
         return {
-          field: `drawCalls (${side} arm auto-batched L1)`,
+          field: `drawCalls (${side} arm auto-batched ${mode})`,
           left: String(left.drawCalls),
           right: String(right.drawCalls),
           rung: rungKey(mode, objectCount),
@@ -1494,7 +1505,7 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
 
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     const leftPinned = looksVsyncPinned(leftSummaries, mode);
     const rightPinned = looksVsyncPinned(rightSummaries, mode);
     if (leftPinned !== rightPinned) {
@@ -1613,6 +1624,7 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
       L1: knee(leftSummaries, "L1"),
       L2: knee(leftSummaries, "L2"),
       L3: knee(leftSummaries, "L3"),
+      L4: knee(leftSummaries, "L4"),
     },
     leftSummaries,
     right,
@@ -1620,6 +1632,7 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
       L1: knee(rightSummaries, "L1"),
       L2: knee(rightSummaries, "L2"),
       L3: knee(rightSummaries, "L3"),
+      L4: knee(rightSummaries, "L4"),
     },
     rightSummaries,
   };
@@ -1691,7 +1704,7 @@ export function renderComparisonMarkdown(comparison: IComparison): string {
     `| mode | knee — ${comparison.left.arm} | knee — ${comparison.right.arm} |`,
     "|---|---|---|",
   ];
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     lines.push(
       `| ${mode} | ${formatKnee(comparison.leftKnee[mode])} | ${formatKnee(comparison.rightKnee[mode])} |`,
     );

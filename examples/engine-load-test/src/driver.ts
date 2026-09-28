@@ -25,9 +25,11 @@ import {
   FRAMES_PER_RUNG,
   type IWorkloadAxes,
   LADDER,
+  RENDER_MODES,
   REPEATS,
   type RenderMode,
   WARMUP_FRAMES,
+  isProjectedRung,
   parseAxesRecord,
   percentile,
 } from "./workload.js";
@@ -130,9 +132,9 @@ function readModes(): RenderMode[] {
   const raw = parameters.get("modes");
   if (raw === null) return ["L1", "L2"];
   return raw.split(",").map((part) => {
-    if (part !== "L1" && part !== "L2" && part !== "L3")
+    if (!(RENDER_MODES as readonly string[]).includes(part))
       throw new Error("TN_BENCH_BAD_PARAM:modes");
-    return part;
+    return part as RenderMode;
   });
 }
 
@@ -207,9 +209,9 @@ export async function measureRung(
     throw new Error(`TN_BENCH_WARMUP_GE_FRAMES:${knobs.warmup}/${knobs.frames}`);
   harness.setRung(rung);
   const initialPlacementSha256 = await sha256(harness.placementBytes);
-  // L3 bakes across frames. Drive it to "applied" before a single sample is taken, or the rung
-  // times the bake and reports it as the steady-state cost.
-  if (rung.mode === "L3") {
+  // L3 and L4 bakes across frames. Drive it to "applied" before a single sample is taken, or the
+  // rung times the bake and reports it as the steady-state cost.
+  if (isProjectedRung(rung.mode)) {
     harness.beginCollapse();
     for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle += 1) {
       // Draw occasionally while the pass bakes. Every frame pays the un-collapsed scene's cost and
@@ -220,22 +222,28 @@ export async function measureRung(
       if (settle % 8 === 0) await harness.render();
       await nextFrame();
     }
-    // `projected` is the projection's applied state, where the pass this replaced said `applied`.
-    if (harness.collapseStatus() !== "projected")
-      throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
-    // Fail closed on the frozen scene. The pass this replaced could classify a moving object as
-    // static and render a still picture at a very fast frame time, which is indistinguishable from a
-    // win unless the rung refuses to report. The projection cannot freeze an object — every one of
-    // them carries its own instance matrix — so the equivalent assertion is that every object is
-    // actually in the optimized lane rather than quietly sitting on the exact one.
-    //
-    // `>=`, not `===`: the count is every projected object in the scene, and the scene holds a
-    // ground plane besides the rung's cubes. The old equality held only because the ground was
-    // static and so was never a "moving part"; under the projection there is no static/moving split
-    // to exclude it, which is the whole point of the replacement.
-    const moving = harness.collapseMovingParts();
-    if (moving < rung.objectCount)
-      throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${rung.objectCount}`);
+    // L4's question is what the shipped default costs on a scene nothing may batch, so the
+    // projection declining is that row's answer, not a failure — and `drawCalls` is what records
+    // which of the two happened. Only L3's two guards stay strict, because their whole point is
+    // that an un-projected frame must never be published under an L3 label.
+    if (rung.mode === "L3") {
+      // `projected` is the projection's applied state, where the pass this replaced said `applied`.
+      if (harness.collapseStatus() !== "projected")
+        throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+      // Fail closed on the frozen scene. The pass this replaced could classify a moving object as
+      // static and render a still picture at a very fast frame time, which is indistinguishable from
+      // a win unless the rung refuses to report. The projection cannot freeze an object — every one
+      // of them carries its own instance matrix — so the equivalent assertion is that every object is
+      // actually in the optimized lane rather than quietly sitting on the exact one.
+      //
+      // `>=`, not `===`: the count is every projected object in the scene, and the scene holds a
+      // ground plane besides the rung's cubes. The old equality held only because the ground was
+      // static and so was never a "moving part"; under the projection there is no static/moving split
+      // to exclude it, which is the whole point of the replacement.
+      const moving = harness.collapseMovingParts();
+      if (moving < rung.objectCount)
+        throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${rung.objectCount}`);
+    }
   }
   const frameMs: number[] = [];
   const stepMs: number[] = [];

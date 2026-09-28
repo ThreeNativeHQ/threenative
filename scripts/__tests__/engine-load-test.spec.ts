@@ -20,16 +20,20 @@ import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
   type IWorkloadAxes,
+  RENDER_MODES,
   assertRungAxesSupported,
   canonicalPlacementBytes,
   createLcg,
   createPlacements,
   culledOffsetX,
+  isAuthoredRung,
   isMutated,
+  isProjectedRung,
   isVisible,
   parseAxesRecord,
   positionHash,
   resolveAxes,
+  uniqueMaterialColor,
 } from "../../examples/engine-load-test/src/workload.js";
 import {
   assertHardwareAdapter,
@@ -540,6 +544,47 @@ describe("engine load test workload", () => {
         /TN_BENCH_UNSUPPORTED_L2_AXES/u,
       );
     }
+  });
+
+  it("adds L4 as the per-cube-material rung on both arms, with the colour Godot mirrors", async () => {
+    // One flag, not a new project: L4 is L3's shipped-default projection over L1's one-mesh-per-cube
+    // authoring, and only the material changes. L2 stays the single batch, L1 the un-projected
+    // control, and the projection still runs over L3 and L4 alone.
+    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4"]);
+    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([true, false, true, true]);
+    expect(RENDER_MODES.map(isProjectedRung)).toEqual([false, false, true, true]);
+    // Distinct per cube over the whole ladder, and a pure function of the index, so the two arms
+    // compute the same colour and no engine has two materials it could pair.
+    const colors = Array.from({ length: 16_384 }, (_, index) => uniqueMaterialColor(index));
+    expect(new Set(colors).size).toBe(16_384);
+    expect(uniqueMaterialColor(0)).toBe(0xff0000);
+    expect(uniqueMaterialColor(0)).not.toBe(uniqueMaterialColor(1));
+
+    // The GDScript twin builds the same three channels from the same index, and takes the L1 branch
+    // both when it builds the rung and when it steps it — the two places L1's authoring is used.
+    const godot = await readFile(
+      path.join(process.cwd(), "benchmark/godot-load-test/load_test.gd"),
+      "utf8",
+    );
+    expect(godot).toMatch(/Color\(\s*1\.0, float\(\(index >> 16\) & 0xff\) \/ 255\.0/u);
+    expect(godot.match(/_mode == "L1" or _mode == "L4"/gu) ?? []).toHaveLength(2);
+
+    // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
+    // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
+    for (const entry of ["driver.ts", "native.ts"]) {
+      const source = await readFile(
+        path.join(process.cwd(), "examples/engine-load-test/src", entry),
+        "utf8",
+      );
+      expect(source).toMatch(/if \(isProjectedRung\((rung\.)?mode\)\)/u);
+      expect(source).toMatch(/if \((rung\.)?mode === "L3"\)/u);
+    }
+    const game = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/game.ts"),
+      "utf8",
+    );
+    expect(game).toMatch(/if \(isAuthoredRung\(rung\.mode\)\)/u);
+    expect(game).toMatch(/owned\?\.color\.setHex\(uniqueMaterialColor\(index\)\)/u);
   });
 
   it("wires every axis through the CLI and both runtime entry points", async () => {
@@ -2322,6 +2367,23 @@ describe("engine load test equivalence gate", () => {
     expect(comparison.leftKnee.L1).toBe(4096);
     expect(comparison.rightKnee.L1).toBe(4096);
     expect(checkEquivalence(ladderReport(24), ladderReport(30, "godot-web"))).toEqual([]);
+  });
+
+  it("should publish an L4 pair at one draw per cube and refuse one that batched", () => {
+    // R3's row is "nothing can batch", so the record has to survive the reader and the gate has to
+    // judge it by per-cube draws rather than by the L2 batch rule.
+    const l4 = (arm: IRunReport["arm"]): IRunReport =>
+      report({ arm, rungs: [rung({ mode: "L4", drawCalls: 4097, visibleObjects: 4096 })] });
+    expect(parseRunReport(JSON.parse(JSON.stringify(l4("tn-desktop")))).rungs[0]?.mode).toBe("L4");
+    expect(() =>
+      parseRunReport({ ...l4("tn-desktop"), rungs: [rung({ mode: "L5" as never })] }),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(checkEquivalence(l4("tn-desktop"), l4("godot-desktop"))).toEqual([]);
+    const batched = l4("godot-desktop");
+    batched.rungs[0] = rung({ mode: "L4", drawCalls: 2, visibleObjects: 4096 });
+    expect(checkEquivalence(l4("tn-desktop"), batched).map((failure) => failure.field)).toContain(
+      "drawCalls (right arm auto-batched L4)",
+    );
   });
 
   it("should refuse a provisional comparison", () => {

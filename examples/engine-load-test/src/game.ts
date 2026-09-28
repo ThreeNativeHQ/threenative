@@ -42,9 +42,12 @@ import {
   cubeRotationX,
   cubeRotationY,
   culledOffsetX,
+  isAuthoredRung,
   isMutated,
+  isProjectedRung,
   latticeExtent,
   positionHash,
+  uniqueMaterialColor,
 } from "./workload.js";
 
 export const VIEWPORT_WIDTH = 1280;
@@ -141,25 +144,33 @@ interface IAuthoredCubes {
   materials: Material[];
 }
 
-// The authored L1/L3 rung: shared geometry and material by default, per-object clones when either
-// uniqueness axis is on, and culled objects pushed past the far plane.
+// The authored L1/L3/L4 rung: shared geometry and material by default, per-object clones when
+// either uniqueness axis is on, one extra material per cube under L4, and culled objects pushed
+// past the far plane.
 function buildAuthoredCubes(
   placements: readonly ICubePlacement[],
   parent: Object3D,
   axes: IWorkloadAxes,
+  mode: RenderMode,
   cubeGeometry: BoxGeometry,
-  material: Material,
+  material: MeshStandardMaterial,
   shadowCasterCount: number,
 ): IAuthoredCubes {
   const cubes: Mesh[] = [];
   const geometries: BufferGeometry[] = [];
   const materials: Material[] = [];
+  const uniqueGeometry = axes.geometry === "unique";
+  // L4 is the per-cube-material rung whatever the axes say: its whole claim is that nothing can be
+  // batched, which a shared material would let the projection batch away.
+  const perCubeColor = mode === "L4";
+  const uniqueMaterial = axes.material === "unique" || perCubeColor;
   for (let index = 0; index < placements.length; index += 1) {
     const placement = placements[index] as ICubePlacement;
-    const uniqueGeometry = axes.geometry === "unique";
-    const uniqueMaterial = axes.material === "unique";
     const geometry = uniqueGeometry ? cubeGeometry.clone() : cubeGeometry;
-    const meshMaterial = uniqueMaterial ? material.clone() : material;
+    const owned = uniqueMaterial ? material.clone() : undefined;
+    // On the clone, so the ground plane and every other rung keep the shared authored colour.
+    if (perCubeColor) owned?.color.setHex(uniqueMaterialColor(index));
+    const meshMaterial: Material = owned ?? material;
     if (uniqueGeometry) geometries.push(geometry);
     if (uniqueMaterial) materials.push(meshMaterial);
     const cube = new Mesh(geometry, meshMaterial);
@@ -356,11 +367,12 @@ export async function createLoadTestHarness(
     const materials: Material[] = [];
     let instanced: InstancedMesh | undefined;
     const shadowCasterCount = Math.ceil(rung.objectCount * axes.shadowCasterShare);
-    if (rung.mode === "L1" || rung.mode === "L3") {
+    if (isAuthoredRung(rung.mode)) {
       const authored = buildAuthoredCubes(
         placements,
         parent,
         axes,
+        rung.mode,
         cubeGeometry,
         material,
         shadowCasterCount,
@@ -400,7 +412,7 @@ export async function createLoadTestHarness(
   let collapseReport: IRenderProjectionReport | undefined;
 
   const beginCollapse = (): void => {
-    if (state === undefined || state.rung.mode !== "L3") return;
+    if (state === undefined || !isProjectedRung(state.rung.mode)) return;
     if (createCollapse === undefined) throw new Error("TN_BENCH_NO_COLLAPSE_PROVIDER");
     collapseReport = undefined;
     // No tuning: `defineGame` constructs `new SceneRenderProjection(scene)` with defaults and
@@ -441,15 +453,16 @@ export async function createLoadTestHarness(
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
-    if (state.rung.mode === "L1" || state.rung.mode === "L3") {
+    if (isAuthoredRung(state.rung.mode)) {
       // Diagnostic only: with the animation off, `stepMs` is the framework's refresh alone, which
       // is what separates "the engine is slow" from "the game's own gameplay loop is slow". A
       // framework fix can only ever address the first.
       if (animateObjects) {
         writeAuthoredTransforms(state.cubes, state.placements, frameIndex, axes);
       }
-      // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
-      // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
+      // L3 and L4 pay this on the game side every frame: the collapse pass reads the same moved
+      // meshes and pushes their transforms into the baked draw. It is part of the frame, not a
+      // setup cost. L4's per-cube materials are why there is usually nothing to push them into.
       const collapseStartedAt = performance.now();
       // The walk counts the nodes this frame visits, so its count opens before the reconcile that
       // walks the authored scene, as `defineGame` does.
@@ -542,14 +555,19 @@ export async function createLoadTestHarness(
     stats: () => {
       const drawCalls = renderer.info.render.drawCalls;
       const triangles = renderer.info.render.triangles;
-      // `drawCalls` totals every render pass, so the per-object count divides the pass count.
-      const visibleObjects =
-        state?.rung.mode === "L1"
-          ? Math.max(0, drawCalls / axes.passCount - 1)
-          : (state?.rung.objectCount ?? 0);
+      // `drawCalls` totals every render pass, so the per-object count divides the pass count. L1
+      // and L4 have no baked batch to inflate it, so the visible count is read off the draw count;
       // L3's draw count is the finding: if the collapse applied, it is small; if it declined, this
       // is L1 with extra steps and the report must show that rather than hide it.
-      return { drawCalls, triangles, visibleObjects };
+      const mode = state?.rung.mode;
+      return {
+        drawCalls,
+        triangles,
+        visibleObjects:
+          mode === "L1" || mode === "L4"
+            ? Math.max(0, drawCalls / axes.passCount - 1)
+            : (state?.rung.objectCount ?? 0),
+      };
     },
     step,
   };

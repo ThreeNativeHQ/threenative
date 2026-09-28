@@ -26,7 +26,9 @@ function integer(name: string, fallback: number): number {
 function modes(): string[] {
   const raw = process.env.TN_BENCH_MODES ?? "L1,L2,L3";
   return raw.split(",").map((part) => {
-    if (part !== "L1" && part !== "L2" && part !== "L3")
+    // L4 is the per-cube-material rung: RENDER_MODES in `src/workload.ts`, spelled out here because
+    // this config is loaded by esbuild, which will not follow a `./src/workload.js` specifier.
+    if (part !== "L1" && part !== "L2" && part !== "L3" && part !== "L4")
       throw new Error(`TN_BENCH_MODES holds an unknown mode '${part}'.`);
     return part;
   });
