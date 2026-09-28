@@ -10,6 +10,23 @@ git history (`git log --diff-filter=D --name-only -- docs/verification/` names t
 `git show <commit>^:docs/verification/<file>`). §8 indexes what each one concluded. A claim whose
 detail is not in this file exists only in git — quote it with the commit.
 
+## ThreeNative vs Godot 4.7.1 scoreboard, and three projection fixes — 2026-09-28
+
+PRD-449 (`docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md`). One cube scene, native desktop, RTX 2080, 1280×720 uncapped, 40 warm-up + 120 measured frames, and 3 alternating runs per engine (`pnpm bench:scoreboard`). A row is a win only when the median gap beats the run-to-run spread. The dashboard is `pnpm bench:engines:monitor` (`artifacts/engine-load-test/prd-449/progress.html`).
+
+| Row (TN vs Godot) | 1,024 cubes | 4,096 cubes |
+| --- | --- | --- |
+| Shipped defaults (TN L3 / Godot L1) | 1.26 vs 1.64 ms, TN 1.3× | 2.28 vs 4.17 ms, TN 1.8× |
+| Explicit instancing (L2 / L2) | 1.10 vs 1.23 ms, TN 1.1× | 1.40 vs 2.73 ms, TN 2.0× |
+| Can't batch, unique material per cube (L4 / L4) | 2.08 vs 1.73 ms, Godot 1.2× | 7.88 vs 5.95 ms, tie |
+
+Kept fixes in `packages/core`, each paired-A/B'd on the same GPU:
+- Projection reconcile skips the unchanged structure: L3 at 4,096 went 10.93 → 6.08 ms on a loaded machine (6/6 blocks).
+- Batch meshes whose materials differ only in colour/uniforms: L4 draws 2,375 → 3, and 42.9 → 10.8 ms at 4,096. Projection on and off match within tolerance.
+- The per-frame material drift check is 1.3× cheaper: L4 at 4,096 went 9.84 → 8.46 ms.
+
+Real-game holdout (racing and shooter templates): no effect and no regression. Both stay below the projection's 200-renderable floor. **Remaining cost:** polling 4,096 distinct materials for in-place edits is all of the remaining L4 gap (a build without the check runs at 2.8 ms). Removing it needs change notification on the game's materials, which is an open design question. Per-draw cost when nothing can batch is about 9 µs of three.js per-object JS plus 2.3 µs of native replay; render bundles would help only static content (probe notes: `artifacts/engine-load-test/prd-449/tmp/attribution/`, untracked).
+
 ## Skinned rigs share one palette draw per pass — 2026-09-25
 
 The render projection now folds `SkinnedMesh` rigs that share a geometry and material into one

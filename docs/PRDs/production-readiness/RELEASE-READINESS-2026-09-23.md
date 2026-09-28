@@ -8,7 +8,10 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 final
+**Remaining for R2 (owner):** PRD-366 registry consumer game — now
+[`BLOCKED/requires-physical-device/`](../BLOCKED/requires-physical-device/) under R6, all 19 phase
+boxes and 3 acceptance boxes ticked, so its whole remainder is a physical Android device, a Windows
+and a macOS host with registry access, and a republished cohort · PRD-399 final
 cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
 controls and web/native parity. PRD-365 and PRD-375 are closed; PRD-375's owner visual check and
 PR #271 merge completed on 2026-09-28. PRD-445 is filed in
@@ -118,7 +121,9 @@ to 0.3.3 and not released.
 ### R2 — a public beta that ships a game
 
 1. **One consumer game, installed from the registry, on every supported target.** Owner:
-   [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
+   [PRD-366](../BLOCKED/requires-physical-device/PRD-366-one-consumer-game-proves-supported-platforms.md)
+   — all 19 phase boxes and 3 acceptance boxes ticked (2026-09-28); blocked on a physical Android
+   device, Windows and macOS hosts with registry access, and a republished cohort (R6).
 2. **The packed golden path is green (closed 2026-09-27).** The ten-template packed gate and its
    mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
@@ -166,7 +171,7 @@ flowchart TD
     C[PRD-196 publish 0.3.3 cohort + runtime-native-v0.3.3] --> R1
     P[PRD-373 merge promotion #291] --> R1
     R1([R1: coherent 0.3.3 preview on latest])
-    R1 --> Q[PRD-366 phase 3: consumer game from the registry]
+    R1 --> Q[PRD-366 consumer game: physical Android + republished cohort (BLOCKED)]
     G[PRD-112 packed golden path green] --> R2
     Q --> R2
     L[PRD-399 Android UI latency at 60 Hz] --> R2

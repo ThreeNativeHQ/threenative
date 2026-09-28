@@ -25,7 +25,7 @@ index 0bb9262..868a634 100644
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e49079..aa860b3 100644
+index 2e49079..7aa62ad 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -381,16 +381,15 @@ index 2e49079..aa860b3 100644
  
  	}
  
-@@ -30548,6 +30661,8 @@ class RenderObject {
+@@ -30548,6 +30661,7 @@ class RenderObject {
  		}
  
  		cacheKey = hash$1( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
 +		cacheKey = hash$1( cacheKey, this.context.sampleCount );
-+		cacheKey = hash$1( cacheKey, this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples );
  
  		return cacheKey;
  
-@@ -30680,6 +30795,8 @@ class RenderObjects {
+@@ -30680,6 +30794,8 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = material;
  		_chainKeys$3[ 2 ] = renderContext;
  		_chainKeys$3[ 3 ] = lightsNode;
@@ -399,7 +398,7 @@ index 2e49079..aa860b3 100644
  
  		//
  
-@@ -30707,9 +30824,18 @@ class RenderObjects {
+@@ -30707,9 +30823,18 @@ class RenderObjects {
  
  			}
  
@@ -420,7 +419,7 @@ index 2e49079..aa860b3 100644
  
  					renderObject.dispose();
  
-@@ -30719,6 +30845,8 @@ class RenderObjects {
+@@ -30719,6 +30844,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -429,7 +428,7 @@ index 2e49079..aa860b3 100644
  				}
  
  			}
-@@ -30731,6 +30859,7 @@ class RenderObjects {
+@@ -30731,6 +30858,7 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = null;
  		_chainKeys$3[ 2 ] = null;
  		_chainKeys$3[ 3 ] = null;
@@ -437,7 +436,7 @@ index 2e49079..aa860b3 100644
  
  		//
  
-@@ -31165,6 +31294,14 @@ class Geometries extends DataMap {
+@@ -31165,6 +31293,14 @@ class Geometries extends DataMap {
  		 */
  		this._geometryDisposeListeners = new Map();
  
@@ -452,7 +451,7 @@ index 2e49079..aa860b3 100644
  	}
  
  	/**
-@@ -31190,10 +31327,69 @@ class Geometries extends DataMap {
+@@ -31190,10 +31326,69 @@ class Geometries extends DataMap {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
  
@@ -522,7 +521,7 @@ index 2e49079..aa860b3 100644
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -32771,7 +32967,7 @@ class Bindings extends DataMap {
+@@ -32771,7 +32966,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -531,7 +530,7 @@ index 2e49079..aa860b3 100644
  
  	}
  
-@@ -32918,12 +33114,13 @@ class Bindings extends DataMap {
+@@ -32918,12 +33113,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -547,7 +546,7 @@ index 2e49079..aa860b3 100644
  
  		}
  
-@@ -32934,11 +33131,27 @@ class Bindings extends DataMap {
+@@ -32934,11 +33130,27 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -576,7 +575,7 @@ index 2e49079..aa860b3 100644
  		let needsBindingsUpdate = false;
  		let cacheBindings = true;
  		let cacheIndex = 0;
-@@ -32948,7 +33161,7 @@ class Bindings extends DataMap {
+@@ -32948,7 +33160,7 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -585,7 +584,7 @@ index 2e49079..aa860b3 100644
  
  			// every uniforms group is a uniform buffer. So if no update is required,
  			// we move one with the next binding. Otherwise the next if block will update the group.
-@@ -33952,7 +34165,8 @@ class RenderContexts {
+@@ -33952,7 +34164,8 @@ class RenderContexts {
  
  		}
  
@@ -595,7 +594,7 @@ index 2e49079..aa860b3 100644
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -34181,6 +34395,21 @@ class Textures extends DataMap {
+@@ -34181,6 +34394,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -617,7 +616,7 @@ index 2e49079..aa860b3 100644
  		}
  
  		//
-@@ -39725,7 +39954,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +39953,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -627,7 +626,7 @@ index 2e49079..aa860b3 100644
  
  		//
  
-@@ -53841,7 +54071,7 @@ class NodeBuilder {
+@@ -53841,7 +54070,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -636,7 +635,7 @@ index 2e49079..aa860b3 100644
  
  	}
  
-@@ -55244,15 +55474,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55473,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -657,7 +656,7 @@ index 2e49079..aa860b3 100644
  
  		// check for update
  
-@@ -56056,6 +56288,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56287,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -679,7 +678,7 @@ index 2e49079..aa860b3 100644
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56312,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56311,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -694,7 +693,7 @@ index 2e49079..aa860b3 100644
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56337,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56336,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -707,7 +706,7 @@ index 2e49079..aa860b3 100644
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56378,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56377,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -722,7 +721,7 @@ index 2e49079..aa860b3 100644
  			nodeFrame.updateNode( node );
  
  		}
-@@ -62731,6 +62989,7 @@ class Renderer {
+@@ -62731,6 +62988,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -730,7 +729,7 @@ index 2e49079..aa860b3 100644
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63015,7 @@ class Renderer {
+@@ -62756,6 +63014,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -738,7 +737,7 @@ index 2e49079..aa860b3 100644
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63023,15 @@ class Renderer {
+@@ -62763,7 +63022,15 @@ class Renderer {
  
  			}
  
@@ -755,7 +754,7 @@ index 2e49079..aa860b3 100644
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +63093,7 @@ class Renderer {
+@@ -62825,6 +63092,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -763,7 +762,7 @@ index 2e49079..aa860b3 100644
  
  		}
  
-@@ -62886,18 +63155,17 @@ class Renderer {
+@@ -62886,18 +63154,17 @@ class Renderer {
  
  		//
  
@@ -792,7 +791,7 @@ index 2e49079..aa860b3 100644
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63175,7 @@ class Renderer {
+@@ -62907,7 +63174,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -801,7 +800,7 @@ index 2e49079..aa860b3 100644
  
  		}
  
-@@ -79004,7 +79272,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79271,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -817,7 +816,7 @@ index 2e49079..aa860b3 100644
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +79861,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79860,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -827,7 +826,7 @@ index 2e49079..aa860b3 100644
  
  			} else {
  
-@@ -80329,9 +80605,12 @@ ${ flowData.code }
+@@ -80329,9 +80604,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -843,7 +842,7 @@ index 2e49079..aa860b3 100644
  
  				if ( needsSampler ) {
  
-@@ -81295,9 +81574,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81573,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -861,7 +860,7 @@ index 2e49079..aa860b3 100644
  
  		backend.delete( attribute );
  
-@@ -81598,18 +81883,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +81882,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -885,7 +884,7 @@ index 2e49079..aa860b3 100644
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82414,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82413,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -895,7 +894,7 @@ index 2e49079..aa860b3 100644
  	}
  
  	/**
-@@ -83814,6 +84100,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84099,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -910,7 +909,7 @@ index 2e49079..aa860b3 100644
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84220,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84219,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -921,7 +920,7 @@ index 2e49079..aa860b3 100644
  
  			if ( adapter === null ) {
  
-@@ -85461,13 +85757,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85756,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -938,7 +937,7 @@ index 2e49079..aa860b3 100644
  
  			}
  
-@@ -85766,6 +86061,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86060,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -946,7 +945,7 @@ index 2e49079..aa860b3 100644
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86083,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86082,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -956,7 +955,7 @@ index 2e49079..aa860b3 100644
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86104,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86103,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -964,7 +963,7 @@ index 2e49079..aa860b3 100644
  
  			needsUpdate = true;
  
-@@ -85828,6 +86126,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86125,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -972,7 +971,7 @@ index 2e49079..aa860b3 100644
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86145,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +86144,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -2160,7 +2159,7 @@ index 64ecdee..7319e25 100644
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
 diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
-index c900fa4..aebfa51 100644
+index c900fa4..a3dcba2 100644
 --- a/src/renderers/common/RenderObject.js
 +++ b/src/renderers/common/RenderObject.js
 @@ -299,6 +299,18 @@ class RenderObject {
@@ -2191,12 +2190,11 @@ index c900fa4..aebfa51 100644
  
  	}
  
-@@ -936,6 +948,8 @@ class RenderObject {
+@@ -936,6 +948,7 @@ class RenderObject {
  		}
  
  		cacheKey = hash( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
 +		cacheKey = hash( cacheKey, this.context.sampleCount );
-+		cacheKey = hash( cacheKey, this.renderer.getRenderTarget()?.samples ?? this.renderer.currentSamples );
  
  		return cacheKey;
  

@@ -309,8 +309,10 @@ it("moves ladder source identity into a complete comparator report", async () =>
     { workload: "moving-l2-l3-16384" },
   );
   expect(ladder[0]?.candidateCommand).toContain("--source-sha <candidate-source>");
+  // The identity block moved to `driver.ts`, which both web arms drive; `main.ts` keeps the TN arm's
+  // own projection and culling wiring.
   const browserSource = await readFile(
-    path.join(repo, "examples/engine-load-test/src/main.ts"),
+    path.join(repo, "examples/engine-load-test/src/driver.ts"),
     "utf8",
   );
   expect(browserSource).toMatch(/\n\s+identity:/u);
@@ -1034,6 +1036,25 @@ describe("CI pipeline structure", () => {
     expect(publish).toContain("libvulkan1 mesa-vulkan-drivers");
     expect(publish).toContain("THREENATIVE_BLENDER_PATH");
     expect(release).toBeGreaterThan(prerequisites);
+  });
+
+  // The clean room's `android` step builds the APK in the published cohort. Without a JDK 17 and an
+  // SDK carrying a platform and the build tools (where `zipalign` and `apksigner` live) that step
+  // cannot run, and the step is the one consumer observation a release never gets back.
+  it("provisions a JDK 17 and an Android SDK before the clean room runs its android step", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const cleanRoom = jobSections(npm).find(([job]) => job === "clean-room")?.[1];
+    expect(cleanRoom).toBeDefined();
+    if (cleanRoom === undefined) return;
+    expect(cleanRoom).toContain('java-version: "17"');
+    expect(cleanRoom).toContain("platforms;android-35");
+    expect(cleanRoom).toContain("build-tools;35.0.0");
+    const java = cleanRoom.indexOf("actions/setup-java@v5");
+    const sdk = cleanRoom.indexOf("android-actions/setup-android@v4");
+    const verifier = cleanRoom.indexOf("pnpm tsx scripts/verify-registry-install.ts");
+    expect(java).toBeGreaterThanOrEqual(0);
+    expect(sdk).toBeGreaterThan(java);
+    expect(verifier).toBeGreaterThan(sdk);
   });
 
   it("requires native release CI to be a successful push on main", async () => {

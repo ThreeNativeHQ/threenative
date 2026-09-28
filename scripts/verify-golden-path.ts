@@ -1175,6 +1175,10 @@ export async function verifyPackedMutationControl(
       filter: (source) => path.basename(source) !== "node_modules",
       recursive: true,
     });
+    // create-threenative's prepack copies core's Three.js patch from its sibling directory.
+    await cp(path.join(REPO_ROOT, "packages/core/patches"), path.join(root, "core", "patches"), {
+      recursive: true,
+    });
     await materializeTemporaryPackageVersions(mutatedPackage);
     const templateManifestPath = path.join(mutatedPackage, "templates", template, PACKAGE_FILE);
     const templateManifest = JSON.parse(await readFile(templateManifestPath, "utf8")) as Record<

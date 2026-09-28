@@ -17,10 +17,18 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { inflateRawSync } from "node:zlib";
 import { MCP_SERVERS } from "../packages/core/mcp/servers.mjs";
+import {
+  type IZipArchive,
+  type IZipEntry,
+  readZipEntries,
+} from "../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 
 /** `link:` is pnpm's workspace link; `file:` is a local tarball or directory. Neither ships. */
 const LOCAL_SPECIFIER = /(?:^|["'\s:])(?:file|link):/mu;
@@ -43,11 +51,17 @@ export interface IRegistryInstallStep {
   readonly ok: boolean;
 }
 
+/** One published prebuilt release key, and the APK archive entry that has to carry its bytes. */
+export interface IAndroidPrebuiltProof {
+  readonly entry: string;
+  readonly key: string;
+}
+
 /**
- * PRD-366 phase 2: one qualified consumer gameplay row per distributed target, carried beside the
- * clean-room steps. Its shape is the runtime-native verifier's `consumer-targets.json`, which is
- * what actually gates a target; this report threads the rows through so a cohort result names the
- * OS, architecture and session each claim was made on.
+ * PRD-366 phase 2: one qualified consumer gameplay row per distributed target and arm, carried
+ * beside the clean-room steps. Its shape is the runtime-native verifier's `consumer-targets.json`,
+ * which is what actually gates a target; this report threads the rows through so a cohort result
+ * names the OS, architecture, session and artifact each claim was made on.
  */
 export interface IConsumerTargetRow {
   readonly applicationId: string;
@@ -64,6 +78,12 @@ export interface IConsumerTargetRow {
 }
 
 export interface IRegistryInstallReport {
+  /**
+   * The qualified consumer arms, one per arm the cohort ran. `target` alone lost a row: phase 2 ran
+   * a physical arm and an emulator arm on `android` and the second replaced the first, so a cohort
+   * result could name only one machine. Array shape is unchanged; the composite key is internal, so
+   * a caller reads each row's own `session`, `architecture` and `osVersion`.
+   */
   readonly consumerTargets: readonly IConsumerTargetRow[];
   readonly exitCode: 0 | 1;
   readonly managers: readonly RegistryPackageManager[];
@@ -485,6 +505,48 @@ function treeContains(root: string, needle: string): string | undefined {
 }
 
 /**
+ * The internal key an arm is recorded under: its target plus what the run itself named about the
+ * machine.
+ *
+ * `session` is the qualifier's own physical/emulator distinction (`android-device` against
+ * `android-emulator`), which is what this key is for — one target's phone and emulator no longer
+ * overwrite each other. Architecture and OS version narrow it further, but two phones reporting the
+ * same values are still one key, so this is **not** a device identity: only the row's own fields
+ * say which machine ran.
+ */
+function consumerTargetKey(row: IConsumerTargetRow): string {
+  return [row.target, row.session, row.architecture, row.osVersion].join(" ");
+}
+
+/**
+ * What the run itself named, for an arm that evaluated zero assertions.
+ *
+ * `failureReport()` (`packages/playtest/src/runner/shared.ts`) is the generic pre-assertion abort
+ * shape: a single unevaluated `diagnostics` result, so a row keeping only the verifier's message
+ * ("assertion 'diagnostics' was not evaluated") never said what actually failed. That is why phase
+ * 2's one physical arm64 abort is still unexplained. The runner's own stdout sits beside the row
+ * file and holds the diagnostic, so read it back rather than re-running anything — and say so
+ * plainly when it holds none, rather than passing the generic message off as the cause.
+ */
+function firstConsumerDiagnostic(project: string, target: string): string {
+  const file = path.join(project, "artifacts", "native", `consumer-${target}.stdout.json`);
+  const lost = (why: string): string =>
+    `TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_MISSING: ${file} ${why}, so the '${target}' arm that evaluated zero assertions retains no cause.`;
+  if (!fs.existsSync(file)) return lost("is absent");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  } catch (error) {
+    return `TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_UNREADABLE: ${file} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const diagnostics = objectRecord(parsed)?.diagnostics;
+  const first = Array.isArray(diagnostics) ? objectRecord(diagnostics[0]) : undefined;
+  if (!isNonEmptyString(first?.code)) return lost("names no first diagnostic");
+  const message = first?.message;
+  return `${first.code}: ${isNonEmptyString(message) ? message : "(no message)"}`;
+}
+
+/**
  * Read the distributed-target gameplay rows the runtime-native verifier wrote for this consumer.
  *
  * Absent means the target lane has not run here (the desktop container lane is PRD-365, not on
@@ -531,18 +593,22 @@ export function readConsumerTargetRows(project: string): readonly IConsumerTarge
       throw new Error(
         `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field 'failures' is not an array.`,
       );
+    const target = text("target");
+    const failures = record.failures.map((failure) => String(failure));
     return {
       applicationId: text("applicationId"),
       architecture: text("architecture"),
       artifactHash: text("artifactHash"),
       assertions,
-      failures: record.failures.map((failure) => String(failure)),
+      // Zero assertions is the pre-assertion abort shape, so name what the run itself reported.
+      failures:
+        assertions === 0 ? [...failures, firstConsumerDiagnostic(project, target)] : failures,
       os: text("os"),
       osVersion: text("osVersion"),
       pass: record.pass,
       scenario: text("scenario"),
       session: text("session"),
-      target: text("target"),
+      target,
     };
   });
 }
@@ -564,17 +630,29 @@ function step(name: string, work: () => string): IRegistryInstallStep {
   }
 }
 
-function nativeOutput(project: string): string {
+/** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
+async function stepAsync(name: string, work: () => Promise<string>): Promise<IRegistryInstallStep> {
+  try {
+    return { detail: (await work()).trim().slice(-400) || "(no output)", name, ok: true };
+  } catch (error) {
+    return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
+  }
+}
+
+function artifactName(project: string): string {
   const manifest = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf8")) as {
     name?: unknown;
   };
   if (typeof manifest.name !== "string" || manifest.name.length === 0)
-    throw new Error("Native build produced no project name to resolve its executable.");
-  const name = manifest.name.replace(/^@[^/]+\//u, "").replace(/[^a-zA-Z0-9._-]/gu, "-");
+    throw new Error("Native build produced no project name to resolve its artifact.");
+  return manifest.name.replace(/^@[^/]+\//u, "").replace(/[^a-zA-Z0-9._-]/gu, "-");
+}
+
+function nativeOutput(project: string): string {
   const executable = path.join(
     project,
     "dist-native",
-    `${name}${process.platform === "win32" ? ".exe" : ""}`,
+    `${artifactName(project)}${process.platform === "win32" ? ".exe" : ""}`,
   );
   if (!fs.existsSync(executable))
     throw new Error(`Native build produced no executable at ${executable}.`);
@@ -582,6 +660,165 @@ function nativeOutput(project: string): string {
   if (process.platform !== "win32" && (mode & 0o111) === 0)
     throw new Error(`Native build output is not executable: ${executable}.`);
   return executable;
+}
+
+function androidOutput(project: string): string {
+  const apk = path.join(project, "dist-native", `${artifactName(project)}.apk`);
+  if (!fs.existsSync(apk)) throw new Error(`Android build produced no APK at ${apk}.`);
+  if (fs.statSync(apk).size === 0)
+    throw new Error(`Android build produced an empty APK at ${apk}.`);
+  return apk;
+}
+
+/** The ABI this gate's Android criterion names, and the one the published cohort is proved on. */
+export const ANDROID_PROOF_ABI = "arm64-v8a";
+
+/**
+ * The rows of the *installed* packager's prebuilt table this ABI must reach the APK as, named the
+ * way the archive names them.
+ *
+ * Read from the installed package rather than restated here: that table is what the build staged
+ * from, and a second copy of it here is a second thing to drift. A `jniLibs/` source directory
+ * becomes `lib/` in the archive, while a staged asset keeps its own path. The `.aar` row is a build
+ * input rather than an APK entry and names no ABI, so the ABI filter already excludes it.
+ */
+export function androidApkPrebuiltProofs(
+  assets: Readonly<Record<string, string>>,
+  abi: string = ANDROID_PROOF_ABI,
+): readonly IAndroidPrebuiltProof[] {
+  const proofs = Object.entries(assets)
+    .filter(([, staged]) => staged.includes(`/${abi}/`))
+    .map(([key, staged]) => ({
+      entry: staged.startsWith("jniLibs/") ? `lib/${staged.slice("jniLibs/".length)}` : staged,
+      key,
+    }));
+  if (proofs.length === 0)
+    throw new Error(
+      `TN_REGISTRY_INSTALL_ANDROID_NO_PREBUILT_ROWS: the installed packager stages no ${abi} library, so its APK cannot be checked against the published cohort.`,
+    );
+  return proofs;
+}
+
+/** A ZIP entry is either stored verbatim or deflated; both read without a dependency. */
+const ZIP_STORED = 0;
+
+function entrySha256(archive: IZipArchive, entry: IZipEntry): string {
+  const raw = archive.bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize);
+  const contents = entry.compression === ZIP_STORED ? raw : inflateRawSync(raw);
+  return createHash("sha256").update(contents).digest("hex");
+}
+
+/**
+ * Require every named prebuilt to be inside the APK, byte-identical to what the release published.
+ *
+ * A stub key, a `.so` compiled on the machine instead of downloaded, or an APK missing one ABI's
+ * runtime all fail here. `build --target android` exiting 0 says none of that: the claim is that
+ * these are the published bytes, and only a checksum against the published release says so.
+ */
+export function assertPublishedApkPrebuilts(
+  apk: string,
+  archive: IZipArchive,
+  artifacts: Readonly<Record<string, { readonly sha256: string }>>,
+  proofs: readonly IAndroidPrebuiltProof[],
+): string {
+  const verified: string[] = [];
+  for (const { entry, key } of proofs) {
+    const expected = artifacts[key]?.sha256;
+    if (typeof expected !== "string" || expected.length === 0)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_NOT_PUBLISHED: the published release manifest carries no '${key}', so ${entry} in ${apk} cannot be proven published.`,
+      );
+    const stored = archive.entries.find((candidate) => candidate.name === entry);
+    if (stored === undefined)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_ENTRY_MISSING: ${apk} carries no ${entry} for prebuilt '${key}'.`,
+      );
+    const actual = entrySha256(archive, stored);
+    if (actual !== expected)
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH: ${entry} in ${apk} hashes to ${actual}, not the published ${expected} for '${key}'.`,
+      );
+    verified.push(`${key} -> ${entry}`);
+  }
+  return `Published ${verified.length} ${ANDROID_PROOF_ABI} prebuilt(s) verified byte-for-byte in ${apk}: ${verified.join(", ")}.`;
+}
+
+/**
+ * Read the prebuilt table out of the installed package, the way a consumer's build read it.
+ *
+ * A gate that restates the table is a gate that checks last release's contract, and a gate that
+ * imports this checkout's copy checks a package the consumer never installed. `curl` is the repo's
+ * existing synchronous HTTP idiom (`check-publish-state.ts` heads every release URL with it).
+ */
+async function installedAndroidPrebuilts(
+  project: string,
+  run: CommandRunner,
+): Promise<{
+  artifacts: Record<string, { sha256: string }>;
+  proofs: readonly IAndroidPrebuiltProof[];
+}> {
+  const root = path.join(project, "node_modules", "@threenative", "runtime-native");
+  const scripts = path.join(root, "scripts");
+  const read = async <T>(file: string): Promise<T> => {
+    const modulePath = path.join(scripts, file);
+    if (!fs.existsSync(modulePath))
+      throw new Error(
+        `TN_REGISTRY_INSTALL_ANDROID_NO_RUNTIME_SCRIPTS: the installed runtime-native ships no scripts/${file}, so the Android leg cannot read the prebuilt contract it built with.`,
+      );
+    return (await import(pathToFileURL(modulePath).href)) as T;
+  };
+  const version = (
+    JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      version?: unknown;
+    }
+  ).version;
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(
+      "TN_REGISTRY_INSTALL_ANDROID_NO_RUNTIME_VERSION: the installed runtime-native has no version.",
+    );
+  const manifestUrl = (
+    await read<{ releaseManifestUrl: (version?: string) => string }>("install-prebuilt.mjs")
+  ).releaseManifestUrl(version);
+  // `--fail`, so a version with no published release is reported as a missing release rather than as
+  // the 404 page failing to parse. Both fail the step; only one of them says what to go and fix.
+  const lock = run(
+    "curl",
+    ["--silent", "--show-error", "--fail", "--location", manifestUrl],
+    project,
+  );
+  let manifest: { artifacts?: Record<string, { sha256?: unknown }> };
+  try {
+    manifest = JSON.parse(lock) as { artifacts?: Record<string, { sha256?: unknown }> };
+  } catch (error) {
+    throw new Error(
+      `TN_REGISTRY_INSTALL_ANDROID_MANIFEST: the installed runtime-native ${version} published no readable prebuilt release at ${manifestUrl}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const artifacts = manifest.artifacts ?? {};
+  const proofs = androidApkPrebuiltProofs(
+    (await read<{ ANDROID_PREBUILT_V8_ASSETS: Record<string, string> }>("package-android.mjs"))
+      .ANDROID_PREBUILT_V8_ASSETS,
+  );
+  return { artifacts: artifacts as Record<string, { sha256: string }>, proofs };
+}
+
+/**
+ * The consumer's Android leg: build the APK, then prove it carries the published prebuilt cohort.
+ *
+ * No engine checkout, no `THREENATIVE_RUNTIME_SOURCE`, and the release URL comes from the installed
+ * package's own function, so the step fails if the version a stranger installed has no published
+ * Android arm64 prebuilt.
+ */
+export async function androidStep(
+  project: string,
+  run: CommandRunner,
+  command: string,
+  build: readonly string[],
+): Promise<string> {
+  const output = await run(command, build, project);
+  const apk = androidOutput(project);
+  const { artifacts, proofs } = await installedAndroidPrebuilts(project, run);
+  return `${output}\nAPK: ${apk}\n${assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)}`;
 }
 
 function assertDoctorTargetCensus(output: string): string {
@@ -794,9 +1031,9 @@ function mcpStep(project: string, runner: McpRunner): string {
   return results.join("; ");
 }
 
-export function verifyRegistryInstall(
+export async function verifyRegistryInstall(
   options: IVerifyRegistryInstallOptions = {},
-): IRegistryInstallReport {
+): Promise<IRegistryInstallReport> {
   const template = options.template ?? "starter";
   const managers = [...new Set(options.packageManagers ?? REGISTRY_PACKAGE_MANAGERS)];
   if (managers.length === 0)
@@ -864,6 +1101,7 @@ export function verifyRegistryInstall(
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ])
           notRun(name, "the scaffold step never produced a project.");
@@ -880,6 +1118,7 @@ export function verifyRegistryInstall(
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ])
           notRun(
@@ -944,15 +1183,36 @@ export function verifyRegistryInstall(
           const output = run(command, script("build:desktop"), project);
           const executable = nativeOutput(project);
           const proof = verifyNativeFrames(project, run);
-          // The verifier records one qualified gameplay row per distributed target it ran; thread
-          // them through so the cohort result names each target's machine and artifact identity.
+          // The verifier records one qualified gameplay row per distributed target and arm it ran;
+          // thread them through so each arm's machine and artifact identity survives instead of
+          // collapsing a phone and an emulator of one target into a single row.
           const rows = readConsumerTargetRows(project);
-          for (const row of rows) consumerTargets.set(row.target, row);
+          for (const row of rows) consumerTargets.set(consumerTargetKey(row), row);
+          // Fail closed: the rows gate the target, so a row the verifier marked failed fails the
+          // cohort — and so does one that asserted nothing, whatever `pass` says, because an empty
+          // assertion set is a failure and a row that evaluated zero assertions proved nothing. The
+          // rows are already in the map above, so the returned report still names the run's own
+          // diagnostic rather than only this abort, which repeats it verbatim.
+          const failed = rows.filter((row) => !row.pass || row.assertions === 0);
+          if (failed.length > 0)
+            throw new Error(
+              `TN_REGISTRY_INSTALL_CONSUMER_TARGET_FAILED: ${failed
+                .map(
+                  (row) =>
+                    `${consumerTargetKey(row)} — ${row.assertions === 0 ? "evaluated zero assertions: " : ""}${row.failures.join("; ") || "no failures recorded"}`,
+                )
+                .join(" | ")}`,
+            );
           const targets = rows
-            .map((row) => `${row.target} (${row.os}/${row.architecture})`)
+            .map((row) => `${consumerTargetKey(row)} artifact ${row.artifactHash.slice(0, 12)}`)
             .join(", ");
           return `${output}\nExecutable: ${executable}\n${proof}${targets.length > 0 ? `\nConsumer targets: ${targets}` : ""}`;
         }),
+      );
+      steps.push(
+        await stepAsync(prefix("android"), () =>
+          androidStep(project, run, command, script("build:android")),
+        ),
       );
       steps.push(step(prefix("mcp"), () => mcpStep(project, mcp)));
     }
@@ -967,8 +1227,8 @@ export function verifyRegistryInstall(
   };
 }
 
-function main(): void {
-  const report = verifyRegistryInstall();
+async function main(): Promise<void> {
+  const report = await verifyRegistryInstall();
   for (const item of report.steps)
     process.stdout.write(`${item.ok ? "pass" : "FAIL"}  ${item.name}\n      ${item.detail}\n`);
   process.stdout.write(
@@ -979,4 +1239,7 @@ function main(): void {
   process.exitCode = report.exitCode;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// `void`, not a top-level `await`: this file is also loaded as CommonJS by a scoped caller, and
+// esbuild refuses top-level await in that output format. The process stays alive until the promise
+// settles, and every await inside is a resolved module read rather than an open handle.
+if (import.meta.url === `file://${process.argv[1]}`) void main();

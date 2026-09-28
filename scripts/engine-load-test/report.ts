@@ -2,7 +2,12 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
-import { DEFAULT_AXES, type IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
+import {
+  DEFAULT_AXES,
+  type IWorkloadAxes,
+  RENDER_MODES,
+  type RenderMode,
+} from "../../examples/engine-load-test/src/workload.js";
 
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
@@ -12,10 +17,14 @@ export const ARMS = [
   "godot-web",
   "godot-android",
   "godot-desktop",
+  "plain-three-webgpu",
 ] as const;
 
 export type Arm = (typeof ARMS)[number];
-export type RenderMode = "L1" | "L2" | "L3";
+type EngineName = "godot" | "threenative" | "three";
+// The scene's own mode list, re-exported rather than restated: a report whose reader and whose
+// writer disagree on what a mode is would reject a run the harness happily produced.
+export type { RenderMode };
 export type BuildType = "release" | "debug";
 export type BenchExitCode = 1 | 2;
 
@@ -50,10 +59,26 @@ export interface IPerformancePromotionPolicy {
 
 export interface IRunReportRung {
   collapseMs?: number[];
+  /**
+   * PRD-449 §7.4's primary metric: the wall window for N completed frames over N, cadence included.
+   * Optional because reports written before it existed still parse; `null` with a reason when the arm
+   * could not observe finished work.
+   */
+  completedWorkMeanMs?: number | null;
+  /** Non-null exactly when `completedWorkMeanMs` is null. */
+  completedWorkReason?: string | null;
+  /** The uncapped CPU submit half, kept beside the primary metric and never in place of it. */
+  cpuSubmitMeanMs?: number;
+  /** Fill/drain policy and timing scope, as recorded by the driver. */
+  drainPolicy?: string;
   drawCalls: number;
   frameMs: number[];
+  /** Frames the timed window covered, which the driver also writes as `frameMs.length`. */
+  measuredFrames?: number;
   mode: RenderMode;
   objectCount: number;
+  /** Optional on legacy/native reports; every initial built placement on new browser reports. */
+  initialPlacementSha256?: string;
   positionHash: string;
   repeat: number;
   stepMs?: number[];
@@ -80,7 +105,7 @@ export interface IRunReport {
   deviceCondition?: IDeviceCondition;
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
-  engine: { name: "threenative" | "godot"; version: string };
+  engine: { name: EngineName; version: string };
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
@@ -144,27 +169,33 @@ export class BenchError extends Error {
   }
 }
 
-function requireObject(value: unknown, path: string): Record<string, unknown> {
+// Exported for the v2 campaign reader (`campaign-report.ts`), which parses the same way. Adding the
+// keyword changes no legacy behaviour; the helpers were already the only fail-closed path here.
+export function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path} must be an object`);
   return value as Record<string, unknown>;
 }
 
-function requireString(source: Record<string, unknown>, key: string, path: string): string {
+export function requireString(source: Record<string, unknown>, key: string, path: string): string {
   const value = source[key];
   if (typeof value !== "string" || value.length === 0)
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a non-empty string`);
   return value;
 }
 
-function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
+export function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
   const value = source[key];
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a finite number`);
   return value;
 }
 
-function requireBoolean(source: Record<string, unknown>, key: string, path: string): boolean {
+export function requireBoolean(
+  source: Record<string, unknown>,
+  key: string,
+  path: string,
+): boolean {
   const value = source[key];
   if (typeof value !== "boolean")
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a boolean`);
@@ -328,6 +359,111 @@ function parseReportIdentity(value: unknown): IPerformanceIdentity | undefined {
   return identity;
 }
 
+/** A number that must be finite and non-negative, or `undefined` when the field is absent. */
+function optionalNonNegative(source: Record<string, unknown>, key: string, path: string) {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.${key} must be a finite non-negative number when present`,
+    );
+  return value;
+}
+
+/**
+ * PRD-449 §7.4's completed-work fields, kept so a saved report still carries them: the CLI serialises
+ * the *parsed* report, so a field dropped here is a field that never reaches the JSON on disk.
+ *
+ * Optional as a block, so a report written before the metric existed still parses. Present, they are
+ * validated like everything else, and the metric and its reason are one exclusive pair — a reason
+ * without a hole, or a hole without one, is a record nobody can read.
+ */
+type TCompletedWork = Pick<
+  IRunReportRung,
+  | "completedWorkMeanMs"
+  | "completedWorkReason"
+  | "cpuSubmitMeanMs"
+  | "drainPolicy"
+  | "measuredFrames"
+>;
+
+/** The metric and the reason for its absence, as one exclusive pair, or `undefined` when absent. */
+function parseCompletedWorkPair(
+  rung: Record<string, unknown>,
+  path: string,
+): Pick<TCompletedWork, "completedWorkMeanMs" | "completedWorkReason"> | undefined {
+  const completedWorkMeanMs = rung.completedWorkMeanMs;
+  const completedWorkReason = rung.completedWorkReason;
+  if (completedWorkMeanMs === undefined && completedWorkReason === undefined) return undefined;
+  if (completedWorkMeanMs === undefined || completedWorkReason === undefined)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} must carry completedWorkMeanMs and completedWorkReason together`,
+    );
+  if (completedWorkMeanMs === null) {
+    if (typeof completedWorkReason !== "string" || completedWorkReason.length === 0)
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.completedWorkReason must be a non-empty string when completedWorkMeanMs is null`,
+      );
+    return { completedWorkMeanMs, completedWorkReason };
+  }
+  if (
+    typeof completedWorkMeanMs !== "number" ||
+    !Number.isFinite(completedWorkMeanMs) ||
+    completedWorkMeanMs < 0
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkMeanMs must be a finite non-negative number or null`,
+    );
+  if (completedWorkReason !== null)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkReason is for a null measurement only`,
+    );
+  return { completedWorkMeanMs, completedWorkReason };
+}
+
+/** The frames the window covered, which the driver also writes as `frameMs.length`. */
+function parseMeasuredFrames(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): number | undefined {
+  const measuredFrames = optionalNonNegative(rung, "measuredFrames", path);
+  if (measuredFrames === undefined) return undefined;
+  if (!Number.isInteger(measuredFrames) || measuredFrames < 1)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.measuredFrames must be a positive integer`);
+  // The driver writes one interval per measured frame, so a declared window that disagrees with the
+  // series beside it means the two halves of the record came from different runs.
+  if (measuredFrames !== sampleCount)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.measuredFrames ${measuredFrames} does not match ${sampleCount} frame samples`,
+    );
+  return measuredFrames;
+}
+
+function parseCompletedWork(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): Partial<TCompletedWork> {
+  const cpuSubmitMeanMs = optionalNonNegative(rung, "cpuSubmitMeanMs", path);
+  const drainPolicy = rung.drainPolicy;
+  if (drainPolicy !== undefined) requireString(rung, "drainPolicy", path);
+  const measuredFrames = parseMeasuredFrames(rung, path, sampleCount);
+  const pair = parseCompletedWorkPair(rung, path);
+  return {
+    ...(pair === undefined ? {} : pair),
+    ...(cpuSubmitMeanMs === undefined ? {} : { cpuSubmitMeanMs }),
+    ...(drainPolicy === undefined ? {} : { drainPolicy: drainPolicy as string }),
+    ...(measuredFrames === undefined ? {} : { measuredFrames }),
+  };
+}
+
 export function parseRunReport(value: unknown): IRunReport {
   const root = requireObject(value, "report");
   const arm = requireString(root, "arm", "report");
@@ -343,8 +479,19 @@ export function parseRunReport(value: unknown): IRunReport {
 
   const engine = requireObject(root.engine, "report.engine");
   const engineName = requireString(engine, "name", "report.engine");
-  if (engineName !== "threenative" && engineName !== "godot")
-    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.engine.name ${engineName} is not an engine`);
+  // An arm is one engine, so the report's engine has to be the one that arm runs: a `three` report
+  // stamped `tn-web` is a build that is not the arm it was published under, and its numbers are then
+  // somebody else's. Pairing rather than membership is what keeps `three` off every other arm.
+  const expectedEngine: EngineName = typedArm.startsWith("godot-")
+    ? "godot"
+    : typedArm === "plain-three-webgpu"
+      ? "three"
+      : "threenative";
+  if (engineName !== expectedEngine)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `report.engine.name ${engineName} is not an engine the ${typedArm} arm runs`,
+    );
 
   const build = requireObject(root.build, "report.build");
   const buildType = requireString(build, "type", "report.build");
@@ -383,7 +530,7 @@ export function parseRunReport(value: unknown): IRunReport {
     const path = `report.rungs[${index}]`;
     const rung = requireObject(rawRung, path);
     const mode = requireString(rung, "mode", path);
-    if (mode !== "L1" && mode !== "L2" && mode !== "L3")
+    if (!(RENDER_MODES as readonly string[]).includes(mode))
       throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.mode ${mode} is not a render mode`);
     const frameMs = rung.frameMs;
     if (!Array.isArray(frameMs) || frameMs.length === 0)
@@ -409,12 +556,24 @@ export function parseRunReport(value: unknown): IRunReport {
         );
       timingSeries[field] = samples as number[];
     }
+    const initialPlacementSha256 = rung.initialPlacementSha256;
+    if (
+      initialPlacementSha256 !== undefined &&
+      (typeof initialPlacementSha256 !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(initialPlacementSha256))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.initialPlacementSha256 must be a lowercase SHA-256 digest`,
+      );
     return {
+      ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
       ...timingSeries,
       mode: mode as RenderMode,
       objectCount: requireNumber(rung, "objectCount", path),
+      ...(initialPlacementSha256 === undefined ? {} : { initialPlacementSha256 }),
       positionHash: requireString(rung, "positionHash", path),
       repeat: requireNumber(rung, "repeat", path),
       triangles: requireNumber(rung, "triangles", path),
@@ -438,7 +597,10 @@ export function parseRunReport(value: unknown): IRunReport {
     },
     driver: { adapter, renderer },
     ...(deviceCondition === undefined ? {} : { deviceCondition }),
-    engine: { name: engineName, version: requireString(engine, "version", "report.engine") },
+    engine: {
+      name: engineName as EngineName,
+      version: requireString(engine, "version", "report.engine"),
+    },
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
@@ -1217,9 +1379,13 @@ function drawCallFailure(
   left: IRungSummary,
   right: IRungSummary,
 ): IEquivalenceFailure | undefined {
-  if (mode === "L1") {
+  // L1 and L4 both draw one call per authored cube — L4 with a material per cube, which is exactly
+  // what stops an engine from folding them — so the "one arm silently batched" guard is the same
+  // check, and the L2 batch check below must not be applied to a rung of 4,096 draws.
+  if (mode === "L1" || mode === "L4") {
     // An arm reporting one draw where the other reports N has silently auto-batched and is not
-    // running L1 at all — the single most likely way this comparison gets published wrong (§5.2).
+    // running this rung at all — the single most likely way this comparison gets published wrong
+    // (§5.2).
     for (const [side, summary] of [
       ["left", left],
       ["right", right],
@@ -1227,7 +1393,7 @@ function drawCallFailure(
       const expected = Math.max(0, summary.visibleObjects);
       if (Math.abs(summary.drawCalls - expected) > 2 && summary.drawCalls < objectCount * 0.5) {
         return {
-          field: `drawCalls (${side} arm auto-batched L1)`,
+          field: `drawCalls (${side} arm auto-batched ${mode})`,
           left: String(left.drawCalls),
           right: String(right.drawCalls),
           rung: rungKey(mode, objectCount),
@@ -1339,7 +1505,7 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
 
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     const leftPinned = looksVsyncPinned(leftSummaries, mode);
     const rightPinned = looksVsyncPinned(rightSummaries, mode);
     if (leftPinned !== rightPinned) {
@@ -1372,6 +1538,18 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
       );
     } else if ([...leftHashSet][0] !== [...rightHashSet][0]) {
       push("positionHash", [...leftHashSet][0], [...rightHashSet][0], key);
+    }
+    const leftPlacements = new Set(leftRungs.map((entry) => entry.initialPlacementSha256));
+    const rightPlacements = new Set(rightRungs.map((entry) => entry.initialPlacementSha256));
+    if (leftPlacements.size > 1 || rightPlacements.size > 1) {
+      push(
+        "initialPlacementSha256 (repeats disagree within an arm)",
+        [...leftPlacements],
+        [...rightPlacements],
+        key,
+      );
+    } else if ([...leftPlacements][0] !== [...rightPlacements][0]) {
+      push("initialPlacementSha256", [...leftPlacements][0], [...rightPlacements][0], key);
     }
     if (leftSummary.sampleCount !== rightSummary.sampleCount)
       push("sampleCount", leftSummary.sampleCount, rightSummary.sampleCount, key);
@@ -1446,6 +1624,7 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
       L1: knee(leftSummaries, "L1"),
       L2: knee(leftSummaries, "L2"),
       L3: knee(leftSummaries, "L3"),
+      L4: knee(leftSummaries, "L4"),
     },
     leftSummaries,
     right,
@@ -1453,6 +1632,7 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
       L1: knee(rightSummaries, "L1"),
       L2: knee(rightSummaries, "L2"),
       L3: knee(rightSummaries, "L3"),
+      L4: knee(rightSummaries, "L4"),
     },
     rightSummaries,
   };
@@ -1524,7 +1704,7 @@ export function renderComparisonMarkdown(comparison: IComparison): string {
     `| mode | knee — ${comparison.left.arm} | knee — ${comparison.right.arm} |`,
     "|---|---|---|",
   ];
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     lines.push(
       `| ${mode} | ${formatKnee(comparison.leftKnee[mode])} | ${formatKnee(comparison.rightKnee[mode])} |`,
     );

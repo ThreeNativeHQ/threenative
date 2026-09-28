@@ -28,8 +28,10 @@ import type {
   IProjectionExactEntry,
   IProjectionMaterialGroup,
   IProjectionProjectPlan,
+  IProjectionUniformGroup,
 } from "./projection-plan.js";
 import { SkinnedBatch, isSimilarityTransform } from "./projection-skinned.js";
+import { baseColorOf, uniformUnchanged } from "./projection-uniform.js";
 import {
   disposeBatchedMeshVelocity,
   ensureBatchedMeshVelocity,
@@ -53,6 +55,21 @@ import type { ProjectionExactReason } from "./renderProjection.js";
 
 /** A transform with no volume. Every triangle drawn through it is degenerate and discarded. */
 const ZERO_MATRIX = /* @__PURE__ */ new Matrix4().multiplyScalar(0);
+
+/**
+ * The material a uniform batch draws with: the group's representative with its base colour removed.
+ *
+ * `Color.setHex` converts sRGB into the working colour space as it decodes, so the components on the
+ * material are already linear. The instance colours are read from the same place and the node
+ * material multiplies the two, so leaving the shared colour at the identity leaves the drawn colour
+ * as the source colour, bit for bit, rather than a colour converted twice. Nothing here chooses a
+ * colour: it takes the game's own and removes the one value the draw now carries per instance.
+ */
+function whiteClone(source: Material): Material {
+  const clone = source.clone() as Material & { color?: Color };
+  clone.color?.setRGB(1, 1, 1);
+  return clone;
+}
 
 /**
  * Headroom on every batch, so the common case of a game adding a few more props does not rebuild
@@ -82,12 +99,21 @@ interface IBatch {
   readonly group: IProjectionBatchGroup;
   readonly geometry: BufferGeometry;
   readonly material: Material;
+  /**
+   * True when the members' materials differ only in base colour: `material` is then a clone this
+   * mirror owns, and the colour each member draws with lives in the batch's instance colours.
+   */
+  readonly uniform: boolean;
   /** Source object per instance slot, so a released slot can be reused rather than leaked. */
   readonly instances: Map<Object3D, number>;
   readonly free: number[];
   /** Slots handed out so far, which is also where the next unused one begins. */
   used: number;
   capacity: number;
+  /** Whether an instance matrix was written this frame, so the upload is flagged once per batch. */
+  dirty: boolean;
+  /** Whether an instance colour was written this frame, flagged once per batch for the same reason. */
+  colorsDirty: boolean;
 }
 
 /**
@@ -123,6 +149,13 @@ interface ISourceState {
   material: Material | Material[] | undefined;
   /** The batch this source is an instance of, so a lane change releases the old slot directly. */
   batch: IBatch | IBatched | SkinnedBatch;
+  /**
+   * The instance colour last written for this source, as three components. `NaN` on a fresh slot so
+   * the first write always happens — a colour that is genuinely `NaN` is not a colour three draws.
+   */
+  red: number;
+  green: number;
+  blue: number;
 }
 
 /** Element-wise equality, which is what "did this object move" reduces to. */
@@ -250,6 +283,8 @@ export class ProjectionMirror {
   #projectedObjects = 0;
   #compileMs = 0;
   #velocityEnabled: boolean;
+  /** Set when a member left a uniform group because its material drifted; read once per frame. */
+  #reclassified = false;
 
   constructor(velocityEnabled = false) {
     this.#velocityEnabled = velocityEnabled;
@@ -298,6 +333,16 @@ export class ProjectionMirror {
     return this.#compileMs;
   }
 
+  /**
+   * True when this frame's apply found a member whose material no longer matched the draw it was an
+   * instance of. The frame is still correct — that member is now drawn exactly — but the
+   * classification that put it there is stale, so the caller re-derives it before the next frame
+   * draws. Read once per frame, after `apply`.
+   */
+  get reclassified(): boolean {
+    return this.#reclassified;
+  }
+
   /** Rebuilds exact-lane tallies and scratch from the scan without copying the entry objects. */
   prepare(exactLane: readonly IProjectionExactEntry[], exactLaneCount: number): void {
     this.#exact.clear();
@@ -318,8 +363,13 @@ export class ProjectionMirror {
    * the caller then declines the whole frame. A batch that will not take an object gives up that
    * object, not the scene: dropping several thousand batched props because one of them was
    * awkward would be the fail-open rule applied at exactly the wrong granularity.
+   *
+   * `retireSources` is the sweep for objects that have left the scene, and a caller that has
+   * *proved* the scene's membership is unchanged — the projection's structure proof does exactly
+   * that — passes `false` and skips a per-instance walk that cannot find anything. Everything else
+   * here still runs: slots, stand-ins and lights are written every frame whatever the sweep does.
    */
-  apply(plan: IProjectionProjectPlan): string | undefined {
+  apply(plan: IProjectionProjectPlan, retireSources = true): string | undefined {
     const lightFailure = this.#syncLights(plan.lights, plan.lightCount);
     if (lightFailure !== undefined) {
       this.releaseAll();
@@ -337,24 +387,25 @@ export class ProjectionMirror {
     // thousand batched props because one of them was awkward would be the fail-open rule applied
     // at exactly the wrong granularity.
     this.#projectedObjects = 0;
+    this.#reclassified = false;
     for (let index = 0; index < plan.batchGroupCount; index += 1) {
       const group = plan.batchGroups[index] as IProjectionBatchGroup;
       const batch = this.#ensureBatch(group);
       for (let member = 0; member < group.memberCount; member += 1) {
         const mesh = group.members[member] as Mesh;
-        if (batch !== undefined && this.#syncBatched(batch, mesh)) {
+        const refused =
+          batch === undefined ? "unsupportedGeometry" : this.#syncBatched(batch, mesh);
+        if (refused === undefined) {
           this.#projectedObjects += 1;
           continue;
         }
-        // `#syncBatched` declines only when its batch has no slot left — the mesh was classified
-        // as batchable and its geometry and material are fine. Filing that under
-        // `unsupportedGeometry` sends whoever reads the report looking at the asset, which is the
-        // one place the cause is not. It keeps its own draw either way; only the reason differs,
-        // and the reason is the whole value of the report.
-        const reason = batch === undefined ? "unsupportedGeometry" : "batchOverflow";
+        // Each refusal names its own cause and every refused mesh keeps a draw of its own: a batch
+        // that will not take an object gives up that object, not the scene, and a member whose
+        // material drifted out of its group is drawn exactly until the classification catches up.
         this.#release(mesh);
-        this.#appendExact(mesh, reason);
+        this.#appendExact(mesh, refused);
       }
+      if (batch !== undefined) this.#flushBatch(batch);
     }
     this.#applyMaterialGroups(plan);
     this.#applySkinnedGroups(plan);
@@ -367,7 +418,7 @@ export class ProjectionMirror {
       this.#release(object);
       this.#syncProxy(object);
     }
-    this.#retire(plan.seen, plan.lights, plan.lightCount);
+    if (retireSources) this.#retire(plan.seen, plan.lights, plan.lightCount);
     // After retirement, so a slot freed this frame uploads collapsed rather than one frame late.
     for (const batch of this.#skinnedBatches.values()) batch.end();
     this.#clearExactScratch();
@@ -434,6 +485,9 @@ export class ProjectionMirror {
         geometry: rig.geometry,
         material: rig.material,
         batch,
+        red: Number.NaN,
+        green: Number.NaN,
+        blue: Number.NaN,
       });
     }
     return slot;
@@ -750,60 +804,97 @@ export class ProjectionMirror {
    * is a matrix write, a hidden one a collapsed matrix. Nothing rebuilds, which is what makes
    * reconciling every frame affordable instead of guessing once at startup and being wrong for the
    * rest of the session.
+   *
+   * A uniform batch is the one draw that cannot hold the game's material, because it stands for
+   * many of them. So the colour is the only value it writes per member, and every *other* value its
+   * shared clone was built from is proved unchanged first: a member that drifted leaves the group
+   * rather than draw with a roughness, a map or an alpha that is not its own. That is a
+   * reclassification rather than a fallback, so the caller is told and the next frame re-derives it.
    */
-  #syncBatched(target: IBatch, mesh: Mesh): boolean {
+  #syncBatched(target: IBatch, mesh: Mesh): ProjectionExactReason | undefined {
     const material = mesh.material as Material;
     const geometry = mesh.geometry;
-    const previous = this.#state.get(mesh);
+    let state = this.#state.get(mesh);
 
+    // Read before the group comparison below, because a member whose material no longer matches
+    // the group is leaving whichever batch it holds: the one it is in would draw it with a
+    // roughness, a map or an alpha that is not its own.
+    if (target.uniform && state !== undefined && !uniformUnchanged(material)) {
+      this.#reclassified = true;
+      this.#release(mesh);
+      return "materialChanged";
+    }
     // A geometry, material or flag change moves the object to a different batch entirely, so the
     // old slot is released and it re-enters as if it were new. The group identity covers the
     // shadow flags and layer mask, which change nothing about where an object is but everything
-    // about which draw it may share.
-    if (previous !== undefined && previous.batch !== target) this.#release(mesh);
+    // about which draw it may share. The release takes the state with it, and the slot is gone
+    // with it, so the allocation below is what refills both.
+    if (state !== undefined && state.batch !== target) {
+      this.#release(mesh);
+      state = undefined;
+    }
     // A mesh that was on the exact lane last frame and is batchable now must not keep its
-    // stand-in, or it draws twice.
-    this.#releaseProxy(mesh);
+    // stand-in, or it draws twice. A scene with no stand-ins is the common case, and this is a map
+    // probe per object per frame, so the empty check comes before it.
+    if (this.#proxies.size > 0) this.#releaseProxy(mesh);
 
     let slot = target.instances.get(mesh);
     if (slot === undefined) {
       slot = target.free.pop();
       if (slot === undefined) {
-        if (target.used >= target.capacity) return false;
+        if (target.used >= target.capacity) return "batchOverflow";
         slot = target.used;
         target.used += 1;
       }
       target.instances.set(mesh, slot);
-      this.#state.set(mesh, {
-        // Deliberately unequal to anything real, so the first reconcile below writes the matrix
-        // and the visibility rather than assuming the new slot already carries them.
+      // Deliberately unequal to anything real, so the first reconcile below writes the matrix
+      // and the visibility rather than assuming the new slot already carries them.
+      state = {
         matrixWorld: new Matrix4().multiplyScalar(0),
         visible: !mesh.visible,
         geometry,
         material,
         batch: target,
-      });
+        red: Number.NaN,
+        green: Number.NaN,
+        blue: Number.NaN,
+      };
+      this.#state.set(mesh, state);
     }
-
-    const state = this.#state.get(mesh) as ISourceState;
+    const current = state as ISourceState;
     // Ancestor visibility, not the object's own flag: a prop under a hidden group does not draw,
     // and a batch has no hierarchy to inherit that from.
     const visible = this.#visibleInWorld(mesh);
-    if (visible !== state.visible || !matrixEquals(state.matrixWorld, mesh.matrixWorld)) {
-      state.matrixWorld.copy(mesh.matrixWorld);
-      state.visible = visible;
+    if (visible !== current.visible || !matrixEquals(current.matrixWorld, mesh.matrixWorld)) {
+      current.matrixWorld.copy(mesh.matrixWorld);
+      current.visible = visible;
       // An `InstancedMesh` has no per-instance visibility flag, so a hidden object is given a
       // collapsed transform. Every one of its triangles then has zero area and is discarded before
       // rasterisation — the same trick the pass this replaces used, and the only one available
       // that does not disturb the other instances.
       target.mesh.setMatrixAt(slot, visible ? mesh.matrixWorld : ZERO_MATRIX);
-      target.mesh.instanceMatrix.needsUpdate = true;
+      // One flag per batch rather than one per object, applied by the caller: the buffer is
+      // uploaded once whatever wrote into it, and a version bump per object is a setter call per
+      // object for the same single upload.
+      target.dirty = true;
     }
-    state.geometry = geometry;
-    state.material = material;
-    state.batch = target;
-    target.mesh.count = target.used;
-    return true;
+    if (target.uniform) {
+      // The only per-member value a uniform draw carries, and the only one a game may move without
+      // leaving the group: three floats against what this slot last carried. The shared clone's
+      // colour is white, so what three's node material draws is the source colour exactly.
+      const color = baseColorOf(material) as Color;
+      if (current.red !== color.r || current.green !== color.g || current.blue !== color.b) {
+        target.mesh.setColorAt(slot, color);
+        current.red = color.r;
+        current.green = color.g;
+        current.blue = color.b;
+        target.colorsDirty = true;
+      }
+    }
+    current.geometry = geometry;
+    current.material = material;
+    current.batch = target;
+    return undefined;
   }
 
   /** Whether the game currently wants this object drawn, ancestors included. */
@@ -812,6 +903,24 @@ export class ProjectionMirror {
       if (!node.visible) return false;
     }
     return true;
+  }
+
+  /**
+   * Ends a batch's frame: one upload flag and one draw count for every slot written into it.
+   *
+   * Both were per object before, and both are per buffer: `needsUpdate` is a version bump the
+   * renderer reads once, whatever wrote into the array behind it, and `count` is the number of slots
+   * the batch has handed out — which only the last object of the loop could state correctly anyway.
+   */
+  #flushBatch(batch: IBatch): void {
+    batch.mesh.count = batch.used;
+    if (batch.dirty) {
+      batch.dirty = false;
+      batch.mesh.instanceMatrix.needsUpdate = true;
+    }
+    if (!batch.colorsDirty) return;
+    batch.colorsDirty = false;
+    (batch.mesh.instanceColor as { needsUpdate: boolean }).needsUpdate = true;
   }
 
   /**
@@ -839,7 +948,15 @@ export class ProjectionMirror {
 
   #createBatch(group: IProjectionBatchGroup, first: Mesh, capacity: number): IBatch | undefined {
     const startedAt = globalThis.performance?.now() ?? 0;
-    const material = first.material as Material;
+    const uniform = (group as Partial<IProjectionUniformGroup>).uniform === true;
+    // A uniform group stands for many materials, so it cannot draw any of them: it draws a clone the
+    // mirror owns, identical to the group's representative except that its base colour is white and
+    // each instance carries its own. A clone rather than the representative because the
+    // representative is the game's, and a recolour of it must not reach the shared draw — and
+    // because the game's instance is still what 64 cubes hold, and one draw may not have 64 owners.
+    const material = uniform
+      ? whiteClone(first.material as Material)
+      : (first.material as Material);
     let mesh: InstancedMesh;
     try {
       mesh = new InstancedMesh(first.geometry, material, capacity);
@@ -851,6 +968,10 @@ export class ProjectionMirror {
     // the batch grows.
     for (let slot = 0; slot < capacity; slot += 1) mesh.setMatrixAt(slot, ZERO_MATRIX);
     mesh.instanceMatrix.needsUpdate = true;
+    // Allocates the buffer three fills with the identity, so only the slots a member actually claims
+    // are ever written. Seeded from the clone's own colour, which is that identity: this is three's
+    // allocation path, not a private buffer the renderer would not know to bind.
+    if (uniform) mesh.setColorAt(0, (material as Material & { color: Color }).color);
     // The batch spans wherever its instances are, so a bounding test on the whole thing can only
     // ever answer "visible" and is pure cost.
     mesh.frustumCulled = false;
@@ -864,10 +985,13 @@ export class ProjectionMirror {
       group,
       geometry: first.geometry,
       material,
+      uniform,
       instances: new Map(),
       free: [],
       used: 0,
       capacity,
+      dirty: false,
+      colorsDirty: false,
     };
     this.#batches.set(group, batch);
     this.scene.add(mesh);
@@ -1000,6 +1124,9 @@ export class ProjectionMirror {
         geometry: mesh.geometry,
         material: mesh.material,
         batch: target,
+        red: Number.NaN,
+        green: Number.NaN,
+        blue: Number.NaN,
       });
     }
 
@@ -1030,8 +1157,10 @@ export class ProjectionMirror {
   #disposeBatch(batch: IBatch): void {
     this.scene.remove(batch.mesh);
     // The instance matrices are the batch's own; the geometry and material are the game's and are
-    // deliberately left alone.
+    // deliberately left alone — unless this is a uniform draw, where the material is the mirror's
+    // own clone and nobody else's.
     batch.mesh.dispose();
+    if (batch.uniform) batch.material.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
     this.#batches.delete(batch.group);
   }
@@ -1184,6 +1313,7 @@ export class ProjectionMirror {
     for (const batch of this.#batches.values()) {
       this.scene.remove(batch.mesh);
       batch.mesh.dispose();
+      if (batch.uniform) batch.material.dispose();
     }
     this.#batches.clear();
     for (const batch of this.#materialBatches.values()) {

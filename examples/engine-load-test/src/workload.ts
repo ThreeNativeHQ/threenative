@@ -13,13 +13,39 @@ export const KNEE_THRESHOLD_MS = 20;
 // L3 is not a third way to author the scene — it is L1's authoring, exactly, with the framework's
 // collapse pass switched on. The comparison it answers is what each engine does for a game that
 // never optimised, which is the question L1 asks and neither engine answers with a knob.
-export type RenderMode = "L1" | "L2" | "L3";
+//
+// L4 is L3's pipeline on a scene nothing may batch: the same authoring, the same shipped-default
+// projection, and one material per cube with an albedo only that cube has, so no engine can fold
+// the lattice into instanced draws. It is the fair "what does a per-draw cost?" row (PRD-449 R3).
+// L1, L3 and L4 all author one mesh per cube; L2's single InstancedMesh is the only batched rung,
+// and L3 and L4 are the only rungs the projection runs over.
+export const RENDER_MODES = ["L1", "L2", "L3", "L4"] as const;
+export type RenderMode = (typeof RENDER_MODES)[number];
+
+export function isAuthoredRung(mode: RenderMode): boolean {
+  return mode !== "L2";
+}
+
+export function isProjectedRung(mode: RenderMode): boolean {
+  return mode === "L3" || mode === "L4";
+}
 
 // PRD-400 Phase 1's tuning matrix. Every axis has a default that reproduces the PRD-117 workload
 // byte for byte, so `positionHash` and the Godot port stay equivalent until an axis is deliberately
 // moved. The matrix sweeps mutation rate 0 / 1% / 10%; the default 1 is the old all-dirty scene.
 export type GeometryMode = "shared" | "unique";
 export type MaterialMode = "shared" | "unique";
+
+/**
+ * L4's per-cube albedo, `0xRRGGBB`. Red is pinned and the index fills the other two channels, so no
+ * two cubes under 2^24 can share a colour, the value is a pure function of the index in either
+ * language, and `benchmark/godot-load-test/load_test.gd` ports it as three byte shifts with no
+ * colour-space round trip to disagree about. The point is only that each material is unmistakably
+ * that cube's own, so neither engine's batching can pair two of them.
+ */
+export function uniqueMaterialColor(index: number): number {
+  return 0xff0000 | (index & 0x00ffff);
+}
 
 export interface IWorkloadAxes {
   geometry: GeometryMode;
@@ -222,6 +248,36 @@ export function positionHash(placements: readonly ICubePlacement[]): string {
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
+}
+
+/** Full placement input for SHA-256. Version and count are uint32; every object's x/y/z is
+ * float64, all little-endian, in stable object-index order. Negative zero is canonicalized to
+ * zero. This covers all placements, but is not the complete mesh/material/camera fixture hash. */
+export function canonicalPlacementBytes(
+  count: number,
+  placementAt: (index: number) => ICubePlacement,
+): Uint8Array {
+  if (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    count > 0xffffffff ||
+    count > (Number.MAX_SAFE_INTEGER - 8) / 24
+  )
+    throw new Error("TN_BENCH_PLACEMENT_COUNT_OVERFLOW");
+  const bytes = new Uint8Array(8 + count * 24);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 1, true);
+  view.setUint32(4, count, true);
+  let offset = 8;
+  for (let index = 0; index < count; index += 1) {
+    const placement = placementAt(index);
+    for (const value of [placement.x, placement.y, placement.z]) {
+      if (!Number.isFinite(value)) throw new Error("TN_BENCH_PLACEMENT_NONFINITE");
+      view.setFloat64(offset, Object.is(value, -0) ? 0 : value, true);
+      offset += 8;
+    }
+  }
+  return bytes;
 }
 
 // A pure function of the frame index — never of elapsed time. A slow arm and a fast arm must

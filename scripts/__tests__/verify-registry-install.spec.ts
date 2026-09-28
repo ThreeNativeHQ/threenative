@@ -1,12 +1,17 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
+import { readZipEntries } from "../../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
   type CommandRunner,
   type McpRunner,
+  androidApkPrebuiltProofs,
   assertNoLocalSpecifiers,
+  assertPublishedApkPrebuilts,
   assertSupportedNodeVersion,
   assertSupportedPackageManager,
   checkLockfile,
@@ -24,6 +29,84 @@ async function tempRoot(): Promise<string> {
   return root;
 }
 
+/** The bytes the fake registry "published" for `android-arm64-v8a-runtime-v8`. */
+const PUBLISHED_RUNTIME_SO = Buffer.from("the published arm64-v8a runtime\n", "utf8");
+const PUBLISHED_RUNTIME_SHA = createHash("sha256").update(PUBLISHED_RUNTIME_SO).digest("hex");
+
+const ZIP_STORED = 0;
+const ZIP_DEFLATED = 8;
+
+/**
+ * The smallest archive `readZipEntries` accepts: no padding, no CRC, and every entry stored
+ * unless `deflate` names it — the shape a real APK has, where an aligned `.so` is stored and a
+ * staged asset is deflated.
+ */
+function writeApk(
+  apk: string,
+  entries: Readonly<Record<string, string>>,
+  deflate: readonly string[] = [],
+): void {
+  const names = Object.keys(entries);
+  const locals: Buffer[] = [];
+  const directory: Buffer[] = [];
+  let offset = 0;
+  for (const name of names) {
+    const label = Buffer.from(name, "utf8");
+    const contents = Buffer.from(entries[name] as string, "utf8");
+    const method = deflate.includes(name) ? ZIP_DEFLATED : ZIP_STORED;
+    const data = method === ZIP_STORED ? contents : deflateRawSync(contents);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(contents.length, 22);
+    local.writeUInt16LE(label.length, 26);
+    locals.push(Buffer.concat([local, label, data]));
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(contents.length, 24);
+    central.writeUInt16LE(label.length, 28);
+    central.writeUInt32LE(offset, 42);
+    directory.push(Buffer.concat([central, label]));
+    offset += local.length + label.length + data.length;
+  }
+  const centralBytes = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(names.length, 8);
+  end.writeUInt16LE(names.length, 10);
+  end.writeUInt32LE(centralBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  fs.writeFileSync(apk, Buffer.concat([...locals, centralBytes, end]));
+}
+
+/** The two exports the Android leg reads out of the installed runtime-native. */
+function writeInstalledRuntime(project: string, version = "9.9.9"): void {
+  const scripts = path.join(project, "node_modules", "@threenative", "runtime-native", "scripts");
+  fs.mkdirSync(scripts, { recursive: true });
+  fs.writeFileSync(
+    path.join(project, "node_modules", "@threenative", "runtime-native", "package.json"),
+    JSON.stringify({ name: "@threenative/runtime-native", version }),
+  );
+  fs.writeFileSync(
+    path.join(scripts, "install-prebuilt.mjs"),
+    "export function releaseManifestUrl(version) {\n" +
+      "  return 'https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v' + version + '/prebuilt-lock.json';\n" +
+      "}\n",
+  );
+  fs.writeFileSync(
+    path.join(scripts, "package-android.mjs"),
+    "export const ANDROID_PREBUILT_V8_ASSETS = {\n" +
+      "  'android-arm64-v8a-runtime-v8': 'jniLibs/arm64-v8a/libmystral-runtime.so',\n" +
+      "};\n",
+  );
+}
+
 /** A runner that writes a registry-clean lockfile and succeeds at every step. */
 function happyRunner(): CommandRunner {
   return (command, args, cwd) => {
@@ -38,6 +121,7 @@ function happyRunner(): CommandRunner {
         }),
       );
       fs.writeFileSync(path.join(project, "src", "game.ts"), "export default {};\n");
+      writeInstalledRuntime(project);
       fs.mkdirSync(path.join(project, "playtests"), { recursive: true });
       fs.writeFileSync(
         path.join(project, "playtests", "production-readiness.playtest.json"),
@@ -114,6 +198,22 @@ function happyRunner(): CommandRunner {
         "! target ios: unavailable — requires darwin-arm64",
       ].join("\n");
     }
+    if (
+      (command === "npm" || command === "pnpm") &&
+      args[0] === "run" &&
+      args[1] === "build:android"
+    ) {
+      fs.mkdirSync(path.join(cwd, "dist-native"), { recursive: true });
+      writeApk(path.join(cwd, "dist-native", "my-game.apk"), {
+        "lib/arm64-v8a/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString("utf8"),
+      });
+      return "android built";
+    }
+    if (command === "curl") {
+      return JSON.stringify({
+        artifacts: { "android-arm64-v8a-runtime-v8": { sha256: PUBLISHED_RUNTIME_SHA } },
+      });
+    }
     if (command === "node" && args[0]?.endsWith("verify-starter-desktop.mjs")) {
       const artifacts = path.join(cwd, "artifacts", "native");
       fs.mkdirSync(artifacts, { recursive: true });
@@ -124,6 +224,53 @@ function happyRunner(): CommandRunner {
       return "starter desktop gate passed: 300 frames";
     }
     return "ok";
+  };
+}
+
+/**
+ * One distributed consumer row, as the runtime-native verifier writes it: `session` is the
+ * qualifier's own physical/emulator distinction, so a Pixel 8 arm and an emulator arm are the same
+ * target with two different devices.
+ */
+function consumerRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    applicationId: "com.threenative.mygame",
+    architecture: "arm64-v8a",
+    artifactHash: "3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211",
+    assertionIds: ["diagnostics", "movement.axisDelta"],
+    assertions: 2,
+    failures: [],
+    os: "android",
+    osVersion: "17 (API 37)",
+    pass: true,
+    scenario: "playtests/production-readiness.playtest.json",
+    session: "android-device",
+    target: "android",
+    ...overrides,
+  };
+}
+
+/** Writes the consumer rows the native step reads back, one set per clean room. */
+function consumerRowRunner(
+  rowsFor: (npm: boolean) => {
+    readonly rows: readonly Record<string, unknown>[];
+    readonly stdout?: unknown;
+  },
+): CommandRunner {
+  const happy = happyRunner();
+  return (command, args, cwd) => {
+    const output = happy(command, args, cwd);
+    if (command !== "node" || !args[0]?.endsWith("verify-starter-desktop.mjs")) return output;
+    const { rows, stdout } = rowsFor(fs.existsSync(path.join(cwd, "package-lock.json")));
+    const artifacts = path.join(cwd, "artifacts", "native");
+    fs.mkdirSync(artifacts, { recursive: true });
+    fs.writeFileSync(path.join(artifacts, "consumer-targets.json"), JSON.stringify(rows, null, 2));
+    if (stdout !== undefined)
+      fs.writeFileSync(
+        path.join(artifacts, "consumer-android.stdout.json"),
+        JSON.stringify(stdout, null, 2),
+      );
+    return output;
   };
 }
 
@@ -229,7 +376,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("passes when every step runs and the lockfile names only the registry", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: happyRunner(),
@@ -248,6 +395,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ].map((step) => `${manager}:${step}`),
       ),
@@ -256,7 +404,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 
   it("runs each consumer test command through its selected package manager", async () => {
     const testCommands: string[][] = [];
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -272,9 +420,119 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     ]);
   });
 
+  it("maps the installed packager's staged arm64 rows to the entries the APK must carry", () => {
+    // The real 0.3.3 table, verbatim: the `.aar` names no ABI so it is a build input, `jniLibs`
+    // becomes `lib/`, and the V8 snapshot keeps its staged path.
+    expect(
+      androidApkPrebuiltProofs({
+        "android-arm64-v8a-runtime-v8": "jniLibs/arm64-v8a/libmystral-runtime.so",
+        "android-arm64-v8a-v8-snapshot": "assets/v8/arm64-v8a/snapshot_blob.bin",
+        "android-sdl3-aar": "SDL3-3.2.30.aar",
+        "android-x86_64-runtime-v8": "jniLibs/x86_64/libmystral-runtime.so",
+      }),
+    ).toEqual([
+      {
+        entry: "lib/arm64-v8a/libmystral-runtime.so",
+        key: "android-arm64-v8a-runtime-v8",
+      },
+      {
+        entry: "assets/v8/arm64-v8a/snapshot_blob.bin",
+        key: "android-arm64-v8a-v8-snapshot",
+      },
+    ]);
+  });
+
+  it("refuses a prebuilt table that stages no arm64 library at all", () => {
+    expect(() => androidApkPrebuiltProofs({ "android-sdl3-aar": "SDL3-3.2.30.aar" })).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_NO_PREBUILT_ROWS/u,
+    );
+  });
+
+  it("accepts an APK whose arm64 library is the published byte sequence", async () => {
+    const apk = path.join(await tempRoot(), "app.apk");
+    writeApk(apk, { "lib/arm64-v8a/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
+    const proofs = androidApkPrebuiltProofs({
+      "android-arm64-v8a-runtime-v8": "jniLibs/arm64-v8a/libmystral-runtime.so",
+    });
+    expect(
+      assertPublishedApkPrebuilts(
+        apk,
+        readZipEntries(apk),
+        {
+          "android-arm64-v8a-runtime-v8": { sha256: PUBLISHED_RUNTIME_SHA },
+        },
+        proofs,
+      ),
+    ).toMatch(/1 arm64-v8a prebuilt\(s\) verified byte-for-byte/u);
+  });
+
+  it("inflates a deflated arm64 asset before comparing it to the published SHA-256", async () => {
+    // A staged V8 snapshot is deflated rather than stored, so hashing the entry's compressed
+    // bytes would refuse bytes that really are the published ones, and inflating it is what proves
+    // them. The compression method is asserted so a fixture that stopped deflating cannot pass
+    // through the stored path unnoticed.
+    const key = "android-arm64-v8a-v8-snapshot";
+    const entry = "assets/v8/arm64-v8a/snapshot_blob.bin";
+    const published = Buffer.from("the published arm64-v8a v8 snapshot\n", "utf8");
+    const artifacts = { [key]: { sha256: createHash("sha256").update(published).digest("hex") } };
+    const proofs = androidApkPrebuiltProofs({ [key]: entry });
+    const apk = path.join(await tempRoot(), "app.apk");
+    writeApk(apk, { [entry]: published.toString() }, [entry]);
+    expect(readZipEntries(apk).entries[0]).toMatchObject({ compression: 8 });
+    expect(assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toMatch(
+      /1 arm64-v8a prebuilt\(s\) verified byte-for-byte/u,
+    );
+    writeApk(apk, { [entry]: "compiled on this machine\n" }, [entry]);
+    expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH/u,
+    );
+  });
+
+  it("refuses an APK whose arm64 library is not the published bytes", async () => {
+    // A locally compiled `.so` and a stub key are the two ways this box is claimed without proof,
+    // and a build exiting 0 distinguishes neither from the published cohort.
+    const apk = path.join(await tempRoot(), "app.apk");
+    writeApk(apk, {
+      "lib/arm64-v8a/libmystral-runtime.so": "compiled on this machine\n",
+    });
+    const artifacts = { "android-arm64-v8a-runtime-v8": { sha256: PUBLISHED_RUNTIME_SHA } };
+    const proofs = androidApkPrebuiltProofs({
+      "android-arm64-v8a-runtime-v8": "jniLibs/arm64-v8a/libmystral-runtime.so",
+    });
+    expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH/u,
+    );
+    expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), {}, proofs)).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_NOT_PUBLISHED/u,
+    );
+    writeApk(apk, { "lib/x86_64/libmystral-runtime.so": PUBLISHED_RUNTIME_SO.toString() });
+    expect(() => assertPublishedApkPrebuilts(apk, readZipEntries(apk), artifacts, proofs)).toThrow(
+      /TN_REGISTRY_INSTALL_ANDROID_ENTRY_MISSING/u,
+    );
+  });
+
+  it("reports the android step failed when the APK is not published, never a pass", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: (command, args, cwd) => {
+        if (command === "curl")
+          return JSON.stringify({
+            artifacts: { "android-arm64-v8a-runtime-v8": { sha256: "0".repeat(64) } },
+          });
+        return happyRunner()(command, args, cwd);
+      },
+    });
+    expect(report.exitCode).toBe(1);
+    expect(report.steps.find((step) => step.name === "npm:android")).toMatchObject({ ok: false });
+    expect(report.steps.find((step) => step.name === "npm:android")?.detail).toMatch(
+      /TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH/u,
+    );
+  });
+
   it("fails, and runs nothing further, when the scaffold 404s", async () => {
     // This is the state of the world today, and the reason the gate exists.
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       parent: await tempRoot(),
       run: (command, args) => {
         if ((command === "npm" || command === "pnpm") && args.includes("create"))
@@ -297,7 +555,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when the native build produces no executable", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -315,7 +573,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when the native verifier produces no 300-frame proof", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -330,7 +588,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when doctor text omits the target census", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -345,7 +603,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when an MCP server never answers initialize", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: (serverName) => {
         if (serverName === "threenative-engine") throw new Error("initialize timed out");
         return happyMcpRunner()(serverName, "node", [], "");
@@ -360,7 +618,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when engine MCP returns a malformed capability hit", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: (serverName) =>
         serverName === "threenative-engine"
           ? [
@@ -392,7 +650,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("does not report a pass for a step that did not run", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args) => {
@@ -414,6 +672,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
           "gameplay",
           "doctor",
           "native",
+          "android",
           "mcp",
         ].map((step) => `${manager}:${step}`),
       ),
@@ -422,7 +681,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("fails when the lockfile resolves a dependency from this machine", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       parent: await tempRoot(),
       run: (command, args, cwd) => {
         if (command === "npm" && args[0] === "install") {
@@ -478,7 +737,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 
   it("keeps install-script policy explicit and does not add a bypass flag", async () => {
     const installs: string[][] = [];
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       packageManagers: ["npm"],
       parent: await tempRoot(),
@@ -495,7 +754,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 
   it("uses pnpm create's native option forwarding syntax", async () => {
     const scaffolds: string[][] = [];
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       packageManagers: ["pnpm"],
       parent: await tempRoot(),
@@ -515,14 +774,14 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     ]);
   });
 
-  it("refuses an empty manager matrix instead of reporting a vacuous pass", () => {
-    expect(() => verifyRegistryInstall({ packageManagers: [] })).toThrow(
+  it("refuses an empty manager matrix instead of reporting a vacuous pass", async () => {
+    await expect(verifyRegistryInstall({ packageManagers: [] })).rejects.toThrow(
       /TN_REGISTRY_INSTALL_NO_PACKAGE_MANAGERS/u,
     );
   });
 
   it("rejects a consumer whose gameplay scenario declares no assertions", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -543,7 +802,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("rejects a consumer whose production-readiness scenario was removed", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -563,7 +822,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("rejects a consumer whose real gameplay assertions are false", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -580,7 +839,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
   });
 
   it("rejects when the game-only edit did not reach the build", async () => {
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -598,7 +857,7 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
 
   it("drives the gameplay scenario with a display, a server and an explicit adapter policy", async () => {
     const playtests: string[][] = [];
-    const report = verifyRegistryInstall({
+    const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
       parent: await tempRoot(),
       run: (command, args, cwd) => {
@@ -618,6 +877,137 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     }
     // npm uses `npx --no-install`, not `npm exec --no-install`, which warns on npm 11.
     expect(playtests.map(([command]) => command).sort()).toEqual(["npx", "pnpm"]);
+  });
+
+  it("carries a physical and an emulator arm of one target as separate cohort rows", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner((npm) => ({
+        rows: [
+          npm
+            ? consumerRow()
+            : consumerRow({
+                architecture: "x86_64",
+                artifactHash: "9c1d0a4b7e2f5630bd4a8c9112ee73045ab6cd7f19e2b4d0c8a5f61729be340",
+                osVersion: "15 (API 35)",
+                session: "android-emulator",
+              }),
+        ],
+      })),
+    });
+    expect(report.exitCode).toBe(0);
+    // The target alone cannot hold both: PRD-366 phase 2 lost the Pixel 8 row to the emulator run.
+    expect(report.consumerTargets).toHaveLength(2);
+    expect(
+      report.consumerTargets
+        .map((row) => ({
+          architecture: row.architecture,
+          artifactHash: row.artifactHash,
+          osVersion: row.osVersion,
+          session: row.session,
+        }))
+        .sort((left, right) => left.session.localeCompare(right.session)),
+    ).toEqual([
+      {
+        architecture: "arm64-v8a",
+        artifactHash: "3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211",
+        osVersion: "17 (API 37)",
+        session: "android-device",
+      },
+      {
+        architecture: "x86_64",
+        artifactHash: "9c1d0a4b7e2f5630bd4a8c9112ee73045ab6cd7f19e2b4d0c8a5f61729be340",
+        osVersion: "15 (API 35)",
+        session: "android-emulator",
+      },
+    ]);
+  });
+
+  it("retains the run's own first diagnostic when an arm aborted before any assertion", async () => {
+    // `failureReport()` emits this shape for ANY abort before assertions run, so a row carrying
+    // only the verifier's message cannot say what failed — which is why phase 2's one physical
+    // arm64 abort is still unexplained.
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [
+          consumerRow({
+            assertionIds: [],
+            assertions: 0,
+            failures: ["assertion 'diagnostics' was not evaluated"],
+            pass: false,
+          }),
+        ],
+        stdout: {
+          diagnostics: [
+            {
+              code: "TN_PLAYTEST_ANDROID_LAUNCH",
+              message: "the installed app never reached the foreground",
+              severity: "error",
+            },
+          ],
+          pass: false,
+        },
+      })),
+    });
+    // The real failure path: a row the verifier marked failed must fail the cohort, and the report
+    // must still carry what the run reported rather than only the abort.
+    expect(report.exitCode).toBe(1);
+    const native = report.steps.filter((step) => step.name.endsWith(":native"));
+    expect(native).toHaveLength(2);
+    for (const item of native) expect(item.detail).toContain("TN_PLAYTEST_ANDROID_LAUNCH");
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual([
+      "assertion 'diagnostics' was not evaluated",
+      "TN_PLAYTEST_ANDROID_LAUNCH: the installed app never reached the foreground",
+    ]);
+  });
+
+  it("names the missing diagnostic instead of inventing a cause for a zero-assertion arm", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [consumerRow({ assertionIds: [], assertions: 0, pass: false })],
+      })),
+    });
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual([expect.stringContaining("TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_MISSING")]);
+  });
+
+  it("fails the cohort on a zero-assertion arm even when the row claims it passed", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [consumerRow({ assertionIds: [], assertions: 0, pass: true })],
+        stdout: {
+          diagnostics: [
+            {
+              code: "TN_PLAYTEST_ANDROID_LAUNCH",
+              message: "the installed app never reached the foreground",
+              severity: "error",
+            },
+          ],
+          pass: true,
+        },
+      })),
+    });
+    // An empty assertion set is a failure whatever `pass` says (AGENTS.md's empty-assertion rule):
+    // a row that asserted nothing has proved nothing, so it cannot carry a cohort.
+    expect(report.exitCode).toBe(1);
+    const native = report.steps.filter((step) => step.name.endsWith(":native"));
+    expect(native).toHaveLength(2);
+    for (const item of native)
+      expect(item.detail).toContain("TN_REGISTRY_INSTALL_CONSUMER_TARGET_FAILED");
+    // The row and its diagnostic survive the abort, so the recorded cause is not lost to it.
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual(["TN_PLAYTEST_ANDROID_LAUNCH: the installed app never reached the foreground"]);
   });
 });
 

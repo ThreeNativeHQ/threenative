@@ -37,4 +37,4 @@ catalog:
   '@vitest/coverage-v8': 4.1.10
 
 patchedDependencies:
-  three@0.185.1: patches/three@0.185.1.patch
+  three@0.185.1: packages/core/patches/three@0.185.1.patch

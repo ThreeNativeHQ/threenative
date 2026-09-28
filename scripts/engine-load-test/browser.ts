@@ -1,11 +1,21 @@
 // Shared browser plumbing for the PRD-117 web arms. Both arms park a §5.1 run report on
 // `window.__ENGINE_LOAD_TEST__`; this file opens the page, waits, and hands the object back.
 import { type ChildProcess, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "@playwright/test";
+import {
+  DEFAULT_AXES,
+  canonicalPlacementBytes,
+  createPlacements,
+  culledOffsetX,
+  positionHash,
+} from "../../examples/engine-load-test/src/workload.js";
+import { softwareAdapterName } from "../../packages/playtest/src/runner/browser.js";
+import type { IRunReport } from "./report.js";
 
 // Vsync is disabled on both arms rather than pinned on both: under vsync a frame needing 17 ms of
 // work presents at 33 ms, so the knee would report which side of a 16.7 ms boundary an engine
@@ -20,6 +30,12 @@ export const BENCH_BROWSER_ARGS = [
   "--disable-frame-rate-limit",
   "--autoplay-policy=no-user-gesture-required",
 ] as const;
+
+export function browserLaunchArgs(waylandDisplay: string | undefined): string[] {
+  return waylandDisplay
+    ? [...BENCH_BROWSER_ARGS, "--ozone-platform=wayland"]
+    : [...BENCH_BROWSER_ARGS];
+}
 
 const MIME: Record<string, string> = {
   ".css": "text/css",
@@ -53,9 +69,58 @@ export function benchBrowserPath(): string | undefined {
   return undefined;
 }
 
+// A hardware pilot is the point of this arm, and a software rasteriser answers just as
+// successfully as a GPU: the page loads, the ladder runs, and the numbers are a CPU's. Naming the
+// adapter is not enough when the arm exists to be compared, so the collector refuses one.
+export function assertHardwareAdapter(adapter: string): string {
+  const software = softwareAdapterName({ adapter });
+  if (software !== undefined) throw new Error(`TN_BENCH_SOFTWARE_ADAPTER: ${software}`);
+  return adapter;
+}
+
+// Two things `parseRunReport` cannot know, and only this collector sees. The adapter: a hardware
+// pilot is the point of this arm, and a software rasteriser answers as successfully as a GPU, so a
+// control measured on one is not a control. The legacy `positionHash` is recomputed from the
+// shared workload here. It covers the first eight placements only. Every initial built placement
+// is checked below; complete geometry/material/camera fixture identity is still an open gate.
+export function assertBrowserPlacements(report: IRunReport): IRunReport {
+  for (const rung of report.rungs) {
+    const placements = createPlacements(rung.objectCount);
+    const fraction = report.axes?.visibleFraction ?? DEFAULT_AXES.visibleFraction;
+    const round = rung.mode === "L2" ? Math.fround : (value: number) => value;
+    const digest = createHash("sha256")
+      .update(
+        canonicalPlacementBytes(rung.objectCount, (index) => {
+          const placement = placements[index];
+          if (placement === undefined) throw new Error(`TN_BENCH_PLACEMENT_MISSING:${index}`);
+          const x = placement.x + culledOffsetX(index, fraction);
+          return { x: round(x), y: round(placement.y), z: round(placement.z) };
+        }),
+      )
+      .digest("hex");
+    if (rung.initialPlacementSha256 !== digest)
+      throw new Error(
+        `TN_BENCH_PLACEMENT_MISMATCH: ${rung.mode}@${rung.objectCount} built ${rung.initialPlacementSha256 ?? "missing"}, expected ${digest}`,
+      );
+  }
+  return report;
+}
+
+export function assertPlainThreePilot(report: IRunReport): IRunReport {
+  assertHardwareAdapter(report.driver.adapter);
+  for (const rung of report.rungs) {
+    const expected = positionHash(createPlacements(rung.objectCount));
+    if (rung.positionHash !== expected)
+      throw new Error(
+        `TN_BENCH_SCENE_MISMATCH: ${rung.objectCount} objects hashed ${rung.positionHash}, the workload hashes ${expected}`,
+      );
+  }
+  return assertBrowserPlacements(report);
+}
+
 export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknown> {
   const browser = await chromium.launch({
-    args: [...BENCH_BROWSER_ARGS],
+    args: browserLaunchArgs(process.env.WAYLAND_DISPLAY),
     executablePath: benchBrowserPath(),
     headless: false,
   });

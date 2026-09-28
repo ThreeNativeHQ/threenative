@@ -1,5 +1,5 @@
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
-use rapier3d::na::{Quaternion, UnitQuaternion};
+use rapier3d::na::{Point3, Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ptr;
@@ -262,6 +262,34 @@ impl Simulation {
     }
 
     fn add_body(&mut self, options: TnPhysicsBodyOptions) -> bool {
+        let collider = match options.shape_type {
+            0 if options.shape_x > 0.0 && options.shape_y > 0.0 && options.shape_z > 0.0 => {
+                ColliderBuilder::cuboid(options.shape_x, options.shape_y, options.shape_z)
+            }
+            1 if options.shape_x > 0.0 => ColliderBuilder::ball(options.shape_x),
+            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
+                ColliderBuilder::capsule_y(options.shape_x, options.shape_y)
+            }
+            _ => return false,
+        };
+        self.insert_body(options, collider)
+    }
+
+    /// A triangle mesh, the only concave shape a static level needs. Rapier refuses a degenerate
+    /// mesh with an error rather than panicking, so a bad import fails closed.
+    fn add_trimesh_body(
+        &mut self,
+        options: TnPhysicsBodyOptions,
+        vertices: Vec<Point3<Real>>,
+        indices: Vec<[u32; 3]>,
+    ) -> bool {
+        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+            return false;
+        };
+        self.insert_body(options, collider)
+    }
+
+    fn insert_body(&mut self, options: TnPhysicsBodyOptions, collider: ColliderBuilder) -> bool {
         let finite = [
             options.position_x,
             options.position_y,
@@ -317,28 +345,9 @@ impl Simulation {
             body = body.additional_mass(options.mass);
         }
         let body = self.bodies.insert(body);
-        let mut collider = match options.shape_type {
-            0 if options.shape_x > 0.0 && options.shape_y > 0.0 && options.shape_z > 0.0 => {
-                ColliderBuilder::cuboid(options.shape_x, options.shape_y, options.shape_z)
-            }
-            1 if options.shape_x > 0.0 => ColliderBuilder::ball(options.shape_x),
-            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
-                ColliderBuilder::capsule_y(options.shape_x, options.shape_y)
-            }
-            _ => {
-                self.bodies.remove(
-                    body,
-                    &mut self.islands,
-                    &mut self.colliders,
-                    &mut self.impulse_joints,
-                    &mut self.multibody_joints,
-                    true,
-                );
-                return false;
-            }
-        }
-        .collision_groups(InteractionGroups::new(layer, mask))
-        .sensor(options.sensor);
+        let mut collider = collider
+            .collision_groups(InteractionGroups::new(layer, mask))
+            .sensor(options.sensor);
         collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
         let shape = collider.shape.clone();
         let collider = self
@@ -1183,6 +1192,54 @@ pub extern "C" fn tn_physics_add_body(
     simulation.add_body(unsafe { ptr::read(options) })
 }
 
+/// Add a fixed or dynamic body whose collider is a triangle mesh.
+///
+/// `vertices` is a flat `x, y, z` float array and `indices` a flat triangle-index array. Both are
+/// copied into the collider here, so the caller's buffers only have to outlive this call.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_add_trimesh_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    if vertices.is_null() || indices.is_null() {
+        return false;
+    }
+    let vertex_count = vertex_floats as usize;
+    let triangle_vertices = index_count as usize;
+    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
+    {
+        return false;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return false;
+    }
+    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
+    let point_count = vertex_count / 3;
+    if raw_indices
+        .iter()
+        .any(|index| *index as usize >= point_count)
+    {
+        return false;
+    }
+    let points = floats
+        .chunks_exact(3)
+        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+        .collect();
+    let triangles = raw_indices
+        .chunks_exact(3)
+        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+        .collect();
+    simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_create_joint(
     simulation: *mut Simulation,
@@ -1655,6 +1712,108 @@ mod tests {
             discrete_x > 0.1,
             "opted-out body did not tunnel at {discrete_x}"
         );
+    }
+
+    /// A 4 m wide, 2 m tall wall in the x/y plane at z = 0 with a 1 m opening centred on x = 0.
+    /// `left` and `right` are the two quad halves, so the gap between them is the doorway.
+    fn trimesh_wall() -> (Vec<Point3<Real>>, Vec<[u32; 3]>) {
+        let left = [-2.0f32, -1.0, 0.0, -0.5, -1.0, 0.0, -0.5, 1.0, 0.0, -2.0, -1.0, 0.0,
+            -0.5, 1.0, 0.0, -2.0, 1.0, 0.0];
+        let right = [0.5f32, -1.0, 0.0, 2.0, -1.0, 0.0, 2.0, 1.0, 0.0, 0.5, -1.0, 0.0, 2.0, 1.0,
+            0.0, 0.5, 1.0, 0.0];
+        let flat: Vec<f32> = left.into_iter().chain(right).collect();
+        let points = flat
+            .chunks_exact(3)
+            .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+            .collect();
+        let triangles = (0..12u32).collect::<Vec<u32>>()
+            .chunks_exact(3)
+            .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+            .collect();
+        (points, triangles)
+    }
+
+    #[test]
+    fn a_trimesh_body_keeps_the_openings_the_mesh_has() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let (points, triangles) = trimesh_wall();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 3;
+        assert!(simulation.add_trimesh_body(options, points, triangles));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        let through = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 0.0,
+                from_z: -2.0,
+                to_x: 0.0,
+                to_y: 0.0,
+                to_z: 2.0,
+                collision_mask: 1,
+            })
+            .expect("clear ray arithmetic");
+        assert!(through.is_none(), "a ray through the opening must miss");
+        let wall = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 1.5,
+                from_y: 0.0,
+                from_z: -2.0,
+                to_x: 1.5,
+                to_y: 0.0,
+                to_z: 2.0,
+                collision_mask: 1,
+            })
+            .expect("wall ray arithmetic")
+            .expect("a ray into the intact wall must hit");
+        assert_eq!(wall.body_id, 0);
+    }
+
+    #[test]
+    fn the_trimesh_ffi_rejects_a_degenerate_or_out_of_range_mesh() {
+        let gravity = TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        };
+        let mut simulation = Simulation::new(gravity).unwrap();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 3;
+        let vertices = [-1.0f32, -1.0, 0.0, 1.0, -1.0, 0.0, 0.0, 1.0, 0.0];
+        // An index past the vertex buffer must be refused, not read.
+        let bad = [0u32, 1, 3];
+        assert!(!tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            vertices.as_ptr(),
+            9,
+            bad.as_ptr(),
+            3,
+        ));
+        // A NaN vertex is not a mesh.
+        let nan = [0.0f32, f32::NAN, 0.0];
+        assert!(!tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            nan.as_ptr(),
+            3,
+            [0u32, 0, 0].as_ptr(),
+            3,
+        ));
+        let good = [0u32, 1, 2];
+        assert!(tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            vertices.as_ptr(),
+            9,
+            good.as_ptr(),
+            3,
+        ));
     }
 
     #[test]
