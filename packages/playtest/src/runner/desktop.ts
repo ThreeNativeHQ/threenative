@@ -9,6 +9,13 @@ import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared
 /** How long the host may leave a screenshot request untouched before the app counts as hung. */
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_REQUEST_FILE = "tn-playtest-screenshot-request.txt";
+
+function nativeScreenshotTimeoutMs(environment: NodeJS.ProcessEnv = process.env): number {
+  const configured = environment.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS;
+  if (configured === undefined || configured.trim().length === 0) return SCREENSHOT_TIMEOUT_MS;
+  const parsed = Number(configured);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : SCREENSHOT_TIMEOUT_MS;
+}
 const SCREENSHOT_REQUEST_TEMP_FILE = `${SCREENSHOT_REQUEST_FILE}.tmp`;
 const HOST_TAIL_LINES = 6;
 const HOST_DIAGNOSTIC_LINE = /\[(?:Screenshot|Playtest)\]/u;
@@ -137,19 +144,14 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     // map — which a software adapter's present outlasts (endDawnFrame p50 333ms, max 4.3s on arm64
     // llvmpipe), so only that phase gets the harness's overall screenshot budget. The sum is the
     // absolute cap, and isAlive() still fails fast inside both.
-    const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? SCREENSHOT_TIMEOUT_MS);
+    const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? nativeScreenshotTimeoutMs());
     const deadline = pickupDeadline + OVERALL_SCREENSHOT_TIMEOUT_MS;
     let accepted = false;
     let lastReadError: unknown;
     while (Date.now() < deadline) {
-      try {
-        const png = await readFile(path);
-        assertCaptureNotBlank(png, path);
-        return;
-      } catch (error) {
-        if (error instanceof Error && error.name === "CaptureGuardError") throw error;
-        if (!isMissingFile(error)) lastReadError = error;
-      }
+      const readError = await tryReadDesktopScreenshot(path);
+      if (readError === undefined) return;
+      lastReadError = readError;
       if (!(await this.isAlive())) {
         throw new Error("Desktop playtest executable exited before screenshot capture.");
       }
@@ -223,6 +225,17 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       this.consoleEntries.push({ text: line, type: desktopConsoleType(stream, line) });
       this.pendingOutput[stream] = "";
     }
+  }
+}
+
+async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefined> {
+  try {
+    const png = await readFile(path);
+    assertCaptureNotBlank(png, path);
+    return undefined;
+  } catch (error) {
+    if (error instanceof Error && error.name === "CaptureGuardError") throw error;
+    return isMissingFile(error) ? "request timed out" : error;
   }
 }
 

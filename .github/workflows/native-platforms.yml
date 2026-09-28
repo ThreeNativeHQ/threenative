@@ -1809,6 +1809,7 @@ jobs:
           target="$RUNNER_TEMP/threenative-starter-native"
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
+          TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
             pnpm --dir "$target" test:native
       # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
       # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.

@@ -1038,6 +1038,25 @@ describe("CI pipeline structure", () => {
     expect(release).toBeGreaterThan(prerequisites);
   });
 
+  // The clean room's `android` step builds the APK in the published cohort. Without a JDK 17 and an
+  // SDK carrying a platform and the build tools (where `zipalign` and `apksigner` live) that step
+  // cannot run, and the step is the one consumer observation a release never gets back.
+  it("provisions a JDK 17 and an Android SDK before the clean room runs its android step", async () => {
+    const npm = await readFile(path.join(repo, ".github/workflows/npm-release.yml"), "utf8");
+    const cleanRoom = jobSections(npm).find(([job]) => job === "clean-room")?.[1];
+    expect(cleanRoom).toBeDefined();
+    if (cleanRoom === undefined) return;
+    expect(cleanRoom).toContain('java-version: "17"');
+    expect(cleanRoom).toContain("platforms;android-35");
+    expect(cleanRoom).toContain("build-tools;35.0.0");
+    const java = cleanRoom.indexOf("actions/setup-java@v5");
+    const sdk = cleanRoom.indexOf("android-actions/setup-android@v4");
+    const verifier = cleanRoom.indexOf("pnpm tsx scripts/verify-registry-install.ts");
+    expect(java).toBeGreaterThanOrEqual(0);
+    expect(sdk).toBeGreaterThan(java);
+    expect(verifier).toBeGreaterThan(sdk);
+  });
+
   it("requires native release CI to be a successful push on main", async () => {
     const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
     const gates = jobSections(native).find(([job]) => job === "gates")?.[1];

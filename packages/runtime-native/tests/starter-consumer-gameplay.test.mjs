@@ -257,6 +257,7 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     assert.equal(expected.artifactHash, row.artifactHash);
     assert.match(calls[0].join(' '), /--target desktop/u);
     assert.match(calls[0].join(' '), /--executable/u);
+    assert.match(calls[0].join(' '), /--no-screenshots/u);
     const recorded = JSON.parse(
       readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
     );

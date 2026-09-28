@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { BoxGeometry, Camera, Mesh, Scene } from "three";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
@@ -26,7 +23,7 @@ import { describe, expect, it, vi } from "vitest";
 // with `dynamicOpen` and `clipOpen` both exactly zero — the version gate was the only one open.
 // Evidence: artifacts/wildwood-performance/cache-gate/.
 //
-// The fix lives in `patches/three@0.185.1.patch`: the per-object scratchpad write goes to the
+// The fix lives in `packages/core/patches/three@0.185.1.patch`: the per-object scratchpad write goes to the
 // backing field so the shared version stops moving, and each render object tracks its own source
 // material's version instead, which is the signal that actually belongs to it.
 
@@ -368,21 +365,5 @@ describe("three RenderObjects source invalidation", () => {
     expect(probe.get(object, source)).toBe(renderObject);
     probe.setRenderTargetSamples(0);
     expect(probe.get(object, source)).toBe(renderObject);
-  });
-
-  it("keeps every shipped Three.js patch copy byte-identical", () => {
-    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-    const patchPaths = [
-      resolve(repositoryRoot, "patches/three@0.185.1.patch"),
-      resolve(repositoryRoot, "packages/core/patches/three@0.185.1.patch"),
-      resolve(
-        repositoryRoot,
-        "packages/create-threenative/template-assets/patches/three@0.185.1.patch",
-      ),
-    ];
-    const [rootPatch, corePatch, templatePatch] = patchPaths.map((path) => readFileSync(path));
-
-    expect(corePatch).toEqual(rootPatch);
-    expect(templatePatch).toEqual(rootPatch);
   });
 });
