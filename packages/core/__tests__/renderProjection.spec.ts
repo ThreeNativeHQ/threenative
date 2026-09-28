@@ -42,6 +42,7 @@ import {
   scanProjection,
 } from "../src/projection-plan.js";
 import * as projectionPlan from "../src/projection-plan.js";
+import { markEngineRenderHook } from "../src/engine-render-hook.js";
 import { readVelocityPreviousMatrices } from "../src/render/velocity.js";
 import { type IRenderProjectionReport, SceneRenderProjection } from "../src/renderProjection.js";
 
@@ -261,6 +262,25 @@ describe("SceneRenderProjection", () => {
     expect(projection.deoptimized).toBe(true);
     expect(projection.root).toBe(scene);
     expect(projection.report.reasonCode).toBe("renderHook");
+  });
+
+  it("still projects when the only hook is the engine's own prewarm bookkeeping (PRD-458)", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+
+    // What `WorldCells#awaitDraw` installs: a self-clearing borrow that counts one submitted draw.
+    // It is engine bookkeeping with no game-visible object behind it, so the mirror's own draw
+    // cannot be mistaken for the game's draw and the frame stays projectable. A real game hook on
+    // the same mesh still declines the frame — see the case above.
+    const borrow = (): void => undefined;
+    markEngineRenderHook(borrow);
+    (meshes[7] as Mesh).onBeforeRender = borrow;
+
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.reasonCode).toBe("projected");
   });
 
   it("keeps one draw per material and never merges two materials into one", () => {

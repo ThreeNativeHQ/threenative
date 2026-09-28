@@ -15,6 +15,7 @@ import {
 } from "three";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
+import { markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
@@ -357,8 +358,17 @@ export interface IShadowRegion {
  * the drawn range holds nothing but live records. The handles are opaque: `allocate` only hands one
  * back to `write` and `clear`.
  */
+/**
+ * A `SharedBatch`'s mesh plus the one field it publishes for a shadow level's size gate: the largest
+ * instance scale any live record carries. Duck-typed rather than augmented into `three`, the same as
+ * `isInstancedMesh` — `render/virtual-shadow.ts` reads it back off the mesh.
+ */
+interface ICasterScaleMesh extends InstancedMesh {
+  casterInstanceScale: number;
+}
+
 class SharedBatch {
-  mesh: InstancedMesh;
+  mesh: ICasterScaleMesh;
   readonly #segmentSize: number;
   /** Block handle -> the block's first instance record. */
   readonly #start = new Map<number, number>();
@@ -371,6 +381,10 @@ class SharedBatch {
   #drawn = 0;
   /** Block handle -> the AABB of the records it holds, and the union of those is the mesh's bounds. */
   readonly #boxes = new Map<number, Box3>();
+  /** Block handle -> the largest instance scale in it; the union is published on the mesh. */
+  readonly #scales = new Map<number, number>();
+  /** Carried out of the last `#boxOf` pass, which already reads every record's basis. */
+  #maxScale = 0;
   #localGeometry: BufferGeometry | undefined;
   readonly #localCenter = new Vector3();
   readonly #localHalf = new Vector3();
@@ -417,8 +431,8 @@ class SharedBatch {
     capacity: number,
     name: string,
     bounds: Box3,
-  ): InstancedMesh {
-    const mesh = pooledMesh(geometry, material, capacity);
+  ): ICasterScaleMesh {
+    const mesh = pooledMesh(geometry, material, capacity) as ICasterScaleMesh;
     mesh.name = name;
     mesh.boundingBox = bounds.clone();
     mesh.boundingSphere = bounds.getBoundingSphere(mesh.boundingSphere ?? new Sphere());
@@ -432,6 +446,8 @@ class SharedBatch {
     mesh.receiveShadow = false;
     (mesh.instanceMatrix.array as Float32Array).fill(0);
     mesh.instanceMatrix.needsUpdate = true;
+    // A pooled mesh arrives carrying the last user's scale; nothing lives here yet.
+    mesh.casterInstanceScale = 0;
     return mesh;
   }
 
@@ -495,6 +511,10 @@ class SharedBatch {
     (this.mesh.boundingBox as Box3).copy(box);
     this.mesh.boundingSphere = this.mesh.boundingSphere ?? new Sphere();
     box.getBoundingSphere(this.mesh.boundingSphere);
+    // The size a per-instance shadow gate reads, published next to the mesh rather than asked for
+    // again per level: the cluster's own sphere is ~24 m of grid square, so gating on it dropped
+    // nothing, while a fern is 0.3 m and every fern cluster clears every coarse level.
+    this.mesh.casterInstanceScale = live === false ? 0 : Math.max(...this.#scales.values());
   }
 
   /**
@@ -530,6 +550,7 @@ class SharedBatch {
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
     let maxZ = Number.NEGATIVE_INFINITY;
+    let scale = 0;
     for (let index = from; index < from + count; index += 1) {
       const at = index * 16;
       const m0 = array[at] as number;
@@ -553,7 +574,15 @@ class SharedBatch {
       if (px + ex > maxX) maxX = px + ex;
       if (py + ey > maxY) maxY = py + ey;
       if (pz + ez > maxZ) maxZ = pz + ez;
+      // The largest column of the instance basis: the scale a fern or a trunk is drawn at.
+      const basis = Math.max(
+        Math.hypot(m0, m1, m2),
+        Math.hypot(m4, m5, m6),
+        Math.hypot(m8, m9, m10),
+      );
+      if (basis > scale) scale = basis;
     }
+    this.#maxScale = scale;
     out.min.set(minX, minY, minZ);
     out.max.set(maxX, maxY, maxZ);
     return out;
@@ -613,8 +642,13 @@ class SharedBatch {
     this.#size.set(segment, written);
     // The block's extent, read from the records where they are now, because `#compact` is about to
     // move them. The box is keyed by handle, so the move cannot falsify it.
-    if (written > 0) this.#boxes.set(segment, this.#boxOf(start, written));
-    else this.#boxes.delete(segment);
+    if (written > 0) {
+      this.#boxes.set(segment, this.#boxOf(start, written));
+      this.#scales.set(segment, this.#maxScale);
+    } else {
+      this.#boxes.delete(segment);
+      this.#scales.delete(segment);
+    }
     this.#compact();
     this.#touched(start, written);
     this.#rebound();
@@ -634,6 +668,7 @@ class SharedBatch {
     // "upload the whole buffer" — a ring-sized write to zero a block that is no longer drawn.
     this.#touched(0, this.#drawn);
     this.#boxes.delete(segment);
+    this.#scales.delete(segment);
     this.#rebound();
   }
 
@@ -1363,6 +1398,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #prewarmOwed = 0;
   #prewarmDrawn = 0;
   #prewarmWait = 0;
+  /** Meshes still carrying a prewarm borrow, with the hook each one has to be handed back. */
+  readonly #awaited = new Map<InstancedMesh, { borrow: unknown; own: unknown }>();
   #prewarmSettled = false;
   #prewarmResolve: () => void = () => {
     // replaced in the field initialiser below, once `this` exists
@@ -1728,6 +1765,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#prewarmOwed = 0;
     this.#prewarmDrawn = 0;
     this.#prewarmWait = 0;
+    this.#releaseImpossibleBorrows();
     this.#settlePrewarm();
   }
 
@@ -1769,11 +1807,33 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#prewarmOwed += 1;
     const own = mesh.onBeforeRender;
     const borrow = own as ((...args: unknown[]) => void) | undefined;
-    mesh.onBeforeRender = ((...args: unknown[]): void => {
+    const counted = (...args: unknown[]): void => {
       this.#prewarmDrawn += 1;
       mesh.onBeforeRender = own;
+      this.#awaited.delete(mesh);
       borrow?.(...args);
-    }) as typeof mesh.onBeforeRender;
+    };
+    // Engine bookkeeping, not a claim on the mesh: the scene-render projection's `hasRenderHook`
+    // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
+    // collapse they exist to be folded into. Unmarked, 202 of them permanently declined it.
+    markEngineRenderHook(counted);
+    this.#awaited.set(mesh, { borrow: counted, own });
+    mesh.onBeforeRender = counted as typeof mesh.onBeforeRender;
+  }
+
+  /**
+   * Hand back a borrow whose draw can no longer happen, so no hook outlives the prewarm it served.
+   *
+   * A prewarmed main batch that is still empty when the gate settles never draws, so its borrow
+   * would sit on the mesh for the rest of the walk. Batches that did draw already returned theirs.
+   */
+  #releaseImpossibleBorrows(): void {
+    for (const [mesh, entry] of [...this.#awaited]) {
+      if (mesh.count > 0) continue;
+      if (mesh.onBeforeRender === entry.borrow)
+        mesh.onBeforeRender = entry.own as typeof mesh.onBeforeRender;
+      this.#awaited.delete(mesh);
+    }
   }
 
   /**
@@ -1898,6 +1958,11 @@ export class WorldCells extends Group implements IComputeDriven {
   dispose(): void {
     if (this.#released) return;
     this.#released = true;
+    for (const [mesh, entry] of [...this.#awaited]) {
+      if (mesh.onBeforeRender === entry.borrow)
+        mesh.onBeforeRender = entry.own as typeof mesh.onBeforeRender;
+    }
+    this.#awaited.clear();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
     if (this.#drainShared() > 0) this.#failures += 1;
     // The batches `#drainShared` just retired. Their geometry and material were released by the

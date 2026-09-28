@@ -1,6 +1,8 @@
 import {
+  Box3,
   BoxGeometry,
   DirectionalLight,
+  InstancedMesh,
   FloatType,
   HalfFloatType,
   Matrix4,
@@ -11,7 +13,8 @@ import {
   type OrthographicCamera,
   PerspectiveCamera,
   Scene,
-  type Sphere,
+  Sphere,
+  SphereGeometry,
   Vector3,
 } from "three";
 import { float, mix, vec4 } from "three/tsl";
@@ -581,6 +584,7 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     readonly camera: PerspectiveCamera;
     readonly casters: readonly Mesh[];
     readonly light: DirectionalLight;
+    readonly scene: Scene;
     readonly mass: Mesh;
     readonly small: Mesh;
     readonly tall: Mesh;
@@ -638,6 +642,7 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
       camera,
       casters: [mass, ...tiles, small, tall, upSun],
       light,
+      scene,
       mass,
       small,
       tall,
@@ -752,6 +757,42 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     expect(seen).toEqual(["0:st", "1:st", "2:-t"]);
     // Hidden for the level render, put back for the next camera.
     expect(small.visible && tall.visible).toBe(true);
+    node.dispose();
+  });
+
+  it("should gate a world cluster on its part's radius, not the grid square it spans (PRD-458)", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    // What a `WorldCells` cluster is: one `InstancedMesh` covering a whole grid square, so its own
+    // sphere is 24 m of square. A fern inside it is 0.3 m, and the published scale says so.
+    const fern = new InstancedMesh(
+      new SphereGeometry(0.15, 6, 4),
+      new MeshStandardMaterial(),
+      64,
+    );
+    fern.boundingSphere = new Sphere(new Vector3(0, 1, 0), 24);
+    fern.boundingBox = new Box3(new Vector3(-12, 0, -12), new Vector3(12, 2, 12));
+    fern.castShadow = true;
+    // A 0.15 m part placed at scale 10: 3 m of ground cover under a 48 m grid square.
+    (fern as InstancedMesh & { casterInstanceScale?: number }).casterInstanceScale = 10;
+    fern.position.set(-6, 0, 0);
+    scene.add(fern);
+    scene.updateMatrixWorld(true);
+
+    const seen: string[] = [];
+    stubLevelRenders(node);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        seen.push(`${String(index)}:${fern.visible ? "f" : "-"}`);
+      };
+    });
+    settle(node, camera);
+    // 3 m across is over 1.5 texels of the 48 m window and under 1.5 of the 192 m and 640 m ones, so
+    // it leaves the two coarse levels and stays in the fine one. Gated on its cluster's 48 m sphere
+    // it was kept by all three and submitted a fern draw to two levels that could not resolve a
+    // fragment of it — the whole gate, dropping nothing at all.
+    expect(seen).toEqual(["0:f", "1:-", "2:-"]);
+    expect(fern.visible).toBe(true);
     node.dispose();
   });
 

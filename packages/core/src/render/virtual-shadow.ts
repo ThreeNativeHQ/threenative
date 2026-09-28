@@ -247,6 +247,21 @@ const _center = new Vector3();
 const _sphere = new Sphere();
 const _box = new Box3();
 
+/**
+ * The diameter a shadow level's texel gate judges one caster by: the part's own geometry radius
+ * times the largest instance scale `WorldCells` placed into this batch, or the mesh's own sphere
+ * when it publishes no scale (anything the world does not own).
+ */
+function instanceDiameter(mesh: Mesh, sphereRadius: number): number {
+  const scale = (mesh as Mesh & { casterInstanceScale?: number }).casterInstanceScale;
+  if (scale === undefined || scale <= 0) return sphereRadius * 2;
+  const geometry = mesh.geometry;
+  if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
+  const radius = geometry.boundingSphere?.radius;
+  if (radius === undefined || radius <= 0) return sphereRadius * 2;
+  return radius * 2 * scale;
+}
+
 /** Keep each stock node's source-owned settings aligned with the public light shadow. */
 function syncShadowSettings(
   source: DirectionalLight["shadow"],
@@ -674,7 +689,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       this.#poolCount += 1;
       // Sub-texel: a caster the level cannot resolve draws no shadow a fragment could tell from
       // ground cover, so it is hidden for this render and put back immediately after it.
-      if (mesh.castShadow && _sphere.radius * 2 < gate) {
+      //
+      // On the part's own radius, not the cluster's. A world batch is one `InstancedMesh` per grid
+      // square, so its sphere is ~24 m of square whatever it holds and every cluster cleared every
+      // level's texel budget — the gate dropped nothing at all. `WorldCells` publishes the largest
+      // instance scale it actually placed (`casterInstanceScale`), and the part's geometry radius
+      // times that is the diameter a shadow map really has to resolve. A mesh without it — anything
+      // but a world batch — is gated on its own sphere, exactly as before.
+      if (mesh.castShadow && instanceDiameter(mesh, _sphere.radius) < gate) {
         object.visible = false;
         this.#hidden.push(object);
       }
