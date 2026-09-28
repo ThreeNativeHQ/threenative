@@ -658,7 +658,7 @@ describe("ThreeNative against Godot scoreboard", () => {
       html.indexOf("</table>", html.indexOf('<table class="compare-table">')),
     );
 
-  it("shows exploratory measurements with visible qualification gaps and no winner or speed ratio", () => {
+  it("names a winner and a speed ratio per row, with the caveats collapsed", () => {
     const html = renderProgressHtml(
       data({
         pilots: [
@@ -695,37 +695,50 @@ describe("ThreeNative against Godot scoreboard", () => {
       html.indexOf("Qualified iterations"),
     );
     const table = tableOf(html);
-    expect(table).toContain("Shipped defaults (exploratory)");
+    expect(table).toContain("Same scene, shipped defaults");
+    expect(table).toContain(
+      "One mesh per cube; each engine&#39;s own default batching. Headline row.",
+    );
     expect(table).toContain("Explicit instancing (both)");
-    expect(table).toContain("TN with auto-batching OFF (diagnostic)");
-    // Each engine's own p50 / p95 is retained without a speed ratio.
+    expect(table).toContain("TN auto-batching OFF (diagnostic)");
+    expect(table).toContain("Shows TN&#39;s per-draw cost when it cannot batch.");
+    // Each engine's own p50 / p95, then a winner and the ratio that decided it.
     expect(table).toContain("4.00 / 5.00 ms");
     expect(table).toContain("3.40 / 6.00 ms");
     expect(table).toContain("2.50 / 2.60 ms");
     expect(table).toContain("1.50 / 1.60 ms");
     expect(table).toContain("30.00 / 40.00 ms");
-    expect(table).not.toContain("Winner");
-    expect(table).not.toContain("faster");
-    expect(table).not.toMatch(/\d+\.\dx/u);
-    expect(table).toContain("Recorded TN p50 lower; Recorded TN p95 higher");
-    expect(table).toContain("Recorded TN p50 higher; Recorded TN p95 higher");
-    expect(table).toContain("L1 has a known output/draw mismatch");
-    const beforeTable = html.slice(0, html.indexOf('<table class="compare-table">'));
-    expect(beforeTable).toContain("L2 uses different visible-count semantics");
-    expect(beforeTable).toContain("Full fixture conformance and paired blocks are missing");
-    expect(beforeTable).not.toContain("<details>");
+    expect(table).toContain("ThreeNative 1.2x faster");
+    expect(table).toContain("ThreeNative 1.7x faster");
+    expect(table).toContain("Godot 7.5x faster");
+    // TN takes the median and loses the slow frames: the cell says both instead of picking one.
+    expect(table).toContain("TN on median, Godot on slow frames (p95)");
+    expect(table).toContain('class="pill win-tn">TN<');
+    expect(table).toContain('class="pill win-godot">Godot<');
+    expect(table).not.toContain("Exploratory direction");
+    expect(html).not.toContain("No winner or speedup");
+    // Where the headline row loses, in the same files as the table, directly under the bars.
+    const losses = html.slice(html.indexOf('class="scoreboard-bars"'));
+    expect(losses.indexOf("Where TN loses")).toBeGreaterThan(0);
+    expect(losses).toContain("Same scene, shipped defaults: Godot ahead by 1.00 ms on p95");
+    expect(losses).toContain(
+      "TN auto-batching OFF (diagnostic): Godot ahead by 26.00 ms on p50, 35.00 ms on p95",
+    );
+    // The qualification gaps moved out of the headline into a collapsed methodology block.
+    expect(table).not.toContain("L1 has a known output/draw mismatch");
+    const afterTable = html.slice(html.indexOf("</table>"));
+    expect(html).toContain("<summary>Methodology and caveats</summary>");
+    expect(afterTable).toContain("L1 has a known output/draw mismatch");
+    expect(afterTable).toContain("L2 uses different visible-count semantics");
+    expect(afterTable).toContain("Full fixture conformance and paired blocks are missing");
+    expect(html).toContain("Pilot numbers: one run per engine, 120 frames each");
     expect(table).toContain("2 vs 3");
     expect(table).toContain("2 vs 2375");
     expect(html).toContain(`href="${GODOT_L1}"`);
     expect(html).toContain(`href="${TN_L2}"`);
     expect(html).toContain(`href="${TN_L3}"`);
-    expect(html).not.toContain("Where TN loses");
     expect(html).toContain('class="scoreboard-bars"');
     expect(html.match(/<rect x="52"/gu)).toHaveLength(6);
-    // The caveat is one sentence, from what the files actually carry.
-    expect(html).toContain(
-      "Pilot numbers: one run per engine, 4 measured frames per file, warmup not recorded in these files",
-    );
   });
 
   it("renders a missing file as missing, never as a number or a near neighbour", () => {
@@ -743,9 +756,9 @@ describe("ThreeNative against Godot scoreboard", () => {
     const table = tableOf(html);
     expect(table).toContain("Godot file missing");
     expect(table).toContain("TN file missing");
-    // Two rows fully unpaired and the Godot half of the third: 4 + 4 + 3 cells read as missing,
+    // Two rows fully unpaired and the Godot half of the third: 5 + 5 + 4 cells read as missing,
     // none as a number, and the retained TN half is never stretched across the missing side.
-    expect(table.match(/>missing</gu)).toHaveLength(11);
+    expect(table.match(/>missing</gu)).toHaveLength(14);
     expect(table).not.toMatch(/\d+\.\dx/u);
     expect(table).not.toContain("faster");
     expect(html).not.toContain("Where TN loses");
