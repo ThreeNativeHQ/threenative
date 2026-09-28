@@ -28,6 +28,7 @@ import {
   pooledMesh,
 } from "./render/mesh-pool.js";
 import type { IRendererLike } from "./renderer.js";
+import { markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
@@ -2541,6 +2542,12 @@ export class WorldCells extends Group implements IComputeDriven {
    * reach the shadow maps only through a caster half.
    */
   #dressMesh(mesh: InstancedMesh, role: "cluster" | "main" | "wide", receiveShadow: boolean): void {
+    // Every role's records are written into the instance buffer, never moved in the world, and the
+    // mesh is created and released per role — so this is the one place that covers a fresh mesh, a
+    // rebound one and the three roles. Static here is only safe because every write announces
+    // itself: `instanceMatrix.needsUpdate` bumps the attribute's version, which is what a settled
+    // draw watches to know it still has to scan.
+    markStatic(mesh);
     if (role !== "main") {
       mesh.layers.set(
         role === "cluster" ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
@@ -2853,6 +2860,9 @@ export class WorldCells extends Group implements IComputeDriven {
             });
           cell.chunks.push(object);
           this.add(object);
+          // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
+          // are the ones the export gave it, so it is the one subtree here with nothing to announce.
+          markStatic(object);
           attached += 1;
         },
         { marker: false, while: live },
