@@ -5,7 +5,6 @@
 // *looks* like is `materials.ts`; this file is the ground itself, its water, and the one texture
 // the fog of war lives in.
 import {
-  BoxGeometry,
   DataTexture,
   InstancedMesh,
   LinearFilter,
@@ -32,6 +31,17 @@ import { palette } from "./palette.js";
  * the vertices for the extra rings to find.
  */
 const SEGMENTS = 112;
+
+/**
+ * The plain the battlefield stands on, in metres across and in metres below the map.
+ *
+ * Wide enough that the widest zoom cannot reach its edge: the rig's ground parallelogram reaches
+ * about 195 m from the origin at most, so 800 is four times the reach. Low enough to sit under
+ * every hollow the simulation digs — the deepest pool bed is 1.45 m up, the water 0.18 m up — and
+ * high enough that the terrain's own lowest ground, 0.15 m, never sinks into it.
+ */
+const APRON = 800;
+const APRON_Y = -1.75;
 
 export interface ITerrain {
   /** Rewrite the fog texture from the simulation's vision arrays. Cheap; not every frame. */
@@ -61,13 +71,20 @@ export function createTerrain(): ITerrain {
   ground.receiveShadow = true;
   root.add(ground);
 
-  // A skirt, so the battlefield has an edge rather than a paper-thin plane at the horizon.
-  const skirt = new Mesh(
-    new BoxGeometry(WORLD + 3, 7, WORLD + 3),
+  // The plain the battlefield stands on, so no camera angle looks off the map into a void.
+  //
+  // The orthographic rig covers a 228 m x 128 m parallelogram of ground at its widest zoom —
+  // wider than the 224 m map — and an orthographic camera's rays are parallel, so every one of
+  // them meets the ground at the same depth: past the map's rim there is nothing left to hit, and
+  // the background, sampled at the one direction every ray shares, filled the corner of the frame
+  // with a flat grey wedge. One plane, two triangles, below the deepest pool bed so no water is
+  // covered, and the battlefield reads as a plateau over a plain instead of a floating sheet.
+  const plain = new Mesh(
+    new PlaneGeometry(APRON, APRON).rotateX(-Math.PI / 2),
     new MeshStandardMaterial({ color: palette.cliff, roughness: 1 }),
   );
-  skirt.position.y = -5.2;
-  root.add(skirt);
+  plain.position.y = APRON_Y;
+  root.add(plain);
 
   // The pools the simulation refuses to path across: one instanced disc, so four lakes cost one
   // draw. The matrices never move, so the pool is sized for the world's sites rather than grown.

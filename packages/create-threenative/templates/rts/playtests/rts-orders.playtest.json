@@ -84,10 +84,16 @@
       "label": "order-move",
       "pointerPosition": {
         "buttons": 2,
-        "x": 0.82,
-        "y": 0.82
+        "x": 0.68,
+        "y": 0.7
       },
       "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ordered",
+      "waitTicks": 20,
       "release": true
     },
     {
@@ -124,7 +130,7 @@
           },
           {
             "equals": "move",
-            "label": "moved"
+            "label": "ordered"
           }
         ]
       }

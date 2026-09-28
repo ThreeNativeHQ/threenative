@@ -32,18 +32,24 @@ import { HALF, WORLD } from "../sim/terrain.js";
 import { palette } from "./palette.js";
 
 /**
- * How many metres one grid tile covers. Four, not one: at a 30 m tactical zoom a metre is a dozen
- * pixels, and a metre tile's line is a tenth of a pixel of it — the grid mips itself into a flat
- * wash. Four metres is a 48-pixel tile, which is where a grid reads as a grid.
+ * How many metres one grid tile covers.
+ *
+ * Sixteen, not four, and the number is measured at the rig's own zoom rather than picked. The tile
+ * holds four major lines and sixteen minor ones, so this is a 4 m grid with a 1 m line inside each
+ * square: at a 30 m tactical zoom a major line lands every 48 px and the minor one every 12 px,
+ * where the 1 m major grid this file started with put a crosshatch every 12 px on *both* axes and
+ * the whole battlefield read as wireframe mesh rather than as ground. A metre is still a metre —
+ * the minor line is what keeps the grid honest — but the ground now reads as ground.
  */
-const TILE = 4;
+const TILE = 16;
 const MAJOR_EVERY = 4;
 const MINOR_EVERY = 16;
 
 /**
- * One tile of grid: a heavy line every `TILE` metres, a faint one every metre, and nothing else.
+ * One tile of grid: a heavy line every four metres, a faint one every metre, and nothing else.
  * White where there is no line, so the terrain material can tint the same tile light ground and
- * dark cliff — the grid is the look, the tint is the terrain's.
+ * dark cliff — the grid is the look, the tint is the terrain's. The minor line darkens its tile by
+ * less than a quarter, which is what "faint" has to mean when a metre is a dozen pixels wide.
  */
 function gridTexture(size = 256): DataTexture {
   const LINE = 64; // The line darkens its tile to a quarter: a grid, not a stain.
@@ -54,7 +60,7 @@ function gridTexture(size = 256): DataTexture {
     for (let x = 0; x < size; x += 1) {
       const major = x % (size / MAJOR_EVERY) < heavy || y % (size / MAJOR_EVERY) < heavy;
       const minor = x % MINOR_EVERY < light || y % MINOR_EVERY < light;
-      const weight = major ? 0.95 : minor ? 0.4 : 0;
+      const weight = major ? 0.95 : minor ? 0.22 : 0;
       const value = Math.round(255 * (1 - weight) + LINE * weight);
       const index = (y * size + x) * 4;
       data[index] = value;

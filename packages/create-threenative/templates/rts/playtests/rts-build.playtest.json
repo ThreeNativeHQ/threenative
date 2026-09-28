@@ -1,0 +1,68 @@
+{
+  "name": "rts-build",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "selection",
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true },
+    {
+      "kind": "click",
+      "label": "build-menu",
+      "at": { "x": 1117, "y": 555 },
+      "waitTicks": 6
+    },
+    {
+      "kind": "input",
+      "label": "place",
+      "pointerPosition": { "buttons": 2, "x": 0.5937, "y": 0.4855 },
+      "holdTicks": 4,
+      "release": true
+    },
+    { "kind": "wait", "label": "raising", "waitTicks": 200, "release": true },
+    {
+      "kind": "click",
+      "label": "select-site",
+      "at": { "x": 760, "y": 314 },
+      "waitTicks": 10
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "selection",
+        "component": "count",
+        "atSteps": [{ "label": "select-site", "equals": 1 }]
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "mode",
+        "atSteps": [
+          { "label": "build-menu", "equals": "build:barracks" },
+          { "label": "place", "equals": "" }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "primaryType",
+        "atSteps": [{ "label": "select-site", "equals": "barracks" }]
+      },
+      {
+        "id": "state",
+        "path": "primaryBuilt",
+        "atSteps": [{ "label": "select-site", "equals": false }]
+      },
+      { "id": "state", "path": "primaryProgress", "changed": true }
+    ],
+    "renderChain": { "tier": "high" }
+  }
+}
