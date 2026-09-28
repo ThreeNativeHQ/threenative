@@ -66,6 +66,18 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("points a two-handed grip request at the copy-in IK integration", () => {
+    const manifest = loadCapabilityManifest(workspaceManifest);
+    const response = searchCapabilities("two-handed weapon grip", workspaceManifest, "request");
+
+    expect(manifest.notOwned.map((entry) => entry.id)).toContain("constrained-ik");
+    expect(response.verdict).toBe("none");
+    expect(response.results).toEqual([]);
+    expect(response.guidance).toContain("examples/integrations/ik/src/");
+    expect(response.guidance).toContain("ConstrainedIK");
+    expect(response.guidance).toContain("examples/constrained-ik/");
+  });
+
   it("finds the portable transport while leaving replication game-owned", () => {
     const transport = searchCapabilities(
       "exchange multiplayer messages",
