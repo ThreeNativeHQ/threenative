@@ -29,8 +29,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const PRD_FILE =
-  "docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md";
+const PRD_FILE = "docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md";
 const ARTIFACT_SUBDIR = path.join("artifacts", "engine-load-test", "prd-449");
 const RUNS_SUBDIR = "runs";
 const PAGE_NAME = "progress.html";

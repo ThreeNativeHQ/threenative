@@ -63,6 +63,15 @@ The remaining can't-batch gap is the per-frame material drift poll. A build with
 - [x] Batch by uniforms: the projection merges meshes that share geometry and shader but differ only in material colour into its batched draw with per-instance colour, identical pixels, and per-frame colour changes honoured. proof: guard specs red-green, projection-on/off pixel match, a paired R3 A/B plus a scoreboard rerun, and a template-game before/after with no regression. Done 2026-09-28: `7f8042277` (9 specs red→green), `1eda85f61` (drift check 1.3× cheaper, 14 spec rows); pixel match `0b726c4cf` (0.00083 mismatch, ΔE 0.031, inside 0.01/3.0); A/B `6ea9bad66` 42.9 → 10.8 ms and 2,375 → 3 draws at 4,096; scoreboard 2026-09-28b L4 4,096 7.88 vs Godot 5.95 ms (tie); template holdout `488bf8791`: no effect, no regression.
 - [x] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit. Done 2026-09-28: `pnpm typecheck` exit 0, `pnpm lint` exit 0 (warnings only), bench specs 134/134 after fixing the Wayland default-param leak (`d5e667c9e`); core suite 1886 pass / 6 fail, all 6 (4 `packaging.spec.ts`, `render-projection-pipeline`, `three-shadow-override-cache`) failing identically with this PRD's core changes reverted; linked from `docs/verification/runtime-perf-state.md`.
 
+**After integrating the remote PR branch and current `develop` (2026-09-28):** the full core
+Vitest suite passes (149 files, 1,891 passed / 1 skipped), including all six cases above. The four
+bench suites pass (154/154), as do `pnpm typecheck`, `pnpm lint`, `pnpm check:docs`, `pnpm budgets`,
+and the core package's strict `publint`. Repository-wide `pnpm test` remains unverified at this
+head: runtime-native passed 1,495 tests but failed one QuickJS `rg11b10-renderable` case because
+this checkout's local QuickJS binary uses the `wgpu-native` backend while the case compares against
+a raw Dawn oracle. Rebuilding that target locally fails on missing `webgpu.h`; no native code in
+this PR changed. Remote CI still has to decide the full merge gate.
+
 ## Acceptance criteria
 
 - [x] Opening the report answers "is TN beating Godot?" in one line, with a winner pill per row and TN's losses left in view. proof: `progress.html` banner "ThreeNative wins 4, Godot wins 1, ties 1 — of 6 head-to-head rows"; `engine-load-test-monitor.spec.ts` 15/15.
