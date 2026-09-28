@@ -3,10 +3,18 @@
 // empty sample array is an error here — never a default, never a skip.
 
 import {
+  LADDER_COUNT_KEYS,
+  type ILadderCounts,
+  type RealisticRung,
+  ladderCountDiff,
+  expectedLadderCounts,
+} from "../../examples/engine-load-test/src/ladder.js";
+import {
   DEFAULT_AXES,
   type IWorkloadAxes,
   RENDER_MODES,
   type RenderMode,
+  isRealisticRung,
 } from "../../examples/engine-load-test/src/workload.js";
 
 export const KNEE_THRESHOLD_MS = 20;
@@ -75,6 +83,12 @@ export interface IRunReportRung {
   frameMs: number[];
   /** Frames the timed window covered, which the driver also writes as `frameMs.length`. */
   measuredFrames?: number;
+  /**
+   * PRD-464's asserted scene cost, present exactly on the realistic-scene rungs and checked against
+   * `expectedLadderCounts` below. A ladder rung without it is a hole in the measurement, not a rung
+   * that measured nothing, so it fails the run.
+   */
+  ladder?: ILadderCounts;
   mode: RenderMode;
   objectCount: number;
   /** Optional on legacy/native reports; every initial built placement on new browser reports. */
@@ -566,13 +580,42 @@ export function parseRunReport(value: unknown): IRunReport {
         "TN_BENCH_BAD_SHAPE",
         `${path}.initialPlacementSha256 must be a lowercase SHA-256 digest`,
       );
+    // PRD-464's rung gate. Both engines build the ladder from the same rung number, so the counts
+    // they record are the only thing that can tell a real R4 from an R1 published under its name:
+    // no counts, or counts that do not match the rung, is a failed run and not a row.
+    const objectCount = requireNumber(rung, "objectCount", path);
+    let ladder: ILadderCounts | undefined;
+    if (isRealisticRung(mode as RenderMode)) {
+      // Read exactly the keys the rung spec asserts and nothing else: `ladderCountDiff` compares
+      // with `!==`, so a missing key, a string where a number belongs and a count that is simply
+      // wrong all fail the same way — a non-zero exit, never a row.
+      const recorded = requireObject(rung.ladder, `${path}.ladder`);
+      ladder = Object.fromEntries(
+        LADDER_COUNT_KEYS.map((key) => [key, recorded[key]]),
+      ) as unknown as ILadderCounts;
+      const diff = ladderCountDiff(
+        expectedLadderCounts(mode as RealisticRung, objectCount),
+        ladder,
+      );
+      if (diff !== null)
+        throw new BenchError(
+          "TN_BENCH_LADDER_COUNTS",
+          `${path} mode ${mode} does not match its rung spec: ${diff}`,
+        );
+    } else if (rung.ladder !== undefined) {
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.ladder is only meaningful on a realistic-scene rung, not on ${mode}`,
+      );
+    }
     return {
       ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
+      ...(ladder === undefined ? {} : { ladder }),
       ...timingSeries,
       mode: mode as RenderMode,
-      objectCount: requireNumber(rung, "objectCount", path),
+      objectCount,
       ...(initialPlacementSha256 === undefined ? {} : { initialPlacementSha256 }),
       positionHash: requireString(rung, "positionHash", path),
       repeat: requireNumber(rung, "repeat", path),
@@ -1618,22 +1661,19 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
   }
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
+  // One entry per mode the scene defines, so a mode added to the ladder cannot be quietly absent
+  // from the knee table the markdown renders.
+  const knees = (summaries: readonly IRungSummary[]): Record<RenderMode, number | null> =>
+    Object.fromEntries(RENDER_MODES.map((mode) => [mode, knee(summaries, mode)])) as Record<
+      RenderMode,
+      number | null
+    >;
   return {
     left,
-    leftKnee: {
-      L1: knee(leftSummaries, "L1"),
-      L2: knee(leftSummaries, "L2"),
-      L3: knee(leftSummaries, "L3"),
-      L4: knee(leftSummaries, "L4"),
-    },
+    leftKnee: knees(leftSummaries),
     leftSummaries,
     right,
-    rightKnee: {
-      L1: knee(rightSummaries, "L1"),
-      L2: knee(rightSummaries, "L2"),
-      L3: knee(rightSummaries, "L3"),
-      L4: knee(rightSummaries, "L4"),
-    },
+    rightKnee: knees(rightSummaries),
     rightSummaries,
   };
 }

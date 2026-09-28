@@ -50,11 +50,13 @@ const execFileAsync = promisify(execFile);
 interface ILadderOptions {
   axes: IWorkloadAxes;
   frames: number;
+  height: number;
   ladder: string;
   modes: string;
   repeats: number;
   sourceSha?: string;
   warmup: number;
+  width: number;
 }
 
 function flag(name: string): string | undefined {
@@ -76,12 +78,26 @@ function ladderOptions(): ILadderOptions {
       visibleFraction: flag("visible-fraction"),
     }),
     frames: Number(flag("frames") ?? 600),
+    // The host surface both desktop arms are given, and both arms' reported `display`. PRD-464's
+    // ladder is run at 1920x1080 so R5 can draw at it; the cube rows keep the old 1280x720.
+    height: positiveInteger(flag("height"), 720),
     ladder: flag("ladder") ?? "256,1024,4096,16384",
     modes: flag("modes") ?? "L1,L2",
     repeats: Number(flag("repeats") ?? 3),
     sourceSha: flag("source-sha"),
     warmup: Number(flag("warmup") ?? 120),
+    width: positiveInteger(flag("width"), 1280),
   };
+}
+
+/** A window dimension is not a benchmark axis that can be zero or negative: a bad flag has to
+ *  fail here rather than reach a window manager. */
+function positiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1)
+    throw new BenchError("TN_BENCH_BAD_FLAG", `--width/--height must be positive integers, got '${value}'`, 1);
+  return parsed;
 }
 
 function query(options: ILadderOptions): string {
@@ -484,7 +500,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 

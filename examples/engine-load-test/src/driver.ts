@@ -5,8 +5,10 @@
 // stage profiler). Nothing here imports the framework, because the control arm's whole claim is
 // that it does not.
 import type { installRendererStageHooks } from "../../../scripts/render-profile/renderer-stage-hooks.js";
+import type { ILadderCounts } from "./ladder.js";
 import {
   type CollapseFactory,
+  type ICharacterCrowd,
   type ILoadTestHarness,
   type ILoadTestRung,
   VIEWPORT_HEIGHT,
@@ -30,6 +32,7 @@ import {
   type RenderMode,
   WARMUP_FRAMES,
   isProjectedRung,
+  isRealisticRung,
   parseAxesRecord,
   percentile,
 } from "./workload.js";
@@ -67,6 +70,8 @@ export interface IRungReport {
   frameMs: number[];
   /** Frames the timed window covered, which is `frames` past the untimed warmup. */
   measuredFrames: number;
+  /** PRD-464: the rung's asserted scene cost, read off the built scene at the mid-measurement frame. */
+  ladder?: ILadderCounts;
   stageReport?: unknown;
   stepMs?: number[];
   mode: RenderMode;
@@ -90,6 +95,12 @@ export interface ILadderArm {
   /** The culling A/B, which only exists where there is a projection to plan with. */
   measureCulling?: (renderer: ILoadTestHarness["renderer"]) => Promise<unknown>;
   rendererLabel: string;
+  /**
+   * PRD-464 R3's skinned characters, built by the arm that owns the framework. Omitted by the
+   * `plain-three-webgpu` control, which never asks for a ladder rung, so a run that does ask for
+   * one without a factory fails closed at `setRung` rather than measuring R1 under an R3 name.
+   */
+  createCharacters?: () => Promise<ICharacterCrowd>;
   /** Opt-in renderer-stage profiling. It inflates absolute frame time, so it is never a default. */
   stageHooks?: typeof installRendererStageHooks;
 }
@@ -209,8 +220,8 @@ export async function measureRung(
     throw new Error(`TN_BENCH_WARMUP_GE_FRAMES:${knobs.warmup}/${knobs.frames}`);
   harness.setRung(rung);
   const initialPlacementSha256 = await sha256(harness.placementBytes);
-  // L3 and L4 bakes across frames. Drive it to "applied" before a single sample is taken, or the
-  // rung times the bake and reports it as the steady-state cost.
+  // L3, L4 and the realistic-scene rungs bake across frames. Drive it to "applied" before a single
+  // sample is taken, or the rung times the bake and reports it as the steady-state cost.
   if (isProjectedRung(rung.mode)) {
     harness.beginCollapse();
     for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle += 1) {
@@ -225,8 +236,10 @@ export async function measureRung(
     // L4's question is what the shipped default costs on a scene nothing may batch, so the
     // projection declining is that row's answer, not a failure — and `drawCalls` is what records
     // which of the two happened. Only L3's two guards stay strict, because their whole point is
-    // that an un-projected frame must never be published under an L3 label.
-    if (rung.mode === "L3") {
+    // that an un-projected frame must never be published under an L3 label. The realistic-scene
+    // rungs are L3's authoring, so they keep both guards: a ladder row that quietly measured the
+    // un-projected scene would be a different experiment from the one its name states.
+    if (rung.mode === "L3" || isRealisticRung(rung.mode)) {
       // `projected` is the projection's applied state, where the pass this replaced said `applied`.
       if (harness.collapseStatus() !== "projected")
         throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
@@ -250,6 +263,7 @@ export async function measureRung(
   let drawCalls = 0;
   let triangles = 0;
   let visibleObjects = 0;
+  let ladder: ILadderCounts | undefined;
   // The completed-work window's CPU half: every measured update+render span, summed. Kept as its own
   // diagnostic rather than folded into the primary metric — the wall window is what the PRD measures,
   // and this is the uncapped submit cost the window's cadence otherwise hides.
@@ -285,6 +299,9 @@ export async function measureRung(
       drawCalls = stats.drawCalls;
       triangles = stats.triangles;
       visibleObjects = stats.visibleObjects;
+      // Read at the same frame as the counters: the rung's asserted scene cost is a property of
+      // the scene it is measuring, and a rung that lost it mid-window must not report a number.
+      ladder = harness.ladderCounts();
     }
     await clock.nextFrame();
     const now = clock.now();
@@ -316,6 +333,7 @@ export async function measureRung(
     drainPolicy: DRAIN_POLICY,
     frameMs,
     measuredFrames,
+    ...(ladder === undefined ? {} : { ladder }),
     stageReport,
     stepMs,
     mode: rung.mode,
@@ -488,12 +506,24 @@ export async function runLadderArm(
 ): Promise<unknown> {
   canvas.width = VIEWPORT_WIDTH;
   canvas.height = VIEWPORT_HEIGHT;
+  // Loaded once, before any rung is built, so the R3 character's first measured frame is a skinning
+  // frame rather than a decode frame. An arm that was asked for a character rung and has no factory
+  // is told here, once, instead of at the first `setRung` deep inside the loop.
+  const wantsCharacters = modes.some((mode) => isRealisticRung(mode));
+  if (wantsCharacters && arm.createCharacters === undefined)
+    throw new Error("TN_BENCH_NO_CHARACTER_FACTORY");
+  const characters =
+    wantsCharacters && arm.createCharacters !== undefined
+      ? await arm.createCharacters()
+      : undefined;
   const harness = await createLoadTestHarness(
     canvas,
     await describeAdapter(),
     true,
     axes,
     arm.createCollapse,
+    undefined,
+    characters,
   );
   const rungs: IRungReport[] = [];
   for (const objectCount of ladder) {

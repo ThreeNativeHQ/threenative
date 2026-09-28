@@ -1,8 +1,14 @@
 // PRD-117 desktop arms. Both engines ship a native desktop binary, and both print the §5.1 run
 // report between two markers because a native process has no `window` for the collector to read.
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  FOX_RELATIVE_PATH,
+  FOX_SHA256,
+} from "../../examples/engine-load-test/src/ladder.js";
 import type { IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
 
 const BEGIN = "ENGINE_LOAD_TEST_JSON_BEGIN";
@@ -11,10 +17,13 @@ const END = "ENGINE_LOAD_TEST_JSON_END";
 export interface IDesktopLadder {
   axes: IWorkloadAxes;
   frames: number;
+  /** The host surface both engines are given, and therefore both engines' `display`. */
+  height: number;
   ladder: string;
   modes: string;
   repeats: number;
   warmup: number;
+  width: number;
 }
 
 // The native host talks to X11 and this machine's session is Wayland, so the run is wrapped in a
@@ -95,11 +104,37 @@ export async function runCapturing(
   return JSON.parse((chunks.trim().length > 0 ? chunks : body).trim());
 }
 
+/**
+ * PRD-464 R3's character, checked once per run against the digest
+ * `benchmark/engine-load-test/sources.lock.json` pins. The bytes live in the git-ignored artifact
+ * tree, so a missing or substituted file has to fail here — before either engine spends a run on it —
+ * rather than as a count mismatch in the report half an hour later. Returns undefined when no
+ * ladder rung was asked for, so an L-only run never needs the asset to exist.
+ */
+function resolveFoxAsset(repoRoot: string, modes: string): string | undefined {
+  if (!modes.split(",").some((mode) => /^R[3-5]$/u.test(mode.trim()))) return undefined;
+  const file = path.resolve(repoRoot, process.env.TN_BENCH_FOX ?? FOX_RELATIVE_PATH);
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(file);
+  } catch (error) {
+    throw new Error(
+      `TN_BENCH_FOX_MISSING: ${file} could not be read (${error instanceof Error ? error.message : String(error)}).`,
+    );
+  }
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  if (digest !== FOX_SHA256)
+    throw new Error(`TN_BENCH_FOX_HASH: ${file} is ${digest}, not the pinned ${FOX_SHA256}.`);
+  return file;
+}
+
 export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {
   const example = path.join(repoRoot, "examples/engine-load-test");
+  const fox = resolveFoxAsset(repoRoot, options.modes);
   await mkdir(path.join(example, "dist"), { recursive: true });
   const buildEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
+    ...(fox === undefined ? {} : { TN_BENCH_FOX: fox }),
     TN_BENCH_FRAMES: String(options.frames),
     TN_BENCH_GEOMETRY: options.axes.geometry,
     TN_BENCH_HIERARCHY_DEPTH: String(options.axes.hierarchyDepth),
@@ -113,6 +148,8 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
     TN_BENCH_TARGET: "native",
     TN_BENCH_VISIBLE_FRACTION: String(options.axes.visibleFraction),
     TN_BENCH_WARMUP: String(options.warmup),
+    TN_BENCH_HEIGHT: String(options.height),
+    TN_BENCH_WIDTH: String(options.width),
   };
   await new Promise<void>((resolve, reject) => {
     const child = spawn("npx", ["vite", "build"], {
@@ -128,7 +165,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
 
   const binary = path.join(repoRoot, "packages/runtime-native/build/tn-linux/mystral");
   const bundle = path.join(example, "dist/engine-load-test-desktop.js");
-  const hostArgs = ["run", bundle, "--width", "1280", "--height", "720"];
+  const hostArgs = ["run", bundle, "--width", String(options.width), "--height", String(options.height)];
   // Godot's desktop arm reports `vsync off`, so the host has to present uncapped too or the two
   // arms are not comparable: pinned to a 60 Hz display ThreeNative reads 16.6 ms at every rung and
   // its real cost is unknowable. The host refuses to fall back to FIFO, so this fails loudly.
@@ -142,7 +179,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
       env: { ...x11Environment(), DISPLAY: display },
     });
   }
-  return runCapturing("xvfb-run", ["-a", "-s", "-screen 0 1600x900x24", binary, ...hostArgs], {
+  return runCapturing("xvfb-run", ["-a", "-s", `-screen 0 ${options.width}x${options.height + 180}x24`, binary, ...hostArgs], {
     cwd: repoRoot,
     env: x11Environment(),
   });
@@ -174,7 +211,20 @@ export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder)
     );
   });
 
-  const query = `ladder=${options.ladder}&modes=${options.modes}&frames=${options.frames}&warmup=${options.warmup}&repeats=${options.repeats}`;
+  // The window size is the surface both engines are given, so it travels on the same query the
+  // rest of the ladder does. The 3D viewport inside it is a per-rung decision (PRD-464's R5 is the
+  // rung that draws at 1920x1080), and the rung records that separately.
+  const fox = resolveFoxAsset(repoRoot, options.modes);
+  const query = new URLSearchParams({
+    frames: String(options.frames),
+    height: String(options.height),
+    ladder: options.ladder,
+    modes: options.modes,
+    repeats: String(options.repeats),
+    warmup: String(options.warmup),
+    width: String(options.width),
+    ...(fox === undefined ? {} : { fox }),
+  }).toString();
   return runCapturing(binary, ["--rendering-driver", "vulkan", "--", `--query=${query}`], {
     cwd: repoRoot,
   });

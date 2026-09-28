@@ -1,5 +1,52 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+/**
+ * PRD-464 R3's character, inlined as base64 so one bundle carries it.
+ *
+ * The Khronos Fox is pinned by `benchmark/engine-load-test/sources.lock.json` and kept in the
+ * git-ignored artifact tree, so it is read at build time rather than vendored: the desktop arm
+ * ships one import-free ESM file with no VFS to stage into, and the same bytes have to reach the
+ * web arm. The hash is the lock's, recomputed here, and a wrong or missing file fails the build
+ * instead of producing a bundle that would quietly benchmark a different fox.
+ */
+const FOX_SHA256 = "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7";
+const FOX_MODULE_ID = "virtual:fox-glb";
+// Spelled out rather than imported from `src/ladder.ts`: this config is loaded by esbuild, which
+// will not follow the source-tree module specifier. `FOX_SHA256`/`FOX_RELATIVE_PATH` there are the
+// same two values, and the runner resolves the path for the Godot arm from that copy.
+const DEFAULT_FOX = resolve(
+  import.meta.dirname,
+  "../../artifacts/engine-load-test/prd-449/bevy/src/assets/models/animated/Fox.glb",
+);
+
+function foxGlb(): Plugin {
+  const file = process.env.TN_BENCH_FOX ?? DEFAULT_FOX;
+  return {
+    enforce: "pre",
+    load(id) {
+      if (id !== FOX_MODULE_ID) return;
+      let bytes: Buffer;
+      try {
+        bytes = readFileSync(file);
+      } catch (error) {
+        throw new Error(
+          `TN_BENCH_FOX_MISSING: ${file} could not be read (${error instanceof Error ? error.message : String(error)}).`,
+        );
+      }
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      if (digest !== FOX_SHA256)
+        throw new Error(`TN_BENCH_FOX_HASH: ${file} is ${digest}, not the pinned ${FOX_SHA256}.`);
+      return `export default ${JSON.stringify(bytes.toString("base64"))};\n`;
+    },
+    name: "tn-bench-fox-glb",
+    resolveId(id) {
+      return id === FOX_MODULE_ID ? FOX_MODULE_ID : undefined;
+    },
+  };
+}
 
 // The native arm is one import-free ESM file, the same contract `examples/native-smoke` asserts.
 // The ladder is compiled in rather than read from a query string: a native host has no URL.
@@ -26,9 +73,10 @@ function integer(name: string, fallback: number): number {
 function modes(): string[] {
   const raw = process.env.TN_BENCH_MODES ?? "L1,L2,L3";
   return raw.split(",").map((part) => {
-    // L4 is the per-cube-material rung: RENDER_MODES in `src/workload.ts`, spelled out here because
-    // this config is loaded by esbuild, which will not follow a `./src/workload.js` specifier.
-    if (part !== "L1" && part !== "L2" && part !== "L3" && part !== "L4")
+    // L4 is the per-cube-material rung and R1-R5 are PRD-464's realistic-scene ladder; both lists
+    // are spelled out here because this config is loaded by esbuild, which will not follow a
+    // `./src/workload.js` specifier.
+    if (part !== "L1" && part !== "L2" && part !== "L3" && part !== "L4" && !/^R[1-5]$/u.test(part))
       throw new Error(`TN_BENCH_MODES holds an unknown mode '${part}'.`);
     return part;
   });
@@ -51,6 +99,9 @@ function axesEnvironment(): Record<string, string | undefined> {
 }
 
 export default defineConfig({
+  // The plugin only reads the file when a graph actually imports it, so `plain.html` — which never
+  // does — costs nothing and the control arm is not made to carry a character it will not draw.
+  plugins: [foxGlb()],
   build: native
     ? {
         lib: {
@@ -85,6 +136,11 @@ export default defineConfig({
       // Stated by the operator, because the host does not expose it. The Pixel 8 used for PRD-117
       // runs at 120 Hz; a desktop under xvfb is 60.
       refreshHz: integer("TN_BENCH_REFRESH_HZ", 60),
+      // The host surface the run was given, recorded on the report as `display`. R1-R4 render
+      // smaller than this inside it — R5 is R4 at 1920x1080 — and the per-rung `ladder.resolution`
+      // is what says which was actually drawn.
+      width: integer("TN_BENCH_WIDTH", 1280),
+      height: integer("TN_BENCH_HEIGHT", 720),
       frames: integer("TN_BENCH_FRAMES", 600),
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),

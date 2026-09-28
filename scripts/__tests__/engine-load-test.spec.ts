@@ -3000,6 +3000,7 @@ describe("the completed-work measurement boundary", () => {
       collapseMs: 0,
       collapseStatus: () => "pending",
       dispose: () => {},
+      ladderCounts: () => undefined,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",
       render: async () => {

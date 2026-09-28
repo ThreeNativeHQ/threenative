@@ -22,3 +22,6 @@ renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
 anti_aliasing/quality/msaa_3d=0
 textures/vram_compression/import_etc2_astc=true
+; PRD-464 R1: the same shadow map on both engines, 2048. Irrelevant to the L rungs, which cast
+; nothing, so the cube scoreboard's rows are unaffected by it being set here.
+lights_and_shadows/directional_shadow/size=2048

@@ -5,8 +5,28 @@ extends Node3D
 
 const LCG_SEED := 1337
 const CUBE_SPACING := 2.5
-const VIEWPORT_WIDTH := 1280
-const VIEWPORT_HEIGHT := 720
+
+# PRD-464's realistic-scene ladder. Every constant here is the port of
+# `examples/engine-load-test/src/ladder.ts`; the two are held together by the asserted counts the
+# report parser checks, so a rung that did not build what it claims fails the run rather than
+# publishing a number for a scene this arm never drew.
+const LADDER_SHADOW_MAP_SIZE := 2048
+const LADDER_POINT_LIGHTS := 8
+const LADDER_CHARACTERS := 50
+# The Khronos Fox's own clip name. Godot and three both read it out of the glTF unchanged, so the
+# two arms play the same clip and neither has to rename it.
+const LADDER_CLIP := "Run"
+const LADDER_WIDTH := 1280
+const LADDER_HEIGHT := 720
+const LADDER_HEADLINE_WIDTH := 1920
+const LADDER_HEADLINE_HEIGHT := 1080
+# `LADDER_TONEMAPPING` in `ladder.ts` is "ACESFilmic", and `LADDER_BLOOM_*` are matched to the same
+# band rather than to the same numbers: Godot's glow is three knobs where three's bloom is one node.
+const LADDER_BLOOM_INTENSITY := 0.5
+const LADDER_BLOOM_THRESHOLD := 0.9
+const LADDER_CHARACTER_SIDE := 10
+const LADDER_CHARACTER_SPACING := 2.4
+const LADDER_CHARACTER_Y := 4.5
 
 var _lcg_state: int = LCG_SEED
 
@@ -16,6 +36,8 @@ var _repeats: int = 3
 var _ladder: Array[int] = [256, 1024, 4096, 16384]
 var _modes: Array[String] = ["L1", "L2"]
 var _refresh_hz: int = 60
+var _window_width: int = LADDER_WIDTH
+var _window_height: int = LADDER_HEIGHT
 
 var _material: StandardMaterial3D
 var _cube_mesh: BoxMesh
@@ -23,6 +45,18 @@ var _cubes: Array[MeshInstance3D] = []
 var _multimesh_instance: MultiMeshInstance3D = null
 var _placements: PackedVector3Array = PackedVector3Array()
 var _camera: Camera3D
+var _sun: DirectionalLight3D
+var _window: Window
+
+# PRD-464's ladder bits, torn down and rebuilt per rung exactly as the TypeScript arm does.
+var _point_lights: Array[OmniLight3D] = []
+var _characters: Array[Node3D] = []
+var _character_players: Array[AnimationPlayer] = []
+var _character_staggers: PackedFloat32Array = PackedFloat32Array()
+var _character_template: Node3D = null
+var _fox_bytes: PackedByteArray = PackedByteArray()
+var _character_clip_seconds: float = 1.0
+var _ladder_post := false
 
 var _plan: Array = []
 var _plan_index: int = 0
@@ -153,7 +187,9 @@ func _read_query() -> Dictionary:
 	for pair in search.split("&", false):
 		var halves := pair.split("=", true, 1)
 		if halves.size() == 2:
-			query[halves[0]] = halves[1]
+			# The runner builds this query with `URLSearchParams`, so a value is percent-encoded —
+			# and R3's Fox path is an absolute one, which is nothing but slashes and escapes.
+			query[halves[0].uri_decode()] = halves[1].uri_decode()
 	return query
 
 
@@ -178,6 +214,14 @@ func _ready() -> void:
 		_modes = []
 		for part in str(query["modes"]).split(",", false):
 			_modes.append(str(part))
+	# The window the run was given. R1-R4 render smaller inside it — R5 is R4 at 1920x1080 — and
+	# the per-rung `ladder.resolution` is the field that says which was actually drawn.
+	if query.has("width") and query.has("height"):
+		_window_width = int(query["width"])
+		_window_height = int(query["height"])
+		_window.size = Vector2i(_window_width, _window_height)
+	if query.has("fox"):
+		_load_fox(str(query["fox"]))
 
 	# One shared lit material for ground and cubes, one directional light, no shadows (§3.1).
 	_material = StandardMaterial3D.new()
@@ -192,6 +236,9 @@ func _ready() -> void:
 	plane.size = Vector2(200, 200)
 	ground.mesh = plane
 	ground.material_override = _material
+	# A receiver, not a caster, in every rung: the asserted `shadowCasters` count has to mean the
+	# same thing here as it does in the ThreeNative arm, where `castShadow` is false by default.
+	ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(ground)
 
 	var light := DirectionalLight3D.new()
@@ -199,6 +246,7 @@ func _ready() -> void:
 	light.shadow_enabled = false
 	light.look_at_from_position(Vector3(40, 80, 25), Vector3.ZERO, Vector3.UP)
 	add_child(light)
+	_sun = light
 
 	_camera = Camera3D.new()
 	_camera.fov = 60.0
@@ -206,6 +254,7 @@ func _ready() -> void:
 	_camera.far = 4000.0
 	_camera.current = true
 	add_child(_camera)
+	_window = get_window()
 
 	for object_count in _ladder:
 		for mode in _modes:
@@ -223,6 +272,194 @@ func _clear_rung() -> void:
 		remove_child(_multimesh_instance)
 		_multimesh_instance.queue_free()
 		_multimesh_instance = null
+	_clear_ladder()
+
+
+# The port of `pointLightPosition` in `examples/engine-load-test/src/ladder.ts`: a pure function of
+# the light index and the frame index, never of elapsed time.
+func _point_light_position(index: int, frame_index: int, extent: float) -> Vector3:
+	var angle := float(frame_index) * 0.01 + (float(index) / float(LADDER_POINT_LIGHTS)) * TAU
+	return Vector3(
+		cos(angle) * extent * 0.3, 6.0 + sin(angle * 1.7) * 2.0, sin(angle) * extent * 0.3
+	)
+
+
+# The port of `characterPlacement`: a 10x5 block above the lattice, inside the sun's frustum and
+# inside the camera's orbit, so the skinning is a submitted cost and not a culled one.
+func _character_position(index: int) -> Vector3:
+	return Vector3(
+		(float(index % LADDER_CHARACTER_SIDE) - (LADDER_CHARACTER_SIDE - 1) / 2.0)
+		* LADDER_CHARACTER_SPACING,
+		LADDER_CHARACTER_Y,
+		(float(index / LADDER_CHARACTER_SIDE) - 2.0) * LADDER_CHARACTER_SPACING
+	)
+
+
+func _clear_ladder() -> void:
+	for point in _point_lights:
+		remove_child(point)
+		point.queue_free()
+	_point_lights.clear()
+	for character in _characters:
+		remove_child(character)
+		character.queue_free()
+	_characters.clear()
+	_character_players.clear()
+	_character_staggers = PackedFloat32Array()
+	if _ladder_post:
+		for child in get_children():
+			if child is WorldEnvironment:
+				remove_child(child)
+				child.queue_free()
+	_ladder_post = false
+	_sun.shadow_enabled = false
+	if _window != null:
+		_window.size = Vector2i(_window_width, _window_height)
+
+
+# The Khronos Fox, read from the pinned file the runner named. A missing or unreadable file stops the
+# run here rather than at R3, where the first `ladder.skinnedMeshes` assertion would fail with a
+# message about counts instead of about the asset.
+func _load_fox(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		print("TN_BENCH_FOX_MISSING:", path)
+		get_tree().quit(1)
+		return
+	_fox_bytes = FileAccess.get_file_as_bytes(path)
+	if _fox_bytes.is_empty():
+		print("TN_BENCH_FOX_EMPTY:", path)
+		get_tree().quit(1)
+		return
+	var document := GLTFDocument.new()
+	var state := GLTFState.new()
+	if document.append_from_buffer(_fox_bytes, "", state, 0) != OK:
+		print("TN_BENCH_FOX_PARSE_FAILED")
+		get_tree().quit(1)
+		return
+	var root := document.generate_scene(state, 30.0, true, true)
+	if root == null or not root.has_node("AnimationPlayer"):
+		print("TN_BENCH_FOX_CLIP_MISSING")
+		get_tree().quit(1)
+		return
+	var player := root.get_node("AnimationPlayer") as AnimationPlayer
+	if not player.has_animation(LADDER_CLIP):
+		print("TN_BENCH_FOX_CLIP_MISSING")
+		get_tree().quit(1)
+		return
+	_character_clip_seconds = player.get_animation(LADDER_CLIP).length
+	# The template stays out of the tree and alive: 50 instances are what the rung draws, and a 51st
+	# fox standing at the origin would be a scene neither engine has.
+	_character_template = root as Node3D
+
+
+# R1's sun, R2's local lights, R3's characters, R4's post chain and R5's resolution, each added only
+# when the rung above it is the one being built — the same order the ThreeNative arm builds in.
+func _apply_ladder(mode: String) -> void:
+	var rank := int(mode.substr(1)) - 1
+	var extent := _lattice_extent(_object_count)
+	_sun.shadow_enabled = true
+	_sun.directional_shadow_max_distance = extent * 2.0 + 100.0
+	# The map size itself is `rendering/lights_and_shadows/directional_shadow/size` in `project.godot`,
+# where it is declared 2048 to match the ThreeNative arm. Godot reads a shadow map size from nowhere
+# else, and setting it from here instead would re-allocate the shadow atlas mid-run — a setup cost
+# the other arm never pays.
+	if rank >= 1:
+		for index in LADDER_POINT_LIGHTS:
+			var point := OmniLight3D.new()
+			point.light_energy = 1.2
+			point.shadow_enabled = false
+			point.position = _point_light_position(index, 0, extent)
+			add_child(point)
+			_point_lights.append(point)
+	if rank >= 2:
+		if _character_template == null:
+			print("TN_BENCH_FOX_CLIP_MISSING")
+			get_tree().quit(1)
+			return
+		for index in LADDER_CHARACTERS:
+			var character := _character_template.duplicate() as Node3D
+			character.position = _character_position(index)
+			add_child(character)
+			var player := _find_animation_player(character)
+			if player == null or not player.has_animation(LADDER_CLIP):
+				print("TN_BENCH_FOX_CLIP_MISSING")
+				get_tree().quit(1)
+				return
+			player.play(LADDER_CLIP)
+			_characters.append(character)
+			_character_players.append(player)
+			_character_staggers.append((float(index) / float(LADDER_CHARACTERS)) * _character_clip_seconds)
+	if rank >= 3:
+		var environment := Environment.new()
+		environment.background_mode = Environment.BG_COLOR
+		environment.background_color = ProjectSettings.get_setting(
+			"rendering/environment/defaults/default_clear_color"
+		)
+		# No ambient: an Environment that exists defaults to taking ambient from its own background,
+		# which would light the scene a second way and make R4 a different scene from R3.
+		environment.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
+		environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+		environment.glow_enabled = true
+		environment.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+		environment.glow_intensity = LADDER_BLOOM_INTENSITY
+		environment.glow_bloom = 0.2
+		environment.glow_hdr_threshold = LADDER_BLOOM_THRESHOLD
+		var world := WorldEnvironment.new()
+		world.environment = environment
+		add_child(world)
+		_ladder_post = true
+		var size := (
+			Vector2i(LADDER_HEADLINE_WIDTH, LADDER_HEADLINE_HEIGHT)
+			if mode == "R5"
+			else Vector2i(LADDER_WIDTH, LADDER_HEIGHT)
+		)
+		if _window != null:
+			_window.size = size
+
+
+func _find_animation_player(node: Node) -> AnimationPlayer:
+	if node is AnimationPlayer:
+		return node as AnimationPlayer
+	for child in node.get_children():
+		var found := _find_animation_player(child)
+		if found != null:
+			return found
+	return null
+
+
+# The asserted counts, read off the built scene exactly as the ThreeNative arm reads them off its
+# own, so the report parser's comparison means the same thing on both sides.
+func _ladder_counts(mode: String) -> Dictionary:
+	# `ImporterMeshInstance3D` is what a glTF skin arrives as; a `MeshInstance3D` covers the cubes.
+	# Counts are returned rather than accumulated into captured locals because a GDScript lambda
+	# captures by value, and a census that always reads zero is exactly the bug that hides.
+	var census := _census(self)
+	var size := (
+		Vector2i(LADDER_HEADLINE_WIDTH, LADDER_HEADLINE_HEIGHT)
+		if mode == "R5"
+		else Vector2i(LADDER_WIDTH, LADDER_HEIGHT)
+	)
+	return {
+		"pointLights": _point_lights.size(),
+		"postPasses": 1 if _ladder_post else 0,
+		"resolution": "%dx%d" % [size.x, size.y],
+		"shadowCasters": census.x,
+		"skinnedMeshes": census.y,
+		"tonemapping": 1 if _ladder_post else 0,
+	}
+
+
+# x = shadow casters, y = skinned meshes.
+func _census(node: Node) -> Vector2i:
+	var counts := Vector2i.ZERO
+	if node is MeshInstance3D or node is ImporterMeshInstance3D:
+		if node.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
+			counts.x += 1
+		if node.get("skin") != null:
+			counts.y += 1
+	for child in node.get_children():
+		counts += _census(child)
+	return counts
 
 
 func _begin_rung() -> void:
@@ -239,7 +476,9 @@ func _begin_rung() -> void:
 	_triangles = 0
 	_visible_objects = 0
 
-	if _mode == "L1" or _mode == "L4":
+	# R1-R5 are L1's authoring with real-game costs on top, so the cubes are one MeshInstance3D
+	# each here exactly as they are in L1 — never the L2 batch.
+	if _mode == "L1" or _mode == "L4" or _mode.begins_with("R"):
 		for index in _object_count:
 			var cube := MeshInstance3D.new()
 			cube.mesh = _cube_mesh
@@ -264,6 +503,8 @@ func _begin_rung() -> void:
 			Vector3(-span, -span, -span), Vector3(span * 2.0, span * 2.0, span * 2.0)
 		)
 		add_child(_multimesh_instance)
+	if _mode.begins_with("R"):
+		_apply_ladder(_mode)
 	_last_usec = Time.get_ticks_usec()
 
 
@@ -271,8 +512,20 @@ func _step(frame_index: int) -> void:
 	var pose := _camera_pose(frame_index, _object_count)
 	_camera.position = pose[0]
 	_camera.look_at(pose[1], Vector3.UP)
+	# R2's lights and R3's characters, both pure functions of the frame index, so the two engines
+	# frame the same scene at frame 317.
+	if not _point_lights.is_empty():
+		var extent := _lattice_extent(_object_count)
+		for index in _point_lights.size():
+			(_point_lights[index] as OmniLight3D).position = _point_light_position(
+				index, frame_index, extent
+			)
+	for index in _character_players.size():
+		(_character_players[index] as AnimationPlayer).seek(
+			_character_staggers[index] + float(frame_index) / 60.0, true
+		)
 	# 100% dirty transforms every frame — the honest worst case a game with moving actors pays.
-	if _mode == "L1" or _mode == "L4":
+	if _mode == "L1" or _mode == "L4" or _mode.begins_with("R"):
 		for index in _cubes.size():
 			var placement := _placements[index]
 			var basis := Basis.from_euler(
@@ -339,11 +592,13 @@ func _process(_delta: float) -> void:
 
 
 func _finish_rung() -> void:
+	var ladder_counts := _ladder_counts(_mode) if _mode.begins_with("R") else {}
 	_rungs.append(
 		{
 			"drawCalls": _draw_calls,
 			"frameMs": Array(_samples),
 			"cpuMs": Array(_cpu_samples),
+			"ladder": ladder_counts,
 			"mode": _mode,
 			"objectCount": _object_count,
 			"positionHash": _position_hash(_placements),
@@ -381,10 +636,12 @@ func _emit_report() -> void:
 		},
 		"device": {"battery": null, "label": OS.get_name() + " " + OS.get_model_name()},
 		"display": {
-			"height": VIEWPORT_HEIGHT,
+			# The window the run was given, not the viewport a rung drew into: R1-R4 render at
+			# 1280x720 inside it, and the per-rung `ladder.resolution` is the field that says so.
+			"height": _window_height,
 			"refreshHz": _refresh_hz,
 			"vsync": false,
-			"width": VIEWPORT_WIDTH,
+			"width": _window_width,
 		},
 		"driver": {
 			"adapter": (

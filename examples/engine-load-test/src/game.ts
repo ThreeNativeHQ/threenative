@@ -2,6 +2,7 @@
 // index, and renders. It touches no browser global other than the canvas handed to it, so the
 // device arms of Phase 4 can drive the same file.
 import {
+  ACESFilmicToneMapping,
   BoxGeometry,
   type BufferGeometry,
   DirectionalLight,
@@ -11,14 +12,18 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  NoToneMapping,
   Object3D,
   type OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
+  PointLight,
   Scene,
   Vector2,
   WebGPURenderer,
 } from "three/webgpu";
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
 // Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
 // scene, and a runtime import here would put the framework in the control arm's served graph. The
 // arm that owns the optimizer passes the factory in; an arm that has none has no L3 to measure.
@@ -29,6 +34,24 @@ import type {
   IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
+import {
+  LADDER_BLOOM_RADIUS,
+  LADDER_BLOOM_STRENGTH,
+  LADDER_BLOOM_THRESHOLD,
+  LADDER_HEADLINE_HEIGHT,
+  LADDER_HEADLINE_WIDTH,
+  LADDER_HEIGHT,
+  LADDER_POINT_LIGHTS,
+  LADDER_SHADOW_MAP_SIZE,
+  LADDER_TONEMAPPING,
+  LADDER_WIDTH,
+  type ILadderCounts,
+  type RealisticRung,
+  characterPlacement,
+  pointLightPosition,
+  resolutionOf,
+  rungAtLeast,
+} from "./ladder.js";
 import {
   DEFAULT_AXES,
   type ICubePlacement,
@@ -45,6 +68,7 @@ import {
   isAuthoredRung,
   isMutated,
   isProjectedRung,
+  isRealisticRung,
   latticeExtent,
   positionHash,
   uniqueMaterialColor,
@@ -76,6 +100,22 @@ export interface ILoadTestRung {
   objectCount: number;
 }
 
+/**
+ * PRD-464's R3 characters. The arm that owns the framework builds them with the engine's own
+ * `SkeletalMesh3D` and hands them in, for the same reason it hands in the projection: this module
+ * may only import the framework's types, or the control arm would inherit it. An arm with no
+ * factory asking for R3 fails closed at `setRung` rather than quietly measuring R1.
+ */
+export interface ICharacterCrowd {
+  /** How many skinned meshes the crowd actually built, which is what the rung asserts. */
+  readonly skinnedMeshes: number;
+  dispose(): void;
+  /** The roots to attach, one per character. */
+  objects(): Object3D[];
+  /** Poses every character at a pure function of the frame index. */
+  step(frameIndex: number): void;
+}
+
 export interface ILoadTestFrameStats {
   drawCalls: number;
   triangles: number;
@@ -91,6 +131,8 @@ export interface ILoadTestHarness {
   collapseMs: number;
   collapseStatus(): string;
   dispose(): void;
+  /** The rung's asserted counts, or undefined outside the realistic-scene ladder. */
+  ladderCounts(): ILadderCounts | undefined;
   positionHash: string;
   render(): Promise<void>;
   renderer: WebGPURenderer;
@@ -136,6 +178,9 @@ function configureShadowCamera(light: DirectionalLight, objectCount: number): vo
   shadowCamera.near = 0.1;
   shadowCamera.far = extent * 4 + 200;
   shadowCamera.updateProjectionMatrix();
+  // One map, the same size on both engines: a shadow map that differs between the arms would
+  // make R1 a comparison of two resolutions rather than of two renderers.
+  light.shadow.mapSize.set(LADDER_SHADOW_MAP_SIZE, LADDER_SHADOW_MAP_SIZE);
 }
 
 interface IAuthoredCubes {
@@ -288,6 +333,7 @@ export async function createLoadTestHarness(
   axes: IWorkloadAxes = DEFAULT_AXES,
   createCollapse?: CollapseFactory,
   enginePasses?: ILoadTestEnginePasses,
+  characters?: ICharacterCrowd,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -323,6 +369,121 @@ export async function createLoadTestHarness(
   const drawingBufferSize = new Vector2();
   let state: IRungState | undefined;
 
+  // PRD-464's ladder bits. They sit on the harness rather than in a rung's teardown list because
+  // each one is a *setting* of something the scene already owns — the sun, the renderer's post
+  // chain, the drawing buffer — so the next rung has to put every one of them back as it found it.
+  // `setOutputNode` is absent from `@types/three`, so the post stage is reached through the same
+  // structural view the generated `src/render/` templates use rather than through a cast per call.
+  const post = renderer as unknown as {
+    setOutputNode(node: unknown): void;
+    toneMapping: number;
+  };
+  let ladder: RealisticRung | undefined;
+  let ladderPost = false;
+  const pointLights: PointLight[] = [];
+  let characterRoots: Object3D[] = [];
+
+  const clearLadder = (): void => {
+    for (const point of pointLights) point.removeFromParent();
+    pointLights.length = 0;
+    for (const root of characterRoots) root.removeFromParent();
+    characterRoots = [];
+    post.setOutputNode(null);
+    post.toneMapping = NoToneMapping;
+    ladder = undefined;
+    ladderPost = false;
+    renderer.shadowMap.enabled = axes.shadowCasterShare > 0;
+    light.castShadow = axes.shadowCasterShare > 0;
+    ground.receiveShadow = axes.shadowCasterShare > 0;
+    if (renderer.domElement.width !== VIEWPORT_WIDTH) {
+      renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
+      camera.aspect = VIEWPORT_WIDTH / VIEWPORT_HEIGHT;
+      camera.updateProjectionMatrix();
+    }
+  };
+
+  /** R1's sun, R2's local lights, R3's characters, R4's post chain and R5's resolution, each one
+   *  added only when the rung above it is the one being built. */
+  const buildLadder = (rung: RealisticRung, objectCount: number, parent: Object3D): void => {
+    const rank = rung === "R1" ? 0 : Number(rung.slice(1)) - 1;
+    ladder = rung;
+    renderer.shadowMap.enabled = true;
+    light.castShadow = true;
+    ground.receiveShadow = true;
+    configureShadowCamera(light, objectCount);
+    if (rungAtLeast(rank, "R2")) {
+      for (let index = 0; index < LADDER_POINT_LIGHTS; index += 1) {
+        const point = new PointLight(0xffffff, 1.2, 0, 2);
+        point.position.set(0, 6, 0);
+        parent.add(point);
+        pointLights.push(point);
+      }
+    }
+    if (rungAtLeast(rank, "R3")) {
+      if (characters === undefined) throw new Error("TN_BENCH_NO_CHARACTER_FACTORY");
+      const roots = characters.objects();
+      if (characters.skinnedMeshes !== roots.length)
+        throw new Error(
+          `TN_BENCH_CHARACTER_COUNT:${characters.skinnedMeshes}/${roots.length}`,
+        );
+      for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index] as Object3D;
+        const placement = characterPlacement(index);
+        root.position.set(placement.x, placement.y, placement.z);
+        root.traverse((object) => {
+          object.castShadow = true;
+          object.frustumCulled = false;
+        });
+        parent.add(root);
+        characterRoots.push(root);
+      }
+    }
+    if (rungAtLeast(rank, "R4")) {
+      // `LADDER_TONEMAPPING` in `ladder.ts` is the name of this pair, read by the Godot arm's
+      // `_apply_post` so neither engine picks its own operator.
+      post.toneMapping = ACESFilmicToneMapping;
+      const size = resolutionOf(rung);
+      const scenePass = pass(scene, camera);
+      const colour = scenePass.getTextureNode();
+      post.setOutputNode(
+        colour.add(
+          bloom(colour, LADDER_BLOOM_STRENGTH, LADDER_BLOOM_RADIUS, LADDER_BLOOM_THRESHOLD),
+        ),
+      );
+      ladderPost = true;
+      renderer.setSize(size.width, size.height, false);
+      camera.aspect = size.width / size.height;
+      camera.updateProjectionMatrix();
+      return;
+    }
+    if (rung === "R5") {
+      // R5 is R4 at 1080p, so it never reaches here; a new rung below R4 that changed resolution
+      // would, and a silent 720p row published as R5 is exactly the lie this guard refuses.
+      throw new Error(`TN_BENCH_LADDER_RUNG_UNBUILT:${rung}`);
+    }
+  };
+
+  /** The scene cost the rung claims it added, read off the built scene rather than off the spec. */
+  const readLadderCounts = (): ILadderCounts | undefined => {
+    if (ladder === undefined || state === undefined) return undefined;
+    const size = renderer.getDrawingBufferSize(drawingBufferSize);
+    let shadowCasters = 0;
+    let skinnedMeshes = 0;
+    scene.traverse((object) => {
+      if ((object as Mesh).castShadow === true) shadowCasters += 1;
+      if ((object as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh === true)
+        skinnedMeshes += 1;
+    });
+    return {
+      pointLights: pointLights.length,
+      postPasses: ladderPost ? 1 : 0,
+      resolution: `${size.x}x${size.y}`,
+      shadowCasters,
+      skinnedMeshes,
+      tonemapping: post.toneMapping === ACESFilmicToneMapping ? 1 : 0,
+    };
+  };
+
   // The shipped default's per-frame passes, and only for the rung that installed the projection.
   // L1 and L2 hand the authored scene straight to three with no engine walk behind it, and that is
   // exactly what the independent rung is for: it must keep measuring the scene with the framework's
@@ -340,6 +501,7 @@ export async function createLoadTestHarness(
     // rung's geometry; leaving them alive across a rung change would draw the previous rung's
     // objects on top of the next one's.
     state.collapse?.dispose();
+    clearLadder();
     for (const cube of state.cubes) cube.removeFromParent();
     if (state.instanced !== undefined) {
       state.instanced.removeFromParent();
@@ -366,7 +528,9 @@ export async function createLoadTestHarness(
     const geometries: BufferGeometry[] = [];
     const materials: Material[] = [];
     let instanced: InstancedMesh | undefined;
-    const shadowCasterCount = Math.ceil(rung.objectCount * axes.shadowCasterShare);
+    const shadowCasterCount = isRealisticRung(rung.mode)
+      ? rung.objectCount
+      : Math.ceil(rung.objectCount * axes.shadowCasterShare);
     if (isAuthoredRung(rung.mode)) {
       const authored = buildAuthoredCubes(
         placements,
@@ -391,7 +555,8 @@ export async function createLoadTestHarness(
       // subset, so a mutation rate of 0 leaves the batch static and never re-uploads it.
       initInstanceMatrices(instanced, placements, axes, dummy, instanceMatrix);
     }
-    if (axes.shadowCasterShare > 0) {
+    if (isRealisticRung(rung.mode)) buildLadder(rung.mode, rung.objectCount, parent);
+    else if (axes.shadowCasterShare > 0) {
       configureShadowCamera(light, rung.objectCount);
     }
     state = {
@@ -451,6 +616,16 @@ export async function createLoadTestHarness(
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
+    // R2's lights and R3's characters move before the cube transforms, and both are a pure
+    // function of the frame index so the two engines frame the same scene at frame 317.
+    if (ladder !== undefined) {
+      const extent = latticeExtent(state.rung.objectCount);
+      for (let index = 0; index < pointLights.length; index += 1) {
+        const at = pointLightPosition(index, frameIndex, extent);
+        (pointLights[index] as PointLight).position.set(at.x, at.y, at.z);
+      }
+      characters?.step(frameIndex);
+    }
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
     if (isAuthoredRung(state.rung.mode)) {
@@ -507,6 +682,7 @@ export async function createLoadTestHarness(
     },
     dispose: () => {
       clearRung();
+      characters?.dispose();
       enginePasses?.cameraCull.dispose();
       enginePasses?.matrixWorld.dispose();
       renderer.dispose();
@@ -543,6 +719,7 @@ export async function createLoadTestHarness(
     },
     beginCollapse,
     collapseStatus,
+    ladderCounts: readLadderCounts,
     renderer,
     setRung,
     collapseMovingParts,
