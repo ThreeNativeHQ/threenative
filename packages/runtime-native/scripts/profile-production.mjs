@@ -1430,7 +1430,7 @@ function markerEvents(events) {
   return { firstFrame, samples };
 }
 
-async function normalizeRun(
+export async function normalizeRun(
   result,
   artifactDirectory,
   kind,
@@ -1448,12 +1448,25 @@ async function normalizeRun(
   return {
     elapsedMs: result.durationMs,
     ...(Number.isFinite(firstFrameMs) ? { firstFrameMs } : {}),
+    // A child that exits without a parseable report has no report and usually no screenshot, so
+    // without this the whole run vanishes from the evidence and the failure is an absence.
+    ...(report === undefined ? { failure: missingReportFailure(result) } : {}),
     kind,
     report: report === undefined ? undefined : safeReport(report),
     screenshot,
     series: Array.isArray(series) ? series : undefined,
     status: result.status,
   };
+}
+
+function missingReportFailure(result) {
+  return sanitizeReportValue({
+    code: 'TN_PROD_RUN_REPORT_MISSING',
+    message: `The child run exited without a parseable report${failureSuffix(result).slice(-4_000)}`,
+    severity: 'error',
+    status: result.status,
+    timedOut: result.timedOut === true,
+  });
 }
 
 const REPORT_REDACTION_MESSAGE = 'TN_PROD_REDACTION: unsafe native report detail withheld.';
@@ -1561,10 +1574,12 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     for (const [index, run] of arm.runs.entries()) {
       if (run.screenshot !== undefined) rawArtifacts.push({ content: run.screenshot, label: `production-render-${arm.kind}-${index + 1}` });
       if (run.report !== undefined) rawArtifacts.push({ content: JSON.stringify(run.report), label: `production-playtest-${arm.kind}-${index + 1}` });
+      if (run.failure !== undefined) rawArtifacts.push({ content: JSON.stringify(run.failure), label: `production-run-failure-${arm.kind}-${index + 1}` });
     }
     for (const [index, startup] of arm.startups.entries()) {
       if (startup.screenshot !== undefined) rawArtifacts.push({ content: startup.screenshot, label: `production-first-frame-${arm.kind}-${index + 1}` });
       if (startup.report !== undefined) rawArtifacts.push({ content: JSON.stringify(startup.report), label: `production-startup-${arm.kind}-${index + 1}` });
+      if (startup.failure !== undefined) rawArtifacts.push({ content: JSON.stringify(startup.failure), label: `production-startup-failure-${arm.kind}-${index + 1}` });
     }
   }
   const metricsByArm = new Map(arms.map((arm) => [arm.kind, aggregateMetrics(arm.runs, arm.startups, warmupFramesFor(options))]));

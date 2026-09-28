@@ -557,6 +557,35 @@ samples, but the paired web arm published no usable frame series, so the report 
 `TN_PROD_RENDER_SAMPLES_INCOMPLETE`, a zero-sample comparison window, and no qualifying verdict.
 The performance box remains open.
 
+**2026-09-28, that run said *that* the web arm produced nothing and not *why*, so a missing report
+now retains its own diagnostic.** The `live-after-tick-fix` evidence is the second case of one shape:
+a child run that exits without a parseable report also has no `after.png`, so `normalizeRun` returned
+`report: undefined` with nothing else and `assembleEvidence` retained artifacts only for a defined
+report or screenshot — that web run and its startup contributed **zero** artifacts, `metrics.web`
+stayed `{}`, and the reader was left with `TN_PROD_RENDER_SAMPLES_INCOMPLETE` and no child output.
+The retained diagnostic is that child's own bounded output: `normalizeRun` now attaches
+`failure` — `TN_PROD_RUN_REPORT_MISSING`, the exit `status`, `timedOut`, and the existing
+`failureSuffix` tail (at most the last 4,000 characters of its 20 stderr+stdout lines, or the timeout sentence) — through the same
+`sanitizeReportValue`/`sanitizeManifest` redaction every report field already passes, and
+`assembleEvidence` retains it as `production-run-failure-<arm>-<n>` /
+`production-startup-failure-<arm>-<n>` on every arm, which is the two loops that already retain
+screenshots and reports. No code, budget, predicate or code list changed: a run with a report is
+byte-identical, the failure is a retained artifact and not a verdict, and nothing is invented for
+the missing web series — `metrics.web` stays `{}` and the run stays BLOCKED until a real web
+collection fills it. Red-green: one test in `packages/runtime-native/tests/production-profile.test.mjs`,
+red on the pre-change script (`run.failure` undefined — `TypeError: Cannot read properties of
+undefined (reading 'status')`, and no web artifact retained at all), green after — a plain stderr
+tail is visible in `production-run-failure-web-1`, a
+`Bearer … /home/operator/.npmrc` stderr is replaced by `TN_PROD_REDACTION` with no token left in the
+artifact, a timed-out run records `timedOut: true` and `timed out after 90 s`, and the labels are
+exactly the three expected. Gates in this checkout: the full `@threenative/runtime-native` vitest
+suite 1,508 passed / 62 skipped, 131 files (this file 78/78); `pnpm typecheck` 0; `pnpm lint` 0
+(846 pre-existing warnings — `biome check` on the two touched files reports the same 10 as the
+`HEAD` copy of the script, none from these lines); `pnpm budgets` 0 with the lane's pre-existing
+non-fatal native-census drift. **No hardware or live collection was run to produce this** — the
+change is proved by the unit test and the retained-artifact contract, and the performance box above
+stays open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

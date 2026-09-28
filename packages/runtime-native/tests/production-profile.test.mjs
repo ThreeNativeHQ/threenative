@@ -30,6 +30,7 @@ import {
   installNativeProfileEntry,
   nativeArtifactPath,
   nativeFrameInstrumentation,
+  normalizeRun,
   parseProductionArgs,
   playtestTimeoutMs,
   prepareNativeWorkload,
@@ -331,6 +332,75 @@ test('failed production commands name the timeout or carry their stderr tail', a
   assert.equal(failed.status, 3);
   assert.equal(failed.timedOut, false);
   assert.match(`The scaffolded platformer web build failed.${failureSuffix(failed)}`, /boom-tail/u);
+});
+
+test('a child run with no parseable report retains a visible, redacted failure artifact', async () => {
+  const artifactDirectory = makeTempDirSync('tn-profile-missing-report-');
+  const run = await normalizeRun(
+    { durationMs: 5, status: 2, stderr: 'Error: the browser closed\n', stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  const unsafe = await normalizeRun(
+    { durationMs: 5, status: 1, stderr: 'Authorization: Bearer sk-fixture at /home/operator/.npmrc\n', stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  const timedOut = await normalizeRun(
+    { durationMs: 5, status: 2, stderr: '', stdout: '', timeout: 90_000, timedOut: true },
+    artifactDirectory,
+    'web',
+  );
+  const oversized = await normalizeRun(
+    { durationMs: 5, status: 1, stderr: 'x'.repeat(10_000), stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  assert.equal(run.report, undefined);
+  assert.equal(run.failure.status, 2);
+  assert.equal(run.failure.code, 'TN_PROD_RUN_REPORT_MISSING');
+  assert.match(run.failure.message, /the browser closed/u);
+  assert.match(unsafe.failure.message, /TN_PROD_REDACTION/u);
+  assert.equal(timedOut.failure.timedOut, true);
+  assert.match(timedOut.failure.message, /timed out after 90 s/u);
+  assert.equal(JSON.stringify(unsafe.failure).includes('Bearer'), false);
+  assert.ok(oversized.failure.message.length <= 4_100);
+
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: undefined,
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 2,
+      target: 'web',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: 'fixture-project',
+    resolutionScaleSetting: undefined,
+    runId: 'missing-report',
+    startedAt: new Date().toISOString(),
+    web: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'web',
+      runs: [run, unsafe],
+      startups: [timedOut],
+    },
+  });
+  assert.ok(evidence.codes.includes('TN_PROD_PLAYTEST_FAILED'));
+  assert.deepEqual(evidence.rawArtifacts.map(({ label }) => label), [
+    'production-run-failure-web-1',
+    'production-run-failure-web-2',
+    'production-startup-failure-web-1',
+  ]);
+  assert.match(evidence.rawArtifacts[0].content, /the browser closed/u);
+  assert.equal(evidence.rawArtifacts[1].content.includes('Bearer'), false);
 });
 
 afterEach(() => {
