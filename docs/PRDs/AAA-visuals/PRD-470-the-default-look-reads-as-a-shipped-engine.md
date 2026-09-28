@@ -1,6 +1,6 @@
 # PRD-470 — the default look reads as a shipped engine
 
-**Status: IN PROGRESS** · filed 2026-09-28 against `3788ce79e` · owner goal: "make it look like
+**Status: PHASE 1 NEARLY DONE** · filed 2026-09-28 against `3788ce79e` · owner goal: "make it look like
 Unreal by default — AAA, 'wow, this looks polished'; baseline assets allowed if the library does not
 grow much."
 
@@ -31,23 +31,33 @@ gets clean edges from the same code. No new package, no new dependency, no new a
 
 ### Phase 1 — `minimal` becomes the reference frame, and every chain antialiases
 
-- [ ] Physical sky (`SkyMesh`) with a sun disk; the same sky baked once through PMREM into `scene.environment`. proof: capture + `TN_WORLD_ENVIRONMENT`
-- [ ] A horizon: ground plane to the fog line, world-aligned grid material, haze in the sky's horizon colour; bevelled neutral-PBR props. proof: capture
-- [ ] `worldEnvironment.ts` antialiases whenever a chain is installed and reports it; shared-source specs updated. proof: `pnpm exec vitest run packages/create-threenative`
-- [ ] `minimal` playtests green with AO + AA on high tier. proof: `pnpm test:templates` (minimal)
+- [x] A photo sky (Poly Haven, CC0, 4k JPEG 282 KB) is the background, the environment light and the fog colour; the sun is aimed at the photographed sun. proof: `sky` scenario pass (tt-minimal2, 2026-09-28); capture `minimal-08-ground-bounce.png`
+- [x] A UE-style test arena: light/dark metre-grid materials with world-metre UVs, bevelled walls/deck/ramp/pillar, blue crates, trimesh colliders via `buildStaticColliders`; Quaternius mannequin (CC0, 665 KB) with a follow camera; camera-centred `VirtualShadowNode` on WebGPU. proof: captures `minimal-06..08`; `TN_VIRTUAL_SHADOW` reuse 0.997
+- [x] `worldEnvironment.ts` antialiases (SMAA, Godot `screen_space_aa`) whenever a chain is installed and reports it; GTAO is denoised; shared-source specs updated. proof: `pnpm exec vitest run packages/create-threenative` 777/777 (2026-09-28)
+- [ ] `minimal` playtests green. proof: `TN_TEMPLATE_ONLY=minimal pnpm test:templates`
+  sky, survives, touch-controls pass; `play` re-measured at 104 draws / 69,930 tris (virtual shadow levels), budget raised to 128 / 80,000 — rerun pending.
 
 ### Phase 2 — `starter`, the default template, gets the same light
 
-- [ ] Physical sky + environment light + AO + AA; painterly stages off by default, still one line away. proof: capture
-- [ ] `starter` playtests green. proof: `pnpm test:templates` (starter)
+- [ ] Photo sky + environment light + AO + AA + mannequin hero; painterly stages off by default, still one line away. proof: capture
+- [ ] `starter` playtests green. proof: `TN_TEMPLATE_ONLY=starter pnpm test:templates`
 
-### Phase 3 — the other eight templates inherit the recipe
+### Phase 3 — the other templates inherit the recipe
 
-- [ ] Environment light from each template's own sky, AO on high tier. proof: captures in PR body
-- [ ] All template playtests green. proof: `pnpm test:templates`
+- [ ] `shooter` rebuilt from the sandbox `fps-framework` game: its hands kept, every other asset replaced by the shared mannequin, arena and sky. proof: `TN_TEMPLATE_ONLY=shooter pnpm test:templates`
+- [ ] The remaining templates take the environment light and AO; all template playtests green. proof: `pnpm test:templates`
 
 A fresh judge subagent compares blind before/after captures per phase; its verdicts go in the PR
 body, not here (R2).
+
+## Decisions
+
+- Photo sky from Poly Haven instead of the procedural atmosphere: "skybox should be from polyhaven" — owner, 2026-09-28.
+- `minimal` is the Unreal third-person test map (grid arena, mannequin, follow camera), and the SCORE/TIME HUD is removed — owner, 2026-09-28.
+- The mannequin is Quaternius' Universal Animation Library, recoloured white — owner, 2026-09-28.
+- `shooter` is rebuilt from `sandbox/fps-framework`, keeping only its hands — owner, 2026-09-28.
+- The AstraCraft RTS template is its own PRD and PR, not this one — agent, 2026-09-28 (one PRD per PR).
+- Engine fix found on the way: `CollisionShape3D.fromMesh` centres its box on the mesh origin, so off-centre geometry silently gets a displaced collider (it floated the mannequin 0.4 m). The template now uses `buildStaticColliders`; the engine guard is tracked as its own change.
 
 ## Blocked on
 
