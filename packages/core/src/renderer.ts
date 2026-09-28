@@ -288,6 +288,8 @@ type RendererInstance = {
   getRenderTarget?: () => unknown;
   setRenderTarget?: (target: unknown) => void;
   _getFrameBufferTarget?: () => unknown;
+  /** What `getRenderTarget()` answers, and the only honest read while that answer is overridden. */
+  _renderTarget?: unknown;
   renderObject?: RenderObjectFunction;
   setRenderObjectFunction?: (renderObjectFunction: RenderObjectFunction) => void;
 };
@@ -395,8 +397,21 @@ function wrapRenderer(
     return { frame: sampled, ms: timestamp };
   };
 
+  /**
+   * A warm-up or a pass can leave a target bound with nothing left to restore it, and
+   * `getRenderTarget()` answers null across that overlap, so read the field. Pipelines restore their
+   * own offscreen targets, so only the surface paths need this.
+   */
+  const bindSurface = (): void => {
+    if (typeof raw.setRenderTarget !== "function") return;
+    const bound = "_renderTarget" in raw ? raw._renderTarget : raw.getRenderTarget?.();
+    if (bound === null || bound === undefined) return;
+    raw.setRenderTarget(null);
+  };
+
   let renderingFrame = 0;
   const renderFrame = (scene: Object3D, camera: Camera): void => {
+    bindSurface();
     if (outputPipeline === undefined) raw.render(scene, camera);
     else {
       // RenderPipeline.render() has no scene argument and PassNode keeps the scene it captured
@@ -408,6 +423,7 @@ function wrapRenderer(
     pipelineCensus?.firstPresent();
   };
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
+    bindSurface();
     const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
     const autoClear = raw.autoClear;
     raw.autoClear = false;
