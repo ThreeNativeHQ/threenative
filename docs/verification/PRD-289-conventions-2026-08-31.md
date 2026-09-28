@@ -14,7 +14,7 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 
 | Template | GroundSnap | normaliseToMetres | attachToBone | AnimationPlayer |
 | --- | --- | --- | --- | --- |
-| action-rpg | `src/conventions.ts:27` | `src/conventions.ts:16` | `src/conventions.ts:26` | N/A — no skinned or animated asset is loaded |
+| action-rpg | `src/conventions.ts:33` | `src/conventions.ts:28` | `src/conventions.ts:32` | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Fighter.ts`), which extends AnimationPlayer |
 | defense | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | minimal | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Player.ts`), which extends AnimationPlayer |
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
@@ -25,6 +25,10 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:7` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |
 | starter | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Player.ts`), which extends AnimationPlayer |
+
+Updated 2026-09-28: the `action-rpg` kit is six instances of one combat mannequin, so it moved
+from a procedural blockout to a skinned rig and gained an `AnimationPlayer` row like the other
+rigged templates. Same three calls, same file, new lines.
 
 Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs
 the player sees when they look down rather than a third-person body, and `normaliseToMetres` and
