@@ -1,0 +1,23 @@
+{
+  "name": "constrained-ik",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "threenative": { "nativeEntry": "src/game.ts" },
+  "scripts": {
+    "setup": "npm --prefix ../integrations/ik install --ignore-scripts --no-audit --no-fund",
+    "dev": "vite --host 127.0.0.1",
+    "build:web": "vite build",
+    "build:desktop": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/constrained-ik-native.js",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

@@ -583,6 +583,28 @@ setInterval(() => {
   }
 });
 
+test.skipIf(process.platform === "win32")("desktop screenshot timeout can be raised by environment", async () => {
+  const previous = process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS;
+  process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = "75";
+  const root = await makeTempDir("playtest-desktop-screenshot-env-");
+  const executable = join(root, "native-test.mjs");
+  await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n");
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root });
+  const started = Date.now();
+  try {
+    await driver.prepare("unused");
+    await expect(driver.screenshot(join(root, "capture.png")))
+      .rejects.toThrow("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(Date.now() - started).toBeLessThan(1_000);
+  } finally {
+    if (previous === undefined) process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = undefined;
+    else process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = previous;
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 interface IDesktopScenarioOptions {
   console?: { text: string; type: string }[];
   mailboxFile?: boolean;

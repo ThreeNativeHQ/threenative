@@ -531,15 +531,19 @@ const FRAMEWORK_PATCH_DIRECTORY = "patches";
 const THREE_PATCH_NAME = "three@0.185.1.patch";
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
-  const source = path.join(
-    path.dirname(templateRootDirectory),
-    "template-assets",
-    FRAMEWORK_PATCH_DIRECTORY,
-    THREE_PATCH_NAME,
+  // The only tracked copy lives in @threenative/core; prepack copies it into template-assets for
+  // the tarball, and a workspace run reads core's directly.
+  const packageRoot = path.dirname(templateRoot());
+  const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map((root) =>
+    path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
   );
-  if (!existsSync(source)) {
+  candidates.push(
+    path.join(packageRoot, "..", "core", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
+  );
+  const source = candidates.find((candidate) => existsSync(candidate));
+  if (source === undefined) {
     throw new Error(
-      `TN_FRAMEWORK_PATCH_MISSING: '${source}' is not in the package; the generated project needs the Three.js velocity patch for batched temporal history.`,
+      `TN_FRAMEWORK_PATCH_MISSING: none of ${candidates.map((candidate) => `'${candidate}'`).join(", ")} exists; the generated project needs the Three.js velocity patch for batched temporal history.`,
     );
   }
   const destination = path.join(target, FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME);
