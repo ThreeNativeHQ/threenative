@@ -168,6 +168,17 @@ export function configureVideoVerificationBuild(cmake) {
   return configureVerificationBuild(cmake, "contracts-video", [["TN_ENABLE_VIDEO", "ON"]]);
 }
 
+/**
+ * TN_ENABLE_METAHUMAN needs the pinned OpenRigLogic source, which the default desktop set
+ * never fetches, so the optional dependency is acquired here rather than on every build.
+ */
+export function configureMetaHumanVerificationBuild(cmake) {
+  run(process.execPath, [join(runtimeRoot, "scripts", "download-deps.mjs"), "--only", "openriglogic"], {
+    timeout: 1_800_000,
+  });
+  return configureVerificationBuild(cmake, "contracts-metahuman", [["TN_ENABLE_METAHUMAN", "ON"]]);
+}
+
 export function configurePhysicsVerificationBuild(cmake) {
   run(process.execPath, [join(runtimeRoot, "scripts", "build-native-physics.mjs"), "--desktop"], {
     timeout: 1_800_000,

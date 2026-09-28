@@ -410,6 +410,21 @@ const DEPS = {
     getUrl: () => `https://github.com/libuv/libuv/archive/refs/tags/v${DEPS['libuv-source'].version}.tar.gz`,
     extractTo: 'libuv-src',
   },
+  openriglogic: {
+    // OpenRigLogic (RigLogic) source for TN_ENABLE_METAHUMAN, pinned to the commit rather than
+    // to the 5.8 branch so the archive can never move under a review. codeload answers a commit
+    // archive directly instead of redirecting, which is what the lock wants; the commit has to be
+    // the last path segment, so the default archive naming (the URL's last segment) would produce
+    // an extensionless file no extractor recognises, hence the explicit archiveName. GitHub
+    // names the extracted directory `OpenRigLogic-<full revision>`, and CMakeLists.txt reads the
+    // revision back out of that name rather than carrying a second copy of the pin.
+    // `packages/metahuman/scripts/openriglogic.mjs` carries the same commit constant for the
+    // browser WASM lane; keep the two in step.
+    version: '7b9e7a88898f51f29aa308acb4877276f27e1507',
+    getUrl: () => `https://codeload.github.com/EpicGames/OpenRigLogic/tar.gz/${DEPS.openriglogic.version}`,
+    archiveName: 'openriglogic-7b9e7a88898f51f29aa308acb4877276f27e1507.tar.gz',
+    extractTo: 'openriglogic',
+  },
   'skia-win-static': {
     // Static Skia + Dawn for Windows from mystralengine/library-builder
     // This build uses /MT (static CRT) and includes dawn_combined.lib with
@@ -1313,9 +1328,9 @@ export async function downloadDep(name, options = {}) {
 
   // Download
   const ext = url.split('.').slice(-1)[0];
-  const archiveName = url.includes('.tar.') ?
-    url.split('/').pop() :
-    `${name}.${ext}`;
+  const archiveName =
+    dep.archiveName ??
+    (url.includes('.tar.') ? url.split('/').pop() : `${name}.${ext}`);
   const archiveRoot = wgpuVersionOverride && WGPU_DEPS.has(name)
     ? join(dirname(destDir), '.downloads')
     : THIRD_PARTY;
@@ -1555,7 +1570,7 @@ async function main() {
 
   // Downloadable dependencies and the complete --only allowlist.
   const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
-  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps])];
+  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic'])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {

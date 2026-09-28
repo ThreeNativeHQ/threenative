@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-42 native contract targets; 2 configured
+42 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -13,7 +13,7 @@ targets could not be built and are named below.
 | `src/cli/` | 1682 | 1238 | 73.60% |
 | `src/fs/` | 235 | 189 | 80.43% |
 | `src/http/` | 410 | 377 | 91.95% |
-| `src/js/` | 2785 | 2210 | 79.35% |
+| `src/js/` | 2785 | 2212 | 79.43% |
 | `src/platform/` | 1284 | 928 | 72.27% |
 | `src/raytracing/` | 461 | 399 | 86.55% |
 | `src/runtime.cpp` | 2361 | 1870 | 79.20% |
@@ -24,9 +24,9 @@ targets could not be built and are named below.
 | `src/webgpu/` | 9661 | 7379 | 76.38% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
 | `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24108** | **18917** | **78.47%** |
+| **TOTAL** | **24108** | **18919** | **78.48%** |
 
-Source digest: `sha256:c530718c671ad84b42a5a3c5ce78c745235570dae0dca7cd272931721b78401d`
+Source digest: `sha256:44e17d3c64307afac491b7498b6df1f35c919323fdb3b0c9fb45d4b43a5abe03`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -58,6 +58,7 @@ change requires this opt-in command to refresh the record.
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`
 - `src/js/quickjs_engine.cpp`
+- `src/metahuman/native_bindings.cpp`
 - `src/physics/native_bindings.cpp`
 - `src/platform/android_main.cpp`
 - `src/platform/surface_android.cpp`
@@ -75,6 +76,7 @@ change requires this opt-in command to refresh the record.
 
 ## Blocked targets
 
+- `threenative-metahuman-bindings-test`: TN_ENABLE_METAHUMAN=OFF
 - `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF
 - `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF
 <!-- native-coverage-generated:end -->

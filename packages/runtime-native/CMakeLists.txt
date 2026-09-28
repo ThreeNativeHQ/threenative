@@ -140,6 +140,7 @@ option(TN_ENABLE_NATIVE_GLTF "Enable deprecated native C++ GLTF path (must remai
 option(TN_ENABLE_DRACO "Enable native Draco decoder when dependencies exist" OFF)
 option(TN_ENABLE_DEBUG_SERVER "Enable debug-server control surface" OFF)
 option(TN_ENABLE_NATIVE_PHYSICS "Enable the ThreeNative native Rapier ABI" OFF)
+option(TN_ENABLE_METAHUMAN "Enable the OpenRigLogic MetaHuman facial rig ABI" OFF)
 # The desktop UI layer: a transparent web view over the game surface, behind a C ABI.
 # Off by default and desktop-only — Android has its own host in Java, iOS has one in Swift, and a
 # game whose ui.renderer is "native" must link none of it.
@@ -218,6 +219,7 @@ add_compile_definitions(
     TN_ENABLE_NATIVE_GLTF=$<BOOL:${TN_ENABLE_NATIVE_GLTF}>
     TN_ENABLE_DEBUG_SERVER=$<BOOL:${TN_ENABLE_DEBUG_SERVER}>
     TN_ENABLE_NATIVE_PHYSICS=$<BOOL:${TN_ENABLE_NATIVE_PHYSICS}>
+    TN_ENABLE_METAHUMAN=$<BOOL:${TN_ENABLE_METAHUMAN}>
     TN_ENABLE_UI_OVERLAY=$<BOOL:${TN_ENABLE_UI_OVERLAY}>
     TN_ANDROID_VSYNC=$<BOOL:${TN_ANDROID_VSYNC}>
     TN_WEBGPU_UPLOAD_STAGING=$<BOOL:${TN_WEBGPU_UPLOAD_STAGING}>
@@ -1523,6 +1525,72 @@ if(TN_ENABLE_NATIVE_PHYSICS)
     list(APPEND MYSTRAL_SOURCES src/physics/native_bindings.cpp)
 endif()
 
+if(TN_ENABLE_METAHUMAN)
+    # OpenRigLogic is reconstructed as pinned source by
+    # `node scripts/download-deps.mjs --only openriglogic`, which extracts GitHub's
+    # commit archive as `OpenRigLogic-<revision>`. Read the revision back out of that
+    # directory name instead of carrying a second copy of the pin: the version string the
+    # binding reports is then the revision that was actually compiled.
+    file(GLOB THREENATIVE_OPENRIGLOGIC_ROOTS
+        "${THIRD_PARTY_DIR}/openriglogic/OpenRigLogic-*")
+    list(LENGTH THREENATIVE_OPENRIGLOGIC_ROOTS THREENATIVE_OPENRIGLOGIC_ROOT_COUNT)
+    if(NOT THREENATIVE_OPENRIGLOGIC_ROOT_COUNT EQUAL 1)
+        message(FATAL_ERROR
+            "TN_ENABLE_METAHUMAN needs exactly one OpenRigLogic source tree under "
+            "'${THIRD_PARTY_DIR}/openriglogic' (found ${THREENATIVE_OPENRIGLOGIC_ROOT_COUNT}). "
+            "Run node scripts/download-deps.mjs --only openriglogic.")
+    endif()
+    list(GET THREENATIVE_OPENRIGLOGIC_ROOTS 0 OPENRIGLOGIC_SOURCE_DIR)
+    if(NOT EXISTS "${OPENRIGLOGIC_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "OpenRigLogic source at ${OPENRIGLOGIC_SOURCE_DIR} has no CMakeLists.txt. "
+            "Re-run node scripts/download-deps.mjs --only openriglogic --force.")
+    endif()
+    # CMake's regex has no interval quantifier, so the revision is split and measured rather
+    # than matched with {40}.
+    get_filename_component(OPENRIGLOGIC_SOURCE_NAME "${OPENRIGLOGIC_SOURCE_DIR}" NAME)
+    string(REGEX REPLACE "^OpenRigLogic-" "" THREENATIVE_OPENRIGLOGIC_COMMIT
+        "${OPENRIGLOGIC_SOURCE_NAME}")
+    string(LENGTH "${THREENATIVE_OPENRIGLOGIC_COMMIT}" THREENATIVE_OPENRIGLOGIC_REVISION_LENGTH)
+    if(NOT THREENATIVE_OPENRIGLOGIC_REVISION_LENGTH EQUAL 40 OR
+       NOT THREENATIVE_OPENRIGLOGIC_COMMIT MATCHES "^[0-9a-f]+$")
+        message(FATAL_ERROR
+            "OpenRigLogic source directory ${OPENRIGLOGIC_SOURCE_DIR} does not carry a 40-hex "
+            "revision, so the ABI version string could not name the pin that was built.")
+    endif()
+    # Scalar, no SIMD, no test/benchmark/example trees: the shared ABI in
+    # packages/metahuman/cpp fixes that configuration because the committed reference
+    # vectors and the browser WASM build were produced with it.
+    set(RL_BUILD_WITH_AVX OFF CACHE BOOL "" FORCE)
+    set(RL_AUTODETECT_AVX OFF CACHE BOOL "" FORCE)
+    set(RL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(RL_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(RL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(RL_LIBRARY_TYPE STATIC CACHE STRING "" FORCE)
+    # The generated version/export headers are committed upstream; regenerating them would
+    # write into a tree this build does not own.
+    set(READ_ONLY_SOURCE_TREE ON CACHE BOOL "" FORCE)
+    add_subdirectory("${OPENRIGLOGIC_SOURCE_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/openriglogic" EXCLUDE_FROM_ALL)
+    if(NOT TARGET riglogic4)
+        message(FATAL_ERROR
+            "OpenRigLogic at ${OPENRIGLOGIC_SOURCE_DIR} defined no riglogic4 target; the "
+            "facial rig cannot be built.")
+    endif()
+    # C++17, the standard packages/metahuman/scripts/build-native-tools.mjs compiles the same
+    # translation unit with, whatever this host's own CMAKE_CXX_STANDARD is.
+    set_target_properties(riglogic4 PROPERTIES CXX_STANDARD 17)
+    add_library(threenative-native-metahuman STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/cpp/tn_riglogic.cpp")
+    set_target_properties(threenative-native-metahuman PROPERTIES CXX_STANDARD 17)
+    target_compile_definitions(threenative-native-metahuman PUBLIC
+        THREENATIVE_OPENRIGLOGIC_COMMIT="${THREENATIVE_OPENRIGLOGIC_COMMIT}")
+    target_include_directories(threenative-native-metahuman PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/cpp")
+    target_link_libraries(threenative-native-metahuman PUBLIC riglogic4)
+    list(APPEND MYSTRAL_SOURCES src/metahuman/native_bindings.cpp)
+endif()
+
 if(TN_ENABLE_UI_OVERLAY)
     if(NOT THREENATIVE_UI_OVERLAY_LIBRARY)
         # MSVC names a static library `.lib`; every other desktop toolchain we build with names it
@@ -1709,6 +1777,10 @@ if(TN_ENABLE_NATIVE_PHYSICS)
     if(ANDROID AND MYSTRAL_USE_WGPU)
         target_link_options(mystral-runtime PRIVATE "LINKER:--allow-multiple-definition")
     endif()
+endif()
+
+if(TN_ENABLE_METAHUMAN)
+    target_link_libraries(mystral-runtime PRIVATE threenative-native-metahuman)
 endif()
 
 # Platform-specific sources
@@ -2138,6 +2210,18 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/physics_actuation_bindings_test.cpp)
     target_link_libraries(threenative-physics-actuation-bindings-test PRIVATE mystral-runtime)
 
+    # The synthetic DNA and its reference vectors live in the package that owns the ABI
+    # contract; the path is compiled in so the executable needs no working directory.
+    add_executable(threenative-metahuman-bindings-test EXCLUDE_FROM_ALL
+        tests/metahuman_bindings_test.cpp)
+    target_link_libraries(threenative-metahuman-bindings-test PRIVATE mystral-runtime)
+    target_include_directories(threenative-metahuman-bindings-test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_compile_definitions(threenative-metahuman-bindings-test PRIVATE
+        THREENATIVE_METAHUMAN_DNA="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.dna"
+        THREENATIVE_METAHUMAN_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.vectors.json"
+        THREENATIVE_METAHUMAN_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/../metahuman/fixtures/synthetic.reference.json")
+
     add_executable(threenative-dom-dispatch-lifetime-test EXCLUDE_FROM_ALL
         tests/dom_dispatch_lifetime_test.cpp)
     target_link_libraries(threenative-dom-dispatch-lifetime-test PRIVATE mystral-runtime)
@@ -2518,6 +2602,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     else()
         tn_register_blocked_test(threenative-physics-actuation-bindings-test
             "TN_ENABLE_NATIVE_PHYSICS=OFF")
+    endif()
+    if(TN_ENABLE_METAHUMAN)
+        tn_register_contract_test(threenative-metahuman-bindings-test)
+    else()
+        tn_register_blocked_test(threenative-metahuman-bindings-test
+            "TN_ENABLE_METAHUMAN=OFF")
     endif()
     tn_register_contract_test(threenative-render-pass-class-table-test)
     tn_register_contract_test(threenative-rt-handle-allocation-test)
