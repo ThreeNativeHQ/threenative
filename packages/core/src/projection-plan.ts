@@ -116,7 +116,7 @@ function specializedLaneReason(
   return undefined;
 }
 
-function hasMorphAttributes(geometry: BufferGeometry): boolean {
+export function hasMorphAttributes(geometry: BufferGeometry): boolean {
   for (const name in geometry.morphAttributes) {
     if (Object.hasOwn(geometry.morphAttributes, name)) return true;
   }
@@ -128,7 +128,7 @@ function hasMorphAttributes(geometry: BufferGeometry): boolean {
  * `castShadowPositionNode`, or a `displacementMap`. Read through `Reflect` because a plain
  * `MeshStandardMaterial` has none of them.
  */
-function displacesVertices(material: Material): boolean {
+export function displacesVertices(material: Material): boolean {
   return (
     Reflect.get(material, "positionNode") != null ||
     Reflect.get(material, "castShadowPositionNode") != null ||
@@ -240,7 +240,7 @@ function laneReasonOf(
  * frame is not projected. There is no third option that is honest, and this is rare enough that
  * whole-scene fallback is the right price.
  */
-function hasRenderHook(object: Object3D): boolean {
+export function hasRenderHook(object: Object3D): boolean {
   return Object.hasOwn(object, "onBeforeRender") || Object.hasOwn(object, "onAfterRender");
 }
 
@@ -724,7 +724,7 @@ function attributeVersionOf(attribute: BufferAttribute | InterleavedBufferAttrib
  * is how the lane learns that a game streams into vertex data it had admitted — the one thing a
  * packed copy cannot follow that the instanced lane's shared reference can.
  */
-function geometryVersionSum(geometry: BufferGeometry): number {
+export function geometryVersionSum(geometry: BufferGeometry): number {
   let sum = 0;
   for (const name in geometry.attributes) {
     if (!Object.hasOwn(geometry.attributes, name)) continue;

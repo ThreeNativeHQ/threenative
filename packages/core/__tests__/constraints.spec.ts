@@ -123,6 +123,13 @@ describe("core constraints", () => {
           // light or colour and reads no property that describes how anything looks; the
           // assertions below are what keep that true.
           file !== "geometry-capture.ts" &&
+          // The structure proof decides whether a frame may skip re-classifying the scene, and a
+          // material is one of the things that decides it: a transparent or vertex-displacing one
+          // takes an object off the batched lane, so the proof compares identity and the same two
+          // predicates the classification reads, and a light is one of the things that decides
+          // whether a frame can be mirrored at all. It reads no property that describes how
+          // anything looks, chooses none and constructs none — the assertions below keep it so.
+          file !== "projection-stability.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))

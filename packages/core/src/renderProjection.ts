@@ -4,11 +4,13 @@ import type { IGeometryOwnership } from "./geometry-capture.js";
 import type { MatrixWorldPass } from "./matrix-world.js";
 import { ProjectionMirror } from "./projection-apply.js";
 import {
+  type IProjectionProjectPlan,
   createProjectionScanWorkspace,
   isRenderable,
   releaseProjectionScanWorkspace,
   scanProjection,
 } from "./projection-plan.js";
+import { ProjectionStability } from "./projection-stability.js";
 import { VelocityTracker } from "./render/velocity.js";
 
 /**
@@ -162,6 +164,16 @@ export class SceneRenderProjection {
   readonly #matrixWorld: MatrixWorldPass | undefined;
   readonly #velocityTracker = new VelocityTracker();
   readonly #scanWorkspace = createProjectionScanWorkspace();
+  /**
+   * What the last projecting scan classified, kept so a frame that can prove the structure unchanged
+   * can skip re-deriving it, and the proof itself.
+   *
+   * The plan points into the scan workspace, which is only rewritten by the next scan — and a scan
+   * only runs when the proof has failed, so a retained plan is never read after the arrays behind
+   * it move. Any decline, release or velocity change drops it: the mirror it described is gone.
+   */
+  readonly #stability = new ProjectionStability();
+  #retainedPlan: IProjectionProjectPlan | undefined;
   #deoptimized = true;
   #reasonCode: ProjectionReasonCode = "belowMeshFloor";
   #reason: string | undefined;
@@ -219,6 +231,14 @@ export class SceneRenderProjection {
    * startup: where it is, whether it is visible, what geometry and material it has, and whether it
    * is still in the scene at all. A source that did not change costs a compare.
    *
+   * What is re-derived *every* frame is the maintenance — the matrix, the visibility, the batch
+   * slot, the stand-in, the mirrored light. What may be re-derived only when it changed is the
+   * classification, because it is a pure function of the scene's structure and reads no world
+   * matrix: a scene where every transform animates would otherwise re-decide an unchangeable answer
+   * per frame. `ProjectionStability` holds what the last scan read and compares it, so the skip
+   * happens only when nothing it reads has moved, and only the scan, the plan's re-derivation and
+   * the retirement sweep are skipped — a wrong comparison costs one scan, never a wrong frame.
+   *
    * A settled decline costs almost nothing: the classification walk re-runs on a bounded cadence
    * rather than every frame, and the whole-scene matrix pass does not run at all — the frames the
    * authored scene draws are exactly the frames three's renderer refreshes its world matrices
@@ -245,6 +265,7 @@ export class SceneRenderProjection {
     if (mirror.setVelocityEnabled(velocityEnabled)) {
       this.#deoptimized = true;
       this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
+      this.#forgetPlan();
     }
     // Re-read every frame, not once at construction: a game that swaps its sky or turns fog on
     // mid-level would otherwise keep the look it happened to have when the mirror was built.
@@ -277,41 +298,61 @@ export class SceneRenderProjection {
     // Scan and decide without touching the mirror; then either build the plan or decline whole.
     // The scan reads no world matrices, so it runs before the forced pass and the pass only runs
     // when its result is actually needed.
-    try {
+    let plan: IProjectionProjectPlan | undefined;
+    let exactLane: IProjectionProjectPlan["exactLane"] = [];
+    let exactLaneCount = 0;
+    // Only a proven-unchanged structure can skip the retirement sweep: it walks every instance the
+    // mirror holds to find the ones that left, and nothing left if the membership is the same.
+    let retireSources = true;
+    const retained = this.#deoptimized ? undefined : this.#retainedPlan;
+    if (retained !== undefined && this.#stability.holds(this.#source)) {
+      // Every input the classification reads is the value the last scan read, so this frame's plan
+      // is the one already built. The apply below still runs in full: this skips the *decision*,
+      // never the maintenance, which is why an object that moved, hid or was reparented since is
+      // still written into the mirror this frame.
+      plan = retained;
+      const exact = this.#stability.exactLane();
+      exactLane = exact.entries;
+      exactLaneCount = exact.count;
+      retireSources = false;
+      this.#refreshMatrices();
+    } else {
+      // The scan releases its own workspace on entry, which is also what releases the previous
+      // plan's members: this frame's plan is what the apply below consumes, and a retained one is
+      // what the next frame re-uses, so releasing it here would empty the arrays it points into.
+      // What that costs is one frame of reach on the objects the last scan saw — which the mirror
+      // holds anyway while they are in the scene, and which the next scan drops either way.
       const scan = scanProjection(this.#source, this.#minMeshes, this.#scanWorkspace);
       this.#sourceRenderables = scan.renderables;
       this.#framesSinceDeclineScan = 0;
       if (scan.plan.action === "decline") {
+        this.#forgetPlan();
         mirror.releaseAll();
         this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
         // A scene with nothing in it yet is still loading, and walking it costs nothing: look
         // again next frame rather than drawing the first second of the level unprojected.
         if (scan.renderables === 0) this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
       } else {
-        // The renderer is handed the mirror, so the authored scene's world matrices are refreshed
-        // here. With the engine's walk installed that is the visible-only pass, which mirrors three
-        // for every visible node and defers a hidden subtree until it shows; without it, honouring
-        // `matrixWorldAutoUpdate` and Three's own `matrixWorldNeedsUpdate` propagation is the
-        // contract every Three renderer uses. A game that turns the flag off has promised to update
-        // the scene itself, and a subtree marked `matrixWorldAutoUpdate = false` under a still
-        // parent is skipped instead of walked.
-        if (this.#matrixWorld !== undefined) {
-          this.#matrixWorld.apply(this.#source);
-        } else if (this.#source.matrixWorldAutoUpdate === true) {
-          this.#source.updateMatrixWorld();
-        }
-        mirror.prepare(scan.exactLane, scan.exactLaneCount);
-        const lightFailure = mirror.apply(scan.plan);
-        if (lightFailure !== undefined) {
-          this.#deoptimize("unsupportedLight", lightFailure);
-        } else {
-          this.#deoptimized = false;
-          this.#reasonCode = "projected";
-          this.#reason = undefined;
-        }
+        this.#refreshMatrices();
+        this.#stability.record(this.#source, scan);
+        this.#retainedPlan = scan.plan;
+        plan = scan.plan;
+        exactLane = scan.exactLane;
+        exactLaneCount = scan.exactLaneCount;
       }
-    } finally {
-      releaseProjectionScanWorkspace(this.#scanWorkspace);
+    }
+
+    if (plan !== undefined) {
+      mirror.prepare(exactLane, exactLaneCount);
+      const lightFailure = mirror.apply(plan, retireSources);
+      if (lightFailure !== undefined) {
+        this.#deoptimize("unsupportedLight", lightFailure);
+        this.#forgetPlan();
+      } else {
+        this.#deoptimized = false;
+        this.#reasonCode = "projected";
+        this.#reason = undefined;
+      }
     }
 
     if (velocityEnabled)
@@ -329,6 +370,30 @@ export class SceneRenderProjection {
   commit(): void {
     if (!this.#enabled || !this.#velocityActive) return;
     this.#velocityTracker.commit(this.root);
+  }
+
+  /**
+   * The renderer is handed the mirror, so the authored scene's world matrices are refreshed here.
+   *
+   * With the engine's walk installed that is the visible-only pass, which mirrors three for every
+   * visible node and defers a hidden subtree until it shows; without it, honouring
+   * `matrixWorldAutoUpdate` and Three's own `matrixWorldNeedsUpdate` propagation is the contract
+   * every Three renderer uses. A game that turns the flag off has promised to update the scene
+   * itself, and a subtree marked `matrixWorldAutoUpdate = false` under a still parent is skipped
+   * instead of walked.
+   */
+  #refreshMatrices(): void {
+    if (this.#matrixWorld !== undefined) {
+      this.#matrixWorld.apply(this.#source);
+    } else if (this.#source.matrixWorldAutoUpdate === true) {
+      this.#source.updateMatrixWorld();
+    }
+  }
+
+  /** Drops the retained plan, for any frame the mirror it described no longer holds. */
+  #forgetPlan(): void {
+    this.#retainedPlan = undefined;
+    this.#stability.clear();
   }
 
   #publish(): void {
@@ -446,6 +511,8 @@ export class SceneRenderProjection {
   dispose(): void {
     this.#mirror?.releaseAll();
     this.#velocityTracker.clear();
+    this.#forgetPlan();
+    releaseProjectionScanWorkspace(this.#scanWorkspace);
     this.#deoptimized = true;
     this.#reasonCode = "belowMeshFloor";
     this.#reason = "the projection was disposed";
