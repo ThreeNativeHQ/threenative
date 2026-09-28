@@ -1,0 +1,81 @@
+{
+  "name": "csg-doorway-desktop",
+  "schemaVersion": 1,
+  "subject": "the native desktop host cooks and loads the Boolean doorway and its collision opening matches the rendered opening",
+  "target": "desktop",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "artifacts": {
+    "screenshots": false,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "cross",
+      "press": "KeyW",
+      "holdTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "renderedOpeningMiss",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "physicsOpeningMiss",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "renderedWallHit",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "physicsWallHit",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "passingZ",
+        "gte": 0.5,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "blockedZ",
+        "lte": -0.1,
+        "changed": true,
+        "allowTrivial": "The blocked walker starts behind the wall and the assertion's point is that it ends short of the doorway, which its starting value already satisfies; the run is what keeps it from crossing."
+      }
+    ],
+    "sceneNodes": [
+      {
+        "select": {
+          "nameContains": "doorway-mesh"
+        },
+        "minCount": 1,
+        "visible": true,
+        "minTriangles": 40
+      }
+    ]
+  }
+}

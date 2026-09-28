@@ -1,0 +1,27 @@
+{
+  "name": "csg-doorway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:native": "node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/csg-doorway-native.js",
+    "playtest:web": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway.playtest.json --browser-recipe webgpu --server-command \"pnpm dev --host 127.0.0.1 --port 5281 --strictPort\" --url http://127.0.0.1:5281",
+    "playtest:android": "node ../../packages/playtest/dist/runner/cli.js --scenario playtests/doorway-android.playtest.json --target android"
+  },
+  "dependencies": {
+    "@threenative/assets": "workspace:*",
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/playtest": "workspace:*",
+    "@threenative/runtime-native": "workspace:*",
+    "@types/three": "0.185.3",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}
