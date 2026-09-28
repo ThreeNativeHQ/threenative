@@ -98,6 +98,24 @@ export interface IVirtualShadowStats {
   readonly deferred: number;
   /** Fraction of levels served from cache over the node's lifetime. */
   readonly reuseRatio: number;
+  /**
+   * The same four counters per level, finest first: which window moved, which invalidation asked
+   * for a redraw, which level took the frame's single render, and which wanted one and did not get
+   * it. One entry per level per frame, so a harness reading this — or the `TN_VIRTUAL_SHADOW`
+   * marker line, which carries it — can see which level a walk keeps re-rendering instead of only
+   * how many.
+   */
+  readonly perLevel: readonly IVirtualShadowLevelStat[];
+}
+
+/** One level's row of {@link IVirtualShadowStats}: 1 or 0 per counter, per frame. */
+export interface IVirtualShadowLevelStat {
+  /** The level's clip extent, in world units. */
+  readonly extent: number;
+  readonly deferred: number;
+  readonly invalidated: number;
+  readonly moved: number;
+  readonly rendered: number;
 }
 
 export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
@@ -276,6 +294,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #basisU: UniformNode<"vec3", Vector3> = uniform(new Vector3(1, 0, 0));
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1));
   #frame = 0;
+  /** 1 while this node is inside `#updateFrame`; a level render re-enters `updateBefore`. */
+  #updating = false;
+  /** Per-level counters, rebuilt each frame; see `IVirtualShadowStats.perLevel`. */
+  #perLevel: IVirtualShadowLevelStat[] = [];
   #rendered = 0;
   #served = 0;
   #stats: IVirtualShadowStats;
@@ -377,6 +399,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       moved: 0,
       moverRenders: 0,
       movers: 0,
+      perLevel: this.#perLevel,
       rendered: 0,
       reuseRatio: 1,
     };
@@ -604,6 +627,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   override updateBefore(frame: NodeFrame): undefined {
+    // Three calls this once per `render()`, and a level render *is* a `render()`: the draw the
+    // budget grants below re-enters this method with a new render id. Without this guard the
+    // one-level-per-frame budget resets on that re-entry, so a frame with every level due draws
+    // all of them — measured on `?scene=map-walk`, where the levels are re-rendered as a group
+    // every time a residency update invalidates them.
+    if (this.#updating) return undefined;
+    this.#updating = true;
+    try {
+      this.#updateFrame(frame);
+    } finally {
+      this.#updating = false;
+    }
+    return undefined;
+  }
+
+  #updateFrame(frame: NodeFrame): undefined {
     if (!this.#initialised) return undefined;
     const camera = frame.camera as Camera | null;
     if (camera === null) return undefined;
@@ -678,6 +717,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let invalidated = 0;
     let rendered = 0;
     let deferred = 0;
+    // Per level, finest first: which window moved, which invalidation asked, and which of the four
+    // took the frame's single render. One object per level per frame, so a harness reading the
+    // marker can see *which* level a walk keeps re-rendering.
+    const perLevel = this.#perLevel;
+    perLevel.length = 0;
     // One level render per frame, finest first: a level render is a whole scene draw, and three of
     // them in one frame is the long task a fly-through cannot absorb. A level the budget skipped
     // holds the map it has and is due again on the next frame.
@@ -711,16 +755,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
             break;
           }
         }
+        const asked =
+          invalidateAll || invalidatedLevels.has(index) || regionDirty || source.shadow.needsUpdate;
         if (windowMoved) moved += 1;
-        if (invalidateAll || invalidatedLevels.has(index) || regionDirty) invalidated += 1;
-        const due =
-          canRender &&
-          (windowMoved ||
-            invalidateAll ||
-            invalidatedLevels.has(index) ||
-            regionDirty ||
-            source.shadow.needsUpdate ||
-            level.pending);
+        if (asked) invalidated += 1;
+        const due = canRender && (windowMoved || asked || level.pending);
         // Finest first: the loop walks the levels in that order, so the first due level takes the
         // frame's single render and every other due level is deferred behind it.
         const grant = due && !budgetSpent;
@@ -737,6 +776,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
         } else {
           level.pending = false;
         }
+        perLevel.push({
+          deferred: due && !grant ? 1 : 0,
+          extent: level.extent,
+          invalidated: asked ? 1 : 0,
+          moved: windowMoved ? 1 : 0,
+          rendered: grant ? 1 : 0,
+        });
         // The level camera sits on the window its map was rendered with, deferred or not. A level
         // that has never rendered takes this frame's: it has no map to hold, and `mapped` keeps
         // every fragment out of it until it does.
@@ -795,6 +841,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       moved,
       moverRenders,
       movers: this.#casters.size,
+      perLevel: this.#perLevel,
       rendered,
       reuseRatio: total === 0 ? 1 : this.#served / total,
     };

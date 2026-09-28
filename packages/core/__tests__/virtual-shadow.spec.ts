@@ -345,6 +345,40 @@ describe("VirtualShadowNode", () => {
     expect(moverSpies.every((spy) => spy.mock.calls.length === 0)).toBe(true);
   });
 
+  it("should spend one level render per presented frame, not per render call", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    // Three calls `updateBefore` once per `render()`, and a level render *is* a render, so the draw
+    // the budget grants re-enters this method with a new render id. Every level is due on the first
+    // frame of a fresh node, which is the case that spent three level renders in one presented frame
+    // on `?scene=map-walk`.
+    let reentered = 0;
+    for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        if (reentered < 4) {
+          reentered += 1;
+          node.updateBefore(frameFor(camera));
+        }
+      };
+    }
+    node.updateBefore(frameFor(camera));
+    expect(reentered).toBeGreaterThan(0);
+    expect(node.stats).toMatchObject({ deferred: 1, levels: 2, rendered: 1 });
+    // Per level, finest first: the one that took the render, and the one held behind it.
+    expect(node.stats.perLevel).toEqual([
+      { deferred: 0, extent: 8, invalidated: 0, moved: 1, rendered: 1 },
+      { deferred: 1, extent: 32, invalidated: 0, moved: 1, rendered: 0 },
+    ]);
+    // The next presented frame spends its single render on the level the first one deferred, and
+    // the frame after that has nothing left to do.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ deferred: 0, rendered: 1 });
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, deferred: 0, rendered: 0 });
+    expect(node.stats.perLevel.every((level) => level.rendered === 0)).toBe(true);
+    node.dispose();
+  });
+
   it("should draw a tracked caster through the mover layer every frame and leave the cached levels alone", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
