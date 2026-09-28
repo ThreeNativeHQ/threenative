@@ -2,6 +2,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  WaterSurface3D,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -12,7 +13,13 @@ import { followShip, setupCamera } from "../render/camera.js";
 import { followSun, setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterials } from "../render/materials.js";
-import { createOcean, createWaterMesh, markReflected, surfaceHeight } from "../render/ocean.js";
+import {
+  SEA_MIRROR,
+  createOcean,
+  createWaterMesh,
+  markReflected,
+  surfaceHeight,
+} from "../render/ocean.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createBuoy, createIsland } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
@@ -89,7 +96,10 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     // passes in the warmup set. It draws nothing — the mesh and its material are this game's, and
     // both live in `src/render/ocean.ts`.
     const ocean = ctx.add(createOcean());
-    const sea = createWaterMesh(ocean);
+    // The mirror is constructed here and handed to the material: `src/render/` reaches the engine
+    // for the wave field it draws and nothing else, so the pass that draws the world a second time
+    // is built in game code from the options that file authored.
+    const sea = createWaterMesh(ocean, new WaterSurface3D(SEA_MIRROR));
     this.#sea = sea;
     ctx.add(sea.mesh);
 

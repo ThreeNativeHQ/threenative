@@ -58,6 +58,7 @@ vi.mock("../templates/sailing/src/render/ocean.js", () => ({
   createOcean: vi.fn(() => fixture.ocean),
   createWaterMesh: vi.fn(() => fixture.sea),
   markReflected: vi.fn(),
+  SEA_MIRROR: { level: 0, maxThickness: 24, reflection: { resolutionScale: 0.5, layers: 2 } },
   surfaceHeight: vi.fn(() => 0),
 }));
 vi.mock("../templates/sailing/src/render/postprocessing.js", () => ({

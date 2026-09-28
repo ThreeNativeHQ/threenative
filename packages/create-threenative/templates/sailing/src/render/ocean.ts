@@ -13,7 +13,7 @@
 //
 // A spectral ocean is cascaded wave spectra inverse-transformed on the GPU every frame, which is
 // what real water is, and a standard node material puts it back under the scene's own lights.
-import { type ISpectralOceanOptions, SpectralOcean, WaterSurface3D } from "@threenative/core";
+import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
 import {
   BufferGeometry,
   DataTexture,
@@ -211,6 +211,28 @@ const MIRROR_GAIN = 0.85;
  * lower-resolution copy of a lookup this material can already do for free.
  */
 export const REFLECTED_LAYER = 1;
+/**
+ * How the sea's mirror is built. The *decision* lives here; the construction is the scene's,
+ * because `src/render/` reaches the engine only for the wave simulation it draws.
+ *
+ * Half is the honest resolution for a reflection seen through moving water — the surface itself is
+ * the blur, and a sharp half-res copy of a hull in a swell reads no better than a soft full-res
+ * one. The layer mask is what keeps the pass affordable: it is a second draw of the world, so
+ * `markReflected` is what names the handful of objects worth paying for.
+ */
+export const SEA_MIRROR = {
+  level: 0,
+  // Never read: this sea is deep everywhere and has no bed to see. The option is required, and
+  // this is the depth of water a fully hazed fragment stands behind.
+  maxThickness: 24,
+  reflection: { resolutionScale: 0.5, layers: 1 << REFLECTED_LAYER },
+} as const;
+
+/** The one thing this material asks of the mirror. Structural, so the type is not an import. */
+interface ISeaMirror {
+  reflectionAt(offset?: Node<"vec2">): Node<"vec3">;
+  dispose(): void;
+}
 
 /**
  * Put an object in the mirror, and every child of it. Layers are not inherited in three, so a
@@ -428,7 +450,7 @@ function rippleSlope(ripples: DataTexture, time: Node<"float">, fade: Node<"floa
   return slope;
 }
 
-export function createWaterMesh(ocean: SpectralOcean): IWaterSurface {
+export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWaterSurface {
   const geometry = seaDisc();
   const ripples = rippleNormals();
 
@@ -443,17 +465,6 @@ export function createWaterMesh(ocean: SpectralOcean): IWaterSurface {
   const shipOrigin = uniform(new Vector2());
   const shipForward = uniform(new Vector2(0, -1));
   const wakeStrength = uniform(0);
-
-  // The mirror: a second draw of the world, at half resolution, with a layer mask. Half is the
-  // honest setting for a reflection seen through moving water — the surface itself is the blur, and
-  // a sharp half-res copy of a hull in a swell reads no better than a soft full-res one.
-  const surface = new WaterSurface3D({
-    level: 0,
-    // Never read: this sea is deep everywhere and has no bed to see. The option is required, and
-    // this is the depth of water a fully hazed fragment stands behind.
-    maxThickness: 24,
-    reflection: { resolutionScale: 0.5, layers: 1 << REFLECTED_LAYER },
-  });
 
   // Standard, not basic. This is the whole reason the sea has a sun on it rather than a
   // hand-rolled `pow()` blob: a lit material gets the scene's key light and its specular response
@@ -580,11 +591,11 @@ export function createWaterMesh(ocean: SpectralOcean): IWaterSurface {
     const fresnel = pow(oneMinus(facing), float(5)).mul(0.97963).add(0.02037);
     // The normal's own slope is the offset: it is the same slope that is bending the light, so the
     // mirror wobbles with the wave it is standing on.
-    const mirror = surface.reflectionAt(normal.xz.mul(0.02)).mul(MIRROR_GAIN);
+    const reflected = mirror.reflectionAt(normal.xz.mul(0.02)).mul(MIRROR_GAIN);
     // Rough water does not mirror at grazing angles the way a flat facet does: the microfacets that
     // survive are not aligned with the view, so reflectance falls off with roughness.
     const rough = max(crest, wake);
-    return mirror.mul(fresnel).mul(oneMinus(max(subpixel, rough).mul(0.75)));
+    return reflected.mul(fresnel).mul(oneMinus(max(subpixel, rough).mul(0.75)));
   })();
   // Roughness is spent, not lost: the slope a distant pixel can no longer resolve reappears here,
   // which is what stops every sea beyond a hundred and thirty metres from becoming a mirror. Foam
@@ -616,7 +627,7 @@ export function createWaterMesh(ocean: SpectralOcean): IWaterSurface {
       seaOrigin.value.set(snappedX, snappedZ);
     },
     dispose(): void {
-      surface.dispose();
+      mirror.dispose();
       ripples.dispose();
       geometry.dispose();
       material.dispose();
