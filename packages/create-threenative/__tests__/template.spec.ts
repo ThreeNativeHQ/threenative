@@ -647,12 +647,13 @@ describe("template contracts", () => {
       const source = await readFile(file, "utf8").catch(() => undefined);
       if (source === undefined) continue;
       checked.push(file);
-      // Not every kit has a horizon. An interior draws no dome at all, and demanding one there
-      // would have forced `puzzle` to ship a gradient sky that read, above its walls, as a
-      // hard-edged blue triangle — a hole in the room. So the rule is conditional on there being
-      // a dome, and the else branch is not an escape hatch: a `sky.ts` that draws no dome must
-      // still say what the horizon *is*, by setting `scene.background`. A file that does neither
-      // is the defect this test was written for, and still fails.
+      // Not every kit has a dome. Four put the captured sky photograph straight on
+      // `scene.background` instead — `minimal`, `puzzle`, `rts`, `starter` — and `puzzle`'s walls
+      // are 1.9 m tall, so what a dome-less kit sees above its own room is the photograph rather
+      // than a hard-edged gradient triangle: a hole in the room. So the rule is conditional on
+      // there being a dome, and the else branch is not an escape hatch: a `sky.ts` that draws no
+      // dome must still say what the horizon *is*, by setting `scene.background`. A file that
+      // does neither is the defect this test was written for, and still fails.
       const drawsDome = /BackSide/u.test(source);
       if (!drawsDome) {
         expect(source, `${file}: a sky with no dome must still set scene.background`).toMatch(
