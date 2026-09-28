@@ -4683,6 +4683,10 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.geometry = geometry;
     mesh.frustumCulled = false;
     shared.gpu = key;
+    // What the record has to say for the draw to name a triangle: the clone's own index count, which
+    // is the shape this key draws. The scene is told rather than left to guess, so its validation can
+    // hold the record against it.
+    scene.indexCount(key.key, geometry.index?.count ?? 0);
     // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.

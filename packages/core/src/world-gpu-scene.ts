@@ -103,6 +103,10 @@ function storageAttribute<A extends BufferAttribute>(
 const VALIDATE_EVERY = 30;
 /** Keys a mismatch line names before the rest are counted and not printed. */
 const VALIDATE_REPORTED_KEYS = 10;
+/** Keys a matrix or indirect-record line names, which carry more numbers than a count line does. */
+const MATRIX_REPORTED_KEYS = 5;
+/** Two matrices within this of each other are the same one written through a `mat4` product. */
+const MATRIX_TOLERANCE = 1e-3;
 /** Characters of a cause a `cause=` line carries, so one message cannot own the report. */
 const CAUSE_CHARS = 160;
 
@@ -143,6 +147,12 @@ export interface IRegion {
   readonly local: Float32Array;
   /** The main key this region is, which is what the validation marker names a mismatch by. */
   readonly name?: string;
+  /**
+   * The dressed geometry's own index count, which the record's `indexCount` has to say for the draw
+   * to name a triangle at all. The owner records it when it dresses the mesh — the scene does not
+   * know what shape a key draws — and the validation holds the record against it.
+   */
+  indexCount: number;
 }
 
 /** One level's parts and the single capacity all of them are sized from. */
@@ -201,6 +211,8 @@ export interface IKernelResult {
 interface IValidationSnapshot extends IKernelInput {
   /** The indirect records this dispatch wrote, which is what its readback must name. */
   readonly args: unknown;
+  /** The shared matrix buffer this dispatch compacted into, which its other readback must name. */
+  readonly drawn: unknown;
   /** Resident placements the scene held when this dispatch ran. */
   readonly placed: number;
 }
@@ -289,6 +301,67 @@ function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
   return true;
 }
 
+/** One word of an indirect readback, out of range being the zero a record that was never written holds. */
+function word(readback: Uint32Array, at: number): number {
+  return (readback[at] ?? 0) as number;
+}
+
+/** The translation of the `mat4` at slot `at`, which is what a draw places and a line can name. */
+function xyz(matrices: Float32Array, at: number): string {
+  const matrix = at * LOCAL_WORDS;
+  if (matrix + LOCAL_WORDS > matrices.length) return "[]";
+  return (
+    `[${(matrices[matrix + 12] as number).toFixed(3)},` +
+    `${(matrices[matrix + 13] as number).toFixed(3)},` +
+    `${(matrices[matrix + 14] as number).toFixed(3)}]`
+  );
+}
+
+/**
+ * Whether two runs of `mat4` hold the same matrices, as a set and not as a sequence.
+ *
+ * The kernel appends through an atomic, so the order two dispatches fill a region's run in is the
+ * order the device scheduled them in and is not the order the reference walked the placements. The
+ * counts agree over a set that agrees; a set that does not is a run one slot out, a matrix that was
+ * never written, or a `firstInstance` the draw reads from a different place — none of which a count
+ * can see. Sorted by translation, because that is what orders a placement, and compared with a
+ * tolerance, because a matrix written through a product of two floats is not bit-equal to either.
+ */
+function sameMatrices(
+  gpu: Float32Array,
+  gpuStart: number,
+  gpuCount: number,
+  cpu: Float32Array,
+  cpuStart: number,
+  cpuCount: number,
+  tolerance: number,
+): boolean {
+  const one = sorted(gpu, gpuStart, gpuCount);
+  const other = sorted(cpu, cpuStart, cpuCount);
+  if (one.length !== other.length) return false;
+  for (const [index, matrix] of one.entries()) {
+    const against = other[index] as Float32Array;
+    for (let word = 0; word < LOCAL_WORDS; word += 1)
+      if (Math.abs((matrix[word] as number) - (against[word] as number)) > tolerance) return false;
+  }
+  return true;
+}
+
+/** One run of `mat4` as views, ordered by translation, and short reads truncated rather than read past. */
+function sorted(matrices: Float32Array, start: number, count: number): Float32Array[] {
+  const out: Float32Array[] = [];
+  for (let taken = 0; taken < count; taken += 1) {
+    const at = (start + taken) * LOCAL_WORDS;
+    if (at < 0 || at + LOCAL_WORDS > matrices.length) break;
+    out.push(matrices.subarray(at, at + LOCAL_WORDS));
+  }
+  out.sort(
+    (one, other) =>
+      (one[12] as number) - (other[12] as number) || (one[14] as number) - (other[14] as number),
+  );
+  return out;
+}
+
 /** `out * into` at `at`, column-major, which is the element order both matrices are written in. */ function compose(
   out: Float32Array,
   into: Float32Array,
@@ -323,6 +396,13 @@ export interface IGpuSceneComparison {
   /** Up to {@link VALIDATE_REPORTED_KEYS} `name gpu=… cpu=…` lines; the count is the whole total. */
   readonly mismatches: readonly string[];
   readonly mismatched: number;
+  /**
+   * Keys whose drawn matrices, `firstInstance` or `indexCount` disagreed, and up to
+   * {@link MATRIX_REPORTED_KEYS} of them by name. The counts above are what the dispatch promised;
+   * these are what the draw reads, which is a different question and the one the picture answers.
+   */
+  readonly matricesMismatched: number;
+  readonly matrixMismatches: readonly string[];
   /** Resident placements the scene held when the readback was issued. */
   readonly placed: number;
   /** The device's last uncaptured error, or `""` for none since the last check reported one. */
@@ -334,14 +414,20 @@ export interface IGpuSceneComparison {
 /**
  * The verdict and the lines one landed readback reports, as `TN_WORLD_GPU_SCENE_VALIDATE`.
  *
- * `ok` is a claim that the GPU drew what the reference draws, so it takes two things: every key's
- * count landing equal, and something to land. A dispatch the device refused leaves the args buffer
- * holding what the clear pass wrote, which compares equal to a scene with nothing in it — a real
- * WebGPU run printed `ok keys=0` 956 times while the cull pipeline was being refused for a binding
- * 48 bytes short, which is a check that reports success precisely when the kernel does nothing. So
- * comparing nothing while placements exist is an `error`, and a device that raised anything
- * uncaptured is an `error` whatever the counts say, because every count in a buffer the device has
- * already invalidated is not evidence of anything.
+ * `ok` is a claim that the GPU drew what the reference draws, so it takes three things: every key's
+ * count landing equal, every key's record and matrices landing where the reference put them, and
+ * something to land. A dispatch the device refused leaves the args buffer holding what the clear
+ * pass wrote, which compares equal to a scene with nothing in it — a real WebGPU run printed
+ * `ok keys=0` 956 times while the cull pipeline was being refused for a binding 48 bytes short, which
+ * is a check that reports success precisely when the kernel does nothing. So comparing nothing while
+ * placements exist is an `error`, and a device that raised anything uncaptured is an `error`
+ * whatever the counts say, because every count in a buffer the device has already invalidated is not
+ * evidence of anything.
+ *
+ * The two mismatch families are counted apart and both are a `mismatch`: a key that drew the right
+ * number of instances at the wrong place or through a record naming no triangle is the failure a
+ * count cannot see, and a walk that printed `mismatched=0` over a forest it never drew is what that
+ * reads like.
  *
  * An `error` always names its cause on one `cause=` line: the checks that fail here fail silently
  * otherwise, and a line reading `error` with nothing after it is the report that hid a refused
@@ -354,12 +440,16 @@ export function validationReport(input: IGpuSceneComparison): IGpuSceneValidatio
       ? `device-error ${input.deviceError}`
       : (input.cause ?? (blind ? `compared-0-with-placed=${String(input.placed)}` : ""));
   const verdict: GpuSceneVerdict =
-    cause !== "" ? "error" : input.mismatched > 0 ? "mismatch" : "ok";
+    cause !== ""
+      ? "error"
+      : input.mismatched > 0 || input.matricesMismatched > 0
+        ? "mismatch"
+        : "ok";
   const line =
     `TN_WORLD_GPU_SCENE_VALIDATE ${verdict} compared=${String(input.compared)} ` +
     `instancesGpu=${String(input.instancesGpu)} instancesCpu=${String(input.instancesCpu)} ` +
-    `mismatched=${String(input.mismatched)}`;
-  const lines: string[] = [...input.mismatches];
+    `mismatched=${String(input.mismatched)} matricesMismatched=${String(input.matricesMismatched)}`;
+  const lines: string[] = [...input.mismatches, ...input.matrixMismatches];
   if (cause !== "") lines.push(`cause=${cause.slice(0, CAUSE_CHARS)}`);
   return { verdict, line, lines };
 }
@@ -728,7 +818,14 @@ export class WorldGpuScene {
     this.#ensure();
     const index = this.#regions.length;
     this.#keysByName.set(name, index);
-    this.#regions.push({ argsIndex: index, capacity, local, name, start: this.#drawnCapacity });
+    this.#regions.push({
+      argsIndex: index,
+      capacity,
+      indexCount: 0,
+      local,
+      name,
+      start: this.#drawnCapacity,
+    });
     this.#drawnCapacity += capacity;
     this.#growOf("keys", index + 1);
     this.#growOf("locals", index + 1);
@@ -767,6 +864,7 @@ export class WorldGpuScene {
       this.#regions.push({
         argsIndex: index,
         capacity: held.capacity,
+        indexCount: 0,
         local,
         name,
         start: this.#drawnCapacity,
@@ -819,6 +917,20 @@ export class WorldGpuScene {
   regionOf(name: string): IRegion | undefined {
     const index = this.#keysByName.get(name);
     return index === undefined ? undefined : this.#regions[index];
+  }
+
+  /**
+   * The index count the dressed geometry draws with, recorded against the key the owner dressed.
+   *
+   * A `DrawIndexedIndirect` record names no triangles at all when its `indexCount` is zero, and the
+   * scene cannot know what shape a key draws: the owner holds the geometry. So the owner says, and
+   * the validation holds the record against what it said — a draw that is submitted, counted, and
+   * draws nothing is the one failure a count cannot see.
+   */
+  indexCount(name: string, count: number): void {
+    const index = this.#keysByName.get(name);
+    if (index === undefined) return;
+    (this.#regions[index] as IRegion).indexCount = count;
   }
 
   /**
@@ -922,23 +1034,27 @@ export class WorldGpuScene {
 
   /**
    * What the last landed readback found, so a harness can read the answer without the log: the
-   * verdict, how many keys it actually compared, how many keys disagreed, and the detail lines.
+   * verdict, how many keys it actually compared, how many disagreed on the count, how many on what
+   * the draw reads, and the detail lines.
    */
   get validation(): {
     readonly verdict: GpuSceneVerdict;
     readonly compared: number;
     readonly mismatched: number;
+    readonly matricesMismatched: number;
     readonly lines: readonly string[];
   } {
     return {
       verdict: this.#verdict,
       compared: this.#compared,
       mismatched: this.#mismatches,
+      matricesMismatched: this.#matrixMismatches,
       lines: this.#lines,
     };
   }
 
   #mismatches = 0;
+  #matrixMismatches = 0;
   #compared = 0;
   #verdict: GpuSceneVerdict = "ok";
   #lines: string[] = [];
@@ -955,25 +1071,40 @@ export class WorldGpuScene {
   #deviceError = "";
 
   /**
-   * Read the indirect args back and hold them against the reference, over the placements, camera and
-   * gate table the dispatch just read — copied at this moment, in this turn, so a structural change
-   * landing while the bytes are in flight changes nothing about what they are held against.
+   * Read the indirect args and the compacted matrices back and hold both against the reference, over
+   * the placements, camera and gate table the dispatch just read — copied at this moment, in this
+   * turn, so a structural change landing while the bytes are in flight changes nothing about what
+   * they are held against.
    *
    * The reference is {@link cullAndSelect} on the CPU, so this is the kernel measured against the
-   * loop it mirrors — the only place the TSL itself is ever checked. It costs a queue submission and
-   * a mapped buffer every {@link VALIDATE_EVERY} dispatches, which is why it is a mode and not a
-   * default: a game never pays for it and a walk is never measured with it on. One check is in flight
-   * at a time, so every report answers a dispatch of its own.
+   * loop it mirrors — the only place the TSL itself is ever checked. It costs two queue submissions
+   * and two mapped buffers every {@link VALIDATE_EVERY} dispatches, which is why it is a mode and
+   * not a default: a game never pays for it and a walk is never measured with it on. One check is in
+   * flight at a time, so every report answers a dispatch of its own.
+   *
+   * The counts alone are not the draw: a key can land every instance it owes into a record whose
+   * `firstInstance` points at the wrong run, or whose `indexCount` names no triangle, or into a
+   * region the mesh does not read — and a real WebGPU walk printed `ok` over 200 keys whose
+   * `indexCount` was zero, with the forest it was supposed to draw missing from the picture and its
+   * shadows still on the ground. So the matrices are read back too, and the same check that reads
+   * them holds the record's two CPU-owned words against what the key's geometry and layout say.
    */
   #compare(renderer: IRendererLike): void {
     const snapshot = this.#snapshot();
     const reference = cullAndSelect(snapshot);
     this.#validating = true;
-    renderer
-      .readback(snapshot.args)
-      .then((bytes) => {
+    Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
+      .then(([argsBytes, drawnBytes]) => {
         this.#validating = false;
-        this.#publish(renderer, this.#against(snapshot, reference, new Uint32Array(bytes)));
+        this.#publish(
+          renderer,
+          this.#against(
+            snapshot,
+            reference,
+            new Uint32Array(argsBytes),
+            new Float32Array(drawnBytes),
+          ),
+        );
       })
       .catch((reason: unknown) => {
         // A readback that never lands is a check that never ran, and saying so is the whole point:
@@ -985,8 +1116,10 @@ export class WorldGpuScene {
           deviceError: this.#deviceError,
           instancesCpu: 0,
           instancesGpu: 0,
+          matricesMismatched: 0,
           mismatched: 0,
           mismatches: [],
+          matrixMismatches: [],
           placed: snapshot.placed,
         });
       });
@@ -1022,6 +1155,7 @@ export class WorldGpuScene {
         z: this.#eye.value.z,
       },
       count: placements.length,
+      drawn: this.#buffers?.drawn,
       placed: this.#live,
       placements,
       regionCount: this.#regions.length,
@@ -1030,26 +1164,56 @@ export class WorldGpuScene {
     };
   }
 
-  /** One readback's bytes against its own dispatch's reference, per key. */
+  /** One readback's bytes against its own dispatch's reference: the counts, then the draw. */
   #against(
     snapshot: IValidationSnapshot,
     reference: IKernelResult,
     gpu: Uint32Array,
+    drawn: Float32Array,
   ): IGpuSceneComparison {
     const mismatches: string[] = [];
+    const matrixMismatches: string[] = [];
     let mismatched = 0;
+    let matricesMismatched = 0;
     let instancesGpu = 0;
     let instancesCpu = 0;
     for (const [index, region] of snapshot.regions.entries()) {
-      const landed = gpu[region.argsIndex * DRAW_ARGS_WORDS + 1] as number;
+      const record = region.argsIndex * DRAW_ARGS_WORDS;
+      // A readback that landed short is a mismatch, not a hole in the report: `word` reads out of
+      // range as the zero a record that was never written holds.
+      const landed = word(gpu, record + 1);
       const expected = reference.counts[index] as number;
       instancesGpu += landed;
       instancesCpu += expected;
-      if (landed === expected) continue;
-      mismatched += 1;
-      if (mismatches.length < VALIDATE_REPORTED_KEYS)
-        mismatches.push(
-          `${region.name ?? `#${String(index)}`} gpu=${String(landed)} cpu=${String(expected)}`,
+      if (landed !== expected) {
+        mismatched += 1;
+        if (mismatches.length < VALIDATE_REPORTED_KEYS)
+          mismatches.push(
+            `${region.name ?? `#${String(index)}`} gpu=${String(landed)} cpu=${String(expected)}`,
+          );
+      }
+      const firstInstance = word(gpu, record + 4);
+      const indexCount = word(gpu, record);
+      const agrees =
+        firstInstance === region.start &&
+        indexCount === region.indexCount &&
+        sameMatrices(
+          drawn,
+          firstInstance,
+          landed,
+          reference.drawn,
+          region.start,
+          expected,
+          MATRIX_TOLERANCE,
+        );
+      if (agrees) continue;
+      matricesMismatched += 1;
+      if (matrixMismatches.length < MATRIX_REPORTED_KEYS)
+        matrixMismatches.push(
+          `${region.name ?? `#${String(index)}`} ` +
+            `first gpu=${xyz(drawn, firstInstance)} cpu=${xyz(reference.drawn, region.start)} ` +
+            `firstInstance gpu=${String(firstInstance)} expected=${String(region.start)} ` +
+            `indexCount gpu=${String(indexCount)} expected=${String(region.indexCount)}`,
         );
     }
     return {
@@ -1057,8 +1221,10 @@ export class WorldGpuScene {
       deviceError: this.#deviceError,
       instancesCpu,
       instancesGpu,
+      matricesMismatched,
       mismatched,
       mismatches,
+      matrixMismatches,
       placed: snapshot.placed,
     };
   }
@@ -1069,6 +1235,7 @@ export class WorldGpuScene {
     this.#verdict = report.verdict;
     this.#compared = input.compared;
     this.#mismatches = input.mismatched;
+    this.#matrixMismatches = input.matricesMismatched;
     this.#lines = [...report.lines];
     // Reported, so cleared: an error is folded into exactly the check that saw it.
     this.#deviceError = "";

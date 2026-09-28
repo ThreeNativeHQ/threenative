@@ -385,13 +385,19 @@ describe("WorldCells GPU-driven main pass", () => {
     let start = 0;
     const regions: IRegion[] = slots.flatMap((slot) =>
       slot.levels.map((level, index) => {
-        const region: { argsIndex: number; capacity: number; local: Float32Array; start: number } =
-          {
-            argsIndex: slots.indexOf(slot) * 3 + index,
-            capacity: 4096,
-            local: LOCAL,
-            start,
-          };
+        const region: {
+          argsIndex: number;
+          capacity: number;
+          indexCount: number;
+          local: Float32Array;
+          start: number;
+        } = {
+          argsIndex: slots.indexOf(slot) * 3 + index,
+          capacity: 4096,
+          indexCount: 0,
+          local: LOCAL,
+          start,
+        };
         start += region.capacity;
         return region;
       }),
@@ -592,7 +598,7 @@ describe("WorldCells GPU-driven main pass", () => {
       planes[at + 2] = plane.normal.z;
       planes[at + 3] = plane.constant;
     }
-    const region: IRegion = { argsIndex: 0, capacity: 8, local: LOCAL, start: 0 };
+    const region: IRegion = { argsIndex: 0, capacity: 8, indexCount: 0, local: LOCAL, start: 0 };
     const result = cullAndSelect({
       camera: { planes, x: 0, y: 0, z: 0 },
       count: 2,
@@ -625,7 +631,7 @@ describe("WorldCells GPU-driven main pass", () => {
       count: 1,
       placements: [placement(0, 0, 10, 0)],
       regionCount: 1,
-      regions: [{ argsIndex: 0, capacity: 4, local, start: 0 }],
+      regions: [{ argsIndex: 0, capacity: 4, indexCount: 0, local, start: 0 }],
       slots: [{ cull: undefined, distances: [0], levels: [{ firstKey: 0, parts: 1 }] }],
     });
     // The placement at y 0 with a part three metres up draws at y 3.
@@ -1240,14 +1246,16 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       deviceError: "",
       instancesCpu: 120,
       instancesGpu: 120,
+      matricesMismatched: 0,
       mismatched: 0,
       mismatches: [] as readonly string[],
+      matrixMismatches: [] as readonly string[],
       placed: 400,
     };
     const agreed = validationReport(base);
     expect(agreed.verdict).toBe("ok");
     expect(agreed.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=6 instancesGpu=120 instancesCpu=120 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0",
     );
     expect(agreed.lines).toEqual([]);
 
@@ -1261,7 +1269,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(nothing.verdict).toBe("ok");
     expect(nothing.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
     );
 
     // Compared nothing with placements resident: nothing was checked, so it is not a pass, and the
@@ -1275,7 +1283,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(blind.verdict).toBe("error");
     expect(blind.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
     );
     expect(blind.lines).toEqual(["cause=compared-0-with-placed=812"]);
 
@@ -1286,7 +1294,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(refused.verdict).toBe("error");
     expect(refused.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0 matricesMismatched=0",
     );
     expect(refused.lines).toEqual([
       "cause=device-error GPUValidationError: bound with size 16 is too small",
@@ -1321,7 +1329,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     });
     expect(differing.verdict).toBe("mismatch");
     expect(differing.line).toBe(
-      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=6 instancesGpu=96 instancesCpu=120 mismatched=2",
+      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=6 instancesGpu=96 instancesCpu=120 mismatched=2 matricesMismatched=0",
     );
     expect(differing.lines).toEqual(["pine:0:0 gpu=40 cpu=48", "pine:1:0 gpu=56 cpu=48"]);
   });
@@ -1402,16 +1410,20 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     const scene = new WorldGpuScene();
     // The kernel mirror: a readback that answers with exactly what the reference would have written
     // for the dispatch it was asked about, which is what a correct kernel produces.
-    const mirror = (): Promise<ArrayBuffer> => {
-      const args = cullAndSelect({
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      const result = cullAndSelect({
         camera: { planes, x: 0, y: 0, z: 0 },
         count: scene.placements.length,
         placements: scene.placements,
         regionCount: scene.regions.length,
         regions: scene.regions,
         slots: scene.gates(),
-      }).args;
-      return Promise.resolve(args.slice().buffer as ArrayBuffer);
+      });
+      // Which buffer is asked for decides which half answers, exactly as the device's two copies do:
+      // the records are `uint` words and the compacted matrices are `mat4` floats.
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
     };
     const renderer = {
       compute: (): void => {},
@@ -1439,7 +1451,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     // reference for the second key did not exist when the dispatch ran.
     expect(scene.regions).toHaveLength(2);
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 matricesMismatched=0",
     );
     expect(scene.validation.verdict).toBe("ok");
     expect(scene.validation.compared).toBe(1);
@@ -1449,7 +1461,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     lines.length = 0;
     await drive(scene, renderer, 30);
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=4 instancesCpu=4 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=4 instancesCpu=4 mismatched=0 matricesMismatched=0",
     );
     expect(scene.validation.compared).toBe(2);
   });
@@ -1474,7 +1486,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     await drive(scene, renderer, 30);
     expect(scene.validation.verdict).toBe("error");
     expect(lines).toContain(
-      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0 matricesMismatched=0",
     );
     expect(lines).toContain(
       "TN_WORLD_GPU_SCENE_VALIDATE cause=readback-failed: mapAsync: device lost",
@@ -1484,5 +1496,152 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     lines.length = 0;
     await drive(scene, renderer, 30);
     expect(lines.some((line) => line.includes("readback-failed"))).toBe(true);
+  });
+
+  /**
+   * The drawn matrices, held against the dispatch that compacted them, with one thing wrong at a
+   * time.
+   *
+   * A real WebGPU walk printed `mismatched=0` over 200 keys and drew no forest: every count landed
+   * and the picture did not, because a count says how many instances a region holds and nothing
+   * about where they are or whether the record naming them is a draw at all. So the readback now
+   * answers for the matrix buffer as well, and each fault below is a picture that a count cannot
+   * name: a run one slot out, a run that was never written, and a record whose `firstInstance` reads
+   * from somewhere other than the region the kernel filled.
+   */
+  it("holds each key's drawn matrices and its record against the reference", async () => {
+    /**
+     * A scene of three keys and a readback that answers with what a correct kernel wrote, `fault`
+     * breaking exactly one thing in the bytes it returns.
+     */
+    async function checked(
+      fault: (args: Uint32Array, drawn: Float32Array, scene: WorldGpuScene) => void,
+    ): Promise<{ lines: string[]; scene: WorldGpuScene }> {
+      const lines: string[] = [];
+      const { camera, planes } = cameraAt(0, 0);
+      const scene = new WorldGpuScene();
+      const renderer = {
+        compute: (): void => {},
+        kind: "webgpu",
+        log: (line: string): void => {
+          lines.push(line);
+        },
+        raw: { backend: { hasFeature: (): boolean => true } },
+        readback: (attribute: unknown): Promise<ArrayBuffer> => {
+          const result = cullAndSelect({
+            camera: { planes, x: 0, y: 0, z: 0 },
+            count: scene.placements.length,
+            placements: scene.placements,
+            regionCount: scene.regions.length,
+            regions: scene.regions,
+            slots: scene.gates(),
+          });
+          const words = (attribute as { array: Uint32Array | Float32Array }).array;
+          const args = Uint32Array.from(result.args);
+          const drawn = Float32Array.from(result.drawn);
+          // What a correct record carries: the CPU's own `indexCount` and `firstInstance`, which the
+          // kernel only ever adds the count to.
+          for (const region of scene.regions) {
+            args[region.argsIndex * 5] = region.indexCount;
+            args[region.argsIndex * 5 + 4] = region.start;
+          }
+          fault(args, drawn, scene);
+          return Promise.resolve((words instanceof Float32Array ? drawn : args).buffer);
+        },
+      } as unknown as IRendererLike;
+      expect(scene.enable(renderer, true, true)).toBe(true);
+      // Three keys, each with a run of two of its own, so a run one slot out is one run out rather
+      // than one whole instance out, and a fault in one key is a fault in one line.
+      for (const [index, name] of ["pine:0:0", "rock:0:0", "fern:0:0"].entries()) {
+        const group = name.replace(":0:0", ":0");
+        scene.key(name, LOCAL, 4, { group, part: 0 });
+        scene.slot(group, { cull: 1000, distances: [0], levels: [{ firstKey: index, parts: 1 }] });
+        for (let taken = 0; taken < 2; taken += 1) {
+          const z = 8 + index * 4 + taken;
+          scene.place(index, new Matrix4().makeTranslation(0, 0, z), 0, 0, z, 0.5);
+        }
+        // What the owner records when it dresses the mesh: the shape this key draws.
+        scene.indexCount(name, 96);
+      }
+      lines.length = 0;
+      await drive(scene, renderer, 30);
+      return { lines, scene };
+    }
+
+    /** The report line, and the detail lines under it. */
+    function report(lines: string[]): { head: string; detail: string[] } {
+      const head = lines.find((line) => line.includes(" compared=")) ?? "";
+      return {
+        detail: lines.filter(
+          (line) => line.startsWith("TN_WORLD_GPU_SCENE_VALIDATE ") && !line.includes(" compared="),
+        ),
+        head,
+      };
+    }
+
+    // A correct kernel: the counts, the matrices and the record all agree, so it is an `ok` and it
+    // names no key.
+    const correct = await checked(() => {});
+    expect(correct.scene.validation.verdict).toBe("ok");
+    expect(report(correct.lines).head).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=0",
+    );
+    expect(report(correct.lines).detail).toEqual([]);
+
+    // A run one slot out: every count still lands, and the first instance is somewhere else.
+    const shifted = await checked((args, drawn, scene) => {
+      const region = scene.regionOf("rock:0:0") as IRegion;
+      // The run the draw reads is one slot late: the second instance is where the first was.
+      drawn.copyWithin(region.start * 16, (region.start + 1) * 16, (region.start + 2) * 16);
+      expect(args[region.argsIndex * 5 + 4]).toBe(region.start);
+      expect(args[region.argsIndex * 5 + 1]).toBe(2);
+    });
+    expect(shifted.scene.validation.verdict).toBe("mismatch");
+    expect(shifted.scene.validation.mismatched).toBe(0);
+    expect(report(shifted.lines).head).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE mismatch compared=3 instancesGpu=6 instancesCpu=6 mismatched=0 matricesMismatched=1",
+    );
+    expect(report(shifted.lines).detail[0]).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE rock:0:0 first gpu=[0.000,0.000,13.000] cpu=[0.000,0.000,12.000] firstInstance gpu=4 expected=4 indexCount gpu=96 expected=96",
+    );
+
+    // A run that was never written: the slot holds the zeros a fresh buffer is made of, which is
+    // what a dispatch the device refused leaves behind.
+    const zeroed = await checked((args, drawn, scene) => {
+      const region = scene.regionOf("fern:0:0") as IRegion;
+      drawn.fill(0, region.start * 16, (region.start + 1) * 16);
+      expect(args[region.argsIndex * 5 + 1]).toBe(2);
+    });
+    expect(zeroed.scene.validation.verdict).toBe("mismatch");
+    expect(zeroed.scene.validation.mismatched).toBe(0);
+    expect(zeroed.scene.validation.matricesMismatched).toBe(1);
+    expect(report(zeroed.lines).detail[0]).toContain(
+      "fern:0:0 first gpu=[0.000,0.000,0.000] cpu=[0.000,0.000,16.000]",
+    );
+
+    // And a record that names no triangle: every instance is where the reference put it and the
+    // draw submits nothing, which is a submitted draw that is not a draw.
+    const empty = await checked((args, _drawn, scene) => {
+      const region = scene.regionOf("pine:0:0") as IRegion;
+      args[region.argsIndex * 5] = 0;
+    });
+    expect(empty.scene.validation.verdict).toBe("mismatch");
+    expect(empty.scene.validation.mismatched).toBe(0);
+    expect(report(empty.lines).detail[0]).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE pine:0:0 first gpu=[0.000,0.000,8.000] cpu=[0.000,0.000,8.000] firstInstance gpu=0 expected=0 indexCount gpu=0 expected=96",
+    );
+    // Every key the check could name is named at most five times, however many disagree.
+    expect(report(empty.lines).detail.length).toBeLessThanOrEqual(5);
+
+    // A record whose `firstInstance` reads from another region's run, which is what a stale record
+    // left by a re-layout draws.
+    const stale = await checked((args, _drawn, scene) => {
+      const region = scene.regionOf("rock:0:0") as IRegion;
+      args[region.argsIndex * 5 + 4] = region.start + 2;
+    });
+    expect(stale.scene.validation.verdict).toBe("mismatch");
+    expect(report(stale.lines).detail[0]).toContain(
+      "rock:0:0 first gpu=[0.000,0.000,0.000] cpu=[0.000,0.000,12.000] firstInstance gpu=6 expected=4",
+    );
   });
 });
