@@ -562,4 +562,41 @@ describe("a hand-placed chunk merged by material", () => {
     expect(disposed).toHaveBeenCalled();
     world.dispose();
   });
+
+  it("should leave every merged caster that is not an opaque group alpha-cut", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { cutout, group, opaque } = shadowChunkModel();
+    const { chunk, world } = await attached(group, { shadows: { cast: true, receive: true } });
+    const proxy = chunk.getObjectByName("world-chunk-shadow") as Mesh | undefined;
+    if (proxy === undefined) throw new Error("Expected one shadow-only proxy on the chunk.");
+    const meshes = meshesIn(chunk);
+
+    // The whole chunk's shadow bill: the proxy is the only opaque caster, and the three opaque
+    // groups are the meshes whose shadow it carries. Nothing else casts, so a level render pays
+    // one draw per side per chunk and never one per material.
+    const stillCasting = meshes.filter((mesh) => mesh.castShadow);
+    expect(stillCasting).toHaveLength(2);
+    expect(stillCasting).toContain(proxy);
+    expect(stillCasting.filter((mesh) => mesh.material === cutout)).toHaveLength(1);
+    // What the uncovered casters are, which is the question a wider level window cannot answer by
+    // resizing: an alpha-tested group is its own cutout, and the map-walk's 603 unnamed chunk
+    // casters are exactly these. A cutout is its texture, and a coarse level either drops it or
+    // re-resolves a texture it cannot afford — which is what the engine's `shadowLodBias` answers,
+    // by casting them into the finest level only.
+    for (const mesh of stillCasting.filter((entry) => entry !== proxy))
+      expect({
+        alphaTest: (mesh.material as MeshBasicMaterial).alphaTest,
+        transparent: (mesh.material as MeshBasicMaterial).transparent,
+      }).toEqual({ alphaTest: 0.5, transparent: false });
+    // The proxy itself is the world's one opaque caster: it carries the covered vertices' shadows
+    // on the group material it borrowed, so it is alpha-free and on every level.
+    expect((proxy.material as MeshBasicMaterial).alphaTest).toBe(0);
+    expect((proxy.material as MeshBasicMaterial).transparent).toBe(false);
+    // And every group the proxy covers has stopped casting, which is the whole of "does the proxy
+    // cover all of them": one left casting would pay the bill twice for the same vertices.
+    for (const mesh of meshes)
+      if (mesh !== proxy && opaque.includes(mesh.material as MeshBasicMaterial))
+        expect(mesh.castShadow).toBe(false);
+    world.dispose();
+  });
 });

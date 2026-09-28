@@ -1,7 +1,9 @@
 import {
   Box3,
+  type BufferGeometry,
   type Camera,
   type DirectionalLight,
+  type Material,
   type Mesh,
   Object3D,
   type OrthographicCamera,
@@ -27,9 +29,11 @@ import {
   type Node,
   type NodeBuilder,
   type NodeFrame,
+  type Renderer,
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
+import { lodChainOf } from "../model-lod.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -123,6 +127,30 @@ export interface IVirtualShadowOptions {
    * cover's own, not its silhouette's. Set 0 to draw every caster into every level.
    */
   readonly minCasterTexels?: number;
+  /**
+   * Draw every level past the finest one with less geometry than the main pass would, default true.
+   *
+   * Two defaults, both Unreal's and both applied in one place — the draw gate three installs for a
+   * level render, wrapped for the duration of that render only:
+   *
+   * 1. **Shadow LOD bias.** A mesh whose geometry carries a registered AutoLOD chain
+   *    (`lodChainOf`) is submitted with the chain's *coarsest* geometry. A level 2 window cannot
+   *    resolve a tree's needles, so drawing LOD0 there is a texel of needles per texel of shadow;
+   *    the coarse level's own texel is metres wide. Level 0 draws what the main pass draws.
+   * 2. **Alpha-caster range.** An alpha-tested (`alphaTest > 0`) or transparent mesh casts into the
+   *    finest level only. Its cutout is its own texture: a coarse level either drops it — the
+   *    level's texel is wider than the card, so the fence is sub-texel — or keeps resolving a
+   *    texture it cannot afford. This is a per-primitive shadow cull distance, and the trade is
+   *    honest and one-sided: a fence's or a foliage card's shadow ends where the finest level's
+   *    window ends, and a wide level shows bare ground where it stood. Opaque casters — a merged
+   *    chunk's position-only proxy, a tree's silhouette — are drawn on every level as before.
+   *
+   * Nothing here is left changed: the coarse geometry is set for the length of one draw and put
+   * back, so the main pass and the mover maps of the finest level see the mesh exactly as authored.
+   * `false` puts every level back on stock full-detail draws, which is what the node did before
+   * either default existed.
+   */
+  readonly shadowLodBias?: boolean;
   /** Print the `TN_VIRTUAL_SHADOW` line every `markerEvery` frames; `false` silences it. Default 300. */
   readonly marker?: boolean | number;
 }
@@ -386,6 +414,23 @@ interface IRenderingShadowNode {
 }
 
 /**
+ * Three's per-draw gate for a shadow pass, as `getShadowRenderObjectFunction` builds it. The node
+ * wraps whatever it is handed rather than reimplementing it, so the pass keeps three's own
+ * `castShadow` and velocity decisions and only the geometry and the skip are ours.
+ */
+type ShadowRenderObjectFunction = NonNullable<Parameters<Renderer["setRenderObjectFunction"]>[0]>;
+
+/**
+ * Whether this draw's material cuts itself out — `alphaTest` against a map, or `transparent` — so
+ * its shadow is its own texture rather than its silhouette's. A multi-material mesh is projected one
+ * group at a time, so the material here is the one this draw would read.
+ */
+function isAlphaCaster(material: Material | undefined): boolean {
+  if (material === undefined) return false;
+  return material.transparent === true || material.alphaTest > 0;
+}
+
+/**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
  * own texel grid and re-rendered only when its window moves. Movers never touch that cache: a
  * tracked caster draws into a second, per-level mover map every frame, and a fragment takes the
@@ -606,6 +651,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
       refreshStep: steps,
       selectionGuard: guardedExtent,
+      shadowLodBias: options.shadowLodBias ?? true,
     };
     this.#stats = {
       byInvalidation: 0,
@@ -894,6 +940,101 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #restoreHidden(): void {
     for (const object of this.#hidden) object.visible = true;
     this.#hidden.length = 0;
+  }
+
+  /**
+   * One level's draw gate, wrapped for the length of that level's render: an alpha caster is
+   * skipped and a chained mesh is submitted with its coarsest geometry. See
+   * `IVirtualShadowOptions.shadowLodBias`, which says what the two defaults are and what they cost.
+   *
+   * Three hands the geometry to `renderObject` but does not draw it: the cached render object is
+   * keyed on the object and re-reads `object.geometry` itself, so the coarse level is set for the
+   * length of the one draw and put straight back. Nothing is left changed and the main pass — which
+   * never runs inside this window — sees the mesh as authored.
+   */
+  #biasedShadowRender(inner: ShadowRenderObjectFunction): ShadowRenderObjectFunction {
+    return (
+      object,
+      scene,
+      camera,
+      geometry,
+      material,
+      group,
+      lightsNode,
+      clippingContext,
+      passId,
+    ) => {
+      if (isAlphaCaster(material)) return;
+      const chain = lodChainOf(geometry);
+      const coarsest = chain?.levels[chain.levels.length - 1];
+      const mesh = object as Mesh;
+      if (coarsest === undefined || coarsest === mesh.geometry) {
+        inner(
+          object,
+          scene,
+          camera,
+          geometry,
+          material,
+          group,
+          lightsNode,
+          clippingContext,
+          passId,
+        );
+        return;
+      }
+      const held = mesh.geometry;
+      mesh.geometry = coarsest;
+      try {
+        inner(
+          object,
+          scene,
+          camera,
+          coarsest,
+          material,
+          group,
+          lightsNode,
+          clippingContext,
+          passId,
+        );
+      } finally {
+        mesh.geometry = held;
+      }
+    };
+  }
+
+  /**
+   * Render one level's map — cached or mover — with the coarse levels' bias in force.
+   *
+   * The hook is the renderer's own per-draw seam, installed for the length of the render only.
+   * Three's `updateShadow` calls it exactly twice: once to install the shadow pass's draw gate, and
+   * once to put back the function it found. Only the first is wrapped, so the main pass's gate is
+   * handed straight back, and `setRenderObjectFunction` itself is restored afterwards.
+   */
+  #renderLevel(frame: NodeFrame, level: ILevel, index: number, mover: boolean): void {
+    const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
+    const renderer = frame.renderer;
+    if (index === 0 || !this.options.shadowLodBias || renderer === null) {
+      node.updateShadow(frame);
+      return;
+    }
+    const original = renderer.setRenderObjectFunction;
+    let armed = true;
+    renderer.setRenderObjectFunction = (renderObjectFunction) => {
+      if (armed) {
+        armed = false;
+        original.call(
+          renderer,
+          renderObjectFunction === null ? null : this.#biasedShadowRender(renderObjectFunction),
+        );
+        return;
+      }
+      original.call(renderer, renderObjectFunction);
+    };
+    try {
+      node.updateShadow(frame);
+    } finally {
+      renderer.setRenderObjectFunction = original;
+    }
   }
 
   /**
@@ -1368,8 +1509,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
           this.#place(level, centre);
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-            // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
-            (level.node as unknown as IRenderingShadowNode).updateShadow(frame);
+            // Every level past the finest draws with `shadowLodBias` in force.
+            this.#renderLevel(frame, level, index, false);
           } finally {
             this.#restoreHidden();
           }
@@ -1387,11 +1528,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
     if (this.#casters.size > 0) {
-      for (const level of this.#levels) {
+      this.#levels.forEach((level, index) => {
         // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
-        if (canRender) (level.moverNode as unknown as IRenderingShadowNode).updateShadow(frame);
+        if (canRender) this.#renderLevel(frame, level, index, true);
         moverRenders += 1;
-      }
+      });
     }
     this.#frame += 1;
     this.#rendered += rendered;

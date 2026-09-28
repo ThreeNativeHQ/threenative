@@ -1,10 +1,13 @@
 import {
   Box3,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   DirectionalLight,
   FloatType,
   HalfFloatType,
   InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -21,6 +24,12 @@ import { float, mix, vec4 } from "three/tsl";
 import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
+import {
+  DISCRETE_LOD_SCHEMA_VERSION,
+  DiscreteLodPlugin,
+  TN_DISCRETE_LOD,
+  lodChainOf,
+} from "../src/model-lod.js";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_MARKER,
@@ -1090,6 +1099,231 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
       expect(cameraForLevel.near).toBe(1);
       expect(cameraForLevel.far).toBe(600);
     }
+    node.dispose();
+  });
+});
+
+describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
+  interface IDraw {
+    /** The level index whose render submitted this draw. */
+    readonly level: number;
+    readonly material: Material;
+    readonly object: Mesh;
+    /**
+     * What three would actually draw: the cached render object is keyed on the object and re-reads
+     * `object.geometry` itself, so the geometry argument is not what reaches the GPU.
+     */
+    readonly submitted: BufferGeometry;
+  }
+
+  type DrawGate = (
+    object: Object3D,
+    scene: Object3D,
+    camera: unknown,
+    geometry: BufferGeometry,
+    material: Material,
+  ) => void;
+
+  /**
+   * A renderer carrying three's own per-draw seam and nothing else, plus a shadow pass that does
+   * what `updateShadow` does: install the draw gate, submit the casters, put back what it found.
+   */
+  function drawHost(
+    camera: PerspectiveCamera,
+    casters: readonly Mesh[],
+  ): {
+    readonly draws: IDraw[];
+    readonly host: object;
+  } {
+    const draws: IDraw[] = [];
+    let current: DrawGate | null = null;
+    return {
+      draws,
+      host: {
+        getRenderObjectFunction: () => current,
+        setRenderObjectFunction: (fn: DrawGate | null) => {
+          current = fn;
+        },
+      },
+    };
+  }
+
+  /** Wire each level node to the host, recording the geometry every draw would submit. */
+  function watchDraws(
+    node: VirtualShadowNode,
+    host: object,
+    camera: PerspectiveCamera,
+    casters: readonly Mesh[],
+    draws: IDraw[],
+  ): void {
+    const levels = [...node.levelNodes];
+    for (const levelNode of levels) {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = (frame) => {
+        const seam = frame.renderer as unknown as {
+          getRenderObjectFunction(): DrawGate | null;
+          setRenderObjectFunction(fn: DrawGate | null): void;
+        };
+        const gate: DrawGate = (object, _scene, _camera, _geometry, material) => {
+          draws.push({
+            level: levels.indexOf(levelNode),
+            material,
+            object: object as Mesh,
+            submitted: (object as Mesh).geometry,
+          });
+        };
+        const found = seam.getRenderObjectFunction();
+        seam.setRenderObjectFunction(gate);
+        // Three draws through the gate the renderer now holds, not the one it was handed, so this
+        // is what proves the node's own wrapper is the thing in the way.
+        const installed = seam.getRenderObjectFunction();
+        if (installed === null) throw new Error("the shadow pass installed no draw gate.");
+        for (const mesh of casters)
+          installed(
+            mesh,
+            camera as unknown as Object3D,
+            null,
+            mesh.geometry,
+            mesh.material as Material,
+          );
+        seam.setRenderObjectFunction(found);
+      };
+    }
+  }
+
+  /** A frame with the draw seam on it, which is the only frame a level renders on. */
+  function drawFrame(camera: PerspectiveCamera, host: object): NodeFrame {
+    return { camera, renderer: host, time: 0 } as unknown as NodeFrame;
+  }
+
+  /**
+   * A grid over its own baked three-level chain, registered by the real plugin: the parser is the
+   * only fake part, exactly as the chunk-merge fixture builds one.
+   */
+  async function chained(triangles = 8): Promise<Mesh> {
+    const positions: number[] = [];
+    for (let vertex = 0; vertex < triangles + 1; vertex += 1)
+      positions.push(vertex / triangles, 0, 0, vertex / triangles, 1, 0);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(Float32Array.from(positions), 3));
+    const indices = (count: number): Uint32Array => {
+      const at = new Uint32Array(count * 3);
+      for (let quad = 0; quad < count / 2; quad += 1) {
+        const offset = quad * 6;
+        at[offset] = quad * 2;
+        at[offset + 1] = quad * 2 + 1;
+        at[offset + 2] = quad * 2 + 2;
+        at[offset + 3] = quad * 2 + 1;
+        at[offset + 4] = quad * 2 + 3;
+        at[offset + 5] = quad * 2 + 2;
+      }
+      return at;
+    };
+    geometry.setIndex(new BufferAttribute(indices(triangles), 1));
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations: new Map<object, { meshes: number; primitives: number }>([
+        [mesh, { meshes: 0, primitives: 0 }],
+      ]),
+      getDependency: async (_type: string, index: number) => ({
+        array: index === 0 ? indices(triangles / 2) : indices(triangles / 4),
+      }),
+      json: {
+        meshes: [
+          {
+            primitives: [
+              {
+                extensions: {
+                  [TN_DISCRETE_LOD]: {
+                    absoluteErrors: [0.05, 0.2],
+                    counts: [triangles / 2, triangles / 4],
+                    errors: [0.05, 0.2],
+                    indices: [0, 1],
+                    lod0Triangles: triangles,
+                    schemaVersion: DISCRETE_LOD_SCHEMA_VERSION,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await plugin.afterRoot({});
+    plugin.attach(mesh, { hysteresis: 0.15, maxPixelError: 1 });
+    return mesh;
+  }
+
+  /** Three levels, one render each: the finest first, so level `n` is drawn on frame `n`. */
+  function renderAllLevels(node: VirtualShadowNode, camera: PerspectiveCamera, host: object): void {
+    for (let frame = 0; frame < node.levelNodes.length; frame += 1)
+      node.updateBefore(drawFrame(camera, host));
+  }
+
+  it("should draw a chained caster with its coarsest chain geometry on the coarse levels only", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[chain.levels.length - 1] as BufferGeometry;
+    expect(chain.levels).toHaveLength(3);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const { draws, host } = drawHost(camera, [mesh]);
+    watchDraws(node, host, camera, [mesh], draws);
+    renderAllLevels(node, camera, host);
+
+    // Level 0 draws what the main pass draws; 96 m and 320 m windows cannot resolve LOD0, so they
+    // draw the coarsest rung — the 2-triangle level, one draw over the mesh's own.
+    expect(draws.map((draw) => draw.level)).toEqual([0, 1, 2]);
+    expect(draws.map((draw) => draw.submitted)).toEqual([mesh.geometry, coarsest, coarsest]);
+    // The mesh was never left on the coarse geometry: the swap lives inside one draw.
+    expect(mesh.geometry).toBe(chain.levels[0]);
+    node.dispose();
+  });
+
+  it("should put every level back on full detail with shadowLodBias off", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], shadowLodBias: false });
+    const { draws, host } = drawHost(camera, [mesh]);
+    watchDraws(node, host, camera, [mesh], draws);
+    renderAllLevels(node, camera, host);
+
+    expect(draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      mesh.geometry,
+    ]);
+    node.dispose();
+  });
+
+  it("should cast an alpha-tested mesh into the finest level only, and every level an opaque one", () => {
+    const { camera, light, scene } = world();
+    // The two shapes `buildChunkShadowProxies` leaves behind: a cutout that keeps casting itself,
+    // and the position-only proxy that stands in for a chunk's opaque half.
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-8, 2, 0);
+    cutout.castShadow = true;
+    const proxy = new Mesh(new BoxGeometry(64, 2, 64), new MeshBasicMaterial());
+    proxy.position.set(0, -1, 0);
+    proxy.castShadow = true;
+    scene.add(cutout, proxy);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const { draws, host } = drawHost(camera, [cutout, proxy]);
+    watchDraws(node, host, camera, [cutout, proxy], draws);
+    renderAllLevels(node, camera, host);
+
+    // The trade, stated once: a fence's or a foliage card's shadow ends where the finest level's
+    // window ends, like Unreal's per-primitive shadow cull distance. The opaque proxy is drawn by
+    // every level, so a chunk's own shadow does not end with it.
+    const levelsFor = (object: Mesh): number[] =>
+      draws.filter((draw) => draw.object === object).map((draw) => draw.level);
+    expect(levelsFor(cutout)).toEqual([0]);
+    expect(levelsFor(proxy)).toEqual([0, 1, 2]);
     node.dispose();
   });
 });
