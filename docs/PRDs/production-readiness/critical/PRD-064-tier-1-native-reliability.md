@@ -595,6 +595,14 @@ in the previous pair did not recur on this isolated run. This web-only result ca
 parity, and the adapter name is still absent from the retained identity; the performance box remains
 open.
 
+**Observed web adapter (2026-09-28):** The retained playtest pipeline census reports
+`webgpu:architecture=turing|vendor=nvidia`. The profile now publishes that observation as
+`identity.webAdapter` only when every workload repetition reports the same adapter. A real
+worktree-dirty web run at `.runtime/prd064/production/web-with-adapter/production-evidence.json`
+verified the field, all three markers, and 1,919 samples over 32.03 seconds. It still failed the
+unrelaxed budget at 59.9352 FPS mean (p95 16.8 ms). This run tests the identity wiring, not clean
+source or native parity; the performance box stays open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

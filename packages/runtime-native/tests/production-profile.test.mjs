@@ -2029,8 +2029,13 @@ test('the web identity names the display the frame rate was read from', () => {
     webDisplay: 'session::0',
   });
   assert.deepEqual(webRateIdentity({ display: { kind: 'host' }, runs: [{}] }), { webDisplay: 'host' });
-  // The adapter is unobserved: the production web scenario declares no visual capture, so an arm
-  // that named nothing keeps the field absent rather than certifying a zero.
+  const observedRun = { report: { observations: { pipelineCensus: { adapter: { identity: 'webgpu:architecture=turing|vendor=nvidia' } } } } };
+  assert.deepEqual(webRateIdentity({ display: { kind: 'host' }, runs: [observedRun, observedRun] }), {
+    webAdapter: 'webgpu:architecture=turing|vendor=nvidia',
+    webDisplay: 'host',
+  });
+  assert.deepEqual(webRateIdentity({ runs: [observedRun, {}] }), {});
+  assert.deepEqual(webRateIdentity({ runs: [observedRun, { report: { observations: { pipelineCensus: { adapter: { identity: 'webgpu:architecture=other|vendor=other' } } } } }] }), {});
   assert.deepEqual(webRateIdentity({ runs: [{}] }), {});
 });
 

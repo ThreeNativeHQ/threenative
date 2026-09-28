@@ -1961,13 +1961,19 @@ function pairMetrics(metrics) {
  * decision the runner itself made, and it is the field that separates this host's two web
  * collections: 33.97 fps on the private display, 163.45 fps on the session display.
  *
- * The playtest producer writes `report.capture.adapter`, but `safeReport` drops it before this
- * identity is assembled. It stays absent here until that observed value is threaded through.
+ * The playtest report retains its observed WebGPU adapter in the pipeline census. Repeated
+ * workload runs must agree before one adapter can identify the whole rate sample.
  */
 export function webRateIdentity(web) {
   const display = web?.display;
-  if (display === undefined) return {};
-  return { webDisplay: display.kind === 'existing' ? `session:${display.display}` : display.kind };
+  const adapters = web?.runs?.map((run) => run?.report?.observations?.pipelineCensus?.adapter?.identity);
+  const adapter = adapters?.length > 0 && adapters.every((identity) => typeof identity === 'string' && identity !== 'unavailable' && identity === adapters[0])
+    ? adapters[0]
+    : undefined;
+  return {
+    ...(display === undefined ? {} : { webDisplay: display.kind === 'existing' ? `session:${display.display}` : display.kind }),
+    ...(adapter === undefined ? {} : { webAdapter: adapter }),
+  };
 }
 
 function identityFor(options, web, native, artifactHashes, resolutionScaleSetting) {
