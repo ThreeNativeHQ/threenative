@@ -8,8 +8,8 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 Android 60 Hz
-UI latency (in-frame B–D superseded; child-window path is the bound) · PRD-064 desktop-judge negative
+**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 final
+cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
 controls and web/native parity · PRD-375 branding remains open (PRD-365 is closed: 2026-09-27, its CI
 signing proof green and its registry-consumer run passed; public Authenticode/notarization superseded
 because each developer signs their own) · PRD-445 is filed in
@@ -119,9 +119,10 @@ to 0.3.3 and not released.
    mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
    its [repair](../done/PRD-112-repair-golden-path-contract.md).
-3. **Native React UI misses its latency bound on a 60 Hz phone.** Real Pixel 8, p95 55.35 ms against
-   50 ms; it passes only on the 120 Hz panel, and that run was below the battery floor. Owner:
-   [PRD-399](critical/PRD-399-playable-dev-distributables.md) (5/18 boxes).
+3. **Final cross-platform React UI qualification is open.** The approved 60 Hz Android bound is
+   four panel frames (~66.7 ms); an unplugged Pixel 8 fixture passed at p95 55.78 ms on 2026-09-27.
+   This does not qualify the immutable consumer cohort or the other supported platforms. Owner:
+   [PRD-399](critical/PRD-399-playable-dev-distributables.md) (8/20 boxes).
 4. **The desktop production-performance judge is BLOCKED today** (six `TN_PROD_*` codes, above).
    Owner: [PRD-064](critical/PRD-064-tier-1-native-reliability.md) (no phase boxes — cannot report
    progress). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
@@ -137,9 +138,10 @@ one (11/12, 3/5).
 1. **Proof on real hardware.** One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
    0/42 boxes. Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
    the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md).
-2. **No stable-API or upgrade contract exists.** Nothing defines the public surface, the deprecation
-   window, or proves a game on version N-1 upgrades to N. **New:
-   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md).**
+2. **The stable-API contract is partial.** PRD-446 now snapshots the public surface and defines
+   deprecation policy; its prepublication upgrade path is wired, but real N-1 starter/platformer
+   runs and 1.0 acceptance remain open. Owner:
+   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md) (11/14 phase boxes).
 3. **Web/native parity is not proven.** [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md):
    browser 66/1/0, desktop 65/1/1, Android 0/0/67 blocked. Audio parity is at its review cap —
    [PRD-057](../BLOCKED/review-cap/PRD-057-native-audio-parity.md) (0/56).
