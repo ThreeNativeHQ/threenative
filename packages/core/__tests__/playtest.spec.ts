@@ -1082,6 +1082,90 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("waits for the host's own tick when a one-tick live advance outruns the frame it names", async () => {
+    // A one-tick request names exactly one frame interval, so on a host presenting at 58 mean fps
+    // the wait ended microseconds before the next frame and the 2026-09-28 desktop pair failed with
+    // "wall-clock advance moved no tick in 1 step(s) of wall time" — refused for the frame it was
+    // about to be given. The tick has to come from the pump, and only a pump that has genuinely
+    // stopped may end the wait without one.
+    const host = globalThis as Record<string, unknown>;
+    const previousAnnouncement = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    const previousClock = host.__THREENATIVE_PLAYTEST_CLOCK__;
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+    let updates = 0;
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    class CountingScene extends Scene {
+      override update(): void {
+        updates += 1;
+      }
+    }
+    // A host whose own pump presents every `gapMs`. 25 ms is a third later than the 16.67 ms one
+    // tick names — the host the pair failed on — and a million is a pump that never presents again.
+    const lateHost = (gapMs: number) => {
+      let handles = 0;
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: (callback: (time: number) => void) => {
+          handles += 1;
+          const handle = handles;
+          setTimeout(() => callback(performance.now()), gapMs);
+          return handle;
+        },
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: () => undefined,
+      });
+      return defineGame({
+        initialState: {},
+        plugins: [playtest({ holdUntilAttached: false })],
+        renderer: stubRenderer(testCanvas()),
+        scenes: { test: CountingScene },
+        start: "test",
+      });
+    };
+    const game = lateHost(25);
+    let stopped: ReturnType<typeof lateHost> | undefined;
+
+    try {
+      await game.start();
+      // Let the pump present before reading the baseline, so the frames the wait is about to miss
+      // are frames of a running game and not of a boot.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const before = updates;
+      const advanced = await bridge().advance?.(1);
+      expect(advanced?.clock.mode).toBe("wall-clock");
+      expect(advanced?.ticks ?? 0).toBeGreaterThanOrEqual(1);
+      // Host-driven, not stepped here: the tick the report names is one this host's pump ran.
+      expect(updates).toBeGreaterThan(before);
+
+      // The bound is real, so a pump that has stopped is still a failed run rather than a wait: the
+      // bridge reports the zero this hands back.
+      stopped = lateHost(1e6);
+      await stopped.start();
+      await expect(bridge().advance?.(1)).rejects.toThrow(/moved no tick in 1 step/u);
+    } finally {
+      stopped?.stop();
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousAnnouncement === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousAnnouncement;
+      if (previousClock === undefined)
+        Reflect.deleteProperty(globalThis, "__THREENATIVE_PLAYTEST_CLOCK__");
+      else host.__THREENATIVE_PLAYTEST_CLOCK__ = previousClock;
+    }
+  });
+
   it("fails the held start immediately when setup application fails", async () => {
     let entered = false;
     class FailingSetupScene extends Scene {

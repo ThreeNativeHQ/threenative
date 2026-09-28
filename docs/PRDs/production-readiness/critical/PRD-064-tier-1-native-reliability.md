@@ -543,6 +543,20 @@ green over an all-zero series (`drawCalls 0, triangles 0` in every live-clock co
 `live-smoke`, against ≤200 and ≤7,700), the C++ presentation pacer, and the three negative controls
 re-observed through the display guard. No phone lane was touched.
 
+**2026-09-28, the next live-clock pair did not qualify.** The new idempotent pacing slice ran at
+1920×1080 for 30 requested seconds per arm, but native startup reported
+`wall-clock advance moved no tick in 1 step(s) of wall time`; the collector wrote
+`.runtime/prd064/production/live-after-pacing/production-evidence.json` with exit 2,
+`TN_PROD_RENDER_SAMPLES_INCOMPLETE`, and no paired comparison. The single-step wall-clock wait in
+`packages/core/src/playtest.ts` could end before the host's next frame. It now waits briefly for an
+actual host tick and still returns zero when the pump has stopped. A test with a 25 ms frame gap and
+a stopped-pump control passes (26/26 in `packages/core/__tests__/playtest.spec.ts`). A second real
+pair at `.runtime/prd064/production/live-after-tick-fix/production-evidence.json` again exited 2:
+the native startup and playtest reports pass and the native playtest logs contain 5,640 parsed frame
+samples, but the paired web arm published no usable frame series, so the report carries
+`TN_PROD_RENDER_SAMPLES_INCOMPLETE`, a zero-sample comparison window, and no qualifying verdict.
+The performance box remains open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

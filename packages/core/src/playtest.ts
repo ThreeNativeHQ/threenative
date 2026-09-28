@@ -251,6 +251,19 @@ function requestedClockMode(): PlaytestClockMode | undefined {
 }
 
 /**
+ * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.
+ *
+ * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
+ * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
+ * that at 58 mean fps. Four steps is enough room for a host presenting at 15 fps, and it is a
+ * bound — a host that really stopped presenting returns the zero the bridge reports as a dead
+ * frame pump rather than hanging the run.
+ */
+const WALL_CLOCK_PUMP_STEPS = 4;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * The live-clock stand-in for `runtime.fixedStep`: deliver the span of wall time `ticks` fixed steps
  * would cover, and report the ticks the host's own frame pump ran in it.
  *
@@ -261,9 +274,17 @@ function requestedClockMode(): PlaytestClockMode | undefined {
  * still batches them, and a burst costs the wall time it always claimed to cost.
  */
 function wallClockAdvance(runtime: IGamePluginRuntime): (ticks: number) => Promise<number> {
+  const stepMs = runtime.step * 1_000;
   return async (ticks) => {
     const before = runtime.tick();
-    await new Promise((resolve) => setTimeout(resolve, ticks * runtime.step * 1_000));
+    await sleep(ticks * stepMs);
+    // The span is the floor, not the end: a host whose next frame lands just after it has still
+    // presented nothing to report. Keep waiting for the pump's own tick, in half-step slices, and
+    // never take one here — the loop is the host's, and a tick invented here would be the profile
+    // measuring itself. The slice count is the bound, so a pump that has stopped is a fast failure
+    // carrying zero rather than a wait that never ends.
+    for (let waited = 0; waited < WALL_CLOCK_PUMP_STEPS && runtime.tick() === before; waited += 1)
+      await sleep(stepMs / 2);
     return runtime.tick() - before;
   };
 }
