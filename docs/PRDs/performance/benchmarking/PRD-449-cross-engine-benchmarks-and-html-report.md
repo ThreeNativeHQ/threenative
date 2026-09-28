@@ -5,7 +5,9 @@
 **Target branch:** `develop`
 **Owner request:** show clearly whether ThreeNative beats Godot, where it loses, and fix TN where it loses.
 
-## Scope cut (2026-09-27)
+## Decisions
+
+**Scope cut — owner, 2026-09-27.**
 
 The original PRD planned six benchmark families (Bevy cubes, plain-Three meshes, foxes, Godot culling, Godot lights, City), browser and native arms, a seven-block publication protocol, CSV, checksummed bundles and clean-directory reproduction. After a day it stood at 3/48 boxes. The owner cut it to the work that answers the question. The full original text is in git: `git show 42de4feb1:docs/PRDs/performance/benchmarking/PRD-449-cross-engine-benchmarks-and-html-report.md`.
 
@@ -37,13 +39,8 @@ Each row runs at 1,024 and 4,096 cubes. Protocol: 40 warm-up frames, 120 measure
 - [ ] One command runs R1–R3 × {1,024, 4,096} × 3 alternating runs per arm and writes one JSON per run. proof: the command and its run list.
 - [ ] Scoreboard reads the repeats: median of run p50s, spread, and win/tie by the rule above. proof: monitor spec case for win vs tie; screenshot.
 
-### Phase 3: Fix TN where it loses
+### Phase 3: Fix TN where it loses, then close
 
-- [ ] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and prove it with a paired A/B. proof: guard specs red-green, A/B table of 3+3 runs.
+- [ ] Projection reconcile. `SceneRenderProjection.reconcile()` re-walks and re-compares every authored object each frame: 1.66 ms of TN's 3.49 ms R1 frame at 4,096 cubes. Skip the provably unchanged work, keep the "game may change anything" guarantee, and re-run R1. proof: guard specs red-green, a 3+3 run A/B table, and the new R1 row on the scoreboard.
 - [ ] Per-draw cost, only if R3 is a TN loss: the native replay costs ~2.3 µs/draw (`replayPackedFrameOpStream`); three.js per-object bookkeeping costs ~8.8 µs/draw and is not TN's to rewrite. proof: R3 A/B before/after, or "not needed: R3 is a TN win or tie".
-- [ ] Re-run the affected rows after each kept fix; the scoreboard shows the new result. proof: new run JSONs linked from the scoreboard.
-
-### Phase 4: Close
-
-- [ ] `pnpm typecheck`, `pnpm lint`, the focused specs and the core suite pass. proof: exit codes recorded here.
-- [ ] Link the final scoreboard from `docs/verification/runtime-perf-state.md`, then `git mv` this PRD to `docs/PRDs/done/`. proof: the link and the move in the closing commit.
+- [ ] Close: `pnpm typecheck`, `pnpm lint` and the core suite pass, the scoreboard is linked from `docs/verification/runtime-perf-state.md`, and this PRD moves to `docs/PRDs/done/`. proof: exit codes recorded here; the closing commit.
