@@ -228,16 +228,16 @@ describe("pnpm release ordering", () => {
     expect(upgrade).toBeGreaterThan(cohort);
   });
 
-  it("upgrades the previous latest onto the packed candidate, on both named templates", () => {
+  it("upgrades the previous latest onto the packed candidate, on both named templates", async () => {
     const packages = [candidate("@threenative/core", "0.3.3")];
     const tarballs = { "@threenative/core": "/cohort/threenative-core-0.3.3.tgz" };
     const seen: {
       candidate?: { tarballs: typeof tarballs; versions: Map<string, string> };
       template?: string;
     }[] = [];
-    const reports = proveUpgradeFromLatest(packages, tarballs, (options) => {
+    const reports = await proveUpgradeFromLatest(packages, tarballs, (options) => {
       seen.push(options as never);
-      return { consumerTargets: [], exitCode: 0, managers: [], steps: [] };
+      return Promise.resolve({ consumerTargets: [], exitCode: 0, managers: [], steps: [] });
     });
     expect(reports).toHaveLength(UPGRADE_PROOF_TEMPLATES.length);
     expect(seen.map((call) => call.template)).toEqual([...UPGRADE_PROOF_TEMPLATES]);

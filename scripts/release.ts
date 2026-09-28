@@ -319,16 +319,18 @@ function packReleaseSet(
  * One package manager per template, the one whose lockfile records the packed tarball's SHA-512, so
  * the clean room can prove which bytes it installed; see `UPGRADE_PACKAGE_MANAGERS`.
  */
-export function proveUpgradeFromLatest(
+export async function proveUpgradeFromLatest(
   packages: readonly IPublishPackage[],
   tarballs: Readonly<Record<string, string>>,
   verify: (
     options: IVerifyRegistryInstallOptions,
-  ) => IRegistryInstallReport = verifyRegistryInstall,
-): readonly IRegistryInstallReport[] {
+  ) => Promise<IRegistryInstallReport> = verifyRegistryInstall,
+): Promise<readonly IRegistryInstallReport[]> {
   const versions = new Map(packages.map((item) => [item.name, item.version]));
-  return UPGRADE_PROOF_TEMPLATES.map((template) =>
-    verify({ candidate: { tarballs, versions }, template }),
+  return Promise.all(
+    UPGRADE_PROOF_TEMPLATES.map((template) =>
+      verify({ candidate: { tarballs, versions }, template }),
+    ),
   );
 }
 
@@ -435,7 +437,7 @@ async function main(argv: readonly string[]): Promise<void> {
   const packed = await mkdtemp(path.join(os.tmpdir(), "threenative-release-pack-"));
   try {
     const tarballs = packReleaseSet(packages, packed);
-    const upgrades = proveUpgradeFromLatest(packages, tarballs);
+    const upgrades = await proveUpgradeFromLatest(packages, tarballs);
     for (const [index, report] of upgrades.entries()) {
       const template = UPGRADE_PROOF_TEMPLATES[index] as string;
       process.stdout.write(`\nUpgrade proof — ${template} (registry latest -> candidate):\n`);

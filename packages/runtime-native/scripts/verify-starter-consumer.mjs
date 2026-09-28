@@ -258,6 +258,18 @@ export function parseConsumerPlaytestReport(stdout, target, declaredFamilies = [
     throw consumerError('ROW_MALFORMED', 'the playtest diagnostics are malformed.');
   }
   const diagnostics = rawDiagnostics.map((item) => item.code);
+  if (
+    parsed.assertionResults === undefined &&
+    rawDiagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  ) {
+    return {
+      assertionIds: ['diagnostics'],
+      assertions: 1,
+      diagnostics,
+      failures: diagnostics,
+      pass: false,
+    };
+  }
   if (diagnostics.some((code) => code.endsWith('UNSUPPORTED_ON_TARGET'))) {
     throw consumerError(
       'SCENARIO_NOT_CROSS_TARGET',
@@ -618,7 +630,7 @@ export function verifyStarterConsumerGameplay(options = {}) {
       options.activity ?? 'com.threenative.runtime.MystralActivity',
     );
   } else {
-    args.push('--executable', artifact, '--host-arg', '--windowed');
+    args.push('--executable', artifact, '--host-arg', '--windowed', '--no-screenshots');
   }
   try {
     if (android) {
