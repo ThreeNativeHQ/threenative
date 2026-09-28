@@ -30,6 +30,37 @@ function cachedPaths(entry: string): string[] {
     .map((line) => line.trim());
 }
 
+// Which jobs of a workflow can publish the workspace key, and which only restore it. A `uses`
+// block whose `save-bundles` is anything but the literal "false" counts as a saver, because that
+// is the conservative reading of an event-name expression evaluated on a standalone dispatch.
+function workspaceDistConsumers(workflow: string): {
+  savers: string[];
+  restoreOnly: [string, string[]][];
+} {
+  const savers: string[] = [];
+  const restoreOnly: [string, string[]][] = [];
+  for (const job of workflow.split(/(?=^ {2}[a-z0-9-]+:$)/mu).slice(1)) {
+    const uses = job.match(
+      /uses: \.\/\.github\/actions\/workspace-dist\b[^\n]*\n(?:[ \t]+[^\n]*\n)*/gu,
+    );
+    if (!uses) continue;
+    const name = /^ {2}([a-z0-9-]+):$/mu.exec(job)?.[1] ?? "?";
+    if (uses.some((use) => !/save-bundles: "false"/u.test(use))) {
+      savers.push(name);
+      continue;
+    }
+    restoreOnly.push([
+      name,
+      (/^ {4}needs: (.+)$/mu.exec(job)?.[1] ?? "")
+        .replace(/[[\]]/gu, "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ]);
+  }
+  return { savers, restoreOnly };
+}
+
 describe("workspace bundle reuse without cached verdicts", () => {
   it("restores without a deferred post-job cache writer", () => {
     assert.match(step("Restore the compiled workspace"), /uses: actions\/cache\/restore@v4/u);
@@ -43,7 +74,10 @@ describe("workspace bundle reuse without cached verdicts", () => {
   it("publishes only after both product validators, before returning to caller tests", () => {
     const save = step("Save validated workspace bundles");
     assert.match(save, /uses: actions\/cache\/save@v4/u);
-    assert.match(save, /^ {6}if: success\(\) && steps\.dist\.outputs\.cache-hit != 'true'$/mu);
+    assert.match(
+      save,
+      /^ {6}if: success\(\) && steps\.dist\.outputs\.cache-hit != 'true' && inputs\.save-bundles == 'true'$/mu,
+    );
     assert.doesNotMatch(save, /always\(\)|continue-on-error/u);
     for (const prerequisite of [
       "Build missing workspace bundles",
@@ -145,5 +179,36 @@ describe("workspace bundle reuse without cached verdicts", () => {
     assert.ifError(complete.error);
     assert.equal(complete.status, 0, complete.stderr);
     assert.match(complete.stdout, /workspace compiled bundles validated/u);
+  });
+
+  it("holds one reservation per run, from the job that produces the product", () => {
+    // The Actions cache service grants one reservation per key. Every saver past the first is
+    // refused with "another job may be creating this cache" — thirteen of those lines on a full run
+    // say nothing about whether the winner published, and the equivalent-SHA rerun stayed cold.
+    const workflow = readFileSync(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const savers = workspaceDistConsumers(workflow).savers;
+    assert.deepEqual(savers, ["build-artifacts"], `contested savers: ${savers.join(", ")}`);
+  });
+
+  it("leaves a standalone native-platforms dispatch exactly one saver, and every consumer needs it", () => {
+    // A dispatch is its own run and still has to publish; called from ci.yml it shares
+    // build-artifacts' reservation. Three jobs restore the same key in one dispatch — web-reference,
+    // android-emulator-parity and desktop-parity — and `github.event_name == 'workflow_dispatch'` is
+    // true for all three, so an expression gate is not a reservation gate: only the literal "false"
+    // keeps a job out of the race. The other dynamic caller, `pipeline-cache.yml`, is a separate
+    // workflow and shares no reservation until something here calls it, which this audit of this
+    // file cannot see — hence the last assertion.
+    const native = readFileSync(path.join(repo, ".github/workflows/native-platforms.yml"), "utf8");
+    const { savers, restoreOnly } = workspaceDistConsumers(native);
+    assert.deepEqual(savers, ["web-reference"], `contested dispatch savers: ${savers.join(", ")}`);
+    // web-reference is ungated on the pull requests that need it, but a skipped saver would leave
+    // every restore-only consumer rebuilding a key nobody publishes, so each one has to need it.
+    for (const [name, needs] of restoreOnly) {
+      assert.ok(
+        needs.includes("web-reference"),
+        `${name} restores from a key its run may never save`,
+      );
+    }
+    assert.doesNotMatch(native, /uses: \.\/\.github\/workflows\//u);
   });
 });

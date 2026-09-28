@@ -98,7 +98,7 @@ blocks the merge exactly when the scope plan requires it — a full selection to
 `gh pr list` and `pnpm worktree:status` before retargeting,
 retarget in-flight PRs individually, and never rewrite another worktree. Keep the existing release
 gates and exact-main push qualification. Activation and rollback:
-`docs/PRDs/production-readiness/PRD-373-selective-ci-and-develop-promotion.md`.
+`docs/PRDs/done/PRD-373-selective-ci-and-develop-promotion.md`.
 **Prove it locally before you push** and record unrun platform gates honestly. Registry commands
 read auth from the user's npm config (`~/.npmrc`); a checkout-local untracked `.npmrc` is passed
 explicitly (`npm --userconfig .npmrc <command>`) when one exists, and a fresh worktree has none.

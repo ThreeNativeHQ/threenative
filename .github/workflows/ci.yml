@@ -97,6 +97,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          save-bundles: "false"
           pack-archives: "false"
       - run: pnpm typecheck
 
@@ -140,6 +141,7 @@ jobs:
         if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
         uses: ./.github/actions/workspace-dist
         with:
+          save-bundles: "false"
           pack-archives: "false"
       - name: Verify selected agent-instruction consumers
         if: ${{ needs.scope.outputs.selection != 'full' && fromJSON(needs.scope.outputs.plan).checks.instructions }}
@@ -223,6 +225,7 @@ jobs:
       # this job takes the cached result rather than repeating it three times over.
       - uses: ./.github/actions/workspace-dist
         with:
+          save-bundles: "false"
           pack-archives: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
@@ -448,6 +451,8 @@ jobs:
       #   Cannot find module '.../packages/playtest/dist/index.js'
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       # The pump-silence observer drives the real host with the public native-smoke bundle. Keep
       # this explicit because the shared action only builds packages/*/dist, not examples/*/dist.
       - name: Build the native-smoke host fixture
@@ -460,6 +465,8 @@ jobs:
       - name: Collect bounded native Linux performance evidence
         if: always()
         shell: bash
+        env:
+          NO_AT_BRIDGE: "1"
         run: |
           mkdir -p artifacts/native-performance/native-linux-contract
           set +e
@@ -510,6 +517,8 @@ jobs:
       # on disk. Split out, they resolve @threenative/* through export maps that point at dist,
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       # `playwright.config.ts` scaffolds its starter projects from packed tarballs, and without
       # this it rebuilds and re-packs every workspace package to get them — before the first of
@@ -556,6 +565,8 @@ jobs:
             packages/create-threenative/templates/*/package.json
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
@@ -855,6 +866,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          save-bundles: "false"
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
       - run: pnpm --filter abyss-vanilla build
@@ -1044,6 +1056,7 @@ jobs:
       # reads like a guarantee it does not make. The shared action is what actually supplies dist.
       - uses: ./.github/actions/workspace-dist
         with:
+          save-bundles: "false"
           pack-archives: "false"
       - run: pnpm budgets
       - run: pnpm quality
@@ -1213,8 +1226,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # gh refuses `--slurp` next to `--jq`/`--template` ("the `--slurp` option is not supported
+          # with `--jq` or `--template`"), so the flatten of the paginated pages happens here. Paired
+          # wrongly, the call failed, the guard below wrote `[]`, and every run's timing table was
+          # header-only — an empty measurement read as a measured one.
           if ! gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
-            --jq '[.[].jobs[]]' > "$RUNNER_TEMP/job-timings.json"; then
+            | node -e 'let raw = ""; process.stdin.on("data", (chunk) => { raw += chunk; }).on("end", () => { process.stdout.write(JSON.stringify(JSON.parse(raw).flatMap((page) => page.jobs ?? []))); });' \
+            > "$RUNNER_TEMP/job-timings.json"; then
             echo '[]' > "$RUNNER_TEMP/job-timings.json"
             echo 'Timing API unavailable; no queue/execution improvement is claimed.' >> "$GITHUB_STEP_SUMMARY"
           fi
