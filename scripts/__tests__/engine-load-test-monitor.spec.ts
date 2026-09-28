@@ -658,7 +658,7 @@ describe("ThreeNative against Godot scoreboard", () => {
       html.indexOf("</table>", html.indexOf('<table class="compare-table">')),
     );
 
-  it("names a winner and a speed ratio per row, with the caveats collapsed", () => {
+  it("leads with the fair-row score and names a winner sentence per row, with the caveats collapsed", () => {
     const html = renderProgressHtml(
       data({
         pilots: [
@@ -694,36 +694,61 @@ describe("ThreeNative against Godot scoreboard", () => {
     expect(html.indexOf("ThreeNative vs Godot — 4,096 cubes, adapter, 1280x720")).toBeLessThan(
       html.indexOf("Qualified iterations"),
     );
+    // The banner is the first thing inside the scoreboard, and counts fair rows only: the
+    // diagnostic row Godot would win 7.5x is not a race and is not in the 2.
+    const banner = html.slice(
+      html.indexOf('<div class="verdict-banner">'),
+      html.indexOf('<table class="compare-table">'),
+    );
+    expect(banner).toContain(
+      '<span class="win-tn">ThreeNative</span> is faster in 2 of 2 head-to-head comparisons',
+    );
+    expect(banner).toContain(
+      "Fair rows only: both engines run the same scene with their own default optimizations.",
+    );
+    expect(html.indexOf("ThreeNative is faster") + 1).toBeLessThan(
+      html.indexOf('<table class="compare-table">'),
+    );
     const table = tableOf(html);
     expect(table).toContain("Same scene, shipped defaults");
     expect(table).toContain(
       "One mesh per cube; each engine&#39;s own default batching. Headline row.",
     );
     expect(table).toContain("Explicit instancing (both)");
-    expect(table).toContain("TN auto-batching OFF (diagnostic)");
-    expect(table).toContain("Shows TN&#39;s per-draw cost when it cannot batch.");
-    // Each engine's own p50 / p95, then a winner and the ratio that decided it.
+    // The Speed column is gone: its ratio now lives in the row's own sentence.
+    expect(table).not.toContain('<th scope="col">Speed</th>');
+    // Each engine's own p50 / p95, then one plain sentence naming the winner and the ratio.
     expect(table).toContain("4.00 / 5.00 ms");
     expect(table).toContain("3.40 / 6.00 ms");
     expect(table).toContain("2.50 / 2.60 ms");
     expect(table).toContain("1.50 / 1.60 ms");
-    expect(table).toContain("30.00 / 40.00 ms");
-    expect(table).toContain("ThreeNative 1.2x faster");
-    expect(table).toContain("ThreeNative 1.7x faster");
-    expect(table).toContain("Godot 7.5x faster");
-    // TN takes the median and loses the slow frames: the cell says both instead of picking one.
-    expect(table).toContain("TN on median, Godot on slow frames (p95)");
-    expect(table).toContain('class="pill win-tn">TN<');
-    expect(table).toContain('class="pill win-godot">Godot<');
+    expect(table).toContain("ThreeNative wins — 1.2x faster on a typical frame");
+    expect(table).toContain("ThreeNative wins — 1.7x faster on a typical frame");
+    // TN takes the median and loses the worst-case frame: the cell says both instead of picking one.
+    expect(table).toContain("Godot has steadier worst-case frames (p95 5.00 vs 6.00 ms)");
+    expect(table).toContain('<span class="pill win-tn">TN</span>');
+    expect(table).not.toContain("TN on median");
     expect(table).not.toContain("Exploratory direction");
     expect(html).not.toContain("No winner or speedup");
-    // Where the headline row loses, in the same files as the table, directly under the bars.
-    const losses = html.slice(html.indexOf('class="scoreboard-bars"'));
-    expect(losses.indexOf("Where TN loses")).toBeGreaterThan(0);
-    expect(losses).toContain("Same scene, shipped defaults: Godot ahead by 1.00 ms on p95");
-    expect(losses).toContain(
-      "TN auto-batching OFF (diagnostic): Godot ahead by 26.00 ms on p50, 35.00 ms on p95",
+    // The auto-batching-off row is a diagnostic, not a race: out of the table, out of the score,
+    // and reported below the bars with its own numbers, draw calls and the reason it is out.
+    expect(table).not.toContain("TN auto-batching OFF (diagnostic)");
+    expect(table).not.toContain("30.00 / 40.00 ms");
+    expect(table).not.toContain("2 vs 2375");
+    const block = html.slice(html.indexOf("<h3>TN internal diagnostic — not a race</h3>"));
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).toContain("TN auto-batching OFF (diagnostic)");
+    expect(block).toContain("Godot 4.00 / 5.00 ms · TN 30.00 / 40.00 ms");
+    expect(block).toContain("draw calls 2 vs 2375 (Godot vs TN)");
+    expect(block).toContain(
+      "Godot kept its automatic batching; TN's was switched off on purpose to measure TN's cost per draw call. Not counted in the score.",
     );
+    expect(block).toContain(`href="${GODOT_L1}"`);
+    expect(block).toContain(`href="${TN_L1}"`);
+    // Where a fair row loses, in the same files as the table, directly under the bars.
+    const losses = html.slice(html.indexOf("<h3>Where TN loses</h3>"), html.indexOf("</ul>"));
+    expect(losses).toContain("Same scene, shipped defaults: Godot ahead by 1.00 ms on p95");
+    expect(losses).not.toContain("auto-batching");
     // The qualification gaps moved out of the headline into a collapsed methodology block.
     expect(table).not.toContain("L1 has a known output/draw mismatch");
     const afterTable = html.slice(html.indexOf("</table>"));
@@ -733,12 +758,13 @@ describe("ThreeNative against Godot scoreboard", () => {
     expect(afterTable).toContain("Full fixture conformance and paired blocks are missing");
     expect(html).toContain("Pilot numbers: one run per engine, 120 frames each");
     expect(table).toContain("2 vs 3");
-    expect(table).toContain("2 vs 2375");
     expect(html).toContain(`href="${GODOT_L1}"`);
     expect(html).toContain(`href="${TN_L2}"`);
     expect(html).toContain(`href="${TN_L3}"`);
+    // Bars for the fair rows only, each group titled with the winner's pill.
     expect(html).toContain('class="scoreboard-bars"');
-    expect(html.match(/<rect x="52"/gu)).toHaveLength(6);
+    expect(html.match(/<rect x="52"/gu)).toHaveLength(4);
+    expect(html.match(/<text class="group win-tn" x="430"/gu)).toHaveLength(2);
   });
 
   it("renders a missing file as missing, never as a number or a near neighbour", () => {
@@ -756,11 +782,14 @@ describe("ThreeNative against Godot scoreboard", () => {
     const table = tableOf(html);
     expect(table).toContain("Godot file missing");
     expect(table).toContain("TN file missing");
-    // Two rows fully unpaired and the Godot half of the third: 5 + 5 + 4 cells read as missing,
-    // none as a number, and the retained TN half is never stretched across the missing side.
-    expect(table.match(/>missing</gu)).toHaveLength(14);
+    // Two fair rows fully unpaired: 4 cells each read as missing, none as a number, and the
+    // retained TN half of the diagnostic row is never stretched across a missing fair row.
+    expect(table.match(/>missing</gu)).toHaveLength(8);
     expect(table).not.toMatch(/\d+\.\dx/u);
     expect(table).not.toContain("faster");
+    // Nobody measured a win, so the score claims none.
+    expect(html).toContain("Tied — 0 of 2 head-to-head comparisons each");
+    expect(html).not.toContain("is faster in");
     expect(html).not.toContain("Where TN loses");
     expect(html).toContain('class="scoreboard-bars"');
   });

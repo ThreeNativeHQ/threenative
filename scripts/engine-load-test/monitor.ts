@@ -405,7 +405,7 @@ export async function collectMonitorData(): Promise<IMonitorData> {
 }
 
 const STYLE = `
-:root{color-scheme:dark;--bg:#101312;--panel:#191d1a;--line:#343b33;--muted:#a6b0a5;--ink:#f0f4e9;--accent:#d1ef86;--bad:#ffab9f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Helvetica Neue",Helvetica,sans-serif}main{max-width:1440px;margin:auto;padding:38px 5vw}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,4vw,54px);font-weight:500;letter-spacing:-.055em;line-height:1.1}h2{font-size:22px;letter-spacing:-.025em;font-weight:500}h3{font-size:16px}a{color:var(--accent);text-underline-offset:4px}button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:9px 15px;cursor:pointer}button:hover{border-color:var(--accent)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.eyebrow,.label,th{font:11px/1.5 "DejaVu Sans Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.eyebrow{color:var(--accent);margin-bottom:16px}.topline,.section-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.topline{margin-bottom:35px}.subtitle{color:var(--muted);margin-top:16px;max-width:720px}.live{font-size:12px;color:var(--muted)}.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:8px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);margin:34px 0 26px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}.kpi{padding:23px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi strong{display:block;font-size:42px;letter-spacing:-.05em;margin:9px 0 3px;line-height:1.1}.kpi.missing strong{color:var(--muted)}.kpi .small{display:block;max-width:340px}.coverage{margin:-10px 0 26px;color:var(--muted);font-size:12px}.pilot-table{min-width:760px}.pilot-table td:first-child{max-width:270px;overflow-wrap:anywhere}.compare-table{min-width:1040px}.compare-table td:first-child{max-width:300px;overflow-wrap:anywhere}.compare-table caption{text-align:left;padding:0 0 12px}.win-tn{color:var(--accent)}.win-godot{color:var(--bad)}.pill{display:inline-block;padding:3px 12px;border-radius:999px;font:600 12px/1.4 "DejaVu Sans Mono",monospace;letter-spacing:.06em;border:1px solid currentColor}.pill.win-tn{background:#d1ef8622}.pill.win-godot{background:#ffab9f22}details.methodology{margin-top:18px}.scoreboard-bars{width:100%;max-width:760px;height:auto;margin-top:22px}.scoreboard-bars text{font:11px "DejaVu Sans Mono",monospace;fill:var(--muted)}.scoreboard-bars .group{fill:var(--ink);font-size:12px}.trend .godot{stroke:#7fd1c4}.small,.note{font-size:12px;color:var(--muted)}.panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:25px;margin-bottom:24px}.section-head{margin-bottom:22px}.badge{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:4px 9px;font:11px "DejaVu Sans Mono",monospace;color:var(--muted)}.empty-chart{height:245px;display:grid;place-content:center;text-align:center;border-bottom:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent,transparent 59px,#343b3366 60px);padding:20px}.empty-chart h3{font-size:24px;font-weight:400;margin-bottom:10px}.empty-chart p{color:var(--muted);max-width:530px}.chart-note{margin-top:14px;color:var(--muted);font-size:12px}.grid{align-items:start;display:grid;grid-template-columns:1.7fr 1fr;gap:24px}.grid>.panel{min-width:0}.state{border-left:2px solid var(--accent);padding-left:16px;margin:20px 0}.state p{margin-top:8px;overflow-wrap:anywhere}.state .label{color:var(--accent)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}th:first-child,td:first-child{padding-left:0}td{font-size:13px}code{font:12px "DejaVu Sans Mono",monospace;overflow-wrap:anywhere}.timeline{max-height:310px;overflow:auto;list-style:none;padding:0;margin:0}.timeline li{position:relative;margin-left:5px;padding:0 0 23px 22px;border-left:1px solid var(--line)}.timeline li:before{content:"";position:absolute;left:-4px;top:7px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.timeline p{margin-top:4px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:12px}.timeline code{margin-right:8px}.phase{margin-top:18px}.phase-head{display:flex;justify-content:space-between;gap:20px;font-size:12px}progress{width:100%;height:6px;border:0;border-radius:8px;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line);border-radius:8px}progress::-webkit-progress-value{background:var(--accent);border-radius:8px}.error{color:var(--bad);overflow-wrap:anywhere}.trend{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}.trend svg{width:100%;height:auto;max-height:260px}.trend text{fill:var(--muted);font:12px monospace}.trend circle{fill:var(--accent)}.trend polyline{fill:none;stroke:var(--accent);stroke-width:2}.trend .baseline{stroke:#a6b0a5;stroke-dasharray:5 5}.trend .incumbent{stroke:#8dbdd5}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}details summary{cursor:pointer;font-size:14px}details p{margin:12px 0}footer{font-size:12px;color:var(--muted);margin-top:24px;overflow-wrap:anywhere}@media(max-width:850px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2){border-right:0}.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:480px){main{padding:24px 18px}.panel{padding:18px}.topline{align-items:flex-start}.kpi strong{font-size:34px}.kpi{padding:18px}.section-head{align-items:flex-start}.live{max-width:140px}.badge{white-space:normal;overflow-wrap:anywhere;min-width:0;text-align:right}}
+:root{color-scheme:dark;--bg:#101312;--panel:#191d1a;--line:#343b33;--muted:#a6b0a5;--ink:#f0f4e9;--accent:#d1ef86;--bad:#ffab9f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Helvetica Neue",Helvetica,sans-serif}main{max-width:1440px;margin:auto;padding:38px 5vw}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,4vw,54px);font-weight:500;letter-spacing:-.055em;line-height:1.1}h2{font-size:22px;letter-spacing:-.025em;font-weight:500}h3{font-size:16px}a{color:var(--accent);text-underline-offset:4px}button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:9px 15px;cursor:pointer}button:hover{border-color:var(--accent)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.eyebrow,.label,th{font:11px/1.5 "DejaVu Sans Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.eyebrow{color:var(--accent);margin-bottom:16px}.topline,.section-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.topline{margin-bottom:35px}.subtitle{color:var(--muted);margin-top:16px;max-width:720px}.live{font-size:12px;color:var(--muted)}.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:8px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);margin:34px 0 26px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}.kpi{padding:23px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi strong{display:block;font-size:42px;letter-spacing:-.05em;margin:9px 0 3px;line-height:1.1}.kpi.missing strong{color:var(--muted)}.kpi .small{display:block;max-width:340px}.coverage{margin:-10px 0 26px;color:var(--muted);font-size:12px}.pilot-table{min-width:760px}.pilot-table td:first-child{max-width:270px;overflow-wrap:anywhere}.compare-table{min-width:1040px}.compare-table td:first-child{max-width:300px;overflow-wrap:anywhere}.compare-table caption{text-align:left;padding:0 0 12px}.win-tn{color:var(--accent)}.win-godot{color:var(--bad)}.pill{display:inline-block;padding:3px 12px;border-radius:999px;font:600 12px/1.4 "DejaVu Sans Mono",monospace;letter-spacing:.06em;border:1px solid currentColor}.pill.win-tn{background:#d1ef8622}.pill.win-godot{background:#ffab9f22}.verdict-banner{margin-bottom:22px}.verdict-line{font-size:32px;line-height:1.15;letter-spacing:-.035em;font-weight:500;margin-bottom:8px;max-width:1100px}details.methodology{margin-top:18px}.scoreboard-bars{width:100%;max-width:760px;height:auto;margin-top:22px}.scoreboard-bars text{font:11px "DejaVu Sans Mono",monospace;fill:var(--muted)}.scoreboard-bars .group{fill:var(--ink);font-size:12px}.scoreboard-bars .win-tn{fill:var(--accent)}.scoreboard-bars .win-godot{fill:var(--bad)}.trend .godot{stroke:#7fd1c4}.small,.note{font-size:12px;color:var(--muted)}.panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:25px;margin-bottom:24px}.section-head{margin-bottom:22px}.badge{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:4px 9px;font:11px "DejaVu Sans Mono",monospace;color:var(--muted)}.empty-chart{height:245px;display:grid;place-content:center;text-align:center;border-bottom:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent,transparent 59px,#343b3366 60px);padding:20px}.empty-chart h3{font-size:24px;font-weight:400;margin-bottom:10px}.empty-chart p{color:var(--muted);max-width:530px}.chart-note{margin-top:14px;color:var(--muted);font-size:12px}.grid{align-items:start;display:grid;grid-template-columns:1.7fr 1fr;gap:24px}.grid>.panel{min-width:0}.state{border-left:2px solid var(--accent);padding-left:16px;margin:20px 0}.state p{margin-top:8px;overflow-wrap:anywhere}.state .label{color:var(--accent)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}th:first-child,td:first-child{padding-left:0}td{font-size:13px}code{font:12px "DejaVu Sans Mono",monospace;overflow-wrap:anywhere}.timeline{max-height:310px;overflow:auto;list-style:none;padding:0;margin:0}.timeline li{position:relative;margin-left:5px;padding:0 0 23px 22px;border-left:1px solid var(--line)}.timeline li:before{content:"";position:absolute;left:-4px;top:7px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.timeline p{margin-top:4px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:12px}.timeline code{margin-right:8px}.phase{margin-top:18px}.phase-head{display:flex;justify-content:space-between;gap:20px;font-size:12px}progress{width:100%;height:6px;border:0;border-radius:8px;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line);border-radius:8px}progress::-webkit-progress-value{background:var(--accent);border-radius:8px}.error{color:var(--bad);overflow-wrap:anywhere}.trend{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}.trend svg{width:100%;height:auto;max-height:260px}.trend text{fill:var(--muted);font:12px monospace}.trend circle{fill:var(--accent)}.trend polyline{fill:none;stroke:var(--accent);stroke-width:2}.trend .baseline{stroke:#a6b0a5;stroke-dasharray:5 5}.trend .incumbent{stroke:#8dbdd5}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}details summary{cursor:pointer;font-size:14px}details p{margin:12px 0}footer{font-size:12px;color:var(--muted);margin-top:24px;overflow-wrap:anywhere}@media(max-width:850px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2){border-right:0}.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:480px){main{padding:24px 18px}.panel{padding:18px}.topline{align-items:flex-start}.kpi strong{font-size:34px}.kpi{padding:18px}.section-head{align-items:flex-start}.live{max-width:140px}.badge{white-space:normal;overflow-wrap:anywhere;min-width:0;text-align:right}}
 `;
 
 function attemptLink(data: IMonitorData, attempt: IAttempt, label = attempt.source): string {
@@ -496,6 +496,7 @@ function renderPilotTrace(data: IMonitorData): string {
  *  reads "missing" instead of borrowing a near neighbour. */
 const SCOREBOARD_ROWS = [
   {
+    fair: true,
     godot: "pilots/godot-desktop-4096-visible-2026-09-27.json",
     godotMode: "L1",
     label: "Same scene, shipped defaults",
@@ -504,6 +505,7 @@ const SCOREBOARD_ROWS = [
     tnMode: "L3",
   },
   {
+    fair: true,
     godot: "pilots/godot-desktop-4096-l2-visible-2026-09-27.json",
     godotMode: "L2",
     label: "Explicit instancing (both)",
@@ -512,10 +514,13 @@ const SCOREBOARD_ROWS = [
     tnMode: "L2",
   },
   {
+    // Not a race: Godot batches identical meshes on its own in every run, so pairing it against
+    // TN with batching deliberately switched off would score TN's per-draw cost, not its speed.
+    fair: false,
     godot: "pilots/godot-desktop-4096-visible-2026-09-27.json",
     godotMode: "L1",
     label: "TN auto-batching OFF (diagnostic)",
-    note: "Shows TN's per-draw cost when it cannot batch.",
+    note: "",
     tn: "pilots/tn-desktop-4096-physical-visible-2026-09-27.json",
     tnMode: "L1",
   },
@@ -552,10 +557,26 @@ function physicalPilot(
 const MISSING = "missing";
 
 interface IScoreboardRow {
+  fair: boolean;
   godotPair?: IPhysicalPair;
   label: string;
   note: string;
   tnPair?: IPhysicalPair;
+}
+
+type TEngine = "Godot" | "ThreeNative";
+
+/** Who won a row by typical frame (p50) and by worst-case frame (p95), read off the two files that
+ *  row names. Undefined when either file is missing: an unpaired row has no winner, and no number
+ *  is borrowed from a neighbour to invent one. */
+function winners(
+  godot: IPhysicalPair | undefined,
+  tn: IPhysicalPair | undefined,
+): { median: TEngine; slow: TEngine } | undefined {
+  if (!godot || !tn) return undefined;
+  const ahead = (key: "p50" | "p95"): TEngine =>
+    tn.summary[key] < godot.summary[key] ? "ThreeNative" : "Godot";
+  return { median: ahead("p50"), slow: ahead("p95") };
 }
 
 /** "NVIDIA GeForce RTX 2080 / 1.4.351" -> "RTX 2080": the board, without the vendor or the driver
@@ -574,25 +595,37 @@ function draws(godot: IPhysicalPair | undefined, tn: IPhysicalPair | undefined):
   return godot && tn ? `${godot.rung.drawCalls} vs ${tn.rung.drawCalls}` : MISSING;
 }
 
-/** The two verdict cells the owner reads: who won this row and by how much, taken from the two
- *  files the row names. The winner follows p50, the slow-frame column p95 — when they disagree the
- *  cell says so rather than picking one silently. Speed is the slower p50 over the faster p50, so a
- *  row missing either side is "missing" in both cells, never a borrowed or invented number. */
+/** The cell the owner reads: one pill and one plain sentence — who won this row and by how much on
+ *  a typical frame. When the worst-case frame (p95) went the other way, a second small line names
+ *  that instead of picking one metric silently. The ratio is the slower p50 over the faster p50, so
+ *  a row missing either file is "missing" in one cell, never a borrowed or invented number. */
 function verdict(godot: IPhysicalPair | undefined, tn: IPhysicalPair | undefined): string {
-  if (!godot || !tn) return `<td>${MISSING}</td><td>${MISSING}</td>`;
-  const faster = (key: "p50" | "p95"): "ThreeNative" | "Godot" =>
-    tn.summary[key] < godot.summary[key] ? "ThreeNative" : "Godot";
-  const median = faster("p50");
-  const slow = faster("p95");
-  const winner =
-    median === slow
-      ? median
-      : `TN on median, ${slow === "ThreeNative" ? "TN" : "Godot"} on slow frames (p95)`;
+  const w = winners(godot, tn);
+  if (!godot || !tn || !w) return `<td>${MISSING}</td>`;
   const ratio =
     Math.max(godot.summary.p50, tn.summary.p50) / Math.min(godot.summary.p50, tn.summary.p50);
-  const pill = `<span class="pill ${median === "ThreeNative" ? "win-tn" : "win-godot"}">${median === "ThreeNative" ? "TN" : "Godot"}</span>`;
-  const split = median === slow ? "" : `<p class="small">${winner}</p>`;
-  return `<td>${pill}${split}</td><td>${median} ${ratio.toFixed(1)}x faster</td>`;
+  const tnWins = w.median === "ThreeNative";
+  const pill = `<span class="pill ${tnWins ? "win-tn" : "win-godot"}">${tnWins ? "TN" : "Godot"}</span>`;
+  const split =
+    w.median === w.slow
+      ? ""
+      : `<p class="small">${w.slow} has steadier worst-case frames (p95 ${(w.slow === "ThreeNative" ? tn : godot).summary.p95.toFixed(2)} vs ${(w.slow === "ThreeNative" ? godot : tn).summary.p95.toFixed(2)} ms)</p>`;
+  return `<td>${pill}<p>${w.median} wins — ${ratio.toFixed(1)}x faster on a typical frame</p>${split}</td>`;
+}
+
+/** The one line the owner reads first, above the table: who won the fair rows and how many, counted
+ *  from the same two files each row names. An unpaired row is not a win for anyone, so a page whose
+ *  files are missing reads "Tied" rather than a lead nobody measured. */
+function scoreboardBanner(rows: IScoreboardRow[]): string {
+  const medians = rows.map((row) => winners(row.godotPair, row.tnPair)?.median);
+  const tnWins = medians.filter((engine) => engine === "ThreeNative").length;
+  const godotWins = medians.filter((engine) => engine === "Godot").length;
+  const lead = tnWins === godotWins ? null : tnWins > godotWins ? "ThreeNative" : "Godot";
+  const line =
+    lead === null
+      ? `Tied — ${tnWins} of ${rows.length} head-to-head comparisons each`
+      : `<span class="${lead === "ThreeNative" ? "win-tn" : "win-godot"}">${lead}</span> is faster in ${lead === "ThreeNative" ? tnWins : godotWins} of ${rows.length} head-to-head comparisons`;
+  return `<div class="verdict-banner"><p class="verdict-line">${line}</p><p class="small">Fair rows only: both engines run the same scene with their own default optimizations.</p></div>`;
 }
 
 /** Where the headline row's engine loses, per row, in the same files as the table. Empty when no
@@ -611,8 +644,30 @@ function whereTnLoses(rows: IScoreboardRow[]): string {
   return items.length === 0 ? "" : `<h3>Where TN loses</h3><ul>${items.join("")}</ul>`;
 }
 
-/** Grouped median bars, one group per row, all three on one axis scaled to the slowest cell, so the
- *  3 ms headline row and the 30 ms diagnostic row are read against each other rather than apart. */
+/** A row's own evidence: each side named and linked, a missing file named rather than dropped. */
+function rawJson(data: IMonitorData, row: IScoreboardRow): string {
+  const link = (pair: IPhysicalPair | undefined, label: string): string =>
+    pair
+      ? `${label} ${attemptLink(data, pair.attempt, path.basename(pair.attempt.source))}`
+      : `${label} file missing`;
+  return `${link(row.godotPair, "Godot")}<p class="small">${link(row.tnPair, "TN")}</p>`;
+}
+
+/** Rows that are not races. They keep their own numbers, their files and the reason they are out of
+ *  the score, below the bars — a diagnostic is evidence, not a win for the engine it flatters. */
+function diagnostics(data: IMonitorData, rows: IScoreboardRow[]): string {
+  if (rows.length === 0) return "";
+  const blocks = rows
+    .map(
+      (row) =>
+        `<div class="small"><strong>${escapeHtml(row.label)}</strong> · Godot ${escapeHtml(ms(row.godotPair))} · TN ${escapeHtml(ms(row.tnPair))} · draw calls ${escapeHtml(draws(row.godotPair, row.tnPair))} (Godot vs TN) · ${rawJson(data, row)}</div>`,
+    )
+    .join("");
+  return `<h3>TN internal diagnostic — not a race</h3>${blocks}<p class="note">Godot kept its automatic batching; TN's was switched off on purpose to measure TN's cost per draw call. Not counted in the score.</p>`;
+}
+
+/** Grouped median bars, one group per fair row, all on one axis scaled to the slowest cell, so the
+ *  3 ms headline row and the 2.5 ms instancing row are read against each other rather than apart. */
 function scoreboardBars(rows: IScoreboardRow[]): string {
   const scale = Math.max(
     ...rows.flatMap((row) => [row.godotPair?.summary.p50 ?? 0, row.tnPair?.summary.p50 ?? 0]),
@@ -625,7 +680,12 @@ function scoreboardBars(rows: IScoreboardRow[]): string {
   const groups = rows
     .map((row, index) => {
       const top = 34 + index * 86;
-      return `<text class="group" x="0" y="${top - 8}">${escapeHtml(row.label)}</text>${bar(row.godotPair, "Godot", top, "#7fd1c4")}${bar(row.tnPair, "TN", top + 24, "var(--accent)")}`;
+      const median = winners(row.godotPair, row.tnPair)?.median;
+      const pill =
+        median === undefined
+          ? ""
+          : `<text class="group ${median === "ThreeNative" ? "win-tn" : "win-godot"}" x="430" y="${top - 8}">${median === "ThreeNative" ? "TN" : "Godot"}</text>`;
+      return `<text class="group" x="0" y="${top - 8}">${escapeHtml(row.label)}</text>${pill}${bar(row.godotPair, "Godot", top, "#7fd1c4")}${bar(row.tnPair, "TN", top + 24, "var(--accent)")}`;
     })
     .join("");
   const reading = rows
@@ -661,15 +721,19 @@ function renderGodotUpstream(data: IMonitorData): string {
 }
 
 /** ThreeNative against Godot on the same display: the requested workload, each engine's own
- *  p50/p95, who won that row and by how much, and the file behind it. Exploratory, not qualified. */
+ *  p50/p95, who won that row and by how much, and the file behind it. Exploratory, not qualified.
+ *  Only `fair` rows race: a row that changes one engine's optimizations is reported below the bars
+ *  as a diagnostic instead, so the score counts rows both engines ran as themselves. */
 function renderEngineComparison(data: IMonitorData): string {
   const e = escapeHtml;
   const rows: IScoreboardRow[] = SCOREBOARD_ROWS.map((row) => ({
+    fair: row.fair,
     label: row.label,
     note: row.note,
     godotPair: physicalPilot(data, row.godot, row.godotMode),
     tnPair: physicalPilot(data, row.tn, row.tnMode),
   }));
+  const fairRows = rows.filter((row) => row.fair);
   const retained = rows.find((row) => row.godotPair ?? row.tnPair);
   const head = retained?.godotPair ?? retained?.tnPair;
   const title = head
@@ -677,10 +741,10 @@ function renderEngineComparison(data: IMonitorData): string {
     : "ThreeNative vs Godot";
   const caveat =
     "Pilot numbers: one run per engine, 120 frames each; the seven-block repeated protocol is still pending, so treat gaps under ~10% as noise.";
-  const table = rows
+  const table = fairRows
     .map(
       (row) =>
-        `<tr><td><strong>${e(row.label)}</strong>${row.note ? `<p class="small">${e(row.note)}</p>` : ""}</td><td>${e(ms(row.godotPair))}</td><td>${e(ms(row.tnPair))}</td>${verdict(row.godotPair, row.tnPair)}<td>${e(draws(row.godotPair, row.tnPair))}</td><td>${row.godotPair ? `Godot ${attemptLink(data, row.godotPair.attempt, path.basename(row.godotPair.attempt.source))}` : "Godot file missing"}<p class="small">${row.tnPair ? `TN ${attemptLink(data, row.tnPair.attempt, path.basename(row.tnPair.attempt.source))}` : "TN file missing"}</p></td></tr>`,
+        `<tr><td><strong>${e(row.label)}</strong>${row.note ? `<p class="small">${e(row.note)}</p>` : ""}</td><td>${e(ms(row.godotPair))}</td><td>${e(ms(row.tnPair))}</td>${verdict(row.godotPair, row.tnPair)}<td>${e(draws(row.godotPair, row.tnPair))}</td><td>${rawJson(data, row)}</td></tr>`,
     )
     .join("");
   const charts = rows
@@ -710,7 +774,10 @@ function renderEngineComparison(data: IMonitorData): string {
       return `<div class="trend"><h3>${e(row.label)} · per-frame series</h3><p class="small">${e(reading)} · ${width} sample slots · zero-based axis scaled to this row only</p><svg viewBox="0 0 700 250" role="img" aria-label="Per-frame intervals in milliseconds for ${e(row.label)}: ${e(reading)}; exploratory observations only"><text x="0" y="17">ms ↓</text><text x="0" y="42">${maximum.toFixed(1)}</text><text x="25" y="115">${(maximum / 2).toFixed(1)}</text><text x="25" y="184">0</text><path d="M50 30V180H660" fill="none" stroke="#465040"/>${lines}<text x="55" y="205">1</text><text x="645" y="205" text-anchor="end">${width}</text><text x="350" y="238" text-anchor="middle">Sample index · one run per arm · not an improvement trend</text></svg><div class="legend"><span style="color:#7fd1c4">— Godot ${e(godotVersion ?? "version not recorded")}</span><span style="color:var(--accent)">— ThreeNative native host</span></div></div>`;
     })
     .join("");
-  return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · one run per engine</span></div><p class="note">${e(caveat)}</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median and 95th-percentile frame time in milliseconds, the winner by median, plus draw calls, per scene.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot p50 / p95</th><th scope="col">ThreeNative p50 / p95</th><th scope="col">Winner</th><th scope="col">Speed</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Raw JSON</th></tr></thead><tbody>${table}</tbody></table></div>${scoreboardBars(rows)}${whereTnLoses(rows)}<p class="chart-note">Median frame time per row, one axis. Godot teal, ThreeNative green.</p><details class="methodology"><summary>Methodology and caveats</summary><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance and paired blocks are missing for these rows.</p><p class="note">Same display, matching legacy first-eight placement hash, full fixture equivalence unverified. Every row is exploratory: one run per engine, no repeated pair, no qualified iteration. Modes are distinct requested workloads; Winner follows p50 and Speed is the slower p50 over the faster p50 of the two files each row names, so both are read off retained samples only and do not establish relative engine performance.</p><p class="note">Warmup frames are not recorded in these JSON files — the L3 file's name says 40, its content records no warmup field — so the retained 120 samples per file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.find((row) => row.godotPair)?.godotPair?.pilot.driver.adapter ?? MISSING)} · TN ${e(rows.find((row) => row.tnPair)?.tnPair?.pilot.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</details>${charts}</section>`;
+  return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · one run per engine</span></div>${scoreboardBanner(fairRows)}<p class="note">${e(caveat)}</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median and 95th-percentile frame time in milliseconds, who won the row and by how much, plus draw calls, per scene.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot p50 / p95</th><th scope="col">ThreeNative p50 / p95</th><th scope="col">Winner</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Raw JSON</th></tr></thead><tbody>${table}</tbody></table></div>${scoreboardBars(fairRows)}${whereTnLoses(fairRows)}<p class="chart-note">Median frame time per fair row, one axis. Godot teal, ThreeNative green.</p>${diagnostics(
+    data,
+    rows.filter((row) => !row.fair),
+  )}<details class="methodology"><summary>Methodology and caveats</summary><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance and paired blocks are missing for these rows.</p><p class="note">Same display, matching legacy first-eight placement hash, full fixture equivalence unverified. Every row is exploratory: one run per engine, no repeated pair, no qualified iteration. Modes are distinct requested workloads; the winner is the lower median frame time of the two files each row names and its ratio is that file over the slower one, read off retained samples only, so neither establishes relative engine performance. The auto-batching-off row is excluded from the score and reported below the bars as a diagnostic.</p><p class="note">Warmup frames are not recorded in these JSON files — the L3 file's name says 40, its content records no warmup field — so the retained 120 samples per file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.find((row) => row.godotPair)?.godotPair?.pilot.driver.adapter ?? MISSING)} · TN ${e(rows.find((row) => row.tnPair)?.tnPair?.pilot.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</details>${charts}</section>`;
 }
 
 export function renderProgressHtml(data: IMonitorData): string {
