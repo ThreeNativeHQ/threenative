@@ -309,8 +309,10 @@ it("moves ladder source identity into a complete comparator report", async () =>
     { workload: "moving-l2-l3-16384" },
   );
   expect(ladder[0]?.candidateCommand).toContain("--source-sha <candidate-source>");
+  // The identity block moved to `driver.ts`, which both web arms drive; `main.ts` keeps the TN arm's
+  // own projection and culling wiring.
   const browserSource = await readFile(
-    path.join(repo, "examples/engine-load-test/src/main.ts"),
+    path.join(repo, "examples/engine-load-test/src/driver.ts"),
     "utf8",
   );
   expect(browserSource).toMatch(/\n\s+identity:/u);

@@ -6,6 +6,9 @@ import { stat } from "node:fs/promises";
 import { type Server, createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "@playwright/test";
+import { createPlacements, positionHash } from "../../examples/engine-load-test/src/workload.js";
+import { softwareAdapterName } from "../../packages/playtest/src/runner/browser.js";
+import type { IRunReport } from "./report.js";
 
 // Vsync is disabled on both arms rather than pinned on both: under vsync a frame needing 17 ms of
 // work presents at 33 ms, so the knee would report which side of a 16.7 ms boundary an engine
@@ -57,6 +60,32 @@ export function benchBrowserPath(): string | undefined {
     if (existsSync(candidate)) return candidate;
   }
   return undefined;
+}
+
+// A hardware pilot is the point of this arm, and a software rasteriser answers just as
+// successfully as a GPU: the page loads, the ladder runs, and the numbers are a CPU's. Naming the
+// adapter is not enough when the arm exists to be compared, so the collector refuses one.
+export function assertHardwareAdapter(adapter: string): string {
+  const software = softwareAdapterName({ adapter });
+  if (software !== undefined) throw new Error(`TN_BENCH_SOFTWARE_ADAPTER: ${software}`);
+  return adapter;
+}
+
+// Two things `parseRunReport` cannot know, and only this collector sees. The adapter: a hardware
+// pilot is the point of this arm, and a software rasteriser answers as successfully as a GPU, so a
+// control measured on one is not a control. The legacy `positionHash` is recomputed from the
+// shared workload here. It covers the first eight placements only; full-fixture identity remains
+// a separate PRD-449 gate and is required before any publication comparison.
+export function assertPlainThreePilot(report: IRunReport): IRunReport {
+  assertHardwareAdapter(report.driver.adapter);
+  for (const rung of report.rungs) {
+    const expected = positionHash(createPlacements(rung.objectCount));
+    if (rung.positionHash !== expected)
+      throw new Error(
+        `TN_BENCH_SCENE_MISMATCH: ${rung.objectCount} objects hashed ${rung.positionHash}, the workload hashes ${expected}`,
+      );
+  }
+  return report;
 }
 
 export async function driveBenchmarkPage(options: IDriveOptions): Promise<unknown> {

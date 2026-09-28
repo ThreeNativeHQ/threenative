@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,7 +27,11 @@ import {
   positionHash,
   resolveAxes,
 } from "../../examples/engine-load-test/src/workload.js";
-import { browserLaunchArgs } from "../engine-load-test/browser.js";
+import {
+  assertHardwareAdapter,
+  assertPlainThreePilot,
+  browserLaunchArgs,
+} from "../engine-load-test/browser.js";
 import {
   type IRunReport,
   PERFORMANCE_BASELINES,
@@ -312,16 +317,18 @@ describe("engine load test workload", () => {
   });
 
   it("wires the browser collector to the syntax-aware scanner and workload filter", async () => {
-    const browserSource = await readFile(
-      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+    // The served-graph walk moved to the driver both web arms share; `main.ts` is the TN arm's own
+    // projection and culling wiring, and `plain.ts` reaches the same walk without the framework.
+    const driverSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
       "utf8",
     );
-    expect(browserSource).toMatch(/extractModuleSpecifiers\(source\)/u);
-    expect(browserSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
-    expect(browserSource).toMatch(
+    expect(driverSource).toMatch(/extractModuleSpecifiers\(source\)/u);
+    expect(driverSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
+    expect(driverSource).toMatch(
       /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
     );
-    expect(browserSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
+    expect(driverSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
   });
 
   it("should produce the LCG sequence PRD-117 §3.3 specifies", () => {
@@ -515,19 +522,22 @@ describe("engine load test workload", () => {
   it("wires every axis through the CLI and both runtime entry points", async () => {
     const load = (relative: string): Promise<string> =>
       readFile(path.join(process.cwd(), relative), "utf8");
-    const [cli, web, native, vite, game] = await Promise.all([
+    const [cli, web, native, vite, game, driver] = await Promise.all([
       load("scripts/engine-load-test/cli.ts"),
       load("examples/engine-load-test/src/main.ts"),
       load("examples/engine-load-test/src/native.ts"),
       load("examples/engine-load-test/vite.config.ts"),
       load("examples/engine-load-test/src/game.ts"),
+      load("examples/engine-load-test/src/driver.ts"),
     ]);
     expect(cli).toMatch(/parseAxesRecord\(\{/u);
     expect(cli).toMatch(/shadowCasterShare: flag\("shadow-caster-share"\)/u);
-    expect(web).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
-    expect(web).toMatch(/createLoadTestHarness\(canvas, await describeAdapter\(\), true, axes\)/u);
+    // The axes are read where the page is, in the driver both web arms drive.
+    expect(driver).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
+    expect(driver).toMatch(/createLoadTestHarness\([\s\S]*arm\.createCollapse/u);
+    expect(web).toMatch(/createCollapse: \(scene, options\) => new SceneRenderProjection/u);
     expect(native).toMatch(/parseAxesRecord\(config\.axes\)/u);
-    expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes\);/u);
+    expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes,[\s\S]*new SceneRenderProjection/u);
     expect(vite).toMatch(/TN_BENCH_SHADOW_CASTER_SHARE/u);
     expect(vite).toMatch(/axes: axesEnvironment\(\)/u);
     // L2's unsupported cells fail closed at the one place a rung is built.
@@ -581,15 +591,15 @@ describe("engine load test workload", () => {
     expect(relabeledIdentity.artifactHash).toBe(candidateIdentity.artifactHash);
     expect(relabeledIdentity.sourceSha).not.toBe(candidateIdentity.sourceSha);
 
-    const browserSource = await readFile(
-      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+    const driverSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
       "utf8",
     );
-    expect(browserSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
-    expect(browserSource).toMatch(
+    expect(driverSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
+    expect(driverSource).toMatch(
       /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
     );
-    expect(browserSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
+    expect(driverSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
   });
 
   it("should keep graph identity stable across absolute worktree roots", async () => {
@@ -2588,3 +2598,107 @@ describe("the emulator canary", () => {
     expect(check?.regressions).toEqual([]);
   });
 });
+
+// PRD-449's `plain-three-webgpu` control: the same Three.js bytes and the same authored scene as
+// the TN web arm, with no framework code in the graph it serves. Two things can silently rot it —
+// framework code reaching the graph, and a software rasteriser answering for a hardware pilot —
+// and a third, a page that reports a scene the collector cannot confirm.
+describe("plain three.js control arm", () => {
+  // One import statement, from `import` to its terminating semicolon, reaching into `packages/`
+  // without saying `import type`. A type-only import is erased before the browser sees it; a
+  // runtime one is the framework sitting inside the control.
+  const RUNTIME_FRAMEWORK_IMPORT = /import\s+(?!type\b)[^;]*?["'][^"']*\/packages\//u;
+
+  it("keeps every module the plain entry serves free of runtime framework code", async () => {
+    const seen = new Set<string>();
+    const pending = ["examples/engine-load-test/src/plain.ts"];
+    while (pending.length > 0) {
+      const file = pending.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const absolute = path.join(process.cwd(), file);
+      if (!existsSync(absolute)) continue;
+      const source = await readFile(absolute, "utf8");
+      expect([file, RUNTIME_FRAMEWORK_IMPORT.test(source)]).toEqual([file, false]);
+      // `import type` is erased before the browser sees it, so a type-only reference is not part of
+      // the graph the control serves and the walk does not follow it.
+      const runtime = source.replace(/import\s+type\s+[^;]*;/gu, "");
+      for (const specifier of extractModuleSpecifiers(runtime)) {
+        if (!specifier.startsWith(".")) continue;
+        pending.push(path.join(path.dirname(file), specifier).replace(/\.js$/u, ".ts"));
+      }
+    }
+    // A control that measures nothing is not a control: the harness it shares with the TN arm is
+    // the only reason the two arms frame the same scene.
+    expect([...seen].sort()).toEqual([
+      "examples/engine-load-test/src/driver.ts",
+      "examples/engine-load-test/src/game.ts",
+      "examples/engine-load-test/src/identity.ts",
+      "examples/engine-load-test/src/plain.ts",
+      "examples/engine-load-test/src/workload.ts",
+    ]);
+  });
+
+  it("reads a real control report through the shared parser and refuses the rest", () => {
+    // The control is a `report.ts` arm now, so the dashboard, `--check-report` and the CLI all reach
+    // it through the one parser every other arm uses.
+    const parsed = parseRunReport(plainReport());
+    expect(parsed.arm).toBe("plain-three-webgpu");
+    expect(parsed.engine).toEqual({ name: "three", version: "185" });
+    // The axes are the matrix cell the number belongs to; without them a pilot is not comparable.
+    expect(parsed.axes).toEqual(DEFAULT_AXES);
+    // An arm is one engine, and `three` is only ever the control's: a `three` report under a TN arm
+    // is a build stamp that does not match the platform, and the TN/Godot pairing is unchanged.
+    expect(() => parseRunReport(plainReport({ arm: "tn-web" }))).toThrow(/is not an engine/u);
+    expect(() => parseRunReport(plainReport({ arm: "godot-web" }))).toThrow(/is not an engine/u);
+    expect(() =>
+      parseRunReport(plainReport({ engine: { name: "threenative", version: "workspace" } })),
+    ).toThrow(/is not an engine/u);
+    // Fail closed on samples, as every other arm does: an empty series and a non-finite or negative
+    // sample are faults, not numbers.
+    const malformed = (frameMs: unknown[]): Record<string, unknown> =>
+      plainReport({ rungs: [rung({ frameMs: frameMs as number[] })] });
+    expect(() => parseRunReport(malformed([]))).toThrow(/TN_BENCH_EMPTY_SERIES/u);
+    expect(() => parseRunReport(malformed([Number.NaN]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() => parseRunReport(malformed(["9"]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() => parseRunReport(malformed([8, -1]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+  });
+
+  it("refuses a software rasteriser and a scene the collector cannot confirm", () => {
+    expect(assertHardwareAdapter("nvidia / turing")).toBe("nvidia / turing");
+    for (const software of ["swiftshader / google", "llvmpipe / mesa", "lavapipe / llvm"]) {
+      expect(() => assertHardwareAdapter(software)).toThrow(/TN_BENCH_SOFTWARE_ADAPTER/u);
+    }
+    // The collector catches a false legacy positionHash; full-fixture identity, including objects
+    // beyond index eight, is a separate gate before publication.
+    const pilot = parseRunReport(plainReport());
+    expect(assertPlainThreePilot(pilot)).toBe(pilot);
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(plainReport({ rungs: [rung({ positionHash: "deadbeef" })] })),
+      ),
+    ).toThrow(/TN_BENCH_SCENE_MISMATCH/u);
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(
+          plainReport({ driver: { adapter: "google / swiftshader", renderer: "three/webgpu" } }),
+        ),
+      ),
+    ).toThrow(/TN_BENCH_SOFTWARE_ADAPTER/u);
+  });
+});
+
+function plainReport(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const objectCount = 4096;
+  return {
+    arm: "plain-three-webgpu",
+    axes: DEFAULT_AXES,
+    build: { notes: "vite production build, plain three/webgpu control", type: "release" },
+    device: { battery: null, label: "desktop-chrome-linux" },
+    display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+    driver: { adapter: "nvidia / turing", renderer: "three/webgpu WebGPURenderer" },
+    engine: { name: "three", version: "185" },
+    rungs: [rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) })],
+    ...overrides,
+  };
+}

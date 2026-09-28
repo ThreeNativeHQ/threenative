@@ -12,9 +12,11 @@ export const ARMS = [
   "godot-web",
   "godot-android",
   "godot-desktop",
+  "plain-three-webgpu",
 ] as const;
 
 export type Arm = (typeof ARMS)[number];
+type EngineName = "godot" | "threenative" | "three";
 export type RenderMode = "L1" | "L2" | "L3";
 export type BuildType = "release" | "debug";
 export type BenchExitCode = 1 | 2;
@@ -80,7 +82,7 @@ export interface IRunReport {
   deviceCondition?: IDeviceCondition;
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
-  engine: { name: "threenative" | "godot"; version: string };
+  engine: { name: EngineName; version: string };
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
@@ -349,8 +351,19 @@ export function parseRunReport(value: unknown): IRunReport {
 
   const engine = requireObject(root.engine, "report.engine");
   const engineName = requireString(engine, "name", "report.engine");
-  if (engineName !== "threenative" && engineName !== "godot")
-    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.engine.name ${engineName} is not an engine`);
+  // An arm is one engine, so the report's engine has to be the one that arm runs: a `three` report
+  // stamped `tn-web` is a build that is not the arm it was published under, and its numbers are then
+  // somebody else's. Pairing rather than membership is what keeps `three` off every other arm.
+  const expectedEngine: EngineName = typedArm.startsWith("godot-")
+    ? "godot"
+    : typedArm === "plain-three-webgpu"
+      ? "three"
+      : "threenative";
+  if (engineName !== expectedEngine)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `report.engine.name ${engineName} is not an engine the ${typedArm} arm runs`,
+    );
 
   const build = requireObject(root.build, "report.build");
   const buildType = requireString(build, "type", "report.build");
@@ -444,7 +457,10 @@ export function parseRunReport(value: unknown): IRunReport {
     },
     driver: { adapter, renderer },
     ...(deviceCondition === undefined ? {} : { deviceCondition }),
-    engine: { name: engineName, version: requireString(engine, "version", "report.engine") },
+    engine: {
+      name: engineName as EngineName,
+      version: requireString(engine, "version", "report.engine"),
+    },
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,

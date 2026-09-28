@@ -18,8 +18,12 @@ import {
   Scene,
   WebGPURenderer,
 } from "three/webgpu";
-import {
-  type IRenderProjectionReport,
+// Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
+// scene, and a runtime import here would put the framework in the control arm's served graph. The
+// arm that owns the optimizer passes the factory in; an arm that has none has no L3 to measure.
+import type {
+  IRenderProjectionOptions,
+  IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
@@ -41,6 +45,12 @@ import {
 
 export const VIEWPORT_WIDTH = 1280;
 export const VIEWPORT_HEIGHT = 720;
+
+/** How an arm that owns a render projection builds one over a scene. */
+export type CollapseFactory = (
+  scene: Scene,
+  options?: IRenderProjectionOptions,
+) => SceneRenderProjection;
 
 export interface ILoadTestRung {
   mode: RenderMode;
@@ -247,6 +257,7 @@ export async function createLoadTestHarness(
   adapterLabel = "unknown",
   animateObjects = true,
   axes: IWorkloadAxes = DEFAULT_AXES,
+  createCollapse?: CollapseFactory,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -359,11 +370,12 @@ export async function createLoadTestHarness(
 
   const beginCollapse = (): void => {
     if (state === undefined || state.rung.mode !== "L3") return;
+    if (createCollapse === undefined) throw new Error("TN_BENCH_NO_COLLAPSE_PROVIDER");
     collapseReport = undefined;
     // No tuning: `defineGame` constructs `new SceneRenderProjection(scene)` with defaults and
     // reconciles it every frame, so L3 must use the same defaults or it measures a hand-tuned
     // optimizer rather than what a ThreeNative game actually gets.
-    state.collapse = new SceneRenderProjection(scene, {
+    state.collapse = createCollapse(scene, {
       onReport: (value) => {
         collapseReport = value;
       },

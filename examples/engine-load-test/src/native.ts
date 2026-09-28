@@ -1,6 +1,7 @@
 // Native entry for the PRD-117 ThreeNative desktop/device arms. It drives the same ladder as the
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
+import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
 import { type RenderMode, parseAxesRecord, percentile } from "./workload.js";
 
@@ -31,7 +32,16 @@ function nextFrame(): Promise<number> {
 async function main(): Promise<void> {
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface", config.animate, axes);
+  // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
+  // control can drive the same harness without the framework in its graph. This arm has one, and
+  // L3 is a native cell.
+  const harness = await createLoadTestHarness(
+    surface,
+    "native host surface",
+    config.animate,
+    axes,
+    (scene, options) => new SceneRenderProjection(scene, options),
+  );
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {

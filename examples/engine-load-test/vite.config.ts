@@ -66,6 +66,9 @@ export default defineConfig({
         rollupOptions: {
           input: {
             loadTest: resolve(import.meta.dirname, "index.html"),
+            // The plain-Three control is a second entry on the same build, so both arms are served
+            // from one `dist` out of one `vite build` and differ only in their module graph.
+            plain: resolve(import.meta.dirname, "plain.html"),
             projectionConformance: resolve(import.meta.dirname, "projection-conformance.html"),
           },
         },
