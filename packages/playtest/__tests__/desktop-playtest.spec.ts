@@ -464,18 +464,66 @@ test("desktop signal during preparation stops before bridge evaluation continues
   expect(driver?.stopped).toBe(true);
 });
 
-test.skipIf(process.platform === "win32")("desktop screenshot timeout fails closed", async () => {
+test.skipIf(process.platform === "win32")("desktop screenshot timeout fails closed with the host's own words", async () => {
+  // A timeout that names only "request timed out" sends the reader to the wrong layer: the host
+  // said something, and whether it still sees the request file says which half broke — the file
+  // left behind means it never looked, a consumed one means it read the request and the capture
+  // never landed. Both readings fail closed under the same prefix.
   const root = await makeTempDir("playtest-desktop-screenshot-");
   const executable = join(root, "native-test.mjs");
-  await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n");
+  await writeFile(executable, [
+    "#!/usr/bin/env node",
+    'import { unlinkSync } from "node:fs";',
+    'import { join } from "node:path";',
+    'if (process.argv[2] !== "silent") {',
+    '  console.log("[Playtest] mailbox ready");',
+    '  console.log("[Screenshot] waiting for request");',
+    '  console.log("platform noise the reader does not need");',
+    "}",
+    'if (process.argv[2] === "consume") {',
+    '  setTimeout(() => {',
+    '    unlinkSync(join(process.env.TN_PLAYTEST_MAILBOX_ROOT ?? "", "tn-playtest-screenshot-request.txt"));',
+    '    console.log("[Screenshot] request consumed, no png written");',
+    "  }, 200);",
+    "}",
+    "setInterval(() => {}, 1000);",
+    "",
+  ].join("\n"));
   await chmod(executable, 0o755);
-  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root, screenshotTimeoutMs: 20 });
+
+  const driveTimeout = async (args: string[]): Promise<string> => {
+    const driver = new DesktopPlaytestDriver({ executable, args, mailboxRoot: root, screenshotTimeoutMs: 1_000 });
+    try {
+      await driver.prepare("unused");
+      return await driver.screenshot(join(root, "capture.png")).then(
+        () => { throw new Error("screenshot unexpectedly resolved"); },
+        (error: unknown) => (error as Error).message,
+      );
+    } finally {
+      await driver.stop();
+    }
+  };
+
   try {
-    await driver.prepare("unused");
-    await expect(driver.screenshot(join(root, "capture.png")))
-      .rejects.toThrow("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    const untouched = await driveTimeout([]);
+    expect(untouched).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(untouched).toContain("request file still present");
+    expect(untouched).toContain("[Screenshot] waiting for request");
+    expect(untouched).toContain("[Playtest] mailbox ready");
+    // The tail is short and tagged: a line the reader cannot act on is not evidence.
+    expect(untouched).not.toContain("platform noise the reader does not need");
+
+    const consumed = await driveTimeout(["consume"]);
+    expect(consumed).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(consumed).toContain("request file consumed");
+    expect(consumed).toContain("[Screenshot] request consumed, no png written");
+
+    // A host that logged nothing still has to name the state it was in, not print an empty tail.
+    const mute = await driveTimeout(["silent"]);
+    expect(mute).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(mute).toContain("request file still present");
+    expect(mute).toContain("native host output: none captured");
   } finally {
-    await driver.stop();
     await rm(root, { force: true, recursive: true });
   }
 });

@@ -8,6 +8,8 @@ import type { IDevicePlaytestDriver } from "./androidRunner.js";
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_REQUEST_FILE = "tn-playtest-screenshot-request.txt";
 const SCREENSHOT_REQUEST_TEMP_FILE = `${SCREENSHOT_REQUEST_FILE}.tmp`;
+const HOST_TAIL_LINES = 6;
+const HOST_DIAGNOSTIC_LINE = /\[(?:Screenshot|Playtest)\]/u;
 
 export interface IDesktopPlaytestDriverOptions {
   args?: readonly string[];
@@ -143,8 +145,25 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       await delay(25);
     }
     throw new Error(
-      `TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: ${lastReadError instanceof Error ? lastReadError.message : "request timed out"}`,
+      `TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: ${await this.describeScreenshotTimeout(request, lastReadError)}`,
     );
+  }
+
+  /**
+   * Why a screenshot produced no file. The host's own tagged lines are the only place that answer
+   * is written, and the request file's presence splits the failure in two: left behind means the
+   * host never looked, consumed means it read the request and the capture never landed. A bounded
+   * tail, never the whole log — a 40k-line dump is how a timeout becomes unreadable.
+   */
+  private async describeScreenshotTimeout(request: string, lastReadError: unknown): Promise<string> {
+    this.flushOutput("stdout");
+    this.flushOutput("stderr");
+    const cause = lastReadError instanceof Error ? lastReadError.message : "request timed out";
+    const requestState = await requestFileState(request);
+    const lines = this.consoleEntries.map((entry) => entry.text);
+    const tagged = lines.filter((line) => HOST_DIAGNOSTIC_LINE.test(line));
+    const tail = (tagged.length > 0 ? tagged : lines).slice(-HOST_TAIL_LINES);
+    return `${cause}; ${requestState}; native host output: ${tail.length > 0 ? tail.join(" | ") : "none captured"}`;
   }
 
   async stop(): Promise<void> {
@@ -273,4 +292,19 @@ function isMissingFile(error: unknown): boolean {
     && error !== null
     && "code" in error
     && (error as { code?: unknown }).code === "ENOENT";
+}
+
+/**
+ * Reads the request file to name the host's state. Only ENOENT proves the host consumed it;
+ * a permission or I/O failure proves nothing about the host, so it is reported as unreadable
+ * rather than folded into "consumed" — a wrong label sends the reader to the wrong layer.
+ */
+async function requestFileState(path: string): Promise<string> {
+  try {
+    await readFile(path);
+    return "request file still present";
+  } catch (error) {
+    if (isMissingFile(error)) return "request file consumed";
+    return `request file unreadable: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
