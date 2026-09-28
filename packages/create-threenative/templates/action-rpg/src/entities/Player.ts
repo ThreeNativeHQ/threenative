@@ -31,7 +31,7 @@ const SWING = 0.45;
 const CAST = 0.7;
 const ROLL = 0.5;
 const DODGE_COOLDOWN = 1;
-const REACH = 1.1;
+const REACH = 0.9;
 
 export class Player extends Fighter {
   readonly body: CharacterBody3D;

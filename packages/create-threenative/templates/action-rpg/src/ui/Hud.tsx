@@ -12,9 +12,9 @@ export function Hud() {
   const blocked = state.lineOfSightBlocked;
   return (
     <section className="pointer-events-none absolute left-6 top-5 w-72 text-[10px] uppercase tracking-[0.16em]">
-      <div className="text-dim">dungeon / action rpg</div>
+      <div className="text-dim">grid dungeon / action rpg</div>
       <div className="mt-2 text-3xl leading-none text-amber">room {room} / 3</div>
-      <div className="mt-2 text-cyan">boss clear · death fails</div>
+      <div className="mt-2 text-cyan">three rooms · boss clear · death fails</div>
       <div className="mt-2 flex justify-between border-t border-line pt-2 text-dim">
         <span>defeated {enemies}</span>
         <span>wall ray {blocked === 1 ? "blocked" : "clear"}</span>

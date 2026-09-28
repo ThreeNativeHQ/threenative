@@ -60,11 +60,13 @@ function addTorch(room: Group, x: number, wallZ: number, inward: number): void {
 
 /** The cross wall between two rooms, split around a doorway with a lintel over it. */
 function addDoorway(room: Group, x: number): void {
-  const side = (ROOM_HALF_DEPTH - DOOR_HALF_WIDTH) as number;
+  // Two wall segments and one gap: 2 x (halfDepth - doorHalfWidth) + 2 x doorHalfWidth is exactly
+  // the room's depth, so the gap is a real hole and not a gap with a wall through it.
+  const segment = ROOM_HALF_DEPTH - DOOR_HALF_WIDTH;
   for (const direction of [-1, 1]) {
     const wall = solidBox(
-      [WALL_THICKNESS, NORTH_WALL, side * 2],
-      [x, 0, direction * (DOOR_HALF_WIDTH + side / 2)],
+      [WALL_THICKNESS, NORTH_WALL, segment],
+      [x, 0, direction * (DOOR_HALF_WIDTH + segment / 2)],
       structureMaterial,
     );
     wall.name = "cross-wall";

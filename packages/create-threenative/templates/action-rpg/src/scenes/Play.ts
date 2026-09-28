@@ -348,8 +348,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     addEnemy("enemy.room-three", new Vector3(11.5, 0.78, 0), { health: 30 });
     const boss = addEnemy("boss", new Vector3(16, 0.78, 0), { boss: true, health: 64 });
 
+    /** The damage half of a swing. The clip is the caller's: a spell and a sword do not play the
+     * same animation, and both of them reach this function. */
     const strike = (amount: number): void => {
-      player.strike();
       burst(attackVfx, player.attackOrigin(), "vfx-attack");
       const hits = ctx.physics.directSpaceState.intersectShape({
         collisionMask: HOSTILE_LAYER,
@@ -382,11 +383,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         emitPlaytestEvent({ entity: "player", name: "ability-expired" });
       },
       onStart: () => {
-        player.cast();
         burst(surgeVfx, player.mesh.position, "vfx-surge");
         damageStats.apply({ add: 6, duration: 1, source: "arcane-surge" }, elapsed);
         ctx.state.set({ abilityUses: ctx.state.getState().abilityUses + 1, modifierActive: 1 });
         strike(20);
+        player.cast();
         emitPlaytestEvent({ entity: "player", name: "ability" });
       },
     });
@@ -451,8 +452,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (frameCtx.input.justPressed("lethal")) player.takeDamage(player.health + 1);
       if (frameCtx.input.justPressed("damage")) player.takeDamage(18);
       const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true)
+      if (frameCtx.input.justPressed("attack") || touch?.attackPressed === true) {
+        player.strike();
         strike(Math.round(damageStats.value(elapsed)));
+      }
       if (frameCtx.input.justPressed("ability") || touch?.abilityPressed === true) ability.cast();
       if (frameCtx.input.justPressed("dodge") && player.dodge())
         emitPlaytestEvent({ entity: "player", name: "dodged" });

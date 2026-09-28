@@ -145,7 +145,9 @@ export class Enemy extends Fighter {
         this.#onAttack(this.boss ? 10 : 5);
       }
       this.body.moveAndSlide(dt);
-      this.animateRig(dt, heading, this.busy ? MELEE_RANGE : 0);
+      // Standing still: it keeps facing the player, but a stationary body must not be handed a
+      // walking clip, or stride sync re-times the legs to ground the enemy is not covering.
+      this.animateRig(dt, heading, 0);
       return;
     }
 

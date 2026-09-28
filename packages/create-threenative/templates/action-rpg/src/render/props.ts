@@ -63,8 +63,11 @@ export function bakeByMaterial(parts: readonly Mesh[], into: Group, name: string
         mesh.updateMatrix();
         const placed = mesh.geometry.clone().applyMatrix4(mesh.matrix);
         const cloned = placed.index === null ? placed : placed.toNonIndexed();
+        // Position and UVs only. Normals are recomputed below, and dropping the UVs would leave a
+        // grid-mapped material with no coordinates to read the grid from — three warns, and the
+        // merged surface comes out untextured.
         for (const name of Object.keys(cloned.attributes)) {
-          if (name !== "position") cloned.deleteAttribute(name);
+          if (name !== "position" && name !== "uv") cloned.deleteAttribute(name);
         }
         return cloned;
       }),
