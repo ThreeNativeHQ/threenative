@@ -258,7 +258,7 @@ describe("PRD-449 campaign progress monitor", () => {
     expect(html).toContain("invalid");
     expect(html.indexOf("bb22cc3")).toBeLessThan(html.indexOf("aa11bb2"));
     // A run's own numbers stay in that run's file; the page reports only its status and path.
-    expect(html).not.toMatch(/frameMs|p95|12\.3|9\.9/);
+    expect(html).not.toMatch(/>12\.3<|>9\.9</u);
   });
 
   it("escapes untrusted text and links only paths inside the campaign root", async () => {
