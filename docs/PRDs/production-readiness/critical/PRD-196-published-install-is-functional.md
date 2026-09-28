@@ -21,7 +21,13 @@ verifying the APK's five `arm64-v8a` entries byte-for-byte against `runtime-nati
 full `pnpm tsx scripts/verify-registry-install.ts` run remains red before the Android npm leg:
 `npm:install` fails in published-package dependency installation at `sharp@0.34.5` (`Please add
 node-addon-api to your dependencies`), while the `pnpm` manager's scaffold/install/build/test/
-gameplay/doctor/native/android/mcp steps pass. The hosted tag gate above remains open.
+gameplay/doctor/native/android/mcp steps pass. 2026-09-28 root cause: the public
+`create-threenative@0.2.6` tarball's templates have no npm `overrides.sharp`, so npm follows
+`@gltf-transform/cli@4.4.2` to `sharp@0.34.5`; a minimal clean room with only that dependency
+reproduces the source-build failure under current Node/npm, while the same clean room with
+`overrides: { sharp: ">=0.35.4" }` installs `sharp@0.35.5` successfully. The current branch's
+templates and regression test carry that fix, but the already-published tarball cannot be changed
+without a new package publish. The hosted tag gate above remains open.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at

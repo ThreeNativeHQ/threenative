@@ -1339,3 +1339,54 @@ The full publish-state suite is 45/45, the release suite is 14/14, and the workf
 suite is 83/83. `git diff --check` is clean. This completes the review repair; the remaining
 unverified boundaries are still the credentialed eleven-package publish, matching native release,
 and consumer clean-room run described above.
+
+## Repair round 9 — npm sharp blocker and linux-arm64 consumer verifier, 2026-09-28
+
+Root cause for the remaining npm clean-room blocker is package-boundary drift in the already
+published CLI tarball, not global libvips, pnpm behavior, or repository runner configuration. A
+minimal clean room with only `@gltf-transform/cli@4.4.2` reproduces npm's `sharp@0.34.5` source-build
+failure (`Please add node-addon-api to your dependencies`) on the current Node/npm toolchain. The
+same minimal clean room with an npm `overrides.sharp` floor of `>=0.35.4` installs successfully and
+resolves `sharp@0.35.5`. Inspecting the public `create-threenative@0.2.6` tarball confirmed that its
+templates have no `overrides.sharp`, while this branch's templates and regression test do. Because
+that published tarball is immutable, the public-registry npm leg still requires a future package
+publish; no publish was performed in this repair.
+
+The current linux-arm64 CI failure was separate. The failed run's `native-starter-linux-arm64`
+artifact contained `consumer-desktop.log` with a structured playtest diagnostic on stderr:
+`TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: request timed out`, while stdout was empty. The verifier
+was parsing only stdout and reported the misleading malformed-row error. A rerun after preserving the
+structured stderr proved the remaining failure was the playtest runner's default convenience
+`after.png` capture: the PRD-366 consumer scenario has no visual assertion, and its gameplay proof is
+the protocol assertion report, so forcing a desktop mailbox screenshot after the non-visual assertions
+made the arm64 lane depend on flaky post-scenario screenshot servicing. The desktop playtest driver
+now supports `TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS`, the starter linux CI leg sets it to 30s for
+future screenshot-requiring scenarios, the consumer verifier falls back to a structured stderr report,
+and desktop consumer qualification passes `--no-screenshots` so non-visual consumer proof records the
+actual gameplay assertions instead of failing on an unused artifact frame.
+
+Focused verification:
+
+```text
+$ pnpm exec vitest run packages/playtest/__tests__/desktop-playtest.spec.ts \
+    --testNamePattern "desktop screenshot timeout can be raised|desktop screenshot timeout fails closed"
+Test Files  1 passed (1)
+Tests       2 passed | 33 skipped (35)
+exit 0
+
+$ pnpm --dir packages/runtime-native exec vitest run --config vitest.config.ts \
+    tests/starter-consumer-gameplay.test.mjs
+Test Files  1 passed (1)
+Tests       13 passed (13)
+exit 0
+
+$ pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts \
+    --testNamePattern "forces the broken sharp"
+Test Files  1 passed (1)
+Tests       1 passed | 59 skipped (60)
+exit 0
+```
+
+Repository gates run after the repair: `pnpm check:docs` pass (2343 links / 1155 Markdown files),
+`pnpm typecheck` pass, `pnpm lint` exit 0 with inherited warnings, and `pnpm budgets` exit 0 with the
+current native-census drift warnings already printed by that gate.

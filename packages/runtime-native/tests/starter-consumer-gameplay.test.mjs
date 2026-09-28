@@ -194,6 +194,63 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     );
   });
 
+  test('uses a structured runner report from stderr when stdout is empty', () => {
+    const project = makeTempDirSync('starter-consumer-stderr-report-');
+    const executableName = process.platform === 'win32' ? 'my-game.exe' : 'my-game';
+    mkdirSync(join(project, 'dist-native'), { recursive: true });
+    const artifact = join(project, 'dist-native', executableName);
+    writeFileSync(artifact, 'built consumer');
+    writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'my-game' }));
+    writeFileSync(
+      join(project, 'threenative.config.ts'),
+      'export default { app: { id: "com.threenative.my-game" } };\n',
+    );
+    mkdirSync(join(project, 'playtests'), { recursive: true });
+    writeFileSync(
+      join(project, scenario),
+      JSON.stringify({ assert: { movement: { entity: 'player' } }, steps: [] }),
+    );
+    const runner = join(
+      project,
+      'node_modules',
+      '@threenative',
+      'playtest',
+      'dist',
+      'runner',
+      'cli.js',
+    );
+    mkdirSync(join(runner, '..'), { recursive: true });
+    writeFileSync(runner, '// installed consumer runner');
+
+    assert.throws(
+      () =>
+        verifyStarterConsumerGameplay({
+          applicationId: builtApplicationId,
+          project,
+          runner: () => ({
+            status: 1,
+            stderr: JSON.stringify({
+              diagnostics: [
+                {
+                  code: 'TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE',
+                  message: 'request timed out',
+                  severity: 'error',
+                },
+              ],
+              pass: false,
+            }),
+            stdout: '',
+          }),
+          target: 'desktop',
+        }),
+      /TN_STARTER_CONSUMER_NO_ASSERTIONS|TN_STARTER_CONSUMER_ASSERTION_FAILED/u,
+    );
+    const recorded = JSON.parse(
+      readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
+    );
+    assert.match(recorded[0].failures.join('\n'), /TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE/u);
+  });
+
   test('records a desktop consumer row through the injected runner without a display', () => {
     const project = makeTempDirSync('starter-consumer-gameplay-');
     const executableName = process.platform === 'win32' ? 'my-game.exe' : 'my-game';
@@ -252,6 +309,7 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     assert.equal(expected.artifactHash, row.artifactHash);
     assert.match(calls[0].join(' '), /--target desktop/u);
     assert.match(calls[0].join(' '), /--executable/u);
+    assert.match(calls[0].join(' '), /--no-screenshots/u);
     const recorded = JSON.parse(
       readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
     );

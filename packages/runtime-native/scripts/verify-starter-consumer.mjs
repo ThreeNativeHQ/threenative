@@ -258,6 +258,18 @@ export function parseConsumerPlaytestReport(stdout, target, declaredFamilies = [
     throw consumerError('ROW_MALFORMED', 'the playtest diagnostics are malformed.');
   }
   const diagnostics = rawDiagnostics.map((item) => item.code);
+  if (
+    parsed.assertionResults === undefined &&
+    rawDiagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  ) {
+    return {
+      assertionIds: ['diagnostics'],
+      assertions: 1,
+      diagnostics,
+      failures: diagnostics,
+      pass: false,
+    };
+  }
   if (diagnostics.some((code) => code.endsWith('UNSUPPORTED_ON_TARGET'))) {
     throw consumerError(
       'SCENARIO_NOT_CROSS_TARGET',
@@ -456,6 +468,13 @@ function recordConsumerTargetRow(projectRoot, row, target = row?.target) {
   return file;
 }
 
+function runnerReportText(result) {
+  const stdout = result.stdout ?? '';
+  if (stdout.trim().length > 0) return stdout;
+  const stderr = result.stderr ?? '';
+  return stderr.trim().length > 0 ? stderr : stdout;
+}
+
 function defaultConsumerRunner(
   command,
   args,
@@ -596,7 +615,7 @@ export function verifyStarterConsumerGameplay(options = {}) {
       options.activity ?? 'com.threenative.runtime.MystralActivity',
     );
   } else {
-    args.push('--executable', artifact, '--host-arg', '--windowed');
+    args.push('--executable', artifact, '--host-arg', '--windowed', '--no-screenshots');
   }
   try {
     if (android) {
@@ -616,7 +635,8 @@ export function verifyStarterConsumerGameplay(options = {}) {
         `the '${target}' process did not complete: ${result.error?.message ?? result.signal ?? result.status}.`,
       );
     }
-    const report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
+    const reportText = runnerReportText(result);
+    const report = parseConsumerPlaytestReport(reportText, target, declaredFamilies);
     Object.assign(row, {
       assertionIds: report.assertionIds,
       assertions: report.assertions,
