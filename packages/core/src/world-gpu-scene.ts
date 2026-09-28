@@ -103,6 +103,8 @@ function storageAttribute<A extends BufferAttribute>(
 const VALIDATE_EVERY = 30;
 /** Keys a mismatch line names before the rest are counted and not printed. */
 const VALIDATE_REPORTED_KEYS = 10;
+/** Characters of a cause a `cause=` line carries, so one message cannot own the report. */
+const CAUSE_CHARS = 160;
 
 /**
  * A `mat4` world matrix, the placement's bounding-sphere centre and radius, and the asset slot whose
@@ -184,6 +186,23 @@ export interface IKernelResult {
   readonly drawn: Float32Array;
   /** Instances drawn per region, which is what the args record's count must say. */
   readonly counts: Uint32Array;
+}
+
+/**
+ * One dispatch's own copy of everything its kernel read, taken while that dispatch runs, plus the
+ * attribute the readback has to name.
+ *
+ * A streamed world changes its placement set, its gate table and its region layout between one frame
+ * and the next, so a reference computed when a readback lands describes the frames that followed the
+ * dispatch that produced the bytes — which is how a check that compared nothing came to report
+ * `compared=0` over 21,147 resident placements. Copied at dispatch time, the reference is a pure
+ * function of the snapshot and nothing that happens afterwards can change it.
+ */
+interface IValidationSnapshot extends IKernelInput {
+  /** The indirect records this dispatch wrote, which is what its readback must name. */
+  readonly args: unknown;
+  /** Resident placements the scene held when this dispatch ran. */
+  readonly placed: number;
 }
 
 /**
@@ -308,6 +327,8 @@ export interface IGpuSceneComparison {
   readonly placed: number;
   /** The device's last uncaptured error, or `""` for none since the last check reported one. */
   readonly deviceError: string;
+  /** What stopped the check — a rejected readback, say. Non-empty is an `error` on its own. */
+  readonly cause?: string;
 }
 
 /**
@@ -321,22 +342,25 @@ export interface IGpuSceneComparison {
  * comparing nothing while placements exist is an `error`, and a device that raised anything
  * uncaptured is an `error` whatever the counts say, because every count in a buffer the device has
  * already invalidated is not evidence of anything.
+ *
+ * An `error` always names its cause on one `cause=` line: the checks that fail here fail silently
+ * otherwise, and a line reading `error` with nothing after it is the report that hid a refused
+ * pipeline in the first place.
  */
 export function validationReport(input: IGpuSceneComparison): IGpuSceneValidation {
+  const blind = input.compared === 0 && input.placed > 0;
+  const cause =
+    input.deviceError !== ""
+      ? `device-error ${input.deviceError}`
+      : (input.cause ?? (blind ? `compared-0-with-placed=${String(input.placed)}` : ""));
   const verdict: GpuSceneVerdict =
-    input.deviceError !== "" || (input.compared === 0 && input.placed > 0)
-      ? "error"
-      : input.mismatched > 0
-        ? "mismatch"
-        : "ok";
+    cause !== "" ? "error" : input.mismatched > 0 ? "mismatch" : "ok";
   const line =
     `TN_WORLD_GPU_SCENE_VALIDATE ${verdict} compared=${String(input.compared)} ` +
     `instancesGpu=${String(input.instancesGpu)} instancesCpu=${String(input.instancesCpu)} ` +
     `mismatched=${String(input.mismatched)}`;
   const lines: string[] = [...input.mismatches];
-  if (verdict === "error" && input.deviceError === "")
-    lines.push(`reason=compared-0-with-placed=${String(input.placed)}`);
-  if (input.deviceError !== "") lines.push(`device-error ${input.deviceError}`);
+  if (cause !== "") lines.push(`cause=${cause.slice(0, CAUSE_CHARS)}`);
   return { verdict, line, lines };
 }
 
@@ -908,56 +932,92 @@ export class WorldGpuScene {
   #deviceError = "";
 
   /**
-   * Read the indirect args back and hold them against the reference, over the same placements, the
-   * same camera and the same gate table the dispatch just read.
+   * Read the indirect args back and hold them against the reference, over the placements, camera and
+   * gate table the dispatch just read — copied at this moment, in this turn, so a structural change
+   * landing while the bytes are in flight changes nothing about what they are held against.
    *
    * The reference is {@link cullAndSelect} on the CPU, so this is the kernel measured against the
    * loop it mirrors — the only place the TSL itself is ever checked. It costs a queue submission and
    * a mapped buffer every {@link VALIDATE_EVERY} dispatches, which is why it is a mode and not a
-   * default: a game never pays for it and a walk is never measured with it on.
+   * default: a game never pays for it and a walk is never measured with it on. One check is in flight
+   * at a time, so every report answers a dispatch of its own.
    */
   #compare(renderer: IRendererLike): void {
-    const buffers = this.#buffers;
-    if (buffers === undefined) return;
-    const reference = cullAndSelect({
+    const snapshot = this.#snapshot();
+    const reference = cullAndSelect(snapshot);
+    this.#validating = true;
+    renderer
+      .readback(snapshot.args)
+      .then((bytes) => {
+        this.#validating = false;
+        this.#publish(renderer, this.#against(snapshot, reference, new Uint32Array(bytes)));
+      })
+      .catch((reason: unknown) => {
+        // A readback that never lands is a check that never ran, and saying so is the whole point:
+        // this line used to end the chain and leave the last verdict standing as if it were fresh.
+        this.#validating = false;
+        this.#publish(renderer, {
+          cause: `readback-failed: ${String(reason instanceof Error ? reason.message : reason)}`,
+          compared: 0,
+          deviceError: this.#deviceError,
+          instancesCpu: 0,
+          instancesGpu: 0,
+          mismatched: 0,
+          mismatches: [],
+          placed: snapshot.placed,
+        });
+      });
+  }
+
+  /**
+   * A copy of everything the dispatch that is running right now reads: the source records, the slot
+   * and gate tables, the region and args layout, the frustum planes and the eye.
+   *
+   * One flat array holds the placement records and each copy is a view into it, so a twenty-thousand
+   * placement walk costs one allocation rather than forty thousand. The gate and region tables are
+   * copied shallowly, which is whole: an asset's gate definition is replaced rather than edited, and
+   * a region is spread into a fresh object, so nothing reachable from a snapshot can move under it.
+   */
+  #snapshot(): IValidationSnapshot {
+    const flat = new Float32Array(this.placements.length * PLACEMENT_WORDS);
+    const placements = this.placements.map((placement, index) => {
+      const at = index * PLACEMENT_WORDS;
+      flat.set(placement.matrix, at);
+      flat.set(placement.centre, at + LOCAL_WORDS);
+      return {
+        centre: flat.subarray(at + LOCAL_WORDS, at + LOCAL_WORDS + 4),
+        matrix: flat.subarray(at, at + LOCAL_WORDS),
+        slot: placement.slot,
+      };
+    });
+    return {
+      args: this.#buffers?.args,
       camera: {
-        planes: this.#planes,
+        planes: this.#planes.slice(),
         x: this.#eye.value.x,
         y: this.#eye.value.y,
         z: this.#eye.value.z,
       },
-      count: this.placements.length,
-      placements: this.placements,
+      count: placements.length,
+      placed: this.#live,
+      placements,
       regionCount: this.#regions.length,
-      regions: this.#regions,
-      slots: this.gates(),
-    });
-    const issued = this.#dispatched;
-    const version = this.#version;
-    this.#validating = true;
-    renderer
-      .readback(buffers.args)
-      .then((bytes) => {
-        this.#validating = false;
-        // A readback that lands more than its own window later describes a walk, not this frame.
-        if (this.#dispatched - issued > VALIDATE_EVERY) return;
-        // Nor one that lands after a structural change: a key minted, a buffer regrown or a gate
-        // table rewritten in between means this reference describes neither the region set nor the
-        // attribute the bytes came from, and a comparison over it says nothing.
-        if (this.#version !== version) return;
-        this.#reportMismatch(renderer, new Uint32Array(bytes), reference);
-      })
-      .catch(() => {
-        this.#validating = false;
-      });
+      regions: this.#regions.map((region) => ({ ...region, local: region.local.slice() })),
+      slots: this.gates().map((slot) => ({ ...slot })),
+    };
   }
 
-  #reportMismatch(renderer: IRendererLike, gpu: Uint32Array, reference: IKernelResult): void {
+  /** One readback's bytes against its own dispatch's reference, per key. */
+  #against(
+    snapshot: IValidationSnapshot,
+    reference: IKernelResult,
+    gpu: Uint32Array,
+  ): IGpuSceneComparison {
     const mismatches: string[] = [];
     let mismatched = 0;
     let instancesGpu = 0;
     let instancesCpu = 0;
-    for (const [index, region] of this.#regions.entries()) {
+    for (const [index, region] of snapshot.regions.entries()) {
       const landed = gpu[region.argsIndex * DRAW_ARGS_WORDS + 1] as number;
       const expected = reference.counts[index] as number;
       instancesGpu += landed;
@@ -969,18 +1029,23 @@ export class WorldGpuScene {
           `${region.name ?? `#${String(index)}`} gpu=${String(landed)} cpu=${String(expected)}`,
         );
     }
-    const report = validationReport({
-      compared: this.#regions.length,
+    return {
+      compared: snapshot.regions.length,
       deviceError: this.#deviceError,
-      instancesGpu,
       instancesCpu,
+      instancesGpu,
       mismatched,
       mismatches,
-      placed: this.#live,
-    });
+      placed: snapshot.placed,
+    };
+  }
+
+  /** One verdict, stored for a harness to read and printed once, with its cause if it failed. */
+  #publish(renderer: IRendererLike, input: IGpuSceneComparison): void {
+    const report = validationReport(input);
     this.#verdict = report.verdict;
-    this.#compared = this.#regions.length;
-    this.#mismatches = mismatched;
+    this.#compared = input.compared;
+    this.#mismatches = input.mismatched;
     this.#lines = [...report.lines];
     // Reported, so cleared: an error is folded into exactly the check that saw it.
     this.#deviceError = "";

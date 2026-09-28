@@ -1155,7 +1155,8 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       "TN_WORLD_GPU_SCENE_VALIDATE ok compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
     );
 
-    // Compared nothing with placements resident: nothing was checked, so it is not a pass.
+    // Compared nothing with placements resident: nothing was checked, so it is not a pass, and the
+    // line says which of the two numbers is the wrong one.
     const blind = validationReport({
       ...base,
       compared: 0,
@@ -1167,7 +1168,7 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(blind.line).toBe(
       "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
     );
-    expect(blind.lines).toEqual(["reason=compared-0-with-placed=812"]);
+    expect(blind.lines).toEqual(["cause=compared-0-with-placed=812"]);
 
     // A refused dispatch, however good the counts look.
     const refused = validationReport({
@@ -1179,8 +1180,29 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
       "TN_WORLD_GPU_SCENE_VALIDATE error compared=6 instancesGpu=120 instancesCpu=120 mismatched=0",
     );
     expect(refused.lines).toEqual([
-      "device-error GPUValidationError: bound with size 16 is too small",
+      "cause=device-error GPUValidationError: bound with size 16 is too small",
     ]);
+
+    // A readback that never landed, with nothing resident to blame: a named cause is an error on its
+    // own, because a check that did not run is not a check that passed.
+    const failed = validationReport({
+      ...base,
+      cause: "readback-failed: mapAsync device lost",
+      compared: 0,
+      instancesCpu: 0,
+      instancesGpu: 0,
+      placed: 0,
+    });
+    expect(failed.verdict).toBe("error");
+    expect(failed.lines).toEqual(["cause=readback-failed: mapAsync device lost"]);
+
+    // And one cause cannot own the report: 160 characters, however long the device's message is.
+    const long = validationReport({
+      ...base,
+      cause: `readback-failed: ${"x".repeat(400)}`,
+      compared: 0,
+    });
+    expect(long.lines[0]).toHaveLength("cause=".length + 160);
 
     const differing = validationReport({
       ...base,
@@ -1254,5 +1276,104 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     await drive(scene, renderer, 30);
     expect(lines.some((line) => line.includes("device-error"))).toBe(false);
     expect(scene.validation.verdict).not.toBe("error");
+  });
+
+  /**
+   * The readback is held against the dispatch that produced it, not against the frames that followed.
+   *
+   * A 20 m/s map-walk flyover printed `error compared=0 instancesGpu=0 instancesCpu=0` over 21,147
+   * resident placements and never once compared a key: the check dropped the bytes whenever a
+   * structural change landed between asking for them and receiving them, and while a world streams
+   * that is every readback. So the reference is now a copy taken in the dispatch itself, and a new
+   * key minted while the bytes are in flight is no longer a reason to throw them away.
+   */
+  it("compares the dispatch's own snapshot after a structural change lands in flight", async () => {
+    const lines: string[] = [];
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    // The kernel mirror: a readback that answers with exactly what the reference would have written
+    // for the dispatch it was asked about, which is what a correct kernel produces.
+    const mirror = (): Promise<ArrayBuffer> => {
+      const args = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      }).args;
+      return Promise.resolve(args.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    // Thirty dispatches, so the thirtieth asks for its readback — and the structural change lands
+    // between the request and the bytes, which is the window the check used to discard.
+    for (let index = 0; index < 30; index += 1) scene.dispatch(renderer, camera);
+    scene.key("pine:0:1", LOCAL, 4, { group: "pine:0", part: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 2 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 12), 0, 0, 12, 0.5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // One key, because that is the one the snapshot held: the live scene has two by now, and the
+    // reference for the second key did not exist when the dispatch ran.
+    expect(scene.regions).toHaveLength(2);
+    expect(lines).toContain(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0",
+    );
+    expect(scene.validation.verdict).toBe("ok");
+    expect(scene.validation.compared).toBe(1);
+
+    // And the next check is a check of the world as it now is: two keys, each drawing both of the
+    // two placements, so four instances where the first dispatch had one.
+    lines.length = 0;
+    await drive(scene, renderer, 30);
+    expect(lines).toContain(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=2 instancesGpu=4 instancesCpu=4 mismatched=0",
+    );
+    expect(scene.validation.compared).toBe(2);
+  });
+
+  it("says a readback that never landed failed, instead of leaving the last verdict standing", async () => {
+    const lines: string[] = [];
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: (): Promise<ArrayBuffer> => Promise.reject(new Error("mapAsync: device lost")),
+    } as unknown as IRendererLike;
+    const scene = new WorldGpuScene();
+    scene.enable(renderer, true, true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    expect(scene.validation.verdict).toBe("error");
+    expect(lines).toContain(
+      "TN_WORLD_GPU_SCENE_VALIDATE error compared=0 instancesGpu=0 instancesCpu=0 mismatched=0",
+    );
+    expect(lines).toContain(
+      "TN_WORLD_GPU_SCENE_VALIDATE cause=readback-failed: mapAsync: device lost",
+    );
+
+    // And the mode keeps checking: a failed readback does not leave the flag set and silence it.
+    lines.length = 0;
+    await drive(scene, renderer, 30);
+    expect(lines.some((line) => line.includes("readback-failed"))).toBe(true);
   });
 });
