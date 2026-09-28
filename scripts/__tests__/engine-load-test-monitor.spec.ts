@@ -379,7 +379,7 @@ describe("performance iteration evidence", () => {
   });
 });
 
-it("plots production hardware pilot samples without claiming iteration improvement", () => {
+it("plots exploratory pilot samples and distinguishes observed, zero, null and absent means", () => {
   const pilot: IRunReport = {
     arm: "tn-web",
     build: { type: "release", notes: "vite production build" },
@@ -425,6 +425,44 @@ it("plots production hardware pilot samples without claiming iteration improveme
   expect(html).toContain("not completed-work or iteration improvement");
   expect(html).toContain("No qualified iterations yet");
   expect(html).toContain("No qualified run");
+  const rung = pilot.rungs[0];
+  if (!rung) throw new Error("Missing pilot rung fixture");
+  const withObservation = (value: number | null): string =>
+    renderProgressHtml(
+      data({
+        pilots: [
+          {
+            ...attempt,
+            pilot: {
+              ...pilot,
+              rungs: [
+                {
+                  ...rung,
+                  completedWorkMeanMs: value,
+                  completedWorkReason: value === null ? "GPU drain unavailable <unsafe>" : null,
+                  cpuSubmitMeanMs: 0,
+                  measuredFrames: 4,
+                  drainPolicy: "drain after final frame",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+  const measured = withObservation(18.125);
+  expect(measured).toContain("18.125 ms/frame");
+  expect(measured).toContain("0.000 ms/frame");
+  expect(measured).toContain("Exploratory, cadence-inclusive browser delivery");
+  expect(measured).toContain("Measured frames</span><strong>4</strong>");
+  expect(measured).toContain("Drain policy: drain after final frame");
+  expect(measured).toContain("No qualified run");
+  const unavailable = withObservation(null);
+  expect(unavailable).toContain("Completed-work mean</span><strong>—</strong>");
+  expect(unavailable).toContain("Unavailable: GPU drain unavailable &lt;unsafe&gt;");
+  expect(unavailable).not.toContain("18.125 ms/frame");
+  expect(html).toContain("Not recorded");
+
   expect(
     renderProgressHtml(
       data({

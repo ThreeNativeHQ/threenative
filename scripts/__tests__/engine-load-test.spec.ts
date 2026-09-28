@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
 import {
+  type ILoadTestHarness,
   initInstanceMatrices,
   writeInstanceMatrices,
 } from "../../examples/engine-load-test/src/game.js";
@@ -2005,6 +2007,74 @@ describe("engine load test scorer", () => {
     );
   });
 
+  it("preserves the completed-work block so a saved report keeps the primary metric", () => {
+    const v2 = {
+      completedWorkMeanMs: 28.5,
+      completedWorkReason: null,
+      cpuSubmitMeanMs: 10,
+      drainPolicy:
+        "pre-drain:untimed,post-drain:timed,per-frame-fence:none,timing-scope:cadence-inclusive-browser-delivery",
+      measuredFrames: 8,
+    };
+    expect(parseRunReport(report({ rungs: [rung(v2)] })).rungs[0]).toMatchObject(v2);
+  });
+
+  it("keeps a rung written before the completed-work metric existed, with no invented value", () => {
+    const [legacy] = parseRunReport(report()).rungs;
+    expect(legacy).toBeDefined();
+    // One key list pins it: a parsed legacy rung carries exactly what it was written with, so no
+    // field is invented and no legacy report is refused.
+    expect(Object.keys(legacy ?? {}).sort()).toEqual([
+      "drawCalls",
+      "frameMs",
+      "mode",
+      "objectCount",
+      "positionHash",
+      "repeat",
+      "triangles",
+      "visibleObjects",
+    ]);
+  });
+
+  it("keeps an unobservable completed-work metric as null plus its reason", () => {
+    expect(
+      parseRunReport(
+        report({
+          rungs: [
+            rung({
+              completedWorkMeanMs: null,
+              completedWorkReason: "queue-completion-unavailable",
+              cpuSubmitMeanMs: 10,
+            }),
+          ],
+        }),
+      ).rungs[0],
+    ).toMatchObject({
+      completedWorkMeanMs: null,
+      completedWorkReason: "queue-completion-unavailable",
+    });
+  });
+
+  it("fails closed on a completed-work record nobody could read", () => {
+    for (const fields of [
+      // A hole with no reason, a reason on a measurement that exists, and a half-written pair.
+      { completedWorkMeanMs: null },
+      { completedWorkMeanMs: 4, completedWorkReason: "queue-completion-unavailable" },
+      { completedWorkReason: null },
+      { completedWorkMeanMs: 4, completedWorkReason: null, cpuSubmitMeanMs: Number.NaN },
+      { completedWorkMeanMs: -1, completedWorkReason: null },
+      { completedWorkMeanMs: 4, completedWorkReason: null, cpuSubmitMeanMs: 1, drainPolicy: "" },
+      // A declared window that disagrees with the series written beside it.
+      { completedWorkMeanMs: 4, completedWorkReason: null, measuredFrames: 7 },
+      { completedWorkMeanMs: 4, completedWorkReason: null, measuredFrames: 0 },
+    ]) {
+      expect(
+        () => parseRunReport(report({ rungs: [rung(fields)] })),
+        JSON.stringify(fields),
+      ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    }
+  });
+
   it("should reject a report missing its driver line", () => {
     const missing = report() as unknown as Record<string, unknown>;
     // biome-ignore lint/performance/noDelete: the point of the test is an absent key.
@@ -2715,3 +2785,198 @@ function plainReport(overrides: Record<string, unknown> = {}): Record<string, un
     ...overrides,
   };
 }
+
+// PRD-449 §7.4's primary metric, on the shared driver both web arms run: the wall time for N
+// *complete* rendered frames, drained once at the boundary. Summing the CPU submit spans instead
+// leaves the browser's rAF waits out of the window, and a queue-backed arm is then measured by its
+// submission cost rather than by how long N finished frames took — so the boundary is pinned here on
+// an injected clock rather than inferred from a run.
+describe("the completed-work measurement boundary", () => {
+  const FRAMES = 4;
+  const WARMUP = 2;
+  const STEP_MS = 1;
+  const RENDER_MS = 9;
+  /** One vsync wait per frame: real browser cadence, and inside the wall window by definition. */
+  const PRESENT_MS = 16;
+  const PRE_DRAIN_MS = 3;
+  const POST_DRAIN_MS = 5;
+  const KNOBS = { frames: FRAMES, repeats: 1, warmup: WARMUP };
+  const ARM: ILadderArm = {
+    arm: "stub",
+    buildNotes: "stub",
+    engineName: "three",
+    engineVersion: "185",
+    rendererLabel: "stub",
+  };
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // The driver reads the page's query string at module scope, which node has no `location` for.
+  async function loadDriver(): Promise<
+    typeof import("../../examples/engine-load-test/src/driver.js")
+  > {
+    vi.stubGlobal("location", { search: "" });
+    return import("../../examples/engine-load-test/src/driver.js");
+  }
+
+  /**
+   * A virtual clock: only `advance` moves time, so every millisecond in the report is one this test
+   * put there. The presentation wait is charged to `nextFrame`, where a real rAF's wait belongs.
+   */
+  function virtualClock(presentMs = PRESENT_MS): {
+    advance: (ms: number) => void;
+    clock: MeasurementClock;
+  } {
+    let time = 0;
+    return {
+      advance: (ms) => {
+        time += ms;
+      },
+      clock: {
+        nextFrame: async () => {
+          time += presentMs;
+          return time;
+        },
+        now: () => time,
+      },
+    };
+  }
+
+  /**
+   * A harness carrying only the seams the driver reads, plus the queue seam itself: `queue` is what
+   * turns finished work into an observation, so its absence is the case under test.
+   */
+  function stubHarness(
+    queue: { onSubmittedWorkDone?: () => Promise<void> } | undefined,
+    advance: (ms: number) => void,
+    onDrain: () => void = () => {},
+  ): ILoadTestHarness {
+    return {
+      adapterLabel: "stub adapter",
+      beginCollapse: () => {
+        throw new Error("the stub arm has no projection");
+      },
+      collapseMovingParts: () => -1,
+      collapseMs: 0,
+      collapseStatus: () => "pending",
+      dispose: () => {},
+      positionHash: "00000000",
+      render: async () => {
+        advance(RENDER_MS);
+      },
+      // The stub renderer holds nothing but the backend seam the completion probe reads.
+      renderer: (queue === undefined
+        ? {}
+        : { backend: { device: { queue } } }) as unknown as ILoadTestHarness["renderer"],
+      setRung: () => {},
+      stats: () => ({ drawCalls: 8, triangles: 96, visibleObjects: 4 }),
+      step: () => {
+        advance(STEP_MS);
+      },
+      stepMs: STEP_MS,
+    };
+  }
+
+  /** A harness whose queue drains, so the completed-work metric is observable. */
+  function drainingHarness(advance: (ms: number) => void): {
+    harness: ILoadTestHarness;
+    drains: () => number;
+  } {
+    let drains = 0;
+    const harness = stubHarness(
+      {
+        onSubmittedWorkDone: async () => {
+          drains += 1;
+          advance(drains === 1 ? PRE_DRAIN_MS : POST_DRAIN_MS);
+        },
+      },
+      advance,
+    );
+    return { drains: () => drains, harness };
+  }
+
+  it("measures the wall window over N completed frames, the browser's waits included", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const { drains, harness } = drainingHarness(advance);
+    const report = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(report.measuredFrames).toBe(2);
+    // Wall time from immediately after the 3 ms pre-drain (t=55) to immediately after the 5 ms tail
+    // drain (t=112) over 2 frames: 57/2 = 28.5. Two waits of 16 ms sit inside it, so the sum of the
+    // 10 ms submit spans plus the 5 ms drain (12.5) is not the answer, the pre-drain is outside it
+    // (30.0), and the tail is inside (26.0). One number pins every edge of the window.
+    expect(report.completedWorkMeanMs).toBe(28.5);
+    expect(report.drainPolicy).toBe(
+      "pre-drain:untimed,post-drain:timed,per-frame-fence:none,timing-scope:cadence-inclusive-browser-delivery",
+    );
+    // One pre-drain and one post-drain, and never a fence per frame: four frames would be six.
+    expect(drains()).toBe(2);
+    // The CPU submit half is a proxy and stays labelled as one, beside the metric that is not.
+    expect(report.cpuSubmitMeanMs).toBe(10);
+    // The legacy series is untouched: successive rAF intervals over the measured frames only, still
+    // read from the drained clock, so the boundary change moves the primary metric and nothing else.
+    expect(report.frameMs).toEqual([26, 26]);
+    expect(report.stepMs).toEqual([STEP_MS, STEP_MS]);
+  });
+
+  it("reports the same window on a clock with no cadence, where it equals the submit sum", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock(0);
+    const { harness } = drainingHarness(advance);
+    const report = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    // With no presentation wait there is nothing between the submit spans, so 20 ms of work plus the
+    // 5 ms tail drain over 2 frames is 12.5 — the two clocks differ by exactly the cadence, which is
+    // what makes the browser's number a delivery figure and not a capacity one.
+    expect(report.completedWorkMeanMs).toBe(12.5);
+    expect(report.cpuSubmitMeanMs).toBe(10);
+  });
+
+  it("reports a hole in the measurement as null plus a reason, never the submit proxy", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    // A backend with no queue to ask: a WebGL context, a stub, a seam that moved.
+    const report = await measureRung(
+      stubHarness(undefined, advance),
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(report.completedWorkMeanMs).toBeNull();
+    expect(report.completedWorkReason).toBe("queue-completion-unavailable");
+    // The submit time is still worth having, as long as nothing can mistake it for finished work.
+    expect(report.cpuSubmitMeanMs).toBe(10);
+  });
+
+  it("fails closed on a window with no measured frame", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const harness = stubHarness(undefined, advance);
+    const rung = { mode: "L1" as const, objectCount: 64 };
+    for (const knobs of [
+      { frames: FRAMES, repeats: 1, warmup: FRAMES },
+      { frames: FRAMES, repeats: 1, warmup: FRAMES + 1 },
+    ]) {
+      await expect(measureRung(harness, ARM, rung, 0, knobs, clock)).rejects.toThrow(
+        /TN_BENCH_WARMUP_GE_FRAMES/u,
+      );
+    }
+  });
+});

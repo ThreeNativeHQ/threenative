@@ -32,8 +32,38 @@ import {
 } from "./workload.js";
 
 export interface IRungReport {
+  /**
+   * PRD-449 §7.4's primary metric: the wall time from immediately after one untimed pre-drain,
+   * through `measuredFrames` rendered frames, to immediately after one final timed completion drain,
+   * divided by that count.
+   *
+   * The window is wall time, not the sum of the CPU submit spans plus a tail drain. GPU work can land
+   * during the browser's rAF waits, so adding up submit spans measures CPU occupancy and misses the
+   * waits entirely; it is not how long N *completed* frames took. Those waits are therefore *inside*
+   * this window, which makes the number **cadence-inclusive browser completed-work delivery** — how
+   * fast the surface actually delivered N finished frames at its presentation cadence — and never an
+   * uncapped capacity figure. `cpuSubmitMeanMs` is the uncapped CPU half; read the two together and
+   * neither stands in for the other.
+   *
+   * `null` when the arm's renderer exposes no queue to observe completion on, which is a hole in the
+   * measurement and never a zero and never the submit proxy.
+   */
+  completedWorkMeanMs: number | null;
+  /** Non-null exactly when `completedWorkMeanMs` is null: why finished work was unobservable. */
+  completedWorkReason: string | null;
+  /** The CPU submit half of the same window. A proxy, reported apart from `completedWorkMeanMs`. */
+  cpuSubmitMeanMs: number;
   drawCalls: number;
+  /** Fill/drain policy and timing scope for `completedWorkMeanMs`, recorded on every rung. */
+  drainPolicy: string;
+  /**
+   * The legacy series: successive render-producing rAF intervals, measured frames only. Unchanged by
+   * the completed-work window, because the pre-drain sits on the boundary — the first measured
+   * interval is read from the drained clock, so the drain enters neither series.
+   */
   frameMs: number[];
+  /** Frames the timed window covered, which is `frames` past the untimed warmup. */
+  measuredFrames: number;
   stageReport?: unknown;
   stepMs?: number[];
   mode: RenderMode;
@@ -126,12 +156,52 @@ export interface ILadderKnobs {
 
 export const LADDER_KNOBS: ILadderKnobs = { frames, repeats, warmup };
 
-async function measureRung(
+/**
+ * PRD-449 §7.4's fill/drain policy and timing scope, recorded on every rung: one untimed pre-drain so
+ * the window never opens with earlier work in flight, one post-measurement drain so the tail is inside
+ * it, and no per-frame fence — a fence per frame is the thing the primary metric exists to avoid.
+ * `timing-scope` says the window is wall time with the browser's presentation cadence inside it, so a
+ * reader cannot mistake the metric for uncapped capacity.
+ */
+export const DRAIN_POLICY =
+  "pre-drain:untimed,post-drain:timed,per-frame-fence:none,timing-scope:cadence-inclusive-browser-delivery";
+
+/** The clock a measurement reads. Injected so the boundary is provable without a browser. */
+export type MeasurementClock = { nextFrame: () => Promise<number>; now: () => number };
+
+const BROWSER_CLOCK: MeasurementClock = {
+  nextFrame,
+  now: () => performance.now(),
+};
+
+/**
+ * The one finished-work observation a WebGPU arm can make, or `undefined` when this renderer holds
+ * no queue to ask — a WebGL context, a stubbed backend, a backend that moved the seam. Undefined is a
+ * hole in the measurement, never a licence to publish the CPU submit time as finished work.
+ */
+function queueCompletion(renderer: unknown): (() => Promise<void>) | undefined {
+  const queue = (
+    renderer as {
+      backend?: { device?: { queue?: { onSubmittedWorkDone?: () => Promise<void> } } };
+    }
+  ).backend?.device?.queue;
+  const done = queue?.onSubmittedWorkDone;
+  if (typeof done !== "function") return undefined;
+  return () => (done as () => Promise<void>).call(queue);
+}
+
+export async function measureRung(
   harness: ILoadTestHarness,
   arm: ILadderArm,
   rung: ILoadTestRung,
   repeat: number,
+  knobs: ILadderKnobs = LADDER_KNOBS,
+  clock: MeasurementClock = BROWSER_CLOCK,
 ): Promise<IRungReport> {
+  // Fail closed before the scene is even built: a window with no measured frame would divide by
+  // zero and report an infinite or `NaN` throughput, which reads as a win rather than as a bug.
+  if (knobs.warmup >= knobs.frames)
+    throw new Error(`TN_BENCH_WARMUP_GE_FRAMES:${knobs.warmup}/${knobs.frames}`);
   harness.setRung(rung);
   // L3 bakes across frames. Drive it to "applied" before a single sample is taken, or the rung
   // times the bake and reports it as the steady-state cost.
@@ -168,16 +238,34 @@ async function measureRung(
   let drawCalls = 0;
   let triangles = 0;
   let visibleObjects = 0;
-  let previous = performance.now();
-  const statsFrame = Math.floor((frames + warmup) / 2);
+  // The completed-work window's CPU half: every measured update+render span, summed. Kept as its own
+  // diagnostic rather than folded into the primary metric — the wall window is what the PRD measures,
+  // and this is the uncapped submit cost the window's cadence otherwise hides.
+  let submitMs = 0;
+  const completion = queueCompletion(harness.renderer);
+  let windowStart: number | undefined;
+  let previous = clock.now();
+  const statsFrame = Math.floor((knobs.frames + knobs.warmup) / 2);
   const hooks =
     profileStages && arm.stageHooks !== undefined
       ? arm.stageHooks(harness.renderer, { mode: "full" })
       : undefined;
-  for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
-    if (frameIndex === warmup) hooks?.reset();
+  for (let frameIndex = 0; frameIndex < knobs.frames; frameIndex += 1) {
+    if (frameIndex === knobs.warmup) {
+      hooks?.reset();
+      // One untimed pre-drain. Work submitted by the warmup must have landed before the window
+      // opens, or the first measured frame pays for it and the mean is pessimistic by an amount
+      // that has nothing to do with the engine.
+      if (completion !== undefined) await completion();
+      // The drain sits on the boundary, so one drained read starts both series: the completed-work
+      // wall window and the legacy frame-interval series. It is untimed work in neither.
+      windowStart = clock.now();
+      previous = windowStart;
+    }
+    const submittedAt = clock.now();
     harness.step(frameIndex);
     await harness.render();
+    if (frameIndex >= knobs.warmup) submitMs += clock.now() - submittedAt;
     // Read before yielding: three's own rAF resets the per-frame counters, so a read after
     // `nextFrame()` reports zero draws no matter what was submitted.
     if (frameIndex === statsFrame) {
@@ -186,20 +274,36 @@ async function measureRung(
       triangles = stats.triangles;
       visibleObjects = stats.visibleObjects;
     }
-    await nextFrame();
-    const now = performance.now();
+    await clock.nextFrame();
+    const now = clock.now();
     const interval = now - previous;
     previous = now;
-    if (frameIndex >= warmup) {
+    if (frameIndex >= knobs.warmup) {
       frameMs.push(interval);
       stepMs.push(harness.stepMs);
     }
   }
-  const stageReport = hooks?.snapshot({ measuredFrameCount: frames - warmup });
+  // One post-measurement drain, and timed: the last measured frame's GPU work has to land inside the
+  // window or the tail is missing and the mean is optimistic. The window closes on the drained clock,
+  // so it is wall time for N completed frames — the rAF waits included, and that is the point.
+  if (completion !== undefined) await completion();
+  const windowEnd = clock.now();
+  // Unreachable while `warmup < frames` is enforced above; stated so a future knob cannot make the
+  // window unstarted and report a mean over a window that never opened.
+  if (windowStart === undefined)
+    throw new Error(`TN_BENCH_WINDOW_UNSTARTED:${knobs.warmup}/${knobs.frames}`);
+  const measuredFrames = knobs.frames - knobs.warmup;
+  const stageReport = hooks?.snapshot({ measuredFrameCount: measuredFrames });
   hooks?.dispose();
   return {
+    completedWorkMeanMs:
+      completion === undefined ? null : (windowEnd - windowStart) / measuredFrames,
+    completedWorkReason: completion === undefined ? "queue-completion-unavailable" : null,
+    cpuSubmitMeanMs: submitMs / measuredFrames,
     drawCalls,
+    drainPolicy: DRAIN_POLICY,
     frameMs,
+    measuredFrames,
     stageReport,
     stepMs,
     mode: rung.mode,

@@ -52,8 +52,22 @@ export interface IPerformancePromotionPolicy {
 
 export interface IRunReportRung {
   collapseMs?: number[];
+  /**
+   * PRD-449 §7.4's primary metric: the wall window for N completed frames over N, cadence included.
+   * Optional because reports written before it existed still parse; `null` with a reason when the arm
+   * could not observe finished work.
+   */
+  completedWorkMeanMs?: number | null;
+  /** Non-null exactly when `completedWorkMeanMs` is null. */
+  completedWorkReason?: string | null;
+  /** The uncapped CPU submit half, kept beside the primary metric and never in place of it. */
+  cpuSubmitMeanMs?: number;
+  /** Fill/drain policy and timing scope, as recorded by the driver. */
+  drainPolicy?: string;
   drawCalls: number;
   frameMs: number[];
+  /** Frames the timed window covered, which the driver also writes as `frameMs.length`. */
+  measuredFrames?: number;
   mode: RenderMode;
   objectCount: number;
   positionHash: string;
@@ -336,6 +350,111 @@ function parseReportIdentity(value: unknown): IPerformanceIdentity | undefined {
   return identity;
 }
 
+/** A number that must be finite and non-negative, or `undefined` when the field is absent. */
+function optionalNonNegative(source: Record<string, unknown>, key: string, path: string) {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.${key} must be a finite non-negative number when present`,
+    );
+  return value;
+}
+
+/**
+ * PRD-449 §7.4's completed-work fields, kept so a saved report still carries them: the CLI serialises
+ * the *parsed* report, so a field dropped here is a field that never reaches the JSON on disk.
+ *
+ * Optional as a block, so a report written before the metric existed still parses. Present, they are
+ * validated like everything else, and the metric and its reason are one exclusive pair — a reason
+ * without a hole, or a hole without one, is a record nobody can read.
+ */
+type TCompletedWork = Pick<
+  IRunReportRung,
+  | "completedWorkMeanMs"
+  | "completedWorkReason"
+  | "cpuSubmitMeanMs"
+  | "drainPolicy"
+  | "measuredFrames"
+>;
+
+/** The metric and the reason for its absence, as one exclusive pair, or `undefined` when absent. */
+function parseCompletedWorkPair(
+  rung: Record<string, unknown>,
+  path: string,
+): Pick<TCompletedWork, "completedWorkMeanMs" | "completedWorkReason"> | undefined {
+  const completedWorkMeanMs = rung.completedWorkMeanMs;
+  const completedWorkReason = rung.completedWorkReason;
+  if (completedWorkMeanMs === undefined && completedWorkReason === undefined) return undefined;
+  if (completedWorkMeanMs === undefined || completedWorkReason === undefined)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} must carry completedWorkMeanMs and completedWorkReason together`,
+    );
+  if (completedWorkMeanMs === null) {
+    if (typeof completedWorkReason !== "string" || completedWorkReason.length === 0)
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.completedWorkReason must be a non-empty string when completedWorkMeanMs is null`,
+      );
+    return { completedWorkMeanMs, completedWorkReason };
+  }
+  if (
+    typeof completedWorkMeanMs !== "number" ||
+    !Number.isFinite(completedWorkMeanMs) ||
+    completedWorkMeanMs < 0
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkMeanMs must be a finite non-negative number or null`,
+    );
+  if (completedWorkReason !== null)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkReason is for a null measurement only`,
+    );
+  return { completedWorkMeanMs, completedWorkReason };
+}
+
+/** The frames the window covered, which the driver also writes as `frameMs.length`. */
+function parseMeasuredFrames(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): number | undefined {
+  const measuredFrames = optionalNonNegative(rung, "measuredFrames", path);
+  if (measuredFrames === undefined) return undefined;
+  if (!Number.isInteger(measuredFrames) || measuredFrames < 1)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.measuredFrames must be a positive integer`);
+  // The driver writes one interval per measured frame, so a declared window that disagrees with the
+  // series beside it means the two halves of the record came from different runs.
+  if (measuredFrames !== sampleCount)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.measuredFrames ${measuredFrames} does not match ${sampleCount} frame samples`,
+    );
+  return measuredFrames;
+}
+
+function parseCompletedWork(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): Partial<TCompletedWork> {
+  const cpuSubmitMeanMs = optionalNonNegative(rung, "cpuSubmitMeanMs", path);
+  const drainPolicy = rung.drainPolicy;
+  if (drainPolicy !== undefined) requireString(rung, "drainPolicy", path);
+  const measuredFrames = parseMeasuredFrames(rung, path, sampleCount);
+  const pair = parseCompletedWorkPair(rung, path);
+  return {
+    ...(pair === undefined ? {} : pair),
+    ...(cpuSubmitMeanMs === undefined ? {} : { cpuSubmitMeanMs }),
+    ...(drainPolicy === undefined ? {} : { drainPolicy: drainPolicy as string }),
+    ...(measuredFrames === undefined ? {} : { measuredFrames }),
+  };
+}
+
 export function parseRunReport(value: unknown): IRunReport {
   const root = requireObject(value, "report");
   const arm = requireString(root, "arm", "report");
@@ -429,6 +548,7 @@ export function parseRunReport(value: unknown): IRunReport {
       timingSeries[field] = samples as number[];
     }
     return {
+      ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
       ...timingSeries,
