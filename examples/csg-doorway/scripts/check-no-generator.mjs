@@ -42,7 +42,8 @@ for (const root of BUNDLE_ROOTS) {
     if (!/\.(js|mjs|css|html)$/u.test(file)) continue;
     scanned += 1;
     const source = readFileSync(file, "utf8");
-    for (const name of FORBIDDEN_PACKAGES) if (source.includes(name)) offenders.push(`${file}: ${name}`);
+    for (const name of FORBIDDEN_PACKAGES)
+      if (source.includes(name)) offenders.push(`${file}: ${name}`);
   }
 }
 

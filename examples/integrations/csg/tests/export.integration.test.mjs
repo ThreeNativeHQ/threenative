@@ -56,7 +56,10 @@ test("single-material meshes ignore geometry material indices, as Three.js does"
   mesh.geometry.addGroup(18, 18, 5);
   const document = await validate(await writeSolidGlb(mesh));
   const primitives = document.getRoot().listMeshes()[0].listPrimitives();
-  assert.equal(primitives.reduce((sum, p) => sum + p.getIndices().getCount(), 0), 36);
+  assert.equal(
+    primitives.reduce((sum, p) => sum + p.getIndices().getCount(), 0),
+    36,
+  );
   assert.ok(primitives.every((p) => p.getMaterial() === primitives[0].getMaterial()));
 });
 
@@ -180,8 +183,14 @@ for (const indexed of [true, false]) {
     const original = Array.from(mesh.geometry.getAttribute("position").array);
     const document = await validate(await writeSolidGlb(mesh));
     const primitives = document.getRoot().listMeshes()[0].listPrimitives();
-    assert.deepEqual(primitives.map((p) => p.getIndices().getCount()), [12, 12]);
-    assert.deepEqual(primitives.map((p) => p.getMaterial().getName()), ["outer", "inner"]);
+    assert.deepEqual(
+      primitives.map((p) => p.getIndices().getCount()),
+      [12, 12],
+    );
+    assert.deepEqual(
+      primitives.map((p) => p.getMaterial().getName()),
+      ["outer", "inner"],
+    );
     assert.deepEqual(Array.from(mesh.geometry.getAttribute("position").array), original);
     assert.deepEqual(mesh.geometry.drawRange, { start: 6, count: 24 });
   });

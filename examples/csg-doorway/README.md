@@ -1,7 +1,7 @@
 # csg-doorway
 
 Proof that a TypeScript-authored Boolean model reaches a playable game through the **ordinary**
-asset path: the [CSG authoring integration](../../integrations/csg) writes `assets/doorway.glb`, the
+asset path: the [CSG authoring integration](../integrations/csg) writes `assets/doorway.glb`, the
 normal cook compiles it, and `ctx.assets.model("doorway.glb")` loads the cooked GLB. No CSG
 generator, no `three-bvh-csg`, and no authoring dependency is present in this game or its bundle.
 
