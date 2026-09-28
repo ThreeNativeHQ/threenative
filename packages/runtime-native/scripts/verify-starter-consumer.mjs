@@ -474,6 +474,28 @@ function defaultConsumerRunner(
   return { ...result, stderr: result.stderr ?? '', stdout: result.stdout ?? '' };
 }
 
+/**
+ * What a failing runner said about itself. The harness writes its failure report to stderr as
+ * `{ diagnostics: [{ code, message, severity }], pass: false }`, so that is where the real cause
+ * lives; the raw tail is the fallback, so a runner that crashed before it could format a report
+ * still contributes its own words. Never returns empty — a diagnosis with nothing in it is the
+ * failure this exists to prevent.
+ */
+function consumerRunnerFailureDetail(stderr) {
+  const text = stderr.trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const diagnostics = Array.isArray(parsed?.diagnostics) ? parsed.diagnostics : [];
+  const named = diagnostics
+    .filter((item) => item !== null && typeof item === 'object' && nonEmptyString(item.code))
+    .map((item) => `${item.code}${nonEmptyString(item.message) ? `: ${item.message}` : ''}`);
+  return named.length > 0 ? named.join('; ') : `no JSON failure report; stderr: ${text.slice(-2000) || '(empty)'}`;
+}
+
 export function verifyStarterConsumerGameplay(options = {}) {
   const target = options.target;
   if (!CONSUMER_REQUIRED_TARGETS.includes(target)) {
@@ -616,6 +638,15 @@ export function verifyStarterConsumerGameplay(options = {}) {
         `the '${target}' process did not complete: ${result.error?.message ?? result.signal ?? result.status}.`,
       );
     }
+    // A runner that never reached assertions writes its failure report to stderr and leaves stdout
+    // empty, so reading stdout first reported "emitted no JSON report" and threw the real cause
+    // away — the exit status is a verdict about the run, and it is checked before the report.
+    if (result.status !== 0) {
+      throw consumerError(
+        'RUNNER_FAILED',
+        `the '${target}' runner exited ${result.status}: ${consumerRunnerFailureDetail(result.stderr ?? '')}`,
+      );
+    }
     const report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
     Object.assign(row, {
       assertionIds: report.assertionIds,
@@ -624,12 +655,6 @@ export function verifyStarterConsumerGameplay(options = {}) {
       pass: report.pass,
       log: log.slice(-4000),
     });
-    if (result.status !== 0 && report.pass) {
-      throw consumerError(
-        'RUNNER_FAILED',
-        `the '${target}' runner reported pass but exited ${result.status}.`,
-      );
-    }
     if (hashFile(artifact) !== artifactHash) {
       throw consumerError('ARTIFACT_MISMATCH', 'the consumer artifact changed during the run.');
     }
