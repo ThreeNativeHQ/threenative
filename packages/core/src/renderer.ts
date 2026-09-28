@@ -1,4 +1,4 @@
-import type { Camera, Object3D, WebGLRenderer } from "three";
+import type { BufferGeometry, Camera, Object3D, WebGLRenderer } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -137,6 +137,17 @@ export interface IRendererLike {
   alphaAntialiasing?: () => IAlphaAntialiasingReport;
   compute(node: unknown): void;
   /**
+   * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
+   * and reports how many it created.
+   *
+   * `compileAsync` builds pipelines, not buffers: a streamed mesh's first draw is where its
+   * attributes reach the device, and one chunk's first draw measured 230 ms of a frame for it. This
+   * moves that to admission, one chunk at a time. WebGPU only — the WebGL fallback has no seam
+   * this can call without inventing a GL enum — and absent or throwing answers 0, so the first
+   * draw uploads exactly as it did before.
+   */
+  uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
+  /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
    * It is on the wrapper for the same reason `compute` is: the call is WebGPU-only and a game that
@@ -260,6 +271,9 @@ type RendererInstance = {
   info?: { frame?: number; render?: { timestamp?: number } };
   backend?: {
     trackTimestamp?: boolean;
+    /** The backend's own attribute creation, which a compile does not do. */
+    createAttribute?: (attribute: unknown) => void;
+    createIndexAttribute?: (attribute: unknown) => void;
     getTimestampFrames?: (type: string) => number[];
     createRenderPipeline?: (...args: unknown[]) => unknown;
     createComputePipeline?: (...args: unknown[]) => unknown;
@@ -607,6 +621,28 @@ function wrapRenderer(
         throw new Error("webgpu renderer does not expose compute().");
       setTimestampTracking();
       raw.compute(node);
+    },
+    uploadAttributes: (geometries) => {
+      const backend = kind === "webgpu" ? raw.backend : undefined;
+      if (typeof backend?.createAttribute !== "function") return 0;
+      let created = 0;
+      try {
+        for (const geometry of geometries) {
+          for (const attribute of Object.values(geometry.attributes)) {
+            backend.createAttribute(attribute);
+            created += 1;
+          }
+          const index = geometry.getIndex();
+          if (index !== null && typeof backend.createIndexAttribute === "function") {
+            backend.createIndexAttribute(index);
+            created += 1;
+          }
+        }
+      } catch {
+        // A backend that will not take an attribute is a device that has already lost; the frame
+        // that needs it tries again there, where the error belongs.
+      }
+      return created;
     },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);

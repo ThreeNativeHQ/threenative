@@ -1,6 +1,9 @@
 import {
   Box3,
-  type BufferGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  type Camera,
+  Frustum,
   Group,
   InstancedBufferAttribute,
   type InstancedMesh,
@@ -17,6 +20,8 @@ import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
+import { mergeByMaterial } from "./merge-parts.js";
+import { type ILodChain, lodChainOf } from "./model-lod.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
 import {
@@ -30,6 +35,7 @@ import {
 import type { IRendererLike } from "./renderer.js";
 import { markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
+import { within, yieldToHost } from "./warmup.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
   type IWorldAsset,
@@ -50,6 +56,38 @@ const PLACEMENT_RECORD_BYTES = 32;
 const PLACEMENT_RECORD_FLOATS = 8;
 const DEFAULT_TILE_RESOLUTION = 129;
 const CHUNK_NAME = "world-chunk";
+/**
+ * Bytes one merged chunk group may hold: 4 MiB, which is where a single first-draw upload stops
+ * being a few milliseconds and becomes a frame.
+ *
+ * The 228.8 MB of `createAttribute` buffers a browser walk measured — 826 buffers, 33 over 1 MB,
+ * the largest 23.2 / 18.1 / 17.2 / 16.4 MB — all arrived on the first draw of a merged chunk mesh,
+ * and that first draw took up to 230 ms. A group is split rather than grown, so each of those
+ * uploads is bounded and none of them is a stall.
+ */
+const CHUNK_MERGE_MAX_BYTES = 4 * 1024 * 1024;
+/** Position (12) + normal (12) + uv (8) in float32: the three channels a merged group keeps. */
+const CHUNK_MERGE_BYTES_PER_VERTEX = 32;
+/** Vertices in 4 MiB of the above. The budget a chunk's material group is split on. */
+const CHUNK_MERGE_MAX_VERTICES = CHUNK_MERGE_MAX_BYTES / CHUNK_MERGE_BYTES_PER_VERTEX;
+/**
+ * Triangles a chunk's merged material group may reach before one of its `InstancedMesh` is left
+ * instanced instead. A merged group is one draw; past this many triangles the instanced draw is the
+ * cheaper of the two, so the mesh is kept rather than expanded. It is the same 4 MiB counted in the
+ * worst case, a de-indexed triangle of three 32-byte vertices, so the cap and the vertex budget above
+ * are the one size read in two units. See `IWorldCellsLoadOptions.chunkMergeMaxTriangles`.
+ */
+const CHUNK_MERGE_MAX_TRIANGLES = Math.floor(
+  CHUNK_MERGE_MAX_BYTES / (3 * CHUNK_MERGE_BYTES_PER_VERTEX),
+);
+/**
+ * How long one chunk's warm-up may take before the chunk is attached uncompiled. The engine's own
+ * loading-screen bound for a single pipeline is 2,000 ms, and a compile that outlives it is a
+ * compile that is not coming back — which is a slow frame rather than a chunk that never appears.
+ */
+const CHUNK_WARM_TIMEOUT_MS = 2000;
+/** The engine frame clock, for the warm-up's bound. */
+const warmClock = (): number => globalThis.performance?.now() ?? Date.now();
 /** Milliseconds one `update` may spend admitting streamed content, unless the game says otherwise. */
 const DEFAULT_ADMISSION_BUDGET_MS = 2;
 /**
@@ -59,6 +97,16 @@ const DEFAULT_ADMISSION_BUDGET_MS = 2;
  * 128 m cell, so nothing that could change an answer is skipped.
  */
 const SETTLED_FOLLOW_METRES = 0.5;
+/**
+ * How far the follow point has to move before the `maxDistance`/`lods` refilter pass runs again.
+ * That pass walks every resident cell's batches, derives both distance brackets and sorts what it
+ * found, and on a 2 km walk at 0.3 m a frame it ran every second frame for the same brackets — a
+ * third of the world's `update`. Two metres is the same order as the per-asset hysteresis the pass
+ * already applies (`threshold / 8`, 3.75 m for a 30 m gate), so a level switch or a cull lands
+ * within about two metres of the distance that asked for it, on a level the player is still walking
+ * toward. Raise it when a game's gates are far apart, lower it when placements sit inside one.
+ */
+const LEVEL_REFILTER_STEP_METRES = 2;
 /**
  * Instance-matrix bytes a world keeps in released shared batches, oldest dropped first. A batch is
  * sized to its asset's largest cell times the resident cells, so on a 2 km package one runs 80 kB
@@ -97,6 +145,68 @@ const PREWARM_PER_UPDATE = 8;
  * context would mean hooking the renderer, which this class does not own.
  */
 const PREWARM_WARM_UPDATES = 2;
+/**
+ * Updates a mesh may still be owed a prewarm draw after the gate settled before its borrow is handed
+ * back anyway. An empty prewarmed batch draws, so this is the ceiling on the ones that never will —
+ * a projection that collapsed the world, a camera that never reached the mesh — and not a diagnosis
+ * of any of them. Without it those meshes would hold their hook for the whole walk.
+ */
+const PREWARM_RELEASE_UPDATES = 8;
+/**
+ * The projection a baked chain's levels are switched at when the world names none: 60° of vertical
+ * field of view over 1080 raster rows, which is the desktop view a switch distance is a function of.
+ * See `autoLod`.
+ */
+const DEFAULT_AUTO_LOD_FOV_Y = 60;
+const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
+/**
+ * The screen-space error budget a baked chain's levels are switched at, in pixels, when the world
+ * names none. See `IWorldCellsLoadOptions.autoLod`.
+ */
+const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = 4;
+/**
+ * How far past the frustum a world-grid square is kept inside the main pass's draw window, in metres.
+ *
+ * The window is decided once per draw, from the camera that draw uses, and a square that has just
+ * left the frustum is dropped from it — so a square at the frustum's edge would be drawn in one
+ * frame and not the next, and a tree on that edge pops in at the edge of the screen. Growing each
+ * square's box by this margin keeps a band of it in the window while it is still off screen, so a
+ * tree crosses into view already there.
+ *
+ * An eighth of the default 64 m square is deliberately small. It has to exceed what a camera
+ * travels between two draws — 8 m a frame is 480 m/s at 60 fps, so no playable camera reaches it —
+ * and nothing more, because every metre of it is a metre of geometry the vertex stage still shades.
+ */
+const MAIN_CULL_PAD_METRES = 8;
+/**
+ * Side of the main cull's own visibility cell, in metres, when it divides the package's `cellSize`.
+ *
+ * This is the finest grid the main pass can cull on, and it is not a free parameter: a shared
+ * batch's block is one *world* cell's records and placements never move, so a world cell cannot be
+ * spread across two cells of a finer grid without giving every world cell its own block — one more
+ * main mesh per key, which is the cost this whole cull exists to avoid. So a package whose
+ * `cellSize` is not a whole multiple of 32 m falls back to its own `cellSize`, which is the square
+ * its placements are already cut on, and the rule below is the whole of it.
+ *
+ * A visibility cell is a sub-square of the shadow caster's world-grid square, and it is deliberately
+ * finer than that square: `clusterSize` is sized for how many meshes a shadow level submits, while
+ * this is sized for how little geometry the vertex stage is handed. It is also the one volume the
+ * cull tests, so everything in it — a 64 m cell's XZ and the Y its own placements and asset bounds
+ * reach — is what a draw of that cell costs. See {@link WorldCells.#cullMainPass}.
+ */
+const MAIN_CULL_SQUARE_METRES = 32;
+/**
+ * How often `TN_WORLD_MAIN_CULL` is printed. Five seconds is a line a playtest capture can hold and
+ * a walk long enough to see the window move; every frame is a wall of text over the marker it would
+ * report on.
+ */
+const MAIN_CULL_MARKER_MS = 5e3;
+/**
+ * Assets reported one by one before the `TN_WORLD_LOD_CHAIN` marker collapses into a single line.
+ * A 2 km package carries hundreds of chained assets, and a console line each is a wall of text that
+ * buries the one that matters.
+ */
+const CHAIN_LOD_MARKER_LIMIT = 20;
 /**
  * The layer the level shadow cameras render and the main camera does not; see
  * `VirtualShadowNode`'s `VIRTUAL_SHADOW_CASTER_LAYER`. Duplicated from `index.ts` rather than
@@ -212,6 +322,17 @@ export interface IWorldCellsLoadOptions {
     readonly invalidate?: (region?: IShadowRegion) => void;
   };
   /**
+   * Triangles a hand-placed chunk's merged material group may reach before one of its
+   * `InstancedMesh` is left instanced. Defaults to 43,690, the same 4 MiB
+   * budget the merged buffers are split on counted in the worst case, a de-indexed triangle: a merged
+   * group is a single draw, so expanding into it wins until the merged geometry is too big for the
+   * frame, and above it the instanced draw is the cheaper of the two. A group that crosses the budget
+   * is split into several meshes in traversal order rather than grown, and an instanced shape over
+   * 2,048 triangles is never expanded. Everything else in a chunk merges regardless — one mesh per
+   * material, in the main pass and in every shadow pass that redraws it.
+   */
+  readonly chunkMergeMaxTriangles?: number;
+  /**
    * `(url) => Promise<Object3D>`, overriding `assets.model`; a raw `GLTFLoader` or a game's own
    * loader works. The url is the authored one, so a compiled package wants `assets` instead.
    */
@@ -264,6 +385,39 @@ export interface IWorldCellsLoadOptions {
    * test can prove the ceiling instead of hoping a machine is slow enough to show it.
    */
   readonly admissionNow?: () => number;
+  /**
+   * The screen-space projection the extra levels of a baked AutoLOD chain are switched at, for an
+   * asset whose `world.json` entry names no `lods` of its own.
+   *
+   * A chain measures its levels' geometric error in world units and the model runtime turns that
+   * into pixels per frame; a batched draw cannot, so the same test is solved for distance once,
+   * here, and every placement beyond it draws the next level. `fovY` is the vertical field of view
+   * in degrees and `viewportHeight` the drawing-buffer height in raster pixels — a CSS height is the
+   * wrong number, exactly as it is for the model runtime.
+   *
+   * Defaults are 60° over 1080 raster rows: a desktop view, and what the switch distance is a
+   * function of. A world whose camera this class cannot see should pass its own, or a world with a
+   * narrow field of view (a telephoto gun sight) or a tall window will switch earlier than its
+   * pixels ask for. An asset with authored `lods` ignores all three numbers entirely: the package is
+   * the authority on its own shape.
+   *
+   * `maxPixelError` is the error budget, in pixels, every synthesized level is selected against, and
+   * it defaults to 4 rather than to the budget the asset's chain was registered with. The
+   * registered budget is calibrated for a `ModelLod`, which picks a level for *one* mesh from where
+   * that mesh is on screen; an instanced draw cannot, because every placement in the draw is at its
+   * own distance and the draw is one call with one geometry. The batched answer has to be solved
+   * once, for the whole key, which moves every switch distance outward by the ratio of the budgets —
+   * and a 1 px budget is calibrated for a hero object filling the screen. At 1 px a tree's switches
+   * land at 400–600 m on a 1080-row view, which on a 2 km map with a 640 m ring is past most of the
+   * resident world: the levels are all there and none of them is ever selected, which is the same
+   * full triangle bill the chain was added to remove. Four pixels puts the first switch inside the
+   * ring, where it can actually do something.
+   */
+  readonly autoLod?: {
+    readonly fovY?: number;
+    readonly viewportHeight?: number;
+    readonly maxPixelError?: number;
+  };
 }
 
 export interface IWorldCellsStats {
@@ -285,12 +439,41 @@ export interface IWorldCellsStats {
   /** Cumulative `maxDistance`/`lods` refilters performed, across every update. */
   readonly rebuilds: number;
   /**
+   * Cumulative refilter *passes* run, whether or not they queued a rebuild. The pass walks every
+   * resident cell, derives both distance brackets and sorts what it found, so this is what says
+   * whether a follow point standing inside the 2 m step paid for it; `rebuilds` only says whether it
+   * was worth anything. See `LEVEL_REFILTER_STEP_METRES`.
+   */
+  readonly refilters: number;
+  /**
+   * Cumulative stale cell-assets the refilter passes found, across every update. The pass walks every
+   * resident cell and gates it as a whole before it looks at one batch, so a follow point that has
+   * crossed nothing leaves this still — which is what says the walk cost brackets and comparisons and
+   * not allocations.
+   */
+  readonly refilterEntries: number;
+  /**
    * Cumulative refilters whose rebuild held the same records and were settled without a write,
    * clear or compaction. A rising share of `rebuilds` is a follow point crossing a cell's distance
    * bracket rather than any placement crossing a gate.
    */
   readonly unchanged: number;
   readonly failures: number;
+  /**
+   * What the main-pass cull cost, cumulative, and the evidence that a settled camera costs nothing.
+   *
+   * `frustums` is one a frame that had a perspective camera — it used to be one per main mesh, ~230
+   * of them on a 2 km walk. `windows` is how many of those meshes had to re-derive their window at
+   * all, and `repacks` how many copied records: both are 0 on a frame where the visible squares did
+   * not change and no record joined or left, which is what the two integer comparisons in
+   * `SharedBatch.cullFrom` buy.
+   */
+  readonly mainCull: {
+    readonly frustums: number;
+    readonly windows: number;
+    readonly repacks: number;
+    readonly visibleEpoch: number;
+  };
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
   /**
@@ -311,6 +494,12 @@ export interface IWorldCellsStats {
 
 interface ICellBatch {
   readonly asset: string;
+  /**
+   * The run these records came from. One cell can hold two runs of one canonical asset — two names
+   * for the same model — and each builds its own, so a refilter and a rebuild have to know which of
+   * the cell's entries belong to the run they are replacing.
+   */
+  readonly run: IWorldRun;
   readonly batch: InstancedBatch;
   readonly level: number;
   readonly part: number;
@@ -336,6 +525,9 @@ interface ICellBatch {
   lastFilterX: number;
   lastFilterZ: number;
 }
+
+/** The geometry and material one batch draws; a part is one of these plus what it does not need. */
+type IBatchShape = Pick<IAssetPart, "geometry" | "material">;
 
 /** One key a loaded asset's levels contributed to the prewarm queue. */
 
@@ -375,6 +567,13 @@ export interface IShadowRegion {
  * to the asset's largest cell, and a freed or shortened block is compacted into the lowest hole, so
  * the drawn range holds nothing but live records. The handles are opaque: `allocate` only hands one
  * back to `write` and `clear`.
+ *
+ * A **main** batch is `clustered`, and that changes the packing: its blocks are laid out grouped by
+ * the world-grid square they sit in, the same square the caster clusters are keyed by, and
+ * {@link SharedBatch.cullFrom} narrows `mesh.count` to the squares the main camera's frustum covers.
+ * Three's whole-mesh frustum test cannot do this on its own — the bounds are the whole ring, so the
+ * test always passes and every instance behind or beside the camera is vertex-shaded. See
+ * {@link WorldCells.#cullMainPass} for which camera is allowed to decide.
  */
 /**
  * A `SharedBatch`'s mesh plus the one field it publishes for a shadow level's size gate: the largest
@@ -385,17 +584,77 @@ interface ICasterScaleMesh extends InstancedMesh {
   casterInstanceScale: number;
 }
 
+/** One world-grid square's records in a clustered batch: how many of them there are. */
+type ISquareSizes = Map<string, number>;
+
+/**
+ * The one buffer a clustered regroup permutes through.
+ *
+ * A regroup is a permutation of `[0, drawn)`, and there is no in-place order for one: putting the
+ * visible squares at the front necessarily writes over squares that have not been copied out yet. A
+ * snapshot is the honest way to do it — read every block into here, then write the new layout back —
+ * and one buffer is enough for the whole world, because a regroup never nests and the largest
+ * main batch is the only bound on it. Module-level like the upload epoch, because there is one world
+ * drawing at a time.
+ */
+let regroupScratch = new Float32Array(0);
+
+/** A scratch with room for `floats`, kept between regroups so a walk allocates it once. */
+function scratchFor(floats: number): Float32Array {
+  if (regroupScratch.length < floats) regroupScratch = new Float32Array(floats * 2);
+  return regroupScratch;
+}
+
+/** The two scratch objects a cull builds its frustum in, and whether two square sets are the same. */
+const _cullFrustum = new Frustum();
+const _cullProjScreen = new Matrix4();
+/** The corner one visibility cell's volume is widened by, for one placement at a time. */
+const _cullPoint = new Vector3();
+
+/** Records a square's blocks hold, which is its share of the batch. */
+function sizeOf(square: { blocks: Array<[number, number, number, string]> }): number {
+  let size = 0;
+  for (const block of square.blocks) size += block[2];
+  return size;
+}
+
+function sameSquares(next: Set<string>, was: Set<string> | undefined): boolean {
+  if (was === undefined || was.size !== next.size) return false;
+  for (const cluster of next) if (!was.has(cluster)) return false;
+  return true;
+}
+
 class SharedBatch {
   mesh: ICasterScaleMesh;
+  /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
+  readonly role: "cluster" | "main" | "wide";
+  readonly #clustered: boolean;
   readonly #segmentSize: number;
   /** Block handle -> the block's first instance record. */
   readonly #start = new Map<number, number>();
   /** Block handle -> live records in it; the reserved count until `write` reports the real one. */
   readonly #size = new Map<number, number>();
+  /** Block handle -> the world-grid square it sits in; only a clustered batch records it. */
+  readonly #blockCluster = new Map<number, string>();
+  /** World-grid square -> its records in the buffer, so the window can be summed. See `#regroup`. */
+  readonly #squareSizes: ISquareSizes = new Map();
+  /** The squares the last cull kept, how many records of the batch they are, and whether that is current. */
+  #visible: Set<string> | undefined;
+  /** The `visibleEpoch` this batch last laid itself out at; see {@link SharedBatch.cullFrom}. */
+  #packedEpoch = -1;
+  /** Reused across culls, so a repack allocates no set. */
+  #scratch: Set<string> = new Set();
+  #window = 0;
+  #narrowed = false;
+  /**
+   * A prewarmed batch whose first draw is still owed, so it is visible at count 0 until that draw
+   * counts. The draw is the whole of the prewarm; see {@link #publish}.
+   */
+  #awaitingPrewarm = false;
   /** Free record ranges `[from, to)`, sorted, disjoint and never adjacent. */
   #free: Array<[number, number]> = [];
   #handles = 0;
-  /** One past the last live record: the range `mesh.count` draws. */
+  /** One past the last live record: the range the whole buffer holds. A clustered batch draws `#window`. */
   #drawn = 0;
   /** Block handle -> the AABB of the records it holds, and the union of those is the mesh's bounds. */
   readonly #boxes = new Map<number, Box3>();
@@ -420,7 +679,10 @@ class SharedBatch {
     segments: number,
     name: string,
     bounds: Box3,
+    role: "cluster" | "main" | "wide",
   ) {
+    this.role = role;
+    this.#clustered = role === "main";
     this.#segmentSize = Math.max(1, segmentSize);
     this.#bounds = bounds;
     this.mesh = SharedBatch.#meshFor(
@@ -505,7 +767,7 @@ class SharedBatch {
   #resize(capacity: number): void {
     const mesh = this.mesh;
     mesh.instanceMatrix = new InstancedBufferAttribute(new Float32Array(capacity * 16), 16);
-    mesh.count = 0;
+    this.#publish(0);
     this.#free = [[0, capacity]];
     this.#drawn = 0;
   }
@@ -607,13 +869,17 @@ class SharedBatch {
   }
 
   /** A handle for `count` free records, or `undefined` when the buffer has none and must grow. */
-  allocate(count: number): number | undefined {
+  allocate(count: number, cluster?: string): number | undefined {
     const at = this.#take(count);
     if (at < 0) return undefined;
     const handle = this.#handles;
     this.#handles += 1;
     this.#start.set(handle, at);
     this.#size.set(handle, count);
+    // Only a clustered batch groups, so only it pays for the lookup. The square is the caller's
+    // cell's, and a cell's placements never move, so a record is only ever grouped when the cell
+    // holding it is admitted or evicted.
+    if (this.#clustered && cluster !== undefined) this.#blockCluster.set(handle, cluster);
     return handle;
   }
 
@@ -636,9 +902,8 @@ class SharedBatch {
     (mesh.instanceMatrix.array as Float32Array).set(old.instanceMatrix.array as Float32Array);
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
-    mesh.count = old.count;
     this.mesh = mesh;
-    this.#compact();
+    this.#settle();
     // The whole drawn range, because this is a different buffer. `#meshFor` left the new
     // attribute's range list empty, and an empty list is how three is told "upload everything" — so
     // before the coalescing below, this was the whole buffer by default and the records copied out
@@ -667,7 +932,7 @@ class SharedBatch {
       this.#boxes.delete(segment);
       this.#scales.delete(segment);
     }
-    this.#compact();
+    this.#settle();
     this.#touched(start, written);
     this.#rebound();
   }
@@ -678,9 +943,10 @@ class SharedBatch {
     const size = this.#size.get(segment) ?? 0;
     this.#start.delete(segment);
     this.#size.delete(segment);
+    this.#blockCluster.delete(segment);
     (this.mesh.instanceMatrix.array as Float32Array).fill(0, start * 16, (start + size) * 16);
     this.#hole(start, start + size);
-    this.#compact();
+    this.#settle();
     // The drawn range, not nothing. `#compact` closed the hole by moving the topmost block down
     // into it, so the bytes below `#drawn` changed and an empty range list is read by three as
     // "upload the whole buffer" — a ring-sized write to zero a block that is no longer drawn.
@@ -780,6 +1046,211 @@ class SharedBatch {
   }
 
   /**
+   * Close the holes a write, a clear or a grow left, the way this batch's role needs.
+   *
+   * A caster batch compacts: one square holds the key's records, so the lowest hole is where the
+   * topmost block belongs. A main batch regroups instead, because compaction would carry a block
+   * away from the square it belongs to and the frustum test reads the squares.
+   */
+  #settle(): void {
+    if (this.#clustered) {
+      this.#regroup();
+      // Records moved, so `mesh.count` is the live total again and the window has to be re-narrowed
+      // by the next draw — with no copy, because the regroup just put the squares in place.
+      this.#narrowed = false;
+    } else this.#compact();
+  }
+
+  /**
+   * Lay every live block out again, grouped by its world-grid square, `visible`'s squares first.
+   *
+   * A regroup is a permutation of `[0, drawn)` and there is no in-place order for one: writing the
+   * visible squares to the front necessarily lands on squares whose records have not been read out
+   * yet, in either direction. So every block is copied into {@link regroupScratch} and the new order
+   * is copied back — two passes over the drawn range, and only when a square entered or left the
+   * window, which on a settled camera is not once a frame.
+   *
+   * Squares keep their relative order within each half, so a residency change regroups in place and
+   * a cull that found the same set writes nothing. What each square holds is recorded here, because
+   * that is the only per-key data the window needs: the squares' world volumes belong to the grid,
+   * not to a key, and are derived once a frame for all of them. See {@link WorldCells.#cullMainPass}.
+   *
+   * Only the records that actually moved are handed to the upload, and on a walk that is usually the
+   * tail or nothing at all: the squares that stayed in the half they were in keep their offsets
+   * exactly, so a square crossing the boundary between the two halves moves the records from there
+   * to the boundary and leaves `[0, boundary)` byte-identical. Uploading `[0, drawn)` instead — which
+   * is what this did — re-sent a whole key's records to the GPU on every frame the window moved,
+   * which on a walking camera is most frames, and on the largest key in a 2 km walk measured
+   * **37 draws over 7 ms each**. An identity reorder now costs no bytes at all, and the rest costs
+   * the span that moved; `#touched` still widens a span over half the drawn range, so the ranges
+   * stay few and large rather than many and small.
+   */
+  #regroup(visible = this.#visible): void {
+    const array = this.mesh.instanceMatrix.array as Float32Array;
+    const squares = this.#squares();
+    let total = 0;
+    for (const square of squares) total += sizeOf(square);
+    const scratch = scratchFor(total * 16);
+    // The visible squares first. `filter` is stable, so both halves keep the order the buffer had
+    // them in and a residency change lays out exactly what the last one did.
+    const front = squares.filter((one) => visible?.has(one.cluster) ?? true);
+    const back = squares.filter((one) => !(visible?.has(one.cluster) ?? true));
+    let written = 0;
+    // Where the layout departed from the one the GPU holds: the first record written somewhere other
+    // than where it was read from, and the last one after it. `-1` until something moves, so an
+    // identity reorder touches nothing.
+    let movedFrom = -1;
+    let movedTo = 0;
+    this.#squareSizes.clear();
+    for (const square of [...front, ...back]) {
+      const union = new Box3();
+      for (const [handle, start, count] of square.blocks) {
+        scratch.set(array.subarray(start * 16, (start + count) * 16), written * 16);
+        // Read before it is overwritten: a block written back to its own offset is a record the GPU
+        // already holds, and is the whole difference between a repack that costs nothing and one
+        // that re-uploads the key.
+        if (this.#start.get(handle) !== written) {
+          if (movedFrom < 0) movedFrom = written;
+          movedTo = written + count;
+        }
+        this.#start.set(handle, written);
+        const box = this.#boxes.get(handle);
+        // A fresh `Box3` is already empty, so the first block's box is the square's and every block
+        // after it unions into it.
+        if (box !== undefined) union.union(box);
+        written += count;
+      }
+      this.#squareSizes.set(square.cluster, sizeOf(square));
+    }
+    array.set(scratch.subarray(0, written * 16));
+    this.#drawn = written;
+    const capacity = this.mesh.instanceMatrix.count;
+    this.#free = written < capacity ? [[written, capacity]] : [];
+    this.#window = this.#windowOf(visible);
+    // After `#drawn`, because `#touched` measures the span it may widen against the drawn range, and
+    // before the caller's own `#touched`, which the epoch unions with it rather than replacing it.
+    if (movedFrom >= 0) this.#touched(movedFrom, movedTo - movedFrom);
+  }
+
+  /**
+   * The live blocks, in buffer order and gathered into the squares they belong to.
+   *
+   * Buffer order is what "the squares keep their relative order" means, and it is not the order of
+   * `#start`, which is keyed by handle rather than by position. A square's blocks are only adjacent
+   * because the last regroup made them so — a cell admitted after that lands anywhere in the free
+   * tail — so the squares are gathered here and written out by {@link #regroup}, and it is these
+   * two orders that a residency change has to preserve.
+   */
+  #squares(): Array<{ cluster: string; blocks: Array<[number, number, number, string]> }> {
+    const blocks: Array<[number, number, number, string]> = [];
+    for (const [handle, start] of this.#start) {
+      const size = this.#size.get(handle) ?? 0;
+      if (size > 0) blocks.push([handle, start, size, this.#blockCluster.get(handle) ?? ""]);
+    }
+    blocks.sort((a, b) => a[1] - b[1]);
+    const squares: Array<{ cluster: string; blocks: typeof blocks }> = [];
+    const squareOf = new Map<string, number>();
+    for (const block of blocks) {
+      const cluster = block[3] as string;
+      const index = squareOf.get(cluster);
+      if (index === undefined) {
+        squareOf.set(cluster, squares.length);
+        squares.push({ cluster, blocks: [block] });
+        continue;
+      }
+      (squares[index] as { blocks: typeof blocks }).blocks.push(block);
+    }
+    return squares;
+  }
+
+  /** Records of the squares in `visible`, the count a clustered batch's `mesh.count` draws. */
+  #windowOf(visible: Set<string> | undefined): number {
+    if (visible === undefined) return this.#drawn;
+    let window = 0;
+    for (const [cluster, size] of this.#squareSizes) if (visible.has(cluster)) window += size;
+    return window;
+  }
+
+  /**
+   * Narrow the draw window to the visibility cells `visible` names, rewriting the instance buffer
+   * when this batch's own share of that set changed. `settled` when nothing had to be looked at,
+   * `narrowed` when the count was re-widened, `repacked` when records were copied.
+   *
+   * `visible` and `epoch` are the frame's answer, derived once for the whole main pass by
+   * {@link WorldCells.#cullMainPass}: one frustum, one set of visible visibility cells, and an epoch
+   * that only moves when that set did. A batch whose records have not moved since it last packed at
+   * that epoch answers `false` from two integer comparisons — no frustum, no set, no copy — which is
+   * the whole of a settled frame across the ~230 meshes of a 2 km walk. Before that it was every
+   * batch rebuilding a frustum from the same camera, allocating a set and re-testing its own per-key
+   * volumes: ~4 ms a frame of `compute` for an answer that had not changed.
+   *
+   * Three's whole-mesh test cannot do this at all: the mesh's bounds are every resident cell's, so on
+   * a 640 m ring the test always passes and every instance behind or beside the camera is
+   * vertex-shaded — which on a tree-heavy 2 km map is most of a 65 M-triangle main pass, and the
+   * whole cost of it is vertex work that half resolution does not touch.
+   *
+   * The cells are the main cull's own and the volumes are per placement (see
+   * {@link WorldCells.#cullMainPass}), which is what this narrowness is spent on: a cell's XZ is
+   * one world cell rather than a 128 m caster square, and its Y is the height its own placements
+   * reach rather than the whole map's terrain range.
+   *
+   * A draw that finds the same cells it found last time touches nothing at all: no copy, no
+   * `needsUpdate`, and therefore no attribute version — which is what a settled static draw watches
+   * to know it still has to scan.
+   */
+  cullFrom(visible: ReadonlySet<string>, epoch: number): "settled" | "narrowed" | "repacked" {
+    if (!this.#clustered) return "settled";
+    // A batch holding no square draws nothing whatever the camera found, so it is published empty
+    // and takes no set and no scan — a prewarmed batch sits in exactly this state.
+    if (this.#squareSizes.size === 0) {
+      this.#publish(0);
+      return "settled";
+    }
+    // Settled: the frame's set is the one this window was laid out at and no record joined or left
+    // since. O(1), and no allocation of any kind.
+    if (this.#narrowed && this.#packedEpoch === epoch) return "settled";
+    const next = this.#scratch;
+    next.clear();
+    for (const square of this.#squareSizes.keys()) if (visible.has(square)) next.add(square);
+    // The same squares as the buffer holds: a residency change or a square elsewhere entering and
+    // leaving the view. The layout is already right, so the window only has to be re-narrowed — a
+    // residency change left `mesh.count` at the live total, and `#settle`'s regroup put the squares
+    // in the window's order with no copy.
+    if (sameSquares(next, this.#visible)) {
+      this.#publish(this.#window);
+      this.#narrowed = true;
+      this.#packedEpoch = epoch;
+      return "narrowed";
+    }
+    this.#regroup(next);
+    // The reorder hands its own upload, over the records that actually moved — a window that moved
+    // a square across the half boundary and left every record where it was costs nothing here, which
+    // is the walking camera's common case. See `#regroup`.
+    // The layout now belongs to the other set, so the two trade places and the next cull reuses the
+    // one this batch is no longer holding.
+    const was = this.#visible;
+    this.#visible = next;
+    this.#scratch = was ?? new Set();
+    this.#scratch.clear();
+    // `#publish` is what hides a window the camera narrowed to nothing, and what shows it again when
+    // the camera turns back.
+    this.#publish(this.#window);
+    this.#narrowed = true;
+    this.#packedEpoch = epoch;
+    return "repacked";
+  }
+
+  /** Live records this batch holds, whether the camera is drawing them or not. */
+  get live(): number {
+    return this.#drawn;
+  }
+
+  /** Records `mesh.count` draws: every live one, until a cull narrows the window. */
+  get drawn(): number {
+    return this.#clustered ? this.#window : this.#drawn;
+  }
+
+  /**
    * One coalesced upload per mesh, not one per moved, written or zeroed record range. Three's WebGPU
    * backend turns each entry of `updateRanges` into its own `GPUQueue.writeBuffer`, so the
    * per-range bookkeeping here was the walk's largest CPU cost: thousands of sub-1 KB vertex writes
@@ -818,13 +1289,67 @@ class SharedBatch {
     matrix.clearUpdateRanges();
     if (high > low) matrix.addUpdateRange(low, high - low);
     matrix.needsUpdate = true;
-    this.mesh.count = this.#drawn;
-    this.mesh.visible = this.mesh.count > 0;
+    this.#publish(this.#drawn);
     // Records are real, so the bounds are the ones `#rebound` just wrote and the mesh goes back to
     // being culled.
     this.mesh.frustumCulled = true;
   }
+
+  /**
+   * The one place `mesh.count` is written, so a batch that would draw nothing is not submitted.
+   *
+   * In three r185's WebGPU path an `InstancedMesh` with `count === 0` still runs the whole per-draw
+   * JS chain — nodes, bindings, pipeline, attributes — and only the backend's `getDrawParameters`
+   * finally answers null. A walk census measured 322 of 871 main batch meshes and 437 of 1,574
+   * caster meshes at count 0, so every empty batch was ~17 µs of CPU a frame for nothing drawn.
+   * `visible` is the one flag three reads before any of that, so a batch with nothing to draw is
+   * hidden here and shown again by the first write that gives it a record: a placement add, a
+   * rebind of a retained batch, a residency change, or the main cull's window opening again.
+   *
+   * The exception is a batch still owed its prewarm draw, which stays visible *because* it is empty:
+   * that one draw is what builds the node and the pipeline the loading screen exists to pay for,
+   * and hiding it would hand the build to the first walk frame that wants the key. It hides as soon
+   * as the draw is counted — see {@link prewarmDrew} — so this costs one zero-count draw per
+   * prewarmed batch over the whole load, which is the cost the prewarm is for.
+   */
+  #publish(count: number): void {
+    this.mesh.count = count;
+    this.mesh.visible = count > 0 || this.#awaitingPrewarm;
+  }
+
+  /**
+   * Owe this batch its prewarm draw, and show it: empty, unsubmitted work is not what a prewarm
+   * wants, one submission is.
+   *
+   * The flag on the mesh is what `VirtualShadowNode`'s `#probe` reads: a caster is drawn by a level,
+   * and a level picks one of the two caster layers, so a level that finds an owed caster renders
+   * both — otherwise the half it did not pick would leave its prewarm casters unbuilt for the whole
+   * walk. Engine bookkeeping on the mesh, beside the `casterInstanceScale` the probe already reads.
+   */
+  awaitPrewarmDraw(): void {
+    this.#awaitingPrewarm = true;
+    (this.mesh as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = true;
+    this.#publish(this.drawn);
+  }
+
+  /**
+   * The owed draw is counted, or it can never come, so the batch follows the count again and hides
+   * if no placement ever gave it a record. Only `visible` is written: the count three is submitting
+   * this frame is the right one, and `#publish` would replace it with a window no cull has run for.
+   */
+  prewarmDrew(): void {
+    this.#awaitingPrewarm = false;
+    (this.mesh as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = false;
+    this.mesh.visible = this.mesh.count > 0;
+  }
 }
+
+/**
+ * A camera, plus the one flag the exclusion rule reads. Three sets `isOrthographicCamera` on an
+ * `OrthographicCamera` at runtime and declares it on no base camera type, so it is duck-typed here
+ * the same way `ICasterScaleMesh` and `isInstancedMesh` are.
+ */
+type ICamera = Camera & { readonly isOrthographicCamera?: boolean };
 
 /**
  * The `@x,z` half of a cluster key, for a cell index. `cellsPerCluster` squares of cells per
@@ -835,11 +1360,37 @@ function clusterOf(cellX: number, cellZ: number, cellsPerCluster: number): strin
   return `${String(Math.floor(cellX / cellsPerCluster))},${String(Math.floor(cellZ / cellsPerCluster))}`;
 }
 
+/**
+ * Whether any of `gates` — ascending — lies in `[low, high]`. One binary search for the first gate at
+ * or past `low`, against the walk of every gate a scan does per cell: a follow point that has not
+ * carried anything across a boundary is the common case, and the refilter runs it over every resident
+ * cell every 2 m of travel. Ends included, so a placement exactly on a gate is one of the reasons to
+ * rebuild.
+ */
+function crossesGate(gates: readonly number[], low: number, high: number): boolean {
+  let start = 0;
+  let end = gates.length;
+  while (start < end) {
+    const middle = (start + end) >> 1;
+    if ((gates[middle] as number) < low) start = middle + 1;
+    else end = middle;
+  }
+  return start < gates.length && (gates[start] as number) <= high;
+}
+
 interface IResidentCell {
   readonly key: string;
   readonly x: number;
   readonly z: number;
   readonly cell: IWorldCell;
+  /**
+   * The union of the distances from every one of this cell's batches' own filter points to the cell's
+   * rectangle, widened as batches are built and never narrowed; see `#staleIn`. Monotone on purpose:
+   * too wide a range means a cell the gate test does not reject, and too narrow one would drop a
+   * rebuild the pass owes.
+   */
+  filterNear: number;
+  filterFar: number;
   readonly generation: number;
   readonly instances: number;
   readonly bytes: number;
@@ -900,14 +1451,20 @@ const releasedParts = new WeakSet<IAssetPart>();
 interface IAssetState {
   readonly id: string;
   readonly definition: IWorldAsset;
-  /** The distance at which each level takes over, index-aligned with `glbs`; level 0 never does. */
-  readonly distances: readonly number[];
+  /**
+   * The distance at which each level takes over, index-aligned with `glbs`; level 0 never does.
+   *
+   * Mutable because a chain is only known once the asset's own model has loaded: an asset with no
+   * authored `lods` is widened with the levels that model's baked chain carries, and every consumer
+   * of this reads it at build time — after `#adoptAsset` — so nothing has to be rebuilt.
+   */
+  distances: readonly number[];
   /** The package-relative GLB per level, index-aligned with `distances`. */
   readonly glbs: readonly string[];
   /** Every distance the level or cull answer changes at, `threshold` being the nearest. */
-  readonly gates: readonly number[];
+  gates: readonly number[];
   /** The nearest distance this asset's batching can be crossed at, or `undefined` when it cannot. */
-  readonly threshold: number | undefined;
+  threshold: number | undefined;
   refcount: number;
   pending: boolean;
   disposed: boolean;
@@ -925,6 +1482,12 @@ interface IWorldCellsInit extends IWorldCellsLoadOptions {
   readonly baseUrl: string;
   /** `baseUrl` as the loader keys it: no leading slash, which is what a manifest lists. */
   readonly logicalBase: string;
+  /**
+   * Asset ids the package named twice for one model, each pointing at the id that is kept. Built
+   * once in `load`, where the loader can be asked what each path really fetches; empty when nothing
+   * is a duplicate. See {@link assetAliases}.
+   */
+  readonly aliases: ReadonlyMap<string, string>;
 }
 
 /** GPU resources already handed to a `dispose`, so no second path can tear the same one down. */
@@ -1091,7 +1654,11 @@ function disposeModel(model: Object3D): number {
     const materials: Material[] = Array.isArray(object.material)
       ? object.material
       : [object.material];
-    for (const material of materials) if (release(material)) failed += 1;
+    // A world-owned surface is one chunk's proxy material, and the next chunk's teardown would
+    // otherwise release a material this world's remaining proxies are still drawing with. It is
+    // released with the world that owns it; see `WorldCells#dispose`.
+    for (const material of materials)
+      if (!worldOwned.has(material) && release(material)) failed += 1;
   });
   return failed;
 }
@@ -1100,6 +1667,295 @@ function disposeModels(models: readonly (Object3D | undefined)[]): number {
   let failed = 0;
   for (const model of models) if (model !== undefined) failed += disposeModel(model);
   return failed;
+}
+
+/** What one chunk's merge did, for `TN_WORLD_CHUNK_MERGE`. */
+interface IChunkMerge {
+  /** Meshes the chunk held before, and the ones its subtree submits after. */
+  readonly meshes: number;
+  readonly draws: number;
+  /**
+   * Bytes the merged groups hold: exactly what the first draw of those meshes uploads, and the
+   * number this merge exists to keep small.
+   */
+  readonly bytes: number;
+  /** Instanced meshes baked into a material's group, and the ones left instanced. */
+  readonly expanded: number;
+  readonly keptInstanced: number;
+  /** Teardowns of the consumed shapes that threw, for the caller to count. */
+  readonly failed: number;
+  /** Shadow-only proxies the chunk carries, one per `side`; 0 when the chunk casts nothing. */
+  readonly shadowDraws: number;
+  /**
+   * The merged opaque meshes a proxy covers. They keep drawing the main pass and keep receiving, and
+   * they stop casting: the depth pass reads positions, not materials, so it reads the proxy instead.
+   */
+  readonly shadowCovered: readonly Mesh[];
+}
+
+function meshesOf(root: Object3D): number {
+  let meshes = 0;
+  root.traverse((object) => {
+    if ((object as Mesh).isMesh === true) meshes += 1;
+  });
+  return meshes;
+}
+
+/**
+ * The one surface each `side` of a chunk shadow proxy draws with, world-wide.
+ *
+ * A depth pass cannot tell one material from another: it reads `side`, `alphaTest` and position,
+ * and a proxy covers only opaque, non-alphaTest meshes, so every covered material with the same
+ * `side` produces the same shadow pipeline. Borrowing one per covered group built a new one for
+ * every chunk that loaded — 23 shadow draws over 125 ms and a 18 ms worst case on the walk this
+ * measured, each one compiling a pipeline the one before it had already proven was identical. The
+ * first covered material seen for a side is the world's, and every later proxy of that side borrows
+ * it, so a world pays at most one shadow pipeline per side over its whole life.
+ *
+ * The materials are the world's own, so `disposeModel` must not release them with the chunk that
+ * happened to contribute them.
+ */
+const worldOwned = new WeakSet<Material>();
+
+/**
+ * A depth pass cannot tell one material from another, so a chunk's shadow bill is its material
+ * count, not its triangle count: ~100 shadow draws a level render on the map, each a per-material
+ * mesh walked through the light's frustum. Positions are all it needs, and a position-only geometry
+ * grouped by `side` — the one thing a depth material does read — collapses that bill to one draw per
+ * side.
+ *
+ * The proxy lives alone on `VIRTUAL_SHADOW_CASTER_LAYER`, the layer the level shadow cameras draw and
+ * the main camera never does, and is counted by the same `#probe` window test as the scatter caster
+ * clusters, so a level whose window does not reach the chunk drops it for free. Nothing here decides
+ * how anything looks: the covered meshes keep the game's own materials and keep drawing the main pass
+ * with them, and the proxy carries the world's material for its `side` by reference — the group it
+ * was grouped *by* is the material's own `side`, so the depth pass reads exactly what the covered
+ * mesh's own depth material would have read, and this file still constructs no material.
+ *
+ * Alpha-tested and transparent meshes are left out and keep casting themselves: a cutout's depth is
+ * its own texture, and a transparent one is not a shadow at all. So are the kept instanced meshes,
+ * which a merge left alone.
+ */
+function buildChunkShadowProxies(
+  chunk: Object3D,
+  merged: readonly Mesh[],
+  label: string,
+  proxyMaterials: Map<number, Material>,
+): { readonly covered: Mesh[]; readonly proxies: Mesh[] } {
+  const sides = new Map<number, { material: Material; meshes: Mesh[] }>();
+  for (const mesh of merged) {
+    const material = mesh.material;
+    if (Array.isArray(material) || material.transparent === true || material.alphaTest > 0)
+      continue;
+    const side = material.side;
+    const group = sides.get(side);
+    if (group === undefined) sides.set(side, { material, meshes: [mesh] });
+    else group.meshes.push(mesh);
+  }
+  const covered: Mesh[] = [];
+  const proxies: Mesh[] = [];
+  for (const [side, group] of sides) {
+    const held = proxyMaterials.get(side);
+    const material = held ?? group.material;
+    if (held === undefined) {
+      proxyMaterials.set(side, material);
+      worldOwned.add(material);
+    }
+    const proxy = new Mesh(shadowProxyGeometry(group.meshes, label), material);
+    proxy.name = `${CHUNK_NAME}-shadow`;
+    proxy.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
+    proxy.castShadow = true;
+    proxy.receiveShadow = false;
+    markStatic(proxy);
+    chunk.add(proxy);
+    proxies.push(proxy);
+    for (const mesh of group.meshes) {
+      mesh.castShadow = false;
+      covered.push(mesh);
+    }
+  }
+  return { covered, proxies };
+}
+
+/**
+ * One position-only geometry holding every covered mesh's vertices, indices preserved.
+ *
+ * Read through the attribute's own accessors, because a cooked model's positions can be quantized
+ * and interleaved (`KHR_mesh_quantization`) and the raw array behind them is not what three would
+ * have drawn. One pass at load time; the result is a depth buffer's whole input.
+ */
+function shadowProxyGeometry(meshes: readonly Mesh[], label: string): BufferGeometry {
+  let vertices = 0;
+  let drawn = 0;
+  for (const mesh of meshes) {
+    const position = mesh.geometry.getAttribute("position");
+    if (position === undefined)
+      throw new Error(`Chunk shadow proxy (${label}): a merged mesh carries no position.`);
+    vertices += position.count;
+    drawn += mesh.geometry.getIndex()?.count ?? position.count;
+  }
+  const positions = new Float32Array(vertices * 3);
+  const indices = new Uint32Array(drawn);
+  let vertexAt = 0;
+  let indexAt = 0;
+  for (const mesh of meshes) {
+    const position = mesh.geometry.getAttribute("position");
+    if (position === undefined)
+      throw new Error(`Chunk shadow proxy (${label}): a merged mesh carries no position.`);
+    for (let index = 0; index < position.count; index += 1) {
+      const at = (vertexAt + index) * 3;
+      positions[at] = position.getX(index);
+      positions[at + 1] = position.getY(index);
+      positions[at + 2] = position.getZ(index);
+    }
+    const source = mesh.geometry.getIndex();
+    if (source === null || source === undefined) {
+      for (let index = 0; index < position.count; index += 1) {
+        indices[indexAt + index] = vertexAt + index;
+      }
+      indexAt += position.count;
+    } else {
+      for (let index = 0; index < source.count; index += 1) {
+        indices[indexAt + index] = source.getX(index) + vertexAt;
+      }
+      indexAt += source.count;
+    }
+    vertexAt += position.count;
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  geometry.setIndex(new BufferAttribute(indices, 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * One chunk's static meshes merged by material, in place, before the chunk is added.
+ *
+ * A hand-placed chunk is a bridge or a yard, not a prop: its mesh nodes are packed a few dozen to a
+ * few hundred per file over a handful of materials, and each one is its own draw — in the main pass
+ * and again in every shadow level that redraws it. Merging by material is what the cook already did
+ * for repeated meshes (hence the `InstancedMesh`es in a loaded chunk), so this is the same fix one
+ * step further out: one draw per material per chunk instead of one per node.
+ *
+ * Nothing here decides how anything looks. The merged mesh draws the game's own material and holds
+ * the geometry exactly as authored, baked into the chunk root's space; what changes is how many
+ * calls it takes to draw. `mergeByMaterial` does the bake and owns the refusals, so a group it
+ * cannot merge (a material whose meshes disagree about `uv`) leaves the whole chunk as it was and is
+ * counted as a failure — a chunk never disappears over a draw-call saving.
+ *
+ * Left alone: a skinned mesh (posed per frame), one carrying morph targets (the bake drops them), a
+ * multi-material mesh (one draw per material already), and anything carrying a baked AutoLOD chain,
+ * whose own `ModelLod` swaps its geometry and would be swapped for nothing. No chunk node is
+ * animation-targeted: the chunk path takes `gltf.scene` and never a clip list.
+ *
+ * `disposeSources` says who owns the shapes the bake consumed. The merged buffers are the chunk's
+ * own and are released with it on eviction; a shape nothing draws any more is released here, unless
+ * the loader cache still holds it — `createAssetLoader` keys models by path and hands the same scene
+ * back on the next load, so a cached shape is not this world's to tear down. A geometry a kept mesh
+ * still draws is never released either way.
+ *
+ * `castShadow` says the chunk's shadow bill exists at all — the same answer the caller hands the
+ * chunk's nodes — and only then is it worth one position-only proxy per `side`. See
+ * `buildChunkShadowProxies`, which draws every side of every chunk with the world's one material for
+ * that side.
+ *
+ * @returns what the merge did, or `undefined` when the bake refused the whole chunk.
+ */
+function mergeChunk(
+  chunk: Object3D,
+  maxTriangles: number,
+  disposeSources: boolean,
+  castShadow: boolean,
+  proxyMaterials: Map<number, Material>,
+): IChunkMerge | undefined {
+  chunk.updateMatrixWorld(true);
+  const meshes: Mesh[] = [];
+  const skipped = new Set<Mesh>();
+  let instanced = 0;
+  chunk.traverse((object) => {
+    const mesh = object as Mesh & { isInstancedMesh?: boolean };
+    if (mesh.isMesh !== true) return;
+    meshes.push(mesh);
+    // A chain is baked into the geometry the mesh draws, so a merged buffer would carry a `ModelLod`
+    // that has nothing to swap: the mesh keeps its own geometry and its own level selection.
+    if (lodChainOf(mesh.geometry) !== undefined) {
+      skipped.add(mesh);
+      return;
+    }
+    if (Object.keys(mesh.geometry.morphAttributes).length > 0) {
+      skipped.add(mesh);
+      return;
+    }
+    if (mesh.isInstancedMesh === true) instanced += 1;
+  });
+  const before = meshes.length;
+  let result: Mesh[];
+  try {
+    result = mergeByMaterial(chunk, {
+      expandInstancedUnderTriangles: maxTriangles,
+      label: `world chunk ${chunk.name}`,
+      maxGroupVertices: CHUNK_MERGE_MAX_VERTICES,
+      skip: (mesh) => skipped.has(mesh),
+    });
+  } catch {
+    return undefined;
+  }
+  const kept = new Set(skipped);
+  let keptInstanced = 0;
+  for (const mesh of result) {
+    if ((mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh !== true) continue;
+    kept.add(mesh);
+    keptInstanced += 1;
+  }
+  const held = new Set<BufferGeometry>();
+  for (const mesh of kept) held.add(mesh.geometry);
+  let failed = 0;
+  // Only what the bake consumed leaves its place; a kept mesh draws the same either way, so it is
+  // not re-parented and the chunk's authored hierarchy survives around the merged groups.
+  for (const mesh of meshes) {
+    if (kept.has(mesh)) continue;
+    if (disposeSources && !held.has(mesh.geometry) && release(mesh.geometry)) failed += 1;
+    mesh.removeFromParent();
+  }
+  for (const mesh of result)
+    if (!(mesh as Mesh & { isInstancedMesh?: boolean }).isInstancedMesh === true) chunk.add(mesh);
+  // Only what the bake produced is covered: a kept mesh was never merged, so it still holds its own
+  // per-material draw and its own materials the proxy knows nothing about.
+  const shadow = castShadow
+    ? buildChunkShadowProxies(
+        chunk,
+        result.filter((mesh) => !kept.has(mesh)),
+        `world chunk ${chunk.name}`,
+        proxyMaterials,
+      )
+    : undefined;
+  return {
+    bytes: mergedBytes(result, kept),
+    draws: meshesOf(chunk),
+    expanded: instanced - keptInstanced,
+    failed,
+    keptInstanced,
+    meshes: before,
+    shadowCovered: shadow?.covered ?? [],
+    shadowDraws: shadow?.proxies.length ?? 0,
+  };
+}
+
+/**
+ * Bytes the bake's own meshes hold, indices included: the upload their first draw would have paid.
+ * A kept mesh is not one of them — it was never merged, and it draws the same either way.
+ */
+function mergedBytes(merged: readonly Mesh[], kept: ReadonlySet<Mesh>): number {
+  let bytes = 0;
+  for (const mesh of merged) {
+    if (kept.has(mesh)) continue;
+    for (const attribute of Object.values(mesh.geometry.attributes))
+      bytes += attribute.array.byteLength;
+    const index = mesh.geometry.getIndex();
+    if (index !== null) bytes += index.array.byteLength;
+  }
+  return bytes;
 }
 
 /**
@@ -1170,12 +2026,221 @@ function assetLevels(definition: IWorldAsset): {
   };
 }
 
+/**
+ * The batched shape of one definition, as the loader will actually fetch it: the url the manifest
+ * gives its `glb`, the url and switch distance of every `lods` entry in order, its `maxDistance` and
+ * its bounds. Two definitions that agree on all of it are the same draw — same geometry, same
+ * materials, same levels, same gates — so one model serves both and their placements batch together.
+ *
+ * `undefined` when the loader cannot resolve a path at all: a path the manifest does not list makes
+ * `resolve` throw, and the load that asks for it will say so. Such a definition never aliases,
+ * which is the same behaviour it has today.
+ */
+async function assetSignature(
+  assets: IAssetLoader,
+  definition: IWorldAsset,
+  logicalBase: string,
+): Promise<string | undefined> {
+  const url = async (glb: string): Promise<string> => {
+    const candidates = await assets.resolve(resolveRelative(logicalBase, glb));
+    return candidates[0] ?? glb;
+  };
+  try {
+    const parts = [await url(definition.glb)];
+    for (const lod of definition.lods ?? [])
+      parts.push(`${await url(lod.glb)}@${String(lod.distance)}`);
+    parts.push(
+      definition.maxDistance === undefined ? "" : String(definition.maxDistance),
+      definition.bounds.min.join(","),
+      definition.bounds.max.join(","),
+    );
+    return parts.join("|");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `alias id -> canonical id` for every definition that is another name for the same cooked model,
+ * which is what a 374-asset package with 273 duplicates is: one model exported under many object
+ * names, cooked once and fetched once.
+ *
+ * The canonical is the lexicographically smallest id of the group, so it does not depend on the
+ * order the exporter happened to write them in. An empty map — every definition its own model, or a
+ * package whose paths resolve to nothing — leaves the whole runtime exactly as it is.
+ */
+async function assetAliases(
+  assets: IAssetLoader,
+  manifest: IWorldPackage,
+  logicalBase: string,
+): Promise<ReadonlyMap<string, string>> {
+  const canonicalBySignature = new Map<string, string>();
+  const aliases = new Map<string, string>();
+  // Sorted, so the first id to claim a signature is the smallest one in its group.
+  for (const id of Object.keys(manifest.assets).sort()) {
+    const definition = manifest.assets[id];
+    if (definition === undefined) continue;
+    const signature = await assetSignature(assets, definition, logicalBase);
+    if (signature === undefined) continue;
+    const canonical = canonicalBySignature.get(signature);
+    if (canonical === undefined) canonicalBySignature.set(signature, id);
+    else aliases.set(id, canonical);
+  }
+  return aliases;
+}
+
 /** The level a placement `distance` out from the follow point draws with. */
 function levelAt(distances: readonly number[], distance: number): number {
   let level = 0;
   for (let index = 1; index < distances.length; index += 1)
     if (distance > (distances[index] as number)) level = index;
   return level;
+}
+
+/** Triangles one geometry submits; the count the `TN_WORLD_LOD_CHAIN` marker reports per level. */
+function levelTriangles(geometry: BufferGeometry): number {
+  const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
+  return Math.floor(drawn / 3);
+}
+
+/**
+ * Pixels one world unit covers at unit depth, from the vertical field of view and the raster height.
+ * The scale `ModelLod` divides an error by; see `IWorldCellsLoadOptions.autoLod`.
+ */
+function autoLodScale(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
+  const fovY = autoLod?.fovY ?? DEFAULT_AUTO_LOD_FOV_Y;
+  const viewportHeight = autoLod?.viewportHeight ?? DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT;
+  if (!Number.isFinite(fovY) || fovY <= 0 || fovY >= 180)
+    throw new Error("WorldCells autoLod.fovY must be a finite angle in (0, 180) degrees.");
+  if (!Number.isFinite(viewportHeight) || !(viewportHeight > 0))
+    throw new Error(
+      "WorldCells autoLod.viewportHeight must be a positive number of raster pixels.",
+    );
+  return viewportHeight / (2 * Math.tan((fovY * Math.PI) / 360));
+}
+
+/** The screen-space error budget a synthesized level is switched at, in pixels. */
+function autoLodPixelError(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
+  const maxPixelError = autoLod?.maxPixelError ?? DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR;
+  if (!Number.isFinite(maxPixelError) || maxPixelError <= 0)
+    throw new Error("WorldCells autoLod.maxPixelError must be a positive number of pixels.");
+  return maxPixelError;
+}
+
+/** What a baked chain gives a batched draw: the extra levels, where they take over, what they cost. */
+interface IChainLevels {
+  /** Index-aligned with `distances`; index 0 is the parts the asset already had. */
+  readonly levels: (readonly IAssetPart[])[];
+  /** `distances[0]` is 0 and never switches; the rest are the synthesized switch distances. */
+  readonly distances: number[];
+  /** Triangles every level submits, all its parts together, index-aligned with `levels`. */
+  readonly triangles: number[];
+}
+
+/**
+ * The extra levels an asset's baked AutoLOD chain gives a batched draw, or `undefined` when none of
+ * its parts carries a chain.
+ *
+ * A `ModelLod` swaps one mesh's geometry, so a world that batches thousands of placements of one
+ * model into a handful of instanced draws never reaches that selection: every placement drew
+ * LOD0, which on a 2 km map is the whole triangle bill at every distance. The chain already holds
+ * the reduced shapes, so this derives the levels a batch can hold and the distance each one takes
+ * over at — the same screen-space test `ModelLod` runs, solved for depth:
+ * `error * pixelsPerUnit / maxPixelError`, with each part's own registered budget.
+ *
+ * Level `i` is `chain.levels[min(i, length - 1)]` per part, so a part without a chain — and one
+ * whose chain ran out below `i` — keeps the shape above it. The switch distance is the **max**
+ * across the parts, so a part that still wants detail at that distance holds the whole asset back
+ * rather than being drawn coarse by a sibling that does not.
+ */
+function chainDistances(
+  chains: readonly (ILodChain | undefined)[],
+  pixelsPerUnit: number,
+  maxPixelError: number,
+  maxDistance: number | undefined,
+): number[] {
+  let deepest = 1;
+  for (const chain of chains)
+    if (chain !== undefined) deepest = Math.max(deepest, chain.levels.length);
+  const distances = [0];
+  for (let level = 1; level < deepest; level += 1) {
+    let error = 0;
+    for (const chain of chains) {
+      if (chain === undefined) continue;
+      error = Math.max(error, chain.errors[Math.min(level, chain.levels.length - 1)] ?? 0);
+    }
+    const at = (error * pixelsPerUnit) / maxPixelError;
+    // A chain's errors only ascend, so a switch that does not move outward — or that lands at or
+    // past the cull — ends the list: every level above it is further out still, and none of them
+    // can be selected or drawn. That keeps the thresholds strictly increasing and inside
+    // `maxDistance`, exactly as `assetLevels` keeps authored ones.
+    if (at <= (distances[level - 1] as number)) break;
+    if (maxDistance !== undefined && at >= maxDistance) break;
+    distances.push(at);
+  }
+  return distances;
+}
+
+/** One level's parts, and what they submit: the chain's shape where it has one, the one above where not. */
+function chainLevelParts(
+  parts: readonly IAssetPart[],
+  chains: readonly (ILodChain | undefined)[],
+  level: number,
+): { readonly parts: IAssetPart[]; readonly triangles: number } {
+  const at: IAssetPart[] = [];
+  let triangles = 0;
+  for (const [index, part] of parts.entries()) {
+    const chain = chains[index];
+    // A part with no chain keeps its own shape, in its own slot: the batch builder and
+    // `#addPlacements` index every level's parts by the same number.
+    const geometry =
+      chain === undefined
+        ? part.geometry
+        : (chain.levels[Math.min(level, chain.levels.length - 1)] as BufferGeometry);
+    // The same part object when the shape did not change, so one resource is one teardown.
+    at.push(geometry === part.geometry ? part : { ...part, geometry });
+    triangles += levelTriangles(geometry);
+  }
+  return { parts: at, triangles };
+}
+
+/**
+ * The extra levels an asset's baked AutoLOD chain gives a batched draw, or `undefined` when none of
+ * its parts carries a chain.
+ *
+ * A `ModelLod` swaps one mesh's geometry, so a world that batches thousands of placements of one
+ * model into a handful of instanced draws never reaches that selection: every placement drew
+ * LOD0, which on a 2 km map is the whole triangle bill at every distance. The chain already holds
+ * the reduced shapes, so this derives the levels a batch can hold and the distance each one takes
+ * over at — the same screen-space test `ModelLod` runs, solved for depth:
+ * `error * pixelsPerUnit / maxPixelError`, over the world's own `autoLod.maxPixelError` rather than
+ * the budget the loader registered the chain with. See
+ * {@link IWorldCellsLoadOptions.autoLod} for why a batch cannot use the registered one.
+ *
+ * Level `i` is `chain.levels[min(i, length - 1)]` per part, so a part without a chain — and one
+ * whose chain ran out below `i` — keeps the shape above it. The switch distance is the **max**
+ * across the parts, so a part that still wants detail at that distance holds the whole asset back
+ * rather than being drawn coarse by a sibling that does not.
+ */
+function chainLevels(
+  parts: readonly IAssetPart[],
+  pixelsPerUnit: number,
+  maxPixelError: number,
+  maxDistance: number | undefined,
+): IChainLevels | undefined {
+  const chains: (ILodChain | undefined)[] = [];
+  for (const part of parts) chains.push(lodChainOf(part.geometry));
+  const distances = chainDistances(chains, pixelsPerUnit, maxPixelError, maxDistance);
+  if (distances.length === 1) return undefined;
+  const levels: (readonly IAssetPart[])[] = [parts];
+  // Level 0 leads, so the marker opens with what the asset submits today.
+  const triangles: number[] = [parts.reduce((sum, part) => sum + levelTriangles(part.geometry), 0)];
+  for (let level = 1; level < distances.length; level += 1) {
+    const at = chainLevelParts(parts, chains, level);
+    levels.push(at.parts);
+    triangles.push(at.triangles);
+  }
+  return { distances, levels, triangles };
 }
 
 /**
@@ -1330,6 +2395,10 @@ class AdmissionBudget implements IAdmissionBudget {
  * each, and a scattered part whose own material is transparent draws as an alpha cutout unless the
  * game asks for blending, because an `InstancedMesh` cannot sort its instances.
  *
+ * An asset whose package entry names no `lods` is drawn at the levels its own model carries a baked
+ * AutoLOD chain for: the levels an instanced draw cannot reach by itself, switched at the distance
+ * their error projects over the `autoLod` viewport. Authored `lods` win; a chain is only a fallback.
+ *
  * @situation stream a large Blender-authored world by cell instead of one huge GLB
  * @situation keep scattered props and hand-placed chunks resident around a moving player
  * @situation honour per-asset draw distances and hard streaming budgets without a mid-frame throw
@@ -1339,9 +2408,13 @@ class AdmissionBudget implements IAdmissionBudget {
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
+ * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it
  * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
  * @constraint every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers
+ * @constraint two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct
+ * @constraint the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds
+ * @constraint a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left
  * @constraint `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
  * @example
  * const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
@@ -1364,6 +2437,16 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #rebuildsPerUpdate: number;
   readonly #prefetchSeconds: number;
   readonly #freshMeshesPerUpdate: number;
+  /**
+   * Pixels per world unit at unit depth, the scale a baked chain's level errors are divided by to
+   * reach a switch distance. See `IWorldCellsLoadOptions.autoLod` and {@link chainLevels}.
+   */
+  readonly #autoLodPixelsPerUnit: number;
+  /** The screen-space error budget a synthesized level is switched at; see `autoLod`. */
+  readonly #autoLodMaxPixelError: number;
+  /** Assets widened by their own chain so far, and whether the marker has already collapsed. */
+  #chainLodAssets = 0;
+  #chainLodSummarised = false;
   /** Fresh meshes created this update, and whether a build waited for next frame's allowance. */
   #freshThisUpdate = 0;
   #meshStalled = false;
@@ -1376,6 +2459,13 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #transparentScatter: "cutout" | "blend";
   readonly #baseUrl: string;
   readonly #logicalBase: string;
+  /**
+   * Asset ids the package named twice for one model, each pointing at the id kept. Every lookup of
+   * an id by a run's `asset` goes through {@link #canonical}, so a duplicate's placements are built,
+   * keyed, prewarmed, refcounted and released as the one asset they really are. Empty when the
+   * package has no duplicates, and then the lookup is the identity.
+   */
+  readonly #aliases: ReadonlyMap<string, string>;
   readonly #assets = new Map<string, IAssetState>();
   readonly #resident = new Map<string, IResidentCell>();
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
@@ -1416,8 +2506,26 @@ export class WorldCells extends Group implements IComputeDriven {
   #prewarmOwed = 0;
   #prewarmDrawn = 0;
   #prewarmWait = 0;
-  /** Meshes still carrying a prewarm borrow, with the hook each one has to be handed back. */
-  readonly #awaited = new Map<InstancedMesh, { borrow: unknown; own: unknown; hadOwn: boolean }>();
+  /**
+   * Awaited meshes that only a shadow level can draw, and the share of them that have had one.
+   *
+   * A caster's node is built in the shadow context, so a walk-time first shadow draw of a streamed
+   * key is a `NodeBuilder.build` inside a shadow pass — a third of the shadow lane's CPU on the
+   * 2 km walk. Counting them separately is what `TN_WORLD_PREWARM`'s `shadowPrewarmed` reports and
+   * what the gate waits on; a count of "every batch drew once" cannot tell the two apart.
+   */
+  #prewarmCasterMinted = 0;
+  #prewarmCasterOwed = 0;
+  #prewarmCasterDrawn = 0;
+  /**
+   * Meshes still carrying a prewarm borrow, with the hook each one has to be handed back, the batch
+   * holding it visible, and the post-settle updates it has waited; see
+   * {@link #releaseImpossibleBorrows}.
+   */
+  readonly #awaited = new Map<
+    InstancedMesh,
+    { batch: SharedBatch; borrow: unknown; own: unknown; hadOwn: boolean; waited: number }
+  >();
   #prewarmSettled = false;
   #prewarmResolve: () => void = () => {
     // replaced in the field initialiser below, once `this` exists
@@ -1431,6 +2539,20 @@ export class WorldCells extends Group implements IComputeDriven {
   /** How many of an asset's finest levels cast shadows; 0 when the game asked for none. */
   readonly #castShadowLevels: number;
   readonly #receiveShadow: boolean;
+  /** The triangle cap a chunk's instanced meshes are expanded under; see the load option. */
+  readonly #chunkMergeMaxTriangles: number;
+  /**
+   * The one surface each `side` of a chunk shadow proxy draws with, for the whole world. See
+   * `worldOwned`: sharing it is what holds a world to one shadow pipeline per side.
+   */
+  readonly #proxyMaterials = new Map<number, Material>();
+  /**
+   * The renderer and camera of the last frame that ran, kept so a chunk streamed in between frames
+   * can be compiled before it is attached. `update(renderer, camera)` is the only place either is
+   * known, and the admission that loads a chunk is not a place that has them.
+   */
+  #renderer: IRendererLike | undefined;
+  #camera: Camera | undefined;
   /**
    * Side of a world-grid square, and how many cells fit in one. One `SharedBatch` per
    * `asset:level:part` per square, so the mesh's bounds are that square's records and every camera
@@ -1448,14 +2570,45 @@ export class WorldCells extends Group implements IComputeDriven {
   // world has admitted nothing.
   #shadowMoved = true;
   #shadowToldAt = Number.NEGATIVE_INFINITY;
+  /** When `TN_WORLD_MAIN_CULL` was last printed; see {@link #reportMainCull}. */
+  #mainCullToldAt = 0;
+  /** Window repacks since the last marker; see {@link #reportMainCull}. */
+  #mainCullRepacks = 0;
+  /** Frusta the main cull has built, one a frame; see `IWorldCellsStats.mainCull`. */
+  #mainCullFrustums = 0;
+  /** Windows main batches have had to re-derive, cumulative; see `IWorldCellsStats.mainCull`. */
+  #mainCullWindows = 0;
+  /** Window repacks, cumulative; see `IWorldCellsStats.mainCull`. */
+  #mainCullPacks = 0;
+  /**
+   * One AABB per resident visibility cell, and how many resident world cells hold it. Shared by
+   * every key, so the main cull is O(visibility cells) a frame rather than O(keys × cells); see
+   * {@link #cullMainPass}.
+   */
+  readonly #cullCells = new Map<string, { cells: number; box: Box3 }>();
+  /** World cells per main-cull visibility cell; see `MAIN_CULL_SQUARE_METRES`. */
+  readonly #cellsPerCullCell: number;
+  /** The visibility cells the last cull kept and the frame's set, trading places; see `#cullMainPass`. */
+  #visibleSquares: Set<string> = new Set();
+  #cullScratch: Set<string> = new Set();
+  /** Bumped only when `#visibleSquares` changed, so a settled camera repacks no batch at all. */
+  #visibleEpoch = 0;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** The follow point the last refilter pass ran for; see `#refilterStale`. */
+  readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
+  #residencyEpoch = 0;
+  /** The residency epoch the last refilter pass saw; see `#refilterStale`. */
+  #refilterEpoch = -1;
+  /** The last pass found more stale cell-assets than `rebuildsPerUpdate` could queue. */
+  #refilterOwed = false;
   /** The game's hook to refresh the shadow levels after streamed records changed. */
   readonly #invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
   /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
   #jobs: IBuildJob[] = [];
-  /** The (cell, asset) pairs already queued, so a refilter cannot queue itself twice. */
-  readonly #queued = new Set<string>();
+  /** The (cell, run) pairs already queued, so a refilter cannot queue itself twice. */
+  readonly #queued = new Set<IWorldRun>();
   readonly #position = new Vector3();
   readonly #rotation = new Quaternion();
   readonly #scale = new Vector3();
@@ -1470,8 +2623,17 @@ export class WorldCells extends Group implements IComputeDriven {
   #evictions = 0;
   #failures = 0;
   #rebuilds = 0;
+  /** Refilter passes run, whether or not they queued anything; see `IWorldCellsStats.refilters`. */
+  #refilters = 0;
   /** Refilters whose rebuild came back identical and were settled without a write. */
   #unchanged = 0;
+  /** Every distinct gate distance the world's assets have, ascending; see `#noteGate`. */
+  readonly #gates: number[] = [];
+  /** The reused hit list and the reused per-cell seen set; see `#staleIn`. */
+  readonly #stale: Array<{ cell: IResidentCell; distance: number; id: string }> = [];
+  readonly #staleSeen = new Set<string>();
+  /** Stale cell-assets the passes found, cumulative; see `IWorldCellsStats.refilterEntries`. */
+  #staleEntries = 0;
   #generation = 0;
   #released = false;
 
@@ -1487,10 +2649,16 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#now = init.admissionNow ?? ((): number => globalThis.performance?.now() ?? Date.now());
     this.#follow = init.follow;
     this.#manifest = init.manifest;
+    // Before the first `#canonical` read, which is the run loop below.
+    this.#aliases = init.aliases;
     this.#cells = init.manifest.cells;
     for (const cell of this.#cells)
-      for (const run of cell.runs)
-        this.#runMax.set(run.asset, Math.max(this.#runMax.get(run.asset) ?? 0, run.count));
+      for (const run of cell.runs) {
+        // By the canonical id, so one key's buffer is sized for the largest run of *any* member of
+        // the group and a duplicate's placements never overflow the block their canonical minted.
+        const id = this.#canonical(run.asset);
+        this.#runMax.set(id, Math.max(this.#runMax.get(id) ?? 0, run.count));
+      }
     this.#cellSize = init.manifest.cellSize;
     this.#minX = init.manifest.extent.minX;
     const { extent, terrain } = init.manifest;
@@ -1502,6 +2670,11 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#minZ = init.manifest.extent.minZ;
     this.#placements = init.placements;
     this.#rebuildsPerUpdate = positiveInteger(init.rebuildsPerUpdate ?? 16, "rebuildsPerUpdate");
+    this.#autoLodPixelsPerUnit = autoLodScale(init.autoLod);
+    this.#autoLodMaxPixelError = autoLodPixelError(init.autoLod);
+    // The marker is periodic, and a world's first five seconds are its own: the clock starts at the
+    // world, not before it, so loading does not print a line.
+    this.#mainCullToldAt = this.#now();
     this.#prefetchSeconds = init.prefetchSeconds ?? 1.5;
     this.#freshMeshesPerUpdate = positiveInteger(
       init.freshMeshesPerUpdate ?? 2,
@@ -1522,6 +2695,10 @@ export class WorldCells extends Group implements IComputeDriven {
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
         : 0;
     this.#receiveShadow = init.shadows?.receive === true;
+    this.#chunkMergeMaxTriangles = positiveInteger(
+      init.chunkMergeMaxTriangles ?? CHUNK_MERGE_MAX_TRIANGLES,
+      "chunkMergeMaxTriangles",
+    );
     // Validated and dropped. Clusters bound what a shadow level submits now, so a game that set
     // this keeps compiling and keeps loading; see the option's TSDoc.
     if (init.shadows?.castDistance !== undefined)
@@ -1532,6 +2709,12 @@ export class WorldCells extends Group implements IComputeDriven {
         : positiveInteger(init.clusterSize, "clusterSize");
     // Rounded, so a cluster is a whole number of cells and a cell belongs to exactly one of them.
     this.#cellsPerCluster = Math.max(1, Math.round(this.#clusterSize / this.#cellSize));
+    // The main cull's own grid, which is a whole number of world cells or nothing: see
+    // `MAIN_CULL_SQUARE_METRES`. A `cellSize` that is not a whole multiple of 32 m — and every
+    // `cellSize` larger than it — falls back to one cell, which is the cull this shipped before it
+    // had a grid of its own.
+    this.#cellsPerCullCell =
+      MAIN_CULL_SQUARE_METRES % this.#cellSize === 0 ? MAIN_CULL_SQUARE_METRES / this.#cellSize : 1;
     this.#invalidateShadows = init.shadows?.invalidate;
     if (this.#transparentScatter !== "cutout" && this.#transparentScatter !== "blend")
       throw new Error("WorldCells transparentScatter must be 'cutout' or 'blend'.");
@@ -1614,8 +2797,17 @@ export class WorldCells extends Group implements IComputeDriven {
       error.name = "WorldPackageValidationError";
       throw error;
     }
+    // One line, at the one moment the whole package is known: how many assets it names and how many
+    // of them are one model under several names. `canonical` equal to `assets` is a package with no
+    // duplicates, which is most of them.
+    const aliases = await assetAliases(assets, manifest, logicalBase);
+    const named = Object.keys(manifest.assets).length;
+    console.info(
+      `TN_WORLD_ASSET_ALIAS assets=${String(named)} canonical=${String(named - aliases.size)}`,
+    );
     return new WorldCells({
       ...options,
+      aliases,
       assets,
       baseUrl,
       heightmap,
@@ -1660,10 +2852,19 @@ export class WorldCells extends Group implements IComputeDriven {
    * The residency pass itself is skipped while the follow point has moved less than half a metre
    * since the last one and nothing is pending (a load, a cell build, a deferred terrain admission, a
    * prewarm mint or a shadow level not yet told), because the pass would re-derive the set the
-   * world already holds. The drain, the prewarm and the invalidation below it run every time.
+   * world already holds. The drain, the prewarm, the invalidation and the main cull below it run
+   * every time.
+   *
+   * `camera` is the frame's render camera, which the engine's render-cadence dispatch hands over
+   * because it is the one this world draws with. A game that drives this world itself can pass it,
+   * and a game that does not keeps every resident record drawn.
    */
-  update(renderer?: IRendererLike): void {
+  update(renderer?: IRendererLike, camera?: Camera): void {
     if (this.#released) return;
+    // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
+    // arrives, which can be a frame or a loading screen after the frame that gave us these.
+    if (renderer !== undefined) this.#renderer = renderer;
+    if (camera !== undefined) this.#camera = camera;
     // A new upload epoch, so no batch's pending span outlives the render that consumed it. See
     // `SharedBatch#touched`.
     advanceWriteEpoch();
@@ -1695,7 +2896,13 @@ export class WorldCells extends Group implements IComputeDriven {
         ahead.x,
         ahead.z,
       );
-      this.#updateMaxDistance(x, z);
+      // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
+      // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
+      if (this.#refilterStale(x, z)) {
+        this.#refilterPoint.set(x, 0, z);
+        this.#refilterEpoch = this.#residencyEpoch;
+        this.#updateMaxDistance(x, z);
+      }
     } else if (
       // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
       // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
@@ -1712,11 +2919,169 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#drainPrewarm();
     // After the drain, so the levels are told about this update's records and not the last one's.
     this.#tellShadows();
+    // After the drain too, so a record admitted this update is in the window the camera draws and
+    // not one frame behind it.
+    this.#cullMainPass(camera);
+    this.#reportMainCull();
     this.#admission = {
       backlog: this.#backlog(),
       deferred: this.#jobs.length,
       spentMs: budget.spentMs,
     };
+  }
+
+  /**
+   * Narrow every main batch's draw window to the world-grid squares `camera`'s frustum covers, once
+   * per frame, for the whole set at once.
+   *
+   * This used to be each main mesh's own `onBeforeRender`, which three never calls for an invisible
+   * mesh — so the moment a batch that draws nothing was hidden, the one thing that could show it
+   * again when the camera turned back was gone with it, and the world lost its trees for good. The
+   * decision therefore moved to the frame's own driver: the render-cadence compute dispatch, which
+   * the engine already runs once per rendered frame — on the same readiness gate residency itself
+   * sits behind, so a frame that skips this skipped the world's records too — and which now hands the
+   * render camera to the world, so it reaches every main mesh whether it is drawn or not.
+   *
+   * The camera rules are the ones the hook had, and they are the whole of what decides a window:
+   *
+   * - **An orthographic camera never repacks.** A virtual-shadow level's camera is a
+   *   `DirectionalLightShadow`'s own, which three makes orthographic, so a level's window — one shadow
+   *   slice of the ring, deliberately not the main view's — can never overwrite the main pass's. A
+   *   game whose own camera is orthographic keeps the old behaviour: everything resident is drawn, and
+   *   nothing pops. That is a lost saving, never a wrong picture.
+   * - **The render camera is the one that decides.** The engine dispatches this with the camera it
+   *   is about to draw the main pass with, so the second-perspective-camera race the hook had to
+   *   arbitrate per mesh cannot arise: a mirror or a minimap is drawn with its own camera and is
+   *   served the main view's window, which is the honest trade for a world with one main view.
+   * - **A set that did not change touches nothing.** The frustum, the visible cells and the epoch
+   *   are the frame's, derived once for the whole pass; a batch whose records have not moved since it
+   *   packed at that epoch compares two integers and returns. A camera at rest costs one frustum and
+   *   one test per resident visibility cell a frame, and nothing at all per mesh.
+   */
+  #cullMainPass(camera: Camera | undefined): void {
+    if (camera === undefined || (camera as ICamera).isOrthographicCamera === true) return;
+    this.#mainCullFrustums += 1;
+    const frustum = _cullFrustum.setFromProjectionMatrix(
+      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    // The visible visibility cells, for the whole pass, into a set that is reused and compared
+    // rather than allocated: two sets trading places, so a settled camera allocates nothing at all.
+    const next = this.#cullScratch;
+    next.clear();
+    for (const [cell, entry] of this.#cullCells) {
+      // An occupied cell whose placements have not been decoded yet holds nothing to draw, and its
+      // Y range is still empty — a volume that cannot be tested against ±Infinity is not one this
+      // frame's answer may rest on.
+      if (entry.box.isEmpty() === false && frustum.intersectsBox(entry.box)) next.add(cell);
+    }
+    if (!sameSquares(next, this.#visibleSquares)) {
+      this.#visibleEpoch += 1;
+      const was = this.#visibleSquares;
+      this.#visibleSquares = next;
+      this.#cullScratch = was;
+      this.#cullScratch.clear();
+    }
+    for (const shared of this.#shared.values()) {
+      if (shared.role !== "main") continue;
+      const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
+      if (outcome === "settled") continue;
+      this.#mainCullWindows += 1;
+      if (outcome === "repacked") {
+        this.#mainCullRepacks += 1;
+        this.#mainCullPacks += 1;
+      }
+    }
+  }
+
+  /**
+   * The one volume per resident visibility cell, shared by every key: its own XZ footprint, and in Y
+   * the range its resident placements actually reach once their assets' own bounds are added to them,
+   * padded by `MAIN_CULL_PAD_METRES`.
+   *
+   * It is derived here, on admission, and never a frame — a volume walked every frame to answer a
+   * question about placements that never move is a frame's work for an admission's answer.
+   *
+   * It is deliberately not per key. Every key drew the same cell set, so deriving it per key meant
+   * ~230 frusta and ~230 sets a frame to learn the same answer; one volume per cell is what makes the
+   * pass O(cells) instead of O(keys × cells).
+   *
+   * The Y is what makes it a volume rather than a slab. It used to be the whole terrain height range
+   * widened by the tallest asset bound in the world — ~100 m of Y on a map with a 10 m relief, which
+   * made every cell's bounding sphere a ~90 m radius that a view beside the world still cleared, and
+   * handed the vertex stage the whole ring. This is per placement instead: a sub-square of flat
+   * ground with ferns on it is the height of its ferns.
+   */
+  #cullResident(cell: IWorldCell): void {
+    const per = this.#cellsPerCullCell;
+    const side = per * this.#cellSize;
+    const first = Math.floor(cell.x / per);
+    const firstZ = Math.floor(cell.z / per);
+    const name = clusterOf(cell.x, cell.z, per);
+    let entry = this.#cullCells.get(name);
+    if (entry === undefined) {
+      // XZ from the grid, padded, and an empty Y: this cell's own placements are unioned in below,
+      // and a cell holding none of them yet is never visible rather than visible by its footprint.
+      const box = new Box3(
+        new Vector3(
+          this.#minX + first * side - MAIN_CULL_PAD_METRES,
+          Number.POSITIVE_INFINITY,
+          this.#minZ + firstZ * side - MAIN_CULL_PAD_METRES,
+        ),
+        new Vector3(
+          this.#minX + (first + 1) * side + MAIN_CULL_PAD_METRES,
+          Number.NEGATIVE_INFINITY,
+          this.#minZ + (firstZ + 1) * side + MAIN_CULL_PAD_METRES,
+        ),
+      );
+      entry = { box, cells: 0 };
+      this.#cullCells.set(name, entry);
+    }
+    entry.cells += 1;
+    const box = entry.box;
+    for (const run of cell.runs) {
+      const bounds = this.#manifest.assets[this.#canonical(run.asset)]?.bounds;
+      if (bounds === undefined || run.count === 0) continue;
+      const records = cellPlacements(this.#placements, run);
+      for (let index = 0; index < run.count; index += 1) {
+        const at = index * PLACEMENT_RECORD_FLOATS;
+        // The placement, widened by its own asset's bounds at the scale it is drawn at, and by the
+        // pad — a union, so the pad is counted once however many placements there are.
+        const scale = Math.abs(records[at + 7] as number);
+        const x = records[at] as number;
+        const y = records[at + 1] as number;
+        const z = records[at + 2] as number;
+        box.expandByPoint(
+          _cullPoint.set(
+            x - (Math.abs(bounds.min[0]) + MAIN_CULL_PAD_METRES) * scale,
+            y - Math.abs(bounds.min[1]) * scale - MAIN_CULL_PAD_METRES,
+            z - (Math.abs(bounds.min[2]) + MAIN_CULL_PAD_METRES) * scale,
+          ),
+        );
+        box.expandByPoint(
+          _cullPoint.set(
+            x + (Math.abs(bounds.max[0]) + MAIN_CULL_PAD_METRES) * scale,
+            y + Math.abs(bounds.max[1]) * scale + MAIN_CULL_PAD_METRES,
+            z + (Math.abs(bounds.max[2]) + MAIN_CULL_PAD_METRES) * scale,
+          ),
+        );
+      }
+    }
+  }
+
+  /**
+   * Drop the visibility cell an evicted cell sat in once nothing resident is left in it. Records are
+   * cleared before this runs, so a batch can never be holding a cell the cull no longer knows: an
+   * unknown cell is not in the visible set, and that would be a tree nobody draws.
+   *
+   * The box goes with it, so a cell that comes back derives its volume again — which is what keeps a
+   * released asset's height out of a cell that no longer holds it.
+   */
+  #cullEvicted(cell: IResidentCell): void {
+    const name = clusterOf(cell.x, cell.z, this.#cellsPerCullCell);
+    const entry = this.#cullCells.get(name);
+    if (entry === undefined) return;
+    entry.cells -= 1;
+    if (entry.cells <= 0) this.#cullCells.delete(name);
   }
 
   /**
@@ -1744,6 +3109,25 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+   * Does this update have to run the `maxDistance`/`lods` refilter pass?
+   *
+   * Three things, and the pass runs when any of them holds: the follow point has moved
+   * `LEVEL_REFILTER_STEP_METRES` since the last one, so a walk re-derives its brackets every two
+   * metres instead of every half; residency changed, because a cell that arrived or left is the
+   * bracket the pass is about; and the last pass found more stale cell-assets than
+   * `rebuildsPerUpdate` could queue, so the ones it could not queue are still owed and a still
+   * follow point has to keep coming back for them. Anything else is the same brackets, so the pass
+   * is skipped and the world does nothing for that update.
+   */
+  #refilterStale(x: number, z: number): boolean {
+    if (this.#refilterOwed) return true;
+    if (this.#refilterEpoch !== this.#residencyEpoch) return true;
+    return (
+      Math.hypot(x - this.#refilterPoint.x, z - this.#refilterPoint.z) >= LEVEL_REFILTER_STEP_METRES
+    );
+  }
+
+  /**
    * Mint this update's prewarm allowance, then settle the readiness signal.
    *
    * A batch minted while the world is not in a scene is projected by nothing and builds nothing, so
@@ -1764,26 +3148,32 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#mintPrewarm(entry);
       minted += 1;
     }
-    // A minted companion is only *owed* a draw by `#awaitDraw`; nothing made the shadow levels draw
-    // one. They render when their window moves or something invalidates them, and on a loading
-    // screen the follow point stands still, so every companion minted after the first frame sat in
-    // the graph with a built-in node that no level had ever asked for. The walk's first window move
-    // then built all of them in one shadow pass. Invalidating on every minting update is what makes
-    // the prewarm prewarm: the build is paid by the loading screen, which is the only frame rate
-    // that was hiding it anyway.
-    if (minted > 0) {
-      this.#prewarmWait = 0;
-      this.#invalidateShadows?.();
-    } else if (this.parent !== null) this.#prewarmWait += 1;
+    // A minted batch is only *owed* a draw by `#awaitDraw`; nothing made anything draw it. A main
+    // batch is drawn by the next main render, but a caster is drawn by a shadow level, and the
+    // levels render when their window moves or something invalidates them — on a loading screen the
+    // follow point stands still, so every caster minted after the first frame sat in the graph with
+    // a node no level had ever asked for and the walk's first window move built all of them in one
+    // shadow pass. Invalidating while the gate is open, minting or not, is what makes the prewarm
+    // prewarm: the build is paid by the loading screen, which is the only frame rate hiding it.
+    if (minted > 0) this.#prewarmWait = 0;
+    // A caster's draw is a shadow level's, and the levels render at most one per frame, so the gate
+    // keeps asking them to while one is owed — bounded, because a borrow nothing draws is handed
+    // back by `#releaseImpossibleBorrows` below and a world that never draws one settles anyway.
+    const waitingOnCasters = this.parent !== null && this.#prewarmCasterOwed > 0;
+    if (minted > 0 || waitingOnCasters) this.#invalidateShadows?.();
+    else if (this.parent !== null) this.#prewarmWait += 1;
+    this.#releaseImpossibleBorrows();
     if (this.#prewarmQueue.length > 0 || this.#prewarmPending <= 0) return;
     if (this.#prewarmWait < PREWARM_WARM_UPDATES) return;
+    // A caster still owed a draw is a build the walk would otherwise pay inside a shadow pass, so the
+    // gate holds for it until its borrow is handed back, which is the bound.
+    if (waitingOnCasters) return;
     this.#prewarmPending = 0;
     // The gate is settled, so nothing is owed a draw. A companion no shadow level covers leaves its
     // pair non-zero, and `pendingPrewarm` is documented `0` from here on.
     this.#prewarmOwed = 0;
     this.#prewarmDrawn = 0;
     this.#prewarmWait = 0;
-    this.#releaseImpossibleBorrows();
     this.#settlePrewarm();
   }
 
@@ -1806,23 +3196,33 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#budgets.residentCells + 1,
       entry.key,
       this.#extentBounds,
+      entry.role,
     );
-    this.#dressMesh(shared.mesh, entry.role, entry.role === "main" && this.#receiveShadow);
-    shared.mesh.visible = true;
+    this.#dressMesh(shared, entry.role === "main" && this.#receiveShadow);
     this.#shared.set(entry.key, shared);
     this.add(shared.mesh);
     this.#prewarmPending += 1;
     this.#prewarmMinted += 1;
-    // A main batch is owed a draw by `#awaitDraw`; nothing made a shadow level draw a caster, and
-    // a caster never reaches the main pass, so the hook would wait on a draw that cannot happen.
-    // The minting update invalidates the levels instead, which is what builds the caster's node.
-    if (entry.role === "main") this.#awaitDraw(shared.mesh);
+    // Every role is owed a draw by `#awaitDraw` and is shown while empty until that draw is counted:
+    // the node, the bindings and the pipeline are built by a submission, and one zero-count
+    // submission per prewarmed batch is the price of having the walk never pay for it. A caster's
+    // submission is a shadow level's, not the main pass's — which is why `#drainPrewarm` keeps the
+    // levels rendering while one is owed, and why `VirtualShadowNode`'s `#probe` renders both caster
+    // layers when it finds one. A caster that is not awaited here is built on the first shadow draw
+    // of the walk, inside a shadow pass, which is the cost this prewarm exists to move.
+    this.#awaitDraw(shared);
   }
 
-  /** Count this mesh's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
-  #awaitDraw(mesh: InstancedMesh | undefined): void {
-    if (mesh === undefined) return;
+  /** Count this batch's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
+  #awaitDraw(shared: SharedBatch): void {
+    const mesh = shared.mesh;
+    const caster = shared.role !== "main";
     this.#prewarmOwed += 1;
+    if (caster) {
+      this.#prewarmCasterMinted += 1;
+      this.#prewarmCasterOwed += 1;
+    }
+    shared.awaitPrewarmDraw();
     // three's `Object3D` carries an inherited no-op, so reading `onBeforeRender` off a fresh mesh
     // hands back a function that was never an own property. Writing it back as one leaves every
     // batch that has drawn since looking permanently hooked, and the projection's `hasRenderHook`
@@ -1832,29 +3232,53 @@ export class WorldCells extends Group implements IComputeDriven {
     const borrow = own as ((...args: unknown[]) => void) | undefined;
     const counted = (...args: unknown[]): void => {
       this.#prewarmDrawn += 1;
+      if (caster) {
+        this.#prewarmCasterOwed -= 1;
+        this.#prewarmCasterDrawn += 1;
+      }
       this.#handBack(mesh, hadOwn, own);
       this.#awaited.delete(mesh);
+      // The node is built and the pipeline is compiled: the batch owes nothing more, so an empty one
+      // goes back to hiding.
+      shared.prewarmDrew();
       borrow?.(...args);
     };
     // Engine bookkeeping, not a claim on the mesh: the scene-render projection's `hasRenderHook`
     // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
     // collapse they exist to be folded into. Unmarked, 202 of them permanently declined it.
     markEngineRenderHook(counted);
-    this.#awaited.set(mesh, { borrow: counted, own, hadOwn });
+    this.#awaited.set(mesh, { batch: shared, borrow: counted, own, hadOwn, waited: 0 });
     mesh.onBeforeRender = counted as typeof mesh.onBeforeRender;
   }
 
   /**
-   * Hand back a borrow whose draw can no longer happen, so no hook outlives the prewarm it served.
+   * Hand back the borrow of a mesh whose prewarm draw can never come, so no hook outlives the
+   * prewarm it served.
    *
-   * A prewarmed main batch that is still empty when the gate settles never draws, so its borrow
-   * would sit on the mesh for the rest of the walk. Batches that did draw already returned theirs.
+   * A mesh that is merely empty now draws — `visible` at count 0 is what builds its node and its
+   * pipeline, and the borrow is counted off that one submission — so emptiness is no longer a
+   * reason to release anything. What is left is a mesh nothing can draw, and which mesh that is
+   * depends on the role: a main batch is drawn by the main pass, so a world projected by nothing
+   * (`parent === null`, which is a `load()` loop's prewarm and settles the moment the world joins a
+   * scene) still owes it one, while a *caster* is drawn by a shadow level, and a world nothing
+   * projects has no level to draw it — its visible-at-count-0 exception is handed straight back
+   * rather than held for the whole load. Otherwise a level is a frame's schedule away and the
+   * borrow waits `PREWARM_RELEASE_UPDATES` updates for it. That is a ceiling rather than a
+   * diagnosis — a projection that collapsed the world, a camera that never reached the mesh, a game
+   * that passed no `shadows.invalidate` for the levels to be told by — and it is here so those
+   * meshes neither hold a hook nor sit visible at count 0 for the whole walk.
    */
   #releaseImpossibleBorrows(): void {
+    const projected = this.parent !== null;
     for (const [mesh, entry] of [...this.#awaited]) {
-      if (mesh.count > 0) continue;
+      entry.waited += 1;
+      const caster = entry.batch.role !== "main";
+      if (projected === true && entry.waited < PREWARM_RELEASE_UPDATES) continue;
+      if (projected === false && caster === false) continue;
       if (mesh.onBeforeRender === entry.borrow) this.#handBack(mesh, entry.hadOwn, entry.own);
       this.#awaited.delete(mesh);
+      if (caster) this.#prewarmCasterOwed -= 1;
+      entry.batch.prewarmDrew();
     }
   }
 
@@ -1873,6 +3297,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * residency, two an update.
    */
   #queuePrewarm(asset: IAssetState): void {
+    const coarsest = asset.levels[asset.levels.length - 1];
     for (const [level, parts] of asset.levels.entries()) {
       for (const [part, entry] of parts.entries()) {
         const key = `${asset.id}:${String(level)}:${String(part)}`;
@@ -1886,14 +3311,17 @@ export class WorldCells extends Group implements IComputeDriven {
           // A retained key is already paid for; see `#mintPrewarm`.
           if (this.#shared.has(name) || this.#retired.has(name) || this.#prewarmKeys.has(name))
             continue;
+          // The wide half is prewarmed out of the coarsest level, exactly as it is drawn; see
+          // `#shapeFor`.
+          const shape = role === "wide" ? (coarsest?.[part] ?? entry) : entry;
           this.#prewarmKeys.add(name);
           this.#prewarmQueue.push({
             asset: asset.id,
             role,
-            geometry: entry.geometry,
+            geometry: shape.geometry,
             key: name,
             level,
-            material: entry.material,
+            material: shape.material,
           });
         }
       }
@@ -1903,11 +3331,24 @@ export class WorldCells extends Group implements IComputeDriven {
   #settlePrewarm(): void {
     if (this.#prewarmSettled) return;
     this.#prewarmSettled = true;
+    // The one line a walk's log needs to say the prewarm paid what it exists to pay:
+    // `shadowPrewarmed` is the casters whose shadow-context node was built behind the gate, and
+    // `castersUnbuilt` the ones it could not reach — a non-zero there is the walk-time first shadow
+    // build the prewarm was supposed to move, named rather than inferred.
+    console.info(
+      `TN_WORLD_PREWARM minted=${String(this.#prewarmMinted)} ` +
+        `shadowPrewarmed=${String(this.#prewarmCasterDrawn)} ` +
+        `castersUnbuilt=${String(Math.max(0, this.#prewarmCasterMinted - this.#prewarmCasterDrawn))}`,
+    );
     this.#prewarmResolve();
   }
 
-  process(renderer?: IRendererLike): void {
-    this.update(renderer);
+  /**
+   * The render-cadence dispatch. The engine hands the frame's render camera over, and this world's
+   * main windows follow it; see {@link #cullMainPass} for why the decision is not the meshes' own.
+   */
+  process(renderer?: IRendererLike, camera?: Camera): void {
+    this.update(renderer, camera);
   }
 
   /**
@@ -1968,6 +3409,12 @@ export class WorldCells extends Group implements IComputeDriven {
       instances: this.#instances,
       loadsInFlight: this.#limiter.inFlight,
       loadsQueued: this.#limiter.queued,
+      mainCull: {
+        frustums: this.#mainCullFrustums,
+        repacks: this.#mainCullPacks,
+        visibleEpoch: this.#visibleEpoch,
+        windows: this.#mainCullWindows,
+      },
       // Minted meshes still owed a first draw, not minted meshes. The two used to be the same
       // number, so a loading bar read minting as the whole of the prewarm and then stood still for
       // the whole draw — the node builds a bar cannot show. The gate is a promise about batches, so
@@ -1975,6 +3422,11 @@ export class WorldCells extends Group implements IComputeDriven {
       pendingPrewarm: this.#prewarmQueue.length + this.#prewarmOwed - this.#prewarmDrawn,
       prewarmMinted: this.#prewarmMinted,
       pressure: { ...this.#pressure },
+      // The pass itself, counted whether or not it found anything: `rebuilds` cannot tell a skipped
+      // pass from one that scanned every resident cell and found the same brackets, and that gap is
+      // the whole cost of the 2 m step. See `#refilterStale`.
+      refilters: this.#refilters,
+      refilterEntries: this.#staleEntries,
       rebuilds: this.#rebuilds,
       // The share of `rebuilds` the swap found unchanged, which is the honest report of how much of
       // the refilter pass is a bracket that was wider than any placement.
@@ -1996,6 +3448,13 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     this.#awaited.clear();
     for (const cell of [...this.#resident.values()]) this.#evict(cell);
+    // Every chunk is gone by now, so the surfaces the world owns on their behalf are the last thing
+    // holding them, and they are released here rather than by whichever chunk contributed them.
+    for (const material of this.#proxyMaterials.values())
+      this.#failures += release(material) ? 1 : 0;
+    this.#proxyMaterials.clear();
+    this.#renderer = undefined;
+    this.#camera = undefined;
     if (this.#drainShared() > 0) this.#failures += 1;
     // The batches `#drainShared` just retired. Their geometry and material were released by the
     // refcount path above, which is why they are disposed and not reused.
@@ -2057,6 +3516,8 @@ export class WorldCells extends Group implements IComputeDriven {
       bytes,
       cell,
       chunks: [],
+      filterFar: Number.NEGATIVE_INFINITY,
+      filterNear: Number.POSITIVE_INFINITY,
       generation: this.#generation++,
       instances,
       key: cellKey(cell.x, cell.z),
@@ -2064,27 +3525,42 @@ export class WorldCells extends Group implements IComputeDriven {
       z: cell.z,
     };
     this.#resident.set(state.key, state);
+    this.#cullResident(cell);
+    this.#residencyEpoch += 1;
     this.#instances += instances;
     this.#bytes += bytes;
     for (const run of cell.runs) this.#acquire(run, state);
     if (cell.chunks !== undefined && cell.chunks.length > 0) this.#startChunkLoad(state);
   }
 
+  /**
+   * The asset id a run's `asset` really is: itself, or the one canonical id its model is loaded
+   * under. Every path from a run to the state that holds it goes through here, so a duplicate costs
+   * one `IAssetState`, one model load, one set of `canonical:level:part` keys and one refcount —
+   * released when the last run naming any member of the group leaves the ring. A placement keeps its
+   * own transform, because those are read from the run's own records.
+   */
+  #canonical(id: string): string {
+    return this.#aliases.get(id) ?? id;
+  }
+
   #acquire(run: IWorldRun, cell: IResidentCell): void {
-    let asset = this.#assets.get(run.asset);
+    const id = this.#canonical(run.asset);
+    let asset = this.#assets.get(id);
     if (asset === undefined) {
-      const definition = this.#manifest.assets[run.asset];
+      const definition = this.#manifest.assets[id];
       if (definition === undefined) return;
       asset = {
         ...assetLevels(definition),
         definition,
         disposed: false,
-        id: run.asset,
+        id,
         levels: [],
         pending: false,
         refcount: 0,
       };
-      this.#assets.set(run.asset, asset);
+      this.#assets.set(id, asset);
+      for (const gate of asset.gates) this.#noteGate(gate);
     }
     asset.refcount += 1;
     if (asset.levels.length > 0) {
@@ -2108,12 +3584,15 @@ export class WorldCells extends Group implements IComputeDriven {
    * instead of a hole.
    */
   #queueBuild(asset: IAssetState, cell: IResidentCell, run: IWorldRun, replace = false): void {
-    const token = `${cell.key}|${asset.id}`;
-    if (this.#queued.has(token)) return;
-    // A cell that already draws this asset is not built again, which is where an adopted asset's
+    // Keyed on the run, not the asset: one cell can hold two runs of the same canonical asset —
+    // two names for one model — and each has its own records to build. A token per asset made the
+    // second run a no-op and dropped its placements on the floor.
+    if (this.#queued.has(run)) return;
+    // A cell that already draws this run is not built again, which is where an adopted asset's
     // second acquire over a still-resident cell lands.
-    if (!replace && cell.batches.some((entry) => entry.asset === asset.id)) return;
-    this.#queued.add(token);
+    if (!replace && cell.batches.some((entry) => entry.asset === asset.id && entry.run === run))
+      return;
+    this.#queued.add(run);
     this.#jobs.push({
       asset,
       batches: undefined,
@@ -2124,7 +3603,9 @@ export class WorldCells extends Group implements IComputeDriven {
       next: 0,
       published: 0,
       records: undefined,
-      replaced: replace ? cell.batches.filter((entry) => entry.asset === asset.id) : [],
+      replaced: replace
+        ? cell.batches.filter((entry) => entry.asset === asset.id && entry.run === run)
+        : [],
       run,
     });
   }
@@ -2162,7 +3643,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   #forget(index: number, job: IBuildJob): void {
     this.#jobs.splice(index, 1);
-    this.#queued.delete(`${job.cell.key}|${job.asset.id}`);
+    this.#queued.delete(job.run);
   }
 
   /** Units of work the queue still owes: placement slices left, plus meshes left to publish. */
@@ -2226,6 +3707,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#unchanged += 1;
       same.lastFilterX = fresh.lastFilterX;
       same.lastFilterZ = fresh.lastFilterZ;
+      this.#widenFilterRange(cell, fresh.lastFilterX, fresh.lastFilterZ);
       job.fresh.splice(index, 1);
     }
     // Every segment first, so a frame out of fresh meshes leaves the old batches drawing whole.
@@ -2237,7 +3719,9 @@ export class WorldCells extends Group implements IComputeDriven {
       if (entry.segment < 0) {
         const shared = this.#sharedFor(job.asset.id, entry, cell);
         const segment =
-          shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
+          shared === undefined
+            ? undefined
+            : this.#segmentIn(shared, entry.batch.count, this.#cullCellOf(cell));
         if (shared === undefined || segment === undefined) {
           this.#meshStalled = true;
           return false;
@@ -2352,6 +3836,54 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+   * `TN_WORLD_MAIN_CULL`, every `MAIN_CULL_MARKER_MS`: what the main pass holds, what it is drawing,
+   * how many of its meshes are submitted at all, and how many times the window moved to get there.
+   *
+   * `instances` is every live record the main batches hold — the whole resident ring, which is what
+   * three's whole-mesh test used to hand the vertex stage — and `drawn` is what the cull left in the
+   * windows. The gap between them is the saving, `repacks` says what it cost to get: a settled camera
+   * repacks nothing, so a walk that repacks dozens of times a second is a window that is chasing the
+   * camera, not one that is thrashing. `hidden` and `castersHidden` are the batches with nothing to
+   * draw that are now not submitted at all: in three r185's WebGPU path a zero-count `InstancedMesh`
+   * still runs the whole per-draw JS chain, so an empty batch was CPU a frame for no draw — the number
+   * is the part of the census that no longer costs anything.
+   */
+  #reportMainCull(): void {
+    const now = this.#now();
+    if (now - this.#mainCullToldAt < MAIN_CULL_MARKER_MS) return;
+    this.#mainCullToldAt = now;
+    const repacks = this.#mainCullRepacks;
+    this.#mainCullRepacks = 0;
+    let instances = 0;
+    let drawn = 0;
+    let hidden = 0;
+    let castersHidden = 0;
+    // What the two caster layers hold between them, per layer: the resident triangle bill a shadow
+    // level that picked that layer submits. Two numbers that must not be equal is the whole claim —
+    // the wide half draws the asset's coarsest level, so it is the one that falls.
+    let clusterTriangles = 0;
+    let wideTriangles = 0;
+    for (const shared of this.#shared.values()) {
+      if (shared.role !== "main") {
+        if (shared.mesh.visible === false) castersHidden += 1;
+        // Zero records add zero, so an empty batch needs no test of its own here.
+        const triangles = levelTriangles(shared.mesh.geometry) * shared.live;
+        if (shared.role === "cluster") clusterTriangles += triangles;
+        else wideTriangles += triangles;
+        continue;
+      }
+      instances += shared.live;
+      drawn += shared.drawn;
+      if (shared.mesh.visible === false) hidden += 1;
+    }
+    console.info(
+      `TN_WORLD_MAIN_CULL instances=${String(instances)} drawn=${String(drawn)} ` +
+        `hidden=${String(hidden)} castersHidden=${String(castersHidden)} repacks=${String(repacks)} ` +
+        `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)}`,
+    );
+  }
+
+  /**
    * Filter one slice of a run's placements into the batches they draw from, culling on the position
    * this build was queued for and switching level where an asset's `lods` say to.
    */
@@ -2398,8 +3930,20 @@ export class WorldCells extends Group implements IComputeDriven {
    * into the other level's batch, so the swap pops. A blend needs a per-instance mix the
    * InstancedBatch has no slot for; add one when a game's swap is visible enough to pay for it.
    */
+  /**
+   * Fold one batch's own filter point into the cell's bracket, which only ever widens. See
+   * `IResidentCell.filterNear` and `#staleIn`.
+   */
+  #widenFilterRange(cell: IResidentCell, filterX: number, filterZ: number): void {
+    const [near, far] = this.#span(cell, filterX, filterZ);
+    if (near < cell.filterNear) cell.filterNear = near;
+    if (far > cell.filterFar) cell.filterFar = far;
+  }
+
   #buildOne(job: IBuildJob, batches: readonly InstancedBatch[][]): void {
     const { asset } = job;
+    const { cell } = job;
+    this.#widenFilterRange(cell, job.filterX, job.filterZ);
     let part = job.published;
     for (const [level, levelBatches] of batches.entries()) {
       if (part >= levelBatches.length) {
@@ -2417,6 +3961,7 @@ export class WorldCells extends Group implements IComputeDriven {
         lastFilterZ: job.filterZ,
         level,
         part,
+        run: job.run,
         segment: -1,
         shared: undefined,
         threshold: asset.threshold,
@@ -2467,9 +4012,37 @@ export class WorldCells extends Group implements IComputeDriven {
     return `${entry.asset}:${String(entry.level)}:${String(entry.part)}`;
   }
 
+  /**
+   * The geometry and material one caster half draws, and the one place the coarse shape is chosen.
+   *
+   * Only the wide half is coarse. A shadow level picks its granularity by bill — one mesh per square
+   * on `VIRTUAL_SHADOW_CASTER_LAYER`, one mesh per key on the wide layer — so the wide half is what
+   * the levels whose window holds the resident ring submit, and their texels are metres across: the
+   * shape such a map resolves cannot tell level 0 from the asset's coarsest level, so it draws the
+   * coarsest one per part and the triangles it saves are triangles no fragment ever sampled. A
+   * cluster is the fine half, culled down to the squares one level's own window covers, so it keeps
+   * the level the placement selected. An asset with one level is its own coarsest, and every half
+   * draws what it draws today.
+   */
+  #shapeFor(entry: ICellBatch, role: "cluster" | "main" | "wide"): IBatchShape {
+    const coarse =
+      role === "wide" ? this.#assets.get(entry.asset)?.levels.at(-1)?.[entry.part] : undefined;
+    if (coarse !== undefined) return coarse;
+    return { geometry: entry.batch.geometry, material: entry.batch.material };
+  }
+
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
   #clusterOf(cell: IResidentCell): string {
     return clusterOf(cell.x, cell.z, this.#cellsPerCluster);
+  }
+
+  /**
+   * The `@x,z` half of the main cull's own visibility-cell key, for a resident cell. This is what a
+   * main batch's blocks are grouped by and what `#cullMainPass` tests, so it is the granularity the
+   * main pass is culled at; the caster clusters above are the shadow levels' and are left alone.
+   */
+  #cullCellOf(cell: IResidentCell): string {
+    return clusterOf(cell.x, cell.z, this.#cellsPerCullCell);
   }
 
   /**
@@ -2496,6 +4069,7 @@ export class WorldCells extends Group implements IComputeDriven {
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
     if (existing !== undefined) return existing;
+    const shape = this.#shapeFor(entry, role);
     // The batch released when this asset's last cell left the ring is the one to draw into again,
     // so the mesh keeps the uuid and the node three built for it. It costs no fresh allowance,
     // because it is not a fresh mesh.
@@ -2503,9 +4077,9 @@ export class WorldCells extends Group implements IComputeDriven {
     if (released !== undefined) {
       this.#retired.delete(key);
       this.#retiredBytes -= this.#heldBytes(released);
-      released.rebind(entry.batch.geometry, entry.batch.material);
+      released.rebind(shape.geometry, shape.material);
       released.mesh.name = key;
-      this.#dressMesh(released.mesh, role, receiveShadow);
+      this.#dressMesh(released, receiveShadow);
       this.#shared.set(key, released);
       this.add(released.mesh);
       return released;
@@ -2513,8 +4087,8 @@ export class WorldCells extends Group implements IComputeDriven {
     if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
     this.#freshThisUpdate += 1;
     const shared = new SharedBatch(
-      entry.batch.geometry,
-      entry.batch.material,
+      shape.geometry,
+      shape.material,
       this.#runMax.get(assetId) ?? entry.batch.count,
       // A caster cluster's block count is bounded by the cluster's own cells; a wide caster and the
       // main pass's one mesh per key are both bounded by the whole ring, so either way the one a
@@ -2524,8 +4098,9 @@ export class WorldCells extends Group implements IComputeDriven {
         : this.#budgets.residentCells + 1,
       key,
       this.#extentBounds,
+      role,
     );
-    this.#dressMesh(shared.mesh, role, receiveShadow);
+    this.#dressMesh(shared, receiveShadow);
     this.#shared.set(key, shared);
     this.add(shared.mesh);
     return shared;
@@ -2541,7 +4116,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * shadow level ever sees either. A main mesh keeps layer 0 and casts nothing, because its records
    * reach the shadow maps only through a caster half.
    */
-  #dressMesh(mesh: InstancedMesh, role: "cluster" | "main" | "wide", receiveShadow: boolean): void {
+  #dressMesh(shared: SharedBatch, receiveShadow: boolean): void {
+    const mesh = shared.mesh;
+    const role = shared.role;
     // Every role's records are written into the instance buffer, never moved in the world, and the
     // mesh is created and released per role — so this is the one place that covers a fresh mesh, a
     // rebound one and the three roles. Static here is only safe because every write announces
@@ -2559,6 +4136,10 @@ export class WorldCells extends Group implements IComputeDriven {
     mesh.layers.set(0);
     mesh.castShadow = false;
     mesh.receiveShadow = receiveShadow;
+    // Nothing to hang off a main mesh: the window is narrowed by `#cullMainPass` for the whole set,
+    // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
+    // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
+    // as long as the camera looked away. That leaves `onBeforeRender` to the prewarm borrow alone.
   }
 
   /** The world-grid square the follow point is in, as the `@x,z` half of a cluster key. */
@@ -2583,7 +4164,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * buffer state cannot be trusted, so it goes the same way as one over the byte budget.
    */
   #retire(key: string, shared: SharedBatch): void {
-    if (shared.mesh.count > 0) {
+    // Live records, not the draw window: a main batch whose squares are all behind the camera still
+    // holds its records, and that is not a batch to dispose.
+    if (shared.live > 0) {
       shared.mesh.dispose();
       return;
     }
@@ -2611,19 +4194,27 @@ export class WorldCells extends Group implements IComputeDriven {
     return this.#castShadowLevels > level;
   }
 
-  /** A block in `shared` for one cell's `count` records, growing the buffer when it is full. */
-  #segmentIn(shared: SharedBatch, count: number): number | undefined {
-    const segment = shared.allocate(count);
+  /**
+   * A block in `shared` for one cell's `count` records, growing the buffer when it is full. `cluster`
+   * is the world-grid square the cell sits in, and only a main batch keeps it: its draw window is
+   * narrowed per square, and a square is a grouping, not a position.
+   */
+  #segmentIn(shared: SharedBatch, count: number, cluster?: string): number | undefined {
+    const segment = shared.allocate(count, cluster);
     if (segment !== undefined) return segment;
     if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
     this.#freshThisUpdate += 1;
     const old = shared.grow();
+    // The replacement is a different object, so the layer and the cull hook `grow` copied neither of
+    // have to be dressed onto it again — a grown caster that kept layer 0 would be drawn by the main
+    // camera and lost to the shadow level, and a grown main batch would stop narrowing at all.
+    this.#dressMesh(shared, shared.role === "main" && this.#receiveShadow);
     this.add(shared.mesh);
     // The mesh this grow replaced goes back to the pool: a cached shadow level can still replay a
     // draw of it until its window next moves, and the pool keeps the buffer and the uuid rather
     // than letting one array of retired meshes grow without bound.
     parkMesh(old);
-    return shared.allocate(count);
+    return shared.allocate(count, cluster);
   }
 
   /**
@@ -2717,18 +4308,75 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#failures += disposeModels(models);
       return;
     }
-    const levels = this.#adoptLevels(models);
-    if (levels === undefined) return;
-    asset.levels = levels;
+    const adopted = this.#adoptLevels(models);
+    if (adopted === undefined) return;
+    // Before the prewarm and the queued builds, both of which read the levels, the distances and
+    // the gates: an asset whose chain widened it is batched at those levels from its first build.
+    asset.levels = this.#widenWithChain(asset, adopted);
     // Every level and part of the asset now, before any of them is asked for. A level with no
     // placement in it is not drawn and would otherwise mint its mesh — and pay its node build — on
     // the frame a walk first moves far enough to switch into it.
     this.#queuePrewarm(asset);
     for (const cell of [...this.#resident.values()]) {
       for (const run of cell.cell.runs) {
-        if (run.asset === asset.id) this.#queueBuild(asset, cell, run);
+        if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run);
       }
     }
+  }
+
+  /**
+   * An asset's loaded levels, widened with the ones its model's baked AutoLOD chain carries.
+   *
+   * An asset with authored `lods` keeps them: the package names its own shape at its own
+   * distances, and a chain the loader also happens to have registered is a fallback for a package
+   * that named none, not a second opinion over one that did. Everything downstream is unchanged by
+   * the widening — a level is a level, and its switch is a gate like any other — so the batch keys,
+   * the prewarm, the caster clusters and the retire/rebind pool all see the chain's levels as
+   * ordinary ones.
+   */
+  #widenWithChain(
+    asset: IAssetState,
+    levels: readonly (readonly IAssetPart[])[],
+  ): readonly (readonly IAssetPart[])[] {
+    if (asset.definition.lods !== undefined) return levels;
+    const chained = chainLevels(
+      levels[0] as readonly IAssetPart[],
+      this.#autoLodPixelsPerUnit,
+      this.#autoLodMaxPixelError,
+      asset.definition.maxDistance,
+    );
+    if (chained === undefined) return levels;
+    asset.distances = chained.distances;
+    asset.gates = [...chained.distances.slice(1), ...asset.gates];
+    for (const gate of asset.gates) this.#noteGate(gate);
+    asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
+    this.#reportChainLod(asset.id, chained);
+    return chained.levels;
+  }
+
+  /**
+   * `TN_WORLD_LOD_CHAIN`, one line per asset that was widened: how many levels it is now drawn at,
+   * where each takes over in metres to one decimal, and what each submits in triangles. Level 0
+   * leads, so the first triangle count is what the asset submits today and the last is what it
+   * submits past the last switch: the reduction is the whole point of the line.
+   */
+  #reportChainLod(id: string, chained: IChainLevels): void {
+    this.#chainLodAssets += 1;
+    if (this.#chainLodAssets > CHAIN_LOD_MARKER_LIMIT) {
+      if (this.#chainLodSummarised) return;
+      this.#chainLodSummarised = true;
+      console.info(
+        `TN_WORLD_LOD_CHAIN more than ${String(CHAIN_LOD_MARKER_LIMIT)} assets carry a chain; ` +
+          `the rest are one line: assets=${String(this.#chainLodAssets)}`,
+      );
+      return;
+    }
+    const listed: string[] = [];
+    for (const distance of chained.distances) listed.push(distance.toFixed(1));
+    console.info(
+      `TN_WORLD_LOD_CHAIN ${id}: levels=${String(chained.levels.length)} ` +
+        `distances=${listed.join(",")} tris=${chained.triangles.join(",")}`,
+    );
   }
 
   /**
@@ -2753,10 +4401,20 @@ export class WorldCells extends Group implements IComputeDriven {
     ];
   }
 
-  /** One entry per asset of `cell` the follow point has moved a gate of, nearest placement first. */
-  #staleIn(cell: IResidentCell, x: number, z: number): Array<{ distance: number; id: string }> {
-    const stale: Array<{ distance: number; id: string }> = [];
-    const seen = new Set<string>();
+  /**
+   * One entry per asset of `cell` the follow point has moved a gate of, nearest placement first.
+   *
+   * The cell's own bracket is the caller's: it was derived once for the cell, and every batch of a
+   * cell is measured against the same rectangle, so deriving it per batch was the same four
+   * `Math.max` and two `Math.hypot` calls as many times as the cell had batches. What is left here is
+   * per batch: one moved-point test and, for a batch that moved, its own bracket.
+   *
+   * Nothing is allocated to find them: the entries go into one reused array, the per-cell "already
+   * seen" set into another, and a pass that crossed no gate anywhere pushes nothing at all.
+   */
+  #staleIn(cell: IResidentCell, x: number, z: number, near: number, far: number): void {
+    const seen = this.#staleSeen;
+    seen.clear();
     for (const entry of cell.batches) {
       if (entry.threshold === undefined || seen.has(entry.asset)) continue;
       // Every level of one asset was filtered from the same follow position, so the first entry
@@ -2765,15 +4423,28 @@ export class WorldCells extends Group implements IComputeDriven {
       if (Math.hypot(x - entry.lastFilterX, z - entry.lastFilterZ) <= entry.threshold / 8) continue;
       const asset = this.#assets.get(entry.asset);
       if (asset === undefined) continue;
-      const [near, far] = this.#span(cell, x, z);
       const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
       const low = Math.min(near, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
       const high = Math.max(far, builtFar);
       if (!asset.gates.some((gate) => gate >= low && gate <= high)) continue;
-      stale.push({ distance: near, id: entry.asset });
+      this.#stale.push({ cell, distance: near, id: entry.asset });
+      this.#staleEntries += 1;
     }
-    return stale;
+  }
+
+  /**
+   * Record that one more gate distance exists, keeping the world's list ascending so
+   * {@link crossesGate} can binary search it. A gate is never withdrawn: an asset whose ring left
+   * still leaves its distances behind, which costs a cell the gate test does not reject and never a
+   * rebuild the pass owes.
+   */
+  #noteGate(gate: number): void {
+    const gates = this.#gates;
+    if (gates.includes(gate)) return;
+    let at = gates.length;
+    while (at > 0 && (gates[at - 1] as number) > gate) at -= 1;
+    gates.splice(at, 0, gate);
   }
 
   /**
@@ -2792,16 +4463,45 @@ export class WorldCells extends Group implements IComputeDriven {
    * cannot be afforded this frame leaves the cell drawing the level it has, not a hole.
    */
   #updateMaxDistance(x: number, z: number): void {
-    const stale: Array<{ cell: IResidentCell; distance: number; id: string }> = [];
-    for (const cell of this.#resident.values())
-      for (const job of this.#staleIn(cell, x, z)) stale.push({ cell, ...job });
-    stale.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
+    this.#refilters += 1;
+    const stale = this.#stale;
+    stale.length = 0;
+    this.#collectStale(x, z);
+    // Only what was found, and usually a handful of entries.
+    if (stale.length > 1) stale.sort((a, b) => a.distance - b.distance || a.id.localeCompare(b.id));
+    // What the cap could not queue is still owed, and `#refilterStale` reads that: a standing follow
+    // point has to keep coming back for it, or a walk that stopped mid-drain never finished.
+    this.#refilterOwed = stale.length > this.#rebuildsPerUpdate;
     for (const job of stale.slice(0, this.#rebuildsPerUpdate)) {
       const asset = this.#assets.get(job.id);
-      const run = job.cell.cell.runs.find((candidate) => candidate.asset === job.id);
-      if (asset === undefined || asset.levels.length === 0 || run === undefined) continue;
-      this.#queueBuild(asset, job.cell, run, true);
-      this.#rebuilds += 1;
+      if (asset === undefined || asset.levels.length === 0) continue;
+      // Every run of the group, not just the one that happens to carry the canonical's name: a cell
+      // holding two names for one model has two stale answers, and rebuilding only the named one
+      // left the other drawing the level its own distance has moved out of.
+      for (const run of job.cell.cell.runs) {
+        if (this.#canonical(run.asset) !== job.id) continue;
+        this.#queueBuild(asset, job.cell, run, true);
+        this.#rebuilds += 1;
+      }
+    }
+  }
+
+  /**
+   * Every resident cell's stale assets, into the reused list, nearest placement first.
+   *
+   * A cell is gated as a whole before one of its batches is looked at: its own bracket is derived
+   * once, unioned with every distance any of its batches was filtered from, and one binary search
+   * over the world's gates decides it. No gate in that range means no asset of the cell can have
+   * changed side of one, so its batches are not walked at all — which is the whole cost of a pass in
+   * which the follow point has not yet reached anything that switches.
+   */
+  #collectStale(x: number, z: number): void {
+    for (const cell of this.#resident.values()) {
+      const [near, far] = this.#span(cell, x, z);
+      const low = near < cell.filterNear ? near : cell.filterNear;
+      const high = far > cell.filterFar ? far : cell.filterFar;
+      if (!crossesGate(this.#gates, low, high)) continue;
+      this.#staleIn(cell, x, z, near, far);
     }
   }
 
@@ -2838,6 +4538,56 @@ export class WorldCells extends Group implements IComputeDriven {
     );
   }
 
+  /**
+   * Hand the chunk's own buffers to the renderer now, and report how many it took.
+   *
+   * A compile builds pipelines, not geometry, so the bake's new attributes reached the device on
+   * whichever frame first drew them — 826 buffers and 228.8 MB on an 8 s walk, 33 of them over a
+   * megabyte, lining up exactly with the p95 and max frame spikes. The backend's own attribute
+   * creation is idempotent, so this is a move rather than a second upload, and a renderer with no
+   * such seam answers 0 and behaves as it did.
+   */
+  #uploadAttributes(chunk: Object3D): number {
+    const upload = this.#renderer?.uploadAttributes;
+    if (upload === undefined) return 0;
+    const geometries = new Set<BufferGeometry>();
+    chunk.traverse((object) => {
+      const mesh = object as Mesh;
+      if (mesh.isMesh === true) geometries.add(mesh.geometry);
+    });
+    return upload(geometries);
+  }
+
+  /**
+   * Compile a merged chunk before anything can draw it, and report whether the compile came back.
+   *
+   * A chunk's first draw is the most expensive frame a streaming world has: its own first draw built
+   * nodes and a render pipeline synchronously, and one chunk cost **248 ms of a 291 ms walk** in the
+   * census that found it. The engine already owns this work — `warmUpScene` drives the renderer's
+   * own `compileAsync`, and this is that same call with the world as the target scene, so the chunk's
+   * materials resolve the same lights, environment and clipping the real frame will resolve them
+   * against. A pipeline compiled against no lights would be a different pipeline, and the frame would
+   * still pay for it.
+   *
+   * It is bounded by `within`, the warm-up's own bound: a compile that never settles is abandoned and
+   * the chunk is attached anyway, because a missing chunk is worse than a slow frame. A world that is
+   * in no scene is skipped outright — nothing projects it, so a compile would build nothing, which is
+   * the same answer `load()` gets, where the loading screen is about to draw it anyway.
+   */
+  async #warmChunk(chunk: Object3D): Promise<boolean> {
+    const renderer = this.#renderer;
+    const camera = this.#camera;
+    if (renderer === undefined || camera === undefined || this.parent === null) return false;
+    // The rejected compile is a pipeline this warm-up could not build, not a reason to fail the
+    // admission: the frame that needs it will try again and fail there, where the error belongs.
+    return within(
+      renderer.compileAsync(chunk, camera, this),
+      CHUNK_WARM_TIMEOUT_MS,
+      yieldToHost,
+      warmClock,
+    );
+  }
+
   async #attachChunks(
     cell: IResidentCell,
     generation: number,
@@ -2845,31 +4595,86 @@ export class WorldCells extends Group implements IComputeDriven {
   ): Promise<void> {
     const live = (): boolean => this.#cellLive(cell, generation);
     let attached = 0;
+    // Merged and shaped, not yet in the world: the compile below runs between the two, and a cell
+    // that left the ring in the middle takes its prepared chunks with it.
+    const prepared: { readonly object: Object3D; readonly proxies: number }[] = [];
     try {
       const report = await addInSlices(
         models,
         (object) => {
           if (!live()) return;
           object.name = CHUNK_NAME;
+          // One draw per material before the chunk is ever added, so the main pass and every shadow
+          // level that redraws it submit the chunk's materials rather than its nodes. A refusal
+          // leaves the chunk exactly as authored and is counted: it never costs the chunk itself.
+          const merge = mergeChunk(
+            object,
+            this.#chunkMergeMaxTriangles,
+            // A `loadModel` override parses per load, so a chunk's shapes are this world's to
+            // release; `assets.model` caches by path and hands the same scene back, so they are not.
+            this.#loadModel !== undefined,
+            this.#castShadowLevels > 0,
+            this.#proxyMaterials,
+          );
+          // The buffers the bake just made, uploaded here rather than on the chunk's first draw,
+          // which is the frame that uploads them today: 228.8 MB over 826 `createAttribute` calls
+          // in a browser walk, and up to 230 ms inside the frames that first submitted them.
+          // `addInSlices` is the admission budget, so this is one chunk per update, never a batch.
+          const uploaded = this.#uploadAttributes(object);
+          if (merge === undefined) this.#failures += 1;
+          else {
+            this.#failures += merge.failed;
+            console.info(
+              `TN_WORLD_CHUNK_MERGE meshes=${String(merge.meshes)} draws=${String(merge.draws)} ` +
+                `bytes=${String(merge.bytes)} uploaded=${String(uploaded)} ` +
+                `instancedExpanded=${String(merge.expanded)} keptInstanced=${String(merge.keptInstanced)} ` +
+                `shadowDraws=${String(merge.shadowDraws)}`,
+            );
+          }
           // Hand-placed chunks are the buildings and set dressing: full shape, so they cast with the
-          // near scatter and receive like everything else when the game asks for shadows.
-          if (this.#castShadowLevels > 0 || this.#receiveShadow)
+          // near scatter and receive like everything else when the game asks for shadows. A merged
+          // opaque mesh the proxy covers keeps receiving and stops casting: the depth pass reads the
+          // proxy, so casting from both would pay the bill the proxy was built to remove. The proxy
+          // itself is off layer 0 and already carries what the level cameras need of it.
+          if (this.#castShadowLevels > 0 || this.#receiveShadow) {
+            const covered = new Set(merge?.shadowCovered);
             object.traverse((node) => {
-              node.castShadow = this.#castShadowLevels > 0;
+              if (node.layers.isEnabled(0) === false) return;
+              node.castShadow = this.#castShadowLevels > 0 && !covered.has(node as Mesh);
               node.receiveShadow = this.#receiveShadow;
             });
-          cell.chunks.push(object);
-          this.add(object);
-          // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
-          // are the ones the export gave it, so it is the one subtree here with nothing to announce.
-          markStatic(object);
-          attached += 1;
+          }
+          prepared.push({ object, proxies: merge?.shadowDraws ?? 0 });
         },
         { marker: false, while: live },
       );
       if (report.stopped)
         for (let i = report.added; i < models.length; i += 1)
           this.#failures += disposeModel(models[i] as Object3D);
+      for (const { object, proxies } of prepared) {
+        // The compile is the whole point of the wait, and the wait is the only thing between the
+        // merge and the attach. Everything the world does not own is released when the cell that
+        // asked for the chunk is gone, so a chunk that arrives after its cell left is torn down here
+        // rather than compiled and thrown at a world that is not looking.
+        if (live()) await this.#warmChunk(object);
+        if (!live()) {
+          this.#failures += disposeModel(object);
+          continue;
+        }
+        cell.chunks.push(object);
+        this.add(object);
+        // A loaded chunk is placed once and never rewritten: its transforms, geometry and material
+        // are the ones the export gave it, so it is the one subtree here with nothing to announce.
+        markStatic(object);
+        // The proxies' shadow pipelines are the one thing a compile cannot build — three creates a
+        // shadow variant on the first pass that draws the caster, and the pass is the levels'. So
+        // the levels are told a caster arrived, exactly as a prewarmed caster cluster tells them:
+        // the first level whose window covers the chunk submits the proxy and builds it. With one
+        // material per `side` world-wide, that is one pipeline for the world's first chunk of each
+        // side and a node binding for every chunk after it, not a compile per chunk.
+        if (proxies > 0) this.#shadowRecordsMoved();
+        attached += 1;
+      }
     } catch {
       this.#failures += 1;
       for (let i = attached; i < models.length; i += 1)
@@ -2878,11 +4683,12 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   #evict(cell: IResidentCell): void {
+    this.#residencyEpoch += 1;
     // Work queued for a cell that has left is dropped, not resumed: a later frame would build
     // batches into a graph that no longer holds the cell, and the residency slot is already gone.
     this.#jobs = this.#jobs.filter((job) => {
       if (job.cell !== cell) return true;
-      this.#queued.delete(`${cell.key}|${job.asset.id}`);
+      this.#queued.delete(job.run);
       // A swap that ran out of fresh meshes leaves its claims in `fresh`, which is not in
       // `cell.batches` until the swap completes. Dropping the job without handing those blocks back
       // keeps them reserved and unwritten, so `mesh.count` never falls to zero, the asset's release
@@ -2902,10 +4708,13 @@ export class WorldCells extends Group implements IComputeDriven {
     }
     cell.chunks.length = 0;
     this.#resident.delete(cell.key);
+    this.#cullEvicted(cell);
     this.#instances -= cell.instances;
     this.#bytes -= cell.bytes;
     this.#evictions += 1;
-    for (const run of cell.cell.runs) this.#release(run.asset);
+    // One per run, so the canonical's refcount reaches zero exactly when the last run naming any
+    // member of its group has left the ring.
+    for (const run of cell.cell.runs) this.#release(this.#canonical(run.asset));
   }
 
   /**

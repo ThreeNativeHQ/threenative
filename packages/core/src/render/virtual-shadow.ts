@@ -43,6 +43,16 @@ import {
 type ILightAxisRange = { low: number; high: number };
 
 /**
+ * Why a level owes a render: not at all, a window that moved, or an invalidation that asked and
+ * waited out its delay. The render it finally takes is counted against this, so a level the frame's
+ * single budget passed over is not counted twice.
+ */
+type RenderReason = 0 | 1 | 2;
+const REASON_NONE: RenderReason = 0;
+const REASON_MOVE: RenderReason = 1;
+const REASON_INVALIDATION: RenderReason = 2;
+
+/**
  * Options for {@link VirtualShadowNode}. Every value is a mechanism parameter; the light's own
  * `shadow` keeps bias, normalBias, intensity, map type and filter, exactly as with a stock shadow.
  */
@@ -78,6 +88,22 @@ export interface IVirtualShadowOptions {
    * walking camera re-renders most, so it is the one that wants the larger step.
    */
   readonly refreshStep?: number | readonly number[];
+  /**
+   * How long a level waits after its own last render before an invalidation may re-render it, in
+   * seconds. One value for every level, or one per level finest first, the last entry standing in
+   * for the rest. Default `0.25 * extent / finestExtent` — 0.25 s, 1 s and 3.33 s for extents
+   * 24 / 96 / 320 — and `0` renders on the very next frame, which is what the node did before.
+   *
+   * A streamed world invalidates its shadows on every residency update, and a cell admitted at the
+   * ring edge lands in the coarsest window: the level that redraws for it is the one paying for the
+   * whole ring's wide casters, ten times a second where movement alone asks for two. A level
+   * waiting out its delay keeps the map and window it has, which is already right for every static
+   * caster in it, so only a newly streamed caster is missing — the trade is that a far tree's
+   * shadow can appear up to the delay late (3.33 s at extent 320, invisible on a level whose texel
+   * is wider than the tree). A window that moved is never delayed: that is a different reason, and
+   * it is not this option's.
+   */
+  readonly invalidationDelay?: number | readonly number[];
   /**
    * How far behind the window centre each level camera sits, in world units. Default 200. An
    * explicit `lightDistance` *and* `depthRange` switch the level's light-space depth off the derived
@@ -122,8 +148,33 @@ export interface IVirtualShadowStats {
    * one level per frame. They keep the map they already have and come due again next frame.
    */
   readonly deferred: number;
+  /**
+   * Levels holding a redraw for an invalidation that is still inside its own `invalidationDelay`,
+   * so this frame is not the frame they render on. They keep the map they have, which is right for
+   * every static caster in it: only a caster streamed in since is missing, and the cumulative
+   * `coalesced` below is what is being waited out.
+   */
+  readonly held: number;
   /** Fraction of levels served from cache over the node's lifetime. */
   readonly reuseRatio: number;
+  /**
+   * Level renders over the node's lifetime, for any reason. `byMove` and `byInvalidation` are the two
+   * the node has — a window that moved, and an invalidation that asked and waited out its delay — and
+   * they add up to this exactly, because a render the single per-frame budget defers is counted
+   * against the reason that queued it and not again when it is finally taken.
+   */
+  readonly rendersTotal: number;
+  /** Of those, the renders taken because a level's window moved. */
+  readonly byMove: number;
+  /** Of those, the renders taken because an invalidation asked and its level's delay had passed. */
+  readonly byInvalidation: number;
+  /**
+   * Invalidation asks that cost no render of their own, over the node's lifetime: absorbed by a
+   * render the level was taking anyway for its window, or merged into an ask already waiting out
+   * that level's delay. The two of these are the shape of the win — with the default delays a walk
+   * asks once a second and renders about that often, and every ask in between is counted here.
+   */
+  readonly coalesced: number;
   /**
    * The same four counters per level, finest first: which window moved, which invalidation asked
    * for a redraw, which level took the frame's single render, and which wanted one and did not get
@@ -174,6 +225,14 @@ export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
+/** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
+const STATS_QUERY_EVERY = 60;
+/**
+ * The invalidation delay of the *finest* level, in seconds; every other level's is this times its
+ * extent over the finest one. A burst of streamed invalidations is paid as one render, and the
+ * level that pays it is the one whose window is widest.
+ */
+const BASE_INVALIDATION_DELAY = 0.25;
 const DEFAULT_MIN_CASTER_TEXELS = 1.5;
 /**
  * The floor on a light's horizontal magnitude, so a sun on the horizon divides by a `cos` that is
@@ -232,11 +291,24 @@ interface ILevel {
    */
   readonly mapped: UniformNode<"float", number>;
   /**
-   * Set when this level was due and the frame's single render went to a finer one. Sticky, so a
-   * level that was passed over stays due on the next frame instead of waiting for its window to
-   * move again — the reason it was due (an `invalidateAll`, an explicit region) is already cleared.
+   * Set when an invalidation asked for a redraw that has not been rendered yet, 0 until then. The
+   * ask is held here instead of being consumed on the frame it arrives, so a level can wait out
+   * `invalidationDelay` and still redraw; a render of any reason clears it.
    */
-  pending: boolean;
+  dirty: boolean;
+  /**
+   * The engine frame clock's reading when this level last rendered, in seconds. A dirty level
+   * re-renders for the invalidation no sooner than `invalidationDelay` after this. `-Infinity`
+   * until the first render, so a level invalidated before it holds a map is due immediately.
+   */
+  lastRender: number;
+  /**
+   * Why this level owes a render the frame's single budget did not grant it: {@link REASON_NONE},
+   * and the reason it was due otherwise. Sticky, so a level that was passed over stays due on the
+   * next frame instead of waiting for its window to move again — and the render it eventually takes
+   * is counted against the reason that queued it.
+   */
+  pending: RenderReason;
   /**
    * Where this level's *rendered* map sits, relative to the centre the fragment test measures
    * from. A level whose re-render was deferred still holds an older window, and its selection has
@@ -344,13 +416,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   readonly options: Required<
-    Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard">
+    Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard" | "invalidationDelay">
   > & {
     readonly markerEvery: number;
     /** Per level, finest first; the last entry stands in for every level past it. */
     readonly refreshStep: readonly number[];
     /** The per-level `selectionGuard` each level's own window is drawn with. */
     readonly selectionGuard: readonly number[];
+    /**
+     * Per level, finest first: the seconds a dirty level waits after its own last render before an
+     * invalidation may re-render it. Already scaled by that level's extent, so the fine levels
+     * answer a streamed caster promptly and the coarse ones let a burst merge into one render.
+     */
+    readonly invalidationDelay: readonly number[];
   };
   readonly clipmap: DirectionalClipmap;
   /**
@@ -379,6 +457,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #perLevel: IVirtualShadowLevelStat[] = [];
   #rendered = 0;
   #served = 0;
+  /** Cumulative level renders and the reason each took one; see `IVirtualShadowStats`. */
+  #rendersTotal = 0;
+  #byMove = 0;
+  #byInvalidation = 0;
+  #coalesced = 0;
+  /** Read from the URL once, for the `?tnShadowStats=1` marker cadence. */
+  #statsRequested: boolean | undefined;
   #stats: IVirtualShadowStats;
   #initialised = false;
   /** 1 when each level derives its own light-space depth, 0 when `lightDistance`/`depthRange` pin it. */
@@ -437,12 +522,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const perLevel = (
       value: number | readonly number[],
       valid: (v: number) => boolean,
+      complaint: string,
     ): number[] => {
       const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
       for (const entry of values) {
         if (!valid(entry)) {
           throw new RangeError(
-            `TN_VIRTUAL_SHADOW_INVALID: refreshStep must be in the range [0, 1), got ${String(entry)}.`,
+            `TN_VIRTUAL_SHADOW_INVALID: ${complaint}, got ${String(entry)}.`,
           );
         }
       }
@@ -455,10 +541,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const steps = perLevel(
       options.refreshStep ?? 0.125,
       (v) => Number.isFinite(v) && v >= 0 && v < 1,
+      "refreshStep must be in the range [0, 1)",
     );
     const guards = perLevel(
       options.selectionGuard ?? 0.9,
       (v) => Number.isFinite(v) && v > 0 && v <= 1,
+      "selectionGuard must be in the range (0, 1]",
     );
     for (let level = 0; level < steps.length; level += 1) {
       if ((steps[level] as number) >= (guards[level] as number)) {
@@ -467,6 +555,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
         );
       }
     }
+    // The finest level's delay is the unit the rest are multiples of: a level whose window is `n`
+    // times wider redraws `n` times more of the world, so it is the one that merges the most asks
+    // into one render. 0.25 s on the fine levels keeps a streamed tree's shadow arriving with the
+    // player; 3.33 s on the coarsest is invisible, because a texel there is wider than the tree.
+    // One number is the finest level's delay and every level scales it by its own extent; a
+    // per-level list is each level's own seconds, taken as it stands.
+    const finest = clipExtents[0] as number;
+    const validDelay = (v: number): boolean => Number.isFinite(v) && v >= 0;
+    const asked = options.invalidationDelay;
+    const invalidationDelay = Array.isArray(asked)
+      ? perLevel(
+          asked as readonly number[],
+          validDelay,
+          "invalidationDelay must be zero or positive",
+        )
+      : clipExtents.map(
+          (extent) =>
+            ((asked as number | undefined) ?? BASE_INVALIDATION_DELAY) * (extent / finest),
+        );
     const at = (values: readonly number[], level: number): number =>
       values[Math.min(level, values.length - 1)] as number;
     const guardedExtent = clipExtents.map((_, level) => at(guards, level) - at(steps, level));
@@ -482,6 +589,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.options = {
       clipExtents: [...clipExtents],
       depthRange: options.depthRange ?? 400,
+      invalidationDelay,
       lightDistance: options.lightDistance ?? 200,
       mapSize,
       minCasterTexels,
@@ -491,9 +599,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       selectionGuard: guardedExtent,
     };
     this.#stats = {
+      byInvalidation: 0,
+      byMove: 0,
       cached: 0,
+      coalesced: 0,
       deferred: 0,
       frame: 0,
+      held: 0,
       invalidated: 0,
       levels: clipExtents.length,
       moved: 0,
@@ -501,6 +613,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       movers: 0,
       perLevel: this.#perLevel,
       rendered: 0,
+      rendersTotal: 0,
       reuseRatio: 1,
     };
   }
@@ -651,15 +764,26 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#hidden.length = 0;
     let clusterDraws = 0;
     let wideDraws = 0;
+    // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
+    // node is built by the next shadow render that draws it, so the level that draws it here is
+    // what moves the build off the walk. Both layers are therefore rendered while one is owed, since
+    // the choice below would leave the other half's casters unbuilt until the level's own window
+    // move. The flag is on the mesh rather than a module-level signal because the world chunk does
+    // not import this one — the same channel as the `casterInstanceScale` read below.
+    let prewarming = false;
     this.#root().traverse((object) => {
       if (object.visible !== true) return;
       if ((object as { isMesh?: boolean }).isMesh !== true) return;
       const mesh = object as Mesh & {
         boundingBox?: Box3 | null;
         boundingSphere?: Sphere | null;
+        casterPrewarmOwed?: boolean;
         computeBoundingBox(): void;
         computeBoundingSphere(): void;
       };
+      // Read before the gates below: the level is going to render both caster layers either way, and
+      // a caster too small for this level's texels is still one the prewarm owes a draw.
+      if (mesh.casterPrewarmOwed === true) prewarming = true;
       // The same two spheres three's cull uses: an instanced mesh's own, over its instances, or the
       // geometry's. `boundingSphere` is `null` on a fresh instanced mesh and undefined on a `Mesh`.
       const own = mesh.boundingSphere;
@@ -739,12 +863,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // not. A fraction of the ring's radius was the rule before, and a 192 m window over a 640 m ring
     // is 36% of it — clustered, at one draw per square where one per key would do. Layer 0 stays on,
     // because the terrain and everything else in the world casts from it, and a world with no caster
-    // batch at all counts zero of both and takes the wide layer for nothing.
+    // batch at all counts zero of both and takes the wide layer for nothing. A level rendering while
+    // a caster is still owed its prewarm draw takes both, which is the only way the half it did not
+    // pick gets its node built before the walk.
     const clustered = clusterDraws < wideDraws;
     level.shadow.camera.layers.set(0);
     level.shadow.camera.layers.enable(
-      clustered ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+      clustered || prewarming ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
     );
+    if (prewarming) level.shadow.camera.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
   }
 
   /** Put back every caster `#probe` hid, so the next camera sees the world as it was. */
@@ -892,14 +1019,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
       this.#levels.push({
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
+        dirty: false,
         eye: this.options.lightDistance,
         extent,
         extentUniform: uniform(extent),
+        lastRender: Number.NEGATIVE_INFINITY,
         light,
         mapped: uniform(0),
         minX: Number.NaN,
         minY: Number.NaN,
-        pending: false,
+        pending: REASON_NONE,
         offsetU: uniform(0),
         offsetV: uniform(0),
         guardUniform: uniform(
@@ -1084,11 +1213,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     this.#regions.length = 0;
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
+    // The engine's own frame clock, in seconds. This is what a level's invalidation delay is
+    // measured against, so a test drives time instead of frames and a 3.33 s delay means 3.33 s
+    // whatever the frame rate is.
+    const now = (frame as { time?: number }).time ?? 0;
 
     let moved = 0;
     let invalidated = 0;
     let rendered = 0;
     let deferred = 0;
+    let waiting = 0;
     // Per level, finest first: which window moved, which invalidation asked, and which of the four
     // took the frame's single render. One object per level per frame, so a harness reading the
     // marker can see *which* level a walk keeps re-rendering.
@@ -1130,8 +1264,26 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const asked =
           invalidateAll || invalidatedLevels.has(index) || regionDirty || source.shadow.needsUpdate;
         if (windowMoved) moved += 1;
-        if (asked) invalidated += 1;
-        const due = canRender && (windowMoved || asked || level.pending);
+        if (asked) {
+          invalidated += 1;
+          // An ask that lands on a level already dirty merges into the one waiting out that
+          // level's delay instead of queueing a render of its own. This is the counter that says
+          // how much a streaming world's once-a-second invalidation actually cost.
+          if (level.dirty) this.#coalesced += 1;
+          level.dirty = true;
+        }
+        // A window that moved is never delayed. A dirty level waits `invalidationDelay` after its
+        // *own* last render, so a burst spanning that delay is one render and a lone ask is one
+        // render, and the level keeps the map and window it has in between — already right for
+        // every static caster in it, missing only what streamed in since.
+        const delay = this.options.invalidationDelay[index] ?? 0;
+        const matured = level.dirty && now - level.lastRender >= delay;
+        let reason: RenderReason = REASON_NONE;
+        if (windowMoved) reason = REASON_MOVE;
+        else if (matured) reason = REASON_INVALIDATION;
+        else if (level.pending !== REASON_NONE) reason = level.pending;
+        else if (level.dirty) waiting += 1;
+        const due = canRender && reason !== REASON_NONE;
         // Finest first: the loop walks the levels in that order, so the first due level takes the
         // frame's single render and every other due level is deferred behind it.
         const grant = due && !budgetSpent;
@@ -1139,14 +1291,27 @@ export class VirtualShadowNode extends ShadowBaseNode {
           level.minX = window.minX;
           level.minY = window.minY;
           level.mapped.value = 1;
-          level.pending = false;
+          level.pending = REASON_NONE;
+          level.lastRender = now;
+          this.#rendersTotal += 1;
+          if (reason === REASON_MOVE) {
+            this.#byMove += 1;
+            // The render was already going to happen for the window, so the invalidation rode
+            // along on it: one ask, one render, and it is counted as absorbed.
+            if (level.dirty) this.#coalesced += 1;
+          } else {
+            this.#byInvalidation += 1;
+          }
+          // A render of any reason answers whatever asked, so a movement render clears the dirty
+          // flag too and the coalesced level is not redrawn a frame later for nothing.
+          level.dirty = false;
           rendered += 1;
           budgetSpent = true;
         } else if (due) {
           deferred += 1;
-          level.pending = true;
+          level.pending = reason;
         } else {
-          level.pending = false;
+          level.pending = REASON_NONE;
         }
         perLevel.push({
           deferred: due && !grant ? 1 : 0,
@@ -1214,9 +1379,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#served += this.#levels.length - rendered;
     const total = this.#rendered + this.#served;
     this.#stats = {
+      byInvalidation: this.#byInvalidation,
+      byMove: this.#byMove,
       cached: this.#levels.length - rendered,
+      coalesced: this.#coalesced,
       deferred,
       frame: this.#frame,
+      held: waiting,
       invalidated,
       levels: this.#levels.length,
       moved,
@@ -1224,13 +1393,29 @@ export class VirtualShadowNode extends ShadowBaseNode {
       movers: this.#casters.size,
       perLevel: this.#perLevel,
       rendered,
+      rendersTotal: this.#rendersTotal,
       reuseRatio: total === 0 ? 1 : this.#served / total,
     };
     const every = this.options.markerEvery;
-    if (every > 0 && (this.#frame === 1 || this.#frame % every === 0)) {
+    // `?tnShadowStats=1` is the walk's own switch: a 10 s walk is ~600 frames, and a marker every
+    // 60 of them is a hundred lines that say which level is re-rendering and why. It prints on top
+    // of `markerEvery` rather than instead of it, so a run can turn it on without a rebuild.
+    const walk = this.#statsWalkRequested() ? STATS_QUERY_EVERY : 0;
+    if (
+      (every > 0 && (this.#frame === 1 || this.#frame % every === 0)) ||
+      (walk > 0 && this.#frame % walk === 0)
+    ) {
       console.info(`${VIRTUAL_SHADOW_MARKER}:${JSON.stringify(this.#stats)}`);
     }
     return undefined;
+  }
+
+  /** Whether `?tnShadowStats=1` is on this launch's URL, read once. */
+  #statsWalkRequested(): boolean {
+    this.#statsRequested ??= /[?&]tnShadowStats=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(
+      globalThis.location?.search ?? "",
+    );
+    return this.#statsRequested;
   }
 
   override dispose(): void {
@@ -1256,15 +1441,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
 }
 
 const VIRTUAL_SHADOW_STAT_FIELDS = [
+  "byInvalidation",
+  "byMove",
   "cached",
+  "coalesced",
   "deferred",
   "frame",
+  "held",
   "invalidated",
   "levels",
   "moved",
   "moverRenders",
   "movers",
   "rendered",
+  "rendersTotal",
   "reuseRatio",
 ] as const;
 

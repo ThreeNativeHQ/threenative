@@ -4,6 +4,7 @@ import type { IAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import type { IRendererLike } from "./renderer.js";
 import { summarizeWorldTopology } from "./world-topology.js";
+import { terrainValidationRequested } from "./world-validate.js";
 import {
   Heightfield,
   type IHeightfieldOrigin,
@@ -102,6 +103,13 @@ export interface IWorldTilesOptions {
   readonly lodFactors?: readonly number[];
   /** Distances in world units at which the next LOD becomes active. */
   readonly lodDistances?: readonly number[];
+  /**
+   * Re-derive the terrain every frame and assert it: a finiteness scan of every rendered vertex,
+   * a seam measurement per resident pair and an LOD pop sample per blending tile. Off by default
+   * because it is a measurement and it cost ~270 ms over a six-second walk on a 289-tile ring.
+   * `TN_TERRAIN_VALIDATE=1` or `?tnTerrainValidate=1` turns it on for a run; this overrides that.
+   */
+  readonly validate?: boolean;
   /** Explicit game-owned measurement region used by the topology evaluator. */
   readonly topologyObservation?: IWorldTilesTopologyObservation;
 }
@@ -154,6 +162,18 @@ interface ILodFrameSnapshot {
   readonly heights: Float32Array;
   readonly resolution: number;
   readonly tile: IResidentTile;
+}
+
+/**
+ * A pair's observed seam state, one per coverage mode, and the observation pass that last saw each
+ * of them. Both modes live in one record so a pass marks what it visited and prunes what it did
+ * not without building a `${key}|coverage` string and a Set of them for every resident pair.
+ */
+interface ISeamObservation {
+  coverage: number[] | undefined;
+  plain: number[] | undefined;
+  seenCoverage: number;
+  seenPlain: number;
 }
 
 const MAX_RAW_TOPOLOGY_SAMPLES = 10_000;
@@ -339,11 +359,50 @@ function appendQuad(
   indices.push(topLeft, bottomLeft, topRight, topRight, bottomLeft, bottomRight);
 }
 
+/**
+ * The field's own sample heights, once, with a ring of clamped neighbours around them.
+ *
+ * `normalAt` reads the height at the point and at its four field-cell neighbours, so a level built
+ * vertex by vertex asked the field six times per vertex — 33,800 `heightAt` calls for a 65x65 tile
+ * and every coarser level with it (46 ms + 46 ms a streaming frame). This is the same set of samples
+ * read once, and the ring repeats the edge sample, which is exactly the clamp `normalAt` applies at
+ * the field's own border. One grid serves every level of the tile, because a level's vertices are
+ * every `lodFactor`-th of the field's.
+ */
+function fieldHeightGrid(field: Heightfield): Float32Array {
+  const columns = field.columns + 2;
+  const cellWidth = field.width / (field.columns - 1);
+  const cellDepth = field.depth / (field.rows - 1);
+  const minimumX = field.origin.x - field.width / 2;
+  const minimumZ = field.origin.z - field.depth / 2;
+  const grid = new Float32Array(columns * (field.rows + 2));
+  for (let row = 0; row < field.rows + 2; row += 1) {
+    const z = minimumZ + Math.min(field.rows - 1, Math.max(0, row - 1)) * cellDepth;
+    for (let column = 0; column < columns; column += 1) {
+      const x = minimumX + Math.min(field.columns - 1, Math.max(0, column - 1)) * cellWidth;
+      grid[row * columns + column] = field.heightAt(x, z);
+    }
+  }
+  return grid;
+}
+
+/**
+ * How many field samples a level's vertices are apart. An integer by `resolutionFor`'s own check,
+ * and the reason one grid serves every level: vertex column `n` sits on field sample `n * step`.
+ */
+function fieldStep(field: Heightfield, resolution: number): number {
+  const step = (field.columns - 1) / (resolution - 1);
+  if (!Number.isInteger(step) || step < 1)
+    throw new Error("TerrainTiles level vertices must land on the field's own sample grid.");
+  return step;
+}
+
 function buildLevel(
   field: Heightfield,
   resolution: number,
   skirtDepth: number,
   surface: MeshSurface,
+  grid: Float32Array,
 ): ILevelGeometry {
   const positions: number[] = [];
   const normals: number[] = [];
@@ -352,15 +411,37 @@ function buildLevel(
   const minimumZ = field.origin.z - field.depth / 2;
   const cellWidth = field.width / (resolution - 1);
   const cellDepth = field.depth / (resolution - 1);
+  const fieldCellWidth = field.width / (field.columns - 1);
+  const fieldCellDepth = field.depth / (field.rows - 1);
+  const gridColumns = field.columns + 2;
+  const step = fieldStep(field, resolution);
   const normal = new Vector3();
   for (let row = 0; row < resolution; row += 1) {
     const z = minimumZ + row * cellDepth;
+    const fieldRow = row * step;
+    const gridRow = fieldRow + 1;
     for (let column = 0; column < resolution; column += 1) {
       const x = minimumX + column * cellWidth;
-      const height = field.heightAt(x, z);
+      const fieldColumn = column * step;
+      const at = gridRow * gridColumns + fieldColumn + 1;
+      const height = grid[at] as number;
       heights.push(height);
       positions.push(x - field.origin.x, height, z - field.origin.z);
-      field.normalAt(x, z, normal);
+      // `normalAt`'s stencil, off the same grid: a field cell either side, clamped at the border,
+      // over the distance those two samples really are apart.
+      const column0 = Math.min(field.columns - 1, Math.max(0, fieldColumn - 1));
+      const column1 = Math.min(field.columns - 1, fieldColumn + 1);
+      const row0 = Math.min(field.rows - 1, Math.max(0, fieldRow - 1));
+      const row1 = Math.min(field.rows - 1, fieldRow + 1);
+      const slopeX =
+        ((grid[gridRow * gridColumns + column1 + 1] as number) -
+          (grid[gridRow * gridColumns + column0 + 1] as number)) /
+        ((column1 - column0) * fieldCellWidth);
+      const slopeZ =
+        ((grid[(row1 + 1) * gridColumns + fieldColumn + 1] as number) -
+          (grid[(row0 + 1) * gridColumns + fieldColumn + 1] as number)) /
+        ((row1 - row0) * fieldCellDepth);
+      normal.set(-slopeX, 1, -slopeZ).normalize();
       normals.push(normal.x, normal.y, normal.z);
     }
   }
@@ -457,10 +538,13 @@ function renderedLevel(tile: IResidentTile): ILevelGeometry | undefined {
  * Every writer this package owns goes through `needsUpdate`, which bumps `version`, so a version
  * alone cannot see a writer that reached past the attribute — and `NaN` never compares equal to the
  * finite state the last reconcile recorded, so a settled seam still fails closed on it. The scan is
- * the cost of that, against the per-sample walk it keeps off a settled frame.
+ * the cost of that, against the per-sample walk it keeps off a settled frame, so it is validation:
+ * with `validate` off the count alone is compared, and a writer that reached past `needsUpdate`
+ * leaves a geometry the next reconcile reads the same way it always did.
  */
-function positionFingerprint(position: BufferAttribute | undefined): number {
+function positionFingerprint(position: BufferAttribute | undefined, validate: boolean): number {
   if (position === undefined) return -1;
+  if (!validate) return position.count;
   const values = position.array;
   for (let index = 0; index < values.length; index += 1)
     if (!Number.isFinite(values[index])) return Number.NaN;
@@ -514,7 +598,7 @@ function pushPairState(state: number[], pair: NeighborPair): boolean {
  * range and buffers. A diagnostic exists to catch a bridge moved, detached, emptied or rewritten,
  * so each of those has to change this state and force a fresh observation.
  */
-function pushBridgeState(state: number[], bridge: IStitchBridge): void {
+function pushBridgeState(state: number[], bridge: IStitchBridge, validate: boolean): void {
   const { mesh } = bridge;
   // The mesh's own geometry rather than the record's: a bridge retargeted to foreign geometry reads
   // perfectly well from the record, and `bridgeCoverageContext` is the only thing that rejects it.
@@ -530,7 +614,7 @@ function pushBridgeState(state: number[], bridge: IStitchBridge): void {
   state.push(
     geometry.id,
     position?.version ?? -1,
-    positionFingerprint(position),
+    positionFingerprint(position, validate),
     normal?.id ?? -1,
     index?.id ?? -1,
     index?.version ?? -1,
@@ -539,10 +623,14 @@ function pushBridgeState(state: number[], bridge: IStitchBridge): void {
   );
 }
 
-function seamState(pair: NeighborPair, bridge: IStitchBridge | undefined): number[] | undefined {
+function seamState(
+  pair: NeighborPair,
+  bridge: IStitchBridge | undefined,
+  validate: boolean,
+): number[] | undefined {
   const state: number[] = [];
   if (!pushPairState(state, pair)) return undefined;
-  if (bridge !== undefined) pushBridgeState(state, bridge);
+  if (bridge !== undefined) pushBridgeState(state, bridge, validate);
   return state;
 }
 
@@ -720,11 +808,19 @@ function edgeWorldPoint(
   return [x, height, z];
 }
 
+/**
+ * A level mid-blend already carries the union of both levels' bounds, widened once when the
+ * transition started, and the canonical edge this writes is inside it. So the blend's three frames
+ * restore the edge and leave the bounds alone: recomputing them walked the level's ~4,500
+ * positions per seam per frame, which is the `setFromBufferAttribute` + `computeBoundingSphere` +
+ * `computeBoundingBox` + `expandByPoint` the six-second walk spent inside a transition.
+ */
 function restoreLevelEdge(
-  field: Heightfield,
+  tile: IResidentTile,
   level: ILevelGeometry,
   side: keyof IEdgeSamples,
 ): boolean {
+  const field = tile.field;
   const position = level.geometry.getAttribute("position");
   const normalAttribute = level.geometry.getAttribute("normal");
   const normal = new Vector3();
@@ -756,8 +852,10 @@ function restoreLevelEdge(
   refreshEdgeSamples(level);
   position.needsUpdate = true;
   normalAttribute.needsUpdate = true;
-  level.geometry.computeBoundingBox();
-  level.geometry.computeBoundingSphere();
+  if (tile.lodTransition === undefined) {
+    level.geometry.computeBoundingBox();
+    level.geometry.computeBoundingSphere();
+  }
   return true;
 }
 
@@ -936,14 +1034,29 @@ function updateStitchBridge(bridge: IStitchBridge, data: IStitchGeometryData): v
   bridge.coverageDepth = data.coverageDepth;
 }
 
-function levelHeight(level: ILevelGeometry, row: number, column: number): number {
-  const position = level.geometry.getAttribute("position");
-  const value = position.getY(row * level.resolution + column);
+/**
+ * The position attribute is passed in rather than looked up per sample: these run four times a
+ * vertex for a blend and four times a sample for the pop measurement — 33,800 `getAttribute` map
+ * lookups a transition frame on a 65x65 tile, for a name that cannot change while the level is
+ * being written.
+ */
+function levelHeight(
+  position: BufferAttribute,
+  resolution: number,
+  row: number,
+  column: number,
+): number {
+  const value = position.getY(row * resolution + column);
   if (!Number.isFinite(value)) throw new Error("TerrainTiles LOD geometry has an invalid height.");
   return value;
 }
 
-function interpolatedLevelHeight(level: ILevelGeometry, x: number, z: number): number {
+function interpolatedLevelHeight(
+  level: ILevelGeometry,
+  position: BufferAttribute,
+  x: number,
+  z: number,
+): number {
   const column = Math.max(0, Math.min(1, x)) * (level.resolution - 1);
   const row = Math.max(0, Math.min(1, z)) * (level.resolution - 1);
   const column0 = Math.floor(column);
@@ -952,10 +1065,10 @@ function interpolatedLevelHeight(level: ILevelGeometry, x: number, z: number): n
   const row1 = Math.min(level.resolution - 1, row0 + 1);
   const columnMix = column - column0;
   const rowMix = row - row0;
-  const upperLeft = levelHeight(level, row0, column0);
-  const upperRight = levelHeight(level, row0, column1);
-  const lowerLeft = levelHeight(level, row1, column0);
-  const lowerRight = levelHeight(level, row1, column1);
+  const upperLeft = levelHeight(position, level.resolution, row0, column0);
+  const upperRight = levelHeight(position, level.resolution, row0, column1);
+  const lowerLeft = levelHeight(position, level.resolution, row1, column0);
+  const lowerRight = levelHeight(position, level.resolution, row1, column1);
   const upper = upperLeft + (upperRight - upperLeft) * columnMix;
   const lower = lowerLeft + (lowerRight - lowerLeft) * columnMix;
   return upper + (lower - upper) * rowMix;
@@ -963,6 +1076,7 @@ function interpolatedLevelHeight(level: ILevelGeometry, x: number, z: number): n
 
 function interpolatedLevelNormal(
   level: ILevelGeometry,
+  normal: BufferAttribute,
   x: number,
   z: number,
   target: Vector3,
@@ -975,7 +1089,6 @@ function interpolatedLevelNormal(
   const row1 = Math.min(level.resolution - 1, row0 + 1);
   const columnMix = column - column0;
   const rowMix = row - row0;
-  const normal = level.geometry.getAttribute("normal");
   const upperLeft = row0 * level.resolution + column0;
   const upperRight = row0 * level.resolution + column1;
   const lowerLeft = row1 * level.resolution + column0;
@@ -1061,6 +1174,23 @@ function restoreLevelSurface(field: Heightfield, level: ILevelGeometry): void {
   level.geometry.computeBoundingSphere();
 }
 
+/**
+ * A blend only ever moves a vertex between the two levels' surfaces, so the union of the two
+ * known bounds holds every frame of it. Widened once when the transition starts instead of
+ * recomputed per blend frame: `computeBoundingBox` + `computeBoundingSphere` walked the finer
+ * level's ~8,600 positions every frame of every transition (56 + 45 + 27 + 29 ms over a six-second
+ * walk). `#restoreLodTransition` puts the finer level's own bounds back when the blend ends.
+ */
+function widenLevelBoundsForBlend(finer: ILevelGeometry, coarser: ILevelGeometry): void {
+  const box = finer.geometry.boundingBox;
+  const sphere = finer.geometry.boundingSphere;
+  const coarserBox = coarser.geometry.boundingBox;
+  if (box === null || sphere === null || coarserBox === null)
+    throw new Error("TerrainTiles LOD transition needs both levels' bounds to be known.");
+  box.union(coarserBox);
+  box.getBoundingSphere(sphere);
+}
+
 function updateLodTransitionGeometry(
   tile: IResidentTile,
   transition: ILodTransition,
@@ -1075,6 +1205,8 @@ function updateLodTransitionGeometry(
   const fromIsFiner = finer === from;
   const position = finer.geometry.getAttribute("position");
   const normalAttribute = finer.geometry.getAttribute("normal");
+  const coarsePosition = coarser.geometry.getAttribute("position") as BufferAttribute;
+  const coarseNormalAttribute = coarser.geometry.getAttribute("normal") as BufferAttribute;
   const minimumX = tile.field.origin.x - tile.field.width / 2;
   const minimumZ = tile.field.origin.z - tile.field.depth / 2;
   const cellWidth = tile.field.width / (finer.resolution - 1);
@@ -1090,13 +1222,24 @@ function updateLodTransitionGeometry(
       const normalizedX = column / (finer.resolution - 1);
       const index = row * finer.resolution + column;
       const fineHeight = tile.field.heightAt(x, z);
-      const coarseHeight = interpolatedLevelHeight(coarser, normalizedX, normalizedZ);
+      const coarseHeight = interpolatedLevelHeight(
+        coarser,
+        coarsePosition,
+        normalizedX,
+        normalizedZ,
+      );
       const startHeight = fromIsFiner ? fineHeight : coarseHeight;
       const endHeight = fromIsFiner ? coarseHeight : fineHeight;
       position.setY(index, startHeight + (endHeight - startHeight) * progress);
 
       tile.field.normalAt(x, z, fineNormal);
-      interpolatedLevelNormal(coarser, normalizedX, normalizedZ, coarseNormal);
+      interpolatedLevelNormal(
+        coarser,
+        coarseNormalAttribute,
+        normalizedX,
+        normalizedZ,
+        coarseNormal,
+      );
       const startNormal = fromIsFiner ? fineNormal : coarseNormal;
       const endNormal = fromIsFiner ? coarseNormal : fineNormal;
       blendedNormal
@@ -1113,8 +1256,6 @@ function updateLodTransitionGeometry(
   refreshEdgeSamples(finer);
   position.needsUpdate = true;
   normalAttribute.needsUpdate = true;
-  finer.geometry.computeBoundingBox();
-  finer.geometry.computeBoundingSphere();
 }
 
 function surfaceHeights(level: ILevelGeometry): Float32Array {
@@ -1153,6 +1294,7 @@ function surfaceDeltaFromSamples(
   level: ILevelGeometry,
 ): number {
   const sampleCount = Math.max(resolution, level.resolution);
+  const position = level.geometry.getAttribute("position") as BufferAttribute;
   let maximum = 0;
   for (let row = 0; row < sampleCount; row += 1) {
     for (let column = 0; column < sampleCount; column += 1) {
@@ -1162,7 +1304,7 @@ function surfaceDeltaFromSamples(
         maximum,
         Math.abs(
           interpolatedSamplesHeight(samples, resolution, x, z) -
-            interpolatedLevelHeight(level, x, z),
+            interpolatedLevelHeight(level, position, x, z),
         ),
       );
     }
@@ -1421,13 +1563,23 @@ function neighborPairKey(pair: NeighborPair): string {
  */
 function neighborPairs(tiles: ReadonlyMap<string, IResidentTile>): NeighborPair[] {
   const pairs: NeighborPair[] = [];
+  collectNeighborPairs(tiles, pairs);
+  return pairs;
+}
+
+/** `neighborPairs` into a buffer the caller already owns, so a frame allocates no pair arrays. */
+function collectNeighborPairs(
+  tiles: ReadonlyMap<string, IResidentTile>,
+  into: NeighborPair[],
+): NeighborPair[] {
+  into.length = 0;
   for (const tile of tiles.values()) {
     const east = tiles.get(keyFor(tile.tileX + 1, tile.tileZ));
-    if (east !== undefined) pairs.push([tile, east]);
+    if (east !== undefined) into.push([tile, east]);
     const south = tiles.get(keyFor(tile.tileX, tile.tileZ + 1));
-    if (south !== undefined) pairs.push([tile, south]);
+    if (south !== undefined) into.push([tile, south]);
   }
-  return pairs;
+  return into;
 }
 
 function hasPendingTarget(targets: ReadonlyMap<IResidentTile, number>): boolean {
@@ -1481,8 +1633,8 @@ function reconcileNeighborPair(
   const bLevel = renderedLevel(b);
   if (aLevel === undefined || bLevel === undefined)
     throw new Error("TerrainTiles cannot reconcile a neighbor with no rendered LOD level.");
-  restoreLevelEdge(a.field, aLevel, aSide);
-  restoreLevelEdge(b.field, bLevel, bSide);
+  restoreLevelEdge(a, aLevel, aSide);
+  restoreLevelEdge(b, bLevel, bSide);
   if (aLevel.resolution === bLevel.resolution) return undefined;
   const finer = aLevel.resolution > bLevel.resolution ? a : b;
   const finerLevel = aLevel.resolution > bLevel.resolution ? aLevel : bLevel;
@@ -1525,7 +1677,8 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @alias stream terrain across chunks
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
- * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets
+ * @constraint seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off
+ * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
@@ -1570,7 +1723,11 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Each pair's `seamState` as the last reconcile left it, so a settled seam is not redone. */
   readonly #pairSignatures = new Map<string, number[]>();
   /** The state each pair was last observed in, per coverage mode, so a settled seam is not re-measured. */
-  readonly #observedSeams = new Map<string, number[]>();
+  readonly #observedSeams = new Map<string, ISeamObservation>();
+  /** Counts the observation passes, so a pass marks what it saw instead of building a live set. */
+  #observationPass = 0;
+  /** The facing pairs a pass walks, reused so a frame allocates no pair arrays. */
+  readonly #pairScratch: NeighborPair[] = [];
   /** The ring state the last full seam pass left behind; `undefined` until one has run. */
   #settledRing: number[] | undefined;
   /**
@@ -1580,8 +1737,20 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * this fast path exists to avoid.
    */
   #ringScratch: number[] = [];
+  /**
+   * Bumped by every writer of the state the ring pass describes, and the epoch the last pass settled
+   * at. The shipped frame's change detector; see {@link #seamPass}. `-1` so the first pass runs.
+   */
+  #ringEpoch = 0;
+  #seamEpoch = -1;
   #released = false;
   #renderer: IRendererLike | undefined;
+  /**
+   * Whether the per-frame measurements run. Off by default: they assert what the shipped frame
+   * trusts, and every observation getter below reports `undefined` while they are off, so a caller
+   * can never read an unmeasured zero as a measurement.
+   */
+  readonly #validate: boolean;
 
   constructor(options: IWorldTilesOptions) {
     super();
@@ -1600,6 +1769,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#surface = options.surface;
     if (options.surface === undefined || options.surface === null)
       throw new Error("TerrainTiles surface is required and must be game-owned.");
+    this.#validate = options.validate ?? terrainValidationRequested();
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
@@ -1637,7 +1807,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         "TerrainTiles residentByteBudget cannot fit the topology observation.",
       );
     this.#recordPeaks();
-    this.#recordSeamDiagnostics();
+    if (this.#validate) this.#recordSeamDiagnostics();
     this.frustumCulled = true;
   }
 
@@ -1695,9 +1865,15 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return blending;
   }
 
-  /** Maximum per-render-frame displacement of the visible LOD surface during transitions. */
-  get maxLodPop(): number {
-    return this.#maxLodPop;
+  /**
+   * Maximum per-render-frame displacement of the visible LOD surface during transitions.
+   *
+   * `undefined` when validation is off: the pop is sampled by measuring the rendered surface twice
+   * a frame, and reporting the empty value `0` instead of a measurement would be a lie a caller
+   * could assert on.
+   */
+  get maxLodPop(): number | undefined {
+    return this.#validate ? this.#maxLodPop : undefined;
   }
 
   /** Maximum number of rendered frames during which an LOD transition remained observable. */
@@ -1705,14 +1881,20 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#maxLodTransitionFrames;
   }
 
-  /** Maximum visible edge gap observed across follow/process calls for this residency owner. */
-  get maxSeamGap(): number {
-    return this.#maxSeamGap;
+  /**
+   * Maximum visible edge gap observed across follow/process calls for this residency owner, or
+   * `undefined` when validation is off — see `maxLodPop`.
+   */
+  get maxSeamGap(): number | undefined {
+    return this.#validate ? this.#maxSeamGap : undefined;
   }
 
-  /** Maximum remaining visible gap after skirt or bridge coverage observed across follow/process calls. */
-  get maxVisualSeamGap(): number {
-    return this.#maxVisualSeamGap;
+  /**
+   * Maximum remaining visible gap after skirt or bridge coverage observed across follow/process
+   * calls, or `undefined` when validation is off — see `maxLodPop`.
+   */
+  get maxVisualSeamGap(): number | undefined {
+    return this.#validate ? this.#maxVisualSeamGap : undefined;
   }
 
   /** Number of mixed-LOD edge reconciliations observed during this residency lifetime. */
@@ -1823,6 +2005,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       }
       this.#resident.set(tile.key, tile);
       this.add(tile.lod);
+      this.#ringEpoch += 1;
       this.#recordPeaks();
     }
     this.#recordPeaks();
@@ -1855,7 +2038,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   process(renderer = this.#renderer): void {
     if (this.#released) return;
-    const lodFrame = this.#captureLodFrame();
+    const lodFrame = this.#validate ? this.#captureLodFrame() : undefined;
     this.#advanceLodTransitions();
     if (renderer !== undefined) {
       this.#topologyField?.process(renderer);
@@ -1865,7 +2048,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       }
     }
     this.#seamPass();
-    this.#recordLodPopAfterReconciliation(lodFrame);
+    if (lodFrame !== undefined) this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
   }
 
@@ -1912,13 +2095,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       peakResidentBytes: this.#peakBytes,
       peakResidentTiles: this.#peakTiles,
       residentBytes: this.residentBytes,
+      // The shipped frame's change detector, and the ring-state reads it replaced. Both flat: a
+      // settled ring leaves them still.
+      ringEpoch: this.#ringEpoch,
+      ringStateBuilds: this.#ringStateBuilds,
       residentByteBudget: this.residentByteBudget,
       residentKeys: this.residentKeys,
       residentTiles: this.residentTileCount,
       residentTileBudget: this.residentTileBudget,
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
-      maxLodPop: this.#maxLodPop,
+      maxLodPop: this.maxLodPop,
       stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
         (total, tile) => total + tile.skirtVertexCount,
@@ -1976,6 +2163,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     let lod: LOD | undefined;
     let collider: IWorldTileCollider | undefined;
     try {
+      // One grid of the field's own heights for the whole tile, read before any level is built.
+      const grid = fieldHeightGrid(field);
       for (const factor of this.#factors)
         levels.push(
           buildLevel(
@@ -1983,6 +2172,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
             resolutionFor(this.tileResolution, factor),
             this.skirtDepth,
             this.#surface,
+            grid,
           ),
         );
       lod = new LOD();
@@ -2097,6 +2287,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!wanted) {
         tile.collider?.dispose();
         tile.collider = undefined;
+        this.#ringEpoch += 1;
         continue;
       }
       const created = (): void => {
@@ -2114,6 +2305,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         Math.max(Math.abs(tile.tileX - centerX), Math.abs(tile.tileZ - centerZ)) <= 1
       ) {
         created();
+        this.#ringEpoch += 1;
       }
       // Out of room: the body is owed, and every later `follow` asks for it again.
       else if (!budget.admit(created)) {
@@ -2151,7 +2343,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       return;
     }
     const interruptedFrame =
-      tile.lodTransition === undefined ? undefined : this.#captureLodFrameForTile(tile);
+      !this.#validate || tile.lodTransition === undefined
+        ? undefined
+        : this.#captureLodFrameForTile(tile);
     if (tile.lodTransition !== undefined) this.#finishLodTransition(tile);
     const previousLevel = tile.lodLevel;
     const previous = tile.levels[previousLevel];
@@ -2159,6 +2353,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (previous === undefined || next === undefined)
       throw new Error("TerrainTiles LOD transition references a missing level.");
     tile.lodLevel = selectable;
+    this.#ringEpoch += 1;
     if (!countTransition) {
       setManualLodLevel(tile.lod, selectable);
       this.#setLodVisibility(tile);
@@ -2175,6 +2370,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const finerLevel = previous.resolution >= next.resolution ? previousLevel : selectable;
     const finer = previous.resolution >= next.resolution ? previous : next;
     setManualLodLevel(tile.lod, finerLevel);
+    widenLevelBoundsForBlend(finer, finer === previous ? next : previous);
     updateLodTransitionGeometry(tile, tile.lodTransition, 0);
     this.#setLodVisibility(tile, [finerLevel]);
     this.#recordLodPopAfterRetarget(interruptedFrame);
@@ -2236,7 +2432,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
         transition,
         Math.min(1, transition.elapsedFrames / LOD_TRANSITION_FRAMES),
       );
-      if (transition.remainingFrames > 0) continue;
+      if (transition.remainingFrames > 0) {
+        // A blend frame rewrote the finer level's vertices, which the ring state reads.
+        this.#ringEpoch += 1;
+        continue;
+      }
+      this.#ringEpoch += 1;
       this.#maxLodTransitionFrames = Math.max(
         this.#maxLodTransitionFrames,
         transition.elapsedFrames,
@@ -2249,7 +2450,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   #coordinateNeighborLods(countTransitions: boolean): void {
-    const pairs = neighborPairs(this.#resident);
+    const pairs = collectNeighborPairs(this.#resident, this.#pairScratch);
     let changed = true;
     while (changed) {
       changed = false;
@@ -2281,7 +2482,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     for (const pair of pairs) {
       const key = neighborPairKey(pair);
       if (!reconciled.has(key)) continue;
-      const state = seamState(pair, this.#stitches.get(key));
+      const state = seamState(pair, this.#stitches.get(key), this.#validate);
       if (state === undefined) this.#pairSignatures.delete(key);
       else this.#pairSignatures.set(key, state);
     }
@@ -2295,14 +2496,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * stitch still counts as stitched.
    */
   #settled(key: string, pair: NeighborPair): boolean {
-    if (!sameState(seamState(pair, this.#stitches.get(key)), this.#pairSignatures.get(key)))
+    if (
+      !sameState(
+        seamState(pair, this.#stitches.get(key), this.#validate),
+        this.#pairSignatures.get(key),
+      )
+    )
       return false;
     if (this.#stitches.has(key)) this.#stitchedEdges += 1;
     return true;
   }
 
   #reconcileNeighbors(): void {
-    const pairs = neighborPairs(this.#resident);
+    const pairs = collectNeighborPairs(this.#resident, this.#pairScratch);
     const active = new Set<string>();
     const reconciled = new Set<string>();
     for (const pair of pairs) {
@@ -2330,6 +2536,9 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       if (!active.has(key)) this.#removeStitch(key);
     }
     this.#recordPairSignatures(pairs, reconciled, active);
+    // Every edge restore and bridge rewrite this pass did is a change the ring state describes; the
+    // pass is the only writer of either, so one bump here covers all of it.
+    this.#ringEpoch += 1;
     if (this.residentBytes > this.residentByteBudget)
       throw new TerrainTileBudgetError(
         "TerrainTiles residentByteBudget cannot fit stitched neighbor geometry.",
@@ -2378,55 +2587,93 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
-   * Reconcile and observe every seam, unless nothing a seam reads changed since the last pass: the
-   * same tiles on the same rendered levels with the same buffer versions, placements and drawn
-   * coordinates, and every bridge where it was. A settled 289-tile ring then costs one flat state
-   * compare a frame instead of walking 544 pairs three times. A settled stitch still counts as
-   * stitched, as `#settled` does per pair.
+   * Reconcile and observe every seam, unless nothing a seam reads changed since the last pass.
+   *
+   * The change detector is `this` class's own epoch, bumped by every writer of the state the ring
+   * pass describes: a tile admitted or evicted, a LOD level set, a transition started, stepped or
+   * finished, a bridge written or an edge restored, a collider created or disposed. A settled
+   * 289-tile ring used to rebuild an array of per-tile levels, geometry ids and attribute versions
+   * and compare it with last frame's — 244 ms of a six-second walk, plus 139 ms of the bridge states
+   * — to be told the same thing the epoch already said.
+   *
+   * The reconcile half always runs when the epoch moved; the observe half is validation, so with
+   * `validate` off a frame pays for this compare and the geometry it changes and nothing else.
+   *
+   * Under validation the full ring-state compare stays, as the extra detector it now is: it is what
+   * catches a writer that reached past this class's own bookkeeping — a buffer overwritten without
+   * `needsUpdate`, a level mesh moved from outside — and the corrupted-buffer specs fail closed on
+   * it. The epoch cannot see those, and the trade is deliberate: the shipped frame trusts the writers
+   * it owns, and the validating frame still checks everything.
    */
   #seamPass(): void {
-    this.#ringStateInto(this.#ringScratch);
-    if (sameState(this.#ringScratch, this.#settledRing)) {
+    if (this.#validate) {
+      this.#ringStateInto(this.#ringScratch);
+      if (sameState(this.#ringScratch, this.#settledRing)) {
+        this.#stitchedEdges += this.#stitches.size;
+        return;
+      }
+    } else if (this.#ringEpoch === this.#seamEpoch) {
       this.#stitchedEdges += this.#stitches.size;
       return;
     }
-    this.#recordSeamDiagnostics(false);
+    if (this.#validate) this.#recordSeamDiagnostics(false);
     this.#reconcileNeighbors();
-    this.#recordSeamDiagnostics();
-    // The pass moved geometry, so the settled state is what it left behind, read into the buffer the
-    // compare just filled; the buffer it compared against becomes the next frame's scratch.
-    const scratch = this.#ringScratch;
-    this.#ringScratch = this.#settledRing ?? [];
-    this.#settledRing = scratch;
-    this.#ringStateInto(this.#settledRing);
+    if (this.#validate) this.#recordSeamDiagnostics();
+    if (this.#validate) {
+      // The pass moved geometry, so the settled state is what it left behind, read into the buffer
+      // the compare just filled; the buffer it compared against becomes the next frame's scratch.
+      const scratch = this.#ringScratch;
+      this.#ringScratch = this.#settledRing ?? [];
+      this.#settledRing = scratch;
+      this.#ringStateInto(this.#settledRing);
+    }
+    // Read after the pass, which moved geometry and bumped the epoch itself.
+    this.#seamEpoch = this.#ringEpoch;
   }
 
+  /** Counted so a frame that built one is visible; see `#ringStateInto`. */
+  #ringStateBuilds = 0;
+
   #ringStateInto(state: number[]): void {
+    this.#ringStateBuilds += 1;
     state.length = 0;
     for (const tile of this.#resident.values()) {
       const level = renderedLevel(tile);
       if (level === undefined) state.push(-1);
       else pushLevelState(state, level);
     }
-    for (const bridge of this.#stitches.values()) pushBridgeState(state, bridge);
+    for (const bridge of this.#stitches.values()) pushBridgeState(state, bridge, this.#validate);
   }
 
   /**
    * Seam gaps are running maxima, so a pair observed in exactly this state already contributed its
    * gap: re-measuring every resident pair three times an update cost ~3 ms a frame on a 289-tile
    * ring for the same numbers. Only pairs whose levels or bridge changed are observed again.
+   *
+   * The pass stamps the pairs it visits and clears the mode of every pair it did not, so it neither
+   * builds the `${key}|coverage` string nor the Set of live keys for each of the ring's 544 pairs
+   * twice a frame — which on this pass was more work than the observations it was pruning for.
    */
   #recordSeamDiagnostics(includeBridgeCoverage = true): void {
-    const live = new Set<string>();
-    for (const pair of neighborPairs(this.#resident)) {
+    this.#observationPass += 1;
+    const pass = this.#observationPass;
+    for (const pair of collectNeighborPairs(this.#resident, this.#pairScratch)) {
       const key = neighborPairKey(pair);
       const bridge = this.#stitches.get(key);
-      const observedKey = includeBridgeCoverage ? `${key}|coverage` : key;
-      live.add(observedKey);
-      const state = seamState(pair, bridge);
-      if (sameState(state, this.#observedSeams.get(observedKey))) continue;
-      if (state === undefined) this.#observedSeams.delete(observedKey);
-      else this.#observedSeams.set(observedKey, state);
+      let observed = this.#observedSeams.get(key);
+      if (observed === undefined) {
+        observed = { coverage: undefined, plain: undefined, seenCoverage: 0, seenPlain: 0 };
+        this.#observedSeams.set(key, observed);
+      }
+      if (includeBridgeCoverage) observed.seenCoverage = pass;
+      else observed.seenPlain = pass;
+      const state = seamState(pair, bridge, this.#validate);
+      if (sameState(state, includeBridgeCoverage ? observed.coverage : observed.plain)) continue;
+      if (state === undefined) {
+        if (includeBridgeCoverage) observed.coverage = undefined;
+        else observed.plain = undefined;
+      } else if (includeBridgeCoverage) observed.coverage = state;
+      else observed.plain = state;
       const { gap, visualGap } = seamObservation(
         pair[0],
         pair[1],
@@ -2437,9 +2684,12 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       this.#maxSeamGap = Math.max(this.#maxSeamGap, gap);
       this.#maxVisualSeamGap = Math.max(this.#maxVisualSeamGap, visualGap);
     }
-    for (const key of this.#observedSeams.keys()) {
-      const coverage = key.endsWith("|coverage");
-      if (coverage === includeBridgeCoverage && !live.has(key)) this.#observedSeams.delete(key);
+    for (const [key, observed] of this.#observedSeams) {
+      if (includeBridgeCoverage) {
+        if (observed.seenCoverage !== pass) observed.coverage = undefined;
+      } else if (observed.seenPlain !== pass) observed.plain = undefined;
+      if (observed.coverage === undefined && observed.plain === undefined)
+        this.#observedSeams.delete(key);
     }
   }
 
@@ -2456,6 +2706,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
 
   #evict(tile: IResidentTile): void {
     if (this.#resident.get(tile.key) === tile) this.#resident.delete(tile.key);
+    this.#ringEpoch += 1;
     this.#removeStitchesForTile(tile.key);
     this.remove(tile.lod);
     tile.collider?.dispose();

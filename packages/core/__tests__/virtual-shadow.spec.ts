@@ -56,10 +56,19 @@ const builder = {
   renderer: { shadowMap: { enabled: true } },
 } as unknown as NodeBuilder;
 
-function frameFor(camera: PerspectiveCamera): NodeFrame {
+/**
+ * The engine frame clock this harness hands the node, in seconds. It advances a second per frame so
+ * that every `invalidationDelay` is behind us from the second frame on — which is the behaviour the
+ * node had before the delay existed, and so what the tests written against it mean. A test that is
+ * *about* the delay passes its own times instead.
+ */
+let clock = 0;
+
+function frameFor(camera: PerspectiveCamera, time?: number): NodeFrame {
   // A renderer, because a level only re-renders and only settles its window on a frame that can
   // draw: a frame with none never holds a window, and a node asked twice renders twice.
-  return { camera, renderer: {} } as unknown as NodeFrame;
+  clock += 1;
+  return { camera, renderer: {}, time: time ?? clock } as unknown as NodeFrame;
 }
 
 function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
@@ -570,6 +579,226 @@ describe("VirtualShadowNode", () => {
     } finally {
       info.mockRestore();
     }
+  });
+
+  it("should print the marker every 60 frames while ?tnShadowStats=1 is on the URL", () => {
+    const { camera, light } = world();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("location", { search: "?scene=map-walk&tnShadowStats=1" });
+    try {
+      // The URL switch has to work on a launch that silenced the marker, or walking a world with
+      // `marker: false` — which is what the harness passes — could not be measured at all.
+      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      node.setup(builder);
+      stubLevelRenders(node);
+      for (let frame = 0; frame < 180; frame += 1) node.updateBefore(frameFor(camera));
+      const lines = info.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith(VIRTUAL_SHADOW_MARKER));
+      // 180 frames at one line per 60 is three, and the last one is the frame itself.
+      expect(lines).toHaveLength(3);
+      expect(readVirtualShadowMarker(lines[2] ?? "")).toMatchObject({
+        byInvalidation: 0,
+        byMove: 1,
+        coalesced: 0,
+        frame: 180,
+        held: 0,
+        rendersTotal: 1,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      info.mockRestore();
+    }
+  });
+});
+
+/**
+ * Invalidation coalescing: a streamed world asks its shadows for a redraw every residency update, and
+ * a cell admitted at the ring edge lands in the coarsest window — the one level render that pays for
+ * the whole ring's wide casters. So a dirty level waits out an `invalidationDelay` scaled by its own
+ * extent before it redraws for an ask, and the cumulative counters say what that cost.
+ */
+describe("VirtualShadowNode invalidation coalescing", () => {
+  /** The cascade the measurement used: delays of 0.25 s, 1 s and 3.33 s. */
+  const CASCADE = { clipExtents: [24, 96, 320], mapSize: 64 };
+
+  /**
+   * One level render per frame, counted per level, so a test can say *which* level redrew. Call it
+   * after the levels have settled: it replaces the draw for every frame from there on.
+   */
+  function countRenders(node: VirtualShadowNode): number[] {
+    const counts = node.levelNodes.map(() => 0);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        counts[index] = (counts[index] as number) + 1;
+      };
+    });
+    return counts;
+  }
+
+  /**
+   * Every level settled on a tight clock, one frame each 0.1 s apart, and the clock left at 0.4 s.
+   * The harness clock steps a second per frame, which is past every delay; the delay is what these
+   * tests are about, so they drive the engine's own `time` themselves.
+   */
+  function settleOnClock(node: VirtualShadowNode, camera: PerspectiveCamera): number {
+    let time = 0;
+    for (let frame = 0; frame < node.levelLights.length + 1; frame += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    return time;
+  }
+
+  /**
+   * A region 250 m out, as `WorldCells` hands one over when a cell is admitted: inside the 640 m
+   * window, outside the 192 m one. Whichever way the clipmap's axes fall, it is over 96 m out on
+   * both, so only the coarse level is ever asked.
+   */
+  const RING_EDGE = { min: { x: 246, y: 0, z: -4 }, max: { x: 254, y: 8, z: 4 } };
+
+  it("should turn 30 streamed invalidations of the coarse level in half a second into one render", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    // A cell streaming in once a frame, half a second's worth.
+    for (let ask = 0; ask < 30; ask += 1) {
+      time += 1 / 60;
+      node.invalidateRegion(RING_EDGE);
+      node.updateBefore(frameFor(camera, time));
+      expect(node.stats).toMatchObject({ held: 1, invalidated: 1, rendered: 0 });
+    }
+    expect(renders[2]).toBe(0);
+    // Its own 3.33 s are what the level waits out, from its last render — so the first frame past
+    // that redraws once, for all thirty asks.
+    for (let step = 0; step < 40 && renders[2] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders).toEqual([0, 0, 1]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(1);
+    expect(node.stats.byInvalidation - before.byInvalidation).toBe(1);
+    // Twenty-nine asks merged into the one already waiting; the thirtieth is the render.
+    expect(node.stats.coalesced - before.coalesced).toBe(29);
+    expect(node.stats.byMove - before.byMove).toBe(0);
+  });
+
+  it("should still render the finest level within a quarter second of an invalidation", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    // The finest level rendered at 0.1 s, so its delay runs out at 0.35 s and the first frame at or
+    // after that is its render. The coarse two are 1.2 s and 3.63 s away from their own.
+    const asked = time;
+    let finestAt: number | undefined;
+    for (let step = 0; step < 20; step += 1) {
+      time += 0.05;
+      node.invalidateAll();
+      node.updateBefore(frameFor(camera, time));
+      if (finestAt === undefined && (renders[0] as number) > 0) finestAt = time;
+    }
+    expect(finestAt).toBeDefined();
+    expect((finestAt as number) - asked).toBeLessThan(0.3);
+    // It keeps answering rather than answering once, and the level the measurement is about — the
+    // 3.33 s one, a whole second past the end of this run — has not rendered at all.
+    expect(renders[0]).toBeGreaterThan(1);
+    expect(renders[2]).toBe(0);
+  });
+
+  it("should not delay a render whose window moved", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64, refreshStep: 0 });
+    camera.position.set(0, 5, 0);
+    settle(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    // 0.3 crosses the finest texel (0.25) but not the coarse one (1.0): no invalidation anywhere.
+    camera.position.set(0.3, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
+    expect(renders).toEqual([1, 0]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(1);
+    expect(node.stats.byMove - before.byMove).toBe(1);
+    // An ask arriving on the frame a window moves is answered by that render rather than queued
+    // behind the level's delay: the map it draws is already the new window's.
+    node.invalidateAll();
+    camera.position.set(0.6, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(renders).toEqual([2, 0]);
+    expect(node.stats.byMove - before.byMove).toBe(2);
+    expect(node.stats.coalesced - before.coalesced).toBe(1);
+    // And the ask is spent, so the level does not redraw a frame later for the same casters.
+    node.updateBefore(frameFor(camera));
+    expect(renders).toEqual([2, 1]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(3);
+    expect(node.stats.byInvalidation - before.byInvalidation).toBe(1);
+  });
+
+  it("should reproduce today's counts with invalidationDelay 0 and hold the level without it", () => {
+    const { camera, light } = world();
+    camera.position.set(0, 5, 0);
+    // The same cascade twice, one switch off. Both nodes are on the same light: each owns its own
+    // levels, so what the two of them do is comparable frame for frame.
+    const off = setupNode(light, { clipExtents: [8, 32], mapSize: 64, invalidationDelay: 0 });
+    const on = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    expect(on.options.invalidationDelay).toEqual([0.25, 1]);
+    expect(off.options.invalidationDelay).toEqual([0, 0]);
+    for (const node of [off, on]) {
+      for (let frame = 1; frame <= 4; frame += 1) node.updateBefore(frameFor(camera, frame * 0.1));
+    }
+    const offRenders = countRenders(off);
+    const onRenders = countRenders(on);
+    const offBefore = { ...off.stats };
+    const onBefore = { ...on.stats };
+    for (const node of [off, on]) node.invalidateAll();
+    off.updateBefore(frameFor(camera, 0.5));
+    on.updateBefore(frameFor(camera, 0.5));
+    // The same asks and the same per-frame counters; the difference is entirely the coarse level's
+    // 1 s delay, which holds it rather than deferring it behind the frame's budget.
+    expect(off.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1, held: 0 });
+    expect(on.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 0, held: 1 });
+    off.updateBefore(frameFor(camera, 0.6));
+    on.updateBefore(frameFor(camera, 0.6));
+    expect(offRenders).toEqual([1, 1]);
+    expect(onRenders).toEqual([1, 0]);
+    expect(off.stats.rendersTotal - offBefore.rendersTotal).toBe(2);
+    expect(on.stats.rendersTotal - onBefore.rendersTotal).toBe(1);
+  });
+
+  it("should add up: every render is a move or an invalidation, every ask is answered or merged", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    // A walk with a streaming world behind it: the windows keep moving and the levels keep being
+    // asked, so both reasons and both halves of the invalidation accounting are exercised.
+    let asks = 0;
+    for (let step = 0; step < 200; step += 1) {
+      time += 0.05;
+      camera.position.set(step * 0.4, 5, 0);
+      if (step % 3 === 0) node.invalidateAll();
+      node.updateBefore(frameFor(camera, time));
+      asks += node.stats.perLevel.filter((level) => level.invalidated === 1).length;
+    }
+    // Every ask has to be accounted for, so the run has to end with nothing still waiting: a level
+    // still dirty at the end is an ask that has not been answered or merged yet, and the identity
+    // below is only about asks that have been.
+    for (let step = 0; step < 30; step += 1) {
+      time += 0.5;
+      node.updateBefore(frameFor(camera, time));
+    }
+    const { byInvalidation, byMove, coalesced, rendersTotal } = node.stats;
+    expect(rendersTotal).toBe(byMove + byInvalidation);
+    expect(byInvalidation + coalesced).toBe(asks);
+    // Both halves really happened, or the identity above would pass on a node that did nothing.
+    expect(byMove).toBeGreaterThan(0);
+    expect(byInvalidation).toBeGreaterThan(0);
+    expect(coalesced).toBeGreaterThan(0);
   });
 });
 

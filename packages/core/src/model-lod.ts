@@ -268,7 +268,7 @@ async function readPendingLevels(
  * forever; recovering the chain from the geometry the clone carries is what makes a clone behave
  * like the source.
  */
-interface ILodChain {
+export interface ILodChain {
   readonly levels: BufferGeometry[];
   readonly errors: readonly number[];
   readonly base: BufferGeometry;
@@ -688,8 +688,17 @@ interface IRegisteredChain {
  * to the source's chain instead of vanishing. Weak on the key, so a chain whose last live geometry
  * is dropped leaves with it: the value holds its own level geometries, and an ephemeron keeps that
  * self-reference from pinning them.
+ *
+ * One map per realm, not per module copy: the package builds each entry without code splitting,
+ * so `@threenative/core` (whose asset loader registers) and `@threenative/core/world` (whose
+ * `WorldCells` reads) each carry this module. A module-local map left WorldCells finding no chain.
  */
-const chains = new WeakMap<BufferGeometry, IRegisteredChain>();
+const chains: WeakMap<BufferGeometry, IRegisteredChain> = ((
+  globalThis as { [key: symbol]: unknown }
+)[Symbol.for("threenative.discreteLodChains")] ??= new WeakMap()) as WeakMap<
+  BufferGeometry,
+  IRegisteredChain
+>;
 
 /** Per-mesh selection state, keyed weakly by the mesh so a disposed or dropped clone drops out. */
 const controllers = new WeakMap<Mesh, ModelLod>();
@@ -985,6 +994,22 @@ export function baseGeometryOf(mesh: Mesh): BufferGeometry {
   const controller = controllers.get(mesh);
   if (controller !== undefined) return controller.base;
   return chains.get(mesh.geometry)?.chain.base ?? mesh.geometry;
+}
+
+/**
+ * The chain registered against `geometry`, or `undefined` when the geometry carries none.
+ *
+ * For a caller that draws one geometry many times. A `ModelLod` swaps one mesh's geometry, so an
+ * instanced batch — which cannot swap a geometry per instance — derives levels of its own from these
+ * numbers and crosses between them by distance instead. Selection stays here: this reads the chain
+ * out and hands it over, and the caller does the arithmetic {@link projectedLodError} documents, with
+ * a screen-space error budget of its own — a batch's placements are all at different distances, so
+ * the budget the loader registered the chain with, which is calibrated for the one mesh it drives,
+ * is not the one that applies. Any level of a chain answers, since a clone may be carrying a derived
+ * geometry.
+ */
+export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined {
+  return chains.get(geometry)?.chain;
 }
 
 // --- Per-frame update, mirroring `updateClusteredMeshes` ----------------------------------------

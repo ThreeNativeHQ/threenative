@@ -1064,7 +1064,7 @@ describe("WorldCells", () => {
 
   it("rejects a concurrency or refilter cap that could never start a load", async () => {
     stubFixtureFetch();
-    for (const option of ["concurrency", "rebuildsPerUpdate"] as const)
+    for (const option of ["concurrency", "rebuildsPerUpdate", "chunkMergeMaxTriangles"] as const)
       for (const value of [0, -1, 1.5, Number.NaN])
         await expect(
           loadWorld({
@@ -1251,7 +1251,10 @@ describe("WorldCells", () => {
     world.update();
     await flush();
     expect(world.stats().residentKeys).toEqual([cellKey(1, 1)]);
-    expect(world.stats().failures).toBe(0);
+    // Already one: the chunk's shape is released as soon as the merge has baked it into the merged
+    // buffers (PRD-458), so its teardown throws here rather than at the eviction below. Counted on
+    // the frame it happens, either way — the point is that it is never swallowed.
+    expect(world.stats().failures).toBe(1);
 
     follow.position.x = 100_000;
     follow.position.z = 100_000;
@@ -1393,6 +1396,72 @@ describe("WorldCells", () => {
 
     expect(world.stats().rebuilds).toBe(before);
     expect(world.children.filter((child) => child instanceof InstancedMesh)).toEqual(meshes);
+    world.dispose();
+  });
+
+  /**
+   * The refilter pass runs every 2 m of travel, and at 20 m/s that is ten times a second over every
+   * resident cell. It gates the whole cell before it looks at one batch, so a follow point that has
+   * crossed nothing walks 256 cells and allocates nothing — the array, the set and the per-batch
+   * entry objects the pass used to build per cell are gone, and `refilterEntries` is the counter that
+   * says so.
+   *
+   * A 16 m `cellSize` over the committed extent is 16 × 16 = 256 cells, and the one asset's only gate
+   * is its `maxDistance` cull distance at 87.5 km: no cell's own distance bracket can contain it, so
+   * the honest answer is nothing stale, ten times a second, over a quarter of a thousand cells.
+   */
+  it("allocates no refilter entry for 256 cells that crossed no gate", async () => {
+    const CELL = 16;
+    const side = manifest.extent.sizeX / CELL;
+    const pine = manifest.assets.pine;
+    if (pine === undefined) throw new Error("the committed package has no pine asset.");
+    const run = manifest.cells[1]?.runs.find((one) => one.asset === "pine");
+    if (run === undefined) throw new Error("the committed package has no pine run.");
+    const cells: IWorldPackage["cells"] = [];
+    for (let z = 0; z < side; z += 1)
+      for (let x = 0; x < side; x += 1) cells.push({ chunks: [], runs: [run], x, z });
+    stubManifestFetch({
+      ...manifest,
+      assets: {
+        ...manifest.assets,
+        // No authored `lods`, so the cull distance is the only gate there is, and it is 87.5 km out.
+        pine: { bounds: pine.bounds, glb: pine.glb, maxDistance: 100_000 },
+      },
+      cellSize: CELL,
+      cells,
+    });
+    const follow = followAt(MIN_X + (side / 2) * CELL, MIN_Z + (side / 2) * CELL);
+    const world = await loadWorld({
+      budgets: { bytes: 1_000_000_000, instances: 1_000_000, residentCells: 256 },
+      follow,
+      freshMeshesPerUpdate: 4096,
+      loadModel: controlledLoader().load,
+      prefetchSeconds: 0,
+      ring: 8,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    for (let frame = 0; frame < 12; frame += 1) await flushed(world);
+    expect(world.stats().residentCells).toBe(256);
+
+    const before = world.stats();
+    // Ten refilter passes, the cadence a 20 m/s walk gets: each one two metres of travel.
+    for (let step = 1; step <= 20; step += 1) {
+      follow.position.x += 2;
+      world.update();
+    }
+    const after = world.stats();
+
+    // The pass ran, over the whole resident set, every time — and found nothing to rebuild, so it
+    // allocated nothing: no entry objects, no per-cell array, no per-cell set.
+    expect(after.refilters - before.refilters).toBeGreaterThanOrEqual(10);
+    expect(after.refilterEntries).toBe(before.refilterEntries);
+    expect(after.rebuilds).toBe(before.rebuilds);
+    // And nothing was queued, dropped or failed: the ring slid 40 m east, so the eastern column of
+    // 16 left the package and the ring is the 240 that is left of it.
+    expect(after.residentCells).toBe(240);
+    expect(after.failures).toBe(0);
     world.dispose();
   });
 
@@ -1650,6 +1719,9 @@ describe("WorldCells", () => {
     expect(clustersOf(shaded, "pine", 1, 0), "a far level minted a caster cluster").toEqual([]);
     const terrain: Mesh[] = [];
     shaded.traverse((object) => {
+      // A mesh alone on a caster layer is a shadow-only proxy: it casts, and by construction it
+      // receives nothing, exactly as the caster clusters the same test blesses above do.
+      if (object.layers.isEnabled(0) === false) return;
       if ((object as Mesh).isMesh && !(object as InstancedMesh).isInstancedMesh)
         terrain.push(object as Mesh);
     });

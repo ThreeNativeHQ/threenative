@@ -1,4 +1,4 @@
-import type { Object3D } from "three";
+import type { Camera, Object3D } from "three";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -17,8 +17,15 @@ export interface IComputeDriven {
    * existing behavior of consumers whose simulation is intentionally tied to presentation.
    */
   readonly processCadence?: "fixed" | "render";
-  /** Dispatched once per fixed step, in scene-add order unless render cadence is declared. */
-  process(renderer: IRendererLike): void;
+  /**
+   * Dispatched once per fixed step, in scene-add order unless render cadence is declared.
+   *
+   * `camera` is the frame's render camera, handed over at render cadence so a consumer that culls by
+   * the view — a streamed world narrowing its instanced windows to what the frustum covers — can do
+   * it from the driver that runs every frame rather than from a draw three will not submit. An
+   * implementation that does not need it simply declares one parameter.
+   */
+  process(renderer: IRendererLike, camera?: Camera): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -64,19 +71,22 @@ export class ComputeDrivenRegistry {
     this.#process(renderer, "fixed");
   }
 
-  /** Dispatch render-cadence objects once; detached scene children are released before dispatch. */
-  processRender(renderer: IRendererLike): void {
-    this.#process(renderer, "render");
+  /**
+   * Dispatch render-cadence objects once with the frame's render camera; detached scene children are
+   * released before dispatch.
+   */
+  processRender(renderer: IRendererLike, camera?: Camera): void {
+    this.#process(renderer, "render", camera);
   }
 
-  #process(renderer: IRendererLike, cadence: "fixed" | "render"): void {
+  #process(renderer: IRendererLike, cadence: "fixed" | "render", camera?: Camera): void {
     for (const entry of [...this.#entries.values()]) {
       if (entry.driven.released || entry.object.parent === null) {
         this.remove(entry.driven);
         continue;
       }
       if ((entry.driven.processCadence ?? "fixed") !== cadence) continue;
-      entry.driven.process(renderer);
+      entry.driven.process(renderer, camera);
     }
   }
 

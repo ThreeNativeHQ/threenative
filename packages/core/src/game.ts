@@ -1592,7 +1592,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
           try {
-            this.#computeDriven.processRender(this.#renderer);
+            // The render camera comes with it, because a render-cadence consumer that culls by the
+            // view — a streamed world's main batches — has to be driven from here and not from a draw
+            // three skips for a mesh that is hidden because it has nothing to draw.
+            this.#computeDriven.processRender(this.#renderer, camera);
           } finally {
             endSpan(SPANS.compute);
           }

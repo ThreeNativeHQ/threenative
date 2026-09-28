@@ -477,6 +477,12 @@ export type {
   IWorldTilesTopologyObservation,
 } from "./world-tiles.js";
 
+export {
+  TERRAIN_VALIDATE_FLAG,
+  TERRAIN_VALIDATE_MARKER,
+  terrainValidationRequested,
+} from "./world-validate.js";
+
 export { getWorldCapabilities } from "./world-capabilities.js";
 export type { IWorldCapabilities } from "./world-capabilities.js";
 
