@@ -44,7 +44,7 @@ simulation step. Worldgen is seeded (mulberry32) with exactly one `Math.random` 
 ### Phase 3 — it ships as a kit
 
 - [x] `templates/rts` with `kit.json`, AGENTS.md (< 100 lines) and playtests for select, gather, build, train, fight and an AI attack. proof: `TN_TEMPLATE_ONLY=rts pnpm test:templates` — 6 of 7 scenarios green and the `rts-real-frame-boot` gate green: `survives` (150 ticks), `rts-orders` (642), `rts-build` (280), `rts-train` (296), `rts-attack` (3660), `rts-ai-attack` (2520), 0 triviality opt-outs across all six. `battlefield-performance` is the one red and the reason is in `## Decisions`. The AGENTS.md is 97 lines (99 in its generated mirror) and 1524/3574 words
-- [x] Scaffold specs and hashes include the kit. proof: `pnpm exec vitest run packages/create-threenative` — 790 tests, the one red being this kit's byte-stable scaffold hash in `scaffold.spec.ts`, which the owner recomputes. Every other gate that names templates derives its list from the directories on disk (`test-support/templates.ts`), and `.github/workflows/ci.yml` already runs the kit in the per-template matrix
+- [x] Scaffold specs and hashes include the kit. proof: `pnpm exec vitest run packages/create-threenative` — 789/790, the one red being this kit's byte-stable scaffold hash in `scaffold.spec.ts`, which the owner recomputes. Every other gate that names templates derives its list from the directories on disk (`test-support/templates.ts`), and `.github/workflows/ci.yml` already runs the kit in the per-template matrix
 ## Decisions
 
 - 2026-09-28, phase 2: the kit dropped `@threenative/physics`. `src/sim/` does its own collision,
