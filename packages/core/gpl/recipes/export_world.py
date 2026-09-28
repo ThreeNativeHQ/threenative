@@ -28,6 +28,7 @@ import array
 import json
 import math
 import os
+import shutil
 import struct
 import sys
 
@@ -385,12 +386,127 @@ def skipped_collections(layer, under_hidden=False):
     return skipped
 
 
+def terrain_layer_texture(table_dir, textures, layer_id, kind):
+    """The source file of one texture set's map, searched in the table's `textures.search` dirs."""
+    name = textures[kind].replace("{id}", layer_id)
+    for relative in textures.get("search", ["."]):
+        base = os.path.normpath(os.path.join(table_dir, relative))
+        for root, _subdirs, files in os.walk(base):
+            if name in files:
+                return os.path.join(root, name)
+    fail("terrain layers: texture '%s' not found under %s" % (name, textures.get("search", ["."])))
+
+
+def terrain_layer_mask(path, size):
+    """A mask image as raw bytes, read through Blender (Non-Color, so values are not converted).
+
+    Blender stores pixels bottom-up, which is the package's splat row order.
+    """
+    import numpy as np
+
+    image = bpy.data.images.load(path, check_existing=False)
+    try:
+        image.colorspace_settings.name = "Non-Color"
+        if tuple(image.size) != (size, size):
+            image.scale(size, size)
+        pixels = np.empty(size * size * 4, np.float32)
+        image.pixels.foreach_get(pixels)
+    finally:
+        bpy.data.images.remove(image)
+    return np.clip(pixels.reshape(size, size, 4) * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+
+def export_terrain_layers(out, table_path, root=None):
+    """Ship a game's terrain material table into the package, for `loadTerrainSplat`.
+
+    The table (the game's; its DCC shader can read the same file) names its masks, texture sets and
+    blend values. This writes `terrain/layers.json` (the table plus the splat layout),
+    `terrain/splat.rgba8` (masks packed into RGBA8 planes, raw so no cook converts them) and
+    `terrain/tex/<id>_diff.jpg` / `<id>_nrm.jpg`, and returns the `terrain.layers` paths.
+    Relative paths in the table resolve against `root` when given, else the table's folder.
+    """
+    import numpy as np
+
+    with open(table_path) as handle:
+        table = json.load(handle)
+    table_dir = os.path.abspath(root) if root else os.path.dirname(os.path.abspath(table_path))
+    size = int(table.get("splatSize", 1024))
+    masks = table.get("masks", {})
+    if not masks:
+        fail("terrain layers: the table names no masks")
+
+    planes, placed = [], {}
+    for name, spec in masks.items():
+        if spec.get("channels", "rgb") == "rgb":
+            planes.append(np.full((size, size, 4), 255, np.uint8))
+            rgba = terrain_layer_mask(os.path.join(table_dir, spec["image"]), size)
+            planes[-1][:, :, :3] = rgba[:, :, :3]
+            placed[name] = [len(planes) - 1, "rgb"]
+    free_alpha = list(range(len(planes)))
+    for name, spec in masks.items():
+        if spec.get("channels", "rgb") == "rgb":
+            continue
+        value = terrain_layer_mask(os.path.join(table_dir, spec["image"]), size)[:, :, 0]
+        if free_alpha:
+            plane = free_alpha.pop(0)
+            planes[plane][:, :, 3] = value
+            placed[name] = [plane, "a"]
+        else:
+            planes.append(np.full((size, size, 4), 255, np.uint8))
+            planes[-1][:, :, 0] = value
+            placed[name] = [len(planes) - 1, "r"]
+
+    terrain = os.path.join(out, "terrain")
+    tex = os.path.join(terrain, "tex")
+    shutil.rmtree(tex, ignore_errors=True)
+    os.makedirs(tex, exist_ok=True)
+    with open(os.path.join(terrain, "splat.rgba8"), "wb") as handle:
+        for plane in planes:
+            handle.write(np.ascontiguousarray(plane).tobytes())
+
+    textures = table.get("textures", {})
+    for layer in [table["base"], *table["layers"]]:
+        shutil.copyfile(
+            terrain_layer_texture(table_dir, textures, layer["id"], "diff"),
+            os.path.join(tex, "%s_diff.jpg" % layer["id"]),
+        )
+        if layer.get("normal"):
+            # `_nrm` is the asset cook's normal-map convention: linear, lossless UASTC.
+            shutil.copyfile(
+                terrain_layer_texture(table_dir, textures, layer["id"], "nrm"),
+                os.path.join(tex, "%s_nrm.jpg" % layer["id"]),
+            )
+
+    shipped = {key: table[key] for key in ("base", "breakup", "macro", "layers")}
+    shipped["splat"] = {"masks": placed, "planes": len(planes), "size": size}
+    shipped["textures"] = "terrain/tex"
+    with open(os.path.join(terrain, "layers.json"), "w") as handle:
+        json.dump(shipped, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return {"splat": "terrain/splat.rgba8", "table": "terrain/layers.json"}
+
+
 def main():
     payload = parse_request()
     out = payload.get("out")
     if not isinstance(out, str) or not out:
         fail("export_world requires an 'out' directory")
     out = os.path.abspath(out)
+    terrain_table = payload.get("terrain-layers")
+    terrain_root = payload.get("terrain-root") or None
+    if payload.get("terrain-only"):
+        # Re-ship only the terrain layers into an existing package: no scene, no re-export.
+        if not isinstance(terrain_table, str) or not terrain_table:
+            fail("export_world terrain-only needs 'terrain-layers'")
+        manifest_path = os.path.join(out, "world.json")
+        with open(manifest_path) as handle:
+            manifest = json.load(handle)
+        manifest["terrain"]["layers"] = export_terrain_layers(out, terrain_table, terrain_root)
+        with open(manifest_path, "w") as handle:
+            json.dump(manifest, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        emit({"out": out, "recipe": "export_world", "terrainLayers": manifest["terrain"]["layers"]})
+        return
     source = payload.get("source")
     if isinstance(source, str) and source:
         load(source)
@@ -527,6 +643,11 @@ def main():
             "heightMax": height_max,
             "heightMin": height_min,
             "heightmap": "terrain/heightmap.u16",
+            **(
+                {"layers": export_terrain_layers(out, terrain_table, terrain_root)}
+                if isinstance(terrain_table, str) and terrain_table
+                else {}
+            ),
             "rows": rows,
             "spacing": spacing,
         },
