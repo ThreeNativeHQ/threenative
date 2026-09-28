@@ -17,7 +17,6 @@ import {
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { painterlyStageNames, painterlyStages } from "./painterly.js";
 import { type QualityTier, qualityPreset } from "./quality.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
@@ -57,11 +56,7 @@ export function setupPost(
     // Replacement is serialized: no old graph or subscription remains alive beside the new one.
     disposeGraph?.();
     const settings = qualityPreset(policy.tier);
-    const world = new WorldEnvironment({
-      ...settings,
-      authoredStageNames: painterlyStageNames(settings),
-      authoredStages: painterlyStages(settings),
-    });
+    const world = new WorldEnvironment(settings);
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
     });

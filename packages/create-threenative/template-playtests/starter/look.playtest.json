@@ -14,20 +14,20 @@
   "steps": [
     {
       "kind": "wait",
-      "label": "preview-pending",
-      "waitTicks": 1,
+      "label": "scene-ready",
+      "waitTicks": 240,
       "release": true
     },
     {
       "kind": "input",
-      "label": "move-before-refinement",
+      "label": "move-across-the-platform",
       "press": "ArrowRight",
       "holdTicks": 140,
       "release": true
     },
     {
       "kind": "wait",
-      "label": "refinement-settles",
+      "label": "frame-settles",
       "waitTicks": 600,
       "release": true
     }
@@ -38,58 +38,6 @@
       "noNetworkErrors": true,
       "runtimeReady": true
     },
-    "components": [
-      {
-        "entity": "scenery.ridge",
-        "component": "state",
-        "equals": "refined",
-        "atSteps": [
-          {
-            "label": "preview-pending",
-            "equals": "preview"
-          }
-        ]
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "generation",
-        "gte": 1,
-        "atSteps": [
-          {
-            "label": "preview-pending",
-            "equals": 0
-          }
-        ]
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "boundaryEdges",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "degenerateTriangles",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "windingConflicts",
-        "equals": 0,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
-      },
-      {
-        "entity": "scenery.ridge",
-        "component": "topology",
-        "path": "signedVolume",
-        "gte": 1,
-        "allowTrivial": "The final-array topology report is a held invariant for the attached ridge."
-      }
-    ],
     "resources": [
       {
         "id": "state",
@@ -98,7 +46,7 @@
         "changed": true,
         "atSteps": [
           {
-            "label": "move-before-refinement",
+            "label": "move-across-the-platform",
             "textIncludes": "."
           }
         ]
@@ -129,6 +77,11 @@
         "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the look assertion.",
         "entity": "player",
         "minProjectedPixels": 20
+      },
+      {
+        "allowTrivial": "The finish flag is authored in frame from the first tick; this held visibility row accompanies the look assertion.",
+        "entity": "goal",
+        "minProjectedPixels": 20
       }
     ],
     "visual": [
@@ -144,7 +97,8 @@
           "width": 1280,
           "height": 720,
           "minNonblankPixelRatio": 0.95,
-          "maxDarkPixelRatio": 0.12,
+          "minDarkPixelRatio": 0.05,
+          "maxDarkPixelRatio": 0.35,
           "maxLuminance": 0.25
         }
       },
@@ -155,7 +109,7 @@
           "width": 1280,
           "height": 360,
           "minNonblankPixelRatio": 0.95,
-          "maxDarkPixelRatio": 0.03,
+          "maxDarkPixelRatio": 0.25,
           "maxLuminance": 0.25
         }
       },

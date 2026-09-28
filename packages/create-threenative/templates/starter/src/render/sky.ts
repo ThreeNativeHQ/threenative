@@ -33,12 +33,11 @@ export function setupSky(scene: Scene, sky: Texture): void {
   scene.backgroundIntensity = SKY_RANGE;
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, a sky to reflect — sharper as roughness drops — and the whole reason the water in
-  // `water.ts` can be a low-roughness physical surface with no hand-rolled sun highlight.
+  // misses, and a sky to reflect, sharper as roughness drops.
   scene.environment = sky;
   scene.environmentIntensity = SKY_RANGE;
-  // Almost nothing inside the island (1.4% at 30 m), and the horizon gone into haze by a
-  // kilometre — so the sea meets the sky instead of ending at a hard line. The colour is the
+  // Almost nothing inside the arena (1.4% at 30 m), and the ground gone into the horizon by a
+  // kilometre — so the floor meets the sky instead of ending at a line. The colour is the
   // photograph's own horizon, sampled from the same HDR, so the fade lands where the sky is.
   scene.fog = new FogExp2(palette.skyLow, 0.003);
 }

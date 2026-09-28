@@ -3,7 +3,6 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
-  WaveField,
   createRandom,
   isMobile,
   isTouchscreenAvailable,
@@ -21,16 +20,14 @@ import config from "../../threenative.config.js";
 import { Crate } from "../entities/Crate.js";
 import { Goal, ISLAND } from "../entities/Goal.js";
 import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js";
+import { createArena, platform } from "../render/arena.js";
 import { createSpringArm } from "../render/camera.js";
-import { createCoastalScene } from "../render/coast.js";
 import { pickupRiseEase } from "../render/easing.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { createMaterials, createPennantMaterial } from "../render/materials.js";
-import { COAST_DOMAIN_WARP, COAST_WAVES } from "../render/palette.js";
+import { createPennantMaterial, propMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createScenery } from "../render/scenery.js";
-import { ball, block, roundedBox, spike, tube } from "../render/shapes.js";
+import { ball, block, spike, tube } from "../render/shapes.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -41,13 +38,13 @@ const KILL_PLANE = -4;
 const STARTING_LIVES = 3;
 const FLOOR_SURFACE_Y = 0;
 const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
+/** The near platform's own footprint, which the support surface below answers for. */
+const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
-  #materials: ReturnType<typeof createMaterials> | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
-  #scenery: ReturnType<typeof createScenery> | undefined;
 
   static override readonly initialState: GameState = {
     coyoteJumps: 0,
@@ -70,7 +67,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   override async load(ctx: GameCtx): Promise<void> {
-    this.#materials = createMaterials();
     const [texture, model, playerModel, sky] = await Promise.all([
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
@@ -124,12 +120,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     if (
       this.#assetProof === undefined ||
-      this.#materials === undefined ||
       this.#playerModel === undefined ||
       this.#sky === undefined
     )
       throw new Error("Starter scene did not finish loading.");
-    const materials = this.#materials;
     const state = ctx.state.getState();
     const player = ctx.entities.add(
       "player",
@@ -143,13 +137,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
     setupSky(ctx.scene, this.#sky);
-    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
+    const { key } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
     this.#post = ctx.entities.add(
       "quality",
       setupPost(ctx.renderer, ctx.scene, ctx.camera, {
-        godraysLight: sun,
+        godraysLight: key,
         mobile: isMobile(),
         targetFps: config.display?.maxFps ?? 60,
         ready: () => ctx.startup.phase === "ready",
@@ -157,8 +155,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);
-    const waves = new WaveField({ waves: COAST_WAVES, domainWarp: COAST_DOMAIN_WARP });
-    ctx.add(createCoastalScene(materials, waves, createRandom(31_415_926)));
     const showTouchControls = isMobile() && isTouchscreenAvailable();
     const touchControls = showTouchControls
       ? ctx.entities.add("touch-controls", new TouchControls(ctx.camera as PerspectiveCamera))
@@ -166,38 +162,43 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // Offset, lead and damping all live in render/camera.ts — framing is a look decision.
     const springArm = createSpringArm(ctx.camera as PerspectiveCamera);
 
-    const scenery = createScenery(materials.rock, materials.ridge, createRandom(20_260_821));
-    let refinementStarted = false;
-    this.#scenery = scenery;
-    ctx.add(scenery.object);
-    ctx.entities.add("scenery.ridge", scenery);
-    // Two sentinels, both read by an out-of-range assertion rather than as a transition:
-    // state.levelX starts at -99, so a level that never builds stays out of range, and
-    // seededLevelX becomes 2 if this draw did not advance ctx.random — which is what happens
-    // if someone swaps it for Math.random. Neither depends on WHEN the runner samples.
+    // The prototype test arena every engine opens a new project on, dressed as a course: a light
+    // metre-grid ground running out to the haze line, dark-grid walls and a pillar as backdrop,
+    // and the near platform between them. Every solid gets a fixed body built from the triangles
+    // the player actually sees. Two sentinels, both read by an out-of-range assertion rather than
+    // as a transition: state.levelX starts at -99, so a level that never builds stays out of
+    // range, and seededLevelX becomes 2 if this draw did not advance ctx.random — which is what
+    // happens if someone swaps it for Math.random. Neither depends on WHEN the runner samples.
     const randomStateBeforeLevel = ctx.random.state;
     const levelX = ctx.random.range(-1, 1);
     const seededLevelX = ctx.random.state === randomStateBeforeLevel ? 2 : levelX;
     const pickupX = 1.2 + createRandom(Math.round((levelX + 1) * 1000))() * 0.8;
-    const floorMesh = new Mesh(roundedBox(10, 0.2, 4.2, 0.1), materials.floor);
-    floorMesh.position.y = -0.1;
-    // The collision slab remains the authoritative support surface, while the coastal renderer
-    // supplies the oval beach and grass top. Showing both makes a rectangular floating raft under
-    // the island, which is a visual artefact rather than a useful part of the scene.
-    floorMesh.visible = false;
-    floorMesh.receiveShadow = true;
-    ctx.add(floorMesh);
-    new RigidBody3D({
-      object: floorMesh,
-      physics: ctx.physics,
-      shape: CollisionShape3D.fromMesh(floorMesh),
-      type: "fixed",
-    });
-    new Crate(ctx, levelX, 4, -1.5, materials.crate);
-    const pickupBase = block(0.42, 0.14, 0.42, materials.player);
-    const pickupStem = tube(0.08, 0.08, 0.3, materials.player);
-    const pickupOrb = ball(0.16, materials.player);
-    const pickupTip = spike(0.14, 0.26, materials.player);
+    const fixed = (mesh: Mesh): Mesh => {
+      new RigidBody3D({
+        object: mesh,
+        physics: ctx.physics,
+        shape: CollisionShape3D.fromMesh(mesh, "trimesh"),
+        type: "fixed",
+      });
+      return mesh;
+    };
+    const arena = createArena();
+    ctx.add(arena.group);
+    for (const solid of arena.solids) fixed(solid);
+    const { base: floorBase, plate: floorMesh } = platform(
+      FLOOR_SIZE.width,
+      FLOOR_SIZE.depth,
+      FLOOR_SURFACE_Y,
+      0,
+      0,
+    );
+    ctx.add(fixed(floorMesh));
+    ctx.add(fixed(floorBase));
+    new Crate(ctx, levelX, 4, -1.5, propMaterial);
+    const pickupBase = block(0.42, 0.14, 0.42, propMaterial);
+    const pickupStem = tube(0.08, 0.08, 0.3, propMaterial);
+    const pickupOrb = ball(0.16, propMaterial);
+    const pickupTip = spike(0.14, 0.26, propMaterial);
     pickupBase.position.y = -0.16;
     pickupStem.position.y = 0.06;
     pickupOrb.position.y = 0.32;
@@ -213,7 +214,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The packaged proof asset earns its place here: it is the pennant on the finish flag,
     // not a debug object parked over the level. The texture and the glTF still load in
     // `load()` above, which is what the native asset gate greps for.
-    const goal = ctx.entities.add("goal", new Goal(ctx, materials, this.#assetProof));
+    const goal = ctx.entities.add("goal", new Goal(ctx, this.#assetProof));
     const supportSurfaceY = (position: { readonly x: number; readonly z: number }):
       | number
       | undefined => {
@@ -277,12 +278,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // at tick 6 on a workstation and tick 47 in CI, and only the slow sample missed the change.
     ctx.state.set({ levelX: seededLevelX });
     const frameState: Partial<GameState> = {};
-    let elapsed = 0;
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: starter frame coordinates existing gameplay state transitions.
     return (frameCtx, dt) => {
       loading.update();
-      elapsed += dt;
-      waves.setTime(elapsed);
       // Restart resets the store before clearing entities and scheduled callbacks.
       if (frameCtx.input.justPressed("restart")) {
         frameCtx.state.set(Play.initialState);
@@ -299,14 +297,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameCtx.state.set((state) => ({ flagGusts: state.flagGusts + 1 }));
       }
       const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      const move = frameCtx.input.vector("move");
-      if (
-        !refinementStarted &&
-        (move.x !== 0 || move.y !== 0 || (touch?.move.x ?? 0) !== 0 || (touch?.move.y ?? 0) !== 0)
-      ) {
-        scenery.rebuild();
-        refinementStarted = true;
-      }
       player.update(frameCtx, dt, supportSurfaceY, touch);
       let respawned = false;
       let lives = previous.lives;
@@ -359,8 +349,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#post?.dispose();
     this.#post = undefined;
-    this.#scenery?.dispose();
-    this.#scenery = undefined;
     super.exit(ctx);
   }
 }
