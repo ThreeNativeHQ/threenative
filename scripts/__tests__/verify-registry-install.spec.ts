@@ -227,6 +227,53 @@ function happyRunner(): CommandRunner {
   };
 }
 
+/**
+ * One distributed consumer row, as the runtime-native verifier writes it: `session` is the
+ * qualifier's own physical/emulator distinction, so a Pixel 8 arm and an emulator arm are the same
+ * target with two different devices.
+ */
+function consumerRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    applicationId: "com.threenative.mygame",
+    architecture: "arm64-v8a",
+    artifactHash: "3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211",
+    assertionIds: ["diagnostics", "movement.axisDelta"],
+    assertions: 2,
+    failures: [],
+    os: "android",
+    osVersion: "17 (API 37)",
+    pass: true,
+    scenario: "playtests/production-readiness.playtest.json",
+    session: "android-device",
+    target: "android",
+    ...overrides,
+  };
+}
+
+/** Writes the consumer rows the native step reads back, one set per clean room. */
+function consumerRowRunner(
+  rowsFor: (npm: boolean) => {
+    readonly rows: readonly Record<string, unknown>[];
+    readonly stdout?: unknown;
+  },
+): CommandRunner {
+  const happy = happyRunner();
+  return (command, args, cwd) => {
+    const output = happy(command, args, cwd);
+    if (command !== "node" || !args[0]?.endsWith("verify-starter-desktop.mjs")) return output;
+    const { rows, stdout } = rowsFor(fs.existsSync(path.join(cwd, "package-lock.json")));
+    const artifacts = path.join(cwd, "artifacts", "native");
+    fs.mkdirSync(artifacts, { recursive: true });
+    fs.writeFileSync(path.join(artifacts, "consumer-targets.json"), JSON.stringify(rows, null, 2));
+    if (stdout !== undefined)
+      fs.writeFileSync(
+        path.join(artifacts, "consumer-android.stdout.json"),
+        JSON.stringify(stdout, null, 2),
+      );
+    return output;
+  };
+}
+
 function mcpMessage(id: number, result: Record<string, unknown>): string {
   return JSON.stringify({ id, jsonrpc: "2.0", result });
 }
@@ -830,6 +877,137 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     }
     // npm uses `npx --no-install`, not `npm exec --no-install`, which warns on npm 11.
     expect(playtests.map(([command]) => command).sort()).toEqual(["npx", "pnpm"]);
+  });
+
+  it("carries a physical and an emulator arm of one target as separate cohort rows", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner((npm) => ({
+        rows: [
+          npm
+            ? consumerRow()
+            : consumerRow({
+                architecture: "x86_64",
+                artifactHash: "9c1d0a4b7e2f5630bd4a8c9112ee73045ab6cd7f19e2b4d0c8a5f61729be340",
+                osVersion: "15 (API 35)",
+                session: "android-emulator",
+              }),
+        ],
+      })),
+    });
+    expect(report.exitCode).toBe(0);
+    // The target alone cannot hold both: PRD-366 phase 2 lost the Pixel 8 row to the emulator run.
+    expect(report.consumerTargets).toHaveLength(2);
+    expect(
+      report.consumerTargets
+        .map((row) => ({
+          architecture: row.architecture,
+          artifactHash: row.artifactHash,
+          osVersion: row.osVersion,
+          session: row.session,
+        }))
+        .sort((left, right) => left.session.localeCompare(right.session)),
+    ).toEqual([
+      {
+        architecture: "arm64-v8a",
+        artifactHash: "3f24116fb41a3e890d51fad9eb4834e3715c284cd023cdb96b310f151015f211",
+        osVersion: "17 (API 37)",
+        session: "android-device",
+      },
+      {
+        architecture: "x86_64",
+        artifactHash: "9c1d0a4b7e2f5630bd4a8c9112ee73045ab6cd7f19e2b4d0c8a5f61729be340",
+        osVersion: "15 (API 35)",
+        session: "android-emulator",
+      },
+    ]);
+  });
+
+  it("retains the run's own first diagnostic when an arm aborted before any assertion", async () => {
+    // `failureReport()` emits this shape for ANY abort before assertions run, so a row carrying
+    // only the verifier's message cannot say what failed — which is why phase 2's one physical
+    // arm64 abort is still unexplained.
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [
+          consumerRow({
+            assertionIds: [],
+            assertions: 0,
+            failures: ["assertion 'diagnostics' was not evaluated"],
+            pass: false,
+          }),
+        ],
+        stdout: {
+          diagnostics: [
+            {
+              code: "TN_PLAYTEST_ANDROID_LAUNCH",
+              message: "the installed app never reached the foreground",
+              severity: "error",
+            },
+          ],
+          pass: false,
+        },
+      })),
+    });
+    // The real failure path: a row the verifier marked failed must fail the cohort, and the report
+    // must still carry what the run reported rather than only the abort.
+    expect(report.exitCode).toBe(1);
+    const native = report.steps.filter((step) => step.name.endsWith(":native"));
+    expect(native).toHaveLength(2);
+    for (const item of native) expect(item.detail).toContain("TN_PLAYTEST_ANDROID_LAUNCH");
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual([
+      "assertion 'diagnostics' was not evaluated",
+      "TN_PLAYTEST_ANDROID_LAUNCH: the installed app never reached the foreground",
+    ]);
+  });
+
+  it("names the missing diagnostic instead of inventing a cause for a zero-assertion arm", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [consumerRow({ assertionIds: [], assertions: 0, pass: false })],
+      })),
+    });
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual([expect.stringContaining("TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_MISSING")]);
+  });
+
+  it("fails the cohort on a zero-assertion arm even when the row claims it passed", async () => {
+    const report = await verifyRegistryInstall({
+      mcp: happyMcpRunner(),
+      parent: await tempRoot(),
+      run: consumerRowRunner(() => ({
+        rows: [consumerRow({ assertionIds: [], assertions: 0, pass: true })],
+        stdout: {
+          diagnostics: [
+            {
+              code: "TN_PLAYTEST_ANDROID_LAUNCH",
+              message: "the installed app never reached the foreground",
+              severity: "error",
+            },
+          ],
+          pass: true,
+        },
+      })),
+    });
+    // An empty assertion set is a failure whatever `pass` says (AGENTS.md's empty-assertion rule):
+    // a row that asserted nothing has proved nothing, so it cannot carry a cohort.
+    expect(report.exitCode).toBe(1);
+    const native = report.steps.filter((step) => step.name.endsWith(":native"));
+    expect(native).toHaveLength(2);
+    for (const item of native)
+      expect(item.detail).toContain("TN_REGISTRY_INSTALL_CONSUMER_TARGET_FAILED");
+    // The row and its diagnostic survive the abort, so the recorded cause is not lost to it.
+    expect(
+      report.consumerTargets.find((row) => row.session === "android-device")?.failures,
+    ).toEqual(["TN_PLAYTEST_ANDROID_LAUNCH: the installed app never reached the foreground"]);
   });
 });
 

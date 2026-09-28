@@ -58,10 +58,10 @@ export interface IAndroidPrebuiltProof {
 }
 
 /**
- * PRD-366 phase 2: one qualified consumer gameplay row per distributed target, carried beside the
- * clean-room steps. Its shape is the runtime-native verifier's `consumer-targets.json`, which is
- * what actually gates a target; this report threads the rows through so a cohort result names the
- * OS, architecture and session each claim was made on.
+ * PRD-366 phase 2: one qualified consumer gameplay row per distributed target and arm, carried
+ * beside the clean-room steps. Its shape is the runtime-native verifier's `consumer-targets.json`,
+ * which is what actually gates a target; this report threads the rows through so a cohort result
+ * names the OS, architecture, session and artifact each claim was made on.
  */
 export interface IConsumerTargetRow {
   readonly applicationId: string;
@@ -78,6 +78,12 @@ export interface IConsumerTargetRow {
 }
 
 export interface IRegistryInstallReport {
+  /**
+   * The qualified consumer arms, one per arm the cohort ran. `target` alone lost a row: phase 2 ran
+   * a physical arm and an emulator arm on `android` and the second replaced the first, so a cohort
+   * result could name only one machine. Array shape is unchanged; the composite key is internal, so
+   * a caller reads each row's own `session`, `architecture` and `osVersion`.
+   */
   readonly consumerTargets: readonly IConsumerTargetRow[];
   readonly exitCode: 0 | 1;
   readonly managers: readonly RegistryPackageManager[];
@@ -499,6 +505,48 @@ function treeContains(root: string, needle: string): string | undefined {
 }
 
 /**
+ * The internal key an arm is recorded under: its target plus what the run itself named about the
+ * machine.
+ *
+ * `session` is the qualifier's own physical/emulator distinction (`android-device` against
+ * `android-emulator`), which is what this key is for — one target's phone and emulator no longer
+ * overwrite each other. Architecture and OS version narrow it further, but two phones reporting the
+ * same values are still one key, so this is **not** a device identity: only the row's own fields
+ * say which machine ran.
+ */
+function consumerTargetKey(row: IConsumerTargetRow): string {
+  return [row.target, row.session, row.architecture, row.osVersion].join(" ");
+}
+
+/**
+ * What the run itself named, for an arm that evaluated zero assertions.
+ *
+ * `failureReport()` (`packages/playtest/src/runner/shared.ts`) is the generic pre-assertion abort
+ * shape: a single unevaluated `diagnostics` result, so a row keeping only the verifier's message
+ * ("assertion 'diagnostics' was not evaluated") never said what actually failed. That is why phase
+ * 2's one physical arm64 abort is still unexplained. The runner's own stdout sits beside the row
+ * file and holds the diagnostic, so read it back rather than re-running anything — and say so
+ * plainly when it holds none, rather than passing the generic message off as the cause.
+ */
+function firstConsumerDiagnostic(project: string, target: string): string {
+  const file = path.join(project, "artifacts", "native", `consumer-${target}.stdout.json`);
+  const lost = (why: string): string =>
+    `TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_MISSING: ${file} ${why}, so the '${target}' arm that evaluated zero assertions retains no cause.`;
+  if (!fs.existsSync(file)) return lost("is absent");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  } catch (error) {
+    return `TN_REGISTRY_INSTALL_CONSUMER_DIAGNOSTIC_UNREADABLE: ${file} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  const diagnostics = objectRecord(parsed)?.diagnostics;
+  const first = Array.isArray(diagnostics) ? objectRecord(diagnostics[0]) : undefined;
+  if (!isNonEmptyString(first?.code)) return lost("names no first diagnostic");
+  const message = first?.message;
+  return `${first.code}: ${isNonEmptyString(message) ? message : "(no message)"}`;
+}
+
+/**
  * Read the distributed-target gameplay rows the runtime-native verifier wrote for this consumer.
  *
  * Absent means the target lane has not run here (the desktop container lane is PRD-365, not on
@@ -545,18 +593,22 @@ export function readConsumerTargetRows(project: string): readonly IConsumerTarge
       throw new Error(
         `TN_REGISTRY_INSTALL_CONSUMER_ROW_MALFORMED: ${file} row field 'failures' is not an array.`,
       );
+    const target = text("target");
+    const failures = record.failures.map((failure) => String(failure));
     return {
       applicationId: text("applicationId"),
       architecture: text("architecture"),
       artifactHash: text("artifactHash"),
       assertions,
-      failures: record.failures.map((failure) => String(failure)),
+      // Zero assertions is the pre-assertion abort shape, so name what the run itself reported.
+      failures:
+        assertions === 0 ? [...failures, firstConsumerDiagnostic(project, target)] : failures,
       os: text("os"),
       osVersion: text("osVersion"),
       pass: record.pass,
       scenario: text("scenario"),
       session: text("session"),
-      target: text("target"),
+      target,
     };
   });
 }
@@ -1131,12 +1183,28 @@ export async function verifyRegistryInstall(
           const output = run(command, script("build:desktop"), project);
           const executable = nativeOutput(project);
           const proof = verifyNativeFrames(project, run);
-          // The verifier records one qualified gameplay row per distributed target it ran; thread
-          // them through so the cohort result names each target's machine and artifact identity.
+          // The verifier records one qualified gameplay row per distributed target and arm it ran;
+          // thread them through so each arm's machine and artifact identity survives instead of
+          // collapsing a phone and an emulator of one target into a single row.
           const rows = readConsumerTargetRows(project);
-          for (const row of rows) consumerTargets.set(row.target, row);
+          for (const row of rows) consumerTargets.set(consumerTargetKey(row), row);
+          // Fail closed: the rows gate the target, so a row the verifier marked failed fails the
+          // cohort — and so does one that asserted nothing, whatever `pass` says, because an empty
+          // assertion set is a failure and a row that evaluated zero assertions proved nothing. The
+          // rows are already in the map above, so the returned report still names the run's own
+          // diagnostic rather than only this abort, which repeats it verbatim.
+          const failed = rows.filter((row) => !row.pass || row.assertions === 0);
+          if (failed.length > 0)
+            throw new Error(
+              `TN_REGISTRY_INSTALL_CONSUMER_TARGET_FAILED: ${failed
+                .map(
+                  (row) =>
+                    `${consumerTargetKey(row)} — ${row.assertions === 0 ? "evaluated zero assertions: " : ""}${row.failures.join("; ") || "no failures recorded"}`,
+                )
+                .join(" | ")}`,
+            );
           const targets = rows
-            .map((row) => `${row.target} (${row.os}/${row.architecture})`)
+            .map((row) => `${consumerTargetKey(row)} artifact ${row.artifactHash.slice(0, 12)}`)
             .join(", ");
           return `${output}\nExecutable: ${executable}\n${proof}${targets.length > 0 ? `\nConsumer targets: ${targets}` : ""}`;
         }),

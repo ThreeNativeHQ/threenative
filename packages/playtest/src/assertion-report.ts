@@ -5,6 +5,7 @@ import type {
   IPlaytestVisualRegionBounds,
   IPlaytestVisualRegionTarget,
 } from "./scenario.js";
+import type { IPlaytestDeviceLifecycleObservation } from "./runner/android.js";
 import type { IPlaytestDeviceMetricsObservation } from "./runner/deviceMetrics.js";
 import type { IPlaytestDiagnosticsPolicy } from "./report.js";
 import type {
@@ -55,6 +56,11 @@ export interface IPlaytestObservations {
   console: Array<{ source?: "browser-console" | "page-error" | "unhandled-rejection"; text: string; type: string }>;
   contacts?: unknown;
   debugColliderCount?: number;
+  /**
+   * Host-measured device lifecycle: the phases a `lifecycle` step drove and what the device said
+   * about the app at each one. Produced by the android target, never by the game.
+   */
+  deviceLifecycle?: IPlaytestDeviceLifecycleObservation;
   /** Host-measured device thermal, power and battery state; produced by the android target. */
   deviceMetrics?: IPlaytestDeviceMetricsObservation;
   effectLog?: unknown;

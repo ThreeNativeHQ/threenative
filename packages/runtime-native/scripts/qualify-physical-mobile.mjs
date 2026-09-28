@@ -18,7 +18,8 @@ import {
 
 const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workspaceRoot = resolve(runtimeRoot, "..", "..");
-const defaultScenario = joinPath(workspaceRoot, "examples/native-smoke/playtests/physical-mobile-lifecycle.playtest.json");
+const defaultProject = joinPath(workspaceRoot, "examples/native-smoke");
+const defaultScenario = joinPath(defaultProject, "playtests/physical-mobile-lifecycle.playtest.json");
 const commitPattern = /^[0-9a-f]{7,64}$/iu;
 const sha256Pattern = /^[0-9a-f]{64}$/u;
 const REQUIRED_PREREQUISITE_REPORT_CONTROLS = {
@@ -77,6 +78,12 @@ Required execution options:
   --candidate-sha SHA          exact source SHA for the candidate
   --out PATH                   ignored raw output directory
 
+Declared consumer subject (defaults to examples/native-smoke):
+  --project PATH               game project root; its app.id is the identity qualified
+  --scenario PATH              playtest scenario inside that project
+  --application-id ID          override the project's app.id
+  --activity CLASS             Android launch activity (default: com.threenative.runtime.MystralActivity)
+
 Prerequisite options:
   --prerequisite NAME=PATH     repeat for prd053, prd054, prd046, and prd048
   --prd053-report PATH         shorthand prerequisite report path
@@ -85,7 +92,7 @@ Prerequisite options:
   --prd048-report PATH         shorthand prerequisite report path
 
 Evidence and controls:
-  --validate-fixture PATH      validate one physicalDeviceEvidenceV1 document
+  --validate-fixture PATH      validate one physicalDeviceEvidenceV1 or V2 document
   --rollup PATH                require passing Android and iOS reports below PATH
   --artifact-provenance PATH   supplied artifact provenance sidecar
   --ios-telemetry PATH         signed iOS collector report from the app bridge (including processPid)
@@ -140,6 +147,10 @@ export function parseArgs(argv, cwd = process.cwd()) {
     app: null,
     candidateSha: null,
     out: resolvePath(".runtime/prd056/run", cwd),
+    project: defaultProject,
+    scenario: defaultScenario,
+    applicationId: null,
+    activity: null,
     durationMs: 30_000,
     cadenceMs: 1_000,
     prerequisiteReports: {},
@@ -182,6 +193,18 @@ export function parseArgs(argv, cwd = process.cwd()) {
       index += 1;
     } else if (arg === "--out") {
       options.out = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--project") {
+      options.project = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--scenario") {
+      options.scenario = resolvePath(requireValue(argv, index, arg), cwd);
+      index += 1;
+    } else if (arg === "--application-id") {
+      options.applicationId = requireValue(argv, index, arg);
+      index += 1;
+    } else if (arg === "--activity") {
+      options.activity = requireValue(argv, index, arg);
       index += 1;
     } else if (arg === "--duration-ms" || arg === "--duration") {
       options.durationMs = positiveInteger(requireValue(argv, index, arg), arg);
@@ -444,24 +467,95 @@ function readPrerequisiteReports(options, { candidateSha, platform, deviceIdenti
   return { valid: errors.length === 0, errors, records };
 }
 
+/**
+ * The application this qualification drives, and the activity it launches.
+ *
+ * A consumer's `app.id` in `threenative.config.ts` is what `package-android.mjs` writes into the
+ * gradle template, so the runtime's own `applicationId` only survives in a project that declares
+ * none. Both this orchestrator and the playtest CLI it invokes used to name a package instead of
+ * reading one — a package the consumer never installed, which renders a plausible scene at a
+ * plausible frame rate and answers a question nobody asked. Resolve the identity once, from the
+ * declared project, and use it for the launch, the telemetry, the runner and the device readback.
+ */
+const DEFAULT_ANDROID_APPLICATION_ID = "com.threenative.game";
+const ANDROID_LAUNCH_ACTIVITY_CLASS = "com.threenative.runtime.MystralActivity";
+
+export function declaredApplicationId(project) {
+  const config = joinPath(project, "threenative.config.ts");
+  if (!existsSync(config)) return null;
+  const match = /id\s*:\s*["'`]([^"'`]+)["'`]/u.exec(readFileSync(config, "utf8"));
+  return match === null || match[1].includes("__") ? null : match[1];
+}
+
+function readScenarioName(scenario) {
+  if (!existsSync(scenario)) return null;
+  try {
+    const name = JSON.parse(readFileSync(scenario, "utf8")).name;
+    return typeof name === "string" && name.length > 0 ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+export function subjectIdentity(options) {
+  const project = options.project ?? defaultProject;
+  const scenario = options.scenario ?? defaultScenario;
+  const configuredApplicationId = declaredApplicationId(project);
+  return {
+    project,
+    scenario,
+    configuredApplicationId,
+    scenarioName: readScenarioName(scenario),
+    applicationId: options.applicationId ?? configuredApplicationId ?? DEFAULT_ANDROID_APPLICATION_ID,
+    activity: options.activity ?? ANDROID_LAUNCH_ACTIVITY_CLASS,
+  };
+}
+
+/**
+ * What the declared subject must satisfy before a device is touched.
+ *
+ * The project and scenario checks are common: either platform drives a scenario out of the project
+ * it was handed, and a run that drove some other one answered a question nobody asked.
+ *
+ * The package-id checks are Android's, and only Android's. This orchestrator resolves an Android
+ * `applicationId` because that is what it launches, `pidof`s and reads `gfxinfo`/`meminfo` for. An
+ * iOS artifact carries a *bundle* identifier read from `codesign`, and the iOS lane launches through
+ * `--app` and never names a package at all, so holding a bundle id to an Android package rule would
+ * block a run on a field it does not read. iOS identity stays where it was: the signed artifact's own.
+ */
+function subjectBlockers(options, subject, artifact) {
+  const blockers = [];
+  if (!existsSync(subject.project)) blockers.push(`declared project is missing at ${subject.project}`);
+  if (subject.scenarioName === null) blockers.push(`declared scenario is missing or names no scenario at ${subject.scenario}`);
+  else if (relative(subject.project, subject.scenario).startsWith("..")) blockers.push(`declared scenario ${subject.scenario} is outside the declared project ${subject.project}`);
+  if (options.platform !== "android") return blockers;
+  if (!/^[A-Za-z0-9_.-]+$/u.test(subject.applicationId)) blockers.push(`declared application id '${subject.applicationId}' is not a safe package name`);
+  if (options.applicationId !== null && options.applicationId !== undefined && subject.configuredApplicationId !== null && options.applicationId !== subject.configuredApplicationId) blockers.push(`--application-id ${options.applicationId} does not match the declared project's app.id ${subject.configuredApplicationId}`);
+  if (artifact !== undefined && artifact !== null && artifact.applicationId !== undefined && artifact.applicationId !== subject.applicationId) blockers.push(`supplied artifact applicationId ${artifact.applicationId} does not match the declared project ${subject.applicationId}`);
+  return blockers;
+}
+
 export function preflight(options, {
   cwd = workspaceRoot,
   source = undefined,
   artifactSha256 = undefined,
   artifactSourceSha = undefined,
+  artifact = undefined,
 } = {}) {
   const blockers = [];
   const platform = options.platform;
   const identity = classifyPhysicalDevice(platform, options.device);
+  const subject = subjectIdentity(options);
   if (platform === null) blockers.push("--platform android|ios is required");
   if (identity.kind === "missing") blockers.push(`${platform ?? "physical"} device identifier is required`);
   if (identity.kind === "emulator" || identity.kind === "simulator") blockers.push(`${identity.code}: ${options.device} is not a physical device`);
   if (options.app === null) blockers.push(`${appFlag(platform ?? "android")} signed artifact path is required`);
   if (options.candidateSha === null) blockers.push("--candidate-sha is required");
   blockers.push(...missingPrerequisiteBlockers(options));
+  blockers.push(...subjectBlockers(options, subject, artifact));
   if (!options.out.includes(".runtime/prd056/") && !options.out.endsWith(".runtime/prd056")) blockers.push("raw output must be ignored under .runtime/prd056/");
-  if (identity.kind === "emulator" || identity.kind === "simulator") return { status: "blocked", code: identity.code, blockers, source: null };
-  if (blockers.length > 0 && options.candidateSha === null) return { status: "blocked", code: "TN_QUALIFY_INPUT_REQUIRED", blockers, source: null };
+  if (identity.kind === "emulator" || identity.kind === "simulator") return { status: "blocked", code: identity.code, blockers, source: null, subject };
+  if (blockers.length > 0 && options.candidateSha === null) return { status: "blocked", code: "TN_QUALIFY_INPUT_REQUIRED", blockers, source: null, subject };
   const resolvedSource = source ?? sourceIdentity(cwd);
   if (resolvedSource.headSha !== options.candidateSha) blockers.push(`candidate SHA mismatch: requested ${options.candidateSha}, checkout HEAD ${resolvedSource.headSha}`);
   if (resolvedSource.worktree !== "clean") blockers.push("source worktree is dirty; physical evidence requires committed HEAD");
@@ -481,6 +575,7 @@ export function preflight(options, {
     code: blockers.length === 0 ? "TN_QUALIFY_PREFLIGHT_PASS" : "TN_QUALIFY_PREFLIGHT_BLOCKED",
     blockers,
     source: resolvedSource,
+    subject,
     artifactSha256,
     prerequisites: prerequisiteResult.records,
   };
@@ -692,22 +787,26 @@ function installAndroid(adb, serial, app, options = {}) {
 }
 
 /**
- * The application this qualification drives, and the activity it launches.
+ * The APK that is on the device, not the one handed to `adb install`.
  *
- * Both carried the pre-rename Mystral identity when this orchestrator was written. The Android
- * identity was renamed while the orchestrator sat on an unlanded branch, so it would have launched a
- * package that no longer exists and then read `gfxinfo` and `meminfo` for it — collecting empty
- * telemetry from a process that never started. `android/app/build.gradle.kts` and
- * `AndroidManifest.xml` are the source of truth; keep this in step with them.
+ * A phone that has been used for this work carries several ThreeNative installs, and a stale
+ * install of the same id is worse: it launches, renders and reports telemetry without ever being
+ * the artifact whose signature and provenance were just verified.
  */
-const ANDROID_APPLICATION_ID = "com.threenative.game";
-const ANDROID_LAUNCH_ACTIVITY = `${ANDROID_APPLICATION_ID}/com.threenative.runtime.MystralActivity`;
+function assertInstalledAndroidArtifact(adb, serial, applicationId, artifactSha256, run) {
+  const located = run(adb, ["-s", serial, "shell", "pm", "path", applicationId]);
+  const installed = located.status === 0 ? /^package:(\/\S+\.apk)$/u.exec(located.stdout.trim()) : null;
+  if (installed === null) throw new QualificationError(`No installed APK for '${applicationId}' on ${serial}.`, { code: "TN_QUALIFY_ANDROID_INSTALL_BLOCKED" });
+  const digest = run(adb, ["-s", serial, "shell", "sha256sum", installed[1]]).stdout.trim().split(/\s+/u)[0];
+  if (digest !== artifactSha256) throw new QualificationError(`Installed '${applicationId}' is ${digest}, not the supplied artifact ${artifactSha256}.`, { code: "TN_QUALIFY_ARTIFACT_PROVENANCE_MISMATCH" });
+  return installed[1];
+}
 
-function launchAndroid(adb, serial, options = {}) {
+function launchAndroid(adb, serial, subject, options = {}) {
   const run = options.command ?? command;
-  const result = run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", ANDROID_LAUNCH_ACTIVITY], { timeout: 30_000 });
+  const result = run(adb, ["-s", serial, "shell", "am", "start", "-W", "-n", `${subject.applicationId}/${subject.activity}`], { timeout: 30_000 });
   if (result.status !== 0) throw new QualificationError(`Android launch failed: ${result.stderr || result.stdout}`, { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
-  const pid = run(adb, ["-s", serial, "shell", "pidof", ANDROID_APPLICATION_ID]);
+  const pid = run(adb, ["-s", serial, "shell", "pidof", subject.applicationId]);
   const value = Number(pid.stdout.trim().split(/\s+/u)[0]);
   if (!Number.isInteger(value) || value <= 0) throw new QualificationError("Android launch did not report a live process id.", { code: "TN_QUALIFY_ANDROID_LAUNCH_FAILED", status: "fail" });
   return value;
@@ -753,16 +852,17 @@ export function parsePlaytestReport(stdout) {
   return reports.at(-1) ?? null;
 }
 
-function runLifecycleScenario(options, { target, device, adb, app }, dependencies = {}) {
+function runLifecycleScenario(options, { target, device, adb, app, subject }, dependencies = {}) {
   const cli = joinPath(workspaceRoot, "packages/playtest/dist/runner/cli.js");
   if (!existsSync(cli)) throw new QualificationError("Playtest CLI is missing; run pnpm --filter @threenative/playtest build.", { code: "TN_QUALIFY_TOOL_REQUIRED" });
-  const args = [cli, defaultScenario, "--target", target, "--device", device, "--project", joinPath(workspaceRoot, "examples/native-smoke"), "--artifacts", joinPath(options.out, "playtest"), "--timeout", String(Math.max(options.durationMs, 60_000))];
-  if (target === "android") args.push("--adb", adb);
+  const args = [cli, subject.scenario, "--target", target, "--device", device, "--project", subject.project, "--artifacts", joinPath(options.out, "playtest"), "--timeout", String(Math.max(options.durationMs, 60_000))];
+  if (target === "android") args.push("--adb", adb, "--package", subject.applicationId, "--activity", subject.activity);
   else args.push("--ios-transport", "device", "--app", app);
   const startedAt = new Date((dependencies.now ?? Date.now)()).toISOString();
   const result = (dependencies.command ?? command)(process.execPath, args, { cwd: workspaceRoot, timeout: Math.max(options.durationMs + 30_000, 90_000) });
   const report = parsePlaytestReport(result.stdout);
   if (result.status !== 0 || report?.pass !== true) throw new QualificationError(`Physical lifecycle scenario failed: ${report?.diagnostics?.map((item) => item.message).join("; ") || result.stderr || "assertion failure"}`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (report.scenario !== subject.scenarioName) throw new QualificationError(`The device ran scenario '${report.scenario}', not the declared '${subject.scenarioName}' from ${subject.scenario}.`, { code: "TN_QUALIFY_SCENARIO_MISMATCH", status: "fail" });
   const reportPath = joinPath(options.out, "playtest/report.json");
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
@@ -819,6 +919,7 @@ function parseGfxinfoFrameIntervals(stdout) {
 function collectSampledAndroidValue({
   adb,
   serial,
+  applicationId,
   durationMs,
   cadenceMs,
   commandRunner,
@@ -836,12 +937,12 @@ function collectSampledAndroidValue({
     const delay = target - now();
     if (delay > 0) sleep(delay);
     const at = new Date(now()).toISOString();
-    const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", ANDROID_APPLICATION_ID, "framestats"]);
+    const frame = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "gfxinfo", applicationId, "framestats"]);
     const frameIntervals = frame.status === 0 ? parseGfxinfoFrameIntervals(frame.stdout) : [];
     if (frameIntervals.length === 0) errors.frame.push(frame.stderr || `no frame intervals at ${at}`);
     else for (const value of frameIntervals) frameSamples.push({ at, value });
 
-    const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", ANDROID_APPLICATION_ID]);
+    const memory = commandRunner(adb, ["-s", serial, "shell", "dumpsys", "meminfo", applicationId]);
     const memoryKb = /TOTAL\s+(\d+)/iu.exec(memory.stdout)?.[1];
     if (memory.status !== 0 || memoryKb === undefined) errors.memory.push(memory.stderr || `TOTAL row unavailable at ${at}`);
     else memorySamples.push({ at, value: Number(memoryKb) * 1024 });
@@ -857,17 +958,18 @@ function collectSampledAndroidValue({
     else batterySamples.push({ at, value: Number(batteryPercent) });
   }
   return {
-    frame: errors.frame.length === 0 ? availableCollector(`adb shell dumpsys gfxinfo ${ANDROID_APPLICATION_ID} framestats`, "ms", frameSamples) : unavailableCollector(`adb shell dumpsys gfxinfo ${ANDROID_APPLICATION_ID} framestats`, "ms", errors.frame.join("; ")),
-    memory: errors.memory.length === 0 ? availableCollector(`adb shell dumpsys meminfo ${ANDROID_APPLICATION_ID}`, "bytes", memorySamples) : unavailableCollector(`adb shell dumpsys meminfo ${ANDROID_APPLICATION_ID}`, "bytes", errors.memory.join("; ")),
+    frame: errors.frame.length === 0 ? availableCollector(`adb shell dumpsys gfxinfo ${applicationId} framestats`, "ms", frameSamples) : unavailableCollector(`adb shell dumpsys gfxinfo ${applicationId} framestats`, "ms", errors.frame.join("; ")),
+    memory: errors.memory.length === 0 ? availableCollector(`adb shell dumpsys meminfo ${applicationId}`, "bytes", memorySamples) : unavailableCollector(`adb shell dumpsys meminfo ${applicationId}`, "bytes", errors.memory.join("; ")),
     thermal: errors.thermal.length === 0 ? availableCollector("adb shell dumpsys thermalservice", "state", thermalSamples) : unavailableCollector("adb shell dumpsys thermalservice", "state", errors.thermal.join("; ")),
     battery: errors.battery.length === 0 ? availableCollector("adb shell dumpsys battery", "percent", batterySamples) : unavailableCollector("adb shell dumpsys battery", "percent", errors.battery.join("; ")),
   };
 }
 
-export function collectAndroidTelemetry(adb, serial, durationMs, cadenceMs, dependencies = {}) {
+export function collectAndroidTelemetry(adb, serial, durationMs, cadenceMs, dependencies = {}, applicationId = DEFAULT_ANDROID_APPLICATION_ID) {
   const telemetry = collectSampledAndroidValue({
     adb,
     serial,
+    applicationId,
     durationMs,
     cadenceMs,
     commandRunner: dependencies.command ?? command,
@@ -950,25 +1052,108 @@ function countScenarioErrors(playtest) {
   return errors.filter((item) => item?.severity === "error" || /GPU|WebGPU|validation/iu.test(JSON.stringify(item))).length;
 }
 
-export function evaluateLifecycleObservation(after, before = undefined) {
+/**
+ * The operations this claim rests on, in the order it reads them: the app went away, came back,
+ * and turned. Any phase after the rotation is a resume, so the report may carry more of them.
+ */
+const LIFECYCLE_OPERATIONS = ["background", "foreground", "rotate"];
+
+/** The device has to have turned, not merely been asked to. */
+function rotationErrors(phase, previous, label) {
+  if (phase.windowRotation !== phase.requestedRotation) return [`${label}.windowRotation is ${String(phase.windowRotation)}, not the requested rotation ${String(phase.requestedRotation)}`];
+  if (phase.windowRotation === previous?.windowRotation) return [`${label}.windowRotation is still ${String(phase.windowRotation)}, so the device never turned`];
+  return [];
+}
+
+/** What one phase's own reading has to carry: a time, a frame count, the session, and its focus. */
+function phaseReadingErrors(phase, previous, pid, label) {
   const errors = [];
-  if (!isRecord(after)) return { valid: false, errors: ["scenario after observation is missing"] };
-  const phases = ["background", "foreground", "supported-rotation", "resume"];
-  if (!Array.isArray(after.lifecycleEvents) || after.lifecycleEvents.length !== phases.length) errors.push("scenario lifecycleEvents must contain four observed events");
+  if (!Number.isFinite(phase.at) || phase.at < 0) errors.push(`${label}.at is missing or non-finite`);
+  if (!Number.isInteger(phase.frames) || phase.frames < 0) errors.push(`${label}.frames is not a whole device frame count`);
+  if (phase.pid !== pid) errors.push(`${label}.pid is ${String(phase.pid)}, not the session process ${String(pid)}`);
+  if (phase.focused !== (phase.phase !== "background")) errors.push(`${label}.focused is ${String(phase.focused)}; the device should report ${String(phase.phase !== "background")} here`);
+  if (Number.isFinite(phase.at) && Number.isFinite(previous?.at) && phase.at <= previous.at) errors.push(`${label}.at is ${String(phase.at)}, not after the previous phase's ${String(previous.at)}`);
+  if (Number.isInteger(phase.frames) && Number.isInteger(previous?.frames) && phase.frames < previous.frames) errors.push(`${label}.frames is ${String(phase.frames)}, below the previous phase's ${String(previous.frames)}; a device frame count does not run backwards`);
+  return errors;
+}
+
+/** The phases themselves: one process throughout, unfocused only while away, and a real turn. */
+function lifecyclePhaseErrors(phases, pid) {
+  const errors = [];
+  phases.forEach((phase, index) => {
+    const operation = LIFECYCLE_OPERATIONS[index] ?? "foreground";
+    const label = `observations.deviceLifecycle.phases[${index}]`;
+    if (!isRecord(phase) || phase.phase !== operation) {
+      errors.push(`${label} is not the ${operation} operation this claim needs`);
+      return;
+    }
+    errors.push(...phaseReadingErrors(phase, phases[index - 1], pid, label));
+    if (operation === "rotate") errors.push(...rotationErrors(phase, phases[index - 1], label));
+  });
+  return errors;
+}
+
+/** What the phases' own counts show: nothing drawn while away, and movement again after the return. */
+function renderClaimsFromPhases(phases) {
+  const [background, resumed] = [phases[0], phases.at(-1)];
+  if (![background, resumed].every((phase) => isRecord(phase) && Number.isInteger(phase.frames))) return {};
+  const advanced = resumed.frames > background.frames;
+  return {
+    advanced,
+    errors: [
+      ...(background.framesPaused === true ? [] : [`observations.deviceLifecycle.phases[0].framesPaused is ${String(background.framesPaused)}; the backgrounded reading itself has to show the frame counter stopping`]),
+      ...(advanced ? [] : [`observations.deviceLifecycle.phases: the resumed frame count ${String(resumed.frames)} did not advance past the backgrounded ${String(background.frames)}`]),
+    ],
+    paused: background.framesPaused,
+  };
+}
+
+/** The summary the phases must agree with: the surface stopped while away, and both counters moved after. */
+function lifecycleContinuityErrors(observation, phases) {
+  const { errors: renderErrors, paused, advanced } = renderClaimsFromPhases(phases);
+  const errors = [...renderErrors];
+  const render = isRecord(observation.render) ? observation.render : undefined;
+  if (render === undefined) errors.push("observations.deviceLifecycle.render is missing");
   else {
-    after.lifecycleEvents.forEach((event, index) => {
-      if (!isRecord(event) || event.phase !== phases[index]) errors.push(`scenario lifecycleEvents[${index}] is not the expected ${phases[index]} observation`);
-    });
+    if (render.framesPaused !== true) errors.push("observations.deviceLifecycle.render.framesPaused is not true; the device's frame counter did not stop while the app was unfocused");
+    if (render.framesAdvanced !== true) errors.push("observations.deviceLifecycle.render.framesAdvanced is not true");
+    if (paused !== undefined && render.framesPaused !== paused) errors.push(`observations.deviceLifecycle.render.framesPaused is ${String(render.framesPaused)}, but phases[0].framesPaused is ${String(paused)}`);
+    if (advanced !== undefined && render.framesAdvanced !== advanced) errors.push(`observations.deviceLifecycle.render.framesAdvanced is ${String(render.framesAdvanced)}, but the phases' own counts ${advanced ? "advance" : "do not advance"} past the backgrounded frame count`);
   }
-  if (typeof after.sessionNonce !== "string" || after.sessionNonce.length === 0) errors.push("scenario sessionNonce is missing");
-  if (before?.sessionNonce !== undefined && before.sessionNonce !== after.sessionNonce) errors.push("scenario sessionNonce changed across lifecycle");
-  if (after.stateContinuity !== true) errors.push("scenario stateContinuity is not true");
-  if (after.framesPaused !== true) errors.push("scenario did not observe paused frames");
-  if (after.framesAdvanced !== true) errors.push("scenario did not observe advanced frames after resume");
-  if (after.surfaceValidAfterResume !== true) errors.push("scenario did not observe a valid surface after resume");
-  if (after.backgroundGapIntegrated !== false) errors.push("scenario integrated the background wall-clock gap");
-  if (!Number.isFinite(after.maxFrameIntervalMs) || after.maxFrameIntervalMs < 0) errors.push("scenario maxFrameIntervalMs is missing or non-finite");
-  if (!Number.isFinite(after.physicsStepDelta) || after.physicsStepDelta < 0) errors.push("scenario physicsStepDelta is missing or non-finite");
+  const physics = observation.physics;
+  const label = "observations.deviceLifecycle.physics";
+  if (!isRecord(physics)) return [...errors, `${label} is missing`];
+  if (physics.available !== true) return [...errors, `${label} is unavailable: ${String(physics.reason ?? "it reported no reason")}`];
+  const steps = isRecord(physics.steps) ? physics.steps : {};
+  const [before, back, afterAdvance] = [steps.beforeBackground, steps.afterForeground, steps.afterAdvance];
+  if (![before, back, afterAdvance].every((value) => Number.isInteger(value) && value >= 0)) errors.push(`${label}.steps must carry three whole counts (beforeBackground, afterForeground, afterAdvance)`);
+  else {
+    if (back !== before) errors.push(`${label}: the simulation stepped from ${String(before)} to ${String(back)} while the app was away`);
+    if (afterAdvance <= back) errors.push(`${label}: the simulation did not advance after the resume (${String(back)} to ${String(afterAdvance)})`);
+    if (physics.stepsPaused !== (back === before)) errors.push(`${label}.stepsPaused is ${String(physics.stepsPaused)}, but the step counts around the away period are ${String(before)} and ${String(back)}`);
+    if (physics.stepsAdvanced !== (afterAdvance > back)) errors.push(`${label}.stepsAdvanced is ${String(physics.stepsAdvanced)}, but the step counts after the return are ${String(back)} and ${String(afterAdvance)}`);
+  }
+  if (physics.stepsPaused !== true) errors.push(`${label}.stepsPaused is not true`);
+  if (physics.stepsAdvanced !== true) errors.push(`${label}.stepsAdvanced is not true`);
+  return errors;
+}
+
+/**
+ * Certify the lifecycle from the runner's own device observation, never from the game's.
+ *
+ * Every value here was read off the phone, so a `GameState` resource — the game's own account of
+ * whether it went away and came back — certifies nothing and is not read. The summary booleans the
+ * producer reported are re-derived from the phases' own counts, and may not contradict them.
+ */
+export function evaluateLifecycleObservation(observation) {
+  if (!isRecord(observation)) return { valid: false, errors: ["observations.deviceLifecycle is missing; the run reported no device-observed lifecycle"] };
+  const errors = [];
+  const phases = Array.isArray(observation.phases) ? observation.phases : [];
+  if (!Array.isArray(observation.phases)) errors.push("observations.deviceLifecycle.phases is missing");
+  const pid = isRecord(observation.session) ? observation.session.pid : undefined;
+  if (!Number.isInteger(pid) || pid <= 0) errors.push("observations.deviceLifecycle.session.pid is missing or is not a live process id");
+  if (phases.length < LIFECYCLE_OPERATIONS.length) errors.push(`observations.deviceLifecycle.phases reported ${phases.length} operations; this claim needs at least ${LIFECYCLE_OPERATIONS.join(", then ")}`);
+  errors.push(...lifecyclePhaseErrors(phases, pid), ...lifecycleContinuityErrors(observation, phases));
   return { valid: errors.length === 0, errors };
 }
 
@@ -980,6 +1165,41 @@ function actualArtifactRecord(path, producerCommand, retention = "ignored-raw") 
     size: statSync(path).size,
     producerCommand,
     retention,
+  };
+}
+
+/**
+ * The v2 evidence document's lifecycle block: exactly what the device reported, in the order it
+ * read it.
+ *
+ * Each row is one operation the phone observed, timed as an offset from the run's own clock, and
+ * carries that reading's own frame count, focus, pid and — on the rotation — the window state the
+ * turn produced. The three step counts bracket the away period rather than being attributed to a
+ * phase, because none of them was read during one. So the v1 booleans (`sameSession`,
+ * `surfaceValidAfterResume`, `stateContinuity`, `backgroundGapIntegrated`, and `physicsStepDelta`,
+ * which is a count, not a delta) have no measured field behind them and are not restated: the v2
+ * validator re-derives each claim from these numbers and refuses a document that denies them.
+ */
+function observedLifecycle(observation) {
+  return {
+    clock: "run-relative-ms",
+    operations: observation.phases.map((phase) => ({
+      operation: phase.phase,
+      offsetMs: phase.at,
+      frames: phase.frames,
+      focused: phase.focused,
+      pid: phase.pid,
+      ...(phase.framesPaused === undefined ? {} : { framesPaused: phase.framesPaused }),
+      ...(phase.windowRotation === undefined ? {} : { windowRotation: phase.windowRotation }),
+      ...(phase.requestedRotation === undefined ? {} : { requestedRotation: phase.requestedRotation }),
+    })),
+    framesPaused: observation.render.framesPaused,
+    framesAdvanced: observation.render.framesAdvanced,
+    physics: {
+      steps: { ...observation.physics.steps },
+      stepsPaused: observation.physics.stepsPaused,
+      stepsAdvanced: observation.physics.stepsAdvanced,
+    },
   };
 }
 
@@ -999,13 +1219,16 @@ export function buildProductionEvidence({
   gateEvidence,
 }) {
   const playtest = playtestRun?.report ?? playtestRun;
-  const after = playtest?.observations?.resources?.GameState?.after;
-  const before = playtest?.observations?.resources?.GameState?.before;
-  const lifecycle = evaluateLifecycleObservation(after, before);
+  // A game-authored `observations.resources.GameState` restates the scenario's own account of
+  // itself, so it is not read: phases, focus, rotation and frames all came off the device.
+  const observation = playtest?.observations?.deviceLifecycle;
+  const lifecycle = evaluateLifecycleObservation(observation);
   if (!lifecycle.valid) throw new QualificationError(lifecycle.errors.join("; "), { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  const frames = observation.phases.at(-1).frames;
   if (!Array.isArray(playtest.assertionResults) || playtest.assertionResults.length === 0) throw new QualificationError("Physical lifecycle scenario produced no assertions.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
-  if (!Number.isInteger(after.frames) || after.frames < 300) throw new QualificationError("Physical lifecycle scenario did not observe 300 frames.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (frames < 300) throw new QualificationError(`Physical lifecycle scenario did not observe 300 frames; the device counted ${frames}.`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (!Number.isInteger(pid) || pid <= 0) throw new QualificationError("Physical lifecycle scenario did not provide the app process id.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (observation.session.pid !== pid) throw new QualificationError(`The device reported process ${observation.session.pid} across the lifecycle, not the launched process ${pid}.`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (processLiveness !== true) throw new QualificationError("Physical lifecycle scenario did not observe a live app process.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (!isRecord(artifact) || artifact.sourceSha !== source.headSha || artifact.artifactSha256 === undefined) throw new QualificationError("Supplied artifact provenance is absent or does not match source HEAD.", { code: "TN_QUALIFY_ARTIFACT_PROVENANCE_MISMATCH" });
   if (!isRecord(device) || device.nativeGpu !== true) throw new QualificationError("Physical device observation did not prove a native GPU.", { code: "TN_QUALIFY_NATIVE_GPU_REQUIRED" });
@@ -1015,7 +1238,7 @@ export function buildProductionEvidence({
   const { nativeGpu, ...publicDevice } = device;
   const candidateSha = source.headSha;
   const evidence = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     identity: {
       schemaVersion: 1,
       runId: `prd056-${platform}-${timestamps.startedAt}`,
@@ -1052,12 +1275,13 @@ export function buildProductionEvidence({
     execution: {
       installStartedAt: timestamps.installStartedAt,
       launchStartedAt: timestamps.launchStartedAt,
+      // The scenario's own start and end are not a ready time, a first frame or a 300th frame, so
+      // the run reports them as unmeasured rather than copying its own clock into all three.
+      readyAt: null,
+      firstFrameAt: null,
+      frame300At: null,
       pid,
-      sessionNonce: after.sessionNonce,
-      readyAt: timestamps.readyAt,
-      firstFrameAt: timestamps.firstFrameAt,
-      frame300At: timestamps.frame300At,
-      frames: after.frames,
+      frames,
       nonBlankCaptureSha256: artifactPaths.find((item) => item.capture === true)?.sha256 ?? "",
       gpuErrorCount: countScenarioErrors(playtest),
       arm64: /^(?:arm64-v8a|arm64|aarch64)$/iu.test(publicDevice.cpuAbi),
@@ -1065,17 +1289,7 @@ export function buildProductionEvidence({
       processLiveness,
       assertionCount: playtest.assertionResults.length,
     },
-    lifecycle: {
-      events: after.lifecycleEvents.map((event) => ({ ...event, pid, sessionNonce: after.sessionNonce })),
-      sameSession: before?.sessionNonce === after.sessionNonce,
-      framesPaused: after.framesPaused,
-      framesAdvanced: after.framesAdvanced,
-      maxFrameIntervalMs: after.maxFrameIntervalMs,
-      surfaceValidAfterResume: after.surfaceValidAfterResume,
-      stateContinuity: after.stateContinuity,
-      physicsStepDelta: after.physicsStepDelta,
-      backgroundGapIntegrated: after.backgroundGapIntegrated,
-    },
+    lifecycle: observedLifecycle(observation),
     consumption: productionConsumption(preflightResult, candidateSha),
     telemetry,
     artifacts: artifactPaths.map(({ capture: _capture, ...record }) => record),
@@ -1122,13 +1336,15 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
   if (adb === null) throw new QualificationError("adb is unavailable; physical Android qualification is blocked.", { code: "TN_QUALIFY_TOOL_REQUIRED" });
   const run = dependencies.command ?? command;
   const now = dependencies.now ?? Date.now;
+  const subject = preflightResult.subject;
   const device = inspectAndroidDevice(adb, options.device, { command: run });
   const installStartedAt = new Date(now()).toISOString();
   installAndroid(adb, options.device, options.app, { command: run });
+  assertInstalledAndroidArtifact(adb, options.device, subject.applicationId, artifact.artifactSha256, run);
   const launchStartedAt = new Date(now()).toISOString();
-  const pid = launchAndroid(adb, options.device, { command: run });
-  const lifecycleRun = runLifecycleScenario(options, { target: "android", device: options.device, adb, app: options.app }, { command: run, now });
-  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, { command: run, now, sleep: dependencies.sleep });
+  const pid = launchAndroid(adb, options.device, subject, { command: run });
+  const lifecycleRun = runLifecycleScenario(options, { target: "android", device: options.device, adb, app: options.app, subject }, { command: run, now });
+  const telemetry = collectAndroidTelemetry(adb, options.device, options.durationMs, options.cadenceMs, { command: run, now, sleep: dependencies.sleep }, subject.applicationId);
   const telemetryErrors = telemetryFailure(telemetry);
   if (telemetryErrors.length > 0) throw new QualificationError(`Android telemetry is incomplete: ${telemetryErrors.join("; ")}`, { code: "TN_QUALIFY_TELEMETRY_INCOMPLETE", details: telemetryErrors });
   const artifactObservationPath = writeArtifactObservation(options, artifact);
@@ -1150,13 +1366,13 @@ function runAndroidQualification(options, preflightResult, artifact, dependencie
     telemetry,
     pid,
     processLiveness: lifecycleRun.report.pass === true,
-    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt, readyAt: lifecycleRun.startedAt, firstFrameAt: lifecycleRun.startedAt, frame300At: lifecycleRun.completedAt },
+    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt },
     artifactPaths,
     gateEvidence: readGateEvidence(options.gateEvidence),
   });
   const reportPath = joinPath(options.out, "physical-device-evidence.json");
   writeFileSync(reportPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath });
+  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath, subject });
 }
 
 function verifyIosArtifact(path, candidateSha, options = {}) {
@@ -1215,7 +1431,7 @@ function runIosQualification(options, preflightResult, artifact, dependencies = 
   const now = dependencies.now ?? Date.now;
   const device = inspectIosDevice(options.device, { command: run, findExecutable: locate });
   const installStartedAt = new Date(now()).toISOString();
-  const lifecycleRun = runLifecycleScenario(options, { target: "ios", device: options.device, app: options.app }, { command: run, now });
+  const lifecycleRun = runLifecycleScenario(options, { target: "ios", device: options.device, app: options.app, subject: preflightResult.subject }, { command: run, now });
   const collectedTelemetry = collectIosTelemetry({ path: options.iosTelemetry, durationMs: options.durationMs, cadenceMs: options.cadenceMs });
   const telemetryErrors = telemetryFailure(collectedTelemetry);
   if (telemetryErrors.length > 0) throw new QualificationError(`iOS signed-device telemetry is incomplete: ${telemetryErrors.join("; ")}`, { code: "TN_QUALIFY_TELEMETRY_INCOMPLETE", details: telemetryErrors });
@@ -1242,13 +1458,13 @@ function runIosQualification(options, preflightResult, artifact, dependencies = 
     telemetry,
     pid,
     processLiveness: lifecycleRun.report.pass === true,
-    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt: lifecycleRun.startedAt, readyAt: lifecycleRun.startedAt, firstFrameAt: lifecycleRun.startedAt, frame300At: lifecycleRun.completedAt },
+    timestamps: { startedAt: installStartedAt, endedAt, installStartedAt, launchStartedAt: lifecycleRun.startedAt },
     artifactPaths,
     gateEvidence: readGateEvidence(options.gateEvidence),
   });
   const reportPath = joinPath(options.out, "physical-device-evidence.json");
   writeFileSync(reportPath, `${JSON.stringify(evidence, null, 2)}\n`);
-  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath });
+  return resultFor("pass", "TN_QUALIFY_PHYSICAL_PASS", { report: reportPath, subject: preflightResult.subject });
 }
 
 export function qualifyPhysicalMobile(options, dependencies = {}) {
@@ -1274,6 +1490,7 @@ export function qualifyPhysicalMobile(options, dependencies = {}) {
     source: dependencies.source,
     artifactSha256: artifact.artifactSha256,
     artifactSourceSha: artifact.sourceSha,
+    artifact,
   });
   if (preflightResult.status !== "pass") return resultFor("blocked", preflightResult.code, { blockers: preflightResult.blockers, source: preflightResult.source });
   try {
@@ -1312,7 +1529,7 @@ export function main(argv = process.argv.slice(2)) {
       return result.status === "pass" ? 0 : result.status === "fail" ? 1 : 2;
     }
     const result = qualifyPhysicalMobile(options);
-    if (result.status === "blocked" || result.status === "fail") writeResult(options.out, result);
+    writeResult(options.out, result);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return result.status === "pass" ? 0 : result.status === "fail" ? 1 : 2;
   } catch (error) {
