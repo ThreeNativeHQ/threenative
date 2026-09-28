@@ -1,6 +1,7 @@
 # PRD-463 — Native leg wall time
 
-Status: PARTIAL — phase 1 written, awaiting its first CI run.
+Status: PARTIAL — phase 1 in CI (dispatch run 36448456340 building and publishing V8); phase 2 fix
+proven locally, awaiting a CI run.
 
 ## Problem
 
@@ -30,14 +31,22 @@ With V8 off the critical path the next one is `Desktop web/native parity`: 46 of
 - [ ] A superseded PR run no longer saves 3 GB of V8 source state. proof: the action's save condition.
 - [ ] A cold V8 build uses every runner core (`THREENATIVE_V8_BUILD_JOBS=$(nproc)`, was 3). proof:
   the next cold build's duration against 2 h 1 min (run 36357493470).
-- [ ] Every executed conformance row logs its wall time. proof: `[conformance] <id> <status> <s>`
-  lines in the PR run's desktop parity log.
+- [x] Every executed conformance row logs its wall time. proof: `[conformance] <id> <status> <s>`
+  lines in the PR run's desktop parity log. — run 36448456340: 74 lines, every row 36–39 s,
+  total 2711 s.
 
 ### Phase 2 — Desktop parity off the critical path
 
-- [ ] Desktop parity ≤ 30 min on a full run. proof: the run's job timestamps. From the per-row
-  times, either run rows concurrently on one runner (if rows wait rather than compute) or shard
-  the job, keeping the `native-desktop-parity` artifact and report shape the release gates read.
+- [x] Conformance rows stop waiting out the native startup gate. proof: local desktop lane,
+  `--only-tests 01-basic-cube,82-fetch-local-asset`: 41.4/42.0 s before, 11.8/11.3 s after, both
+  pass; full lane after the fix 74 pass / 0 fail / 19 blocked (CI baseline 74/0/19), every
+  non-temporal row `TN_STARTUP_CAPTURE_READY:1`.
+- [ ] Desktop parity ≤ 30 min on a full run. proof: the run's job timestamps.
+
+Why not shards or concurrency: every row, trivial or not, took 36–39 s and logged `startup gate
+never opened within 30s`. Nothing in a conformance scene installs core's startup readiness, so
+`runScreenshotMode` waited its full 30 s budget per row after rendering at 60 fps. The entry now
+sets `__TN_STARTUP_READY__` once `startScene` resolves.
 
 ## Acceptance criteria
 
