@@ -27,7 +27,7 @@ add() { names+=("$1"); cmds+=("$2"); }
 add lint      'pnpm lint'
 add docs      'pnpm check:docs'
 add agents    'pnpm sync:agents --check'
-add drift     'pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/template.spec.ts packages/create-threenative/__tests__/playtest.spec.ts packages/create-threenative/__tests__/platformer.spec.ts scripts/__tests__/package-list-drift.spec.ts scripts/__tests__/xvfb.spec.ts scripts/__tests__/ci-structure.spec.ts'
+add drift     'pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/template.spec.ts packages/create-threenative/__tests__/playtest.spec.ts packages/create-threenative/__tests__/platformer.spec.ts scripts/__tests__/package-list-drift.spec.ts scripts/__tests__/api-surface.spec.ts scripts/__tests__/xvfb.spec.ts scripts/__tests__/ci-structure.spec.ts'
 
 status=0
 for index in "${!names[@]}"; do

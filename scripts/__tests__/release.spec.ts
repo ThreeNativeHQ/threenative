@@ -6,8 +6,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { type IPublishPackage, type RegistryLookup, publishSet } from "../check-publish-state.js";
 import {
+  UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  packedTarballName,
   prepareReleaseCohort,
+  proveUpgradeFromLatest,
   releaseOrder,
   unpublishedReleasePackages,
   validateReleaseCohort,
@@ -213,10 +216,40 @@ describe("pnpm release ordering", () => {
     const clean = source.indexOf("assertCleanPackageTree(REPO);", build);
     const preflight = source.indexOf("const postBuildReport", build);
     const cohort = source.indexOf("const publishPackages = unpublishedReleasePackages", preflight);
+    const upgrade = source.indexOf("proveUpgradeFromLatest(packages, tarballs)", cohort);
     expect(build).toBeGreaterThanOrEqual(0);
     expect(clean).toBeGreaterThan(build);
     expect(preflight).toBeGreaterThan(clean);
+    // The upgrade proof reads the previous `latest`, so it has to run before the first publish —
+    // afterwards there is no N-1 left on the registry to upgrade from. And it has to run after the
+    // unpublished check: a cohort whose versions npm already serves can resolve from the registry,
+    // and the proof would credit those bytes to the candidate.
     expect(cohort).toBeGreaterThan(preflight);
+    expect(upgrade).toBeGreaterThan(cohort);
+  });
+
+  it("upgrades the previous latest onto the packed candidate, on both named templates", async () => {
+    const packages = [candidate("@threenative/core", "0.3.3")];
+    const tarballs = { "@threenative/core": "/cohort/threenative-core-0.3.3.tgz" };
+    const seen: {
+      candidate?: { tarballs: typeof tarballs; versions: Map<string, string> };
+      template?: string;
+    }[] = [];
+    const reports = await proveUpgradeFromLatest(packages, tarballs, (options) => {
+      seen.push(options as never);
+      return Promise.resolve({ consumerTargets: [], exitCode: 0, managers: [], steps: [] });
+    });
+    expect(reports).toHaveLength(UPGRADE_PROOF_TEMPLATES.length);
+    expect(seen.map((call) => call.template)).toEqual([...UPGRADE_PROOF_TEMPLATES]);
+    for (const call of seen) {
+      expect(call.candidate?.tarballs).toBe(tarballs);
+      expect(call.candidate?.versions.get("@threenative/core")).toBe("0.3.3");
+    }
+  });
+
+  it("names the tarball `pnpm pack` will write, so the upgrade installs the candidate it packed", () => {
+    expect(packedTarballName("@threenative/core", "0.3.4")).toBe("threenative-core-0.3.4.tgz");
+    expect(packedTarballName("create-threenative", "0.2.7")).toBe("create-threenative-0.2.7.tgz");
   });
 
   it("rejects tracked package output before publication", async () => {

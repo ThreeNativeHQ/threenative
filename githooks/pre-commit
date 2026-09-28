@@ -17,10 +17,14 @@ fi
 
 echo "pre-commit: syncing engine capabilities"
 pnpm capabilities:sync
+# The public surface is written by the same trigger, and refuses to re-record while a removal is
+# unannounced — so the break fails here, naming the symbol, rather than reaching `develop`.
+pnpm api:surface:sync
 
 # Stage only deterministic capability artifacts. Never sweep unrelated work into the commit.
 git add -- \
   packages/create-threenative/capabilities.json \
   packages/core/capabilities.json \
   packages/create-threenative/agent-docs/references/capability-reference.md \
-  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md
+  packages/create-threenative/agent-files/.agents/skills/threenative-context/SKILL.md \
+  scripts/api-surface.json

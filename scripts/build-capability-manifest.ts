@@ -37,6 +37,7 @@ export interface ICapabilityManifestEntry {
   readonly overrides: readonly string[];
   readonly requires?: readonly string[];
   readonly supersedes: readonly string[];
+  readonly deprecated?: readonly string[];
 }
 
 export interface ICapabilityManifest {
@@ -60,6 +61,7 @@ interface IParsedDocumentation {
   readonly overrides: readonly string[];
   readonly requires: readonly string[];
   readonly supersedes: readonly string[];
+  readonly deprecated: readonly string[];
 }
 
 interface IRawExport {
@@ -77,6 +79,7 @@ interface ICapabilityCandidate extends IRawExport {
 const EMPTY_DOCUMENTATION: IParsedDocumentation = {
   aliases: [],
   constraints: [],
+  deprecated: [],
   example: "",
   overrides: [],
   requires: [],
@@ -226,12 +229,13 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   const overrides: string[] = [];
   const requires: string[] = [];
   const supersedes: string[] = [];
+  const deprecated: string[] = [];
   const exampleLines: string[] = [];
   const summaryLines: string[] = [];
   let inExample = false;
   for (const line of lines) {
     const tag =
-      /^@(situation|alias|constraint|example|override|requires|supersedes)\b(?:\s+(.*))?$/u.exec(
+      /^@(situation|alias|constraint|example|override|requires|supersedes|deprecatedOption)\b(?:\s+(.*))?$/u.exec(
         line,
       );
     if (tag !== null) {
@@ -243,6 +247,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
       if (tag[1] === "override" && value.length > 0) overrides.push(value);
       if (tag[1] === "requires" && value.length > 0) requires.push(value);
       if (tag[1] === "supersedes" && value.length > 0) supersedes.push(value);
+      if (tag[1] === "deprecatedOption" && value.length > 0) deprecated.push(value);
       if (tag[1] === "example" && value.length > 0) exampleLines.push(value);
       continue;
     }
@@ -259,6 +264,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   return {
     aliases: [...new Set(aliases)],
     constraints: [...new Set(constraints)],
+    deprecated: [...new Set(deprecated)],
     example,
     overrides: [...new Set(overrides)],
     requires: [...new Set(requires)],
@@ -275,6 +281,7 @@ function mergeDocumentation(
   return {
     aliases: [...new Set([...primary.aliases, ...fallback.aliases])],
     constraints: [...new Set([...primary.constraints, ...fallback.constraints])],
+    deprecated: [...new Set([...primary.deprecated, ...fallback.deprecated])],
     example: primary.example || fallback.example,
     overrides: [...new Set([...primary.overrides, ...fallback.overrides])],
     requires: [...new Set([...primary.requires, ...fallback.requires])],
@@ -658,6 +665,11 @@ export function buildCapabilityManifest(
     ...documentedCandidates.map((candidate) => ({
       aliases: candidate.documentation.aliases,
       constraints: candidate.documentation.constraints,
+      // Optional and omitted when untagged: a capability with nothing deprecated must not answer
+      // a detail lookup with a key, or every reader learns to check for an empty list.
+      ...(candidate.documentation.deprecated.length > 0
+        ? { deprecated: candidate.documentation.deprecated }
+        : {}),
       example: candidate.documentation.example,
       importPath: candidate.importPath,
       kind: candidate.kind,

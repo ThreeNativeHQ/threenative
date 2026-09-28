@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 import type { RegistryLookup } from "../check-publish-state.js";
-import { nextPatch, selectReleaseVersions } from "../prepare-release.js";
+import { assertOneZeroGatesClosed, nextPatch, selectReleaseVersions } from "../prepare-release.js";
 
 describe("release preparation", () => {
   it("increments only the patch component", () => {
@@ -48,5 +51,57 @@ describe("release preparation", () => {
         state: "unreachable",
       })),
     ).toThrow(/TN_RELEASE_REGISTRY_UNREACHABLE/u);
+  });
+});
+
+/**
+ * PRD-446: 1.0.0 is the version that promises a game on N keeps working on N+1, so the cohort may not
+ * claim it while the proof of that promise is open. The refusal is measured against the real PRD.
+ */
+describe("the 1.0.0 refusal", () => {
+  const gate = "docs/PRDs/done/PRD-446-stable-api-and-upgrade-contract.md";
+
+  it("accepts the real gate now that its last box is ticked, and still refuses one reopened", async () => {
+    // The shipped gate is the archived PRD-446. Its proof landed, so a 1.0.0 cohort may proceed…
+    expect(() => assertOneZeroGatesClosed()).not.toThrow();
+    // …and the refusal is still measured against that real file: one box reopened is refused by
+    // name, so the wiring cannot quietly point at a PRD that retired the promise.
+    const root = await makeTempDir("threenative-gates-open-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(
+      source,
+      fs
+        .readFileSync(path.resolve(import.meta.dirname, "../..", gate), "utf8")
+        .replace(/^- \[x\]/gmu, "- [ ]"),
+    );
+    expect(() => assertOneZeroGatesClosed(root, [gate])).toThrow(
+      new RegExp(`TN_RELEASE_1_0_0_GATES_OPEN[\\s\\S]*${gate.replaceAll(".", "\\.")}`, "u"),
+    );
+  });
+
+  it("accepts the same PRD once every phase and acceptance box is ticked", async () => {
+    const root = await makeTempDir("threenative-gates-closed-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    const markdown = fs
+      .readFileSync(path.resolve(import.meta.dirname, "../..", gate), "utf8")
+      .replace(/^- \[ \]/gmu, "- [x]");
+    fs.writeFileSync(source, markdown);
+    expect(() => assertOneZeroGatesClosed(root, [gate])).not.toThrow();
+  });
+
+  it("fails closed when the gate PRD has moved rather than retiring its promise", () => {
+    expect(() => assertOneZeroGatesClosed("/nowhere", [gate])).toThrow(
+      /TN_RELEASE_1_0_0_GATE_MISSING/u,
+    );
+  });
+
+  it("refuses a gate PRD with no phase boxes", async () => {
+    const root = await makeTempDir("threenative-gates-empty-");
+    const source = path.join(root, gate);
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(source, "# PRD-446\n\nNo phase boxes remain.\n");
+    expect(() => assertOneZeroGatesClosed(root, [gate])).toThrow(/TN_RELEASE_1_0_0_GATE_EMPTY/u);
   });
 });
