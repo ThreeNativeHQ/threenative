@@ -597,49 +597,97 @@ it("keeps the latest invalid or rejected iteration visible as the current experi
   }
 });
 
-/** A 4096-cube physical-display pilot as the real files record it: one rung, one repeat, the
- *  samples in the file, and the arm's own engine name. */
-function physicalAttempt(
+type TRenderMode = IRunReport["rungs"][number]["mode"];
+
+interface IScoreboardRung {
+  drawCalls: number;
+  mode: TRenderMode;
+  objectCount: number;
+  p50: number;
+  p95: number;
+}
+
+/** 100 frames: 94 at the run's p50 and 6 at its p95, so summarize() returns both exactly and a
+ *  fixture's p95 can disagree with its p50 — which is what the worst-case sub-line is for. */
+function frames(p50: number, p95: number): number[] {
+  return [...Array<number>(94).fill(p50), ...Array<number>(6).fill(p95)];
+}
+
+/** One retained run file, named the way the repeated experiment names it, carrying one rung per
+ *  row that run measured. A run that never wrote a rung simply has no such entry here. */
+function scoreboardRun(
   source: string,
   engine: "godot" | "threenative",
-  mode: string,
-  frameMs: number[],
-  counts: { draws: number; triangles: number; visible: number },
+  rungs: IScoreboardRung[],
 ): IAttempt {
   return {
     kind: "attempt" as const,
+    source,
+    status: "recorded",
+    time: "2026-09-27T23:00:00Z",
+    timeSource: "filesystem" as const,
     pilot: {
       arm: engine === "godot" ? "godot-desktop" : "tn-desktop",
       build: { type: "release", notes: "release export" },
       device: { battery: null, label: "desktop-native-linux" },
       display: { height: 720, width: 1280, refreshHz: 60, vsync: false },
-      driver: { adapter: "adapter", renderer: "renderer" },
+      driver: { adapter: "native host surface", renderer: "renderer" },
       engine: { name: engine, version: engine === "godot" ? "4.7.1-stable" : "workspace" },
-      rungs: [
-        {
-          mode: mode as IRunReport["rungs"][number]["mode"],
-          objectCount: 4096,
-          repeat: 0,
-          frameMs,
-          drawCalls: counts.draws,
-          triangles: counts.triangles,
-          visibleObjects: counts.visible,
-          positionHash: "e9a32f01",
-        },
-      ],
+      rungs: rungs.map((rung) => ({
+        drawCalls: rung.drawCalls,
+        frameMs: frames(rung.p50, rung.p95),
+        mode: rung.mode,
+        objectCount: rung.objectCount,
+        positionHash: "e9a32f01",
+        repeat: 0,
+        triangles: 49_155,
+        visibleObjects: rung.objectCount,
+      })),
     } as IRunReport,
-    source,
-    status: "recorded",
-    time: "2026-09-27T20:58:00Z",
-    timeSource: "filesystem" as const,
   };
 }
 
-const GODOT_L1 = "pilots/godot-desktop-4096-visible-2026-09-27.json";
-const TN_L1 = "pilots/tn-desktop-4096-physical-visible-2026-09-27.json";
-const GODOT_L2 = "pilots/godot-desktop-4096-l2-visible-2026-09-27.json";
-const TN_L2 = "pilots/tn-desktop-4096-l2-display-fix-2026-09-27.json";
-const TN_L3 = "pilots/tn-desktop-4096-l3-shipped-default-40warmup-2026-09-27.json";
+const TN_R1 = "pilots/scoreboard-tn-r1-2026-09-27.json";
+const TN_R3 = "pilots/scoreboard-tn-r3-2026-09-27.json";
+const GODOT_R3 = "pilots/scoreboard-godot-r3-2026-09-27.json";
+
+interface IRowFixture {
+  drawCalls?: number;
+  mode: TRenderMode;
+  objectCount?: number;
+  p95?: number;
+  /** One p50 per run that measured this row; a run with no entry never wrote the rung. */
+  p50s: number[];
+}
+
+/** The three alternating run files one arm keeps, each carrying every row under test — which is how
+ *  the real run files are shaped. A row's spread is the range of its own run p50s, so the win is
+ *  tested against the spread the runs actually show. */
+function scoreboardRuns(engine: "godot" | "threenative", rows: IRowFixture[]): IAttempt[] {
+  const label = engine === "godot" ? "godot" : "tn";
+  const runCount = Math.max(...rows.map((row) => row.p50s.length));
+  return Array.from({ length: runCount }, (_, run) =>
+    scoreboardRun(
+      `pilots/scoreboard-${label}-r${run + 1}-2026-09-27.json`,
+      engine,
+      rows.flatMap((row) => {
+        const p50 = row.p50s[run];
+        return p50 === undefined
+          ? []
+          : [
+              {
+                drawCalls: row.drawCalls ?? 3,
+                mode: row.mode,
+                objectCount: row.objectCount ?? 4096,
+                p50,
+                p95: row.p95 ?? p50 * 1.5,
+              },
+            ];
+      }),
+    ),
+  );
+}
+
 const GODOT_BOX1000 = "pilots/godot-lights-meshes-box1000-upstream-2026-09-27.json";
 
 const box1000Results = { render_cpu: 0.6345, render_gpu: 0.4795, time: 4.028 };
@@ -658,140 +706,217 @@ describe("ThreeNative against Godot scoreboard", () => {
       html.indexOf("</table>", html.indexOf('<table class="compare-table">')),
     );
 
-  it("leads with the fair-row score and names a winner sentence per row, with the caveats collapsed", () => {
+  const bannerOf = (html: string): string =>
+    html.slice(
+      html.indexOf('<div class="verdict-banner">'),
+      html.indexOf('<table class="compare-table">'),
+    );
+
+  it("calls a win only when the gap beats the run-to-run spread, and reports the spread beside it", () => {
     const html = renderProgressHtml(
       data({
         pilots: [
-          physicalAttempt(GODOT_L1, "godot", "L1", [4, 5, 3, 4], {
-            draws: 2,
-            triangles: 28_538,
-            visible: 2_379,
-          }),
-          physicalAttempt(GODOT_L2, "godot", "L2", [2.4, 2.5, 2.6, 2.5], {
-            draws: 2,
-            triangles: 49_154,
-            visible: 2,
-          }),
-          physicalAttempt(TN_L3, "threenative", "L3", [3.4, 3.5, 3.4, 6], {
-            draws: 3,
-            triangles: 49_155,
-            visible: 4_096,
-          }),
-          physicalAttempt(TN_L2, "threenative", "L2", [1.5, 1.4, 1.6, 1.5], {
-            draws: 3,
-            triangles: 49_155,
-            visible: 4_096,
-          }),
-          physicalAttempt(TN_L1, "threenative", "L1", [30, 31, 29, 40], {
-            draws: 2_375,
-            triangles: 28_479,
-            visible: 2_374,
-          }),
+          ...scoreboardRuns("threenative", [{ mode: "L3", p50s: [3.4, 3.45, 3.5], p95: 6 }]),
+          ...scoreboardRuns("godot", [{ drawCalls: 2, mode: "L1", p50s: [4, 4.1, 4.2], p95: 5 }]),
         ],
       }),
     );
     // First thing on the page, above every later section.
-    expect(html.indexOf("ThreeNative vs Godot — 4,096 cubes, adapter, 1280x720")).toBeLessThan(
+    expect(html.indexOf("ThreeNative vs Godot — 1,024 + 4,096 cubes")).toBeLessThan(
       html.indexOf("Qualified iterations"),
     );
-    // The banner is the first thing inside the scoreboard, and counts fair rows only: the
-    // diagnostic row Godot would win 7.5x is not a race and is not in the 2.
-    const banner = html.slice(
-      html.indexOf('<div class="verdict-banner">'),
-      html.indexOf('<table class="compare-table">'),
-    );
-    expect(banner).toContain(
-      '<span class="win-tn">ThreeNative</span> is faster in 2 of 2 head-to-head comparisons',
-    );
-    expect(banner).toContain(
-      "Fair rows only: both engines run the same scene with their own default optimizations.",
-    );
-    expect(html.indexOf("ThreeNative is faster") + 1).toBeLessThan(
-      html.indexOf('<table class="compare-table">'),
-    );
     const table = tableOf(html);
+    // The banner is the first thing inside the scoreboard, and counts every head-to-head row.
+    expect(bannerOf(html)).toContain(
+      'ThreeNative wins <span class="win-tn">1</span>, Godot wins <span class="win-godot">0</span>, ties 5 — of 6 head-to-head rows',
+    );
+    // The three named scenes, grouped by row name, at both cube counts.
     expect(table).toContain("Same scene, shipped defaults");
-    expect(table).toContain(
-      "One mesh per cube; each engine&#39;s own default batching. Headline row.",
-    );
+    expect(table).toContain("Can&#39;t batch (unique material per cube)");
     expect(table).toContain("Explicit instancing (both)");
-    // The Speed column is gone: its ratio now lives in the row's own sentence.
-    expect(table).not.toContain('<th scope="col">Speed</th>');
-    // Each engine's own p50 / p95, then one plain sentence naming the winner and the ratio.
-    expect(table).toContain("4.00 / 5.00 ms");
-    expect(table).toContain("3.40 / 6.00 ms");
-    expect(table).toContain("2.50 / 2.60 ms");
-    expect(table).toContain("1.50 / 1.60 ms");
+    expect(table).toContain("1,024 cubes");
+    expect(table).toContain("4,096 cubes");
+    // Median of the run p50s, with the spread and run count the win was tested against.
+    expect(table).toContain("3.45 ms (±0.10, 3 runs)");
+    expect(table).toContain("4.10 ms (±0.20, 3 runs)");
+    expect(table).toContain("p95 6.00 ms");
     expect(table).toContain("ThreeNative wins — 1.2x faster on a typical frame");
-    expect(table).toContain("ThreeNative wins — 1.7x faster on a typical frame");
-    // TN takes the median and loses the worst-case frame: the cell says both instead of picking one.
-    expect(table).toContain("Godot has steadier worst-case frames (p95 5.00 vs 6.00 ms)");
     expect(table).toContain('<span class="pill win-tn">TN</span>');
-    expect(table).not.toContain("TN on median");
-    expect(table).not.toContain("Exploratory direction");
-    expect(html).not.toContain("No winner or speedup");
-    // The auto-batching-off row is a diagnostic, not a race: out of the table, out of the score,
-    // and reported below the bars with its own numbers, draw calls and the reason it is out.
+    // TN takes the median and loses the worst-case frame: the cell says both instead of picking one.
+    expect(table).toContain("p95 goes the other way: Godot 5.00 vs 6.00 ms");
+    // Draw calls come from the first retained run, Godot against TN.
+    expect(table).toContain("2 vs 3");
+    // Every run file is named; the ones not retained yet are named in their place.
+    expect(table).toContain(`href="${TN_R1}"`);
+    expect(table).toContain(`href="${TN_R3}"`);
+    expect(table).toContain(`href="${GODOT_R3}"`);
+    expect(table).toContain("scoreboard-tn-r2-2026-09-27.json");
+    // The single-pilot rows and their per-frame series are gone, not hidden.
     expect(table).not.toContain("TN auto-batching OFF (diagnostic)");
-    expect(table).not.toContain("30.00 / 40.00 ms");
-    expect(table).not.toContain("2 vs 2375");
-    const block = html.slice(html.indexOf("<h3>TN internal diagnostic — not a race</h3>"));
-    expect(block.length).toBeGreaterThan(0);
-    expect(block).toContain("TN auto-batching OFF (diagnostic)");
-    expect(block).toContain("Godot 4.00 / 5.00 ms · TN 30.00 / 40.00 ms");
-    expect(block).toContain("draw calls 2 vs 2375 (Godot vs TN)");
-    expect(block).toContain(
-      "Godot kept its automatic batching; TN's was switched off on purpose to measure TN's cost per draw call. Not counted in the score.",
-    );
-    expect(block).toContain(`href="${GODOT_L1}"`);
-    expect(block).toContain(`href="${TN_L1}"`);
-    // Where a fair row loses, in the same files as the table, directly under the bars.
+    expect(table).not.toContain("shipped-default-40warmup");
+    expect(html).not.toContain("per-frame series");
+    expect(html).not.toContain("TN internal diagnostic");
+    // Bars for the rows that have runs, each group titled with its own verdict.
+    expect(html).toContain('class="scoreboard-bars"');
+    expect(html.match(/<rect x="52"/gu)).toHaveLength(2);
+    expect(html).toContain('<text class="group win-tn" x="430"');
+    expect(html).toContain('<text class="group tie" x="430"');
+    // Where a row loses, in the same runs as the table.
     const losses = html.slice(html.indexOf("<h3>Where TN loses</h3>"), html.indexOf("</ul>"));
-    expect(losses).toContain("Same scene, shipped defaults: Godot ahead by 1.00 ms on p95");
-    expect(losses).not.toContain("auto-batching");
-    // The qualification gaps moved out of the headline into a collapsed methodology block.
-    expect(table).not.toContain("L1 has a known output/draw mismatch");
+    expect(losses).toContain(
+      "Same scene, shipped defaults · 4,096 cubes: Godot ahead by 1.00 ms on p95",
+    );
+    expect(losses).not.toContain("ms on p50");
+    // The protocol the runs were collected under is stated, and the qualification gaps collapsed.
+    expect(html).toContain("3 alternating runs per engine, 40 warmup frames then 120 measured");
+    expect(html).toContain("1280x720 uncapped on a physical display");
     const afterTable = html.slice(html.indexOf("</table>"));
     expect(html).toContain("<summary>Methodology and caveats</summary>");
+    expect(table).not.toContain("L1 has a known output/draw mismatch");
     expect(afterTable).toContain("L1 has a known output/draw mismatch");
-    expect(afterTable).toContain("L2 uses different visible-count semantics");
-    expect(afterTable).toContain("Full fixture conformance and paired blocks are missing");
-    expect(html).toContain("Pilot numbers: one run per engine, 120 frames each");
-    expect(table).toContain("2 vs 3");
-    expect(html).toContain(`href="${GODOT_L1}"`);
-    expect(html).toContain(`href="${TN_L2}"`);
-    expect(html).toContain(`href="${TN_L3}"`);
-    // Bars for the fair rows only, each group titled with the winner's pill.
-    expect(html).toContain('class="scoreboard-bars"');
-    expect(html.match(/<rect x="52"/gu)).toHaveLength(4);
-    expect(html.match(/<text class="group win-tn" x="430"/gu)).toHaveLength(2);
+    expect(afterTable).toContain("a win is only called when the gap between the two medians beats");
   });
 
-  it("renders a missing file as missing, never as a number or a near neighbour", () => {
-    const html = renderProgressHtml(
+  it("reads a gap inside the spread, or a single run, as a tie", () => {
+    const tie = renderProgressHtml(
       data({
         pilots: [
-          physicalAttempt(TN_L1, "threenative", "L1", [30, 31], {
-            draws: 2_375,
-            triangles: 28_479,
-            visible: 2_374,
-          }),
+          // The L3 rows are 0.10 ms apart, but each side's own three runs span 0.40 ms.
+          ...scoreboardRuns("threenative", [
+            // One L4 run each, 2.2 ms apart: a single run is a measurement of the run, not a win.
+            { drawCalls: 2_375, mode: "L4", p50s: [1.5] },
+            { mode: "L3", p50s: [3.4, 3.6, 3.8] },
+          ]),
+          ...scoreboardRuns("godot", [
+            { drawCalls: 2, mode: "L4", p50s: [3.7] },
+            { mode: "L1", p50s: [3.5, 3.7, 3.9] },
+          ]),
         ],
       }),
     );
+    const table = tableOf(tie);
+    expect(table).toContain("Tie — within run-to-run noise");
+    expect(table).toContain('<span class="pill tie">Tie</span>');
+    expect(table).not.toContain("x faster on a typical frame");
+    expect(table).toContain("1.50 ms (±0.00, 1 run)");
+    expect(bannerOf(tie)).toContain(
+      'ThreeNative wins <span class="win-tn">0</span>, Godot wins <span class="win-godot">0</span>, ties 6 — of 6 head-to-head rows',
+    );
+    expect(tie).not.toContain("is faster in");
+  });
+
+  it("counts a win, a loss and a tie in the same banner", () => {
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          ...scoreboardRuns("threenative", [
+            { mode: "L2", p50s: [4, 4.1, 4.2] },
+            { mode: "L3", p50s: [2, 2.1, 2.2] },
+            { mode: "L4", p50s: [3, 3.1, 3.2] },
+          ]),
+          ...scoreboardRuns("godot", [
+            { mode: "L1", p50s: [4, 4.1, 4.2] },
+            { mode: "L2", p50s: [2, 2.1, 2.2] },
+            { mode: "L4", p50s: [3, 3.1, 3.2] },
+          ]),
+        ],
+      }),
+    );
+    expect(bannerOf(html)).toContain(
+      'ThreeNative wins <span class="win-tn">1</span>, Godot wins <span class="win-godot">1</span>, ties 4 — of 6 head-to-head rows',
+    );
     const table = tableOf(html);
-    expect(table).toContain("Godot file missing");
-    expect(table).toContain("TN file missing");
-    // Two fair rows fully unpaired: 4 cells each read as missing, none as a number, and the
-    // retained TN half of the diagnostic row is never stretched across a missing fair row.
-    expect(table.match(/>missing</gu)).toHaveLength(8);
-    expect(table).not.toMatch(/\d+\.\dx/u);
+    expect(table).toContain("ThreeNative wins — 2.0x faster on a typical frame");
+    expect(table).toContain('<span class="pill win-godot">Godot</span>');
+    expect(table).toContain("Tie — within run-to-run noise");
+  });
+
+  it("renders a row whose runs are not retained as pending, never as a number or a near neighbour", () => {
+    const empty = renderProgressHtml(data());
+    const table = tableOf(empty);
+    // Both engine cells, the winner cell and the draw-call cell of all six rows.
+    expect(table.match(/pending — no retained runs yet/gu)).toHaveLength(24);
+    expect(table).not.toMatch(/\d+\.\d\d ms/u);
     expect(table).not.toContain("faster");
-    // Nobody measured a win, so the score claims none.
-    expect(html).toContain("Tied — 0 of 2 head-to-head comparisons each");
-    expect(html).not.toContain("is faster in");
-    expect(html).not.toContain("Where TN loses");
-    expect(html).toContain('class="scoreboard-bars"');
+    // Nobody measured a win, so the score claims none and the loss list stays off the page.
+    expect(bannerOf(empty)).toContain(
+      'ThreeNative wins <span class="win-tn">0</span>, Godot wins <span class="win-godot">0</span>, ties 6 — of 6 head-to-head rows',
+    );
+    expect(empty).not.toContain("Where TN loses");
+    expect(empty).toContain('class="scoreboard-bars"');
+
+    // A half-written experiment is pending for the sides that have not landed, not a win.
+    const partial = renderProgressHtml(
+      data({
+        pilots: [
+          scoreboardRun(TN_R1, "threenative", [
+            { drawCalls: 3, mode: "L3", objectCount: 1024, p50: 2, p95: 3 },
+          ]),
+          ...scoreboardRuns("godot", [{ mode: "L1", objectCount: 1024, p50s: [4, 4.1, 4.2] }]),
+        ],
+      }),
+    );
+    const partialTable = tableOf(partial);
+    expect(partialTable).toContain("2.00 ms (±0.00, 1 run)");
+    expect(partialTable).toContain("Tie — within run-to-run noise");
+    expect(partialTable).toContain("pending — no retained runs yet");
+    // The runner appends .json to --out, so a name that already ended in .json lands as .json.json.
+    const doubled = renderProgressHtml(
+      data({
+        pilots: [
+          scoreboardRun(`${TN_R1}.json`, "threenative", [
+            { drawCalls: 3, mode: "L3", objectCount: 1024, p50: 2, p95: 3 },
+          ]),
+        ],
+      }),
+    );
+    expect(tableOf(doubled)).toContain("2.00 ms (±0.00, 1 run)");
+  });
+
+  it("reports the measured fix against the same engine, paired block by block", () => {
+    const ab = (side: "before" | "after", block: number, p50: number): IAttempt =>
+      scoreboardRun(
+        `pilots/tn-desktop-4096-l3-ab-${side}-${block}-2026-09-27.json`,
+        "threenative",
+        [{ drawCalls: 3, mode: "L3", objectCount: 4096, p50, p95: p50 * 1.5 }],
+      );
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          ab("before", 1, 10),
+          ab("after", 1, 6),
+          ab("before", 2, 12),
+          ab("after", 2, 7),
+          ab("before", 3, 14),
+          ab("after", 3, 8),
+        ],
+      }),
+    );
+    const panel = html.slice(
+      html.indexOf('<section class="panel" aria-label="TN fixes this round">'),
+    );
+    expect(panel).toContain("Projection reconcile: TN shipped-default frame 12.00 → 7.00 ms");
+    expect(panel).toContain("median of 3 paired blocks (−42%), faster in 3/3");
+    expect(panel).toContain('href="pilots/tn-desktop-4096-l3-ab-before-1-2026-09-27.json"');
+    expect(panel).toContain('href="pilots/tn-desktop-4096-l3-ab-after-3-2026-09-27.json"');
+    expect(panel).toContain("Block 2:");
+    // Right after the scoreboard, before the next section.
+    expect(html.indexOf("TN fixes this round")).toBeGreaterThan(html.indexOf("scoreboard-bars"));
+    expect(html.indexOf("TN fixes this round")).toBeLessThan(html.indexOf("Qualified iterations"));
+
+    // A half-written pair set reports the file counts it has instead of a pairing it cannot prove.
+    const unpaired = renderProgressHtml(
+      data({
+        pilots: [ab("before", 1, 10), ab("before", 2, 12), ab("before", 3, 14), ab("after", 9, 6)],
+      }),
+    );
+    expect(unpaired).toContain("median of 3 before files against 1 after files");
+    expect(unpaired).not.toContain("faster in");
+
+    // Nothing retained yet: no improvement claimed at all.
+    expect(renderProgressHtml(data())).toContain(
+      "No retained before/after block yet, so no improvement is claimed.",
+    );
   });
 
   it("parses a Godot upstream benchmark file and refuses a malformed one", async () => {
