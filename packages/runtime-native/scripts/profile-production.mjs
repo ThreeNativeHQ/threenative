@@ -106,6 +106,33 @@ export function resolveProductionTools() {
   };
 }
 
+// The primary checkout that owns a checkout or linked worktree at `cwd`. Git's common directory is
+// the one answer a linked worktree gives without being asked for a worktree: it names the primary
+// `.git`, while the worktree's own parent directory is still inside the primary repository.
+export function owningCheckout(cwd) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return common.length > 0 ? dirname(common) : cwd;
+  } catch {
+    return cwd;
+  }
+}
+
+// Beside the owning primary checkout, so the staged game shares its volume and inherits no
+// pnpm-workspace.yaml; an ancestor that is itself a workspace is climbed past, because pnpm reads
+// the nearest one upwards and would install the staged game into it.
+export function stagingParentDirectory(primaryCheckout, workspaceExists = existsSync) {
+  let parent = dirname(primaryCheckout);
+  while (parent !== dirname(parent) && workspaceExists(join(parent, 'pnpm-workspace.yaml'))) {
+    parent = dirname(parent);
+  }
+  return join(parent, '.threenative-profile-production');
+}
+
 export function parseProductionArgs(argv = process.argv.slice(2)) {
   const options = {
     audioEvidence: undefined,
@@ -265,12 +292,13 @@ export async function collectProduction(options, context, runId) {
   const webDisplay = webArmRequested(options) ? await rateBearingDisplay(tools) : undefined;
 
   // Keep staging on the checkout's volume (Windows packaging cannot cross volumes), but outside
-  // the repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
+  // every repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
   // parent workspace, so its install populates the workspace root and leaves the staged project's
-  // node_modules missing. The checkout sibling keeps the same-volume guarantee without inheriting
-  // pnpm-workspace.yaml.
+  // node_modules missing. A linked worktree's own parent is no better - <primary>/.worktrees is
+  // still inside <primary> - so the parent of the *owning primary* checkout is the one directory
+  // that is both same-volume and workspace-free.
   const stagingParent = inRepositoryCheckout
-    ? join(dirname(commandRoot), '.threenative-profile-production')
+    ? stagingParentDirectory(owningCheckout(commandRoot))
     : tmpdir();
   await mkdir(stagingParent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(stagingParent, 'threenative-production-'));

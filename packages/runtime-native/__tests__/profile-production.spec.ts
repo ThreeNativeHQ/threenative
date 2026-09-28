@@ -1,7 +1,20 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+
+const STAGING_DIRECTORY = ".threenative-profile-production";
 
 type Instrumentation = {
+  /** The primary checkout that owns a checkout or linked worktree at `cwd`. */
+  owningCheckout(cwd: string): string;
+  /** The temporary staging parent for that checkout: outside every workspace, same volume. */
+  stagingParentDirectory(
+    primaryCheckout: string,
+    workspaceExists?: (path: string) => boolean,
+  ): string;
   webFrameInstrumentation(
     control: string | undefined,
     warmupFrames?: number,
@@ -131,5 +144,87 @@ describe("production profile frame sampling", () => {
     expect(nativeLaunchesExternalBundle(runtime, { prebuiltArtifact: runtime })).toBe(true);
     expect(nativeLaunchesExternalBundle(packagedGame, { prebuiltArtifact: runtime })).toBe(false);
     expect(nativeLaunchesExternalBundle(packagedGame, {})).toBe(false);
+  });
+});
+
+/**
+ * Git's own linked-checkout layout, built in a throwaway directory: a `.git` file naming an admin
+ * directory whose `commondir` is the primary `.git`. No worktree is created in any real repository.
+ */
+function linkedCheckoutLayout(): { linked: string; primary: string; root: string } {
+  const root = realpathSync(makeTempDirSync("tn-prod-staging-"));
+  const primary = join(root, "primary");
+  execFileSync("git", ["init", "--quiet", primary]);
+  writeFileSync(join(primary, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  const admin = join(primary, ".git", "worktrees", "linked");
+  mkdirSync(admin, { recursive: true });
+  writeFileSync(join(admin, "HEAD"), "ref: refs/heads/linked\n");
+  writeFileSync(join(admin, "commondir"), "../..\n");
+  const linked = join(primary, ".worktrees", "linked");
+  mkdirSync(linked, { recursive: true });
+  writeFileSync(join(linked, ".git"), `gitdir: ${admin}\n`);
+  return { linked, primary, root };
+}
+
+function primaryCheckoutLayout(): { primary: string; root: string } {
+  const root = realpathSync(makeTempDirSync("tn-prod-staging-"));
+  const primary = join(root, "primary");
+  execFileSync("git", ["init", "--quiet", primary]);
+  writeFileSync(join(primary, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+  return { primary, root };
+}
+
+describe("production profile staging", () => {
+  it("should stage a linked checkout outside the owning workspace, where a real install lands in the game", async () => {
+    const { owningCheckout, stagingParentDirectory } = await instrumentation();
+    const { linked, primary, root } = linkedCheckoutLayout();
+    try {
+      expect(owningCheckout(linked)).toBe(primary);
+      const parent = stagingParentDirectory(owningCheckout(linked));
+      // Beside the primary checkout, never beside the linked one: `primary/.worktrees` is still
+      // inside the primary workspace, where pnpm installs into the workspace root instead.
+      expect(parent).toBe(join(root, STAGING_DIRECTORY));
+      expect(relative(primary, parent).startsWith("..")).toBe(true);
+      const game = join(parent, "threenative-production-test", "platformer");
+      mkdirSync(game, { recursive: true });
+      writeFileSync(
+        join(game, "package.json"),
+        '{"name":"platformer","private":true,"version":"0.0.0"}\n',
+      );
+      execFileSync("pnpm", ["install", "--ignore-scripts", "--offline", "--reporter=silent"], {
+        cwd: game,
+      });
+      expect(existsSync(join(game, "node_modules"))).toBe(true);
+      expect(existsSync(join(primary, "node_modules"))).toBe(false);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should stage the primary checkout outside its own workspace", async () => {
+    const { owningCheckout, stagingParentDirectory } = await instrumentation();
+    const { primary, root } = primaryCheckoutLayout();
+    try {
+      expect(owningCheckout(primary)).toBe(primary);
+      const parent = stagingParentDirectory(owningCheckout(primary));
+      expect(parent).toBe(join(root, STAGING_DIRECTORY));
+      for (
+        let directory = parent;
+        directory !== dirname(directory);
+        directory = dirname(directory)
+      ) {
+        expect(existsSync(join(directory, "pnpm-workspace.yaml"))).toBe(false);
+      }
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should keep climbing while an ancestor is itself a workspace", async () => {
+    const { stagingParentDirectory } = await instrumentation();
+    const workspaces = new Set(["/w/pnpm-workspace.yaml", "/w/inner/pnpm-workspace.yaml"]);
+    expect(stagingParentDirectory("/w/inner/checkout", (path) => workspaces.has(path))).toBe(
+      join("/", STAGING_DIRECTORY),
+    );
   });
 });

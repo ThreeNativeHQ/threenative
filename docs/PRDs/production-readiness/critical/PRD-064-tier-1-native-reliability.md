@@ -271,6 +271,27 @@ collection. **The box above stays
 open**: no pair has passed, and the GPU adapter is still absent — the production web report carries no
 adapter field, so nothing here names the GPU.
 
+**2026-09-27 linked-worktree staging repair and live repeat (box remains open).** The profiler staged
+its throwaway game under the primary checkout's `.worktrees/`, which is still inside that checkout's
+pnpm workspace; `pnpm install` left the game without `node_modules/.bin/threenative`, so the web
+build stopped before measurement. The staging parent now resolves from Git's common directory and
+climbs outside any ancestor workspace while staying on the checkout's volume. The linked-checkout
+regression failed before the fix and passes after it (8/8); a real offline install and scaffolded
+`pnpm run build:web` in the new staging location both pass. A new live 1920×1080, five-cold-start
+desktop pair reached both browser and native collection (`.runtime/prd064/production/production-evidence.json`,
+run `desktop-pair-1790554945271`, source `23d6912d8` plus the staging diff, 2026-09-28 UTC).
+It exits 2, `BLOCKED`: web repetition 3 closed its browser during the playtest
+(`TN_PLAYTEST_PAGE_NAVIGATED`), leaving render samples and markers incomplete; the other nine
+playtests pass. The measured web p95 is 16.80 ms/59.88 fps and native p95 is 18.56 ms/57.80 fps,
+so the paired performance budget also remains red. This run proves the staging repair reaches the
+real game; it does not close the platformer parity box or identify the WebGPU adapter.
+The first full `pnpm test` run had 6,157 passes and one test-fixture cleanup failure:
+`temp-dir-guard.spec.ts` caught this new regression using raw `mkdtempSync`. The fixture now uses
+the repository's registered `makeTempDirSync`; the profile and cleanup guard tests pass together
+(9/9). The full post-fix `pnpm test` rerun passes: 493 files/6,158 tests, with two files/eight tests
+skipped and no temporary-directory growth. `pnpm typecheck`, `pnpm lint` (0 errors),
+`pnpm check:docs` and `pnpm budgets` pass.
+
 **2026-09-27, the rest of the judge still counted callbacks, and `desktop-pair-8` says by how much.**
 The correction above moved only the percentile series; five quantities beside it still described rAF
 callbacks — `oneSecondFrameFloors(metrics.intervals)`, `runWindows[].sampleCount`, `sampleCount`,
