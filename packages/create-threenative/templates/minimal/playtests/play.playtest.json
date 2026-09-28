@@ -28,8 +28,8 @@
     "components": [
       {
         "changed": true,
-        "component": "glyphs",
-        "entity": "hud"
+        "component": "position",
+        "entity": "player"
       }
     ],
     "performance": {

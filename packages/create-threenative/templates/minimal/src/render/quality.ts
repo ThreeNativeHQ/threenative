@@ -69,84 +69,42 @@ export function resolveQualityTier(
 }
 
 /**
- * What a desktop gets: this template's shipped desktop look, unchanged.
+ * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
+ * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
+ * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
+ * see `screenSpaceAA` in `worldEnvironment.ts`.
  *
- * The whole chain measured 12.5 ms of a 14.7 ms GPU frame in the reference ablation, and SSGI
- * with its denoiser is ~9.2 ms of that.
+ * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
+ * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
+ * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
+ */
+const shared: IWorldEnvironmentOptions = {
+  bloomEnabled: true,
+  bloomRadius: 0.6,
+  bloomStrength: 0.22,
+  bloomThreshold: 1,
+  exposure: 0.62,
+  tonemapMode: "aces",
+  vignetteAmount: 0.22,
+};
+
+/**
+ * What a desktop gets: contact occlusion on top — the dark line where a foot meets the floor and a
+ * wall meets the ground, most of what separates "objects in a world" from "objects pasted on a
+ * background". Gathered at full resolution and denoised: at half, the upsample left a grain around
+ * every foot.
  */
 const high: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.5,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as "reflections
-  // are on and do nothing" — the ray dies a metre from where it started.
-  ssrMaxDistance: 20,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.5,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.3,
-  tonemapMode: "aces",
+  ...shared,
+  gtaoEnabled: true,
+  gtaoRadius: 0.35,
 };
 
-/**
- * The rung in between. With no SSGI to drop, the reflection is the only stage large enough to be
- * worth halving, so `medium` traces it at a quarter resolution instead of a half — a quarter of
- * the rays. The saving is **unmeasured**: the ablation measured SSR on and off, not SSR at two
- * scales.
- */
-const medium: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.5,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as "reflections
-  // are on and do nothing" — the ray dies a metre from where it started.
-  ssrMaxDistance: 20,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.25,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.3,
-  tonemapMode: "aces",
-};
+/** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
+const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
 
-/**
- * What a phone gets: this template's shipped mobile look, unchanged. Bloom and the tone curve,
- * nothing screen-space. The ablation's floor — every stage off — was 2.2 ms.
- */
-const low: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.5,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  tonemapMode: "aces",
-};
+/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+const low: IWorldEnvironmentOptions = shared;
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
