@@ -30,6 +30,8 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer): { key: Di
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.005;
   scene.add(key);
+  // In the scene, so a camera-following shadow (`VirtualShadowNode`) can aim at it.
+  scene.add(key.target);
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };

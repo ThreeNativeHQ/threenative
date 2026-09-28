@@ -31,7 +31,6 @@ async function typecheckTemplates(): Promise<string[]> {
 // no React and therefore no other way to draw one. Round 10 removed it from platformer, shooter,
 // racing and defense, where it rendered *on top of* their React HUD: four templates drew the same
 // numbers twice, and in shooter the overlap was unreadable.
-const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
 // PRD-449: the engine guards a template without shipping them to a new game, so they live beside
 // the templates rather than inside one. `pnpm test:templates` copies them into the scaffold.
@@ -100,34 +99,6 @@ function callPattern(name: string): RegExp {
 
 function referencePattern(name: string): RegExp {
   return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u");
-}
-
-function hudGlyphProof(source: string, text: string) {
-  const characters = /const CHARS = "([^"]+)"/u.exec(source)?.[1];
-  const encoded = /"([0-9a-f ]+)"\s*\.split\(" "\)/u.exec(source)?.[1];
-  if (characters === undefined || encoded === undefined)
-    throw new Error("Malformed HUD glyph data");
-  const glyphs = encoded.split(" ").map((hex) => BigInt(`0x${hex}`));
-  if (glyphs.length !== characters.length) throw new Error("HUD glyph table is incomplete");
-  const points: Array<[number, number]> = [];
-  for (const [character, value] of [...text].entries()) {
-    if (value === " ") continue;
-    const glyph = glyphs[characters.indexOf(value)];
-    if (glyph === undefined) throw new Error(`Missing HUD glyph: ${value}`);
-    for (let pixel = 0; pixel < 35; pixel += 1)
-      if ((glyph & (1n << BigInt(pixel))) !== 0n)
-        points.push([character * 6 + (pixel % 5), Math.floor(pixel / 5)]);
-  }
-  if (points.length === 0) throw new Error("HUD glyph proof is blank");
-  return {
-    brightPixels: points.length,
-    bounds: [
-      Math.min(...points.map(([x]) => x)),
-      Math.min(...points.map(([, y]) => y)),
-      Math.max(...points.map(([x]) => x)),
-      Math.max(...points.map(([, y]) => y)),
-    ],
-  };
 }
 
 async function linkDependency(target: string, name: string, source: string): Promise<void> {
@@ -440,30 +411,6 @@ describe("template contracts", () => {
     }
   });
 
-  it("should ship a user-owned geometry HUD in templates that use one", async () => {
-    for (const template of geometryHudTemplates) {
-      const root = path.join(templateRoot, template);
-      const hud = await readFile(path.join(root, "src/render/hud.ts"), "utf8");
-      const scene = await readFile(path.join(root, "src/scenes/Play.ts"), "utf8");
-      expect(hud, template).toContain("InstancedMesh");
-      expect(hud, template).toContain("camera.add(root)");
-      expect(hud, template).toContain("renderOrder");
-      expect(hud, template).toContain("TIME ");
-      expect(hud, template).not.toMatch(/CanvasTexture|document\.|window\.|@threenative\//u);
-      expect(scene, template).toContain("createHud(");
-      expect(scene, template).toMatch(/ctx\.add\((?:ctx\.)?camera\)/u);
-      expect(scene, template).toContain("hud.update(");
-      expect(scene, template).toMatch(/ctx\.entities\.add\(\s*"hud"/u);
-      expect(hudGlyphProof(hud, "SCORE 1200"), template).toEqual({
-        brightPixels: 161,
-        bounds: [0, 0, 58, 6],
-      });
-    }
-    expect(() => hudGlyphProof('const CHARS = "";', "SCORE 1200")).toThrow(
-      "Malformed HUD glyph data",
-    );
-  });
-
   it("should ship exactly one starter HUD", async () => {
     const hud = await readFile(path.join(templateRoot, "starter/src/ui/Hud.tsx"), "utf8");
     // `useUiState`, not `useGameState`: the HUD reads the game's PUBLISHED state, because on every
@@ -473,42 +420,6 @@ describe("template contracts", () => {
     await expect(
       readFile(path.join(templateRoot, "starter/src/render/hud.ts"), "utf8"),
     ).rejects.toThrow();
-  });
-
-  /**
-   * Source checks above prove the HUD is written. This pins the proof that it *runs*: a
-   * scenario each template's `pnpm test` executes must observe the booted HUD's live glyph
-   * count. Delete the assertion from a scenario and this goes red, so the observation cannot
-   * quietly disappear and leave the source checks looking like coverage.
-   *
-   * The assertion is `changed`, not a floor: any floor is already satisfied by the warmup
-   * value, which the runner correctly rejects as trivial.
-   */
-  it("should observe the booted geometry HUD in templates that use one", async () => {
-    for (const template of geometryHudTemplates) {
-      // Every template's HUD has to expose the count, whether or not its scenario reads it.
-      const source = await readFile(path.join(templateRoot, template, "src/render/hud.ts"), "utf8");
-      expect(source, template).toMatch(/glyphs:\s*0/u);
-      expect(source, template).toContain("this.glyphs = instance");
-    }
-
-    const root = path.join(templateRoot, "minimal");
-    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-    expect(manifest.scripts?.test ?? "").toContain('--scenario "playtests/*.playtest.json"');
-    // Without the bridge the scenario fails closed on TN_PLAYTEST_BRIDGE_MISSING.
-    expect(await readFile(path.join(root, "src/game.ts"), "utf8")).toContain("playtest(");
-
-    const scenario = JSON.parse(
-      await readFile(path.join(root, "playtests/play.playtest.json"), "utf8"),
-    );
-    const hud = (scenario.assert?.components ?? []).find(
-      (entry: { entity?: string }) => entry.entity === "hud",
-    );
-    expect(hud, "the minimal template boots without observing its HUD").toEqual({
-      changed: true,
-      component: "glyphs",
-      entity: "hud",
-    });
   });
 
   it("should call every exported render integration symbol", async () => {

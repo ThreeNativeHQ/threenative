@@ -6,7 +6,6 @@
 // and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
 // equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
-  Color,
   EquirectangularReflectionMapping,
   FogExp2,
   SRGBColorSpace,
@@ -14,6 +13,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { palette } from "./palette.js";
 
 /**
  * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
@@ -24,9 +24,6 @@ const SKY_RANGE = 2.5;
 
 /** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
-
-/** The sky's own horizon radiance, measured from the same HDR, so distance fades into the sky. */
-const HORIZON = new Color().setRGB(0.41, 0.44, 0.53);
 
 export function setupSky(scene: Scene, sky: Texture): void {
   sky.mapping = EquirectangularReflectionMapping;
@@ -40,5 +37,5 @@ export function setupSky(scene: Scene, sky: Texture): void {
   scene.environmentIntensity = SKY_RANGE;
   // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
   // a kilometre — so the floor meets the sky instead of ending at a line.
-  scene.fog = new FogExp2(HORIZON, 0.003);
+  scene.fog = new FogExp2(palette.horizon, 0.003);
 }

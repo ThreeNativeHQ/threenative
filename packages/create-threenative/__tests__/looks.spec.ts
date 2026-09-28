@@ -647,7 +647,11 @@ describe("starter visual floor", () => {
   it("should light silhouettes with a rim, not just a key", async () => {
     for (const root of [starter, minimal, platformer]) {
       const lighting = await readFile(path.join(root, "src/render/lighting.ts"), "utf8");
-      expect(lighting).toContain("const rim = new DirectionalLight");
+      const sky = await readFile(path.join(root, "src/render/sky.ts"), "utf8");
+      // An image-based environment puts the sky's own highlight on every silhouette, which is the
+      // job the rim light was doing; `minimal` lights with its sky photograph instead of a rim.
+      if (/scene\.environment\s*=/u.test(sky)) expect(sky).toContain("environmentIntensity");
+      else expect(lighting).toContain("const rim = new DirectionalLight");
       expect(lighting).toContain("PCFSoftShadowMap");
       expect(lighting).toContain("normalBias");
     }

@@ -328,15 +328,10 @@ export function countTemplateTouchControlsLoc(
 }
 
 /**
- * The generated HUD's source, against the geometry HUD it replaces.
- *
- * This used to price `NativeHud.tsx` — the starter's second HUD, written in `View`/`Text` quads so
- * that native had something to draw. PRD-217 deleted it: the same `Hud.tsx` now runs on every
- * target, so the thing worth pricing is that one file. It should stay smaller than the geometry
- * HUD it replaces, which is the same bar the second HUD had to clear.
+ * The generated HUD's source: the one `Hud.tsx` that runs on every target (PRD-217). The geometry
+ * HUD it was priced against left the templates with PRD-470, so this is reported, not compared.
  */
 export function countGeneratedHudLoc(rootDirectory = process.cwd()): {
-  readonly geometry: number;
   readonly generated: number;
 } {
   const root = resolve(rootDirectory);
@@ -345,7 +340,6 @@ export function countGeneratedHudLoc(rootDirectory = process.cwd()): {
     return lineCount(normaliseSource(readFileSync(path, "utf8"), path, root));
   };
   return {
-    geometry: count("packages/create-threenative/templates/minimal/src/render/hud.ts"),
     generated: count("packages/create-threenative/templates/starter/src/ui/Hud.tsx"),
   };
 }
@@ -570,7 +564,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     `touch controls LOC: ${touchControls.total} across ${touchControls.copies.length} authored copies; hypothetical shared export ${touchControls.hypotheticalSharedExport}; duplicated ${touchControls.duplicated} (accepted on the look-ownership rule)\n`,
   );
   const hud = countGeneratedHudLoc(root);
-  process.stdout.write(`generated HUD LOC: ${hud.generated} (geometry HUD ${hud.geometry})\n`);
+  process.stdout.write(`generated HUD LOC: ${hud.generated}\n`);
   const cloth = countSoftBodyFeatureLoc(root);
   const clothSavings = ((1 - cloth.framework / cloth.handwritten) * 100).toFixed(1);
   process.stdout.write(

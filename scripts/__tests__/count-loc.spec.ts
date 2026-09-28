@@ -8,7 +8,6 @@ import {
   assertFrameworkRatchet,
   classifyVanillaLine,
   collectLoc,
-  countGeneratedHudLoc,
   countLines,
   countPlatformerTemplateLoc,
   countSoftBodyFeatureLoc,
@@ -109,14 +108,6 @@ describe("count-loc", () => {
     );
     expect(comparison.duplicated).toBe(comparison.total - comparison.hypotheticalSharedExport);
     expect(comparison.duplicated).toBeGreaterThan(0);
-  });
-
-  // PRD-217 removed the starter's second HUD, so what this prices now is the one HUD that runs
-  // everywhere. Same bar: the generated source must stay smaller than the geometry HUD it replaces.
-  it("prices the generated HUD against the geometry HUD", () => {
-    const comparison = countGeneratedHudLoc();
-
-    expect(comparison.generated).toBeLessThanOrEqual(comparison.geometry);
   });
 
   it("prices heightfield framework wiring against every proven game repetition", () => {

@@ -79,6 +79,7 @@ export function resolveQualityTier(
  * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
+  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,
   bloomStrength: 0.22,
@@ -96,6 +97,7 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
 };

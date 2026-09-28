@@ -654,7 +654,6 @@ const MINIMAL_RENDER_PATHS = [
   "src/render/sky.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
-  "src/render/hud.ts",
   "src/render/materials.ts",
   "src/render/postprocessing.ts",
 ] as const;

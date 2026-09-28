@@ -1,21 +1,54 @@
 import {
+  AnimationClip,
+  Bone,
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Group,
-  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
+  Skeleton,
+  SkinnedMesh,
   Texture,
   Vector2,
   Vector3,
+  VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+
+/** The smallest skinned rig that satisfies `requiredClips`: two bones, one box, one track per clip. */
+function tinyRig(clipNames: readonly string[]): { scene: Group; animations: AnimationClip[] } {
+  const root = new Bone();
+  root.name = "root";
+  const head = new Bone();
+  head.name = "Head";
+  head.position.y = 1.5;
+  root.add(head);
+  const geometry = new BoxGeometry(0.4, 1.8, 0.3).translate(0, 0.9, 0);
+  const count = geometry.getAttribute("position").count;
+  geometry.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(count * 4), 4));
+  const weights = new Float32Array(count * 4);
+  for (let index = 0; index < count; index += 1) weights[index * 4] = 1;
+  geometry.setAttribute("skinWeight", new BufferAttribute(weights, 4));
+  const mesh = new SkinnedMesh(geometry, new MeshBasicMaterial());
+  mesh.add(root);
+  mesh.bind(new Skeleton([root, head]));
+  const scene = new Group();
+  scene.add(mesh);
+  const animations = clipNames.map(
+    (name) =>
+      new AnimationClip(name, 1, [
+        new VectorKeyframeTrack("Head.position", [0, 1], [0, 1.5, 0, 0, 1.5, 0]),
+      ]),
+  );
+  return { scene, animations };
+}
 
 const probeState = vi.hoisted(() => ({
   vector2Allocations: 0,
@@ -232,7 +265,7 @@ function runSceneFrames(frame: unknown, context: unknown, beforeMeasure?: () => 
 
 describe("generated template ordinary-frame runtime cost", () => {
   it("executes 600 steady frames per template without fresh vector work", async () => {
-    const minimal = await import("../templates/minimal/src/render/hud.js");
+    const minimal = await import("../templates/minimal/src/render/camera.js");
     const starter = await import("../templates/starter/src/entities/Player.js");
     const platformer = await import("../templates/platformer/src/entities/Character.js");
     const racing = await import("../templates/racing/src/track/Ranking.js");
@@ -246,7 +279,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     const core = await import("../../core/src/index.js");
 
     for (const [name, value] of Object.entries({
-      "minimal HUD": minimal.createHud,
+      "minimal followCamera": minimal.followCamera,
       "starter Player": starter.Player,
       "platformer Character": platformer.Character,
       "racing rankRacers": racing.rankRacers,
@@ -262,19 +295,13 @@ describe("generated template ordinary-frame runtime cost", () => {
     const physics = await physicsFixture();
     try {
       const camera = new PerspectiveCamera(60, 16 / 9);
-      const hud = minimal.createHud(camera, "SCORE");
-      hud.update({ primary: 1, seconds: 3 });
-      const hudWrites = vi.spyOn(InstancedMesh.prototype, "setMatrixAt");
-      const glyphWritesBefore = hud.glyphs;
-      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) hud.update({ primary: 1, seconds: 3 });
-      const stableGlyphs = hud.glyphs;
-      for (let frame = 0; frame < MEASURED_FRAMES; frame += 1)
-        hud.update({ primary: 1, seconds: 3 });
-      expect(hud.glyphs, "minimal HUD high-water glyph count").toBe(stableGlyphs);
-      expect(hudWrites.mock.calls.length, "minimal HUD instance allocation sentinel").toBe(0);
-      expect(glyphWritesBefore).toBe(stableGlyphs);
-      hudWrites.mockRestore();
-      hud.dispose();
+      const target = new Vector3(-2, 0.9, 0);
+      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
+        minimal.followCamera(camera, target, DT);
+      expect(
+        measureVectorAllocations(() => minimal.followCamera(camera, target, DT)),
+        "minimal followCamera vector allocation sentinel",
+      ).toEqual({ clones: 0, constructors: 0 });
 
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
@@ -492,24 +519,18 @@ describe("generated template ordinary-frame runtime cost", () => {
     }
 
     const minimalPhysics = await physicsFixture();
-    const solarPositionSpy = vi.spyOn(core, "solarPosition");
     try {
       const context = sceneContext(minimalPhysics.physics, minimal.Play.initialState);
-      const frame = new minimal.Play().enter(context as never);
+      const rig = tinyRig(["Idle_Loop", "Jog_Fwd_Loop", "Jump_Start", "Jump_Loop", "Jump_Land"]);
+      const play = new minimal.Play();
+      await play.load({
+        ...context,
+        assets: { ...context.assets, model: async <T>(): Promise<T> => rig as T },
+      } as never);
+      const frame = play.enter(context as never);
       runSceneFrames(frame, context);
-      expect(solarPositionSpy).toHaveBeenCalledTimes(1 + WARMUP_FRAMES + MEASURED_FRAMES);
-      expect(
-        new Set(solarPositionSpy.mock.calls.slice(-MEASURED_FRAMES).map(([input]) => input)).size,
-        "minimal solar-position input high-water sentinel",
-      ).toBe(1);
-      expect(
-        new Set(solarPositionSpy.mock.results.slice(-MEASURED_FRAMES).map(({ value }) => value))
-          .size,
-        "minimal solar-position output high-water sentinel",
-      ).toBe(1);
       expect(context.patchIdentities.size, "minimal Play state-patch high-water sentinel").toBe(1);
     } finally {
-      solarPositionSpy.mockRestore();
       minimalPhysics.dispose();
     }
 

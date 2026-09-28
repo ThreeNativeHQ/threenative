@@ -101,27 +101,3 @@ export const propMaterial = new MeshStandardMaterial({
   roughness: 0.45,
   metalness: 0,
 });
-
-/** The figure: polished metal, which is nothing but the environment it reflects. */
-export const defaultMaterial = new MeshStandardMaterial({
-  color: palette.player,
-  roughness: 0.22,
-  metalness: 1,
-});
-
-/** The figure's visor and boots, lit from inside so they read at any distance. */
-export const accentMaterial = new MeshStandardMaterial({
-  color: palette.accent,
-  emissive: palette.accent,
-  emissiveIntensity: 2.5,
-  roughness: 0.3,
-  metalness: 0,
-});
-
-/** Distant ridges: matte rock, left to the haze to colour. */
-export const rockMaterial = new MeshStandardMaterial({
-  color: palette.rock,
-  roughness: 0.95,
-  metalness: 0,
-  flatShading: true,
-});

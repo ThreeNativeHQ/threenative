@@ -113,13 +113,14 @@ export class Player {
       figure.rotation.y += (turn - Math.PI) * Math.min(1, dt * 12);
     }
     const grounded = this.body.grounded;
+    this.#landing -= dt;
     if (jumped) this.character.play(CLIPS.jumpStart, { fade: 0.08, mode: "once" });
     else if (!grounded && this.character.finished)
       this.character.play(CLIPS.jumpLoop, { fade: 0.15 });
     else if (grounded && !this.#wasGrounded) {
       this.#landing = 0.25;
       this.character.play(CLIPS.jumpLand, { fade: 0.06, mode: "once" });
-    } else if (grounded && (this.#landing -= dt) <= 0)
+    } else if (grounded && this.#landing <= 0)
       this.character.play(speed > 0.05 ? CLIPS.jog : CLIPS.idle, { fade: 0.2 });
     this.#wasGrounded = grounded;
     this.character.update(dt);

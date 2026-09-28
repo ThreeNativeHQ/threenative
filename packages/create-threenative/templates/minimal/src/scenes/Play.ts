@@ -1,8 +1,9 @@
 import {
-  afterPhysics,
   type ICtx,
   Scene,
   type SceneFrame,
+  VirtualShadowNode,
+  afterPhysics,
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
@@ -160,6 +161,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     afterPhysics(ctx, (dt) => followCamera(camera, player.mesh.position, dt));
     ctx.entities.add("player", player);
+    // Camera-centred shadow levels on WebGPU: a 6 m window around the camera at ~0.6 cm a texel
+    // for crisp contact under the feet, widening to 48 m for the far walls. The moving figure is a
+    // tracked caster, so it redraws every frame without invalidating the cached static levels.
+    // The WebGL fallback keeps the single fitted shadow map `lighting.ts` configures.
+    if (ctx.renderer.kind === "webgpu") {
+      const shadows = new VirtualShadowNode(lighting.key, { clipExtents: [6, 18, 48] });
+      lighting.key.shadow.shadowNode = shadows;
+      shadows.trackCaster(player.mesh);
+    }
     const pickup = new Area3D({
       physics: ctx.physics,
       position: { x: 1.5, y: 0.5, z: 0 },
