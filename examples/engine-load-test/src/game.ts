@@ -16,10 +16,17 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
+  Vector2,
   WebGPURenderer,
 } from "three/webgpu";
-import {
-  type IRenderProjectionReport,
+// Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
+// scene, and a runtime import here would put the framework in the control arm's served graph. The
+// arm that owns the optimizer passes the factory in; an arm that has none has no L3 to measure.
+import type { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
+import type { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
+import type {
+  IRenderProjectionOptions,
+  IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
@@ -29,18 +36,40 @@ import {
   type RenderMode,
   assertRungAxesSupported,
   cameraPose,
+  canonicalPlacementBytes,
   createPlacements,
   cubeBobY,
   cubeRotationX,
   cubeRotationY,
   culledOffsetX,
+  isAuthoredRung,
   isMutated,
+  isProjectedRung,
   latticeExtent,
   positionHash,
+  uniqueMaterialColor,
 } from "./workload.js";
 
 export const VIEWPORT_WIDTH = 1280;
 export const VIEWPORT_HEIGHT = 720;
+
+/** How an arm that owns a render projection builds one over a scene. */
+export type CollapseFactory = (
+  scene: Scene,
+  options?: IRenderProjectionOptions,
+) => SceneRenderProjection;
+
+/**
+ * The two passes `defineGame` installs around the draw that no render argument can carry: the
+ * engine's visible-only world-matrix walk and the projected-size cull. The arm that owns the
+ * framework builds them at their shipped defaults and hands them in, because this module may only
+ * ever import the framework's *types* — a runtime import would put the engine in the control arm's
+ * served graph, and the whole comparison rests on that arm having none.
+ */
+export interface ILoadTestEnginePasses {
+  readonly cameraCull: RenderCameraCull;
+  readonly matrixWorld: MatrixWorldPass;
+}
 
 export interface ILoadTestRung {
   mode: RenderMode;
@@ -55,6 +84,8 @@ export interface ILoadTestFrameStats {
 
 export interface ILoadTestHarness {
   adapterLabel: string;
+  /** Initial positions read from the built meshes or instance buffer, before the timed loop. */
+  placementBytes: Uint8Array;
   beginCollapse(): void;
   collapseMovingParts(): number;
   collapseMs: number;
@@ -113,25 +144,33 @@ interface IAuthoredCubes {
   materials: Material[];
 }
 
-// The authored L1/L3 rung: shared geometry and material by default, per-object clones when either
-// uniqueness axis is on, and culled objects pushed past the far plane.
+// The authored L1/L3/L4 rung: shared geometry and material by default, per-object clones when
+// either uniqueness axis is on, one extra material per cube under L4, and culled objects pushed
+// past the far plane.
 function buildAuthoredCubes(
   placements: readonly ICubePlacement[],
   parent: Object3D,
   axes: IWorkloadAxes,
+  mode: RenderMode,
   cubeGeometry: BoxGeometry,
-  material: Material,
+  material: MeshStandardMaterial,
   shadowCasterCount: number,
 ): IAuthoredCubes {
   const cubes: Mesh[] = [];
   const geometries: BufferGeometry[] = [];
   const materials: Material[] = [];
+  const uniqueGeometry = axes.geometry === "unique";
+  // L4 is the per-cube-material rung whatever the axes say: its whole claim is that nothing can be
+  // batched, which a shared material would let the projection batch away.
+  const perCubeColor = mode === "L4";
+  const uniqueMaterial = axes.material === "unique" || perCubeColor;
   for (let index = 0; index < placements.length; index += 1) {
     const placement = placements[index] as ICubePlacement;
-    const uniqueGeometry = axes.geometry === "unique";
-    const uniqueMaterial = axes.material === "unique";
     const geometry = uniqueGeometry ? cubeGeometry.clone() : cubeGeometry;
-    const meshMaterial = uniqueMaterial ? material.clone() : material;
+    const owned = uniqueMaterial ? material.clone() : undefined;
+    // On the clone, so the ground plane and every other rung keep the shared authored colour.
+    if (perCubeColor) owned?.color.setHex(uniqueMaterialColor(index));
+    const meshMaterial: Material = owned ?? material;
     if (uniqueGeometry) geometries.push(geometry);
     if (uniqueMaterial) materials.push(meshMaterial);
     const cube = new Mesh(geometry, meshMaterial);
@@ -247,6 +286,8 @@ export async function createLoadTestHarness(
   adapterLabel = "unknown",
   animateObjects = true,
   axes: IWorkloadAxes = DEFAULT_AXES,
+  createCollapse?: CollapseFactory,
+  enginePasses?: ILoadTestEnginePasses,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -279,10 +320,22 @@ export async function createLoadTestHarness(
 
   const dummy = new Object3D();
   const instanceMatrix = new Matrix4();
+  const drawingBufferSize = new Vector2();
   let state: IRungState | undefined;
+
+  // The shipped default's per-frame passes, and only for the rung that installed the projection.
+  // L1 and L2 hand the authored scene straight to three with no engine walk behind it, and that is
+  // exactly what the independent rung is for: it must keep measuring the scene with the framework's
+  // own pipeline out of the frame, or it stops being the diagnostic L3 is compared against.
+  const shippedDefaultPasses = (): ILoadTestEnginePasses | undefined =>
+    state?.collapse === undefined ? undefined : enginePasses;
 
   const clearRung = (): void => {
     if (state === undefined) return;
+    // The engine owns the world-matrix walk while a rung is projecting, so the authored scene is
+    // marked once here. Restored on the way out because L1 and L2 reuse this same scene with
+    // nothing behind it but three: left marked, it would never be refreshed at all.
+    scene.matrixWorldAutoUpdate = true;
     // Released before the cubes are removed. The projection holds instanced draws built from this
     // rung's geometry; leaving them alive across a rung change would draw the previous rung's
     // objects on top of the next one's.
@@ -314,11 +367,12 @@ export async function createLoadTestHarness(
     const materials: Material[] = [];
     let instanced: InstancedMesh | undefined;
     const shadowCasterCount = Math.ceil(rung.objectCount * axes.shadowCasterShare);
-    if (rung.mode === "L1" || rung.mode === "L3") {
+    if (isAuthoredRung(rung.mode)) {
       const authored = buildAuthoredCubes(
         placements,
         parent,
         axes,
+        rung.mode,
         cubeGeometry,
         material,
         shadowCasterCount,
@@ -358,16 +412,22 @@ export async function createLoadTestHarness(
   let collapseReport: IRenderProjectionReport | undefined;
 
   const beginCollapse = (): void => {
-    if (state === undefined || state.rung.mode !== "L3") return;
+    if (state === undefined || !isProjectedRung(state.rung.mode)) return;
+    if (createCollapse === undefined) throw new Error("TN_BENCH_NO_COLLAPSE_PROVIDER");
     collapseReport = undefined;
     // No tuning: `defineGame` constructs `new SceneRenderProjection(scene)` with defaults and
     // reconciles it every frame, so L3 must use the same defaults or it measures a hand-tuned
-    // optimizer rather than what a ThreeNative game actually gets.
-    state.collapse = new SceneRenderProjection(scene, {
+    // optimizer rather than what a ThreeNative game actually gets. The world-matrix pass is the
+    // one option it is handed, because the renderer is given the mirror and three's own walk would
+    // never reach the authored scene it projects from.
+    const passes = enginePasses;
+    state.collapse = createCollapse(scene, {
+      ...(passes === undefined ? {} : { matrixWorld: passes.matrixWorld }),
       onReport: (value) => {
         collapseReport = value;
       },
     });
+    if (passes !== undefined) scene.matrixWorldAutoUpdate = false;
   };
 
   const collapseStatus = (): string =>
@@ -393,16 +453,20 @@ export async function createLoadTestHarness(
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
-    if (state.rung.mode === "L1" || state.rung.mode === "L3") {
+    if (isAuthoredRung(state.rung.mode)) {
       // Diagnostic only: with the animation off, `stepMs` is the framework's refresh alone, which
       // is what separates "the engine is slow" from "the game's own gameplay loop is slow". A
       // framework fix can only ever address the first.
       if (animateObjects) {
         writeAuthoredTransforms(state.cubes, state.placements, frameIndex, axes);
       }
-      // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
-      // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
+      // L3 and L4 pay this on the game side every frame: the collapse pass reads the same moved
+      // meshes and pushes their transforms into the baked draw. It is part of the frame, not a
+      // setup cost. L4's per-cube materials are why there is usually nothing to push them into.
       const collapseStartedAt = performance.now();
+      // The walk counts the nodes this frame visits, so its count opens before the reconcile that
+      // walks the authored scene, as `defineGame` does.
+      shippedDefaultPasses()?.matrixWorld.beginFrame();
       state.collapse?.reconcile();
       collapseMs = performance.now() - collapseStartedAt;
       stepMs = performance.now() - startedAt;
@@ -424,8 +488,27 @@ export async function createLoadTestHarness(
 
   return {
     adapterLabel,
+    get placementBytes() {
+      if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+      const current = state;
+      return canonicalPlacementBytes(current.rung.objectCount, (index) => {
+        if (current.instanced !== undefined) {
+          current.instanced.getMatrixAt(index, instanceMatrix);
+          return {
+            x: instanceMatrix.elements[12] ?? Number.NaN,
+            y: instanceMatrix.elements[13] ?? Number.NaN,
+            z: instanceMatrix.elements[14] ?? Number.NaN,
+          };
+        }
+        const cube = current.cubes[index];
+        if (cube === undefined) throw new Error(`TN_BENCH_PLACEMENT_MISSING:${index}`);
+        return cube.position;
+      });
+    },
     dispose: () => {
       clearRung();
+      enginePasses?.cameraCull.dispose();
+      enginePasses?.matrixWorld.dispose();
       renderer.dispose();
     },
     get positionHash() {
@@ -439,7 +522,24 @@ export async function createLoadTestHarness(
       // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
       // pass-count axis re-renders the same input; the default is one pass.
       const root = state?.collapse?.root ?? scene;
+      // The shipped default's frame around that draw, in its order: the projected-size cull writes
+      // `object.visible` and leaves it alone until the draw is submitted, the engine's walk
+      // refreshes the world matrices three is no longer asked to walk, and both are undone
+      // afterwards so the authored scene is exactly as the game left it. Without these L3 measured
+      // a projection on top of three's default frame, which is not the pipeline a ThreeNative game
+      // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
+      const passes = shippedDefaultPasses();
+      if (passes !== undefined) {
+        passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
+        root.matrixWorldAutoUpdate = false;
+        passes.matrixWorld.apply(root);
+      }
       for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
+      if (passes !== undefined) passes.cameraCull.restore();
+      // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
+      // chain allocates per-object velocity, which this arm has none of — a shipped game with no
+      // post chain resolves the same way, so L3 pays the same commit a shipped game does.
+      state?.collapse?.commit();
     },
     beginCollapse,
     collapseStatus,
@@ -455,14 +555,19 @@ export async function createLoadTestHarness(
     stats: () => {
       const drawCalls = renderer.info.render.drawCalls;
       const triangles = renderer.info.render.triangles;
-      // `drawCalls` totals every render pass, so the per-object count divides the pass count.
-      const visibleObjects =
-        state?.rung.mode === "L1"
-          ? Math.max(0, drawCalls / axes.passCount - 1)
-          : (state?.rung.objectCount ?? 0);
+      // `drawCalls` totals every render pass, so the per-object count divides the pass count. L1
+      // and L4 have no baked batch to inflate it, so the visible count is read off the draw count;
       // L3's draw count is the finding: if the collapse applied, it is small; if it declined, this
       // is L1 with extra steps and the report must show that rather than hide it.
-      return { drawCalls, triangles, visibleObjects };
+      const mode = state?.rung.mode;
+      return {
+        drawCalls,
+        triangles,
+        visibleObjects:
+          mode === "L1" || mode === "L4"
+            ? Math.max(0, drawCalls / axes.passCount - 1)
+            : (state?.rung.objectCount ?? 0),
+      };
     },
     step,
   };
