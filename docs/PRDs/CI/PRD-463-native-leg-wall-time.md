@@ -24,13 +24,16 @@ With V8 off the critical path the next one is `Desktop web/native parity`: 46 of
   a develop/main native-platforms run with `publish-android-v8` green, then a PR run whose
   `Android V8 source payload` job takes < 5 min. The publisher is trusted-ref only and checks
   nothing out; `.github/actions/android-v8-source` downloads before trying the Actions cache.
+  Published half green: run 36448456340 (branch temporarily allowed, reverted in b69a74870) uploaded
+  `v8-android-f543358d….tgz`, 26.6 MB, pre-release, repo "latest" unchanged. PR download open.
 - [ ] A downloaded payload still passes the receipt check, and a stale one rebuilds. proof: the
   build step logs `Verified Android V8` on the download path.
 - [ ] The NDK and Android SDK caches are deleted. proof: `scripts/__tests__/ci-structure.spec.ts`
   (201 passed locally) and the PR run's Android job has no `Post Restore the Android SDK packages`.
 - [ ] A superseded PR run no longer saves 3 GB of V8 source state. proof: the action's save condition.
-- [ ] A cold V8 build uses every runner core (`THREENATIVE_V8_BUILD_JOBS=$(nproc)`, was 3). proof:
-  the next cold build's duration against 2 h 1 min (run 36357493470).
+- [x] A cold V8 build uses every runner core (`THREENATIVE_V8_BUILD_JOBS=$(nproc)`, was 3). proof:
+  the next cold build's duration against 2 h 1 min (run 36357493470). — run 36448456340: cold
+  (no payload, no source state restored), build step 16:06 → 17:10, 1 h 4 min.
 - [x] Every executed conformance row logs its wall time. proof: `[conformance] <id> <status> <s>`
   lines in the PR run's desktop parity log. — run 36448456340: 74 lines, every row 36–39 s,
   total 2711 s.
