@@ -1125,36 +1125,44 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
   ) => void;
 
   /**
-   * A renderer carrying three's own per-draw seam and nothing else, plus a shadow pass that does
-   * what `updateShadow` does: install the draw gate, submit the casters, put back what it found.
+   * A renderer carrying an own-property `setRenderObjectFunction` that wraps whatever it is handed
+   * and then draws through the function it captured when it was installed — which is what
+   * `installDrawHook` in `renderer.ts` puts on a real renderer, and what this walk was measured on:
+   * the function it is handed is never called, so a bias handed to this seam never runs.
    */
-  function drawHost(
-    camera: PerspectiveCamera,
-    casters: readonly Mesh[],
-  ): {
+  function drawHost(): {
     readonly draws: IDraw[];
-    readonly host: object;
+    /** The level whose pass is drawing, so the wrapper's own draw is recorded against it. */
+    level: number;
+    getRenderObjectFunction(): DrawGate | null;
+    setRenderObjectFunction(fn: DrawGate | null): void;
   } {
     const draws: IDraw[] = [];
     let current: DrawGate | null = null;
-    return {
+    const host = {
       draws,
-      host: {
-        getRenderObjectFunction: () => current,
-        setRenderObjectFunction: (fn: DrawGate | null) => {
-          current = fn;
-        },
+      level: -1,
+      getRenderObjectFunction: () => current,
+      setRenderObjectFunction: (fn: DrawGate | null) => {
+        current = fn === null ? null : installed;
       },
     };
+    const installed: DrawGate = (object, _scene, _camera, _geometry, material) => {
+      const mesh = object as Mesh;
+      // What three's own shadow gate reads, and where it reads the geometry from: the cached render
+      // object is keyed on the object and re-reads `object.geometry` itself.
+      if (mesh.castShadow !== true) return;
+      draws.push({ level: host.level, material, object: mesh, submitted: mesh.geometry });
+    };
+    return host;
   }
 
-  /** Wire each level node to the host, recording the geometry every draw would submit. */
+  /** Wire each level node to the host, drawing the casters through whatever function is installed. */
   function watchDraws(
     node: VirtualShadowNode,
-    host: object,
+    host: ReturnType<typeof drawHost>,
     camera: PerspectiveCamera,
     casters: readonly Mesh[],
-    draws: IDraw[],
   ): void {
     const levels = [...node.levelNodes];
     for (const levelNode of levels) {
@@ -1163,20 +1171,12 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
           getRenderObjectFunction(): DrawGate | null;
           setRenderObjectFunction(fn: DrawGate | null): void;
         };
-        const gate: DrawGate = (object, _scene, _camera, _geometry, material) => {
-          draws.push({
-            level: levels.indexOf(levelNode),
-            material,
-            object: object as Mesh,
-            submitted: (object as Mesh).geometry,
-          });
-        };
+        host.level = levels.indexOf(levelNode);
         const found = seam.getRenderObjectFunction();
-        seam.setRenderObjectFunction(gate);
-        // Three draws through the gate the renderer now holds, not the one it was handed, so this
-        // is what proves the node's own wrapper is the thing in the way.
+        seam.setRenderObjectFunction(() => undefined);
+        // Three draws through the function the renderer now holds, not the one it was handed.
         const installed = seam.getRenderObjectFunction();
-        if (installed === null) throw new Error("the shadow pass installed no draw gate.");
+        if (installed === null) throw new Error("the shadow pass installed no draw function.");
         for (const mesh of casters)
           installed(
             mesh,
@@ -1270,15 +1270,17 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     const coarsest = chain.levels[chain.levels.length - 1] as BufferGeometry;
     expect(chain.levels).toHaveLength(3);
     const node = setupNode(light, { clipExtents: [24, 96, 320] });
-    const { draws, host } = drawHost(camera, [mesh]);
-    watchDraws(node, host, camera, [mesh], draws);
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
     renderAllLevels(node, camera, host);
 
     // Level 0 draws what the main pass draws; 96 m and 320 m windows cannot resolve LOD0, so they
-    // draw the coarsest rung — the 2-triangle level, one draw over the mesh's own.
-    expect(draws.map((draw) => draw.level)).toEqual([0, 1, 2]);
-    expect(draws.map((draw) => draw.submitted)).toEqual([mesh.geometry, coarsest, coarsest]);
-    // The mesh was never left on the coarse geometry: the swap lives inside one draw.
+    // draw the coarsest rung — the 2-triangle level, one draw over the mesh's own. This ran on the
+    // renderer whose `setRenderObjectFunction` ignores the function it is handed, which is why it
+    // holds where the draw-gate seam did not.
+    expect(host.draws.map((draw) => draw.level)).toEqual([0, 1, 2]);
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([mesh.geometry, coarsest, coarsest]);
+    // The mesh was never left on the coarse geometry: the swap lives inside one level's render.
     expect(mesh.geometry).toBe(chain.levels[0]);
     node.dispose();
   });
@@ -1289,11 +1291,11 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     mesh.castShadow = true;
     scene.add(mesh);
     const node = setupNode(light, { clipExtents: [24, 96, 320], shadowLodBias: false });
-    const { draws, host } = drawHost(camera, [mesh]);
-    watchDraws(node, host, camera, [mesh], draws);
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
     renderAllLevels(node, camera, host);
 
-    expect(draws.map((draw) => draw.submitted)).toEqual([
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
       mesh.geometry,
       mesh.geometry,
       mesh.geometry,
@@ -1313,17 +1315,60 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     proxy.castShadow = true;
     scene.add(cutout, proxy);
     const node = setupNode(light, { clipExtents: [24, 96, 320] });
-    const { draws, host } = drawHost(camera, [cutout, proxy]);
-    watchDraws(node, host, camera, [cutout, proxy], draws);
+    const host = drawHost();
+    watchDraws(node, host, camera, [cutout, proxy]);
     renderAllLevels(node, camera, host);
 
     // The trade, stated once: a fence's or a foliage card's shadow ends where the finest level's
     // window ends, like Unreal's per-primitive shadow cull distance. The opaque proxy is drawn by
     // every level, so a chunk's own shadow does not end with it.
     const levelsFor = (object: Mesh): number[] =>
-      draws.filter((draw) => draw.object === object).map((draw) => draw.level);
+      host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
     expect(levelsFor(cutout)).toEqual([0]);
     expect(levelsFor(proxy)).toEqual([0, 1, 2]);
+    // The coarse levels took the cutout out of the shadow pass for the length of their render and
+    // put it back: the main pass and the next level's map still draw it.
+    expect(cutout.castShadow).toBe(true);
+    expect(proxy.castShadow).toBe(true);
+    node.dispose();
+  });
+
+  it("should draw both defaults off one walk, and leave the world exactly as authored", async () => {
+    const { camera, light, scene } = world();
+    // The two halves together, which is the shape a streamed chunk leaves behind: a chained mesh
+    // that casts from its coarsest rung and a cutout that casts at all, in one window's walk.
+    const tree = await chained();
+    tree.position.set(12, 0, 0);
+    tree.castShadow = true;
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-12, 2, 0);
+    cutout.castShadow = true;
+    scene.add(tree, cutout);
+    const chain = lodChainOf(tree.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[chain.levels.length - 1] as BufferGeometry;
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [tree, cutout]);
+    renderAllLevels(node, camera, host);
+
+    const drawn = (object: Mesh): { level: number; submitted: BufferGeometry }[] =>
+      host.draws
+        .filter((draw) => draw.object === object)
+        .map((draw) => ({ level: draw.level, submitted: draw.submitted }));
+    // Level 0 is the main pass: both casters, both as authored. Level 1 is the first coarse one,
+    // and it submits the coarsest rung and no cutout — one traverse, two changes.
+    expect(drawn(tree)).toEqual([
+      { level: 0, submitted: tree.geometry },
+      { level: 1, submitted: coarsest },
+      { level: 2, submitted: coarsest },
+    ]);
+    expect(drawn(cutout)).toEqual([{ level: 0, submitted: cutout.geometry }]);
+    // Nothing left changed: the next level's map, the mover maps and the main pass draw the world
+    // the game authored, which is what the walk cost has to be worth.
+    expect(tree.geometry).toBe(chain.levels[0]);
+    expect(tree.castShadow).toBe(true);
+    expect(cutout.castShadow).toBe(true);
     node.dispose();
   });
 });

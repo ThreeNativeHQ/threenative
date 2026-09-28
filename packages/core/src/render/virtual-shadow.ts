@@ -3,7 +3,6 @@ import {
   type BufferGeometry,
   type Camera,
   type DirectionalLight,
-  type Material,
   type Mesh,
   Object3D,
   type OrthographicCamera,
@@ -29,7 +28,6 @@ import {
   type Node,
   type NodeBuilder,
   type NodeFrame,
-  type Renderer,
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
@@ -130,8 +128,9 @@ export interface IVirtualShadowOptions {
   /**
    * Draw every level past the finest one with less geometry than the main pass would, default true.
    *
-   * Two defaults, both Unreal's and both applied in one place — the draw gate three installs for a
-   * level render, wrapped for the duration of that render only:
+   * Two defaults, both Unreal's and both applied in one place — the traverse a level render already
+   * makes over the casters in its window, where each of the two is a change to the object three
+   * draws from and is put back the moment that render is over:
    *
    * 1. **Shadow LOD bias.** A mesh whose geometry carries a registered AutoLOD chain
    *    (`lodChainOf`) is submitted with the chain's *coarsest* geometry. A level 2 window cannot
@@ -145,8 +144,10 @@ export interface IVirtualShadowOptions {
    *    window ends, and a wide level shows bare ground where it stood. Opaque casters — a merged
    *    chunk's position-only proxy, a tree's silhouette — are drawn on every level as before.
    *
-   * Nothing here is left changed: the coarse geometry is set for the length of one draw and put
-   * back, so the main pass and the mover maps of the finest level see the mesh exactly as authored.
+   * Neither is left changed: a hidden caster's `castShadow` and a coarse mesh's `geometry` are put
+   * back before the next level, before the mover maps and before the main pass, which see the world
+   * exactly as the game authored it. Mover maps keep full detail — a 256² map over the level's own
+   * window, drawing only the tracked casters.
    * `false` puts every level back on stock full-detail draws, which is what the node did before
    * either default existed.
    */
@@ -414,19 +415,12 @@ interface IRenderingShadowNode {
 }
 
 /**
- * Three's per-draw gate for a shadow pass, as `getShadowRenderObjectFunction` builds it. The node
- * wraps whatever it is handed rather than reimplementing it, so the pass keeps three's own
- * `castShadow` and velocity decisions and only the geometry and the skip are ours.
+ * Whether a caster's shadow is its own texture rather than its silhouette's — `alphaTest` against a
+ * map, or `transparent`. A multi-material mesh is one caster to the probe, so any one of its
+ * materials answering true takes the whole mesh out of the coarse levels.
  */
-type ShadowRenderObjectFunction = NonNullable<Parameters<Renderer["setRenderObjectFunction"]>[0]>;
-
-/**
- * Whether this draw's material cuts itself out — `alphaTest` against a map, or `transparent` — so
- * its shadow is its own texture rather than its silhouette's. A multi-material mesh is projected one
- * group at a time, so the material here is the one this draw would read.
- */
-function isAlphaCaster(material: Material | undefined): boolean {
-  if (material === undefined) return false;
+function isAlphaCaster(material: Mesh["material"]): boolean {
+  if (Array.isArray(material)) return material.some(isAlphaCaster);
   return material.transparent === true || material.alphaTest > 0;
 }
 
@@ -533,6 +527,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #poolCount = 0;
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
+  /** Alpha casters `#probe` took out of the coarse levels' shadow pass, with `castShadow` to restore. */
+  #alphaHidden: Mesh[] = [];
+  /** Chained meshes `#probe` put on their coarsest chain level, and the geometry each was holding. */
+  #coarsened: { mesh: Mesh; geometry: BufferGeometry }[] = [];
 
   constructor(light: DirectionalLight, options: IVirtualShadowOptions = {}) {
     super(light);
@@ -797,11 +795,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * One traverse for three automatic fixes: the world bounding sphere of every shadow-relevant mesh
+   * One traverse for four automatic fixes: the world bounding sphere of every shadow-relevant mesh
    * goes into the pool, every caster too small for this level's texel grid is hidden until the
-   * level's render is over, and the level's caster granularity is chosen from the two bills it could
-   * pay. Mirrors the sphere three's own cull reads, so the gate drops exactly the volumes that cull
-   * would have kept and the depth below measures the same boxes it will draw.
+   * level's render is over, every level past the finest one draws less of what it can (see
+   * `shadowLodBias`), and the level's caster granularity is chosen from the two bills it could pay.
+   * Mirrors the sphere three's own cull reads, so the gate drops exactly the volumes that cull would
+   * have kept and the depth below measures the same boxes it will draw.
    *
    * Both halves of every key are on the caster-only layers, so the bill is counted off the meshes
    * themselves rather than configured: the clusters whose square the level's window holds, against
@@ -817,6 +816,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const window = level.extent * Math.SQRT2;
     this.#poolCount = 0;
     this.#hidden.length = 0;
+    this.#alphaHidden.length = 0;
+    this.#coarsened.length = 0;
+    // Past the finest level, every level draws less of what it can. Set on the world here, in the
+    // traverse that is already walking this window's casters, and put back by `#restoreHidden` when
+    // the render is over — so the mover maps and the main pass see every mesh as it was authored.
+    const biased = index >= 1 && this.options.shadowLodBias;
     let clusterDraws = 0;
     let wideDraws = 0;
     // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
@@ -839,6 +844,27 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // Read before the gates below: the level is going to render both caster layers either way, and
       // a caster too small for this level's texels is still one the prewarm owes a draw.
       if (mesh.casterPrewarmOwed === true) prewarming = true;
+      // What a coarse level submits less of, in the same walk: an alpha caster casts nothing — its
+      // cutout is its own texture and the level's texel is wider than the card — and a chained mesh
+      // is submitted with the chain's coarsest geometry, which is metres per texel where LOD0 is
+      // needles. Both are the renderer's own business to submit nothing for and the coarse geometry
+      // for, and both are undone before this render ends. `castShadow` is already the flag three's
+      // draw gate reads, and `object.geometry` is what its cached render object re-reads, so this
+      // needs no seam of its own. Not in the pool either: neither draws into this level, so neither
+      // reaches as far as this level's depth has to cover.
+      if (biased && mesh.castShadow === true) {
+        if (isAlphaCaster(mesh.material)) {
+          mesh.castShadow = false;
+          this.#alphaHidden.push(mesh);
+          return;
+        }
+        const chain = lodChainOf(mesh.geometry);
+        const coarsest = chain?.levels[chain.levels.length - 1];
+        if (coarsest !== undefined && coarsest !== mesh.geometry) {
+          this.#coarsened.push({ geometry: mesh.geometry, mesh });
+          mesh.geometry = coarsest;
+        }
+      }
       // The same two spheres three's cull uses: an instanced mesh's own, over its instances, or the
       // geometry's. `boundingSphere` is `null` on a fresh instanced mesh and undefined on a `Mesh`.
       const own = mesh.boundingSphere;
@@ -936,105 +962,30 @@ export class VirtualShadowNode extends ShadowBaseNode {
       level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
   }
 
-  /** Put back every caster `#probe` hid, so the next camera sees the world as it was. */
+  /**
+   * Put back every caster `#probe` changed: the ones its texel gate hid, the alpha casters it took
+   * out of the shadow pass, and the geometry it swapped for a coarser chain level. The next camera
+   * — the next level's map, a mover map, the main pass — sees the world as it was authored.
+   */
   #restoreHidden(): void {
     for (const object of this.#hidden) object.visible = true;
+    for (const mesh of this.#alphaHidden) mesh.castShadow = true;
+    for (const held of this.#coarsened) held.mesh.geometry = held.geometry;
     this.#hidden.length = 0;
+    this.#alphaHidden.length = 0;
+    this.#coarsened.length = 0;
   }
 
   /**
-   * One level's draw gate, wrapped for the length of that level's render: an alpha caster is
-   * skipped and a chained mesh is submitted with its coarsest geometry. See
-   * `IVirtualShadowOptions.shadowLodBias`, which says what the two defaults are and what they cost.
-   *
-   * Three hands the geometry to `renderObject` but does not draw it: the cached render object is
-   * keyed on the object and re-reads `object.geometry` itself, so the coarse level is set for the
-   * length of the one draw and put straight back. Nothing is left changed and the main pass — which
-   * never runs inside this window — sees the mesh as authored.
+   * Render one level's map — cached or mover — as the stock shadow node draws it. What a coarse
+   * level draws less of is set on the world by `#probe` and put back by `#restoreHidden`, which is
+   * the same seam the texel gate has always used: three hands `renderObject` the geometry but the
+   * cached render object re-reads `object.geometry` itself, so only what the object holds can change
+   * what a draw submits, and the renderer's own per-draw function is not ours to wrap.
    */
-  #biasedShadowRender(inner: ShadowRenderObjectFunction): ShadowRenderObjectFunction {
-    return (
-      object,
-      scene,
-      camera,
-      geometry,
-      material,
-      group,
-      lightsNode,
-      clippingContext,
-      passId,
-    ) => {
-      if (isAlphaCaster(material)) return;
-      const chain = lodChainOf(geometry);
-      const coarsest = chain?.levels[chain.levels.length - 1];
-      const mesh = object as Mesh;
-      if (coarsest === undefined || coarsest === mesh.geometry) {
-        inner(
-          object,
-          scene,
-          camera,
-          geometry,
-          material,
-          group,
-          lightsNode,
-          clippingContext,
-          passId,
-        );
-        return;
-      }
-      const held = mesh.geometry;
-      mesh.geometry = coarsest;
-      try {
-        inner(
-          object,
-          scene,
-          camera,
-          coarsest,
-          material,
-          group,
-          lightsNode,
-          clippingContext,
-          passId,
-        );
-      } finally {
-        mesh.geometry = held;
-      }
-    };
-  }
-
-  /**
-   * Render one level's map — cached or mover — with the coarse levels' bias in force.
-   *
-   * The hook is the renderer's own per-draw seam, installed for the length of the render only.
-   * Three's `updateShadow` calls it exactly twice: once to install the shadow pass's draw gate, and
-   * once to put back the function it found. Only the first is wrapped, so the main pass's gate is
-   * handed straight back, and `setRenderObjectFunction` itself is restored afterwards.
-   */
-  #renderLevel(frame: NodeFrame, level: ILevel, index: number, mover: boolean): void {
+  #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean): void {
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
-    const renderer = frame.renderer;
-    if (index === 0 || !this.options.shadowLodBias || renderer === null) {
-      node.updateShadow(frame);
-      return;
-    }
-    const original = renderer.setRenderObjectFunction;
-    let armed = true;
-    renderer.setRenderObjectFunction = (renderObjectFunction) => {
-      if (armed) {
-        armed = false;
-        original.call(
-          renderer,
-          renderObjectFunction === null ? null : this.#biasedShadowRender(renderObjectFunction),
-        );
-        return;
-      }
-      original.call(renderer, renderObjectFunction);
-    };
-    try {
-      node.updateShadow(frame);
-    } finally {
-      renderer.setRenderObjectFunction = original;
-    }
+    node.updateShadow(frame);
   }
 
   /**
@@ -1502,15 +1453,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
         if (grant) {
           // The two automatic fixes, off one traverse of the world this window can see: the depth
           // the level needs to cover what can actually shadow it, and the casters too small for its
-          // texels. Both are undone the moment the render is over — the hidden casters by
-          // `#restoreHidden`, which the mover maps and the main pass both need back.
+          // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
+          // mover maps and the main pass both need back.
           this.#probe(level, centre, index);
           if (this.#autoDepth) this.#deriveDepth(level, centre);
           this.#place(level, centre);
           try {
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
-            // Every level past the finest draws with `shadowLodBias` in force.
-            this.#renderLevel(frame, level, index, false);
+            this.#renderLevel(frame, level, false);
           } finally {
             this.#restoreHidden();
           }
@@ -1528,11 +1478,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
     if (this.#casters.size > 0) {
-      this.#levels.forEach((level, index) => {
+      for (const level of this.#levels) {
         // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
-        if (canRender) this.#renderLevel(frame, level, index, true);
+        // A mover map draws only the tracked casters on layer 29, in a 256² map over the level's own
+        // window, so it keeps full detail: every level's world changes were already put back above.
+        if (canRender) this.#renderLevel(frame, level, true);
         moverRenders += 1;
-      });
+      }
     }
     this.#frame += 1;
     this.#rendered += rendered;
