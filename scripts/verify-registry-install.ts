@@ -201,16 +201,40 @@ export function assertSupportedPackageManager(
     );
 }
 
+/**
+ * The tail of a failed child's own output, in the step report.
+ *
+ * `execFileSync` throws with `Command failed: <command>` and, at most, its stderr. pnpm reports
+ * *resolution* failures on stdout, so a failed install used to report the command line and nothing
+ * else — the one sentence a reader needs was thrown away. Bounded: an install prints megabytes.
+ */
+export function childOutputTail(error: unknown, limit = 2_000): string {
+  if (typeof error !== "object" || error === null) return "";
+  const { stderr, stdout } = error as { readonly stderr?: unknown; readonly stdout?: unknown };
+  const text = [stdout, stderr]
+    .map((stream) => (typeof stream === "string" ? stream : String(stream ?? "")))
+    .join("\n")
+    .trim();
+  return text.length > limit ? `...\n${text.slice(-limit)}` : text;
+}
+
 export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
-  return (command, args, cwd) =>
-    execFileSync(command, [...args], {
-      cwd,
-      encoding: "utf8",
-      env,
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 900_000,
-    });
+  return (command, args, cwd) => {
+    try {
+      return execFileSync(command, [...args], {
+        cwd,
+        encoding: "utf8",
+        env,
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 900_000,
+      });
+    } catch (error) {
+      const tail = childOutputTail(error);
+      if (tail.length > 0 && error instanceof Error) error.message = `${error.message}\n${tail}`;
+      throw error;
+    }
+  };
 }
 
 interface IMcpFixturePaths {

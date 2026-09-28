@@ -1,7 +1,7 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phases 1 and 2 verified; phase 3 is wired and unit-proven, but its real
-`scripts/release.ts` run is unverified, so no phase-3 box claims a release (`prd:75%`).
+**Status:** PARTIAL — phases 1 and 2 verified; starter passed the real phase-3 dry run, while
+platformer and the publish preflight remain open (`prd:75%`).
 **Complexity:** 6 → MEDIUM; touches release scripts, CI, and the physics deprecation warning.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
@@ -223,10 +223,12 @@ lockfile carrying the integrity. Two templates therefore cost two clean rooms, n
 post-publish clean room still runs npm and pnpm in full — that lane is about the published registry,
 not about a candidate.
 
-- [ ] Upgrade proof for `starter` on web: previous `latest` → candidate, scenario passes. proof: a
-  real `pnpm tsx scripts/release.ts` run whose `Upgrade proof — starter` block is all `pass`.
-  **The real run is unverified.** Wired and unit-proven: `pnpm exec vitest run
-  scripts/__tests__/verify-registry-install.spec.ts` → 33 passed. The step list is exactly `pnpm:
+- [x] Upgrade proof for `starter` on web: previous `latest` → candidate, scenario passes. proof:
+  `pnpm release --allow-missing-prebuilt --skip-gates` on the prepared 11-package cohort printed
+  nine `pass` steps from scaffold through gameplay for `Upgrade proof — starter`; no package was
+  published. The overall dry run exited 1 on platformer's separate registry dependency failure.
+  Wired and unit-proven: `pnpm exec vitest run
+  scripts/__tests__/verify-registry-install.spec.ts` → 41 passed. The step list is exactly `pnpm:
   scaffold, install, lockfile, surface, upgrade, edit, build, test, gameplay`; the install carried the
   packed tarball; the playtest carried `playtests/survives.playtest.json` (`UPGRADE_SCENARIO`, five
   non-empty assertion families in both `starter` and `platformer` in this checkout) and not the
@@ -235,12 +237,14 @@ not about a candidate.
   the candidate's, which is the case a version cannot catch` installs the right version with a foreign
   integrity and reads `TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH`; `fails closed when no lockfile records
   the candidate's integrity at all` covers the missing-lockfile and no-integrity branches. Nothing was
-  published, no dist-tag moved, no version bumped.
+  published and no dist-tag moved; the candidate versions were prepared locally.
 - [ ] Upgrade proof for `platformer` on web. proof: the same run's `Upgrade proof — platformer` block.
   `UPGRADE_PROOF_TEMPLATES = ["starter", "platformer"]`, and `upgrades the previous latest onto the
   packed candidate, on both named templates` asserts each template receives the same tarballs and
-  cohort versions. **The real run is unverified.** Its runtime is unknown from here: `platformer`
-  ships far more scenarios than `starter`, so its own `test` script decides how long this lane takes.
+  cohort versions. The real dry run stopped at the previous `latest`'s `pnpm:install`:
+  `@gltf-transform/functions@4.5.1` requires `@gltf-transform/core@^4.5.1`, while npm currently
+  serves core `4.5.0` as latest (`ERR_PNPM_NO_MATCHING_VERSION`). Candidate install and gameplay did
+  not run for platformer, so this box remains open.
 - [x] Red: a candidate with an unannounced breaking change fails the upgrade proof. proof: the
   `surface` step red below, plus phase 1's real `pnpm api:surface:check` exit 1.
   The proof runs the existing `api:surface:check` before it installs a byte and refuses a red

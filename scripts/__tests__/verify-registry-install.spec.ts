@@ -18,8 +18,10 @@ import {
   assertSupportedNodeVersion,
   assertSupportedPackageManager,
   checkLockfile,
+  childOutputTail,
   cleanRoomEnvironment,
   mcpRequests,
+  realRunner,
   registryEnvironment,
   tarballIntegrity,
   verifyRegistryInstall,
@@ -1176,5 +1178,37 @@ describe("clean room environment", () => {
     expect(environment.npm_config_store_dir).toBe("/private/store");
     expect(environment.NPM_CONFIG_CACHE).toBe("/private/cache");
     expect(environment.npm_config_registry).toBeUndefined();
+  });
+});
+
+describe("a failed child command", () => {
+  it("keeps the output the child wrote to stdout, bounded", () => {
+    // pnpm reports a resolution failure on stdout, and `execFileSync`'s own message says only
+    // `Command failed: ...`. The step report used to carry the command line and not the reason.
+    const run = realRunner({ PATH: process.env.PATH ?? "" });
+    let thrown: unknown;
+    try {
+      run(
+        process.execPath,
+        [
+          "-e",
+          "process.stdout.write('ERR_PNPM_NO_MATCHING_VERSION x'.repeat(400));process.exit(1)",
+        ],
+        process.cwd(),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    expect(message).toContain("ERR_PNPM_NO_MATCHING_VERSION");
+    // Bounded: an install prints megabytes, and the report keeps the last screenful.
+    expect(message.length).toBeLessThan(4_000);
+    expect(message).toContain("\n...");
+  });
+
+  it("says nothing extra when the child was quiet", () => {
+    expect(childOutputTail(new Error("Command failed: pnpm install"))).toBe("");
+    expect(childOutputTail("not an error")).toBe("");
   });
 });

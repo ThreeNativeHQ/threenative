@@ -2,10 +2,10 @@
   "artifact": {
     "kind": "directory",
     "name": "dist",
-    "sha256": "8af889c5d8a22f2e70d36c91737eb70bb80f73e2e98bbeb6a8420ef8d97c4367"
+    "sha256": "ab1b17ee9fd1eff028f93fc628b6863235c067e40debed3821e9c0e8440d9d70"
   },
   "measured": {
-    "artifactBytes": 12302575,
+    "artifactBytes": 12344886,
     "packagedAssetBytes": 771728
   },
   "manifestSha256": "4a4cf593b08ca921c69f1a56e4063b438e38c9d57d5f5724ce63eb60f275dbfc",
