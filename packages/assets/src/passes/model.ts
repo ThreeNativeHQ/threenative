@@ -28,6 +28,7 @@ import {
   type IAssetPassOutput,
   classify,
 } from "../compile.js";
+import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
 import { TNDiscreteLod } from "../lod/extension.js";
@@ -223,6 +224,8 @@ export interface IModelPassOutputEntry {
   readonly embeddedTextures?: IEmbeddedTextureSummary;
   readonly extensions: readonly string[];
   readonly lod?: IModelLodSummary;
+  /** Distinct material count before and after the cook's merge (PRD-458 §5, AC-5). */
+  readonly materials?: IMaterialMergeSummary;
   readonly simplify?: IModelSimplifySummary;
   readonly triangles: number;
   readonly vertices: number;
@@ -231,6 +234,8 @@ export interface IModelPassOutputEntry {
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
+/** Bumped with the merge signature so a stale compile-cache entry cannot hide a changed merge. */
+const MATERIAL_MERGE_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -784,6 +789,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       compact: resolveCompactOptions(options.compact),
       // Generation-only identity; runtime budget edits must not invalidate baked geometry.
       lod: lodCacheKey(options.lod),
+      // The material merge is unconditional and lossless, so the version string is the whole knob:
+      // it moves when the signature does, which invalidates every stale output at once.
+      materials: MATERIAL_MERGE_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -886,6 +894,11 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           };
         }
       }
+      // Lossless and unconditional: materials that agree on every field that can change a pixel are
+      // one material, and the cook is the only place that knows the full field list (PRD-458 §5).
+      // After `prune` (which drops unreferenced materials) and before the cutout conversion, so the
+      // count the report gives is the one a runtime would have drawn with.
+      const materials = mergeIdenticalMaterials(document);
       if (options.simplify !== undefined) {
         await MeshoptSimplifier.ready;
         await simplify({
@@ -989,6 +1002,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
         extensions: [...extensions].sort(),
         ...(lod === undefined ? {} : { lod }),
+        materials,
         ...(options.simplify === undefined
           ? {}
           : {

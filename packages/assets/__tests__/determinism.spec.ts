@@ -232,7 +232,7 @@ describe("decoder-free resizing is deterministic and cache-correct", () => {
     await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
     try {
       const outputs = async (config: {
-        readonly lod?: { readonly enabled: boolean };
+        readonly lod?: { readonly generation?: { readonly minSaving: number } };
         readonly textures: { readonly maxSize: number };
       }): Promise<Record<string, string>> => {
         await compileAssets({ config, cwd: root, platform: "android" });
@@ -250,8 +250,10 @@ describe("decoder-free resizing is deterministic and cache-correct", () => {
       // A standalone texture cap does not touch the model, whose embedded textures are "none".
       expect(capped["character.glb"]).toBe(base["character.glb"]);
 
+      // Absent already means "on with defaults" (PRD-458 AC-6), so the change that must move the
+      // model's digest is one that actually alters the baked chain, not a restatement of the default.
       const lodChanged = await outputs({
-        lod: { enabled: true },
+        lod: { generation: { minSaving: 0.5 } },
         textures: { maxSize: 32 },
       });
       // The model-only lod policy is not in the texture's digest...

@@ -71,6 +71,7 @@ import type {
   ILodJoinedGroupRow,
   ILodJoinedRow,
   ILodRow,
+  IMaterialsRow,
   IModelSizeRow,
   IPassCostAssetRow,
   IPassCostRow,
@@ -342,6 +343,8 @@ interface IAssetManifestEntry {
   readonly lod?: ILodRow;
   /** Lossless scene-graph compaction (PRD-443), when it ran (model pass). */
   readonly compact?: IModelCompactSummary;
+  /** The cook's material merge, counted either side of it (PRD-458 §5). */
+  readonly materials?: IMaterialsRow;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -566,6 +569,29 @@ function compactRow(value: unknown): IModelCompactSummary | undefined {
   };
 }
 
+function materialRow(value: unknown): IMaterialsRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const counts = (key: "distinct" | "materials"): { after: number; before: number } | undefined => {
+    const side = value[key];
+    if (
+      !isRecord(side) ||
+      typeof side.after !== "number" ||
+      typeof side.before !== "number" ||
+      !Number.isFinite(side.after) ||
+      !Number.isFinite(side.before)
+    ) {
+      return undefined;
+    }
+    return { after: side.after, before: side.before };
+  };
+  const distinct = counts("distinct");
+  const materials = counts("materials");
+  if (distinct === undefined || materials === undefined) return undefined;
+  if (!Array.isArray(value.merged) || value.merged.some((name) => typeof name !== "string"))
+    return undefined;
+  return { distinct, materials, merged: value.merged as string[] };
+}
+
 function lodRow(value: unknown): ILodRow | undefined {
   if (!isRecord(value)) return undefined;
   const numbers = [
@@ -677,6 +703,24 @@ function lodRow(value: unknown): ILodRow | undefined {
     skipped: value.skipped as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
+    // A malformed cutout report is dropped whole, like `joined`: it is a report about the bake.
+    ...(isRecord(value.cutout) && Array.isArray(value.cutout.converted)
+      ? {
+          cutout: {
+            converted: value.cutout.converted.filter(
+              (name): name is string => typeof name === "string",
+            ),
+            kept: Array.isArray(value.cutout.kept)
+              ? value.cutout.kept.filter(
+                  (entry): entry is { name: string; reason: string } =>
+                    isRecord(entry) &&
+                    typeof entry.name === "string" &&
+                    typeof entry.reason === "string",
+                )
+              : [],
+          },
+        }
+      : {}),
   };
 }
 
@@ -1529,7 +1573,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
-  const configuredLod = config.lod === undefined ? undefined : parseModelLod(config.lod);
+  // Absent means on with defaults (PRD-458 §4/AC-6): a game that streams a world gets foliage cutout
+  // conversion, an automatic chain and a material merge without declaring anything. `false` /
+  // `"none"` remain the absolute kill switch, and the legacy `models` declarations still translate
+  // against the same policy, so an explicit `simplify` or `virtual: "none"` project is unaffected.
+  const configuredLod = config.lod === undefined ? true : parseModelLod(config.lod);
   const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
     configuredModels === undefined
       ? []
@@ -1616,8 +1664,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           : { ...models, vertexLayout: "separate" as const };
       // `assets.lod` is top-level, not under `models`, but it drives the model pass. It rides in
       // the pass options (and its spec) so it is part of the compile cache key.
-      const modelOptionsWithLod =
-        configuredLod === undefined ? modelOptions : { ...modelOptions, lod: configuredLod };
+      const modelOptionsWithLod = { ...modelOptions, lod: configuredLod };
       const pass = modelPass({
         ...modelOptionsWithLod,
         preserveLightmapUv: lightmap !== undefined,
@@ -2481,6 +2528,7 @@ export async function compileAssets(
         ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
         ...(entry.compact === undefined ? {} : { compact: entry.compact }),
         ...(entry.lod === undefined ? {} : { lod: entry.lod }),
+        ...(entry.materials === undefined ? {} : { materials: entry.materials }),
         extensions: entry.extensions,
         logicalPath: logical,
         ...(lightmap === undefined ? {} : { lightmap }),
@@ -2569,6 +2617,7 @@ export async function compileAssets(
             compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
+            materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
             applied.entry.compressionSkipped === "not-smaller"

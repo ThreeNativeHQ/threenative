@@ -22,6 +22,7 @@ import {
 } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { Matrix4 } from "three";
+import { type IFoliageCutoutSummary, convertFoliageCutout } from "../foliage.js";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
 import {
   type DiscreteLodSkipReason,
@@ -93,6 +94,7 @@ export interface IModelLodRuntimeOptions {
 
 /** A partial override for one asset; nested objects overlay, they never replace. */
 export interface IModelLodOverride {
+  readonly cutout?: boolean;
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
   readonly preset?: LodPreset;
@@ -105,6 +107,12 @@ export interface IModelLodOverride {
  * re-enable. Resolution is per asset and happens where the asset is known (PRD-377 §3.2, §5).
  */
 export interface IModelLodOptions {
+  /**
+   * Convert eligible `BLEND` foliage to alpha-tested in the cook (PRD-458 §4). Default `true`,
+   * because a needle card exported as `BLEND` is refused a chain by rule and the tree then draws
+   * LOD0 forever. `false` keeps the authored blending; per asset, `cutout` in an override entry.
+   */
+  readonly cutout?: boolean;
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
   readonly overrides?: Readonly<Record<string, boolean | IModelLodOverride>>;
@@ -238,6 +246,11 @@ export interface IModelLodJoined {
 
 export interface IModelLodSummary {
   readonly byteOverhead: number;
+  /**
+   * The foliage cutout conversion this asset got (PRD-458 §4). Present whenever the policy ran it,
+   * including when nothing qualified — an empty list is the honest report of "no eligible `BLEND`".
+   */
+  readonly cutout: IFoliageCutoutSummary;
   /** Migration/legacy notes the resolver raised; never a silent winner over an explicit setting. */
   readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
@@ -281,6 +294,8 @@ export interface ILodLegacyFlags {
 }
 
 export interface IResolvedLodPolicy {
+  /** Whether the cook converts eligible `BLEND` foliage to `MASK` before generation (PRD-458 §4). */
+  readonly cutout: boolean;
   readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
   /** Generation and runtime are separate cache identities (PRD-377 §3.2, §5). */
@@ -401,8 +416,13 @@ export function resolveLodPolicy(
   }
   if (!enabled && reasons.length === 0) reasons.push("disabled");
 
+  // Independent of `enabled`: an asset may keep its authored blending while its neighbours get a
+  // chain, and the global `false` / `"none"` still turns the whole block off.
+  const cutout = !globalOff && (assetBlock?.cutout ?? project?.cutout ?? true);
+
   const generationFingerprint = lodFingerprint({
     algorithm: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
+    cutout,
     enabled,
     errorTargets: generation.errorTargets,
     join: generation.join,
@@ -414,6 +434,7 @@ export function resolveLodPolicy(
     toolchain: LOD_TOOLCHAIN,
   });
   return {
+    cutout,
     diagnostics,
     enabled,
     fingerprint: {
@@ -686,9 +707,14 @@ function meshFlags(document: Document, animated: Set<GltfNode>): Map<Mesh, IMesh
   return flags;
 }
 
-function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IModelLodSummary {
+function emptySummary(
+  policy: IResolvedLodPolicy,
+  generatedSeconds: number,
+  cutout: IFoliageCutoutSummary = { converted: [], kept: [] },
+): IModelLodSummary {
   return {
     byteOverhead: 0,
+    cutout,
     diagnostics: [...policy.diagnostics],
     enabled: policy.enabled,
     errorTargets: [...policy.generation.errorTargets],
@@ -1020,11 +1046,16 @@ export async function generateDiscreteLod(
   const started = now();
   const policy = resolveLodPolicy(lod, logicalPath, legacy);
   const fingerprint = policy.fingerprint.generation;
-  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000);
+  // Before every early return: a `BLEND` needle card is refused a chain by rule, so the conversion
+  // is what makes one possible at all — and an asset can opt into it with `enabled: false`.
+  const cutout = policy.cutout
+    ? convertFoliageCutout(document)
+    : { converted: [], kept: [] as const };
+  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000, cutout);
   const joinRequested = policy.generation.join;
   const discrete = policy.generation.maxLevels > 1;
   // The join is orthogonal to the discrete ladder: a game can join with no discrete levels at all.
-  if (!discrete && !joinRequested) return emptySummary(policy, (now() - started) / 1000);
+  if (!discrete && !joinRequested) return emptySummary(policy, (now() - started) / 1000, cutout);
 
   await MeshoptSimplifier.ready;
 
@@ -1127,6 +1158,7 @@ export async function generateDiscreteLod(
 
   return {
     byteOverhead,
+    cutout,
     diagnostics: [...policy.diagnostics],
     enabled: true,
     errorTargets: [...policy.generation.errorTargets],
