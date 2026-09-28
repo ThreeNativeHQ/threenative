@@ -2,64 +2,193 @@
   "name": "action-rpg-combat-and-line-of-sight",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "wait", "label": "line-of-sight", "waitTicks": 8, "release": true },
-    { "kind": "input", "label": "attack", "press": "KeyF", "holdTicks": 1, "release": true },
-    { "kind": "input", "label": "surge", "press": "KeyE", "holdTicks": 1, "release": true },
-    { "kind": "wait", "label": "surge-active", "waitTicks": 5, "release": true },
-    { "kind": "wait", "label": "surge-expired", "waitTicks": 65, "release": true }
+    {
+      "kind": "wait",
+      "label": "line-of-sight",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "attack",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "surge",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "surge-active",
+      "waitTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "surge-expired",
+      "waitTicks": 65,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "dodge",
+      "press": "ShiftLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rolling",
+      "waitTicks": 3,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
       {
         "id": "state",
         "path": "lineOfSightBlocked",
-        "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
+        "atSteps": [
+          {
+            "label": "line-of-sight",
+            "equals": 1
+          }
+        ]
       },
       {
         "id": "state",
         "path": "wallEnemyAggro",
-        "atSteps": [{ "label": "line-of-sight", "equals": 0 }]
+        "atSteps": [
+          {
+            "label": "line-of-sight",
+            "equals": 0
+          }
+        ]
       },
       {
         "id": "state",
         "path": "visibleEnemyAggro",
-        "atSteps": [{ "label": "line-of-sight", "equals": 1 }]
+        "atSteps": [
+          {
+            "label": "line-of-sight",
+            "equals": 1
+          }
+        ]
       },
       {
         "id": "state",
         "path": "damage",
         "atSteps": [
-          { "label": "surge-active", "equals": 18 },
-          { "label": "surge-expired", "equals": 12 }
+          {
+            "label": "surge-active",
+            "equals": 18
+          },
+          {
+            "label": "surge-expired",
+            "equals": 12
+          }
         ]
       },
       {
         "id": "state",
         "path": "modifierActive",
         "atSteps": [
-          { "label": "surge-active", "equals": 1 },
-          { "label": "surge-expired", "equals": 0 }
+          {
+            "label": "surge-active",
+            "equals": 1
+          },
+          {
+            "label": "surge-expired",
+            "equals": 0
+          }
         ]
       }
     ],
     "signals": [
-      { "name": "attack", "entity": "player", "minCount": 1 },
-      { "name": "ability", "entity": "player", "minCount": 1 },
-      { "name": "vfx-attack", "entity": "player", "minCount": 2 },
-      { "name": "vfx-hit", "entity": "player", "minCount": 1 },
-      { "name": "vfx-surge", "entity": "player", "minCount": 1, "atStep": "surge" },
-      { "name": "ability-expired", "entity": "player", "minCount": 1, "atStep": "surge-expired" }
+      {
+        "name": "attack",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "ability",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "vfx-attack",
+        "entity": "player",
+        "minCount": 2
+      },
+      {
+        "name": "vfx-hit",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "vfx-surge",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "surge"
+      },
+      {
+        "name": "ability-expired",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "surge-expired"
+      },
+      {
+        "name": "dodged",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "dodge"
+      }
     ],
     "components": [
       {
         "entity": "player",
+        "component": "action",
+        "atSteps": [
+          {
+            "label": "attack",
+            "equals": "attack"
+          },
+          {
+            "label": "surge-active",
+            "equals": "ability"
+          },
+          {
+            "label": "rolling",
+            "equals": "dodge"
+          }
+        ]
+      },
+      {
+        "entity": "player",
         "component": "health",
-        "atSteps": [{ "label": "surge-expired", "equals": 95 }]
+        "atSteps": [
+          {
+            "label": "surge-expired",
+            "equals": 95
+          }
+        ]
       }
     ],
     "visibility": [
@@ -75,9 +204,19 @@
       }
     ],
     "visual": [
-      { "frameDiff": { "minChangedPixelRatio": 0.0001 } },
       {
-        "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.0001 }
+        "frameDiff": {
+          "minChangedPixelRatio": 0.0001
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.0001
+        }
       }
     ]
   }

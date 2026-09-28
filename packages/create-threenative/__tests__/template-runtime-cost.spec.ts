@@ -1,6 +1,4 @@
 import {
-  AnimationClip,
-  Bone,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -10,17 +8,15 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   Scene,
-  Skeleton,
-  SkinnedMesh,
   Texture,
   Vector2,
   Vector3,
-  VectorKeyframeTrack,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+import { templatedRig } from "./templated-rig.js";
 
 /** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
 const MANNEQUIN_CLIPS = [
@@ -31,33 +27,24 @@ const MANNEQUIN_CLIPS = [
   "Jump_Land",
 ] as const;
 
-/** The smallest skinned rig that satisfies `requiredClips`: two bones, one box, one track per clip. */
-function tinyRig(clipNames: readonly string[]): { scene: Group; animations: AnimationClip[] } {
-  const root = new Bone();
-  root.name = "root";
-  const head = new Bone();
-  head.name = "Head";
-  head.position.y = 1.5;
-  root.add(head);
-  const geometry = new BoxGeometry(0.4, 1.8, 0.3).translate(0, 0.9, 0);
-  const count = geometry.getAttribute("position").count;
-  geometry.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(count * 4), 4));
-  const weights = new Float32Array(count * 4);
-  for (let index = 0; index < count; index += 1) weights[index * 4] = 1;
-  geometry.setAttribute("skinWeight", new BufferAttribute(weights, 4));
-  const mesh = new SkinnedMesh(geometry, new MeshBasicMaterial());
-  mesh.add(root);
-  mesh.bind(new Skeleton([root, head]));
-  const scene = new Group();
-  scene.add(mesh);
-  const animations = clipNames.map(
-    (name) =>
-      new AnimationClip(name, 1, [
-        new VectorKeyframeTrack("Head.position", [0, 1], [0, 1.5, 0, 0, 1.5, 0]),
-      ]),
-  );
-  return { scene, animations };
-}
+/**
+ * Every clip `assets/mannequin-combat.glb` ships that the action RPG plays, read off the packaged
+ * glTF's own animation list. `SkeletalMesh3D` fails the load by name when one is missing, so this
+ * list is the contract between the template's clip tables and the file the scaffolder copies.
+ */
+const COMBAT_CLIPS = [
+  "Death01",
+  "Hit_Chest",
+  "Idle_Loop",
+  "Jog_Fwd_Loop",
+  "PickUp_Table",
+  "Punch_Jab",
+  "Roll",
+  "Spell_Simple_Shoot",
+  "Sword_Attack",
+  "Sword_Idle",
+  "Walk_Loop",
+] as const;
 
 const probeState = vi.hoisted(() => ({
   vector2Allocations: 0,
@@ -197,7 +184,7 @@ function sceneContext(
     // missing one of its five named clips, so the stub hands back a rig for that name and the
     // proof scene for everything else.
     model: async <T>(name: string): Promise<T> =>
-      (name === "mannequin.glb" ? tinyRig(MANNEQUIN_CLIPS) : { scene: proofScene }) as T,
+      (name === "mannequin.glb" ? templatedRig(MANNEQUIN_CLIPS) : { scene: proofScene }) as T,
     texture: async () => new Texture(),
   };
   return {
@@ -287,7 +274,6 @@ describe("generated template ordinary-frame runtime cost", () => {
     const shooter = await import("../templates/shooter/src/weapons/Projectile.js");
     const shooterMaterials = await import("../templates/shooter/src/render/materials.js");
     const actionRpg = await import("../templates/action-rpg/src/entities/Enemy.js");
-    const actionRpgMaterials = await import("../templates/action-rpg/src/render/materials.js");
     const defense = await import("../templates/defense/src/attackers/Attacker.js");
     const core = await import("../../core/src/index.js");
 
@@ -319,7 +305,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
         ctx as never,
-        tinyRig(MANNEQUIN_CLIPS),
+        templatedRig(MANNEQUIN_CLIPS),
         new Vector3(-2, 0.9, 0),
       );
       expect(
@@ -465,7 +451,7 @@ describe("generated template ordinary-frame runtime cost", () => {
 
       const enemy = new actionRpg.Enemy(
         ctx as never,
-        actionRpgMaterials.createMaterials(),
+        templatedRig(COMBAT_CLIPS),
         new Vector3(0, 0.78, 0),
         { id: 777 } as never,
         { onAttack: () => undefined, onDeath: () => undefined },
@@ -530,7 +516,13 @@ describe("generated template ordinary-frame runtime cost", () => {
     const minimalPhysics = await physicsFixture();
     try {
       const context = sceneContext(minimalPhysics.physics, minimal.Play.initialState);
-      const rig = tinyRig(["Idle_Loop", "Jog_Fwd_Loop", "Jump_Start", "Jump_Loop", "Jump_Land"]);
+      const rig = templatedRig([
+        "Idle_Loop",
+        "Jog_Fwd_Loop",
+        "Jump_Start",
+        "Jump_Loop",
+        "Jump_Land",
+      ]);
       const play = new minimal.Play();
       await play.load({
         ...context,
@@ -623,7 +615,15 @@ describe("generated template ordinary-frame runtime cost", () => {
     const actionRpgPhysics = await physicsFixture();
     try {
       const context = sceneContext(actionRpgPhysics.physics, actionRpg.Play.initialState);
-      const frame = new actionRpg.Play().enter(context as never);
+      const play = new actionRpg.Play();
+      await play.load({
+        ...context,
+        assets: {
+          ...context.assets,
+          model: async <T>(): Promise<T> => templatedRig(COMBAT_CLIPS) as T,
+        },
+      } as never);
+      const frame = play.enter(context as never);
       const toFixedSpy = vi.spyOn(Number.prototype, "toFixed");
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {

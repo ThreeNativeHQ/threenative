@@ -2,8 +2,7 @@ import { GroundSnap } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { describe, expect, it } from "vitest";
 import { preparePlayerConventions as prepareRpgConventions } from "../templates/action-rpg/src/conventions.js";
-import { createMaterials as createRpgMaterials } from "../templates/action-rpg/src/render/materials.js";
-import { createPlayerVisual as createRpgVisual } from "../templates/action-rpg/src/render/shapes.js";
+import { createSword } from "../templates/action-rpg/src/render/props.js";
 import { prepareCommanderConventions } from "../templates/defense/src/conventions.js";
 import { commander } from "../templates/defense/src/render/shapes.js";
 import { preparePlayerConventions as prepareMinimalConventions } from "../templates/minimal/src/conventions.js";
@@ -22,6 +21,7 @@ import {
   createViewmodelVisual as createShooterViewmodel,
 } from "../templates/shooter/src/render/shapes.js";
 import { preparePlayerConventions as prepareStarterConventions } from "../templates/starter/src/conventions.js";
+import { templatedRig } from "./templated-rig.js";
 
 const FRAME = 1 / 60;
 
@@ -52,13 +52,23 @@ function expectGrounding(
 
 describe("generated template conventions", () => {
   it("grounds, scales, and attaches the action-rpg player", () => {
-    const model = createRpgVisual(createRpgMaterials());
-    const conventions = prepareRpgConventions(model);
+    // The three conventions a rigged character owes its level, in the order they depend on each
+    // other: measure the crown, hold the prop by bone name, then keep the soles on the floor.
+    const { scene } = templatedRig(["Sword_Idle"]);
+    const conventions = prepareRpgConventions(scene, createSword());
 
     expectFactor(conventions.normaliseFactor);
-    expect(conventions.boneNames).toContain("RightHand");
-    expect(conventions.attachedBone).toBe("RightHand");
-    expectGrounding(model, conventions);
+    expect(conventions.boneNames).toContain("hand_r");
+    expect(conventions.attachedBone).toBe("hand_r");
+    expectGrounding(scene, conventions);
+  });
+
+  it("reports no attached bone for a bare-handed action-rpg fighter", () => {
+    // The raiders swing bare fists, so `attachToBone` is skipped for them. Reporting the name of
+    // a bone that was never asked for would be a lie the survives scenario would then assert.
+    const { scene } = templatedRig(["Idle_Loop"]);
+
+    expect(prepareRpgConventions(scene).attachedBone).toBe("");
   });
 
   it("grounds and scales the defense commander", () => {
