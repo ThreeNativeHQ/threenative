@@ -31,7 +31,13 @@ import type {
   IProjectionUniformGroup,
 } from "./projection-plan.js";
 import { SkinnedBatch, isSimilarityTransform } from "./projection-skinned.js";
-import { baseColorOf, uniformUnchanged } from "./projection-uniform.js";
+import {
+  UNIFORM_WATCH_INSTALL_BUDGET_MS,
+  baseColorOf,
+  installUniformWatch,
+  releaseUniformWatch,
+  uniformUnchanged,
+} from "./projection-uniform.js";
 import {
   disposeBatchedMeshVelocity,
   ensureBatchedMeshVelocity,
@@ -114,6 +120,12 @@ interface IBatch {
   dirty: boolean;
   /** Whether an instance colour was written this frame, flagged once per batch for the same reason. */
   colorsDirty: boolean;
+  /**
+   * Whether every member's material carries a change-notification watch. A uniform batch whose
+   * members are all watched stops walking them to install, and a released member puts it back to
+   * false so the walk resumes for that one.
+   */
+  watched: boolean;
 }
 
 /**
@@ -283,6 +295,8 @@ export class ProjectionMirror {
   #projectedObjects = 0;
   #compileMs = 0;
   #velocityEnabled: boolean;
+  /** What this frame may still spend turning uniform members into watched members. */
+  #watchInstallMs = UNIFORM_WATCH_INSTALL_BUDGET_MS;
   /** Set when a member left a uniform group because its material drifted; read once per frame. */
   #reclassified = false;
 
@@ -388,6 +402,7 @@ export class ProjectionMirror {
     // at exactly the wrong granularity.
     this.#projectedObjects = 0;
     this.#reclassified = false;
+    this.#watchInstallMs = UNIFORM_WATCH_INSTALL_BUDGET_MS;
     for (let index = 0; index < plan.batchGroupCount; index += 1) {
       const group = plan.batchGroups[index] as IProjectionBatchGroup;
       const batch = this.#ensureBatch(group);
@@ -405,7 +420,10 @@ export class ProjectionMirror {
         this.#release(mesh);
         this.#appendExact(mesh, refused);
       }
-      if (batch !== undefined) this.#flushBatch(batch);
+      if (batch !== undefined) {
+        this.#flushBatch(batch);
+        this.#installUniformWatches(batch);
+      }
     }
     this.#applyMaterialGroups(plan);
     this.#applySkinnedGroups(plan);
@@ -821,6 +839,9 @@ export class ProjectionMirror {
     // roughness, a map or an alpha that is not its own.
     if (target.uniform && state !== undefined && !uniformUnchanged(material)) {
       this.#reclassified = true;
+      // Leaving the group is the only place a watch would be left listening, so the material gets
+      // its own plain properties back before it is drawn exactly with them.
+      releaseUniformWatch(material);
       this.#release(mesh);
       return "materialChanged";
     }
@@ -895,6 +916,34 @@ export class ProjectionMirror {
     current.material = material;
     current.batch = target;
     return undefined;
+  }
+
+  /**
+   * Turns as many of this uniform batch's members into watched members as this frame's install
+   * budget pays for, and stops there.
+   *
+   * A watch is what makes the settled frame cheap, and it costs about 33 µs to install — 130 ms for
+   * a scene of four thousand, which is a hitch nobody asked for. So the install is sliced to
+   * `UNIFORM_WATCH_INSTALL_BUDGET_MS` a frame, and a member whose watch has not landed keeps the
+   * exact poll in `projection-uniform.ts`, which is what it cost before and detects exactly as much.
+   * Detection never lapses; only the saving arrives a few frames late.
+   *
+   * A batch whose members are all watched is not walked again, and a member released from one puts
+   * it back in the walk, so a re-entering material gets its watch and a settled batch pays a single
+   * boolean test.
+   */
+  #installUniformWatches(batch: IBatch): void {
+    if (!batch.uniform || batch.watched || this.#watchInstallMs <= 0) return;
+    const startedAt = globalThis.performance?.now() ?? 0;
+    for (const object of batch.instances.keys()) {
+      const material = this.#state.get(object)?.material as Material | undefined;
+      if (material === undefined || installUniformWatch(material) === false) continue;
+      if ((globalThis.performance?.now() ?? 0) - startedAt >= this.#watchInstallMs) {
+        this.#watchInstallMs = 0;
+        return;
+      }
+    }
+    batch.watched = true;
   }
 
   /** Whether the game currently wants this object drawn, ancestors included. */
@@ -992,6 +1041,9 @@ export class ProjectionMirror {
       capacity,
       dirty: false,
       colorsDirty: false,
+      // A non-uniform batch draws with the game's own material instance, so there is nothing for a
+      // watch to prove: every member shares one material and the draw is that material.
+      watched: !uniform,
     };
     this.#batches.set(group, batch);
     this.scene.add(mesh);
@@ -1158,11 +1210,21 @@ export class ProjectionMirror {
     this.scene.remove(batch.mesh);
     // The instance matrices are the batch's own; the geometry and material are the game's and are
     // deliberately left alone — unless this is a uniform draw, where the material is the mirror's
-    // own clone and nobody else's.
+    // own clone and nobody else's, and every member's own material is the game's and must get its
+    // plain properties back before it is drawn with them again.
+    if (batch.uniform) {
+      for (const object of batch.instances.keys()) this.#releaseWatch(object);
+      batch.material.dispose();
+    }
     batch.mesh.dispose();
-    if (batch.uniform) batch.material.dispose();
     for (const object of batch.instances.keys()) this.#state.delete(object);
     this.#batches.delete(batch.group);
+  }
+
+  /** Gives one uniform member's own material its plain properties back. */
+  #releaseWatch(object: Object3D): void {
+    const material = this.#state.get(object)?.material as Material | undefined;
+    if (material !== undefined) releaseUniformWatch(material);
   }
 
   /**
@@ -1248,6 +1310,13 @@ export class ProjectionMirror {
       this.#state.delete(object);
       return;
     }
+    // A uniform member leaves through here whatever the cause — a lane change, a hidden object, a
+    // frame's refusal — and a watch outliving its group is a material still paying for the
+    // notification with nothing listening, and never getting its own values back.
+    if (batch !== undefined && (batch as IBatch).uniform === true && state !== undefined) {
+      releaseUniformWatch(state.material as Material);
+      (batch as IBatch).watched = false;
+    }
     const slot = batch?.instances.get(object);
     if (batch !== undefined && slot !== undefined) {
       // Hidden or collapsed before the slot is handed back, so a freed slot draws nothing until
@@ -1312,8 +1381,11 @@ export class ProjectionMirror {
   releaseAll(): void {
     for (const batch of this.#batches.values()) {
       this.scene.remove(batch.mesh);
+      if (batch.uniform) {
+        for (const object of batch.instances.keys()) this.#releaseWatch(object);
+        batch.material.dispose();
+      }
       batch.mesh.dispose();
-      if (batch.uniform) batch.material.dispose();
     }
     this.#batches.clear();
     for (const batch of this.#materialBatches.values()) {
