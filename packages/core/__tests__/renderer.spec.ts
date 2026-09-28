@@ -534,6 +534,71 @@ describe("createRenderer", () => {
     }
   });
 
+  it("binds the screen before every surface frame, whatever a warm-up or a pass left bound", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+    try {
+      // `getRenderTarget()` answers null across the compile window while the field stays stale, and
+      // a later pass can leave one bound again; neither belongs on the screen.
+      const frameBufferTarget = { samples: 4 };
+      const staleTarget = { name: "stale" };
+      let bound: unknown = null;
+      let insideCompileWindow = false;
+      const seenAtDraw: unknown[] = [];
+      const hooks: { frameDuringCompile?: () => void } = {};
+      const setTarget = (target: unknown): void => {
+        bound = target;
+      };
+      const raw: Record<string, unknown> = {
+        needsFrameBufferTarget: true,
+        get _renderTarget() {
+          return bound;
+        },
+        getRenderTarget(this: Record<string, unknown>) {
+          return insideCompileWindow ? null : this._renderTarget;
+        },
+        setRenderTarget: setTarget,
+        _getFrameBufferTarget: () => frameBufferTarget,
+        compileAsync: async () => {
+          insideCompileWindow = true;
+          try {
+            setTarget(staleTarget);
+            hooks.frameDuringCompile?.();
+            await Promise.resolve();
+          } finally {
+            insideCompileWindow = false;
+          }
+        },
+        domElement: canvas,
+        render: () => {
+          seenAtDraw.push(bound);
+        },
+        setSize: () => undefined,
+      };
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => raw as never,
+      });
+      hooks.frameDuringCompile = () => renderer.render({} as never, {} as never);
+      await renderer.compileAsync({} as never, {} as never);
+      renderer.render({} as never, {} as never);
+      // A later pass leaves one bound again, and the overlay is a surface draw like the world.
+      setTarget(staleTarget);
+      renderer.renderOverlay({} as never, {} as never);
+
+      // The frame that overlapped the compile, the frame after it, and the overlay all drew to the
+      // screen rather than to the stale target.
+      expect(seenAtDraw).toEqual([null, null, null]);
+      expect(bound).toBe(null);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("records the actual WebGPU adapter identity in the pipeline census", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
