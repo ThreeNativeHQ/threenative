@@ -1,0 +1,36 @@
+{
+  "name": "native-frame-profile",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": { "width": 2400, "height": 1080 },
+  "warmupFrames": 0,
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 300 },
+    { "kind": "wait", "label": "measure", "waitTicks": 1500, "screenshot": "native-frame-profile" }
+  ],
+  "artifacts": { "screenshots": "after" },
+  "assert": {
+    "components": [
+      { "entity": "frame", "component": "playFrames", "gte": 200,
+        "allowTrivial": "playFrames counts only frames after resetWindow, so it is zero until the scene has been playing; a device that never rendered reports zero." },
+      { "entity": "frame", "component": "p50", "lte": 60,
+        "allowTrivial": "p50 is zero until wall-clock frame deltas have been recorded; this asserts the median native frame fits a 60 ms budget." },
+      { "entity": "frame", "component": "p95", "lte": 60,
+        "allowTrivial": "p95 is zero before any frame is measured; nineteen native frames in twenty must fit 60 ms." },
+      { "entity": "frame", "component": "p99", "lte": 200,
+        "allowTrivial": "p99 is zero before any frame is measured; the worst one percent must stay under 200 ms." },
+      { "entity": "frame", "component": "playSpikes", "lte": 400,
+        "allowTrivial": "playSpikes rests at zero and only rises when a frame passes 33 ms after the startup window." },
+      { "entity": "frame", "component": "sectionP99", "path": "gameFrame", "lte": 60,
+        "allowTrivial": "The game callback section is absent until the scene runs a frame; this is the cost of this game's own per-frame work." },
+      { "entity": "frame", "component": "sectionP99", "path": "outsideGame", "lte": 60,
+        "allowTrivial": "outsideGame is derived per frame from the wall-clock delta minus the game callback, so it exists only once frames are measured; it is the renderer, physics step and host cost." },
+      { "entity": "frame", "component": "sectionP99", "path": "enemies", "lte": 60,
+        "allowTrivial": "The enemies section is recorded only while soldiers are stepping; it is zero on a scene with none." },
+      { "entity": "frame", "component": "sectionP99", "path": "physics", "lte": 60,
+        "allowTrivial": "The physics section is charged from the post-step callback and is absent until Rapier has stepped." },
+      { "entity": "native-ui", "component": "uiCommitP95Ms", "lte": 60,
+        "allowTrivial": "This is recorded only for state-changing React commits; idle refreshes never produce a sample." }
+    ]
+  }
+}

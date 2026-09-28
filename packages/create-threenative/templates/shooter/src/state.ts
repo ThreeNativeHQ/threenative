@@ -1,47 +1,34 @@
-export type GamePhase = "playing" | "dead" | "won" | "lost";
+export type Blip = { x: number; z: number; alive: boolean };
 
 export type GameState = {
-  /** Set from the UI\'s pause and resume intents, and read back by the menu. */
-  paused: boolean;
-  /** True once the UI layer has rendered and published its interactive rectangles. */
-  uiReady: boolean;
-  aimedShots: number;
-  aiming: number;
-  /** Rounds in the magazine, and in reserve. The HUD reads both; a scenario asserts them. */
+  aiming: boolean;
   ammo: number;
-  reserve: number;
-  reloading: number;
-  armor: number;
-  cameraShakes: number;
-  deaths: number;
-  demoDamage: number;
-  demoTargetAlive: number;
-  friendlyPassed: number;
-  gameOver: number;
-  gameWon: number;
+  distanceMoved: number;
   health: number;
-  hitDistanceTenths: number;
-  hitNormalXPercent: number;
-  hitNormalYPercent: number;
-  hitNormalZPercent: number;
-  lives: number;
-  nameplateFacingCamera: number;
-  pickupFrame: number;
-  pickupFrameChanges: number;
-  pickups: number;
-  pitchDegrees: number;
-  radiusInsideDeaths: number;
-  radiusMidAlive: number;
-  radiusNearAlive: number;
-  radiusOutsideAlive: number;
-  respawns: number;
-  scanCount: number;
+  hitFlash: number;
+  phase: "playing" | "complete" | "failed";
+  reloads: number;
+  reserve: number;
   score: number;
-  shotsFired: number;
-  targetsRemaining: number;
-  wave: number;
-  wavesCleared: number;
-  wallBlocked: number;
-  yawDegrees: number;
-  phase: GamePhase;
+  shots: number;
+  targetsHit: number;
+  timeRemaining: number;
+  /** Player ground position and facing, for the minimap. */
+  playerX: number;
+  playerZ: number;
+  playerYaw: number;
+  /** Enemy positions for the minimap, one entry per soldier. */
+  blips: Blip[];
+  /**
+   * Boot progress. The town loads ~23 textures and three rigged GLBs totalling
+   * about 23 MB, which is a few seconds of black canvas on a cold cache; the
+   * HUD shows a real progress bar over it rather than nothing. `ready` flips
+   * when the scene has finished building, not when the last byte arrives.
+   */
+  ready: boolean;
+  assetsLoaded: number;
+  assetsTotal: number;
 };
+
+/** Shared objective contract for the scene and the HUD. */
+export const TARGET_GOAL = 12;

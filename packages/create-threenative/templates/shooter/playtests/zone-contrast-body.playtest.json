@@ -1,0 +1,105 @@
+{
+  "name": "zone-contrast-body",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          0,
+          0.89,
+          4
+        ],
+        "rotation": [
+          -0.05722,
+          0,
+          0,
+          0.99836
+        ]
+      },
+      {
+        "entity": "enemy-frozen",
+        "position": [
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "body-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "body-hit-registered",
+      "waitTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "lastHitMultiplier",
+        "equals": 1,
+        "allowTrivial": "1 is also the resting neutral value, so the discriminating assertions here are health equals 26 and deathObserved equals false at body-hit-registered; the multiplier is pinned alongside them to state the zone contract"
+      },
+      {
+        "entity": "enemy",
+        "component": "health",
+        "atSteps": [
+          {
+            "label": "body-hit-registered",
+            "equals": 26
+          }
+        ]
+      },
+      {
+        "entity": "enemy",
+        "component": "deathObserved",
+        "equals": false,
+        "allowTrivial": "deathObserved rests false before any round; the point of this control is that a chest hit does NOT kill, so the held initial value is the assertion"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "the sentry spawns at x 0 and must hold x 0 through every labelled step; zero displacement is the required invariant, not an oversight"
+      },
+      {
+        "id": "state",
+        "path": "blips.0.z",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "the sentry spawns at z 0 and must hold z 0 through every labelled step; zero displacement is the required invariant, not an oversight"
+      }
+    ]
+  }
+}

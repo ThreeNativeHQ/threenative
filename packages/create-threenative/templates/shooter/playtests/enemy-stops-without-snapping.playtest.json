@@ -1,0 +1,485 @@
+{
+  "name": "enemy-stops-without-snapping",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn-settle",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-00",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-01",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-02",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-03",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-04",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-05",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-06",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-07",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-08",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-09",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-10",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-11",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-12",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-13",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-14",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-15",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-16",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-17",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-18",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-19",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-20",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-21",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-22",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-23",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-24",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-25",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-26",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-27",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-28",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-29",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-30",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-31",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-32",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-33",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-34",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-35",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-36",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-37",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-38",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-39",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-40",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-41",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-42",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-43",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-44",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-45",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-46",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-47",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-48",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-49",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-50",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-51",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-52",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-53",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-54",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-55",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-56",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-57",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-58",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-59",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-60",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-61",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-62",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-63",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-64",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-65",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-66",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-67",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-68",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-69",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-70",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-71",
+      "waitTicks": 12,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "decelPeakMs2",
+        "lte": 10,
+        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 \u2014 WALK_DECEL exactly \u2014 when it coasts"
+      },
+      {
+        "entity": "enemy-2",
+        "component": "decelPeakMs2",
+        "lte": 10,
+        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 \u2014 WALK_DECEL exactly \u2014 when it coasts"
+      },
+      {
+        "entity": "enemy",
+        "component": "locomotionRatePeak",
+        "gte": 1.5,
+        "allowTrivial": "the peak is sticky and the soldiers patrol from spawn, so warmup may already have banked a walking rate before the baseline snapshot"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "changed": true
+      }
+    ]
+  }
+}

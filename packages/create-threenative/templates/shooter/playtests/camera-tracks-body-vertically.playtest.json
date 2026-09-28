@@ -1,0 +1,65 @@
+{
+ "name": "camera-tracks-body-vertically",
+ "target": "web",
+ "schemaVersion": 1,
+ "viewport": {
+  "width": 1280,
+  "height": 720
+ },
+ "warmupFrames": 2,
+ "subject": "player",
+ "setup": {
+  "entities": [
+   {
+    "entity": "player",
+    "position": [
+     6,
+     6.0,
+     0
+    ]
+   }
+  ]
+ },
+ "steps": [
+  {
+   "kind": "wait",
+   "label": "fall",
+   "waitTicks": 120,
+   "release": true
+  },
+  {
+   "kind": "input",
+   "label": "walk",
+   "press": "KeyW",
+   "holdTicks": 40,
+   "release": true
+  },
+  {
+   "kind": "wait",
+   "label": "settle",
+   "waitTicks": 30,
+   "release": true
+  }
+ ],
+ "assert": {
+  "diagnostics": {
+   "noConsoleErrors": true,
+   "noNetworkErrors": true,
+   "runtimeReady": true
+  },
+  "components": [
+   {
+    "entity": "player",
+    "component": "positionY",
+    "lte": 1.0,
+    "allowTrivial": "The player is spawned in the air at y 4.0 over the known-good flat ground at (6, 0, 0) -- the same spot shot-tracks-crosshair uses -- and must have fallen to the standing height of ~0.89 by the end. This is what makes the camera-lag assertion below meaningful: it is identically zero unless the body actually moves vertically, and every other scenario in this suite stays on flat ground for its whole run, which is precisely why the defect below shipped."
+   },
+   {
+    "entity": "player",
+    "component": "cameraLagPeak",
+    "lte": 0.02,
+    "allowTrivial": "cameraLagPeak is the worst gap, in metres, between where the camera was placed and where the body actually was when the frame drew. It reads a true zero on flat ground, so it needs the fall above to mean anything. The defect: syncCamera ran at the end of Scene.update, but moveAndSlide only queues motion and the rapier plugin writes the solved transform in its own update afterwards -- so the eye rendered and raycast one physics step behind the body. Measured on this scenario at 0.4196 m before the fix and 0 after. On a 0.32 m stair step that means firing from a third of a metre below where the player is looking, which puts the round in the tread at their feet."
+   }
+  ]
+ }
+}

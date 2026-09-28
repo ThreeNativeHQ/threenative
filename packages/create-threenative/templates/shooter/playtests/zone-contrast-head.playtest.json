@@ -1,0 +1,99 @@
+{
+  "name": "zone-contrast-head",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          0,
+          0.89,
+          4
+        ]
+      },
+      {
+        "entity": "enemy-frozen",
+        "position": [
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "head-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "head-hit-registered",
+      "waitTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "lastHitMultiplier",
+        "equals": 4,
+        "allowTrivial": "the multiplier rests at the neutral value 1 until a round connects, so equals 4 cannot pass before the head shot"
+      },
+      {
+        "entity": "enemy",
+        "component": "health",
+        "atSteps": [
+          {
+            "label": "head-hit-registered",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "enemy",
+        "component": "deathObserved",
+        "equals": true,
+        "allowTrivial": "deathObserved rests false until a killing round lands; the level-ray head shot in this scenario is that round"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "the sentry spawns at x 0 and must hold x 0 through every labelled step; zero displacement is the required invariant, not an oversight"
+      },
+      {
+        "id": "state",
+        "path": "blips.0.z",
+        "equals": 0,
+        "throughoutSteps": true,
+        "allowTrivial": "the sentry spawns at z 0 and must hold z 0 through every labelled step; zero displacement is the required invariant, not an oversight"
+      }
+    ]
+  }
+}

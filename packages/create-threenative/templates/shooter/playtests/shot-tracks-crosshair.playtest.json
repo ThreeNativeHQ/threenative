@@ -1,0 +1,86 @@
+{
+  "name": "shot-tracks-crosshair",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          6,
+          0.89,
+          0
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "enemy-damage",
+      "waitTicks": 350,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "damage-shake-shot",
+      "press": [
+        "KeyF",
+        "Space"
+      ],
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "shot-recorded",
+      "waitTicks": 1,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "health",
+        "lte": 99,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 1,
+        "changed": true
+      }
+    ],
+    "components": [
+      {
+        "entity": "rifle",
+        "component": "barrelAxisErrorDeg",
+        "lte": 1,
+        "allowTrivial": "barrel-to-camera alignment is a built geometry constant, unchanged by input"
+      },
+      {
+        "entity": "player",
+        "component": "aimDivergenceDeg",
+        "lte": 0.05
+      },
+      {
+        "entity": "player",
+        "component": "damageShakePeak",
+        "gte": 0.5
+      }
+    ]
+  }
+}

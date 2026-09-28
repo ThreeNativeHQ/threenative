@@ -1,25 +1,32 @@
-import { useUiState } from "@threenative/ui";
-import { shooterUi } from "../render/ui.js";
-import type { GameState } from "../state.js";
+import type { ComponentType, ReactNode } from "react";
+
+export type CrosshairPart = "root" | "vertical" | "horizontal";
+
+export interface ICrosshairPrimitiveProps {
+	readonly children?: ReactNode;
+	readonly hidden: boolean;
+	readonly hitFlash: number;
+	readonly part: CrosshairPart;
+}
+
+export interface ICrosshairProps {
+	readonly aiming: boolean;
+	readonly hitFlash: number;
+	readonly Primitive: ComponentType<ICrosshairPrimitiveProps>;
+}
 
 /**
- * The reticle.
+ * The gameplay crosshair shared by the DOM and CanvasLayer React renderers.
  *
- * Two bars with a gap, not a dot: the gap is where the round goes, and it is the only part of a
- * first-person HUD the player actually looks at. It disappears down the sights, because the optic
- * on the weapon is the sight at that point and two reticles read as a bug.
- *
- * It is DOM rather than a mesh because it must sit at the exact centre of the *window*, which is
- * where a viewport-space element already is. A world-space quad in front of the camera moves with
- * the field of view and drifts off centre the moment ADS changes it.
+ * The component owns when the reticle exists and its two-bar structure. Each renderer supplies
+ * only the platform primitive that paints a root or bar, because DOM classes cannot execute on the
+ * native host and CanvasLayer styles are not CSS.
  */
-export function Crosshair() {
-  const state = useUiState<GameState>();
-  if (state === undefined || state.phase !== "playing") return null;
-  return (
-    <div className={state.aiming === 1 ? shooterUi.crosshair.rootAiming : shooterUi.crosshair.root}>
-      <i className={shooterUi.crosshair.vertical} />
-      <i className={shooterUi.crosshair.horizontal} />
-    </div>
-  );
+export function Crosshair({ aiming, hitFlash, Primitive }: ICrosshairProps) {
+	return (
+		<Primitive hidden={aiming} hitFlash={hitFlash} part="root">
+			<Primitive hidden={aiming} hitFlash={hitFlash} part="vertical" />
+			<Primitive hidden={aiming} hitFlash={hitFlash} part="horizontal" />
+		</Primitive>
+	);
 }

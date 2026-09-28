@@ -1,0 +1,67 @@
+{
+  "name": "audio-fires-a-voice",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "shot-1",
+      "press": "Space",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "wait",
+      "label": "voice-1",
+      "release": true,
+      "waitTicks": 12
+    },
+    {
+      "kind": "input",
+      "label": "shot-2",
+      "press": "Space",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "release": true,
+      "waitTicks": 12
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 2
+      }
+    ],
+    "components": [
+      {
+        "entity": "audio",
+        "component": "playerShots",
+        "gte": 2,
+        "allowTrivial": "the counter rests at zero until the first trigger pull routes a cue into the audio bus, so the opening value cannot satisfy it"
+      },
+      {
+        "entity": "audio",
+        "component": "peakVoices",
+        "gte": 1,
+        "allowTrivial": "peakVoices counts live WebAudio nodes seen while sampling frames; it stays zero until an actual voice starts, which needs the keydown that unlocks the bus"
+      }
+    ]
+  }
+}

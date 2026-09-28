@@ -1,0 +1,84 @@
+{
+  "name": "enemy-reaches-walkway",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          6,
+          0.89,
+          -19
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 15,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "draw-fire",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "approach-1",
+      "waitTicks": 170,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "redraw-1",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "approach-2",
+      "waitTicks": 170,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "redraw-2",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "path",
+      "waitTicks": 262,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "underWalkway",
+        "equals": true
+      }
+    ]
+  }
+}

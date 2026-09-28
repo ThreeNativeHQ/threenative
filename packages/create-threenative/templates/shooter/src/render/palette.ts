@@ -1,12 +1,18 @@
-// Generated for you. Keep the six palette roles coherent when you repaint the arena.
-// Lifted off the floor. The arena tone was `0x22303c` under a dim key, and the deck photographed
-// as near-black with a yellow grid floating on it — the cover, the walls and the ground all
-// collapsed into one value and only the emissive trim survived.
+// The Bayview reference frames read as five surfaces and one accent:
+// midday blue sky, sun-bleached flagged stone, whitewashed plaster,
+// deep shade under the eaves, aged render, and the salmon-red site paint.
+// The five swatches on the design sheet are `paint`, `sand`, `sea`, `deep`
+// and `block`; `haze` is read off the horizon of the sky photograph so the
+// fog and the background agree.
 export const palette = {
-  skyHigh: 0x3a5578,
-  skyLow: 0x1b2733,
-  arena: 0x374d63,
-  player: 0x64d8cb,
-  hostile: 0xff6b7a,
-  accent: 0xf6c85f,
+  skyHigh: 0x4b86c4,
+  skyLow: 0xd8e4ec,
+  haze: 0xcddbe4,
+  floor: 0xb3a68c,
+  paint: 0xe8e6df,
+  sand: 0xd6b981,
+  sea: 0x2f6f97,
+  block: 0x3a4750,
+  concrete: 0xc2bba8,
+  accent: 0xff5252,
 } as const;

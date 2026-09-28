@@ -1,0 +1,387 @@
+{
+  "name": "debug-clear",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          35,
+          0.89,
+          33
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "shot-1",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-1",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-2",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-2",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-3",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-3",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-4",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-4",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-5",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-5",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-6",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-6",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-7",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-7",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-8",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-8",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-9",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-9",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-10",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-10",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-11",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-11",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-12",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-12",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-13",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-13",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-14",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-14",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-15",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-15",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-16",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-16",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-17",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-17",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-18",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-18",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-19",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-19",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-20",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-20",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-21",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-21",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-22",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-22",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-23",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-23",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-24",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-24",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-25",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-25",
+      "waitTicks": 88,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-26",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reset-26",
+      "waitTicks": 88,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "targetsHit",
+        "gte": 12
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "equals": "complete"
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "gte": 1200
+      }
+    ]
+  }
+}

@@ -1,0 +1,221 @@
+{
+  "name": "enemy-stride-matches-speed",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn-settle",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-00",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-01",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-02",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-03",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-04",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-05",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-06",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-07",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-08",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-09",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-10",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-11",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-12",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-13",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-14",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-15",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-16",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-17",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-18",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-19",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-20",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-21",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-22",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-23",
+      "waitTicks": 12,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "locomotionRatePeak",
+        "gte": 1.5,
+        "allowTrivial": "the peak is sticky and the soldiers patrol from spawn, so warmup may already have banked a walking rate before the baseline snapshot; the value check still fails at 1.0, which is what an un-re-timed walk clip reads"
+      },
+      {
+        "entity": "enemy",
+        "component": "maxEnvelopeRadius",
+        "lte": 0.8,
+        "allowTrivial": "the envelope is calibrated once in the constructor, so it is constant for the run by design; it reads 1.589 when the vertex walk measures a collapsed skin and 0.453 when it measures the real one"
+      },
+      {
+        "entity": "enemy",
+        "component": "clipGroundSpeed",
+        "gte": 1,
+        "allowTrivial": "the measured stride rests at zero until a locomotion clip is chosen, so the resting value is honest"
+      },
+      {
+        "entity": "enemy",
+        "component": "strideErrorPeak",
+        "lte": 0.15,
+        "allowTrivial": "foot slip rests at zero before the soldier walks, which is the honest baseline for a metric that only grows"
+      },
+      {
+        "entity": "enemy",
+        "component": "strideErrorRatio",
+        "gte": 0.85,
+        "allowTrivial": "the slip ratio reads 1 while standing still, because a stopped man has no stride to mismatch"
+      },
+      {
+        "entity": "enemy",
+        "component": "strideErrorRatio",
+        "lte": 1.15,
+        "allowTrivial": "the slip ratio reads 1 while standing still, because a stopped man has no stride to mismatch"
+      },
+      {
+        "entity": "enemy-2",
+        "component": "strideErrorPeak",
+        "lte": 0.15,
+        "allowTrivial": "foot slip rests at zero before the soldier walks, which is the honest baseline for a metric that only grows"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "changed": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "frame-smoothness",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "advance",
+      "press": "KeyW",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "firefight",
+      "press": "Space",
+      "holdTicks": 300,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "retreat",
+      "press": "KeyS",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "more-fire",
+      "press": "Space",
+      "holdTicks": 300,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "frame",
+        "component": "playFrames",
+        "gte": 1000
+      },
+      {
+        "entity": "frame",
+        "component": "playSpikes",
+        "lte": 8,
+        "allowTrivial": "playSpikes counts frames whose real wall-clock cost passed 33 ms after the opening 1.5 s of pipeline compilation — the hitches a player feels mid-round. It rests at zero and only rises. The same scenario on the code this replaces reported 27; measured runs after the fixes land between 3 and 6, so 8 is the observed ceiling plus headroom for a shared machine rather than a number tuned to one lucky run"
+      },
+      {
+        "entity": "frame",
+        "component": "p95",
+        "lte": 20,
+        "allowTrivial": "p95 is zero until frames have been measured; the assertion is that nineteen frames in twenty fit a 20 ms budget across a whole firefight"
+      }
+    ]
+  }
+}

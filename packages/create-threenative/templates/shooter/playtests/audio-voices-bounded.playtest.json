@@ -1,0 +1,73 @@
+{
+  "name": "audio-voices-bounded",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "advance",
+      "press": "KeyW",
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "firefight",
+      "press": "Space",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "more-fire",
+      "press": "Space",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "audio",
+        "component": "voicePoolSize",
+        "lte": 48,
+        "allowTrivial": "this is the count of retired voices the engine bus holds for reuse. It starts at zero and rises only to peak concurrency, so a bounded reading after 750 ticks of sustained fire is the assertion; under the per-cue voice allocation this replaces there was no reuse at all and the equivalent figure was every cue ever played, still parented to the scene"
+      },
+      {
+        "entity": "audio",
+        "component": "sceneVoiceNodes",
+        "lte": 40,
+        "allowTrivial": "this counts Audio objects parented in the scene. Under the per-cue allocation it replaces, a firefight of this length left well over a hundred behind; a bounded reading after 750 ticks of fire and movement is the assertion"
+      },
+      {
+        "entity": "audio",
+        "component": "playerShots",
+        "gte": 20
+      }
+    ]
+  }
+}

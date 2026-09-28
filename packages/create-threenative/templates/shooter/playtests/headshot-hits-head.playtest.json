@@ -1,0 +1,136 @@
+{
+  "name": "headshot-hits-head",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          0,
+          0.89,
+          4
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "head-shot",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5,
+        "buttons": 1
+      },
+      "holdTicks": 3,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "head-hit-registered",
+      "waitTicks": 8,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "release-pointer",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.5,
+        "buttons": 0
+      },
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "enemy-respawned",
+      "waitTicks": 320,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lower-to-navel",
+      "pointerPosition": {
+        "x": 0.5,
+        "y": 0.58
+      },
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "body-aim-settled",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "body-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "body-hit-registered",
+      "waitTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "headZoneMinY",
+        "gte": 1.1,
+        "allowTrivial": "a collapse floor is satisfied at baseline by design; the discriminating assertion in this scenario is lastHitMultiplier equals 4 at head-hit-registered, which is un-waived"
+      },
+      {
+        "entity": "enemy",
+        "component": "hitboxHeight",
+        "gte": 1.73,
+        "lte": 1.83,
+        "allowTrivial": "held invariant of the loaded rig geometry, not driven by scenario input"
+      },
+      {
+        "entity": "enemy",
+        "component": "lastHitMultiplier",
+        "atSteps": [
+          {
+            "label": "head-hit-registered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "entity": "enemy",
+        "component": "health",
+        "atSteps": [
+          {
+            "label": "head-hit-registered",
+            "equals": 0
+          }
+        ]
+      }
+    ]
+  }
+}

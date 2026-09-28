@@ -1,0 +1,65 @@
+{
+  "name": "bullet-holes",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          0,
+          0.89,
+          32
+        ],
+        "rotation": [
+          -0.46175,
+          0,
+          0,
+          0.88701
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "burst",
+      "press": "Space",
+      "holdTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "decals",
+        "component": "placed",
+        "gte": 1,
+        "allowTrivial": "the field places nothing until a round lands on town geometry, so the resting zero cannot satisfy this"
+      },
+      {
+        "entity": "decals",
+        "component": "capacity",
+        "equals": 224,
+        "allowTrivial": "capacity is fixed by construction; pinning it is how a later change that grows the mark pool per shot fails a gate instead of leaking quietly"
+      }
+    ]
+  }
+}

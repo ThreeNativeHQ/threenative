@@ -1,0 +1,75 @@
+{
+  "name": "enemy-flinches-when-hit",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [0, 0.89, 4],
+        "rotation": [-0.05722, 0, 0, 0.99836]
+      },
+      {
+        "entity": "enemy-frozen",
+        "position": [0, 0, 0]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "body-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "flinching",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "recovered",
+      "waitTicks": 50,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "health",
+        "atSteps": [{ "label": "flinching", "equals": 26 }]
+      },
+      {
+        "entity": "enemy",
+        "component": "animation",
+        "atSteps": [{ "label": "flinching", "equals": "HitReaction" }]
+      },
+      {
+        "entity": "enemy",
+        "component": "animation",
+        "atSteps": [{ "label": "recovered", "equals": "RifleIdle" }]
+      }
+    ]
+  }
+}

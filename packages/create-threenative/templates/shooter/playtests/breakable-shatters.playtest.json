@@ -1,0 +1,71 @@
+{
+  "name": "breakable-shatters",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          -8.4,
+          0.89,
+          21.6
+        ],
+        "rotation": [
+          -0.2045,
+          0,
+          0,
+          0.97887
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shoot-pot",
+      "press": "Space",
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "pieces-fly",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "breakables",
+        "component": "broken",
+        "gte": 1,
+        "allowTrivial": "no vessel is broken until a round reaches one; the resting zero cannot satisfy this"
+      },
+      {
+        "entity": "breakables",
+        "component": "liveShards",
+        "gte": 1,
+        "allowTrivial": "shards carry a physics body only while they are flying, so the resting zero cannot satisfy this either"
+      }
+    ]
+  }
+}

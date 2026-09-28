@@ -1,0 +1,63 @@
+{
+	"name": "native-react-hud",
+	"target": "desktop",
+	"schemaVersion": 1,
+	"viewport": { "width": 2400, "height": 1080 },
+	"warmupFrames": 0,
+	"steps": [
+		{
+			"kind": "wait",
+			"label": "hud-settled",
+			"waitTicks": 1,
+			"screenshot": "native-react-hud"
+		}
+	],
+	"artifacts": { "screenshots": "after" },
+	"assert": {
+		"components": [
+			{
+				"entity": "native-ui",
+				"component": "mounted",
+				"equals": true,
+				"allowTrivial": "The native-only plugin creates this observation during setup; its presence proves that the portable entry mounted React instead of silently omitting the HUD."
+			},
+			{
+				"entity": "native-ui",
+				"component": "objectCount",
+				"gte": 12,
+				"allowTrivial": "The object count starts at zero before React commits and rises only when the HUD creates drawable CanvasLayer objects."
+			},
+			{
+				"entity": "native-ui",
+				"component": "uiCommitSamples",
+				"gte": 1,
+				"allowTrivial": "Each sample is recorded only when React mutates host nodes during refresh; idle refreshes do not increment this count."
+			},
+			{
+				"entity": "native-ui",
+				"component": "crosshairPresent",
+				"equals": true,
+				"allowTrivial": "The crosshair exists only in the ready playing HUD; the loading tree and an absent native mount contain no 3 by 26 pixel bar pair."
+			},
+			{
+				"entity": "native-ui",
+				"component": "crosshairCentered",
+				"equals": true,
+				"allowTrivial": "This derives from the two live crosshair mesh positions after layout; the previous 4000 pixel wrapper reports false at every phone-sized viewport."
+			}
+		],
+		"resources": [
+			{
+				"id": "state",
+				"path": "timeRemaining",
+				"changed": true
+			},
+			{
+				"id": "state",
+				"path": "ready",
+				"equals": true,
+				"allowTrivial": "The scene holds ready false through asset loading and sets it true only after the playable town and native HUD state exist."
+			}
+		]
+	}
+}

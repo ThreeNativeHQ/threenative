@@ -1,0 +1,58 @@
+{
+  "name": "aim-alignment",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "crosshair-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "shot-recorded",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "aimDivergenceDeg",
+        "lte": 0.05
+      },
+      {
+        "entity": "rifle",
+        "component": "barrelAxisErrorDeg",
+        "lte": 1,
+        "allowTrivial": "barrel-to-camera alignment is a built geometry constant held from the first frame"
+      },
+      {
+        "entity": "rifle",
+        "component": "tipGapToGeometry",
+        "lte": 0.02,
+        "allowTrivial": "muzzle-flash tip seating is a built geometry constant held from the first frame"
+      }
+    ]
+  }
+}

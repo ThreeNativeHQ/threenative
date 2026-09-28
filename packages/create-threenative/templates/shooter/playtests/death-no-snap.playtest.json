@@ -1,0 +1,91 @@
+{
+  "name": "death-no-snap",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          -4.5,
+          0.89,
+          -5.0
+        ]
+      },
+      {
+        "entity": "enemy-frozen",
+        "position": [
+          -4.5,
+          0,
+          -6.8
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "head-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "death-settle",
+      "waitTicks": 200,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "deathObserved",
+        "equals": true,
+        "allowTrivial": "death is observed only after the headshot lands, but the metric reads false-free before it"
+      },
+      {
+        "entity": "enemy",
+        "component": "deathAnkleDelta",
+        "lte": 0.05,
+        "allowTrivial": "ankle drift is zero until the death clip plays, so the resting value is the honest baseline"
+      },
+      {
+        "entity": "enemy",
+        "component": "deathClipFrames",
+        "gte": 30,
+        "allowTrivial": "clip frame counters rest at zero until the death clip runs"
+      },
+      {
+        "entity": "enemy",
+        "component": "deathClip",
+        "equals": "DeathHeadshot",
+        "allowTrivial": "the death clip name rests empty until the shot lands"
+      },
+      {
+        "entity": "enemy",
+        "component": "deathFallDot",
+        "gte": 0.0,
+        "allowTrivial": "fall direction is unmeasured until the body falls"
+      },
+      {
+        "entity": "enemy",
+        "component": "lastHitMultiplier",
+        "equals": 4,
+        "allowTrivial": "the multiplier rests at the neutral value until a round connects"
+      }
+    ]
+  }
+}

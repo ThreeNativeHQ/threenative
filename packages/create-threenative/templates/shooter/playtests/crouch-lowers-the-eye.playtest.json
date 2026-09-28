@@ -1,0 +1,41 @@
+{
+ "name": "crouch-lowers-the-eye",
+ "target": "web",
+ "schemaVersion": 1,
+ "viewport": {
+  "width": 1280,
+  "height": 720
+ },
+ "warmupFrames": 30,
+ "subject": "player",
+ "steps": [
+  {
+   "kind": "wait",
+   "label": "stand",
+   "waitTicks": 20,
+   "release": true
+  },
+  {
+   "kind": "input",
+   "label": "crouch",
+   "press": "ControlLeft",
+   "holdTicks": 90,
+   "release": false
+  }
+ ],
+ "assert": {
+  "diagnostics": {
+   "noConsoleErrors": true,
+   "noNetworkErrors": true,
+   "runtimeReady": true
+  },
+  "components": [
+   {
+    "entity": "player",
+    "component": "crouching",
+    "gte": 1,
+    "allowTrivial": "crouching is 0 while standing and 1 while the crouch action is held, so it is only non-trivial because the scenario stands for 20 ticks before pressing. This exists because Ctrl did nothing for the player: game.ts bound ControlLeft as a second aim key and there was no crouch action at all, so holding it aimed down the sights instead. The step deliberately does not release, because the assertion samples the held state."
+   }
+  ]
+ }
+}

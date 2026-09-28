@@ -1,34 +1,17 @@
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
-// This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
-// owns which stages run at which tier and records what each one measured. `WorldEnvironment`,
-// also in this folder, builds them and prints `TN_WORLD_ENVIRONMENT` naming every stage as
-// applied or refused **with a reason**, so a stage that silently no-op'd is never mistaken for
-// one you turned off.
-//
-// To make the game cheaper or prettier everywhere, edit `quality.ts`. To force one tier for one
-// run — a desktop that is dropping frames, a capture you want to compare — pass it:
-// `setupPost(renderer, scene, camera, { tier: "low" })`. Overriding does not silence the report:
-// `TN_QUALITY_TIER` names the tier that ran either way.
-import type { Camera, DirectionalLight, Scene } from "three";
-import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
+// ACES rolls highlights off gently, which is the only reason a whitewashed wall
+// under a 2.55-intensity key can stay a wall instead of a hole in the frame.
+// The exposure is tuned with `lighting.ts` and `sky.ts` as one setting: raising
+// it here is the same edit as raising the sun, and the sunlit plaster in the
+// captures sits just under clipping at 0.95.
+import { ACESFilmicToneMapping } from "three";
+type OutputRenderer = {
+  raw: unknown;
+};
 
-export function setupPost(
-  renderer: OutputRenderer,
-  scene: Scene,
-  camera: Camera,
-  environment: {
-    godraysLight?: DirectionalLight;
-    mobile?: boolean;
-    /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
-    tier?: QualityTier;
-  } = {},
-): void {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
-  const source = environment.tier === undefined ? "platform" : "override";
-  console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
-  const world = new WorldEnvironment(qualityPreset(tier));
-  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+export function setupPost(renderer: OutputRenderer): void {
+  const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
+  raw.toneMapping = ACESFilmicToneMapping;
+  raw.toneMappingExposure = 0.95;
 }

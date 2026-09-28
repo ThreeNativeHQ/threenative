@@ -1,0 +1,44 @@
+{
+  "name": "draw-budget",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": true },
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 120 },
+    { "kind": "wait", "label": "measure", "waitTicks": 240, "screenshot": "draw-budget" }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "render",
+        "component": "drawCalls",
+        "lte": 245,
+        "allowTrivial": "drawCalls is the renderer's world-pass total captured inside the frame callback (a between-frames read sees zeros, since renderer.info resets at each render) and is zero only before the first draw. The settled spawn view carries 315 draws when animated soldiers and small moving targets enter the 2048 px sun pass. Keeping dominant static town casters while excluding those moving sub-pixel silhouettes settles at 232; 245 catches their accidental reintroduction with 13 draws of margin."
+      },
+      {
+        "entity": "render",
+        "component": "triangles",
+        "gte": 400000,
+        "allowTrivial": "triangles is zero before the first draw. The town submits roughly a million triangles a frame; a floor catches the zero-opacity/prewarm class of defect where a scene draws only its sky and every cheapness assertion turns green."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}
