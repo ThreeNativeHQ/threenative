@@ -405,7 +405,7 @@ export async function collectMonitorData(): Promise<IMonitorData> {
 }
 
 const STYLE = `
-:root{color-scheme:dark;--bg:#101312;--panel:#191d1a;--line:#343b33;--muted:#a6b0a5;--ink:#f0f4e9;--accent:#d1ef86;--bad:#ffab9f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Helvetica Neue",Helvetica,sans-serif}main{max-width:1440px;margin:auto;padding:38px 5vw}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,4vw,54px);font-weight:500;letter-spacing:-.055em;line-height:1.1}h2{font-size:22px;letter-spacing:-.025em;font-weight:500}h3{font-size:16px}a{color:var(--accent);text-underline-offset:4px}button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:9px 15px;cursor:pointer}button:hover{border-color:var(--accent)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.eyebrow,.label,th{font:11px/1.5 "DejaVu Sans Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.eyebrow{color:var(--accent);margin-bottom:16px}.topline,.section-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.topline{margin-bottom:35px}.subtitle{color:var(--muted);margin-top:16px;max-width:720px}.live{font-size:12px;color:var(--muted)}.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:8px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);margin:34px 0 26px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}.kpi{padding:23px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi strong{display:block;font-size:42px;letter-spacing:-.05em;margin:9px 0 3px;line-height:1.1}.kpi.missing strong{color:var(--muted)}.kpi .small{display:block;max-width:340px}.coverage{margin:-10px 0 26px;color:var(--muted);font-size:12px}.pilot-table{min-width:760px}.pilot-table td:first-child{max-width:270px;overflow-wrap:anywhere}.compare-table{min-width:1120px}.compare-table td:first-child{max-width:320px;overflow-wrap:anywhere}.trend .godot{stroke:#7fd1c4}.small,.note{font-size:12px;color:var(--muted)}.panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:25px;margin-bottom:24px}.section-head{margin-bottom:22px}.badge{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:4px 9px;font:11px "DejaVu Sans Mono",monospace;color:var(--muted)}.empty-chart{height:245px;display:grid;place-content:center;text-align:center;border-bottom:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent,transparent 59px,#343b3366 60px);padding:20px}.empty-chart h3{font-size:24px;font-weight:400;margin-bottom:10px}.empty-chart p{color:var(--muted);max-width:530px}.chart-note{margin-top:14px;color:var(--muted);font-size:12px}.grid{align-items:start;display:grid;grid-template-columns:1.7fr 1fr;gap:24px}.grid>.panel{min-width:0}.state{border-left:2px solid var(--accent);padding-left:16px;margin:20px 0}.state p{margin-top:8px;overflow-wrap:anywhere}.state .label{color:var(--accent)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}th:first-child,td:first-child{padding-left:0}td{font-size:13px}code{font:12px "DejaVu Sans Mono",monospace;overflow-wrap:anywhere}.timeline{max-height:310px;overflow:auto;list-style:none;padding:0;margin:0}.timeline li{position:relative;margin-left:5px;padding:0 0 23px 22px;border-left:1px solid var(--line)}.timeline li:before{content:"";position:absolute;left:-4px;top:7px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.timeline p{margin-top:4px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:12px}.timeline code{margin-right:8px}.phase{margin-top:18px}.phase-head{display:flex;justify-content:space-between;gap:20px;font-size:12px}progress{width:100%;height:6px;border:0;border-radius:8px;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line);border-radius:8px}progress::-webkit-progress-value{background:var(--accent);border-radius:8px}.error{color:var(--bad);overflow-wrap:anywhere}.trend{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}.trend svg{width:100%;height:auto;max-height:260px}.trend text{fill:var(--muted);font:12px monospace}.trend circle{fill:var(--accent)}.trend polyline{fill:none;stroke:var(--accent);stroke-width:2}.trend .baseline{stroke:#a6b0a5;stroke-dasharray:5 5}.trend .incumbent{stroke:#8dbdd5}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}details summary{cursor:pointer;font-size:14px}details p{margin:12px 0}footer{font-size:12px;color:var(--muted);margin-top:24px;overflow-wrap:anywhere}@media(max-width:850px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2){border-right:0}.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:480px){main{padding:24px 18px}.panel{padding:18px}.topline{align-items:flex-start}.kpi strong{font-size:34px}.kpi{padding:18px}.section-head{align-items:flex-start}.live{max-width:140px}.badge{white-space:normal;overflow-wrap:anywhere;min-width:0;text-align:right}}
+:root{color-scheme:dark;--bg:#101312;--panel:#191d1a;--line:#343b33;--muted:#a6b0a5;--ink:#f0f4e9;--accent:#d1ef86;--bad:#ffab9f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Helvetica Neue",Helvetica,sans-serif}main{max-width:1440px;margin:auto;padding:38px 5vw}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,4vw,54px);font-weight:500;letter-spacing:-.055em;line-height:1.1}h2{font-size:22px;letter-spacing:-.025em;font-weight:500}h3{font-size:16px}a{color:var(--accent);text-underline-offset:4px}button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:9px 15px;cursor:pointer}button:hover{border-color:var(--accent)}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.eyebrow,.label,th{font:11px/1.5 "DejaVu Sans Mono",monospace;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}.eyebrow{color:var(--accent);margin-bottom:16px}.topline,.section-head{display:flex;align-items:center;justify-content:space-between;gap:20px}.topline{margin-bottom:35px}.subtitle{color:var(--muted);margin-top:16px;max-width:720px}.live{font-size:12px;color:var(--muted)}.live:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:8px}.kpis{display:grid;grid-template-columns:repeat(4,1fr);margin:34px 0 26px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}.kpi{padding:23px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi strong{display:block;font-size:42px;letter-spacing:-.05em;margin:9px 0 3px;line-height:1.1}.kpi.missing strong{color:var(--muted)}.kpi .small{display:block;max-width:340px}.coverage{margin:-10px 0 26px;color:var(--muted);font-size:12px}.pilot-table{min-width:760px}.pilot-table td:first-child{max-width:270px;overflow-wrap:anywhere}.compare-table{min-width:1040px}.compare-table td:first-child{max-width:300px;overflow-wrap:anywhere}.compare-table caption{text-align:left;padding:0 0 12px}.scoreboard-bars{width:100%;max-width:760px;height:auto;margin-top:22px}.scoreboard-bars text{font:11px "DejaVu Sans Mono",monospace;fill:var(--muted)}.scoreboard-bars .group{fill:var(--ink);font-size:12px}.trend .godot{stroke:#7fd1c4}.small,.note{font-size:12px;color:var(--muted)}.panel{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:25px;margin-bottom:24px}.section-head{margin-bottom:22px}.badge{display:inline-block;border:1px solid var(--line);border-radius:4px;padding:4px 9px;font:11px "DejaVu Sans Mono",monospace;color:var(--muted)}.empty-chart{height:245px;display:grid;place-content:center;text-align:center;border-bottom:1px solid var(--line);background:repeating-linear-gradient(to bottom,transparent,transparent 59px,#343b3366 60px);padding:20px}.empty-chart h3{font-size:24px;font-weight:400;margin-bottom:10px}.empty-chart p{color:var(--muted);max-width:530px}.chart-note{margin-top:14px;color:var(--muted);font-size:12px}.grid{align-items:start;display:grid;grid-template-columns:1.7fr 1fr;gap:24px}.grid>.panel{min-width:0}.state{border-left:2px solid var(--accent);padding-left:16px;margin:20px 0}.state p{margin-top:8px;overflow-wrap:anywhere}.state .label{color:var(--accent)}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:14px 12px;border-bottom:1px solid var(--line);vertical-align:top}th:first-child,td:first-child{padding-left:0}td{font-size:13px}code{font:12px "DejaVu Sans Mono",monospace;overflow-wrap:anywhere}.timeline{max-height:310px;overflow:auto;list-style:none;padding:0;margin:0}.timeline li{position:relative;margin-left:5px;padding:0 0 23px 22px;border-left:1px solid var(--line)}.timeline li:before{content:"";position:absolute;left:-4px;top:7px;width:7px;height:7px;border-radius:50%;background:var(--accent)}.timeline p{margin-top:4px;overflow-wrap:anywhere}.timeline time{color:var(--muted);font-size:12px}.timeline code{margin-right:8px}.phase{margin-top:18px}.phase-head{display:flex;justify-content:space-between;gap:20px;font-size:12px}progress{width:100%;height:6px;border:0;border-radius:8px;background:var(--line);accent-color:var(--accent)}progress::-webkit-progress-bar{background:var(--line);border-radius:8px}progress::-webkit-progress-value{background:var(--accent);border-radius:8px}.error{color:var(--bad);overflow-wrap:anywhere}.trend{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}.trend svg{width:100%;height:auto;max-height:260px}.trend text{fill:var(--muted);font:12px monospace}.trend circle{fill:var(--accent)}.trend polyline{fill:none;stroke:var(--accent);stroke-width:2}.trend .baseline{stroke:#a6b0a5;stroke-dasharray:5 5}.trend .incumbent{stroke:#8dbdd5}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted)}details summary{cursor:pointer;font-size:14px}details p{margin:12px 0}footer{font-size:12px;color:var(--muted);margin-top:24px;overflow-wrap:anywhere}@media(max-width:850px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.kpi:nth-child(2){border-right:0}.kpi:nth-child(-n+2){border-bottom:1px solid var(--line)}}@media(max-width:480px){main{padding:24px 18px}.panel{padding:18px}.topline{align-items:flex-start}.kpi strong{font-size:34px}.kpi{padding:18px}.section-head{align-items:flex-start}.live{max-width:140px}.badge{white-space:normal;overflow-wrap:anywhere;min-width:0;text-align:right}}
 `;
 
 function attemptLink(data: IMonitorData, attempt: IAttempt, label = attempt.source): string {
@@ -490,34 +490,34 @@ function renderPilotTrace(data: IMonitorData): string {
   return `<section class="panel" aria-label="Latest hardware pilot frame trace"><div class="section-head"><h2>Latest hardware pilot frame trace</h2><span class="badge">Exploratory · one run · cadence-inclusive</span></div><p class="note">Exploratory browser delivery. The trace is render loop interval including rAF waits, not completed-work time or iteration improvement.</p><p class="small">${escapeHtml(pilot.driver.adapter)} · ${escapeHtml(pilot.build.notes)} · headline rung ${escapeHtml(headline.mode)} · ${headline.objectCount} objects · repeat ${headline.repeat}</p>${cards}<p class="coverage">Drain policy: ${escapeHtml(headline.drainPolicy ?? "Not recorded")} · Raw JSON: ${attemptLink(data, latest)} · selected by retained file time, not iteration order.</p>${traces}</section>`;
 }
 
-/** The physical-display 4096-cube pilots actually retained, paired by hand. Two L2 files exist and
- *  only the named one is the physical-display run, so naming the files is the honest pairing: one
- *  that is not there stays missing instead of being substituted by a near neighbour. Every row is
- *  exploratory — one run per arm, no repeated pair, no linked qualified iteration. */
-const PHYSICAL_4096_PILOTS = [
+/** The scoreboard the owner reads first: one row per comparison, every cell computed from the raw
+ *  pilot file that row names. Two L2 ThreeNative files exist and only the display-fix one is the
+ *  corrected physical-display run, so each row names its files and a file that is not retained
+ *  reads "missing" instead of borrowing a near neighbour. */
+const SCOREBOARD_ROWS = [
   {
-    caveat:
-      "Draw-count and output mismatch: TN's L1 turns projection off as a diagnostic, and the two arms report different draw, triangle and visible-object counts, so this is not a matched-output pair.",
     godot: "pilots/godot-desktop-4096-visible-2026-09-27.json",
-    label: "L1 · projection-off diagnostic",
-    mode: "L1",
-    tn: "pilots/tn-desktop-4096-physical-visible-2026-09-27.json",
-  },
-  {
-    caveat:
-      "Unqualified instanced pilots: reported visible-object counts have different meanings across engines (Godot 2, TN 4096), and no full output conformance or repeated pair exists.",
-    godot: "pilots/godot-desktop-4096-l2-visible-2026-09-27.json",
-    label: "L2 · explicit instancing",
-    mode: "L2",
-    tn: "pilots/tn-desktop-4096-l2-physical-visible-2026-09-27.json",
-  },
-  {
-    caveat:
-      "TN default-pipeline diagnostic. No directly equivalent Godot pilot is retained, so this row has no pair and no direction.",
-    godot: null,
-    label: "L3 · default pipeline",
-    mode: "L3",
+    godotMode: "L1",
+    label: "Shipped defaults (exploratory)",
+    note: "One mesh per cube requested; output equivalence remains unverified.",
     tn: "pilots/tn-desktop-4096-l3-shipped-default-40warmup-2026-09-27.json",
+    tnMode: "L3",
+  },
+  {
+    godot: "pilots/godot-desktop-4096-l2-visible-2026-09-27.json",
+    godotMode: "L2",
+    label: "Explicit instancing (both)",
+    note: "Explicit instancing requested; visible-count semantics differ between engines.",
+    tn: "pilots/tn-desktop-4096-l2-display-fix-2026-09-27.json",
+    tnMode: "L2",
+  },
+  {
+    godot: "pilots/godot-desktop-4096-visible-2026-09-27.json",
+    godotMode: "L1",
+    label: "TN with auto-batching OFF (diagnostic)",
+    note: "L1 has a known output/draw mismatch; stage attribution is unavailable.",
+    tn: "pilots/tn-desktop-4096-physical-visible-2026-09-27.json",
+    tnMode: "L1",
   },
 ] as const;
 
@@ -525,7 +525,6 @@ const GODOT_UPSTREAM_SOURCE = "pilots/godot-lights-meshes-box1000-upstream-2026-
 
 interface IPhysicalPair {
   attempt: IAttempt;
-  display: string;
   pilot: IRunReport;
   samples: number[];
   summary: NonNullable<ReturnType<typeof summarize>[number]>;
@@ -534,17 +533,15 @@ interface IPhysicalPair {
 
 function physicalPilot(
   data: IMonitorData,
-  source: string | null,
+  source: string,
   mode: string,
 ): IPhysicalPair | undefined {
-  if (source === null) return undefined;
   const attempt = (data.pilots ?? []).find((item) => item.source === source && item.pilot);
   const pilot = attempt?.pilot;
   const rung = pilot?.rungs.find((item) => item.mode === mode && item.objectCount === 4096);
   if (!attempt?.pilot || !pilot || !rung) return undefined;
   return {
     attempt,
-    display: `${pilot.display.width}x${pilot.display.height} · vsync ${pilot.display.vsync ? "on" : "off"}`,
     pilot,
     rung,
     samples: rung.frameMs,
@@ -552,34 +549,69 @@ function physicalPilot(
   };
 }
 
-const MISSING = "—";
+const MISSING = "missing";
 
-function percentilePair(pair: IPhysicalPair | undefined): string {
-  if (!pair) return MISSING;
-  return `${pair.summary.p50.toFixed(3)} / ${pair.summary.p95.toFixed(3)} ms`;
+interface IScoreboardRow {
+  godotPair?: IPhysicalPair;
+  label: string;
+  note: string;
+  tnPair?: IPhysicalPair;
 }
 
-/** The counts each file recorded, Godot against ThreeNative, exactly as written — so the reader
- *  sees 49154 against 49155 and judges the near match instead of being told it happened. */
-function outputCounts(godot: IPhysicalPair | undefined, tn: IPhysicalPair | undefined): string {
-  if (!godot || !tn) return "not compared — one side not retained";
-  return [
-    `draws ${godot.rung.drawCalls} vs ${tn.rung.drawCalls}`,
-    `triangles ${godot.rung.triangles} vs ${tn.rung.triangles}`,
-    `visible ${godot.rung.visibleObjects} vs ${tn.rung.visibleObjects}`,
-  ].join(" · ");
+/** "NVIDIA GeForce RTX 2080 / 1.4.351" -> "RTX 2080": the board, without the vendor or the driver
+ *  version. The full adapter string stays in the methodology block below. */
+function gpuName(adapter: string | undefined): string {
+  const board = adapter?.split(" / ")[0]?.trim();
+  if (!board) return "GPU not recorded";
+  return board.replace(/^(NVIDIA GeForce|AMD|Radeon|Intel)\s+/iu, "");
 }
 
-function frameTimeDirection(
+function ms(pair: IPhysicalPair | undefined): string {
+  return pair ? `${pair.summary.p50.toFixed(2)} / ${pair.summary.p95.toFixed(2)} ms` : MISSING;
+}
+
+function draws(godot: IPhysicalPair | undefined, tn: IPhysicalPair | undefined): string {
+  return godot && tn ? `${godot.rung.drawCalls} vs ${tn.rung.drawCalls}` : MISSING;
+}
+
+/** Direction in retained observations only; fixture conformance and paired blocks remain absent. */
+function observedDirection(
   godot: IPhysicalPair | undefined,
   tn: IPhysicalPair | undefined,
 ): string {
-  if (!godot || !tn) {
-    const missing = godot ? "TN" : "Godot";
-    return `${MISSING} not shown — ${missing} pilot not retained`;
-  }
-  const higher = tn.summary.p50 > godot.summary.p50;
-  return `${higher ? "TN higher" : "TN lower"} on p50 · one run each · not a speed ratio`;
+  if (!godot || !tn) return MISSING;
+  return (["p50", "p95"] as const)
+    .map(
+      (key) =>
+        `Recorded TN ${key} ${tn.summary[key] === godot.summary[key] ? "equal" : tn.summary[key] < godot.summary[key] ? "lower" : "higher"}`,
+    )
+    .join("; ");
+}
+
+/** Grouped median bars, one group per row, all three on one axis scaled to the slowest cell, so the
+ *  3 ms headline row and the 30 ms diagnostic row are read against each other rather than apart. */
+function scoreboardBars(rows: IScoreboardRow[]): string {
+  const scale = Math.max(
+    ...rows.flatMap((row) => [row.godotPair?.summary.p50 ?? 0, row.tnPair?.summary.p50 ?? 0]),
+    0.001,
+  );
+  const bar = (pair: IPhysicalPair | undefined, label: string, y: number, fill: string): string =>
+    pair === undefined
+      ? `<text x="0" y="${y + 13}">${escapeHtml(label)}: ${MISSING}</text>`
+      : `<text x="0" y="${y + 13}">${escapeHtml(label)}</text><rect x="52" y="${y}" width="${Math.max(1, (pair.summary.p50 / scale) * 430).toFixed(1)}" height="17" rx="3" fill="${fill}"></rect><text x="${(52 + (pair.summary.p50 / scale) * 430 + 6).toFixed(1)}" y="${y + 13}">${pair.summary.p50.toFixed(2)} ms</text>`;
+  const groups = rows
+    .map((row, index) => {
+      const top = 34 + index * 86;
+      return `<text class="group" x="0" y="${top - 8}">${escapeHtml(row.label)}</text>${bar(row.godotPair, "Godot", top, "#7fd1c4")}${bar(row.tnPair, "TN", top + 24, "var(--accent)")}`;
+    })
+    .join("");
+  const reading = rows
+    .map(
+      (row) =>
+        `${row.label}: Godot ${row.godotPair ? `${row.godotPair.summary.p50.toFixed(2)} ms` : MISSING}, TN ${row.tnPair ? `${row.tnPair.summary.p50.toFixed(2)} ms` : MISSING}`,
+    )
+    .join("; ");
+  return `<svg class="scoreboard-bars" viewBox="0 0 700 ${34 + rows.length * 86}" role="img" aria-label="Median frame time in milliseconds, Godot against ThreeNative, per row: ${escapeHtml(reading)}; shorter is a lower recorded observation, not a qualified speedup">${groups}</svg>`;
 }
 
 function comparisonSeriesPoints(samples: number[], maximum: number, width: number): string {
@@ -605,24 +637,22 @@ function renderGodotUpstream(data: IMonitorData): string {
   return `<p class="note">Godot-only upstream pilot · ${escapeHtml(entry.category)} · ${escapeHtml(entry.name)}: ${typeof cpu === "number" ? `render CPU ${cpu.toFixed(4)} ms` : `${MISSING} render CPU`} · ${typeof gpu === "number" ? `render GPU ${gpu.toFixed(4)} ms` : `${MISSING} render GPU`}. Not comparable to the ThreeNative completed-work frame time above: different workload, different timing definition, and its <code>time</code> field is the suite's own. No ThreeNative equivalent is retained for it — that half of the pair is pending. Raw JSON: ${attemptLink(data, attempt)}</p>`;
 }
 
-/** ThreeNative against Godot on the same physical display, as separate exploratory rows. The page
- *  opens on this: the numbers, the retained file behind each, and what each row is not. No ratio is
- *  divided across modes, timing definitions or partial pipelines anywhere in it. */
+/** ThreeNative against Godot on the same display, as the plainest table the numbers allow: the
+ *  requested workload, each engine's own p50/p95, and the file behind it. No qualified verdict. */
 function renderEngineComparison(data: IMonitorData): string {
   const e = escapeHtml;
-  const rows = PHYSICAL_4096_PILOTS.map((row) => ({
-    ...row,
-    godotPair: physicalPilot(data, row.godot, row.mode),
-    tnPair: physicalPilot(data, row.tn, row.mode),
+  const rows: IScoreboardRow[] = SCOREBOARD_ROWS.map((row) => ({
+    label: row.label,
+    note: row.note,
+    godotPair: physicalPilot(data, row.godot, row.godotMode),
+    tnPair: physicalPilot(data, row.tn, row.tnMode),
   }));
-  const paired = rows.filter((row) => row.godotPair && row.tnPair);
-  const higher = rows.filter(
-    (row) => row.godotPair && row.tnPair && row.tnPair.summary.p50 > row.godotPair.summary.p50,
-  ).length;
-  const lower = rows.filter(
-    (row) => row.godotPair && row.tnPair && row.tnPair.summary.p50 <= row.godotPair.summary.p50,
-  ).length;
-  const sampleCounts = [
+  const retained = rows.find((row) => row.godotPair ?? row.tnPair);
+  const head = retained?.godotPair ?? retained?.tnPair;
+  const title = head
+    ? `ThreeNative vs Godot — ${head.rung.objectCount.toString().replace(/\B(?=(\d{3})+(?!\d))/gu, ",")} cubes, ${e(gpuName(head.pilot.driver.adapter))}, ${head.pilot.display.width}x${head.pilot.display.height}`
+    : "ThreeNative vs Godot";
+  const frameCounts = [
     ...new Set(
       rows.flatMap((row) =>
         [row.godotPair, row.tnPair]
@@ -630,14 +660,13 @@ function renderEngineComparison(data: IMonitorData): string {
           .map((pair) => String(pair.samples.length)),
       ),
     ),
-  ].join(" · ");
-  const cards = `<section class="kpis" aria-label="Cross-engine comparison coverage">${kpi("Paired physical rows", String(paired.length), "4096 cubes, both arms, same display")}${kpi("Frame-time direction on p50", `TN higher ${higher} · TN lower ${lower}`, "Direction only — no ratio across modes or timing scopes", true)}${kpi("Speed ratios computed", "0", "Nonmatching work, definitions and pipelines are not divided")}${kpi("Sample counts", `${sampleCounts} per file`, "Retained per-frame samples; warmup frames are not recorded in these files", true)}</section>`;
+  ];
+  const caveat = `Pilot numbers: one run per engine, ${frameCounts.join("–") || MISSING} measured frames per file, warmup not recorded in these files; not yet the seven-block repeated protocol.`;
   const table = rows
-    .map((row) => {
-      const display = row.godotPair?.display ?? row.tnPair?.display;
-      const samples = row.godotPair?.samples.length ?? row.tnPair?.samples.length;
-      return `<tr><td><strong>${e(row.label)}</strong><p class="small">${e(row.mode)} · 4096 objects · exploratory · one run per arm</p><p class="small">${e(display ?? "display not recorded")} · ${samples ?? MISSING} measured samples in file</p><p class="small">${e(row.caveat)}</p></td><td>${e(percentilePair(row.godotPair))}</td><td>${e(percentilePair(row.tnPair))}</td><td>${e(outputCounts(row.godotPair, row.tnPair))}</td><td>${e(frameTimeDirection(row.godotPair, row.tnPair))}</td><td>${row.godotPair ? attemptLink(data, row.godotPair.attempt) : "godot file missing"}<p class="small">${row.tnPair ? attemptLink(data, row.tnPair.attempt) : "TN file missing"}</p></td></tr>`;
-    })
+    .map(
+      (row) =>
+        `<tr><td><strong>${e(row.label)}</strong><p class="small">${e(row.note)}</p></td><td>${e(ms(row.godotPair))}</td><td>${e(ms(row.tnPair))}</td><td>${observedDirection(row.godotPair, row.tnPair)}</td><td>${e(draws(row.godotPair, row.tnPair))}</td><td>${row.godotPair ? `Godot ${attemptLink(data, row.godotPair.attempt, path.basename(row.godotPair.attempt.source))}` : "Godot file missing"}<p class="small">${row.tnPair ? `TN ${attemptLink(data, row.tnPair.attempt, path.basename(row.tnPair.attempt.source))}` : "TN file missing"}</p></td></tr>`,
+    )
     .join("");
   const charts = rows
     .map((row) => {
@@ -656,17 +685,17 @@ function renderEngineComparison(data: IMonitorData): string {
       const lines = series
         .map(
           (item) =>
-            `<polyline class="${item.cls}" points="${comparisonSeriesPoints(item.pair.samples, maximum, width)}"><title>${e(item.label)} ${e(row.label)}: p50 ${item.pair.summary.p50.toFixed(3)} ms, p95 ${item.pair.summary.p95.toFixed(3)} ms, ${item.pair.samples.length} samples</title></polyline>`,
+            `<polyline class="${item.cls}" points="${comparisonSeriesPoints(item.pair.samples, maximum, width)}"><title>${e(item.label)} ${e(row.label)}: p50 ${item.pair.summary.p50.toFixed(2)} ms, p95 ${item.pair.summary.p95.toFixed(2)} ms, ${item.pair.samples.length} samples</title></polyline>`,
         )
         .join("");
       const reading = series
-        .map((item) => `${item.label} p50 ${item.pair.summary.p50.toFixed(3)} ms`)
+        .map((item) => `${item.label} p50 ${item.pair.summary.p50.toFixed(2)} ms`)
         .join(", ");
       const godotVersion = row.godotPair?.pilot.engine.version;
-      return `<div class="trend"><h3>${e(row.label)} · per-frame series</h3><p class="small">${e(reading)} · ${width} sample slots · zero-based axis scaled to this row only</p><svg viewBox="0 0 700 250" role="img" aria-label="Per-frame intervals in milliseconds for ${e(row.label)}: ${e(reading)}; lower is faster"><text x="0" y="17">ms ↓</text><text x="0" y="42">${maximum.toFixed(1)}</text><text x="25" y="115">${(maximum / 2).toFixed(1)}</text><text x="25" y="184">0</text><path d="M50 30V180H660" fill="none" stroke="#465040"/>${lines}<text x="55" y="205">1</text><text x="645" y="205" text-anchor="end">${width}</text><text x="350" y="238" text-anchor="middle">Sample index · one run per arm · not an improvement trend</text></svg><div class="legend"><span style="color:#7fd1c4">— Godot ${e(godotVersion ?? "version not recorded")}</span><span style="color:var(--accent)">— ThreeNative native host</span></div></div>`;
+      return `<div class="trend"><h3>${e(row.label)} · per-frame series</h3><p class="small">${e(reading)} · ${width} sample slots · zero-based axis scaled to this row only</p><svg viewBox="0 0 700 250" role="img" aria-label="Per-frame intervals in milliseconds for ${e(row.label)}: ${e(reading)}; exploratory observations only"><text x="0" y="17">ms ↓</text><text x="0" y="42">${maximum.toFixed(1)}</text><text x="25" y="115">${(maximum / 2).toFixed(1)}</text><text x="25" y="184">0</text><path d="M50 30V180H660" fill="none" stroke="#465040"/>${lines}<text x="55" y="205">1</text><text x="645" y="205" text-anchor="end">${width}</text><text x="350" y="238" text-anchor="middle">Sample index · one run per arm · not an improvement trend</text></svg><div class="legend"><span style="color:#7fd1c4">— Godot ${e(godotVersion ?? "version not recorded")}</span><span style="color:var(--accent)">— ThreeNative native host</span></div></div>`;
     })
     .join("");
-  return `<section class="panel" aria-label="ThreeNative against Godot"><div class="section-head"><h2>ThreeNative vs Godot</h2><span class="badge">Exploratory · physical display · 4096 cubes</span></div><p class="note">Same display and matching legacy first-eight placement hash; full fixture equivalence is unverified. Every row is exploratory: one run per arm, no repeated pair, no qualified iteration, so nothing here is a speed ratio or an improvement trend. Modes are different workloads and are never divided against each other.</p>${cards}<div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot pilots; scroll horizontally for all columns"><table class="compare-table"><thead><tr><th>Pilot</th><th>Godot p50 / p95</th><th>ThreeNative p50 / p95</th><th>Draws / triangles / visible · Godot vs TN</th><th>Frame-time direction</th><th>Raw JSON</th></tr></thead><tbody>${table}</tbody></table></div>${renderGodotUpstream(data)}<p class="chart-note">Warmup frames are not recorded in these JSON files — the L3 file's name says 40, its content records no warmup field — so the retained 120 samples per file are all this page claims. The suite's <code>time</code> field and the CPU/GPU split are its own definitions.</p>${charts}</section>`;
+  return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · one run per engine</span></div><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance and paired blocks are missing for these rows. No winner or speedup is established.</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median and 95th-percentile frame time in milliseconds, plus draw calls, per scene.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot p50 / p95</th><th scope="col">ThreeNative p50 / p95</th><th scope="col">Exploratory direction</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Raw JSON</th></tr></thead><tbody>${table}</tbody></table></div><p class="chart-note">${e(caveat)}</p>${scoreboardBars(rows)}<p class="chart-note">Median frame time per row, one axis. Godot teal, ThreeNative green.</p><div><h3>Methodology and caveats</h3><p class="note">Same display, matching legacy first-eight placement hash, full fixture equivalence unverified. Every row is exploratory: one run per engine, no repeated pair, no qualified iteration. Modes are distinct requested workloads; directions describe retained samples only and do not establish relative engine performance.</p><p class="note">Warmup frames are not recorded in these JSON files — the L3 file's name says 40, its content records no warmup field — so the retained 120 samples per file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.find((row) => row.godotPair)?.godotPair?.pilot.driver.adapter ?? MISSING)} · TN ${e(rows.find((row) => row.tnPair)?.tnPair?.pilot.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</div>${charts}</section>`;
 }
 
 export function renderProgressHtml(data: IMonitorData): string {

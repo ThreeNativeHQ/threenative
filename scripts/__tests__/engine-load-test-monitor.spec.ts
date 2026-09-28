@@ -638,7 +638,7 @@ function physicalAttempt(
 const GODOT_L1 = "pilots/godot-desktop-4096-visible-2026-09-27.json";
 const TN_L1 = "pilots/tn-desktop-4096-physical-visible-2026-09-27.json";
 const GODOT_L2 = "pilots/godot-desktop-4096-l2-visible-2026-09-27.json";
-const TN_L2 = "pilots/tn-desktop-4096-l2-physical-visible-2026-09-27.json";
+const TN_L2 = "pilots/tn-desktop-4096-l2-display-fix-2026-09-27.json";
 const TN_L3 = "pilots/tn-desktop-4096-l3-shipped-default-40warmup-2026-09-27.json";
 const GODOT_BOX1000 = "pilots/godot-lights-meshes-box1000-upstream-2026-09-27.json";
 
@@ -651,8 +651,14 @@ const box1000 = {
   system: { cpu_name: "AMD Ryzen 9 5900X", os: "Linux" },
 };
 
-describe("ThreeNative against Godot on the physical display", () => {
-  it("shows both arms per row, the recorded output, the direction, and divides nothing", () => {
+describe("ThreeNative against Godot scoreboard", () => {
+  const tableOf = (html: string): string =>
+    html.slice(
+      html.indexOf('<table class="compare-table">'),
+      html.indexOf("</table>", html.indexOf('<table class="compare-table">')),
+    );
+
+  it("shows exploratory measurements with visible qualification gaps and no winner or speed ratio", () => {
     const html = renderProgressHtml(
       data({
         pilots: [
@@ -661,80 +667,68 @@ describe("ThreeNative against Godot on the physical display", () => {
             triangles: 28_538,
             visible: 2_379,
           }),
-          physicalAttempt(TN_L1, "threenative", "L1", [30, 31, 29, 40], {
-            draws: 2_375,
-            triangles: 28_479,
-            visible: 2_374,
-          }),
           physicalAttempt(GODOT_L2, "godot", "L2", [2.4, 2.5, 2.6, 2.5], {
             draws: 2,
             triangles: 49_154,
             visible: 2,
           }),
-          physicalAttempt(TN_L2, "threenative", "L2", [1.5, 1.4, 1.6, 1.5], {
-            draws: 3,
-            triangles: 49_154,
-            visible: 4_096,
-          }),
-          physicalAttempt(TN_L3, "threenative", "L3", [3.5, 3.6, 3.4, 3.5], {
+          physicalAttempt(TN_L3, "threenative", "L3", [3.4, 3.5, 3.4, 6], {
             draws: 3,
             triangles: 49_155,
             visible: 4_096,
           }),
-          {
-            kind: "attempt",
-            source: GODOT_BOX1000,
-            status: "unrecorded",
-            time: "2026-09-27T21:46:00Z",
-            timeSource: "filesystem",
-            godotBenchmarks: [
-              {
-                category: "Rendering > Lights And Meshes",
-                name: "Box 1000",
-                results: box1000Results,
-              },
-            ],
-          },
+          physicalAttempt(TN_L2, "threenative", "L2", [1.5, 1.4, 1.6, 1.5], {
+            draws: 3,
+            triangles: 49_155,
+            visible: 4_096,
+          }),
+          physicalAttempt(TN_L1, "threenative", "L1", [30, 31, 29, 40], {
+            draws: 2_375,
+            triangles: 28_479,
+            visible: 2_374,
+          }),
         ],
       }),
     );
-    // First on the page, ahead of the single-run trace and the qualified section.
-    expect(html.indexOf("ThreeNative vs Godot")).toBeLessThan(
-      html.indexOf("Latest qualified candidate"),
+    // First thing on the page, above every later section.
+    expect(html.indexOf("ThreeNative vs Godot — 4,096 cubes, adapter, 1280x720")).toBeLessThan(
+      html.indexOf("Qualified iterations"),
     );
-    expect(html).toContain("Exploratory · physical display · 4096 cubes");
-    // Each arm's own p50/p95, never one substituted for the other.
-    expect(html).toContain("4.000 / 5.000 ms");
-    expect(html).toContain("30.000 / 40.000 ms");
-    expect(html).toContain("2.500 / 2.600 ms");
-    expect(html).toContain("1.500 / 1.600 ms");
-    // The recorded counts, each arm's own, so the near match and the mismatch are visible numbers.
-    expect(html).toContain("draws 2 vs 2375 · triangles 28538 vs 28479 · visible 2379 vs 2374");
-    expect(html).toContain("draws 2 vs 3 · triangles 49154 vs 49154 · visible 2 vs 4096");
-    expect(html).toContain("Draw-count and output mismatch");
-    expect(html).toContain("Unqualified instanced pilots");
-    expect(html).toContain("TN higher on p50 · one run each · not a speed ratio");
-    expect(html).toContain("TN lower on p50 · one run each · not a speed ratio");
-    // L3 keeps its own caveat and refuses a direction it has no pair for.
-    expect(html).toContain("No directly equivalent Godot pilot is retained");
-    expect(html).toContain("not shown — Godot pilot not retained");
-    // Per-frame lines for every retained arm, plus the raw file behind each row.
-    expect(html.match(/<polyline class="(godot|tn)"/g)).toHaveLength(5);
+    const table = tableOf(html);
+    expect(table).toContain("Shipped defaults (exploratory)");
+    expect(table).toContain("Explicit instancing (both)");
+    expect(table).toContain("TN with auto-batching OFF (diagnostic)");
+    // Each engine's own p50 / p95 is retained without a speed ratio.
+    expect(table).toContain("4.00 / 5.00 ms");
+    expect(table).toContain("3.40 / 6.00 ms");
+    expect(table).toContain("2.50 / 2.60 ms");
+    expect(table).toContain("1.50 / 1.60 ms");
+    expect(table).toContain("30.00 / 40.00 ms");
+    expect(table).not.toContain("Winner");
+    expect(table).not.toContain("faster");
+    expect(table).not.toMatch(/\d+\.\dx/u);
+    expect(table).toContain("Recorded TN p50 lower; Recorded TN p95 higher");
+    expect(table).toContain("Recorded TN p50 higher; Recorded TN p95 higher");
+    expect(table).toContain("L1 has a known output/draw mismatch");
+    const beforeTable = html.slice(0, html.indexOf('<table class="compare-table">'));
+    expect(beforeTable).toContain("L2 uses different visible-count semantics");
+    expect(beforeTable).toContain("Full fixture conformance and paired blocks are missing");
+    expect(beforeTable).not.toContain("<details>");
+    expect(table).toContain("2 vs 3");
+    expect(table).toContain("2 vs 2375");
     expect(html).toContain(`href="${GODOT_L1}"`);
+    expect(html).toContain(`href="${TN_L2}"`);
     expect(html).toContain(`href="${TN_L3}"`);
-    // Godot's own suite file stays Godot-only: its CPU/GPU split, and its `time` never shown.
-    expect(html).toContain("render CPU 0.6345 ms");
-    expect(html).toContain("render GPU 0.4795 ms");
-    expect(html).toContain("Not comparable to the ThreeNative completed-work frame time");
-    expect(html).toContain("that half of the pair is pending");
-    expect(html).not.toContain("4.028");
-    // Exploratory, so no multiple, no percentage and no faster-than claim anywhere.
-    expect(html).not.toMatch(/\d\s*×/u);
-    expect(html).not.toMatch(/-?\d+\.\d%/u);
-    expect(html).not.toMatch(/faster by|speedup/i);
+    expect(html).not.toContain("Where TN loses");
+    expect(html).toContain('class="scoreboard-bars"');
+    expect(html.match(/<rect x="52"/gu)).toHaveLength(6);
+    // The caveat is one sentence, from what the files actually carry.
+    expect(html).toContain(
+      "Pilot numbers: one run per engine, 4 measured frames per file, warmup not recorded in these files",
+    );
   });
 
-  it("shows a missing pilot as missing instead of substituting another retained file", () => {
+  it("renders a missing file as missing, never as a number or a near neighbour", () => {
     const html = renderProgressHtml(
       data({
         pilots: [
@@ -746,14 +740,16 @@ describe("ThreeNative against Godot on the physical display", () => {
         ],
       }),
     );
-    expect(html).toContain("godot file missing");
-    expect(html).toContain("— not shown — Godot pilot not retained");
-    expect(html).toContain("not compared — one side not retained");
-    expect(html).toContain(`href="${TN_L1}"`);
-    // L2 and L3 are absent too, and the section says so rather than borrowing L1's numbers.
-    expect(html).not.toContain("Paired physical rows</span><strong>1");
-    expect(html).toContain("Paired physical rows</span><strong>0");
-    expect(html).toContain("missing from retained artifacts, so no value is shown");
+    const table = tableOf(html);
+    expect(table).toContain("Godot file missing");
+    expect(table).toContain("TN file missing");
+    // Two rows fully unpaired and the Godot half of the third: 4 + 4 + 3 cells read as missing,
+    // none as a number, and the retained TN half is never stretched across the missing side.
+    expect(table.match(/>missing</gu)).toHaveLength(11);
+    expect(table).not.toMatch(/\d+\.\dx/u);
+    expect(table).not.toContain("faster");
+    expect(html).not.toContain("Where TN loses");
+    expect(html).toContain('class="scoreboard-bars"');
   });
 
   it("parses a Godot upstream benchmark file and refuses a malformed one", async () => {
