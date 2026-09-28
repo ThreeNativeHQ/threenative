@@ -51,7 +51,7 @@ runs:
         # Only compiled bundles are cacheable. Shipped templates and mirrors are repacked below.
         path: |
           packages/*/dist
-        key: workspace-dist-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.node }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'tsconfig.base.json', 'patches/**', 'packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/*.json', 'packages/*/*.ts', 'packages/*/scripts/**', 'packages/*/mcp/**', 'scripts/workspace-packages.ts', 'scripts/**', '.github/actions/workspace-dist/**') }}${{ inputs.key-suffix }}
+        key: workspace-dist-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.node }}-${{ hashFiles('package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json', 'tsconfig.base.json', 'patches/**', 'packages/*/src/**', 'packages/*/package.json', 'packages/*/tsup.config.ts', 'packages/*/*.json', 'packages/*/*.ts', 'packages/*/scripts/**', 'packages/*/patches/**', 'packages/*/mcp/**', 'scripts/workspace-packages.ts', 'scripts/**', '.github/actions/workspace-dist/**') }}${{ inputs.key-suffix }}
     # Core's capability server lives outside dist. Restore it from the cached engine-mcp bundle
     # BEFORE every repack, or a warm-cache core tarball silently loses its offline MCP server.
     - name: Restore generated files outside dist
