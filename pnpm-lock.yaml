@@ -94,7 +94,7 @@ overrides:
 patchedDependencies:
   three@0.185.1:
     hash: 987eb3547d4f28c03a4a8ef1b3900d4158c805821e61e23572fdb248995c4d91
-    path: patches/three@0.185.1.patch
+    path: packages/core/patches/three@0.185.1.patch
 
 importers:
 
