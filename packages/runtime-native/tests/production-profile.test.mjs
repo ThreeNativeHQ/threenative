@@ -403,6 +403,98 @@ test('a child run with no parseable report retains a visible, redacted failure a
   assert.equal(evidence.rawArtifacts[1].content.includes('Bearer'), false);
 });
 
+test('a desktop frame series ends at the capture the harness itself requested', async () => {
+  // The desktop host captures `after.png` inside its own frame loop, and the frame that spans the
+  // readback reports the readback as its own frame time: both clean-HEAD native collections carry a
+  // 312.72 ms and a 358.26 ms gap immediately after the host's `[Screenshot]` line, beside a
+  // `TN_SLOW_PHASE pollEvents` at the same figure. That line and the sample batches are one
+  // `std::cout` pipe in write order, so it is an exact boundary and not a threshold. A batch logged
+  // at or after it is dropped whole, because a batch straddles the capture and dropping one is the
+  // direction that cannot read the readback as gameplay. The capture itself is still taken, and its
+  // artifact is still evidence.
+  const artifactDirectory = makeTempDirSync('tn-profile-capture-boundary-');
+  temporary.push(artifactDirectory);
+  writeFileSync(join(artifactDirectory, 'after.png'), nonBlankScreenshot());
+  const samples = (firstIndex, frameMs, count = 5) => Array.from({ length: count }, (_, index) => ({
+    clockMs: 100 + (firstIndex + index) * 16.6,
+    drawCalls: 64,
+    frameIndex: firstIndex + index,
+    frameMs,
+  }));
+  const before = samples(100, 16.6);
+  const after = samples(105, 358.18);
+  const seriesLine = (batch) => `[log] TN_PROD_FRAME_SAMPLES:${JSON.stringify(batch)}`;
+  const consoleLines = [
+    seriesLine(before),
+    'TN_SURFACE_FRAME:{"view":true,"present":1935}',
+    '[Screenshot] First 16 bytes (BGRA raw): 202 141 67 255 202 141 67 255 ',
+    'TN_SLOW_PHASE:{"phase":"pollEvents","ms":358.18799999999999,"atMs":34601.958643999998}',
+    seriesLine(after),
+  ];
+  const report = (target) => ({
+    observations: { console: consoleLines.map((text) => ({ text, type: 'log' })) },
+    pass: true,
+    target,
+  });
+  const result = { durationMs: 1, status: 0 };
+  const desktop = await normalizeRun(result, artifactDirectory, 'desktop', report('desktop'));
+  assert.deepEqual(desktop.series.map(({ frameIndex }) => frameIndex), before.map(({ frameIndex }) => frameIndex));
+  assert.ok(desktop.series.every(({ frameMs }) => frameMs <= 17), 'the readback frame stayed in the series');
+  assert.ok(desktop.screenshot.length > 0, 'the desktop capture artifact is still retained');
+  // Web and mobile keep every batch: only the desktop host captures inside its own frame loop.
+  const web = await normalizeRun(result, artifactDirectory, 'web', report('browser'));
+  assert.equal(web.series.length, before.length + after.length);
+  const mislabeledDesktop = await normalizeRun(result, artifactDirectory, 'desktop', report('browser'));
+  assert.deepEqual(mislabeledDesktop.series.map(({ frameIndex }) => frameIndex), before.map(({ frameIndex }) => frameIndex));
+  const mislabeledWeb = await normalizeRun(result, artifactDirectory, 'web', report('desktop'));
+  assert.equal(mislabeledWeb.series.length, before.length + after.length);
+  // A desktop report with no capture line has no boundary to stop at, and it fails closed rather than
+  // measuring a window it cannot bound.
+  const unbounded = await normalizeRun(result, artifactDirectory, 'desktop', {
+    observations: {
+      console: [seriesLine(before), seriesLine(after)].map((text) => ({ text, type: 'log' })),
+      performanceSeries: after,
+    },
+    pass: true,
+    target: 'browser',
+  });
+  assert.equal(unbounded.series, undefined);
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'desktop',
+      runs: [unbounded],
+      startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot: nonBlankScreenshot(), status: 0 }],
+    },
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: 'fixture-project',
+    resolutionScaleSetting: undefined,
+    runId: 'capture-boundary',
+    startedAt: new Date().toISOString(),
+    web: undefined,
+  });
+  assert.ok(evidence.codes.includes('TN_PROD_RENDER_SAMPLES_INCOMPLETE'));
+  assert.deepEqual(evidence.rawArtifacts.map(({ label }) => label), [
+    'production-render-desktop-1',
+    'production-playtest-desktop-1',
+    'production-first-frame-desktop-1',
+    'production-startup-desktop-1',
+  ]);
+});
+
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });
 });

@@ -623,6 +623,35 @@ has a 358.26 ms gap after its screenshot log. This identifies capture overhead i
 series, not permission to discard it: no score was adjusted, and neither the web floor nor native
 parity is proven. The performance box stays open.
 
+**2026-09-28, desktop capture boundary fixed; performance box stays open.** Both native-only
+reports above show the host's `[Screenshot] First 16 bytes (BGRA raw)` line immediately before a
+312–358 ms `TN_SLOW_PHASE pollEvents` and the sample batch containing that stall. The host and V8
+console write to one ordered stdout pipe, so the first screenshot line bounds the gameplay sample
+window without a frame-duration threshold. `frameSeriesFromReport` now discards whole batches from
+that line onward for the **caller-known desktop target**; `normalizeRun` cannot fall back to another
+desktop series. A missing boundary yields no series and `TN_PROD_RENDER_SAMPLES_INCOMPLETE`. Web and
+mobile samples are unchanged; the workload and startup screenshots remain in the evidence.
+
+Red-green: the new capture-boundary test failed with the 358 ms post-capture batch present, then
+passed after the fix. A second red-green check showed that a missing or mislabeled `report.target`
+could bypass the first patch; the caller-known target now controls the boundary. The focused file
+passes 79/79, and targeted Biome plus `pnpm check:docs` pass. Offline parsing of the retained reports
+changes capped 5,665 → 5,545 raw samples and uncapped 5,775 → 5,680; the genuine 99.54 ms
+pre-capture gap remains. No adjusted verdict is claimed from offline parsing; the live check below
+still does not establish a qualifying web/native pair.
+
+**Live parser check in the worktree-dirty checkout:**
+`.runtime/prd064/production/native-after-capture-fix/production-evidence.json` is a 1920×1080,
+30-second requested, uncapped desktop-only run with all three markers and four retained artifacts,
+including both screenshots. It has 1,900 presented intervals over 31.68 seconds, 59.9682 FPS mean,
+17.27 ms p95 and 31.70 ms worst; `TN_PROD_PERFORMANCE_BUDGET` is its only failure code. The raw
+playtest console has 5,700 samples before the screenshot line (worst raw callback 30.30 ms) and
+130 after it (worst 406.01 ms); the latter are absent from the measured series. This verifies the
+capture boundary in a real run but does not prove a clean source, a web pair, or the strict 60 FPS
+floor. `pnpm typecheck`, `pnpm lint`, `pnpm budgets`, `pnpm check:docs` and `pnpm test` pass
+(501 files/6,230 tests passed, 9 skipped); the tracked Abyss build report was regenerated and
+repeated unchanged. The performance box remains open.
+
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 
 **Files (2):** `docs/verification/tier-1-<date>.md` — NEW; `docs/strategy/ROADMAP.md` — EDIT:

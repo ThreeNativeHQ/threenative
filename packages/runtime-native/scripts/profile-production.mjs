@@ -807,7 +807,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
       target,
       report,
       firstFrameMsFromReport(report, startedAt),
-      frameSeriesFromReport(report),
+      frameSeriesFromReport(report, target),
     );
   } catch {
     return { elapsedMs: performance.now() - started, report: undefined, screenshot: undefined, series: undefined, status: 2 };
@@ -865,7 +865,6 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
       'desktop',
       report,
       firstFrameMsFromReport(report, startedAt),
-      frameSeriesFromReport(report),
     );
   } catch (error) {
     let cleanupError;
@@ -1440,9 +1439,11 @@ export async function normalizeRun(
 ) {
   const reportSeries = report?.observations?.visual?.runtimeDiagnosticsSeries;
   const performanceSeries = report?.observations?.performanceSeries;
-  const consoleSeries = frameSeriesFromReport(report);
-  const series = [collectedSeries, reportSeries, performanceSeries, consoleSeries]
-    .find((candidate) => Array.isArray(candidate) && candidate.length > 0);
+  const consoleSeries = frameSeriesFromReport(report, kind);
+  const series = kind === 'desktop'
+    ? consoleSeries
+    : [collectedSeries, reportSeries, performanceSeries, consoleSeries]
+      .find((candidate) => Array.isArray(candidate) && candidate.length > 0);
   const screenshotPath = join(artifactDirectory, 'after.png');
   const screenshot = await nonBlankPng(screenshotPath) ? await readFile(screenshotPath) : undefined;
   return {
@@ -1542,9 +1543,26 @@ function firstFrameMsFromReport(report, startedAt) {
   return elapsed >= 0 ? elapsed : undefined;
 }
 
-function frameSeriesFromReport(report) {
+/**
+ * The desktop host takes its `after.png` inside its own frame loop, so the readback runs where a
+ * frame runs and the frame that spans it reports the readback as its own `frameMs`. Both clean-HEAD
+ * native collections at `f645e65c8` carry a 358.26 ms and a 312.72 ms gap in the batch logged after
+ * the host's capture line, beside a `TN_SLOW_PHASE pollEvents` at 358.19 and 312.79 ms. The capture
+ * line and the sample batches are both `std::cout` in that one process, so console order is write
+ * order and the line is an exact boundary rather than a threshold: every batch logged at or after it
+ * is dropped whole, because such a batch straddles the capture and dropping one is the direction
+ * that cannot read the readback as gameplay. The capture is still requested and its artifact still
+ * retained — this bounds the measured window, it does not remove the evidence.
+ */
+function frameSeriesFromReport(report, kind) {
+  const lines = reportConsoleLines(report);
+  // No capture line means no boundary, so a desktop report keeps nothing and fails closed rather than
+  // publishing a window this parser cannot bound; every other arm keeps its whole console.
+  const capture = kind === 'desktop'
+    ? lines.findIndex((line) => line.includes('[Screenshot] First 16 bytes'))
+    : lines.length;
   const series = [];
-  for (const line of reportConsoleLines(report)) {
+  for (const line of lines.slice(0, Math.max(capture, 0))) {
     const prefix = 'TN_PROD_FRAME_SAMPLES:';
     const offset = line.indexOf(prefix);
     if (offset === -1) continue;
