@@ -117,11 +117,11 @@
     "renderChain": {
       "tier": "high",
       "stages": {
-        "includes": ["outline", "kuwahara", "watercolor"],
-        "order": ["outline", "kuwahara", "watercolor"]
+        "includes": ["ambientOcclusion", "bloom", "vignette"],
+        "order": ["ambientOcclusion", "bloom", "vignette"]
       },
       "contributions": {
-        "graphOutputChanged": ["outline", "kuwahara", "watercolor"]
+        "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette"]
       }
     },
     "visibility": [
@@ -144,7 +144,7 @@
           "width": 1280,
           "height": 720,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.04,
+          "maxDarkPixelRatio": 0.12,
           "maxLuminance": 0.25
         }
       },
@@ -155,7 +155,7 @@
           "width": 1280,
           "height": 360,
           "minNonblankPixelRatio": 0.95,
-          "minDarkPixelRatio": 0.08,
+          "maxDarkPixelRatio": 0.03,
           "maxLuminance": 0.25
         }
       },

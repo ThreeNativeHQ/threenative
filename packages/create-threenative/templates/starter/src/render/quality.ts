@@ -33,9 +33,9 @@ type QualitySettings = IWorldEnvironmentOptions & IPainterlyOptions;
  * The three names this game's look comes in.
  *
  * `low` is what a phone gets and `high` what a desktop gets — those two are this template's
- * shipped looks, unchanged. `medium` is the rung in between for a machine that is neither: a
- * laptop iGPU, a handheld, a desktop that is dropping frames. Nothing outside this file decides
- * what any of them mean.
+ * shipped looks. `medium` is the rung in between for a machine that is neither: a laptop iGPU, a
+ * handheld, a desktop that is dropping frames. Nothing outside this file decides what any of them
+ * mean.
  */
 export type QualityTier = "low" | "medium" | "high";
 
@@ -72,104 +72,66 @@ export function resolveQualityTier(
 }
 
 /**
- * What a desktop gets: a clean coastal look with restrained painterly treatment. The expensive
- * screen-space gathers are deliberately off here: on a small water scene they muddy the grass and
- * turn the water glint into a halo instead of adding useful depth.
+ * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the
+ * sun disk, a water glint — rather than a haze over the frame (a threshold under 1 blooms lit
+ * grass and flattens contrast), and a corner falloff. Antialiasing is on in every tier that
+ * installs a chain; see `screenSpaceAA` in `worldEnvironment.ts`.
+ *
+ * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
+ * captured sky (`sky.ts`), which is what puts the sun's own highlight on the water; SSR on a
+ * rippled sea traced speckle into the swell, and RCAS then rang the smooth sky gradient into
+ * visible bands. Both are one line to turn back on.
+ *
+ * **The three authored paint stages are off, and the wiring stays.** `outline.ts`, `kuwahara.ts`
+ * and `watercolor.ts` are still in `src/render/`, still collected by `painterly.ts`, and still
+ * handed to the chain; they are simply not requested. Re-enabling one is flipping its single
+ * `xxxEnabled` line here from `false` to `true` — its every other knob already has a default in
+ * `painterly.ts` — so the option is a choice rather than a rewrite. They are off by default
+ * because a real sun and a real sky already carry the shading: the ink outline read as a comic
+ * stroke over a photograph, the Kuwahara smear ate the grass, and the watercolour wash grouped
+ * the coast's value steps into bands.
  */
-const high: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; the low strength keeps water glints alive
-  // without washing the scene in orange.
+const shared: QualitySettings = {
+  // Bloom cost: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
-  bloomRadius: 0.34,
-  bloomStrength: 0.26,
-  bloomThreshold: 0.64,
-  denoiseEnabled: false,
-  exposure: 1.04,
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  sharpenEnabled: false,
-  // Outline cost: unmeasured; it is intentionally a soft blue-green edge, not a black
-  // comic-book stroke.
-  outlineEnabled: true,
-  outlineDepthWeight: 0.32,
-  outlineInkColor: 0x173c4a,
-  outlineSoftness: 0.08,
-  outlineStrength: 0.3,
-  outlineThreshold: 0.2,
-  // Kuwahara cost: unmeasured; the half-resolution scratch and restrained strength preserve
-  // readable grass silhouettes.
-  kuwaharaEnabled: true,
-  kuwaharaRadius: 5,
-  kuwaharaResolutionScale: 0.5,
-  kuwaharaStrength: 0.2,
-  // Watercolour cost: unmeasured; the low mix keeps the paper grouping from flattening the coast.
-  watercolorEnabled: true,
-  watercolorPaperStrength: 0.05,
-  watercolorShadowStrength: 0.04,
-  watercolorShadowTint: 0x7d6b62,
-  watercolorStrength: 0.26,
-  renderChainTier: "high",
-  tonemapMode: "aces",
-};
-
-/**
- * Medium keeps the same readable coast, with a smaller paint radius and a little less colour
- * grouping for machines that need a cheaper frame.
- */
-const medium: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; keep only a small highlight lift.
-  bloomEnabled: true,
-  bloomRadius: 0.3,
+  bloomRadius: 0.6,
   bloomStrength: 0.22,
-  bloomThreshold: 0.68,
+  bloomThreshold: 1,
   denoiseEnabled: false,
-  exposure: 1.03,
+  exposure: 0.62,
+  sharpenEnabled: false,
   ssgiEnabled: false,
   ssrEnabled: false,
-  sharpenEnabled: false,
-  // Outline cost: unmeasured; keep its edge narrow on the cheaper tier.
-  outlineEnabled: true,
-  outlineDepthWeight: 0.28,
-  outlineInkColor: 0x173c4a,
-  outlineSoftness: 0.08,
-  outlineStrength: 0.26,
-  outlineThreshold: 0.22,
-  // Kuwahara cost: unmeasured; radius three keeps the water and grass readable.
-  kuwaharaEnabled: true,
-  kuwaharaRadius: 3,
-  kuwaharaResolutionScale: 0.5,
-  kuwaharaStrength: 0.16,
-  // Watercolour cost: unmeasured; fewer bands and a low mix preserve the coast's value steps.
-  watercolorEnabled: true,
-  watercolorLevels: 6,
-  watercolorPaperStrength: 0.04,
-  watercolorShadowStrength: 0.03,
-  watercolorShadowTint: 0x7d6b62,
-  watercolorStrength: 0.22,
-  renderChainTier: "medium",
-  tonemapMode: "aces",
-};
-
-/**
- * What a phone gets: the cleanest version of the coastal look. Authored paint is omitted to keep
- * the water mesh and touch controls responsive.
- */
-const low: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; this is the phone-safe highlight lift.
-  bloomEnabled: true,
-  bloomRadius: 0.28,
-  bloomStrength: 0.18,
-  bloomThreshold: 0.72,
-  exposure: 1.02,
-  sharpenEnabled: false,
-  // The low tier omits authored paint by name: no outline, scratch target, or paper graph is
-  // built on the phone path.
+  // The three authored stages, off. One line each; see the note above.
   outlineEnabled: false,
   kuwaharaEnabled: false,
   watercolorEnabled: false,
-  renderChainTier: "low",
   tonemapMode: "aces",
+  vignetteAmount: 0.22,
 };
+
+/**
+ * What a desktop gets: contact occlusion on top — the dark line where a foot meets the grass and
+ * a boulder meets the ground, most of what separates "objects in a world" from "objects pasted on
+ * a background". Gathered at full resolution and denoised: at half, the upsample left a grain
+ * around every foot.
+ */
+const high: QualitySettings = {
+  ...shared,
+  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
+  gtaoEnabled: true,
+  gtaoRadius: 0.35,
+  renderChainTier: "high",
+};
+
+/**
+ * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
+ * chain's own antialiasing one notch cheaper.
+ */
+const medium: QualitySettings = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+
+/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+const low: QualitySettings = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = { high, low, medium };
 

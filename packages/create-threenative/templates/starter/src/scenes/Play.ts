@@ -9,11 +9,18 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { BufferAttribute, Group, Mesh, NearestFilter, type PerspectiveCamera } from "three";
+import {
+  BufferAttribute,
+  Group,
+  Mesh,
+  NearestFilter,
+  type PerspectiveCamera,
+  type Texture,
+} from "three";
 import config from "../../threenative.config.js";
 import { Crate } from "../entities/Crate.js";
 import { Goal, ISLAND } from "../entities/Goal.js";
-import { Player } from "../entities/Player.js";
+import { type IPlayerModel, PLAYER_STAND_Y, Player } from "../entities/Player.js";
 import { createSpringArm } from "../render/camera.js";
 import { createCoastalScene } from "../render/coast.js";
 import { pickupRiseEase } from "../render/easing.js";
@@ -38,7 +45,8 @@ const FLOOR_BOUNDS = { maxX: 5, minX: -5, maxZ: 2, minZ: -2 } as const;
 export class Play extends Scene<GameState, IPhysicsContext> {
   #assetProof: Mesh | undefined;
   #materials: ReturnType<typeof createMaterials> | undefined;
-  #player: Player | undefined;
+  #playerModel: IPlayerModel | undefined;
+  #sky: Texture | undefined;
   #scenery: ReturnType<typeof createScenery> | undefined;
 
   static override readonly initialState: GameState = {
@@ -62,25 +70,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   override async load(ctx: GameCtx): Promise<void> {
-    const materials = createMaterials();
-    this.#materials = materials;
-    const state = ctx.state.getState();
-    this.#player = ctx.entities.add(
-      "player",
-      new Player(
-        ctx,
-        { accent: materials.heroAccent, body: materials.player, dark: materials.heroDark },
-        {
-          x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
-          y: 0.5,
-          z: 0,
-        },
-      ),
-    );
-    const [texture, model] = await Promise.all([
+    this.#materials = createMaterials();
+    const [texture, model, playerModel, sky] = await Promise.all([
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
+      ctx.assets.model<IPlayerModel>("mannequin.glb"),
+      ctx.assets.texture("sky.jpg"),
     ]);
+    this.#playerModel = playerModel;
+    this.#sky = sky;
     // A 16-pixel check filtered smoothly is a grey smear at flag size; nearest keeps the
     // squares square, which is the whole reason the finish flag is legible from the ledge.
     texture.magFilter = NearestFilter;
@@ -127,15 +125,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     if (
       this.#assetProof === undefined ||
       this.#materials === undefined ||
-      this.#player === undefined
+      this.#playerModel === undefined ||
+      this.#sky === undefined
     )
       throw new Error("Starter scene did not finish loading.");
     const materials = this.#materials;
-    const player = this.#player;
+    const state = ctx.state.getState();
+    const player = ctx.entities.add(
+      "player",
+      new Player(ctx, this.#playerModel, {
+        x: Number.isFinite(state.playerX) ? state.playerX : Play.initialState.playerX,
+        y: PLAYER_STAND_Y,
+        z: 0,
+      }),
+    );
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
-    setupSky(ctx.scene);
+    setupSky(ctx.scene, this.#sky);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
@@ -187,7 +194,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       type: "fixed",
     });
     new Crate(ctx, levelX, 4, -1.5, materials.crate);
-    const state = ctx.state.getState();
     const pickupBase = block(0.42, 0.14, 0.42, materials.player);
     const pickupStem = tube(0.08, 0.08, 0.3, materials.player);
     const pickupOrb = ball(0.16, materials.player);
@@ -326,7 +332,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frameState.jumps = player.jumps;
       frameState.lives = lives;
       frameState.odometer = player.odometer;
-      frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - 0.5);
+      // The rise above the standing body, not above the world origin: measured from the origin a
+      // 1.8 m figure would report its own height as a jump.
+      frameState.peakRise = Math.max(previous.peakRise, player.mesh.position.y - PLAYER_STAND_Y);
       frameState.playerX = player.mesh.position.x;
       frameState.respawns = previous.respawns + (respawned ? 1 : 0);
       const current = frameCtx.state.getState();
