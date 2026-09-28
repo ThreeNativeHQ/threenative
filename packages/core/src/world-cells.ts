@@ -2323,6 +2323,50 @@ function levelAt(distances: readonly number[], distance: number): number {
   return level;
 }
 
+/**
+ * A geometry that draws `source`'s shape through an indirect record: its own object, so the record is
+ * this mesh's, over the same attributes and index, so no vertex buffer is copied.
+ */
+function indirectView(
+  source: BufferGeometry,
+  args: Parameters<BufferGeometry["setIndirect"]>[0],
+  offset: number,
+): BufferGeometry {
+  const view = new BufferGeometry();
+  for (const [name, attribute] of Object.entries(source.attributes))
+    view.setAttribute(name, attribute);
+  view.setIndex(source.index);
+  view.morphAttributes = source.morphAttributes;
+  view.morphTargetsRelative = source.morphTargetsRelative;
+  for (const group of source.groups) view.addGroup(group.start, group.count, group.materialIndex);
+  view.boundingBox = source.boundingBox;
+  view.boundingSphere = source.boundingSphere;
+  view.setIndirect(args, offset);
+  return view;
+}
+
+/** The materials `redressMaterial` gave a mesh, disposed when the mesh is or when it is re-dressed. */
+const redressed = new WeakMap<InstancedMesh, readonly Material[]>();
+
+/**
+ * Give an already-compiled mesh a material of its own, so three builds its nodes again against what
+ * the mesh holds now (see `#dressGpu`). The clones share every texture; only the material objects are
+ * new, and they leave with the mesh.
+ */
+function redressMaterial(mesh: InstancedMesh): void {
+  for (const material of redressed.get(mesh) ?? []) material.dispose();
+  const clones: Material[] = [];
+  for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+    clones.push(material.clone());
+  mesh.material = Array.isArray(mesh.material) ? clones : (clones[0] as Material);
+  if (!redressed.has(mesh))
+    mesh.addEventListener("dispose", () => {
+      for (const material of redressed.get(mesh) ?? []) material.dispose();
+      redressed.delete(mesh);
+    });
+  redressed.set(mesh, clones);
+}
+
 /** Triangles one geometry submits; the count the `TN_WORLD_LOD_CHAIN` marker reports per level. */
 function levelTriangles(geometry: BufferGeometry): number {
   const drawn = geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0;
@@ -4675,18 +4719,24 @@ export class WorldCells extends Group implements IComputeDriven {
     const args2 = scene.regionOf(key.key);
     if (drawn === undefined || args === undefined || args2 === undefined) return;
     const mesh = shared.mesh;
+    const compiled = mesh.instanceMatrix !== drawn;
     mesh.instanceMatrix = drawn;
-    // A clone, so the part's own geometry keeps its attributes and the indirect record is this mesh's:
-    // the original is the shape the caster halves and a rebind still draw with.
-    const geometry = mesh.geometry.clone();
-    geometry.setIndirect(args, args2.argsIndex * DRAW_ARGS_BYTES);
-    mesh.geometry = geometry;
+    // Its own geometry object, so the indirect record is this mesh's, over the SAME attributes: the
+    // original is the shape the caster halves and a rebind still draw with. `clone()` would copy
+    // every vertex buffer of every key a second time.
+    mesh.geometry = indirectView(mesh.geometry, args, args2.argsIndex * DRAW_ARGS_BYTES);
     mesh.frustumCulled = false;
+    // Three builds an instanced mesh's instancing node when the mesh is first compiled, from the
+    // `instanceMatrix` it had then, and keeps it: a mesh the prewarm already drew keeps reading its
+    // old per-mesh buffer, which nothing writes once the GPU scene culls. Measured on machinefall:
+    // validation matched every count and matrix while the distant forest drew nowhere. A material of
+    // its own gives the mesh a fresh build against the storage buffer; it is disposed with the mesh.
+    if (compiled) redressMaterial(mesh);
     shared.gpu = key;
-    // What the record has to say for the draw to name a triangle: the clone's own index count, which
+    // What the record has to say for the draw to name a triangle: the view's own index count, which
     // is the shape this key draws. The scene is told rather than left to guess, so its validation can
     // hold the record against it.
-    scene.indexCount(key.key, geometry.index?.count ?? 0);
+    scene.indexCount(key.key, mesh.geometry.index?.count ?? 0);
     // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.

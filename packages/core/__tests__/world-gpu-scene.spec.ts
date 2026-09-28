@@ -739,6 +739,14 @@ describe("WorldCells with the GPU-driven main pass", () => {
       ).toBeUndefined();
     }
     expect(world.stats().gpuScene.keys).toBe(0);
+    // What each mesh was compiled with before the scene came up: three keeps an instanced mesh's
+    // instancing node from its first build, so a dressed mesh must not keep the material it had.
+    const before = new Map(
+      minted.map((mesh) => [
+        mesh,
+        { material: mesh.material, position: mesh.geometry.getAttribute("position") },
+      ]),
+    );
 
     const lines: string[] = [];
     const renderer = {
@@ -779,6 +787,26 @@ describe("WorldCells with the GPU-driven main pass", () => {
       const record = geometry.indirectOffset / 4;
       expect(geometry.indirect.array[record]).toBe(geometry.index?.count);
       expect(geometry.indirect.array[record]).toBeGreaterThan(0);
+      const was = before.get(mesh);
+      if (was !== undefined) {
+        // A fresh build: a material of its own, over the same vertex buffers (never a copy).
+        expect(mesh.material).not.toBe(was.material);
+        expect(mesh.geometry.getAttribute("position")).toBe(was.position);
+      }
+    }
+    // The material a dressed mesh was given leaves with it.
+    const probe = main.find((mesh) => before.has(mesh));
+    expect(probe).toBeDefined();
+    if (probe !== undefined) {
+      let disposed = 0;
+      (probe.material as { addEventListener: (t: string, f: () => void) => void }).addEventListener(
+        "dispose",
+        () => {
+          disposed += 1;
+        },
+      );
+      probe.dispose();
+      expect(disposed).toBe(1);
     }
     expect(world.stats().gpuScene.keys).toBe(main.length);
     // And the marker names it, because a browser run reads the line and nothing else.
