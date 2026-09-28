@@ -39,6 +39,8 @@ TN wins 3, ties 2, and Godot wins 1 (p50 medians of 3 alternating runs):
 | Explicit instancing | 1.11 vs 1.16 ms, tie | 1.48 vs 2.94 ms, TN 2.0× |
 | Can't batch | 2.56 vs 1.71 ms, tie (TN spread 1.59) | 11.17 vs 5.37 ms, Godot 2.1× (was ~9× before batch-by-uniforms) |
 
+Real-game holdout (`488bf8791`, racing and shooter templates, 6+6 alternating runs): no effect and no regression. Both templates stay below the projection's 200-renderable floor (96–100), so neither fix runs there; draws, triangles and pixels are unchanged within null-control noise. These fixes pay off for scenes with hundreds to thousands of objects and cost small games nothing.
+
 The remaining loss is the projection's per-frame material-change poll: about 5.6 ms of the 8.4 ms collapse at 4,096 distinct materials.
 
 ## Phases
