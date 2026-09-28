@@ -130,7 +130,13 @@ describe("template touch controls", () => {
     expect(scene).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
     expect(scene).toContain("touchControls?.update(frameCtx.input.raw.pointers");
     expect(ship).toContain('import type { ITouchInput } from "../render/touch-controls.js";');
-    expect(ship).toContain("touch.move");
-    expect(ship).toContain("move.clampLength(0, 1)");
+    // The stick is one vector, added into two independent axes. It is read through `move` — which
+    // the engine clamps to unit length, and which is exactly right for a thumbstick — rather than
+    // through the two-way bindings, so a thumb pushed into a corner is one direction and not 0.707
+    // of two.
+    expect(ship).toContain("touch?.move.x");
+    expect(ship).toContain("touch?.move.y");
+    expect(ship).toContain('ctx.input.vector("helm")');
+    expect(ship).toContain('ctx.input.vector("sheets")');
   });
 });

@@ -1092,9 +1092,16 @@ describe("template contracts", () => {
     for (const template of names) {
       const source = await readFile(path.join(templateRoot, template, "src/game.ts"), "utf8");
       expect(source, template).toMatch(/move: \{[\s\S]*?up: \[/);
+      // A *button* bound with `down` reads the field as "is this key held", so the action only
+      // ever fires on a press and never releases. A two-way axis is the opposite case: `up` and
+      // `down` are its two ends, which is what `vector()` reads, so a single-line binding that has
+      // an `up` is an axis and not a button. Sailing binds its sheets that way on purpose — a helm
+      // and a set of sheets are two independent controls, and `vector("move")` clamps their
+      // diagonal to unit length, which is wrong for a ship.
       const buttonBindings = source
         .split("\n")
-        .filter((line) => /^\s+\w+: \{[^\n]*\bdown: \[/.test(line));
+        .filter((line) => /^\s+\w+: \{[^\n]*\bdown: \[/.test(line))
+        .filter((line) => !/\bup: \[/.test(line));
       expect(buttonBindings, `${template} binds a button with down instead of keys`).toEqual([]);
     }
   });

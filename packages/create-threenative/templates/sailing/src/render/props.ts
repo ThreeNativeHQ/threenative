@@ -219,6 +219,51 @@ function belliedSail(width: number, height: number, belly: number, taper = 1): B
 }
 
 /**
+ * A swallow-tailed pennant, the tail cut back to the middle of the hoist instead of squared off.
+ *
+ * The notch is the whole difference: a rectangular flag reads as a card, and at the chase camera's
+ * distance the shape is all there is. Cutting the last fifth of the fly into two points turns the
+ * same four columns of canvas into the shape a player has seen on every ship ever drawn.
+ */
+function swallowtail(width: number, height: number, belly: number): BufferGeometry {
+  const positions: number[] = [];
+  // The notch: past 0.8 of the length the fly narrows to a point, so the tail is two points.
+  const fly = (u: number, v: number): number => (u < 0.8 ? v : v * (1 - (u - 0.8) * 5));
+  const at = (u: number, v: number): [number, number, number] => [
+    u * width,
+    (v - 0.5) * height,
+    Math.sin(Math.PI * u) * Math.sin(Math.PI * v) * belly,
+  ];
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      const u0 = column / 4;
+      const u1 = (column + 1) / 4;
+      const v0 = row / 3;
+      const v1 = (row + 1) / 3;
+      const corners = [
+        at(u0, fly(u0, v0)),
+        at(u1, fly(u1, v0)),
+        at(u1, fly(u1, v1)),
+        at(u0, fly(u0, v1)),
+      ];
+      for (const triangle of [
+        [0, 1, 2],
+        [0, 2, 3],
+      ] as const) {
+        for (const index of triangle) {
+          const corner = corners[index] as [number, number, number];
+          positions.push(...corner);
+        }
+      }
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
  * One sail, authored flat, ready for `SoftBody3D` to put the wind in it.
  *
  * `belliedSail` bakes the belly into the vertices, which is the right answer for a sail that will
@@ -238,8 +283,12 @@ function sailCloth(
   taper: number,
   belly: number,
 ): { geometry: BufferGeometry; pinned: number[] } {
-  const columns = 10;
-  const rows = 8;
+  // The cloth's own resolution. Springs are built from the triangles, so this grid is how many
+  // springs the canvas has: at ten by eight a course bends in four visible facets and reads as a
+  // folded card rather than as a sheet of sailcloth. Fourteen by ten still solves in a fraction of
+  // a millisecond and gives the belly eight segments to curve through.
+  const columns = 14;
+  const rows = 10;
   const positions: number[] = [];
   const pinned: number[] = [];
   const at = (u: number, v: number): [number, number, number] => {
@@ -305,20 +354,21 @@ function sailCloth(
  */
 export const SHIP_SAILS = [
   // Fore course, bent to the fore yard.
-  { belly: 0.2, height: 1.35, pitch: 0, taper: 1, width: 1.5, x: 0, y: 3.44, yaw: 0, z: -1.49 },
-  // Main course, bent to the main yard.
-  { belly: 0.24, height: 1.8, pitch: 0, taper: 1, width: 1.85, x: 0, y: 4.27, yaw: 0, z: 0.16 },
+  { belly: 0.24, height: 1.12, pitch: 0, taper: 1, width: 1.3, x: 0, y: 3.42, yaw: 0, z: -1.49 },
+  // Main course, bent to the main yard. The deepest cut of the three, because it is the sail the
+  // chase camera looks at most and the one whose belly has to read as canvas under load.
+  { belly: 0.3, height: 1.42, pitch: 0, taper: 1, width: 1.62, x: 0, y: 4.22, yaw: 0, z: 0.16 },
   // The mizzen lateen: fore-and-aft, so it is turned side-on and raked with its yard. Its wind
   // therefore pushes it to leeward rather than aft, which falls out of the rotation for free —
   // `SoftBody3D` takes wind in the cloth's own local space.
   {
-    belly: 0.16,
-    height: 1.95,
+    belly: 0.2,
+    height: 1.6,
     pitch: 0.85,
     taper: 0.22,
-    width: 1.2,
+    width: 1.0,
     x: 0.1,
-    y: 3.98,
+    y: 3.9,
     yaw: Math.PI / 2,
     z: 1.28,
   },
@@ -390,6 +440,24 @@ class RigidAssembly {
   }
 }
 
+/**
+ * Where a mast's stays land: `[isForestay, z, y]` on the ship's own lines.
+ *
+ * The forestay of each mast runs forward to the deck under the mast ahead of it and the main's runs
+ * all the way to the bowsprit head; every mast's backstays run aft to the quarterdeck rail. The
+ * numbers are the model's own — a rail height and a bowsprit head — so retuning `HULL_STATIONS`
+ * moves the rig with it.
+ */
+function staysOf(z: number): readonly (readonly [boolean, number, number])[] {
+  const bowsprit = { y: 1.36 + 1.0, z: -4.4 };
+  const quarterdeck = { y: 1.79, z: 3.2 };
+  const isFore = z < -0.5;
+  const stay: [boolean, number, number] = isFore
+    ? [true, -2.3, railAt(-2.3) + 0.1]
+    : [true, bowsprit.z, bowsprit.y];
+  return [stay, [false, quarterdeck.z, quarterdeck.y]];
+}
+
 /** A mast with its yard, sail, shrouds and truck. Returns the group so a game can reach the sail. */
 function mast(
   materials: ISailingMaterials,
@@ -414,8 +482,40 @@ function mast(
 
   // No canvas here any more. The sails are cloth and live at the scene root — see `SHIP_SAILS`.
 
-  // Shrouds: one line authored, placed to both rails. Without them the masts look stuck on.
+  // Stays: the standing rigging that runs fore and aft, which is most of what the eye reads as
+  // "a rig" at this distance. The shrouds below only say "a mast is held up"; a forestay running
+  // to the bowsprit head and a backstay running to the transom are what say "this is a ship", and
+  // they are four lines of geometry in a material that already exists.
   const head = foot + options.height * 0.92;
+  for (const [forward, anchorZ, anchorY] of staysOf(options.z)) {
+    const drop = head - anchorY;
+    const run = options.z - anchorZ;
+    const stay = piece(
+      new CylinderGeometry(0.008, 0.008, Math.hypot(drop, run), 4),
+      materials.cordage,
+      false,
+    );
+    stay.position.set(0, (head + anchorY) / 2, (options.z + anchorZ) / 2);
+    stay.rotation.x = Math.atan2(run, drop);
+    rigid.add(stay);
+    if (forward) continue;
+    // Backstays are doubled and spread to the quarterdeck rails, which is what a real ship does
+    // and what stops the mastheads reading as pins stuck into a deck.
+    for (const side of [-1, 1]) {
+      const beam = halfBeamAt(anchorZ) * 0.9;
+      const spread = piece(
+        new CylinderGeometry(0.007, 0.007, Math.hypot(drop, run + Math.abs(side * beam)), 4),
+        materials.cordage,
+        false,
+      );
+      spread.position.set((side * beam) / 2, (head + anchorY) / 2, (options.z + anchorZ) / 2);
+      spread.rotation.z = Math.atan2(side * beam, drop);
+      spread.rotation.x = -Math.atan2(run, drop);
+      rigid.add(spread);
+    }
+  }
+
+  // Shrouds: one line authored, placed to both rails. Without them the masts look stuck on.
   for (const side of [-1, 1]) {
     for (const aft of [-0.9, 0.9]) {
       const anchorZ = options.z + aft;
@@ -437,10 +537,34 @@ function mast(
   return group;
 }
 
-export function createShipModel(materials: ISailingMaterials): Group {
-  const ship = new Group();
-  const rigid = new RigidAssembly();
+/**
+ * The planking: a course of dark seams running the length of the topsides.
+ *
+ * A lofted hull is one smooth surface of revolution, and at the chase camera's distance the only
+ * thing that tells the eye it is looking at *timber* rather than at a brown solid is a line
+ * following the sheer. Four seams, in the darkest cordage the model owns, cost four boxes per side
+ * and no draw calls at all — `RigidAssembly` bakes them into the cordage mesh this model already
+ * has. They are seams and not planks on purpose: at eight metres a strake is two pixels, and a
+ * plank wide enough to see would be a ledge the ship does not have.
+ */
+function planking(materials: ISailingMaterials, rigid: RigidAssembly): void {
+  for (const [index, drop] of [0.2, 0.32, 0.44, 0.56].entries()) {
+    for (let step = 0; step < 24; step += 1) {
+      const z = MathUtils.lerp(-2.9, 3.1, step / 23);
+      // The seam follows the tumblehome, so it draws in as the rail does instead of running out
+      // past the hull and hanging in the air over the water.
+      const beam = halfBeamAt(z) * (0.99 - index * 0.012);
+      for (const side of [-1, 1]) {
+        const seam = piece(new BoxGeometry(0.02, 0.022, 0.3), materials.cordage, false);
+        seam.position.set(side * beam, railAt(z) - drop, z);
+        rigid.add(seam);
+      }
+    }
+  }
+}
 
+/** The hull, the weather deck, the rails and the planking: everything below the wale. */
+function hullAndDeck(materials: ISailingMaterials, rigid: RigidAssembly): void {
   // blockout: the hull itself.
   rigid.add(piece(loftHull(HULL_STATIONS), materials.hull));
 
@@ -466,7 +590,11 @@ export function createShipModel(materials: ISailingMaterials): Group {
       rigid.add(wale);
     }
   }
+  planking(materials, rigid);
+}
 
+/** The quarterdeck and everything standing on it, which is the whole of the ship's aft. */
+function quarterdeck(materials: ISailingMaterials, rigid: RigidAssembly): void {
   // Sterncastle: a raised deck aft, and the things that stand on it.
   //
   // It used to be a box, a deck plate and two rails — an empty tray at the back of the ship, which
@@ -559,7 +687,10 @@ export function createShipModel(materials: ISailingMaterials): Group {
     band.position.set(x, railAt(z) + 0.2, z);
     rigid.add(band);
   }
+}
 
+/** The beakhead, the bowsprit, and the rudder hung on the transom. */
+function stemAndStern(materials: ISailingMaterials, rigid: RigidAssembly, ship: Group): void {
   const beak = piece(new ConeGeometry(0.2, 0.9, 6), materials.hull);
   beak.rotation.x = -Math.PI / 2;
   beak.position.set(0, 0.42, -3.5);
@@ -598,6 +729,14 @@ export function createShipModel(materials: ISailingMaterials): Group {
   tiller.rotation.x = Math.PI / 2 - 0.25;
   tiller.position.set(0, 2.0, 2.72);
   rigid.add(tiller);
+}
+
+export function createShipModel(materials: ISailingMaterials): Group {
+  const ship = new Group();
+  const rigid = new RigidAssembly();
+  hullAndDeck(materials, rigid);
+  quarterdeck(materials, rigid);
+  stemAndStern(materials, rigid, ship);
 
   // The rig: two square courses of falling size and a raked lateen on the mizzen.
   ship.add(mast(materials, rigid, { height: 3.2, yardWidth: 1.7, yardY: 3.5, z: -1.55 }));
@@ -616,9 +755,10 @@ export function createShipModel(materials: ISailingMaterials): Group {
   lateenYard.rotation.x = 0.85;
   lateenYard.position.set(0, 3.05, 1.9);
   rigid.add(lateenYard);
-  // Pennant at the main truck: the one part of the silhouette that is meant to be seen moving.
-  const pennant = piece(belliedSail(0.62, 0.2, 0.05, 0.25), materials.trim, false);
-  pennant.position.set(0.34, 4.95, 0.1);
+  // Pennant at the main truck: the one part of the silhouette that is meant to be seen moving, and
+  // a swallowtail rather than a rectangle, because a rectangle is the shape of a card on a stick.
+  const pennant = piece(swallowtail(1.25, 0.26, 0.06), materials.trim, false);
+  pennant.position.set(0.64, 4.95, 0.1);
   pennant.name = "pennant";
   ship.add(pennant);
 

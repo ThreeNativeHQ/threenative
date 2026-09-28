@@ -45,6 +45,12 @@ export function createMaterials(): ISailingMaterials {
       // takes the normal from the derivative of the drawn position instead, so it follows the
       // simulation for free.
       flatShading: true,
+      // Canvas is thin, and the sun is usually on the far side of it: a sail the camera sees in
+      // shadow is lit only by the sky, which came back a blue-grey slab the size of the rig. Real
+      // canvas is translucent — a backlit sail glows and the seams show through it. This is the
+      // light coming through the cloth, and it is the difference between the rig reading as three
+      // sails and as one grey wall.
+      emissive: 0x4a3f2c,
       metalness: 0,
       roughness: 0.95,
       side: DoubleSide,
