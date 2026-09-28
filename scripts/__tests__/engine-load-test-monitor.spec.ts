@@ -422,7 +422,7 @@ it("plots exploratory pilot samples and distinguishes observed, zero, null and a
   expect(points?.[0]?.[1]).toBeCloseTo(127.2727);
   expect(points?.[3]?.[1]).toBeCloseTo(48.1818);
   expect(html).toContain('href="pilots/hardware.json"');
-  expect(html).toContain("not completed-work or iteration improvement");
+  expect(html).toContain("not completed-work time or iteration improvement");
   expect(html).toContain("No qualified iterations yet");
   expect(html).toContain("No qualified run");
   const rung = pilot.rungs[0];
@@ -494,6 +494,75 @@ it("plots exploratory pilot samples and distinguishes observed, zero, null and a
       }),
     ),
   ).not.toContain("Latest hardware pilot frame trace");
+});
+
+it("puts the measured pilot's own metrics and per-frame line first, and invents no speedup", () => {
+  // The real 60-frame NVIDIA production run, sampled exactly as retained on disk: 56 frames at
+  // 3.000 ms, then 4.255 ms, then three outliers, so p95 = 4.255 ms and not the mean.
+  const frameMs = [10.105, 4.775, 10.1, 4.255, ...Array<string | number>(56).fill(3)];
+  const pilot: IRunReport = {
+    arm: "tn-web",
+    build: { type: "release", notes: "vite production build, SceneRenderProjection consumer" },
+    device: { battery: null, label: "desktop" },
+    display: { height: 1080, width: 1920, refreshHz: 60, vsync: false },
+    driver: { adapter: "nvidia / turing", renderer: "three/webgpu WebGPURenderer" },
+    engine: { name: "threenative", version: "0.9.0" },
+    rungs: [
+      {
+        mode: "L1",
+        objectCount: 1024,
+        repeat: 0,
+        frameMs: frameMs.map(Number),
+        drawCalls: 1,
+        triangles: 12288,
+        visibleObjects: 1024,
+        positionHash: "fixture",
+        completedWorkMeanMs: 3.4741666664679847,
+        cpuSubmitMeanMs: 3.0559999977548915,
+        measuredFrames: 60,
+        drainPolicy: "drain after final frame",
+      },
+    ],
+  };
+  const html = renderProgressHtml(
+    data({
+      pilots: [
+        {
+          kind: "attempt" as const,
+          status: "recorded",
+          time: "2026-09-27T18:37:46.000Z",
+          timeSource: "filesystem" as const,
+          source: "pilots/tn-completed-work-2026-09-27.json",
+          pilot,
+        },
+      ],
+    }),
+  );
+  // Four separate observations, each with its own value: no submit/completed-work substitution.
+  expect(html).toContain("Completed-work mean</span><strong>3.474 ms/frame</strong>");
+  expect(html).toContain("Frame interval p95</span><strong>4.255 ms</strong>");
+  expect(html).toContain("CPU submit mean</span><strong>3.056 ms/frame</strong>");
+  expect(html).toContain("Measured frames</span><strong>60</strong>");
+  expect(html).toContain("Exploratory · one run · cadence-inclusive");
+  expect(html).toContain('href="pilots/tn-completed-work-2026-09-27.json"');
+  // The measured run leads: its own section, its own line, and the empty qualified trend after it.
+  expect(html.indexOf("Latest hardware pilot frame trace")).toBeLessThan(
+    html.indexOf("Latest qualified candidate"),
+  );
+  expect(html.indexOf("Latest hardware pilot frame trace")).toBeLessThan(
+    html.indexOf("No qualified iterations yet"),
+  );
+  const firstLine = html
+    .match(/<polyline points="([^"]+)"/)?.[1]
+    ?.split(" ")
+    .map((point) => point.split(",").map(Number));
+  expect(firstLine).toHaveLength(60);
+  expect(firstLine?.at(0)).toEqual([55, 180 - (10.105 / 11.1155) * 145]);
+  // No qualified run exists, so no delta, percentage or multiple is derived from the pilot above.
+  expect(html).not.toMatch(/-?\d+\.\d%/u);
+  expect(html).toContain("<strong>—</strong>");
+  expect(html).not.toMatch(/\d\s*×/u);
+  expect(html).toContain("No qualified run");
 });
 
 it("keeps the latest invalid or rejected iteration visible as the current experiment", () => {
