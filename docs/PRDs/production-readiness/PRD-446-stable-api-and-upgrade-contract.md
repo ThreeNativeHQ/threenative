@@ -1,7 +1,7 @@
 # PRD-446 — Stable API and upgrade contract
 
-**Status:** PARTIAL — phases 1 and 2 verified; starter passed the real phase-3 dry run, while
-platformer and the publish preflight remain open (`prd:75%`).
+**Status:** PARTIAL — phases 1 and 2 verified; starter and platformer passed the real phase-3 dry
+run, while the publish preflight and final acceptance remain open (`prd:75%`).
 **Complexity:** 6 → MEDIUM; touches release scripts, CI, and the physics deprecation warning.
 **Depends on:** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (changelog exists). Blocks rung R3
 (1.0) of [RELEASE-READINESS-2026-09-23](RELEASE-READINESS-2026-09-23.md).
@@ -225,8 +225,8 @@ not about a candidate.
 
 - [x] Upgrade proof for `starter` on web: previous `latest` → candidate, scenario passes. proof:
   `pnpm release --allow-missing-prebuilt --skip-gates` on the prepared 11-package cohort printed
-  nine `pass` steps from scaffold through gameplay for `Upgrade proof — starter`; no package was
-  published. The overall dry run exited 1 on platformer's separate registry dependency failure.
+  nine `pass` steps from scaffold through gameplay for `Upgrade proof — starter`; the same run
+  passed platformer and exited 0. No package was published.
   Wired and unit-proven: `pnpm exec vitest run
   scripts/__tests__/verify-registry-install.spec.ts` → 41 passed. The step list is exactly `pnpm:
   scaffold, install, lockfile, surface, upgrade, edit, build, test, gameplay`; the install carried the
@@ -238,13 +238,14 @@ not about a candidate.
   integrity and reads `TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH`; `fails closed when no lockfile records
   the candidate's integrity at all` covers the missing-lockfile and no-integrity branches. Nothing was
   published and no dist-tag moved; the candidate versions were prepared locally.
-- [ ] Upgrade proof for `platformer` on web. proof: the same run's `Upgrade proof — platformer` block.
+- [x] Upgrade proof for `platformer` on web. proof: the same real
+  `pnpm release --allow-missing-prebuilt --skip-gates` dry run printed nine `pass` steps from
+  scaffold through gameplay for `Upgrade proof — platformer` and exited 0, without publishing.
   `UPGRADE_PROOF_TEMPLATES = ["starter", "platformer"]`, and `upgrades the previous latest onto the
   packed candidate, on both named templates` asserts each template receives the same tarballs and
-  cohort versions. The real dry run stopped at the previous `latest`'s `pnpm:install`:
-  `@gltf-transform/functions@4.5.1` requires `@gltf-transform/core@^4.5.1`, while npm currently
-  serves core `4.5.0` as latest (`ERR_PNPM_NO_MATCHING_VERSION`). Candidate install and gameplay did
-  not run for platformer, so this box remains open.
+  cohort versions. An earlier run stopped at the previous `latest`'s install while npm served
+  `@gltf-transform/functions@4.5.1` without its required core version; npm later published
+  `@gltf-transform/core@4.5.1`, and the subsequent clean-room run passed.
 - [x] Red: a candidate with an unannounced breaking change fails the upgrade proof. proof: the
   `surface` step red below, plus phase 1's real `pnpm api:surface:check` exit 1.
   The proof runs the existing `api:surface:check` before it installs a byte and refuses a red
@@ -271,14 +272,14 @@ not about a candidate.
   release path, and the proof has to precede the publish because once `latest` has moved there is no
   N-1 left to upgrade from. It is not skipped by `--skip-gates`, so the `npm-release` lane's
   `release.ts --yes --skip-gates` gets it. Candidate versions are `publishSet(REPO)` output and are
-  not one number: in this checkout `@threenative/core` is 0.3.3 and `@threenative/assets` is 0.3.4, so
+  not one number: in this checkout `@threenative/core` is 0.3.4 and `@threenative/assets` is 0.3.5, so
   the spec reads the real version from `packages/core/package.json` instead of inventing one.
 
 ## Acceptance criteria
 
 - [ ] An unannounced removal of a public symbol cannot reach `develop`.
 - [ ] Every breaking change in the candidate has a `CHANGELOG.md` migration note.
-- [ ] `starter` and `platformer` upgrade from the previous `latest` to the candidate without edits beyond the migration notes. proof: the two `Upgrade proof` blocks of a real `pnpm tsx scripts/release.ts` run. Follows from the two phase 3 runs above: the only edit the lane
+- [x] `starter` and `platformer` upgrade from the previous `latest` to the candidate without edits beyond the migration notes. proof: both nine-step `Upgrade proof` blocks passed in the real `pnpm release --allow-missing-prebuilt --skip-gates` run, exit 0; no package was published. The only edit the lane
   makes is the `dist/`-observable marker, it is applied *after* the upgrade step, and a candidate
   with no announced break requires no migration edit at all.
 - [ ] `pnpm release:prepare` refuses a `1.0.0` version while any box above is open. proof:
@@ -294,5 +295,5 @@ not about a candidate.
   exist, and `accepts the same PRD once every phase and acceptance box is ticked` is the half that
   stops a refusal from being an unconditional throw. A gate PRD that has moved throws
   `TN_RELEASE_1_0_0_GATE_MISSING` rather than passing. `RELEASE_1_0_0_GATES` names PRD-446; a second
-  cohort that gates 1.0 adds its file there. **A real `release:prepare` run was not made** — the
-  task forbade it — so only the refusal logic is proven, not the command's exit code.
+  cohort that gates 1.0 adds its file there. A real `pnpm release:prepare` run passed for this 0.3.x
+  cohort; the `1.0.0` refusal remains unit-proven only, so this box stays open.
