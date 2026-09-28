@@ -208,45 +208,6 @@ export function isStatic(root: Object3D): boolean {
 }
 
 /**
- * Frozen roots whose bytes moved this frame, re-armed by the next `refreshStaticTransforms`.
- *
- * Three skips a settled object's per-draw attribute scan, and the instance buffer of an
- * `InstancedMesh` is a vertex attribute of that draw. Three's settled check watches the world
- * matrix, the material, the geometry and the scene environment, and none of those move when a
- * writer fills `instanceMatrix` — `BufferGeometry` has no `version` to bump, and a material is
- * shared by every batch of an asset, so a material bump would unsettle the writes' neighbours too.
- * What the check *does* read is `object.static`, so that is the switch: a mesh whose records were
- * written leaves the settled path until the frame that drew them has passed.
- */
-const held = new Set<Object3D>();
-
-/**
- * Holds a frozen root out of three's settled path, from a write now until the next refresh.
- *
- * The hold lasts exactly one frame: writes land in the fixed update, the draw that has to see them
- * follows in the same frame's render phase, and `refreshStaticTransforms` re-arms the root at the
- * top of the next one — before that frame's write, because the fixed update it belongs to has
- * already run. A writer that fires after the refresh in the same frame is a caller announcing its
- * own write, which is `invalidateStatic`'s job.
- *
- * Idempotent, and free when the root is not frozen.
- */
-export function holdStatic(object: Object3D): void {
-  // The root that owns the write is what has to leave the settled path, so a write to a descendant
-  // holds the root it hangs from — a tile's level mesh holds the tile's LOD node.
-  let node: Object3D | null = object;
-  while (node !== null) {
-    if (frozen.has(node)) {
-      if (held.has(node)) return;
-      unmarkStatic(node);
-      held.add(node);
-      return;
-    }
-    node = node.parent;
-  }
-}
-
-/**
  * The frozen roots, for the divergence oracle to check directly.
  *
  * The oracle validates what the frame draws, and when the engine's projection is collapsing the
@@ -280,8 +241,6 @@ let rearmedSinceCensus = 0;
  * job and `TN_RENDERLIST_VALIDATE=1`'s proof — and it does not pretend to.
  */
 export function refreshStaticTransforms(): void {
-  for (const root of held) markStatic(root);
-  held.clear();
   if (frozen.size === 0) return;
   for (const entry of frozen.values()) {
     if (snapshotMatches(entry.root, entry.snapshot, scratch)) continue;
@@ -311,6 +270,5 @@ export function staticTransformCensus(): IStaticTransformCensus {
 /** Drops every registration. A game that tore down its scene must not keep its roots alive. */
 export function resetStaticTransforms(): void {
   frozen.clear();
-  held.clear();
   rearmedSinceCensus = 0;
 }
