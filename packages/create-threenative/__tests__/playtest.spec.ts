@@ -159,11 +159,11 @@ describe("starter playtest proof", () => {
     expect(player).toContain('ctx.input.vector("move")');
   });
 
-  it("should run the chase scenario in the platformer test chain", async () => {
+  it("should run the fox run-and-collect scenario in the platformer test chain", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/chase.playtest.json",
+          "packages/create-threenative/templates/platformer/playtests/move.playtest.json",
         ),
         "utf8",
       ),
@@ -171,36 +171,34 @@ describe("starter playtest proof", () => {
       warmupFrames: number;
       assert: {
         diagnostics: { noConsoleErrors: boolean; runtimeReady: boolean };
-        movement: {
-          pathLength: number;
-          reachesPositionWithin: { maxDistance: number; position: number[] };
-        };
+        movement: { minAxisDelta: { axis: string; min: number } };
+        resources: { id: string; path: string; gte: number }[];
       };
     };
-    const avoidance = JSON.parse(
-      await readFile(
-        path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/avoidance.playtest.json",
-        ),
-        "utf8",
-      ),
-    ) as { warmupFrames: number };
 
-    expect([scenario.warmupFrames, avoidance.warmupFrames]).toEqual([0, 0]);
-    expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
-    expect(scenario.assert.movement).toMatchObject({
-      pathLength: 6,
-      reachesPositionWithin: { maxDistance: 1.2, position: [0, 0.66, 0] },
+    // The coin line is the route's first real proof: the fox has to run, and the coins only count
+    // if the pickup test and the reach both hold. Boot time decides how far it gets, so the
+    // scenario asserts the smaller of the two rather than a distance the page's start time sets.
+    expect(scenario.warmupFrames).toBe(20);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      runtimeReady: true,
     });
+    expect(scenario.assert.movement.minAxisDelta).toEqual({ axis: "x", min: 3 });
+    expect(scenario.assert.resources).toEqual([
+      { changed: true, gte: 5, id: "GameState", path: "coins" },
+    ]);
   });
 
   // Both stomp scenarios once passed and failed run to run with identical tick counts. The span
   // was always 117; what moved was `firstTick` — the ticks that elapsed while the page booted —
-  // and `Patrol.update(dt)` walks the enemy from the moment the level loads, so a stomp landed on
-  // a target at a different point in its cycle every run. Placing the patrol frozen is what makes
-  // the landing reproducible; deleting the setup block puts the flake straight back.
-  it.each(["stomp", "stomp-rise"])(
-    "should place the platformer patrol frozen in the %s scenario",
+  // and a walking target moves from the moment the level loads, so a stomp landed on it at a
+  // different point in its cycle every run. Placing the target frozen is what makes the landing
+  // reproducible; deleting the setup block puts the flake straight back. The platformer walks the
+  // two stomp and damage scenarios, both of which place a walker.
+  it.each(["damage", "stomp"])(
+    "should place the platformer walker frozen in the %s scenario",
     async (name) => {
       const scenario = JSON.parse(
         await readFile(
@@ -214,11 +212,11 @@ describe("starter playtest proof", () => {
           place?: readonly { entity: string; at: Record<string, number>; frozen?: boolean }[];
         };
       };
-      const patrol = scenario.setup?.place?.find((entry) => entry.entity === "patrol");
+      const walker = scenario.setup?.place?.find((entry) => entry.entity.startsWith("walker."));
 
-      expect(patrol, "the patrol must be placed, or boot time decides the stomp").toBeDefined();
-      expect(patrol?.frozen).toBe(true);
-      expect(Object.keys(patrol?.at ?? {}).sort()).toEqual(["x", "y", "z"]);
+      expect(walker, "the walker must be placed, or boot time decides the stomp").toBeDefined();
+      expect(walker?.frozen).toBe(true);
+      expect(Object.keys(walker?.at ?? {}).sort()).toEqual(["x", "y", "z"]);
     },
   );
 
@@ -238,8 +236,8 @@ describe("starter playtest proof", () => {
       steps: Array<{ pointers?: Array<{ id: number }> }>;
       target: string;
     };
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Play.ts"),
       "utf8",
     );
 
@@ -256,8 +254,8 @@ describe("starter playtest proof", () => {
         (entry) => entry.entity === "touch-controls" && entry.present === true,
       ),
     ).toBe(true);
-    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
-    expect(level).not.toContain("isNative() && isMobile()");
+    expect(play).toContain("isMobile() && isTouchscreenAvailable()");
+    expect(play).not.toContain("isNative() && isMobile()");
   });
 
   it("should drive sailing movement with browser touch", async () => {
@@ -342,58 +340,40 @@ describe("starter playtest proof", () => {
     ]);
   });
 
-  it("should run a load-bearing platformer physics assertion", async () => {
-    const scenario = JSON.parse(
-      await readFile(
-        path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/physics.playtest.json",
-        ),
-        "utf8",
-      ),
-    ) as {
-      assert: { settled: Array<{ atStep: string; entity: string; minBodies: number }> };
-      steps: Array<{ label: string }>;
-    };
-
-    expect(scenario.steps).toContainEqual(expect.objectContaining({ label: "settled" }));
-    expect(scenario.assert.settled).toEqual([{ atStep: "settled", entity: "crate", minBodies: 1 }]);
-  });
-
-  it("should ship numeric and signal assertions for both terminal outcomes", async () => {
+  it("should ship one smoke and one bounded performance scenario in the platformer chain", async () => {
     const root = path.resolve("packages/create-threenative/templates/platformer");
     const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;
     };
-    const win = JSON.parse(
-      await readFile(path.join(root, "playtests/terminal-loop-win.playtest.json"), "utf8"),
-    ) as { assert: { resources: unknown[]; signals: unknown[] } };
-    const fail = JSON.parse(
-      await readFile(path.join(root, "playtests/terminal-loop-fail.playtest.json"), "utf8"),
-    ) as { assert: { resources: unknown[]; signals: unknown[] } };
+    const survives = JSON.parse(
+      await readFile(path.join(root, "playtests/survives.playtest.json"), "utf8"),
+    ) as { subject: string; assert: { diagnostics: Record<string, boolean> } };
+    const performance = JSON.parse(
+      await readFile(path.join(root, "playtests/performance.playtest.json"), "utf8"),
+    ) as {
+      assert: {
+        performance: { maxDrawCalls: number; maxFrameMsP95: number; minFps: number };
+        renderChain: { tier: string };
+      };
+    };
 
-    expect(packageJson.scripts?.["pretest:terminal-loop"]).toBe("playwright install chromium");
-    const terminalLoop = packageJson.scripts?.["test:terminal-loop"] ?? "";
-    expect(terminalLoop).toContain("terminal-loop-win.playtest.json");
-    expect(terminalLoop).toContain("terminal-loop-fail.playtest.json");
-    expect(win.assert.resources).toContainEqual({
-      changed: true,
-      equals: 1,
-      id: "state",
-      path: "terminal",
+    // `pnpm test` is the whole chain in one command: every scenario in the template, and no
+    // separate script that can rot beside it.
+    const testScript = packageJson.scripts?.test ?? "";
+    expect(testScript).toContain("playtests/*.playtest.json");
+    expect(testScript).toContain("--browser-recipe webgpu");
+    expect(survives.subject).toBe("player");
+    expect(survives.assert.diagnostics).toMatchObject({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
     });
-    expect(win.assert.resources).toContainEqual({
-      atSteps: [{ equals: true, label: "reach-goal" }],
-      id: "state",
-      path: "grounded",
-    });
-    expect(win.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "won" });
-    expect(fail.assert.resources).toContainEqual({
-      changed: true,
-      equals: 2,
-      id: "state",
-      path: "terminal",
-    });
-    expect(fail.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "lost" });
+    // The Tier 3 Floor lives in the shipped scenario, beside the ceilings, not in a report.
+    expect(performance.assert.performance.maxFrameMsP95).toBe(33);
+    expect(performance.assert.performance.minFps).toBe(30);
+    expect(performance.assert.performance.maxDrawCalls).toBeGreaterThan(0);
+    expect(performance.assert.renderChain.tier).toBe("high");
   });
 
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {

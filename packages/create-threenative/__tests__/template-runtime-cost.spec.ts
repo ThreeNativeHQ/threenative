@@ -280,7 +280,7 @@ describe("generated template ordinary-frame runtime cost", () => {
   it("executes 600 steady frames per template without fresh vector work", async () => {
     const minimal = await import("../templates/minimal/src/render/camera.js");
     const starter = await import("../templates/starter/src/entities/Player.js");
-    const platformer = await import("../templates/platformer/src/entities/Character.js");
+    const platformer = await import("../templates/platformer/src/entities/Fox.js");
     const racing = await import("../templates/racing/src/track/Ranking.js");
     const racingLap = await import("../templates/racing/src/track/Lap.js");
     const racingSector = await import("../templates/racing/src/track/TrackSector.js");
@@ -294,7 +294,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     for (const [name, value] of Object.entries({
       "minimal followCamera": minimal.followCamera,
       "starter Player": starter.Player,
-      "platformer Character": platformer.Character,
+      "platformer Fox": platformer.Fox,
       "racing rankRacers": racing.rankRacers,
       "racing TrackSector": racingSector.TrackSector,
       "shooter Projectile": shooter.Projectile,
@@ -328,23 +328,23 @@ describe("generated template ordinary-frame runtime cost", () => {
       ).toEqual({ clones: 0, constructors: 0 });
       player.dispose();
 
-      const character = new platformer.Character(ctx as never, new Vector3(0, 0.75, 0));
+      const fox = new platformer.Fox(ctx as never, new Vector3(0, 0.75, 0));
       expect(
-        measureVectorAllocations(() => character.update(ctx as never, DT)),
-        "platformer Character.update vector allocation sentinel",
+        measureVectorAllocations(() => fox.update(ctx as never, DT)),
+        "platformer Fox.update vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      character.dispose();
+      fox.dispose();
 
       const dashCtx = gameContext(physics.physics, {
         justPressed: (action) => action === "dash",
         move: new Vector2(),
       });
-      const dashCharacter = new platformer.Character(dashCtx as never, new Vector3(0, 0.75, 0));
+      const dashingFox = new platformer.Fox(dashCtx as never, new Vector3(0, 0.75, 0));
       expect(
-        measureVectorAllocations(() => dashCharacter.update(dashCtx as never, DT)),
+        measureVectorAllocations(() => dashingFox.update(dashCtx as never, DT)),
         "platformer dash fallback vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      dashCharacter.dispose();
+      dashingFox.dispose();
 
       const touchModule = await import("../templates/platformer/src/render/touch-controls.js");
       const touch = new touchModule.TouchControls(camera);
@@ -506,7 +506,7 @@ describe("generated template ordinary-frame runtime cost", () => {
   it("executes scene-owned collection and formatted-state paths for 600 frames", async () => {
     const minimal = await import("../templates/minimal/src/scenes/Play.js");
     const starter = await import("../templates/starter/src/scenes/Play.js");
-    const platformer = await import("../templates/platformer/src/scenes/Level.js");
+    const platformer = await import("../templates/platformer/src/scenes/Play.js");
     const racing = await import("../templates/racing/src/scenes/Race.js");
     const shooter = await import("../templates/shooter/src/scenes/Play.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
@@ -518,7 +518,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     for (const [name, value] of Object.entries({
       "minimal Play": minimal.Play,
       "starter Play": starter.Play,
-      "platformer Level": platformer.Level,
+      "platformer Play": platformer.Play,
       "racing Race": racing.Race,
       "shooter Play": shooter.Play,
       "action-RPG Play": actionRpg.Play,
@@ -579,14 +579,18 @@ describe("generated template ordinary-frame runtime cost", () => {
 
     const platformerPhysics = await physicsFixture();
     try {
-      const context = sceneContext(platformerPhysics.physics, platformer.Level.initialState);
-      const frame = new platformer.Level().enter(context as never);
+      const context = sceneContext(platformerPhysics.physics, platformer.Play.initialState);
+      const play = new platformer.Play();
+      // The fox run loads the sky photograph in `load()`, exactly like every other template that
+      // ships one, so the scene under measurement is the one a player sees.
+      await play.load(context as never);
+      const frame = play.enter(context as never);
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {
         patchHighWater = context.patchIdentities.size;
       });
-      expect(patchHighWater, "platformer Level state-patch warm high-water sentinel").toBe(1);
-      expect(context.patchIdentities.size, "platformer Level state-patch high-water sentinel").toBe(
+      expect(patchHighWater, "platformer Play state-patch warm high-water sentinel").toBe(1);
+      expect(context.patchIdentities.size, "platformer Play state-patch high-water sentinel").toBe(
         patchHighWater,
       );
     } finally {

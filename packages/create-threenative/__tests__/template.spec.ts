@@ -606,11 +606,8 @@ describe("template contracts", () => {
   });
 
   it("should decay the platformer coyote timer every update", async () => {
-    const character = await readFile(
-      path.join(templateRoot, "platformer/src/entities/Character.ts"),
-      "utf8",
-    );
-    expect(character).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
+    const fox = await readFile(path.join(templateRoot, "platformer/src/entities/Fox.ts"), "utf8");
+    expect(fox).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
   });
 
   it("should make the sky photograph the background, the environment and the fog", async () => {
@@ -1000,14 +997,16 @@ describe("template contracts", () => {
     }
   });
 
-  it("should use the visible platform object for platform physics", async () => {
-    const platform = await readFile(
-      path.join(templateRoot, "platformer/src/level/Platform.ts"),
-      "utf8",
-    );
-    expect(platform).toContain("object: visual");
-    expect(platform).not.toContain("visible: false");
-    expect(platform).not.toContain("new Mesh(");
+  it("should build the platformer's collision from the level the player can see", async () => {
+    // The platformer's world is authored geometry, so the collider is the same mesh the camera
+    // draws — never a stand-in. `buildStaticColliders` reads the scene root, and the game's own
+    // predicate is what keeps several thousand decorative meshes out of collision.
+    const play = await readFile(path.join(templateRoot, "platformer/src/scenes/Play.ts"), "utf8");
+    const stage = await readFile(path.join(templateRoot, "platformer/src/level/Stage.ts"), "utf8");
+    expect(play).toContain("buildStaticColliders(ctx, stage.group");
+    expect(play).toContain("object.userData.solid === true");
+    expect(stage).toContain("mesh.userData.solid = true");
+    expect(stage).not.toContain("visible: false");
   });
 
   // `vite build` does not typecheck, so a template can ship a red `npm run typecheck` and still
@@ -1062,7 +1061,7 @@ describe("template contracts", () => {
     const movementFiles = [
       ["starter", "src/entities/Player.ts"],
       ["minimal", "src/entities/Player.ts"],
-      ["platformer", "src/entities/Character.ts"],
+      ["platformer", "src/entities/Fox.ts"],
     ] as const;
     for (const [template, relativePath] of movementFiles) {
       const source = await readFile(path.join(templateRoot, template, relativePath), "utf8");

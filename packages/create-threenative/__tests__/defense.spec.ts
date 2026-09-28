@@ -4,6 +4,7 @@ import type { IShapeHit, PhysicsDirectSpaceState3D } from "@threenative/physics"
 import { rapier } from "@threenative/physics";
 import { InstancedMesh, Matrix4, PerspectiveCamera, Vector2, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { PathFollow3D } from "../../core/src/index.js";
 import { createRandom } from "../../core/src/random.js";
 import {
   Economy,
@@ -26,7 +27,6 @@ import {
   WAVE_INTERVAL,
   WaveSchedule,
 } from "../templates/defense/src/waves.js";
-import { Chaser } from "../templates/platformer/src/entities/Chaser.js";
 
 const defenseRoot = path.resolve("packages/create-threenative/templates/defense");
 
@@ -123,49 +123,33 @@ describe("defense starter kit", () => {
     );
   });
 
-  it("uses the promoted core route follower in both portable route users", () => {
+  // One route user is all that is left. The platformer's steering chaser went with its game when
+  // the template became the fox run, which has no chaser at all: its walkers patrol a straight x
+  // range, so a path follower would be an abstraction with one caller and no second user left.
+  it("uses the promoted core route follower in the defense attacker", () => {
     const attacker = readFileSync(path.join(defenseRoot, "src/attackers/Attacker.ts"), "utf8");
-    const chaser = readFileSync(
-      path.resolve("packages/create-threenative/templates/platformer/src/entities/Chaser.ts"),
-      "utf8",
-    );
-    const sources = `${attacker}\n${chaser}`;
 
     expect(attacker).toContain("PathFollow3D");
-    expect(chaser).toContain("PathFollow3D");
-    expect(sources).not.toMatch(/CatmullRomCurve3|routeIndex|routeProgress/u);
-    expect(chaser).toContain("position.distanceTo(routeSample.point) <= ROUTE_REACH_DISTANCE");
-    expect(chaser).toContain("this.#route.progressTo(this.#route.progress + SPEED * dt)");
-    expect(chaser).not.toContain("this.#route.advance(dt)");
+    expect(attacker).not.toMatch(/CatmullRomCurve3|routeIndex|routeProgress/u);
   });
 
-  it("advances a Chaser route only after reaching its sampled point", async () => {
-    const ctx = {
-      add: () => undefined,
-      physics: undefined,
-    } as unknown as ConstructorParameters<typeof Chaser>[0];
-    const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
-    await plugin.setup?.(ctx);
-    const player = {
-      mesh: { position: new Vector3(100, 0.66, 0) },
-    } as unknown as ConstructorParameters<typeof Chaser>[1];
-    const chaser = new Chaser(ctx, player, new Vector3(0, 0.66, -3.05));
+  it("holds a route follower to its sampled points, which is what both users depend on", () => {
+    const route = new PathFollow3D({
+      points: [new Vector3(0, 0, 0), new Vector3(10, 0, 0), new Vector3(20, 0, 0)],
+      speed: 2,
+    });
 
-    try {
-      const initial = chaser.debug();
-      const routeSample = new Vector3(...(initial.routeSample as number[]));
-      expect(chaser.mesh.position.distanceTo(routeSample)).toBeGreaterThan(0.35);
-
-      chaser.update(1 / 60);
-      expect(chaser.debug().routeDistance).toBe(initial.routeDistance);
-
-      chaser.mesh.position.copy(routeSample);
-      chaser.update(1 / 60);
-      expect(chaser.debug().routeDistance).toBeGreaterThan(initial.routeDistance as number);
-    } finally {
-      chaser.dispose();
-      plugin.dispose?.(ctx);
-    }
+    // A 1/60 step is a fraction of a sampled point, so a follower that advanced per frame would
+    // jump the curve and cut the corner. The claim is that the advance is bounded by the sample.
+    const before = route.advance(1 / 60);
+    expect(before.progress).toBeCloseTo((1 / 60) * 2, 6);
+    expect(before.point.x).toBeGreaterThan(0);
+    expect(route.progress).toBeLessThanOrEqual(route.totalLength);
+    // Past the end, progress is clamped rather than running off the curve.
+    route.progressTo(route.totalLength * 2);
+    expect(route.progress).toBe(route.totalLength);
+    expect(route.advance(1 / 60)).toMatchObject({ progress: route.totalLength });
+    expect(route.completed).toBe(true);
   });
 
   // The geometry HUD this test covered was removed in round 10: defense mounted it *and* a React

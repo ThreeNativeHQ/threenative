@@ -671,36 +671,37 @@ const PLATFORMER_PATHS = [
   "src/main.ts",
   "src/state.ts",
   "src/scenes/Boot.ts",
-  "src/scenes/Level.ts",
-  "src/entities/Character.ts",
-  "src/entities/Chaser.ts",
-  "src/entities/Patrol.ts",
+  "src/scenes/Play.ts",
+  "src/entities/Fox.ts",
   "src/entities/Pickup.ts",
+  "src/entities/Walker.ts",
   "src/level/Checkpoints.ts",
-  "src/level/Platform.ts",
-  "src/render/palette.ts",
+  "src/level/Stage.ts",
+  "src/render/blocks.ts",
   "src/render/camera.ts",
+  "src/render/fox.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
   "src/render/materials.ts",
-  "src/render/rig.ts",
-  "src/render/sky.ts",
+  "src/render/palette.ts",
+  "src/render/pickups.ts",
   "src/render/postprocessing.ts",
-  "src/render/terrain.ts",
+  "src/render/props.ts",
+  "src/render/sky.ts",
+  "src/render/scenery.ts",
+  "src/render/walkers.ts",
+  "src/render/waterfall.ts",
   "public/icon.png",
-  "playtests/jump.playtest.json",
-  "playtests/patrol.playtest.json",
+  "playtests/coyote.playtest.json",
   "playtests/collect.playtest.json",
-  "playtests/stomp.playtest.json",
-  "playtests/stomp-rise.playtest.json",
+  "playtests/damage.playtest.json",
+  "playtests/hud.playtest.json",
+  "playtests/jump.playtest.json",
+  "playtests/move.playtest.json",
   "playtests/respawn.playtest.json",
-  "playtests/oneway.playtest.json",
-  "playtests/collision-layers.playtest.json",
-  "playtests/chase.playtest.json",
-  "playtests/avoidance.playtest.json",
+  "playtests/stomp.playtest.json",
+  "playtests/survives.playtest.json",
   "playtests/performance.playtest.json",
-  "playtests/terminal-loop-win.playtest.json",
-  "playtests/terminal-loop-fail.playtest.json",
   "playtests/native/touch-controls.playtest.json",
 ];
 
@@ -717,7 +718,7 @@ describe("create-threenative", () => {
       blurb: expect.any(String),
       genre: "platformer",
       kit: true,
-      title: "Platformer",
+      title: "Fox Dash",
     });
     const help = cliHelp();
     expect(help).toContain("Templates:");
@@ -1499,10 +1500,10 @@ describe("create-threenative", () => {
         ).resolves.toBeTruthy();
       }
       await expect(
-        readFile(path.join(result.target, "src/entities/Character.ts"), "utf8"),
-      ).resolves.toContain("PLATFORMER_FEEL");
+        readFile(path.join(result.target, "src/entities/Fox.ts"), "utf8"),
+      ).resolves.toContain("FOX_FEEL");
       await expect(
-        readFile(path.join(result.target, "src/scenes/Level.ts"), "utf8"),
+        readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
       ).resolves.toContain('ctx.entities.add("player"');
     } finally {
       await rm(root, { recursive: true, force: true });
