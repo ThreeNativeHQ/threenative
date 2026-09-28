@@ -11,6 +11,7 @@ import type {
 } from "three";
 
 import { skinnedMaterialBlocked } from "./projection-skinned.js";
+import { uniformSignatureOf } from "./projection-uniform.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
 
 /**
@@ -276,7 +277,9 @@ class ProjectionSeen implements IProjectionSeenWorkspace {
   }
 }
 
-/** A reusable identity group for one (geometry, material, flags) combination. */
+/**
+ * A reusable identity group for one (geometry, material, flags) combination.
+ */
 export interface IProjectionBatchGroup {
   readonly geometry: BufferGeometry;
   readonly material: Material;
@@ -288,6 +291,20 @@ export interface IProjectionBatchGroup {
   readonly members: Array<Mesh | undefined>;
   memberCount: number;
   activeScan: number;
+}
+
+/**
+ * An instanced group whose members' materials are interchangeable except for their base colour.
+ *
+ * Keyed on (geometry, material signature, flags) rather than material identity, so a scene of
+ * per-object material clones that differ only in albedo — the shape a game gets by cloning a
+ * material per prop — collapses to one draw. The draw cannot use the game's material instances,
+ * because there is one draw and many materials: it carries a clone the mirror owns with the colour
+ * removed, and each instance carries its source material's colour. `material` stays the group's
+ * representative, which is what every member was equal to.
+ */
+export interface IProjectionUniformGroup extends IProjectionBatchGroup {
+  readonly uniform: true;
 }
 
 /**
@@ -365,6 +382,19 @@ export interface IProjectionScanWorkspace {
     BufferGeometry,
     WeakMap<Material, Map<number, IProjectionBatchGroup>>
   >;
+  /**
+   * Uniform groups, by geometry, then by the material signature, then by the batching flags — a
+   * signature is a value, so the geometry key has to be the weak one for the index not to outlive
+   * the geometry it describes.
+   */
+  readonly uniformGroups: WeakMap<
+    BufferGeometry,
+    Map<string, Map<number, IProjectionUniformGroup>>
+  >;
+  readonly activeUniformGroups: Array<IProjectionUniformGroup | undefined>;
+  activeUniformGroupCount: number;
+  /** The uniform group each mesh was filed under, so nothing files it a second time this scan. */
+  readonly uniformOf: WeakMap<Mesh, IProjectionUniformGroup>;
   readonly groupsByMaterial: WeakMap<Material, Map<number, Map<string, IProjectionMaterialGroup>>>;
   /** Attribute signature per geometry, computed once and interned so group lookup stays pointer-cheap. */
   readonly geometrySignatures: WeakMap<BufferGeometry, string>;
@@ -458,6 +488,10 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     walkStack: [],
     walkStackCount: 0,
     groupsByGeometry: new WeakMap(),
+    uniformGroups: new WeakMap(),
+    activeUniformGroups: [],
+    activeUniformGroupCount: 0,
+    uniformOf: new WeakMap(),
     groupsByMaterial: new WeakMap(),
     geometrySignatures: new WeakMap(),
     materialClaims: new WeakMap(),
@@ -529,6 +563,14 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
     group.memberCount = 0;
     workspace.activeGroups[index] = undefined;
   }
+  for (let index = 0; index < workspace.activeUniformGroupCount; index += 1) {
+    const group = workspace.activeUniformGroups[index] as IProjectionUniformGroup;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      group.members[member] = undefined;
+    }
+    group.memberCount = 0;
+    workspace.activeUniformGroups[index] = undefined;
+  }
   for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
     releaseActiveMaterialGroup(
       workspace,
@@ -567,6 +609,7 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   workspace.activeMaterialGroupCount = 0;
   workspace.belowFloorCount = 0;
   workspace.activeGroupCount = 0;
+  workspace.activeUniformGroupCount = 0;
   workspace.walkStackCount = 0;
 }
 
@@ -733,6 +776,68 @@ export function geometryVersionSum(geometry: BufferGeometry): number {
   }
   const index = geometry.getIndex();
   return index === null ? sum : sum + attributeVersionOf(index);
+}
+
+/**
+ * Files a mesh under (geometry, material signature, flags) for a draw that carries the colour
+ * per instance.
+ *
+ * The signature is the material's own readable properties minus its colour, so a mesh whose
+ * material is ineligible — transparent, vertex-coloured, a node graph, an unknown class — simply
+ * has no signature and never reaches this lane. A material that shares an instance with a twin is
+ * still better served by the identity lane, so this runs over the groups that fell below its floor.
+ */
+function addToUniformGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: Mesh,
+  scanNumber: number,
+): void {
+  const geometry = mesh.geometry;
+  const material = mesh.material as Material;
+  const signature = uniformSignatureOf(material);
+  if (signature === undefined) return;
+  const flags = batchFlagsOf(mesh);
+  let bySignature = workspace.uniformGroups.get(geometry);
+  if (bySignature === undefined) {
+    bySignature = new Map();
+    workspace.uniformGroups.set(geometry, bySignature);
+  }
+  let byFlags = bySignature.get(signature);
+  if (byFlags === undefined) {
+    byFlags = new Map();
+    bySignature.set(signature, byFlags);
+  }
+  let group = byFlags.get(flags);
+  if (group === undefined) {
+    group = {
+      geometry,
+      material,
+      castShadow: mesh.castShadow,
+      receiveShadow: mesh.receiveShadow,
+      frustumCulled: mesh.frustumCulled,
+      layersMask: mesh.layers.mask,
+      members: [],
+      memberCount: 0,
+      activeScan: 0,
+      uniform: true,
+    };
+    byFlags.set(flags, group);
+  }
+  if (group.activeScan !== scanNumber) {
+    group.activeScan = scanNumber;
+    group.memberCount = 0;
+    workspace.activeUniformGroups[workspace.activeUniformGroupCount] = group;
+    workspace.activeUniformGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+  workspace.uniformOf.set(mesh, group);
+}
+
+/** Whether a mesh was claimed by a uniform group that made the member floor this scan. */
+function uniformClaimed(workspace: IProjectionScanWorkspace, mesh: Mesh): boolean {
+  const group = workspace.uniformOf.get(mesh);
+  return group !== undefined && group.memberCount >= MIN_BATCH_MEMBERS;
 }
 
 function addToMaterialGroup(
@@ -927,14 +1032,28 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
     addToSkinnedGroup(workspace, workspace.skinned[index] as SkinnedMesh, scanNumber);
   }
   // Meshes whose own (geometry, material, flags) group is too small to instance-batch are exactly
-  // the population a material-keyed batch exists for — distinct geometries over a shared
-  // surface. A mesh whose geometry group made the floor never reaches here; instancing stays its
-  // lane, and it references its geometry live rather than through a packed copy.
+  // the population a material-keyed batch exists for — distinct geometries over a shared surface. A
+  // mesh whose geometry group made the floor never reaches here; instancing stays its lane, and it
+  // references its geometry live rather than through a packed copy.
+  //
+  // The uniform pass runs first, because it is the only one of the two that can collapse these
+  // meshes into a *single* draw: a packed batch is still one sub-draw per member on WebGPU, while a
+  // per-instance colour over one shared geometry is one draw however many members it holds. A mesh
+  // whose uniform group made the floor is claimed by it and never filed here.
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
-      addToMaterialGroup(workspace, group.members[member] as Mesh, scanNumber);
+      addToUniformGroup(workspace, group.members[member] as Mesh, scanNumber);
+    }
+  }
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      const mesh = group.members[member] as Mesh;
+      if (uniformClaimed(workspace, mesh)) continue;
+      addToMaterialGroup(workspace, mesh, scanNumber);
     }
   }
   watchMaterialGroupGeometries(workspace);
@@ -961,6 +1080,16 @@ function predictSkinnedDraws(workspace: IProjectionScanWorkspace): number {
 
 function predictDraws(workspace: IProjectionScanWorkspace): number {
   let predictedDraws = workspace.exactLaneCount;
+  // A uniform group is one instanced draw however many members it holds, which is the whole reason
+  // it exists: unlike the packed lane below, its members do not become one sub-draw each. Claimed
+  // here so the same source cannot be drawn twice — once as an instance and once on the exact lane.
+  for (let index = 0; index < workspace.activeUniformGroupCount; index += 1) {
+    const group = workspace.activeUniformGroups[index] as IProjectionUniformGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
+    workspace.batchGroups[workspace.batchGroupCount] = group;
+    workspace.batchGroupCount += 1;
+    predictedDraws += 1;
+  }
   // A BatchedMesh still executes one multidraw sub-draw per visible member on WebGPU, so charge
   // every material-group member rather than pretending the packed object is one draw. The group
   // still earns admission when the aggregate plan beats the authored candidate count: it removes
@@ -982,7 +1111,11 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
     if (group.memberCount < MIN_BATCH_MEMBERS) {
       for (let member = 0; member < group.memberCount; member += 1) {
         const mesh = group.members[member] as Mesh;
-        if (workspace.materialClaims.get(mesh) !== workspace.scanNumber) predictedDraws += 1;
+        if (
+          workspace.materialClaims.get(mesh) !== workspace.scanNumber &&
+          !uniformClaimed(workspace, mesh)
+        )
+          predictedDraws += 1;
       }
     } else {
       workspace.batchGroups[workspace.batchGroupCount] = group;
@@ -1007,12 +1140,13 @@ function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
       const mesh = group.members[member] as Mesh;
-      // Claimed by a batched material group this scan: it is already an instance inside a batch,
-      // not below the floor. Everything else here — including members evicted from a material
-      // group by the stream watch, whose geometry groups are always below the floor — keeps its
-      // own draw. A material group needs no sweep of its own: every one of its members came from
+      // Claimed by a batched material or uniform group this scan: it is already an instance inside
+      // a batch, not below the floor. Everything else here — including members evicted from a
+      // material group by the stream watch, whose geometry groups are always below the floor — keeps
+      // its own draw. A material group needs no sweep of its own: every one of its members came from
       // a below-floor geometry group, so this loop already reaches each of them exactly once.
       if (workspace.materialClaims.get(mesh) === workspace.scanNumber) continue;
+      if (uniformClaimed(workspace, mesh)) continue;
       workspace.belowFloor[workspace.belowFloorCount] = mesh;
       workspace.belowFloorCount += 1;
     }

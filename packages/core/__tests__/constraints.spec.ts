@@ -130,6 +130,12 @@ describe("core constraints", () => {
           // whether a frame can be mirrored at all. It reads no property that describes how
           // anything looks, chooses none and constructs none — the assertions below keep it so.
           file !== "projection-stability.ts" &&
+          // The uniform lane draws one geometry under one material the mirror owns, with each
+          // member's own base colour carried per instance. This file is the part that decides
+          // whether two materials are interchangeable: it reads their properties to compare them and
+          // writes nothing on any of them. The white clone it exists to justify is built in
+          // `projection-apply.ts`, which is allowlisted above for the same reason.
+          file !== "projection-uniform.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))

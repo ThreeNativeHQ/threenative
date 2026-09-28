@@ -97,6 +97,19 @@ export function skinnedMaterialBlocked(material: Material): boolean {
 }
 
 /**
+ * Whether a per-instance colour may stand in for this material's base colour.
+ *
+ * Closed on purpose, and closed on the same table the skinned lane converts through: only a classic
+ * material class three is known to turn into a node material whose diffuse colour *is*
+ * `material.color` qualifies. A node material is refused outright — a custom graph decides for
+ * itself what a colour means, and a shader three has never heard of cannot be asked what it would
+ * do with a multiply. A material class this table does not name is refused for the same reason.
+ */
+export function tintableMaterial(material: Material): boolean {
+  return Reflect.get(material, "isNodeMaterial") !== true && NODE_CLASSES.has(material.type);
+}
+
+/**
  * True when `elements` is a rotation times a positive uniform scale plus a translation — the only
  * world transform whose fold into the bone palette leaves normals exactly where stock skinning's
  * normal matrix puts them.

@@ -71,6 +71,7 @@ export type ProjectionExactReason =
   | "tooFewToBatch"
   | "batchOverflow"
   | "batchVelocityPatchMissing"
+  | "materialChanged"
   | "negativeScale"
   | "nonUniformScale"
   | "unsupportedGeometry";
@@ -349,6 +350,11 @@ export class SceneRenderProjection {
         this.#deoptimize("unsupportedLight", lightFailure);
         this.#forgetPlan();
       } else {
+        // A member whose material stopped matching the group it was an instance of is drawn exactly
+        // this frame, and the classification that put it there is now stale: nothing structural
+        // changed, so the structure proof would happily re-use it. Dropping the retained plan is
+        // what makes the next frame re-derive the grouping from the materials as they now stand.
+        if (mirror.reclassified) this.#forgetPlan();
         this.#deoptimized = false;
         this.#reasonCode = "projected";
         this.#reason = undefined;
