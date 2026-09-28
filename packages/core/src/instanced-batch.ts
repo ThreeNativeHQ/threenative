@@ -1,12 +1,13 @@
 import {
   type BufferGeometry,
-  InstancedMesh,
+  type InstancedMesh,
   type Material,
   type Matrix4,
   Object3D,
   Quaternion,
   Vector3,
 } from "three";
+import { pooledMesh } from "./render/mesh-pool.js";
 
 /** The axis a unit-height geometry is laid out along, and the axis {@link InstancedBatch.span} rotates from. */
 const UP = new Vector3(0, 1, 0);
@@ -43,6 +44,15 @@ export interface IInstancedBatchBuildOptions {
   readonly parent?: Object3D;
   /** Passed straight to the built mesh. Default `false`, as in Three.js. */
   readonly receiveShadow?: boolean;
+  /**
+   * An existing mesh to refill instead of creating one: used when it draws this batch's geometry
+   * and material and holds at least this many instances. Reusing matters on WebGPU, where three
+   * keys an instanced mesh's compiled node program by the mesh itself — every new InstancedMesh
+   * rebuilds its shader, and a streamed world creating hundreds a cell stalls on it.
+   */
+  readonly into?: InstancedMesh;
+  /** Instance slots to allocate when a new mesh is created, so later refills fit. Default: count. */
+  readonly capacity?: number;
 }
 
 /**
@@ -84,9 +94,37 @@ export class InstancedBatch {
     return this.#matrices.length;
   }
 
+  /**
+   * Writes every placed matrix into `target` (a mesh's `instanceMatrix.array`), starting at instance
+   * `offset`, and returns how many were written. For a caller that packs several batches into one
+   * shared instance buffer instead of building a mesh per batch.
+   */
+  writeMatrices(target: Float32Array, offset: number): number {
+    for (let index = 0; index < this.#matrices.length; index += 1)
+      (this.#matrices[index] as Matrix4).toArray(target, (offset + index) * 16);
+    return this.#matrices.length;
+  }
+
   /** The built mesh, or `undefined` before {@link build} — never a guess. */
   get mesh(): InstancedMesh | undefined {
     return this.#mesh;
+  }
+
+  /**
+   * True when this batch holds element-for-element the matrices of `other`.
+   *
+   * A refilter rebuilds a cell's batch from the same run in the same order, so "did the answer
+   * change" is exactly this question, and comparing is what lets the swap skip a rebuild that came
+   * back identical instead of writing, clearing and compacting records the buffer already holds.
+   */
+  equals(other: InstancedBatch | undefined): boolean {
+    if (other === undefined || this.#matrices.length !== other.#matrices.length) return false;
+    for (let index = 0; index < this.#matrices.length; index += 1) {
+      const mine = (this.#matrices[index] as Matrix4).elements;
+      const theirs = (other.#matrices[index] as Matrix4).elements;
+      for (let field = 0; field < 16; field += 1) if (mine[field] !== theirs[field]) return false;
+    }
+    return true;
   }
 
   /**
@@ -174,8 +212,22 @@ export class InstancedBatch {
     if (this.#built)
       throw new Error("InstancedBatch.build was already called; the instance count is fixed.");
     this.#built = true;
-    if (this.#matrices.length === 0) return undefined;
-    const mesh = new InstancedMesh(this.geometry, this.material, this.#matrices.length);
+    const count = this.#matrices.length;
+    if (count === 0) return undefined;
+    const into = options.into;
+    // A mesh with no `into` comes from the pool, so three keeps the node it built for this uuid the
+    // last time anything drew these instances; `visible`/`frustumCulled` are set because a pooled
+    // mesh is parked with both off.
+    const mesh =
+      into !== undefined &&
+      into.geometry === this.geometry &&
+      into.material === this.material &&
+      into.instanceMatrix.count >= count
+        ? into
+        : pooledMesh(this.geometry, this.material, Math.max(count, options.capacity ?? count));
+    mesh.count = count;
+    mesh.visible = true;
+    mesh.frustumCulled = true;
     if (options.name !== undefined) mesh.name = options.name;
     for (let index = 0; index < this.#matrices.length; index += 1) {
       mesh.setMatrixAt(index, this.#matrices[index] as Matrix4);

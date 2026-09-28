@@ -536,6 +536,9 @@ describe("TerrainTiles", () => {
     const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
     for (let row = 0; row < resolution; row += 1)
       position.setY(row * resolution + resolution - 1, Number.NaN);
+    // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+    // told about. A settled ring skips its seam pass until some rendered buffer's version moves.
+    position.needsUpdate = true;
 
     try {
       expect(() => tiles.process()).toThrow(/seam diagnostic.*finite|invalid.*seam/u);
@@ -765,6 +768,97 @@ describe("TerrainTiles", () => {
     expect(tiles.peakResidentBytes).toBeLessThanOrEqual(200_000);
     expect(disposed.length).toBeGreaterThan(0);
     expect(release).toHaveBeenCalled();
+    tiles.dispose();
+  });
+
+  it("gives only the tiles inside `colliderRadius` a body, and moves that set as follow moves", () => {
+    // The whole point of a stream radius larger than a collider radius: 49 tiles of ground render
+    // while 9 of them are solid, so a wide horizon does not cost a physics body per tile.
+    const created: string[] = [];
+    const disposed: string[] = [];
+    const tiles = new TerrainTiles({
+      colliderRadius: 1,
+      createCollider: ({ key }) => {
+        created.push(key);
+        const collider: IWorldTileCollider = { dispose: () => disposed.push(key) };
+        return collider;
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentTileCount).toBe(49);
+    expect(tiles.residentColliderKeys).toEqual([
+      "-1:-1",
+      "-1:0",
+      "-1:1",
+      "0:-1",
+      "0:0",
+      "0:1",
+      "1:-1",
+      "1:0",
+      "1:1",
+    ]);
+    // A tile outside the radius never got a body to hand back.
+    expect(created).not.toContain("2:2");
+
+    tiles.follow({ x: 48, z: 0 });
+    expect(tiles.residentColliderKeys).toEqual([
+      "2:-1",
+      "2:0",
+      "2:1",
+      "3:-1",
+      "3:0",
+      "3:1",
+      "4:-1",
+      "4:0",
+      "4:1",
+    ]);
+    // The followed tile's own body is released as it leaves the radius, and the tile that arrived
+    // gets one: the set follows the player instead of being fixed at load.
+    expect(disposed).toContain("0:0");
+    expect(created).toContain("3:0");
+    expect(created).toContain("4:0");
+
+    tiles.dispose();
+    expect(disposed).toContain("4:0");
+  });
+
+  it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
+    const tiles = new TerrainTiles({
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+    tiles.follow({ x: 12, z: 0 });
+    for (let frame = 0; frame < 4; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    expect(tiles.lodLevelCount).toBeGreaterThanOrEqual(2);
+    // A float64 height compared against its float32 copy never matched, so every call rewrote the
+    // edges and recomputed whole-tile bounds: ~39 ms a frame on a 25-tile ring.
+    const transitions = tiles.lodTransitions;
+    const bounds = vi.spyOn(BufferGeometry.prototype, "computeBoundingSphere");
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    // A still camera must not morph terrain: the neighbour rule used to flip coarse tiles each frame.
+    expect(tiles.lodTransitions).toBe(transitions);
+    expect(bounds).not.toHaveBeenCalled();
+    bounds.mockRestore();
     tiles.dispose();
   });
 
@@ -1485,7 +1579,11 @@ describe("TerrainTiles", () => {
       tiles.follow({ x: 2, z: 0 });
       const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
       if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
-      bridge.geometry.getAttribute("position").setY(0, Number.NaN);
+      const position = bridge.geometry.getAttribute("position");
+      position.setY(0, Number.NaN);
+      // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+      // told about. A settled bridge skips its diagnostic until some rendered buffer's version moves.
+      position.needsUpdate = true;
 
       expect(() => tiles.process()).toThrow(/bridge coordinates must be finite/u);
     } finally {
