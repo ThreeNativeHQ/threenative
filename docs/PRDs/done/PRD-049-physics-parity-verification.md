@@ -464,7 +464,11 @@ says so — PRD-046 acceptance criterion 8 stays open, not quietly closed by thi
 - It does not unify Rapier versions across arms.
 - It does not add trimesh, convex hull or heightfield to the native ABI. Those throw during
   construction today, which is the correct fail-closed behaviour; adding them is a scope
-  decision with its own LOC cost and its own proof burden.
+  decision with its own LOC cost and its own proof burden. **Amended 2026-09-27:** trimesh was
+  added, on its own proof burden, because `buildStaticColliders` was already exported on native
+  while throwing there and the CSG doorway needs a real opening — see
+  [`PRD-threejs-csg-cook.md`](PRD-threejs-csg-cook.md) and `tn_physics_add_trimesh_body`.
+  Convex hull and heightfield remain out.
 - It does not close PRD-046's iOS or clean-machine criteria. Those are blocked on hardware
   and on PRD-048 respectively, and nothing here changes either.
 

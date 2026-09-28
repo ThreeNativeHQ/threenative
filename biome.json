@@ -35,6 +35,7 @@
       "examples/abyss-vanilla/vite.config.js",
       "examples/auto-lod/public/**",
       "examples/abyss-framework/public/**",
+      "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
       "docs/verification/prd-357-c4-duplicate-inventory.json",
