@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  type IAttempt,
   type IGitState,
   type IMonitorData,
   parsePrdProgress,
@@ -594,4 +595,185 @@ it("keeps the latest invalid or rejected iteration visible as the current experi
     expect(panel).not.toContain("Profile CPU submission and individual render stages");
     expect(html).toContain("No qualified iterations yet");
   }
+});
+
+/** A 4096-cube physical-display pilot as the real files record it: one rung, one repeat, the
+ *  samples in the file, and the arm's own engine name. */
+function physicalAttempt(
+  source: string,
+  engine: "godot" | "threenative",
+  mode: string,
+  frameMs: number[],
+  counts: { draws: number; triangles: number; visible: number },
+): IAttempt {
+  return {
+    kind: "attempt" as const,
+    pilot: {
+      arm: engine === "godot" ? "godot-desktop" : "tn-desktop",
+      build: { type: "release", notes: "release export" },
+      device: { battery: null, label: "desktop-native-linux" },
+      display: { height: 720, width: 1280, refreshHz: 60, vsync: false },
+      driver: { adapter: "adapter", renderer: "renderer" },
+      engine: { name: engine, version: engine === "godot" ? "4.7.1-stable" : "workspace" },
+      rungs: [
+        {
+          mode: mode as IRunReport["rungs"][number]["mode"],
+          objectCount: 4096,
+          repeat: 0,
+          frameMs,
+          drawCalls: counts.draws,
+          triangles: counts.triangles,
+          visibleObjects: counts.visible,
+          positionHash: "e9a32f01",
+        },
+      ],
+    } as IRunReport,
+    source,
+    status: "recorded",
+    time: "2026-09-27T20:58:00Z",
+    timeSource: "filesystem" as const,
+  };
+}
+
+const GODOT_L1 = "pilots/godot-desktop-4096-visible-2026-09-27.json";
+const TN_L1 = "pilots/tn-desktop-4096-physical-visible-2026-09-27.json";
+const GODOT_L2 = "pilots/godot-desktop-4096-l2-visible-2026-09-27.json";
+const TN_L2 = "pilots/tn-desktop-4096-l2-physical-visible-2026-09-27.json";
+const TN_L3 = "pilots/tn-desktop-4096-l3-shipped-default-40warmup-2026-09-27.json";
+const GODOT_BOX1000 = "pilots/godot-lights-meshes-box1000-upstream-2026-09-27.json";
+
+const box1000Results = { render_cpu: 0.6345, render_gpu: 0.4795, time: 4.028 };
+const box1000 = {
+  benchmarks: [
+    { category: "Rendering > Lights And Meshes", name: "Box 1000", results: box1000Results },
+  ],
+  engine: { version: "v4.7.1.stable.official" },
+  system: { cpu_name: "AMD Ryzen 9 5900X", os: "Linux" },
+};
+
+describe("ThreeNative against Godot on the physical display", () => {
+  it("shows both arms per row, the recorded output, the direction, and divides nothing", () => {
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          physicalAttempt(GODOT_L1, "godot", "L1", [4, 5, 3, 4], {
+            draws: 2,
+            triangles: 28_538,
+            visible: 2_379,
+          }),
+          physicalAttempt(TN_L1, "threenative", "L1", [30, 31, 29, 40], {
+            draws: 2_375,
+            triangles: 28_479,
+            visible: 2_374,
+          }),
+          physicalAttempt(GODOT_L2, "godot", "L2", [2.4, 2.5, 2.6, 2.5], {
+            draws: 2,
+            triangles: 49_154,
+            visible: 2,
+          }),
+          physicalAttempt(TN_L2, "threenative", "L2", [1.5, 1.4, 1.6, 1.5], {
+            draws: 3,
+            triangles: 49_154,
+            visible: 4_096,
+          }),
+          physicalAttempt(TN_L3, "threenative", "L3", [3.5, 3.6, 3.4, 3.5], {
+            draws: 3,
+            triangles: 49_155,
+            visible: 4_096,
+          }),
+          {
+            kind: "attempt",
+            source: GODOT_BOX1000,
+            status: "unrecorded",
+            time: "2026-09-27T21:46:00Z",
+            timeSource: "filesystem",
+            godotBenchmarks: [
+              {
+                category: "Rendering > Lights And Meshes",
+                name: "Box 1000",
+                results: box1000Results,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    // First on the page, ahead of the single-run trace and the qualified section.
+    expect(html.indexOf("ThreeNative vs Godot")).toBeLessThan(
+      html.indexOf("Latest qualified candidate"),
+    );
+    expect(html).toContain("Exploratory · physical display · 4096 cubes");
+    // Each arm's own p50/p95, never one substituted for the other.
+    expect(html).toContain("4.000 / 5.000 ms");
+    expect(html).toContain("30.000 / 40.000 ms");
+    expect(html).toContain("2.500 / 2.600 ms");
+    expect(html).toContain("1.500 / 1.600 ms");
+    // The recorded counts, each arm's own, so the near match and the mismatch are visible numbers.
+    expect(html).toContain("draws 2 vs 2375 · triangles 28538 vs 28479 · visible 2379 vs 2374");
+    expect(html).toContain("draws 2 vs 3 · triangles 49154 vs 49154 · visible 2 vs 4096");
+    expect(html).toContain("Draw-count and output mismatch");
+    expect(html).toContain("Unqualified instanced pilots");
+    expect(html).toContain("TN higher on p50 · one run each · not a speed ratio");
+    expect(html).toContain("TN lower on p50 · one run each · not a speed ratio");
+    // L3 keeps its own caveat and refuses a direction it has no pair for.
+    expect(html).toContain("No directly equivalent Godot pilot is retained");
+    expect(html).toContain("not shown — Godot pilot not retained");
+    // Per-frame lines for every retained arm, plus the raw file behind each row.
+    expect(html.match(/<polyline class="(godot|tn)"/g)).toHaveLength(5);
+    expect(html).toContain(`href="${GODOT_L1}"`);
+    expect(html).toContain(`href="${TN_L3}"`);
+    // Godot's own suite file stays Godot-only: its CPU/GPU split, and its `time` never shown.
+    expect(html).toContain("render CPU 0.6345 ms");
+    expect(html).toContain("render GPU 0.4795 ms");
+    expect(html).toContain("Not comparable to the ThreeNative completed-work frame time");
+    expect(html).toContain("that half of the pair is pending");
+    expect(html).not.toContain("4.028");
+    // Exploratory, so no multiple, no percentage and no faster-than claim anywhere.
+    expect(html).not.toMatch(/\d\s*×/u);
+    expect(html).not.toMatch(/-?\d+\.\d%/u);
+    expect(html).not.toMatch(/faster by|speedup/i);
+  });
+
+  it("shows a missing pilot as missing instead of substituting another retained file", () => {
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          physicalAttempt(TN_L1, "threenative", "L1", [30, 31], {
+            draws: 2_375,
+            triangles: 28_479,
+            visible: 2_374,
+          }),
+        ],
+      }),
+    );
+    expect(html).toContain("godot file missing");
+    expect(html).toContain("— not shown — Godot pilot not retained");
+    expect(html).toContain("not compared — one side not retained");
+    expect(html).toContain(`href="${TN_L1}"`);
+    // L2 and L3 are absent too, and the section says so rather than borrowing L1's numbers.
+    expect(html).not.toContain("Paired physical rows</span><strong>1");
+    expect(html).toContain("Paired physical rows</span><strong>0");
+    expect(html).toContain("missing from retained artifacts, so no value is shown");
+  });
+
+  it("parses a Godot upstream benchmark file and refuses a malformed one", async () => {
+    const root = await campaignDir();
+    await mkdir(path.join(root, "pilots"));
+    await writeFile(path.join(root, "pilots", "good.json"), JSON.stringify(box1000));
+    await writeFile(
+      path.join(root, "pilots", "bad.json"),
+      JSON.stringify({ benchmarks: [{ name: "Box 1000", results: { render_cpu: "fast" } }] }),
+    );
+    const attempts = await readAttempts(root, "pilots");
+    const good = attempts.find((attempt) => attempt.source === "pilots/good.json");
+    const bad = attempts.find((attempt) => attempt.source === "pilots/bad.json");
+    expect(good?.godotBenchmarks?.[0]?.results.render_cpu).toBe(0.6345);
+    expect(good?.pilot).toBeUndefined();
+    expect(bad?.godotBenchmarks).toBeUndefined();
+    expect(bad?.evidenceError).toContain("render_cpu");
+    // Named as unavailable, not rendered as an empty benchmark and not dropped.
+    const html = renderProgressHtml(data({ pilots: attempts, attemptsRoot: root }));
+    expect(html).toContain("Evidence unavailable:");
+    expect(html).toContain("Godot upstream benchmark file");
+  });
 });
