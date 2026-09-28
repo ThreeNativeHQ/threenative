@@ -1675,6 +1675,37 @@ test('scaffolded native profile paces the fixed step so the host renders the mea
   assert.match(readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8'), /const tnProductionPaceEnabled = true;/u);
 });
 
+test('a live-clock profile asks the game for the wall clock and stops pacing its own ticks', async () => {
+  const project = makeTempDirSync('tn-profile-live-clock-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), '{}');
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  // The scaffolded default paces its ticks itself; on the live clock `advance` already waits the
+  // wall time those ticks name, so pacing again would profile the game at half speed.
+  await installNativeProfileEntry(project, 'desktop', { liveClock: true, warmup: 1 });
+  const entry = readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8');
+  assert.match(entry, /globalThis\.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";/u);
+  assert.match(entry, /const tnProductionPaceEnabled = false;/u);
+  // The default run is unchanged: no clock request, and the synthetic workload still paced.
+  const paced = makeTempDirSync('tn-profile-fixed-clock-');
+  temporary.push(paced);
+  mkdirSync(join(paced, 'src'));
+  writeFileSync(join(paced, 'package.json'), '{}');
+  writeFileSync(join(paced, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  await installNativeProfileEntry(paced, 'desktop', { warmup: 1 });
+  const defaultEntry = readFileSync(join(paced, 'src/profile-native-entry.ts'), 'utf8');
+  assert.doesNotMatch(defaultEntry, /__THREENATIVE_PLAYTEST_CLOCK__/u);
+  assert.match(defaultEntry, /const tnProductionPaceEnabled = true;/u);
+  // The artifact names the clock it ran on, because a rate read off a frozen loop is not a frame rate.
+  assert.match(readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8'),
+    /clock: options\.liveClock === true \? 'wall-clock' : 'fixed-step',/u);
+  // Through the CLI, because the option set is rebuilt field by field and an unlisted flag reaches
+  // nothing: the run would have paced and frozen exactly as asked while the artifact said otherwise.
+  assert.equal(parseProductionArgs(['--target', 'desktop', '--live-clock']).liveClock, true);
+  assert.equal(parseProductionArgs(['--target', 'desktop']).liveClock, false);
+});
+
 test('slow-path control is bounded and returns the intended exit-1 budget failure', async () => {
   const output = makeTempDirSync('tn-prd064-slow-path-');
   temporary.push(output);

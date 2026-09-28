@@ -142,6 +142,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     device: undefined,
     duration: 60,
     hostedSoftware: false,
+    liveClock: false,
     out: '.runtime/prd064/production',
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
@@ -165,6 +166,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     else if (flag === '--device') { explicit.add('device'); options.device = nextValue(argv, ++index, flag); }
     else if (flag === '--duration') { explicit.add('duration'); options.duration = positiveNumber(nextValue(argv, ++index, flag), flag); }
     else if (flag === '--hosted-software') { options.hostedSoftware = true; }
+    else if (flag === '--live-clock') { options.liveClock = true; }
     else if (flag === '--out') { explicit.add('out'); options.out = nextValue(argv, ++index, flag); }
     else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
     else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
@@ -353,6 +355,10 @@ function normalizeOptions(input = {}) {
     duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
     hostedSoftware: input.hostedSoftware === true,
     help: input.help,
+    // Listed explicitly like every other option here: this function rebuilds the option set field by
+    // field, so an unlisted one is dropped rather than defaulted, and a `--live-clock` that never
+    // reached the instrumentation would quietly profile the frozen run it was asked to replace.
+    liveClock: input.liveClock === true,
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
@@ -369,6 +375,13 @@ function normalizeOptions(input = {}) {
 
 function warmupFramesFor(options) {
   return Math.max(0, Math.ceil((options.warmup ?? 0) * 60));
+}
+
+// Only the scaffolded default needs its ticks paced to wall time, because only it has no authored
+// workload whose own step durations are the seconds the run means. A live-clock run never does: its
+// `advance` already waits that wall time, so pacing again would measure a game running at half speed.
+function paceTicksFor(options) {
+  return options.project === undefined && options.liveClock !== true;
 }
 
 // Directories the judge regenerates itself. Copying a previous build measures stale bytes and
@@ -616,7 +629,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools, dis
   // teardown, which the scenario's own noNetworkErrors policy would fail the run for).
   const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
-    await installWebProfileEntry(project, options.control, warmupFramesFor(options), options.project === undefined);
+    await installWebProfileEntry(project, options.control, warmupFramesFor(options), paceTicksFor(options), options.liveClock);
     // A production build can outlast the default timeout on slow hosted runners.
     const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
     if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
@@ -1044,7 +1057,7 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), options.project === undefined)}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), paceTicksFor(options), options.liveClock)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
@@ -1120,6 +1133,21 @@ const tnProductionReadPerformance = () => {
 }
 
 /**
+ * Ask the game for the wall clock, so the profile measures a game playing.
+ *
+ * A profile run is a playtest run, and a playtest run freezes the live clock: the runner asks the
+ * bridge for fixed steps and the loop simulates nothing else, so the frames the host presents while
+ * a burst of ticks is delivered repeat one standing state. The browser reported ~60 fps of a
+ * platformer whose movement was advancing in ten-tick jumps, and the frame samples the judge reads
+ * described that, not the game. `__THREENATIVE_PLAYTEST_CLOCK__` is the framework's own switch for
+ * the opposite, and it has to be set before the bundle evaluates — which is what the instrumentation
+ * this rides in is.
+ */
+export function productionClockRequest(liveClock = false) {
+  return liveClock === true ? 'globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";\n' : '';
+}
+
+/**
  * Pace the fixed step to wall time so a synthetic workload's tick budget is the seconds it names.
  *
  * The native device transport drives the simulation through `bridge.advance(ticks)`, and the host
@@ -1128,6 +1156,9 @@ const tnProductionReadPerformance = () => {
  * or measure, and the warmup boundary is never reached. Wrapping `advance` to wait one display
  * interval per tick lets the host's own loop run during the wait, so the frames exist to be
  * measured.
+ *
+ * A live-clock run does not need this: its `advance` already waits the wall time the ticks name, so
+ * pacing again here would halve the simulation rate and measure a slower game than ships.
  */
 export function productionExecutionHold(paceTicks = false) {
   return `
@@ -1154,7 +1185,7 @@ tnProductionInstallPace();
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
+export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1162,6 +1193,7 @@ const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_NATIVE_RAF_UNAVAILABLE: native host did not provide requestAnimationFrame.");
 }
+${productionClockRequest(liveClock)}
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
@@ -1219,7 +1251,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
  * `net::ERR_ABORTED` when the runner tears the page down, so the profile failed its own runs for
  * its own instrumentation. The judge still owns `--judge-marker-url`; only the game's samples moved.
  */
-export function webFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
+export function webFrameInstrumentation(control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1227,6 +1259,7 @@ const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_WEB_RAF_UNAVAILABLE: browser host did not provide requestAnimationFrame.");
 }
+${productionClockRequest(liveClock)}
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
@@ -1286,12 +1319,12 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-async function installWebProfileEntry(project, control, warmupFrames = 0, paceTicks = false) {
+async function installWebProfileEntry(project, control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   const markerPath = join(project, 'src/profile-production-marker.ts');
   const mainPath = join(project, 'src/main.ts');
   const markerImport = 'import "./profile-production-marker.js";';
   const main = await readFile(mainPath, 'utf8');
-  const source = webFrameInstrumentation(control, warmupFrames, paceTicks);
+  const source = webFrameInstrumentation(control, warmupFrames, paceTicks, liveClock);
   await writeFile(markerPath, source);
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
 }
@@ -1548,6 +1581,9 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     codes: [...new Set(codes)],
     evidenceClasses: ['production'],
     execution: {
+      // Which clock the arms ran on, published because the two are not the same measurement: on a
+      // frozen clock every presented frame repeats a standing state, so its rate is not a frame rate.
+      clock: options.liveClock === true ? 'wall-clock' : 'fixed-step',
       coldStarts: options.coldStarts,
       ...(options.control === undefined ? {} : { control: options.control }),
       deviceSelected: options.device !== undefined,
@@ -1972,6 +2008,7 @@ function profileCommand(options) {
     `--repetitions ${options.repetitions}`,
     ...(options.device === undefined ? [] : ['--device <selected>']),
     ...(options.hostedSoftware ? ['--hosted-software'] : []),
+    ...(options.liveClock === true ? ['--live-clock'] : []),
     ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
     ...(options.project === undefined ? [] : ['--project <existing-project>']),
     ...(options.scenario === undefined ? [] : ['--scenario <production-scenario>']),

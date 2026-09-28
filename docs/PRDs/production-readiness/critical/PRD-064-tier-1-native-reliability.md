@@ -394,10 +394,58 @@ reasoning — "the production web scenario declares no visual capture" is false 
 threading one field through, not obtaining it. `observations.hardwareIdentity`, the key this lane
 removed at `:1592`, is written by no producer anywhere and should stay gone.
 
+**2026-09-28 the production profile measured a game that was not playing, and now has an opt-in way to
+measure one that is.** Root cause, confirmed in the flow rather than inferred: a profile run *is* a
+playtest run, so core froze the live clock on the runner's announcement
+(`packages/core/src/playtest.ts:157`) and the runner delivers its workload as fixed steps
+(`packages/playtest/src/runner/steps.ts:319`, ten ticks per `advance`), which refroze the clock on
+every call (`packages/core/src/loop.ts:440`). The synthetic workload's own pace wrapper
+(`profile-production.mjs` `productionExecutionHold`) then waited one display interval per tick *after*
+each burst, and the host's frame pump spent that 167 ms presenting the same standing state ten times
+over. The evidence is in the artifacts this phase already quotes: 163–174 fps mean and a ~16.8 ms p95
+is a *presenting* rate for a platformer whose simulation moved in ten-tick jumps six times a second,
+so every frame statistic above describes a frozen world, and the p95 gap read as a pacer deficit is
+at least partly this. The fix is the smallest thing that makes the run honest and is opt-in, so no
+ordinary scenario changes: `--live-clock` sets `__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock"` in the
+instrumentation both arms already inject ahead of the bundle (`productionClockRequest`), core reads it
+and does *not* freeze, and `advance` on that clock waits the wall time its tick count names
+(`wallClockAdvance`) instead of stepping the loop — so the runner, the scenario schema and the tick
+contract are untouched, the host pumps real frames throughout, and a burst costs the wall time it
+always claimed to. The pace wrapper is disabled in that mode, since pacing an already-paced run would
+profile the game at half speed. Observations report `clock.mode: "wall-clock"` **and** `timeMs`
+(`three/observations.ts`; the runner reads `timeMs` for every non-fixed-step mode, so a live run that
+reported only a tick would leave its own rates unmeasured), `advance` fails closed when the host
+presented no frame at all, and an unrecognised clock request throws rather than falling back to a
+frozen run. Every artifact names the clock it ran on (`execution.clock`). `normalizeOptions` rebuilds
+the option set field by field, so the flag is listed there explicitly as well — an unlisted one is
+dropped rather than defaulted, and a `--live-clock` that never reached the instrumentation would have
+profiled the frozen run it was asked to replace. Red-green:
+`packages/core/__tests__/playtest.spec.ts` "runs a live-clock run on the wall clock, and reports that
+it did" reads **0 updates in 250 ms of live frames on the pre-fix tree** and passes after, alongside
+the mode, the no-refreeze and the `timeMs` claims; `production-profile.test.mjs` pins the injected
+clock request, the disabled pace and the unchanged default. Gates in this checkout:
+`pnpm exec vitest run packages/core/__tests__/playtest.spec.ts packages/core/__tests__/loop.spec.ts`
+56/56, the full `packages/playtest` suite 1,232 passed / 3 skipped (99 files), the full
+`production-profile` suite 75/75, `pnpm typecheck` 0, `pnpm lint` 0 (841 pre-existing warnings, none
+from these files), `pnpm budgets` 0 (four non-fatal native-census drift warnings, hundreds of lines
+of drift this change does not account for), and `pnpm test:playtest` green with `firstTick: 60` on
+every scenario — the deterministic path is unchanged, settle included. **No live collection was
+executed**: this box cannot give an uncontended GPU measurement, so the profile's own numbers under
+`--live-clock` remain unmeasured here and the box below stays open rather than moving on a fix whose
+performance effect has not been collected.
+
 **The box above stays open.** Nothing in this pass produced a passing pair or a named GPU, and the C++
 pacing fix is not in it: still open are a green `desktop-pair` at 1920x1080 on a live display, the
-display-synchronised desktop pacer above plus the collection that re-judges it, and threading
-`report.capture.adapter` into `identity`.
+display-synchronised desktop pacer above plus the collection that re-judges it, threading
+`report.capture.adapter` into `identity`, and a `--live-clock` paired collection on a host that can
+carry one.
+
+**Live-clock smoke (2026-09-28):** On the 1920×1080, 59.96 Hz host display, one cold start, two
+seconds of warmup and one repetition produced `execution.clock: wall-clock`. Web presented 89 frames
+at 59.96 mean fps (16.7 ms p95); native averaged 26.29 fps (306.04 ms p95). The judge returned
+`TN_PROD_PERFORMANCE_BUDGET`. This 1.5-second window is below the 30-second/1,000-frame steady-state
+minimum, so it verifies the live path but does not qualify either platform's performance. Raw
+artifact: `.runtime/prd064/production/live-smoke/production-evidence.json` (local, ignored).
 
 ### Phase 5 — the ledger says what Tier 1 licenses, and what it does not
 

@@ -17,7 +17,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { AnimationPlayer } from "../src/animation.js";
 import { type IGamePluginHooks, defineGame } from "../src/game.js";
-import { playtest } from "../src/playtest.js";
+import { PLAYTEST_RUNNER_EXPECTED_GLOBAL, playtest } from "../src/playtest.js";
 import { type ICtx, Scene } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
@@ -987,6 +987,98 @@ describe("playtest holdUntilAttached", () => {
       });
       if (previousEndpoint === undefined) Reflect.deleteProperty(host, "TN_PLAYTEST_ENDPOINT");
       else host.TN_PLAYTEST_ENDPOINT = previousEndpoint;
+    }
+  });
+
+  it("runs a live-clock run on the wall clock, and reports that it did", async () => {
+    // A production profile *is* a playtest run, so the loop froze and the runner's ticks arrived in
+    // bursts of ten. Every frame the host presented between two bursts repeated one standing state,
+    // so a browser collection reported ~60 fps for a platformer whose movement was advancing about
+    // six times a second — a frame rate for a game that was not playing. The opt-in is one global
+    // carrying the protocol's own clock vocabulary, and a run on it has to say so: a rate read off a
+    // frozen clock is not a frame rate.
+    const host = globalThis as Record<string, unknown>;
+    const previousAnnouncement = host[PLAYTEST_RUNNER_EXPECTED_GLOBAL];
+    const previousClock = host.__THREENATIVE_PLAYTEST_CLOCK__;
+    host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = true;
+    // The wire name, written literally because the other end of it is the production profiler's
+    // injected instrumentation, not this package: a test importing the constant would follow a
+    // rename on both sides at once and prove nothing about the contract between them.
+    host.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";
+    let updates = 0;
+    const canvas = testCanvas();
+    const requestFrame = globalThis.requestAnimationFrame;
+    const cancelFrame = globalThis.cancelAnimationFrame;
+    let handles = 0;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      // A host pump rather than the test's hand: the claim under test is that wall time moves the
+      // loop, and that needs frames arriving on their own the way a presented frame does.
+      value: (callback: (time: number) => void) => {
+        handles += 1;
+        const handle = handles;
+        setTimeout(() => callback(performance.now()), 1);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "cancelAnimationFrame", {
+      configurable: true,
+      value: () => undefined,
+    });
+    class CountingScene extends Scene {
+      override update(): void {
+        updates += 1;
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: false })],
+      renderer: stubRenderer(canvas),
+      scenes: { test: CountingScene },
+      start: "test",
+    });
+
+    try {
+      await game.start();
+      // Let the first frames land before reading the baseline: a frozen clock spends one settling
+      // pass there, and counting that as live gameplay would be exactly the mistake.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      // 250 ms of the host's own frames is fifteen fixed steps of gameplay. The frozen clock settles
+      // once and then simulates nothing at all, which is the number the profile was publishing.
+      const settled = updates;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(updates - settled).toBeGreaterThanOrEqual(10);
+
+      // `advance` is the runner's own tick pump, and on this clock it delivers the wall time those
+      // ticks cover instead of stepping the loop: the host kept presenting frames throughout.
+      const advanced = await bridge().advance?.(3);
+      expect(advanced?.clock.mode).toBe("wall-clock");
+      expect(advanced?.ticks ?? 0).toBeGreaterThan(0);
+      // Nothing refroze the clock afterwards — a live run's ticks keep arriving from real frames.
+      const afterAdvance = updates;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      expect(updates).toBeGreaterThan(afterAdvance);
+      const snapshot = await bridge().sample({});
+      expect(snapshot.clock.mode).toBe("wall-clock");
+      // Seconds, not just a step count: the runner reads `timeMs` for every mode that is not
+      // fixed-step, so a live run reporting only a tick would leave its rates unmeasured.
+      expect(typeof snapshot.clock.timeMs).toBe("number");
+    } finally {
+      game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      Object.defineProperty(globalThis, "cancelAnimationFrame", {
+        configurable: true,
+        value: cancelFrame,
+      });
+      if (previousAnnouncement === undefined)
+        Reflect.deleteProperty(host, PLAYTEST_RUNNER_EXPECTED_GLOBAL);
+      else host[PLAYTEST_RUNNER_EXPECTED_GLOBAL] = previousAnnouncement;
+      if (previousClock === undefined)
+        Reflect.deleteProperty(host, "__THREENATIVE_PLAYTEST_CLOCK__");
+      else host.__THREENATIVE_PLAYTEST_CLOCK__ = previousClock;
     }
   });
 
