@@ -10,6 +10,7 @@ import {
   isWeb,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
+import { UI_READY_INTENT } from "@threenative/core/ui-layer";
 import {
   BoxGeometry,
   Matrix4,
@@ -687,7 +688,7 @@ game.ui.onIntent((intent, payload) => {
     lastUiIntent: intent,
     uiIntents: state.uiIntents + 1,
     ...(intent === "slide" ? { slide: payload !== false } : {}),
-    ...(intent === "ready" ? { uiReady: true, uiRegions: Number(payload) } : {}),
+    ...(intent === UI_READY_INTENT ? { uiReady: true, uiRegions: Number(payload) } : {}),
     ...(intent === "restart" ? { restarts: state.restarts + 1 } : {}),
     ...(intent === "slideDone" ? { slidesDone: state.slidesDone + 1 } : {}),
   });

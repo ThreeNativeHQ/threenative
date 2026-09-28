@@ -2,7 +2,7 @@
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
-import { type RenderMode, percentile } from "./workload.js";
+import { type RenderMode, parseAxesRecord, percentile } from "./workload.js";
 
 declare global {
   var canvas: HTMLCanvasElement | undefined;
@@ -12,6 +12,7 @@ declare const __TN_PLATFORM__: string;
 
 declare const __TN_BENCH_CONFIG__: Readonly<{
   animate: boolean;
+  axes: Record<string, string | undefined>;
   frames: number;
   refreshHz: number;
   ladder: number[];
@@ -21,15 +22,16 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
 }>;
 
 const config = __TN_BENCH_CONFIG__;
+const axes = parseAxesRecord(config.axes);
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+function nextFrame(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame((timestamp) => resolve(timestamp)));
 }
 
 async function main(): Promise<void> {
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface", config.animate);
+  const harness = await createLoadTestHarness(surface, "native host surface", config.animate, axes);
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {
@@ -70,6 +72,10 @@ async function main(): Promise<void> {
         // renderer. Without the split a mobile regression cannot be attributed to either.
         const stepMs: number[] = [];
         const collapseMs: number[] = [];
+        // The rAF timestamp the host handed this frame's callback, aligned one-to-one with
+        // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
+        // rafTimestampMs without inferring it from wall time.
+        const rafTimestampMs: number[] = [];
         let drawCalls = 0;
         let triangles = 0;
         let visibleObjects = 0;
@@ -84,7 +90,7 @@ async function main(): Promise<void> {
             triangles = stats.triangles;
             visibleObjects = stats.visibleObjects;
           }
-          await nextFrame();
+          const rafTimestamp = await nextFrame();
           const now = performance.now();
           const interval = now - previous;
           previous = now;
@@ -92,15 +98,18 @@ async function main(): Promise<void> {
             frameMs.push(Math.round(interval * 1000) / 1000);
             stepMs.push(Math.round(harness.stepMs * 1000) / 1000);
             collapseMs.push(Math.round(harness.collapseMs * 1000) / 1000);
+            rafTimestampMs.push(Math.round(rafTimestamp * 1000) / 1000);
           }
         }
         rungs.push({
+          collapseMs,
           drawCalls,
           frameMs,
           stepMs,
           mode,
           objectCount,
           positionHash: harness.positionHash,
+          rafTimestampMs,
           repeat,
           triangles,
           visibleObjects,
@@ -121,6 +130,7 @@ async function main(): Promise<void> {
       ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
+    axes,
     build: {
       notes:
         "owned C++ runtime, three/webgpu render path; defineGame loop not in the measured path",
