@@ -13,10 +13,10 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { templatedRig } from "./templated-rig.js";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+import { templatedRig } from "./templated-rig.js";
 
 /** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
 const MANNEQUIN_CLIPS = [

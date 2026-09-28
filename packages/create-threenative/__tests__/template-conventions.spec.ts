@@ -1,7 +1,6 @@
 import { GroundSnap } from "@threenative/core";
 import { BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { describe, expect, it } from "vitest";
-import { templatedRig } from "./templated-rig.js";
 import { preparePlayerConventions as prepareRpgConventions } from "../templates/action-rpg/src/conventions.js";
 import { createSword } from "../templates/action-rpg/src/render/props.js";
 import { prepareCommanderConventions } from "../templates/defense/src/conventions.js";
@@ -22,6 +21,7 @@ import {
   createViewmodelVisual as createShooterViewmodel,
 } from "../templates/shooter/src/render/shapes.js";
 import { preparePlayerConventions as prepareStarterConventions } from "../templates/starter/src/conventions.js";
+import { templatedRig } from "./templated-rig.js";
 
 const FRAME = 1 / 60;
 
