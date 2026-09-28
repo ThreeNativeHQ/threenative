@@ -23,6 +23,7 @@ import {
   type IAndroidPointerInjection,
   type IPlaytestDeviceLifecycleObservation,
   type IPlaytestDeviceLifecyclePhase,
+  type IPlaytestDeviceLifecycleSteps,
 } from "./android.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import {
@@ -309,7 +310,15 @@ async function runDevicePlaytestInternal(
     // zero *and* asks for release still emits its close at the last point.
     let pointerHeld = false;
     const lifecycle = scenario.steps.some((step) => step.lifecycle !== undefined)
-      ? new DeviceLifecycleRecorder(target.driver)
+      ? new DeviceLifecycleRecorder(
+        target.driver,
+        // Only a build that installed a physics plugin owns a step counter, and it says so by
+        // advertising the capability. Anything else is reported as unmeasured, never as zero.
+        attached.description.capabilities.includes("runtime.physics"),
+        // The step count is an observation like any other, read through the same sample request
+        // the rest of the run uses rather than a channel of its own.
+        () => attached.sample(sampleRequest),
+      )
       : undefined;
     if (lifecycle !== undefined) await lifecycle.launch();
     for (const [index, step] of scenario.steps.entries()) {
@@ -788,9 +797,20 @@ const ANDROID_LIFECYCLE_PAUSE_HOLD_MS = 1_000;
 class DeviceLifecycleRecorder {
   private readonly phases: IPlaytestDeviceLifecyclePhase[] = [];
   private readonly startedAt = Date.now();
+  private readonly physicsSteps: IPlaytestDeviceLifecycleSteps = {
+    afterAdvance: null,
+    afterForeground: null,
+    beforeBackground: null,
+  };
   private pid = 0;
 
-  constructor(private readonly driver: IDevicePlaytestDriver) {}
+  constructor(
+    private readonly driver: IDevicePlaytestDriver,
+    /** Whether the build advertises `runtime.physics`, and so owns a step counter to read. */
+    private readonly countsPhysicsSteps: boolean,
+    /** One observation through the same sample request the rest of the run uses. */
+    private readonly sample: () => Promise<IPlaytestObservationSnapshot>,
+  ) {}
 
   /** The process the run launched, read before any step could change it. */
   async launch(): Promise<void> {
@@ -812,6 +832,11 @@ class DeviceLifecycleRecorder {
     const operation = step.operation;
     const rotation = step.operation === "rotate" ? step.rotation : undefined;
     const driver = this.driver;
+    // Read while the app can still answer. A backgrounded host is asleep, so this is the last
+    // moment the count is readable, and the value the pause below is measured against.
+    if (operation === "background") {
+      this.physicsSteps.beforeBackground = await this.readPhysicsSteps();
+    }
     try {
       if (operation === "background") await driver.background?.();
       else if (operation === "foreground") await driver.foreground?.();
@@ -823,9 +848,18 @@ class DeviceLifecycleRecorder {
         "Inspect the device for an orientation lock, a permission prompt or a system dialog over the app, then rerun the same scenario.",
       ));
     }
+    // The app is back and has not been advanced yet, so the count now is the count it returned
+    // with. Reading it after the advance instead would fold the runner's own step into the value
+    // the away period is supposed to be compared against.
+    if (operation === "foreground") {
+      this.physicsSteps.afterForeground = await this.readPhysicsSteps();
+    }
     // A resumed app has to draw before its phase can claim it is drawing, and the host is asleep
     // until something asks it a question. One tick is the whole ask.
-    if (operation !== "background") await advance();
+    if (operation !== "background") {
+      await advance();
+      this.physicsSteps.afterAdvance = await this.readPhysicsSteps();
+    }
     const state = await this.read();
     this.requirePhaseEffect(operation, rotation, state);
     const settled = operation === "background" ? await this.readSettled(state) : undefined;
@@ -899,12 +933,24 @@ class DeviceLifecycleRecorder {
   observation(): IPlaytestDeviceLifecycleObservation {
     const background = this.phases.find(({ phase }) => phase === "background");
     const last = this.phases.at(-1);
+    const { afterAdvance, afterForeground, beforeBackground } = this.physicsSteps;
     return {
       phases: this.phases,
-      physics: {
-        available: false,
-        reason: "no device-observed simulation-step count: Android counts drawn frames, not physics steps, and the host's frame-budget substeps are a per-window distribution rather than a count per phase",
-      },
+      physics: this.countsPhysicsSteps
+        ? {
+            available: true,
+            steps: { afterAdvance, afterForeground, beforeBackground },
+            stepsAdvanced: afterForeground === null || afterAdvance === null
+              ? null
+              : afterAdvance > afterForeground,
+            stepsPaused: beforeBackground === null || afterForeground === null
+              ? null
+              : afterForeground === beforeBackground,
+          }
+        : {
+            available: false,
+            reason: "the bridge does not advertise runtime.physics, so this build installs no physics plugin and nothing counts simulation steps; install rapier() to measure physics continuity across a lifecycle",
+          },
       render: {
         framesAdvanced: background === undefined || last === undefined
           ? null
@@ -913,6 +959,26 @@ class DeviceLifecycleRecorder {
       },
       session: { pid: this.pid },
     };
+  }
+
+  /**
+   * The runtime-owned simulation-step count, or nothing on a build that installs no physics plugin.
+   *
+   * Fails closed rather than reporting a zero: a bridge that advertises `runtime.physics` and
+   * answers with no count, a string, or a negative number has not measured the simulation, and a
+   * zero here would be indistinguishable from a game that genuinely never stepped.
+   */
+  private async readPhysicsSteps(): Promise<number | null> {
+    if (!this.countsPhysicsSteps) return null;
+    const value = (await this.sample()).physicsSteps;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      throw new PlaytestBridgeError(playtestDiagnostic(
+        "TN_PLAYTEST_ANDROID_LIFECYCLE_PHYSICS_UNOBSERVED",
+        `The bridge advertises runtime.physics but reported ${JSON.stringify(value) ?? "no simulation-step count"} instead of one, so physics continuity cannot be recorded across the lifecycle.`,
+        "Install rapier(), whose runtime.physics observation carries the step count taken at simulation.step, or drop the lifecycle steps. A count a game keeps in its own state is not a measurement, and an absent one is never read as a simulation that stood still.",
+      ));
+    }
+    return value;
   }
 
   /** One device reading, in the process this run launched. A different pid is a failed run. */

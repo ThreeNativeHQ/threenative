@@ -7,8 +7,9 @@
  * game, which is the whole point: a `GameState` resource can restate whatever the scenario wants
  * and prove nothing about whether the app actually went away and came back.
  *
- * The physics column is asserted absent on purpose. The device counts frames, not simulation
- * steps, so the report says so instead of carrying a zero.
+ * The physics column is the runtime-owned simulation-step count, read through the bridge and not
+ * off the device: the platform counts frames, and only the physics plugin can say whether the
+ * simulation stepped. A build with no physics plugin says so rather than carrying a zero.
  */
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { writeFile } from "node:fs/promises";
@@ -83,6 +84,12 @@ class LifecycleAndroidDriver implements IAndroidDriver {
   restartOnForeground = false;
   /** Set for a device whose orientation is pinned, so the rotation never takes. */
   rotationRefused = false;
+  /** Set to model a build with no physics plugin, so nothing advertises `runtime.physics`. */
+  physicsInstalled = true;
+  /** Set to model a bridge that advertises physics and reports a count nobody can read. */
+  physicsStepsMalformed = false;
+  /** How many samples were attempted while the app was backgrounded, where none can answer. */
+  samplesWhileBackgrounded = 0;
 
   constructor(readonly device = new FakeDevice()) {}
 
@@ -142,25 +149,49 @@ class LifecycleAndroidDriver implements IAndroidDriver {
   private bridge(): IPlaytestBridgeV1 {
     const device = this.device;
     let tick = 0;
+    let physicsSteps = 0;
     return {
       advance: async (ticks) => {
         tick += ticks;
+        physicsSteps += ticks;
         device.draw(ticks);
         return { clock: { mode: "fixed-step", tick }, ticks };
       },
       describe: () => ({
-        capabilities: ["entity.bounds", "entity.observe", "runtime.fixedStep", "runtime.diagnostics"],
+        capabilities: [
+          "entity.bounds",
+          "entity.observe",
+          "runtime.fixedStep",
+          "runtime.diagnostics",
+          ...(this.physicsInstalled ? ["runtime.physics"] : []),
+        ],
         limits: PLAYTEST_PROTOCOL_LIMITS,
         name: "lifecycle-test",
         protocolVersion: PLAYTEST_PROTOCOL_VERSION,
       }),
       ready: () => ({ ready: true }),
-      sample: () => ({
-        clock: { mode: "fixed-step" as const, tick },
-        diagnostics: [] as JsonValue[],
-        entities: [{ id: "player", transform: { position: [0, 0, 0] as [number, number, number] }, visible: true }],
-        resources: {},
-      }),
+      sample: () => {
+        // A tick observed at a read is not a step: this clock moves on every sample, the way a
+        // loop the runner never froze moves between its advances, so an implementation that
+        // reports `clock.tick` as the step count reads simulation that never ran.
+        tick += 1;
+        if (!device.focused) this.samplesWhileBackgrounded += 1;
+        return {
+          clock: { mode: "fixed-step" as const, tick },
+          diagnostics: [] as JsonValue[],
+          entities: [{ id: "player", transform: { position: [0, 0, 0] as [number, number, number] }, visible: true }],
+          resources: {},
+          ...(this.physicsInstalled
+            ? {
+                // A count as a string is what the wire can carry and the protocol type forbids:
+                // exactly the malformed value the runner has to reject rather than read as zero.
+                physicsSteps: (this.physicsStepsMalformed
+                  ? `${physicsSteps}`
+                  : physicsSteps) as number,
+              }
+            : {}),
+        };
+      },
     };
   }
 }
@@ -186,10 +217,63 @@ test("the Android runner drives background, foreground and rotation and reports 
   expect(lifecycle?.phases[2]).toMatchObject({ focused: true, requestedRotation: 1, windowRotation: 1 });
   expect(lifecycle?.session).toEqual({ pid: 4242 });
   expect(lifecycle?.render).toMatchObject({ framesAdvanced: true, framesPaused: true });
-  // Physics has no producer on the device; the report says so instead of reporting zero steps.
-  expect(lifecycle?.physics).toEqual({
+  expect(result.pass).toBe(true);
+});
+
+test("the lifecycle phases report the runtime-owned physics-step count read around the away period", async () => {
+  const driver = new LifecycleAndroidDriver();
+  const result = await runAndroid(driver, [
+    { kind: "lifecycle", lifecycle: { operation: "background" }, release: true },
+    { kind: "lifecycle", lifecycle: { operation: "foreground" }, release: true },
+  ]);
+
+  const physics = result.observations?.deviceLifecycle?.physics;
+  expect(physics).toMatchObject({ available: true });
+  if (physics?.available !== true) throw new Error(`expected a physics step count, got ${JSON.stringify(physics)}`);
+  // Read while the app can still answer: immediately before it went away, the moment it came back
+  // and before the runner's own advance, and once after that advance.
+  const { afterAdvance, afterForeground, beforeBackground } = physics.steps;
+  expect([beforeBackground, afterForeground, afterAdvance]).toEqual([
+    expect.any(Number),
+    expect.any(Number),
+    expect.any(Number),
+  ]);
+  // The read on return is taken before the runner advances anything, so the simulation cannot
+  // have moved while the app was away — which is the pause the report has to be able to claim.
+  expect(afterForeground).toBe(beforeBackground);
+  expect(afterAdvance).toBe((afterForeground ?? 0) + 1);
+  expect(physics.stepsPaused).toBe(true);
+  expect(physics.stepsAdvanced).toBe(true);
+  // A backgrounded host is asleep, so a sample there reads as a hung bridge rather than a value.
+  expect(driver.samplesWhileBackgrounded).toBe(0);
+  expect(result.pass).toBe(true);
+});
+
+test("a bridge that advertises physics and reports no readable step count fails the lifecycle step", async () => {
+  const driver = new LifecycleAndroidDriver();
+  driver.physicsStepsMalformed = true;
+  const result = await runAndroid(driver, [
+    { kind: "lifecycle", lifecycle: { operation: "background" }, release: true },
+  ]);
+
+  expect(result.pass).toBe(false);
+  expect(result.diagnostics).toContainEqual(expect.objectContaining({
+    code: "TN_PLAYTEST_ANDROID_LIFECYCLE_PHYSICS_UNOBSERVED",
+  }));
+  expect(result.observations?.deviceLifecycle).toBeUndefined();
+});
+
+test("a build with no physics plugin reports the step count as unavailable rather than as zero", async () => {
+  const driver = new LifecycleAndroidDriver();
+  driver.physicsInstalled = false;
+  const result = await runAndroid(driver, [
+    { kind: "lifecycle", lifecycle: { operation: "background" }, release: true },
+    { kind: "lifecycle", lifecycle: { operation: "foreground" }, release: true },
+  ]);
+
+  expect(result.observations?.deviceLifecycle?.physics).toEqual({
     available: false,
-    reason: expect.stringContaining("no device-observed simulation-step count"),
+    reason: expect.stringContaining("runtime.physics"),
   });
   expect(result.pass).toBe(true);
 });

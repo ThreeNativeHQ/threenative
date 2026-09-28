@@ -255,11 +255,10 @@ has never existed — absent from the repository and from every branch's history
 invocation now blocks naming that file instead of failing later inside the runner. No scenario could
 fix it: `lifecycleEvents` / `sessionNonce` / `stateContinuity` (with `framesPaused`,
 `framesAdvanced`, `surfaceValidAfterResume`, `backgroundGapIntegrated`, `maxFrameIntervalMs`,
-`physicsStepDelta`) are read out of `observations.resources.GameState.after`, and as of the slice
-below the runner produces device lifecycle phases but **nothing produces a per-phase physics-step
-count**. A game-authored `GameState` resource would only forge
-the values the gate exists to read off the device, so the acceptance boxes stay open. The Pixel 8
-was not touched.
+`physicsStepDelta`) are read out of `observations.resources.GameState.after`, which no runner
+produces. The runner-owned phases and plugin-owned step count below replace those claims without
+asking the game to report its own lifecycle. The collector still reads the old fields, so the
+acceptance boxes stay open. The Pixel 8 was not touched for this slice.
 
 **Remaining lifecycle producer slice (2026-09-27; no physical credit):**
 
@@ -267,7 +266,7 @@ was not touched.
       explicit scenario steps, then reports device-observed lifecycle phases and render/physics
       continuity. Missing observations fail rather than becoming game-authored `GameState` values.
       proof: focused runner red-green test with the real step parser and Android driver boundary.
-      **Landed, and the box stays open on its physics clause.** `{ "kind": "lifecycle", "lifecycle":
+      **Landed; the box stays open on a real orientation-change proof.** `{ "kind": "lifecycle", "lifecycle":
       { "operation": "background" | "foreground" | "rotate", "rotation": 0-3 } }` is a real
       scenario step (`schema-base.ts` / `schema-validate.ts`, with rejection cases), driven through
       `AdbAndroidDriver` as `input keyevent 3` / `am start` / `wm user-rotation lock`, each op
@@ -279,7 +278,8 @@ was not touched.
       `..._SESSION_CHANGED`, an operation the device ignored or a refused rotation →
       `..._NOT_APPLIED`, a lifecycle step on browser/desktop/iOS or on a driver without the
       operations → `TN_PLAYTEST_UNSUPPORTED_ON_TARGET`; none of them reaches the report.
-      `physics` is reported as `{ available: false, reason }` naming the seam, never a zero.
+      `physics` is reported as `{ available: false, reason }` when the bridge advertises no
+      physics plugin, never as a guessed zero.
       Two things a critic caught on this slice are now fixed rather than argued: `framesPaused` is
       only `true` once the platform's counter has held one value for a full second of settling
       reads (two equal reads are what a backgrounded surface *still drawing at 10 Hz* produces), and
@@ -304,17 +304,47 @@ was not touched.
       run requested rotation 3 from foreground rotation 1 and failed closed with
       `TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED` because `dumpsys window` remained at 1.
       No physical collector wiring or physical run occurred for this slice; that is the second box.
-      **The missing seam, named:** a per-phase physics-step count has no producer. Android counts
-      drawn frames, not simulation steps (`dumpsys gfxinfo` has no physics counter); the host's
-      `TN_FRAME_BUDGET` `substeps` are a per-window distribution emitted once every 300 frames
-      (`packages/core/src/frame-budget.ts:785`), unusable per phase; and the bridge's `clock.tick`
-      is a game-loop tick, not a physics count. The mailbox already relays the bridge's
-      `IPlaytestAdvanceResult` with `clock.tick`; the runner discards it, but retaining it would
-      still only count ticks. The seam that closes this is a counter incremented at the physics
-      plugin's `simulation.step` call (`packages/physics/src/plugin.ts:211`), surfaced through a
-      runtime-owned observation and read by the runner around lifecycle phases. Until that exists the box
-      cannot be ticked, because "render/physics continuity" is a conjunction and one clause is
-      unmeasured.
+      **Physics counter producer and reader (2026-09-27; emulator-verified, no physical credit —
+      the box stays open):** `packages/physics/src/plugin.ts`
+      counts `simulation.step` calls in a monotone `physicsSteps` incremented only after the call
+      returns, and reports it on the observation contribution it already registered for
+      `runtime.physics` — the same path as `physicsDebugSeries`, on every sample rather than only a
+      debug-series request, so a lifecycle phase can read it without asking for the series. Nothing
+      game-authored, and no new capability, dependency or transport operation. The runner reads it
+      through the ordinary sample request at three named points — immediately before `background`,
+      the moment `foreground` returns and **before** its own advance, and once after that advance —
+      and never while the app is backgrounded, because a backgrounded host is asleep and a sample
+      there reads as a hung bridge rather than a value. It reports
+      `physics.steps.{beforeBackground,afterForeground,afterAdvance}` with `stepsPaused` and
+      `stepsAdvanced`; a read the scenario never reached is `null`, and a bridge that advertises
+      `runtime.physics` and answers with no count, a string or a negative number fails closed as
+      `TN_PLAYTEST_ANDROID_LIFECYCLE_PHYSICS_UNOBSERVED` instead of becoming a zero. A build with no
+      physics plugin reports `{ available: false, reason }` naming `runtime.physics`.
+      proof: `pnpm exec vitest run packages/physics/__tests__/playtest-capability.spec.ts
+      packages/playtest/__tests__/android-lifecycle-steps.spec.ts` — **18 passed**; red first at
+      1 physics + 3 runner cases, and the fake bridge's `clock.tick` moves on every sample while its
+      `physicsSteps` moves only on `advance`, so a tick counted as a step fails the run. `pnpm exec
+      vitest run packages/playtest packages/physics packages/core` **3236 passed** / 3 skipped,
+      `pnpm typecheck` exit 0, `pnpm lint` exit 0 (839 warnings, none in these files, unchanged from
+      the pre-change baseline), `pnpm budgets` exit 0 (census drift unchanged at 2 pre-existing
+      lines), `pnpm check:docs` 2342 links, `scripts/check-capability-docs.ts --census`,
+      `scripts/generate-capability-reference.ts --check` and
+      `scripts/detect-capability-duplicates.ts examples --strict` all exit 0.
+      **Real emulator proof:** a source-built APK with the changed physics package
+      (SHA-256 `dd9485642750e85e0cefdf965ba49e762643e24998f9ac9bd882944076e3426f`)
+      passed the external starter lifecycle scenario on `emulator-5554`: 944 game frames, five
+      gameplay assertions, pid 4585 unchanged, render paused/resumed, physics steps 1021 before
+      background = 1021 after foreground before advance, then 1023 after the foreground and
+      rotation advances. Rotation 1 was already active, so an actual orientation change is still
+      unproven. The emulator was stopped after the run; no Pixel 8 use or physical performance
+      credit. **Prebuilt consumer blocker:** the same project rebuilt against its installed
+      `@threenative/runtime-native@0.3.3` prebuilt produced APK SHA-256
+      `aa75e0ffdb274e842b6ebc239e00ce08fafe3647f1dce11e7887f9f0d572b1dd` and crashed
+      at activity startup with `UnsatisfiedLinkError` for
+      `TnUiOverlay.nativeUiCompositePath(String)`. Building with
+      `THREENATIVE_RUNTIME_SOURCE=.../packages/runtime-native --allow-source-build` resolved the
+      Java/native mismatch. The published prebuilt cannot be credited as the installed consumer
+      cohort until its native library matches the Java wrapper.
 - [ ] [engine; local] The physical collector consumes those runner-owned observations, binds them
       to the exact scenario and installed APK already checked above, and rejects absent or
       inconsistent continuity. proof: collector false-value controls and a real Android emulator

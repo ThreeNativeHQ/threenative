@@ -131,6 +131,11 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
   let events: Uint32Array<ArrayBufferLike> = new Uint32Array(64);
   const activeContacts = new Map<string, readonly [number, number]>();
   let debugSeries: IPhysicsDebugSample[] = [];
+  // Steps this plugin actually completed, counted after the call returns. The game loop's tick is
+  // not this: a frame can render without a physics step, and a step can be refused. A lifecycle
+  // phase therefore reads this to say whether the simulation moved, which no device counter and no
+  // game-authored state can answer. Monotone for the plugin's lifetime, scene restarts included.
+  let completedSteps = 0;
   let unregisterObservations: (() => void) | undefined;
 
   function buildContext(selected: IPhysicsRuntimeSimulation): IPhysicsContext {
@@ -209,6 +214,7 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
       };
       for (const buoyancy of buoyancies) buoyancy.apply(dt);
       simulation.step(dt, input);
+      completedSteps += 1;
 
       visible = growFloat(visible, bodies.size + areas.size);
       // The simulation may own more bodies than this registry (the deprecated raw-world node
@@ -341,7 +347,8 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
     request: IGameObservationSampleRequest,
   ): Record<string, unknown> {
     if (simulation === undefined) throw new Error("Physics observations sampled before setup.");
-    if (request.include?.includes("physicsDebugSeries") !== true) return {};
+    if (request.include?.includes("physicsDebugSeries") !== true)
+      return { physicsSteps: completedSteps };
     if (request.label !== undefined) {
       if (debugSeries.some(({ label }) => label === request.label)) {
         throw new Error(
@@ -359,7 +366,10 @@ export function rapier(options: IPhysicsOptions = {}): PhysicsPlugin {
         tick: runtime.tick(),
       });
     }
-    return { physicsDebugSeries: debugSeries.map((sample) => ({ ...sample })) };
+    return {
+      physicsDebugSeries: debugSeries.map((sample) => ({ ...sample })),
+      physicsSteps: completedSteps,
+    };
   }
 
   function physicsDebugSnapshot(

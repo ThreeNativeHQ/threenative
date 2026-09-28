@@ -99,22 +99,44 @@ export interface IPlaytestDeviceLifecyclePhase {
 }
 
 /**
+ * The simulation-step count at each read around a driven lifecycle.
+ *
+ * A read the scenario never reached is `null` rather than a count this run did not take.
+ */
+export interface IPlaytestDeviceLifecycleSteps {
+  afterAdvance: number | null;
+  afterForeground: number | null;
+  beforeBackground: number | null;
+}
+
+/**
+ * The simulation-step count read around a driven lifecycle, and what it says about continuity.
+ *
+ * The counter is runtime-owned, not device-observed: the platform counts drawn frames, and
+ * `dumpsys gfxinfo` has no physics counter, so only the plugin that performed the step can say
+ * whether the simulation moved. Neither the device nor a game-authored `GameState` can restate it.
+ */
+export type IPlaytestDeviceLifecyclePhysics =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      /** Read immediately before the app went away, on its return before the advance, and after. */
+      steps: IPlaytestDeviceLifecycleSteps;
+      /** The count moved across the runner's advance after the app came back, or `null`. */
+      stepsAdvanced: boolean | null;
+      /** The count stood still while the app was away, or `null` for a scenario that never left. */
+      stepsPaused: boolean | null;
+    };
+
+/**
  * The runner's own account of a driven lifecycle, for a collector to bind to a scenario and an
  * installed artifact. Nothing here was authored by the game.
  */
 export interface IPlaytestDeviceLifecycleObservation {
   phases: readonly IPlaytestDeviceLifecyclePhase[];
-  /**
-   * Always unavailable in this slice, and reported as such rather than as zero steps.
-   *
-   * Android counts drawn frames, not simulation steps: `dumpsys gfxinfo` has no physics counter,
-   * and the native host's `TN_FRAME_BUDGET` `substeps` are a per-window distribution emitted once
-   * every 300 frames, not a count per phase. The mailbox already relays `advance`'s fixed-step
-   * `clock.tick`, but a game-loop tick is not proof that the physics simulation stepped. The
-   * counter must be recorded at the physics plugin's `simulation.step` call and surfaced through
-   * a runtime-owned observation before the runner can claim physics continuity.
-   */
-  physics: { available: false; reason: string };
+  /** Absent rather than zero on a build that installs no physics plugin, and a failed run rather
+   * than a value when the plugin advertised one and reported nothing readable. */
+  physics: IPlaytestDeviceLifecyclePhysics;
   render: {
     /** Frames advanced after the background phase, or `null` when there was nothing to compare. */
     framesAdvanced: boolean | null;
