@@ -51,7 +51,8 @@ pnpm test
 
 `src/main.ts` boots the canvas; `src/scenes/Play.ts` owns the lifecycle; `src/entities/Player.ts`
 drives `assets/mannequin.glb` (Quaternius, CC0) through `SkeletalMesh3D`; the arena is one `Group`
-handed to `buildStaticColliders`; `render/camera.ts` follows from `afterPhysics`. No HUD.
+handed to `buildStaticColliders`; `render/camera.ts` follows from `afterPhysics`. No HUD;
+`playtests/survives.playtest.json` is the durable smoke proof.
 
 On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), the local
 `src/render/touch-controls.ts` adds a left movement stick and a right jump button. The scene

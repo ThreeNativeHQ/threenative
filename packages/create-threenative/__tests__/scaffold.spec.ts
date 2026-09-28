@@ -443,7 +443,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  minimal: "816a68738b4715667380723e365641b633d00c5dcc64c3397ac47e97996c5ed0",
+  minimal: "8263426fb773965f664d4e3bdcf36bd898096ee3518d633a7139cd7dccc85b97",
   platformer: "c13d3002d3253fb649f1996eeffe107b719f5fa9b09c3732b92273396d3fff80",
   runner: "a96f7e8cb743c8675c278c8f1fc3138a7abfda043dcd5cce70c68d5abe2f0120",
   puzzle: "075ddf8edaaaa4a30fb86ecbcde7229251646a2c35f89473b7620dbeec2597fb",
