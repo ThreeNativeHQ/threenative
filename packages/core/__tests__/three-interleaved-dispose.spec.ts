@@ -48,7 +48,10 @@ describe("WebGPUAttributeUtils interleaved dispose", () => {
     const interleaved = new InterleavedBuffer(new Float32Array(6 * 4), 6);
     const position = new InterleavedBufferAttribute(interleaved, 3, 0);
     const normal = new InterleavedBufferAttribute(interleaved, 3, 3);
-    backend.get(interleaved).buffer = { destroy: () => (stub.count += 1) };
+    const destroyed = (): void => {
+      stub.count += 1;
+    };
+    backend.get(interleaved).buffer = { destroy: destroyed };
 
     utils.destroyAttribute(position);
     utils.destroyAttribute(normal);

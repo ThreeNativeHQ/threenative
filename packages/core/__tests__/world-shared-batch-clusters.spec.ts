@@ -120,6 +120,76 @@ async function makeWorld(overrides: { clusterSize?: number } = {}): Promise<{
   return { follow, world };
 }
 
+/** The fixture's heightmap, read raw; a synthetic manifest still needs ground under it. */
+function fixtureHeightmap(): Uint16Array {
+  const raw = readFileSync(path.join(fixture, "terrain/heightmap.u16"));
+  return new Uint16Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+}
+
+/**
+ * A dense ring: `perCell` placements of one asset in every cell of a three-by-three grid, which the
+ * walk puts all nine cells of in residency at once.
+ *
+ * Density is the whole point. The shared fixture puts a few dozen records in a cell and leaves a
+ * main batch hundreds of records of headroom, so it cannot tell a batch sized for one cluster
+ * square from one sized for the ring; a 2 km world bakes hundreds per cell and reported the
+ * difference as 28 keys given a second mesh, `gc_src_fern_08_01_0_001:1:0` among them.
+ */
+function denseRing(perCell: number): {
+  readonly manifest: IWorldPackage;
+  readonly placements: Buffer;
+} {
+  const floats: number[] = [];
+  const cells: {
+    runs: { asset: string; count: number; offset: number }[];
+    x: number;
+    z: number;
+  }[] = [];
+  for (let x = 0; x < 3; x += 1)
+    for (let z = 0; z < 3; z += 1) {
+      const offset = floats.length / 8;
+      for (let at = 0; at < perCell; at += 1)
+        // x, y, z, then the placement quaternion and its scale.
+        floats.push(
+          MIN_X + (x + (at % 8) / 8) * CELL_SIZE,
+          0,
+          MIN_Z + (z + Math.floor(at / 8) / 8) * CELL_SIZE,
+          0,
+          0,
+          0,
+          1,
+          1,
+        );
+      cells.push({ runs: [{ asset: "pine", count: perCell, offset }], x, z });
+    }
+  return {
+    manifest: { ...manifest, cells } as IWorldPackage,
+    placements: Buffer.from(new Float32Array(floats).buffer),
+  };
+}
+
+/** `denseRing`'s package, served over the same stub the fixture uses. */
+function stubDenseFetch(perCell: number): void {
+  const { manifest: dense, placements } = denseRing(perCell);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<IResponseLike> => {
+      const url = String(input);
+      if (url.endsWith("world.json")) return fileResponse(Buffer.from(JSON.stringify(dense)));
+      if (url.endsWith("placements.bin")) return fileResponse(placements);
+      if (url.endsWith("heightmap.u16"))
+        return fileResponse(readFileSync(path.join(fixture, "terrain/heightmap.u16")));
+      return {
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        arrayBuffer: async () => new ArrayBuffer(0),
+        json: async () => ({}),
+      };
+    }),
+  );
+}
+
 async function flush(rounds = 8): Promise<void> {
   for (let round = 0; round < rounds; round += 1)
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -130,11 +200,12 @@ async function flush(rounds = 8): Promise<void> {
  * resolve between frames. A synchronous loop settles nothing: the first pass queues promise work,
  * and a loop that never yields never gets it.
  */
-async function settle(world: WorldCells, limit = 900): Promise<void> {
+async function settle(world: WorldCells, limit = 900, each?: () => void): Promise<void> {
   let stable = 0;
   let owed = Number.POSITIVE_INFINITY;
   for (let frame = 0; frame < limit; frame += 1) {
     world.update();
+    each?.();
     await flush(1);
     const stats = world.stats();
     const done = stats.admission.backlog;
@@ -410,6 +481,64 @@ describe("WorldCells clustered shadow casters", () => {
       minted.add(again.uuid);
     }
     expect(minted.size, "a fresh uuid appeared across the cycle").toBe(home.size);
+    world.dispose();
+  });
+
+  it("sizes a main batch for the whole ring, so a dense ring never grows it into a second mesh", async () => {
+    const perCell = 64;
+    stubDenseFetch(perCell);
+    const follow = { position: cellCenter(1, 1) };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      loadModel: async () => model(),
+      ring: 1,
+      shadows: { cast: true },
+      surface,
+      url: "/world/world.json",
+    });
+    new Group().add(world);
+    // Census every frame of the admission rather than after it. `grow` swaps in a fresh mesh under
+    // the same name on the frame a cell asks for a record the buffer has no room for, so a census
+    // taken once at the end only ever sees the mesh that replaced it, and a grown key looks
+    // untouched — which is how the shared fixture passed a sizing rule the 2 km world failed.
+    const seen = new Map<string, Set<string>>();
+    await settle(world, 900, () => {
+      for (const [name, mesh] of clusters(world)) {
+        const uuids = seen.get(name) ?? new Set<string>();
+        uuids.add(mesh.uuid);
+        seen.set(name, uuids);
+      }
+    });
+    // The claim: no key was ever given a second mesh. A main batch's capacity is bounded by the
+    // ring, not by the one square a caster cluster holds, so nine dense cells never reach `grow`.
+    const reminted = [...seen]
+      .filter(([, uuids]) => uuids.size > 1)
+      .map(([name, uuids]) => `${name} x${String(uuids.size)}`);
+    expect(reminted, "a batch was given a second mesh while a dense ring filled").toEqual([]);
+
+    // Not vacuous: one key is drawn by more cells than a cluster square holds, and by more records
+    // than a batch of two blocks can hold, so a square-sized buffer had to grow to pass.
+    const main = split(world).main.filter(([name, mesh]) => !name.includes("@") && mesh.count > 0);
+    expect(main.length, "no main batch drew anything").toBeGreaterThan(0);
+    const cellsPerKey = main.map(([, mesh]) => {
+      const cells = new Set<string>();
+      for (const point of originsOf(mesh))
+        cells.add(
+          `${String(Math.floor((point.x - MIN_X) / CELL_SIZE))},${String(Math.floor((point.z - MIN_Z) / CELL_SIZE))}`,
+        );
+      return cells.size;
+    });
+    expect(
+      Math.max(...cellsPerKey),
+      "no key spans more cells than one caster square holds, so nothing could have grown",
+    ).toBeGreaterThan(2);
+    for (const [name, mesh] of main)
+      expect(
+        mesh.instanceMatrix.count,
+        `${name} could not hold a dense ring without growing`,
+      ).toBeGreaterThan(perCell * 2);
     world.dispose();
   });
 

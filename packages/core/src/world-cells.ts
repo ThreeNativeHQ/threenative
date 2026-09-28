@@ -2139,7 +2139,8 @@ export class WorldCells extends Group implements IComputeDriven {
       // those records reached the main pass and no shadow map.
       if (entry.segment < 0) {
         const shared = this.#sharedFor(job.asset.id, entry, cell);
-        const segment = shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
+        const segment =
+          shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
         if (shared === undefined || segment === undefined) {
           this.#meshStalled = true;
           return false;
@@ -2380,9 +2381,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#runMax.get(assetId) ?? entry.batch.count,
       // A caster cluster's block count is bounded by the cluster's own cells, the main pass's one
       // mesh per key by the ring; either way the one a refilter holds beside the block it replaces.
-      caster
-        ? this.#cellsPerCluster * this.#cellsPerCluster + 1
-        : this.#budgets.residentCells + 1,
+      caster ? this.#cellsPerCluster * this.#cellsPerCluster + 1 : this.#budgets.residentCells + 1,
       key,
       this.#extentBounds,
     );
