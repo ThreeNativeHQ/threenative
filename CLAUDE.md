@@ -22,6 +22,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 
 ## Pull requests
 
+- **Small changes skip the PR**: a tiny fix, a docs-only edit, a mirror regeneration — anything with no PRD — commits directly to local `develop` after its relevant checks pass.
 - **One PR per PRD**, opened as a draft at the first commit — never one per phase, never several PRDs in one PR. Label it with the `prd:25/50/75/100` that `pnpm prd:progress` prints and update the label as phases land.
 - Branch from `origin/develop` (not a local branch that may be ahead of it), target `develop`, squash-merge. Set `git config threenative.integrationBranch develop` per checkout.
 - The commit that finishes a PRD also `git mv`s it to `docs/PRDs/done/`.
