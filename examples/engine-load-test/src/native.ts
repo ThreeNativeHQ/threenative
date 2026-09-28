@@ -1,6 +1,8 @@
 // Native entry for the PRD-117 ThreeNative desktop/device arms. It drives the same ladder as the
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
+import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
+import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
 import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
 import { type RenderMode, parseAxesRecord, percentile } from "./workload.js";
@@ -45,13 +47,17 @@ async function main(): Promise<void> {
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
   // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
   // control can drive the same harness without the framework in its graph. This arm has one, and
-  // L3 is a native cell.
+  // L3 is a native cell. The other two passes a shipped `defineGame` installs around the draw go
+  // with it, at the same defaults `defineGame` resolves (`renderer.matrixWorld` is `"visible"`,
+  // `renderer.minimumProjectedPixels` is 0.5), because an L3 that kept three's own world-matrix
+  // walk and no projected-size cull would time a pipeline no ThreeNative game ever draws with.
   const harness = await createLoadTestHarness(
     surface,
     "native host surface",
     config.animate,
     axes,
     (scene, options) => new SceneRenderProjection(scene, options),
+    { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
   );
   const rungs: unknown[] = [];
 
