@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   Float32BufferAttribute,
   Group,
@@ -32,7 +33,7 @@ import {
   Uint32BufferAttribute,
 } from "three";
 import { positionLocal, vec3 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectionMirror } from "../src/projection-apply.js";
 import {
@@ -495,19 +496,20 @@ describe("SceneRenderProjection", () => {
     }
   });
 
-  it("keeps forced-visible shader-displaced members in a material batch", () => {
+  it("keeps forced-visible members in a material batch of their own", () => {
     const scene = new Scene();
-    const material = new MeshBasicNodeMaterial();
-    // The shader moves the forced-visible members into the camera, while their authored bounds
-    // stay outside it. BatchedMesh can only answer from those authored bounds.
-    material.positionNode = positionLocal.add(vec3(0, 0, 1_000));
+    const material = new MeshBasicMaterial();
+    // The forced-visible members sit behind the camera, so a batch that culled per object from
+    // their authored bounds would drop them. (A shader that moved them into view used to stand
+    // in for this; a material that displaces vertices now keeps its own draw instead — see
+    // "keeps a static mesh whose material moves its own vertices".)
     const geometries: BoxGeometry[] = [];
     const anchorGeometry = new BoxGeometry(1, 1, 1);
 
     for (let index = 0; index < 8; index += 1) {
       const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material);
       mesh.position.z = index < 4 ? -1_000 : 1_000;
-      mesh.frustumCulled = index >= 4;
+      mesh.frustumCulled = index < 4;
       scene.add(mesh);
       geometries.push(mesh.geometry);
     }
@@ -1377,6 +1379,37 @@ describe("SceneRenderProjection exact lane corpus", () => {
     // override it inherited to everything folded into it.
     expect(projection.report.exact.customDepthMaterial).toBe(1);
     expect(projection.report.projectedObjects).toBe(300);
+  });
+
+  it("keeps a static mesh whose material moves its own vertices on a draw of its own", () => {
+    // A batch is one object: it draws with its own model matrix, so a displacement written in
+    // object space — TSL wind reading `modelWorldMatrixInverse`, a `displacementMap` — is wrong
+    // there, or silently lost. Nothing about such a mesh looks batchable, so the mesh keeps its
+    // own draw and the report names the reason instead of counting it as folded.
+    const displacements: Array<(material: MeshStandardNodeMaterial) => void> = [
+      (material) => {
+        material.positionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.castShadowPositionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.displacementMap = new DataTexture(new Uint8Array(4), 1, 1);
+      },
+    ];
+    for (const displace of displacements) {
+      const material = new MeshStandardNodeMaterial();
+      displace(material);
+      const subject = new Mesh(new BoxGeometry(1, 1, 1), material);
+
+      const { projection } = withSubject(subject);
+
+      expect(projection.report.exact.vertexDisplaced).toBe(1);
+      const proxy = proxyOf(projection, (o) => (o as Mesh).material === material);
+      expect(proxy).toBeDefined();
+      // The 300 props beside it are the same shape without the displacement, and still one draw.
+      expect(projection.report.projectedObjects).toBe(300);
+    }
   });
 
   it("keeps a mesh that asked for its own place in the draw order", () => {

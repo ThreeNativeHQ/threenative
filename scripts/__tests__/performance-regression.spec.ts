@@ -9,6 +9,7 @@ import {
   evaluatePairedComparison,
   parsePerformanceLaneManifest,
 } from "../performance-regression/compare.js";
+import { productionEvidenceToPerformanceRun } from "../performance-regression/run.js";
 
 const POLICY: IPerformancePolicy = {
   ...DEFAULT_PERFORMANCE_POLICY,
@@ -169,6 +170,61 @@ describe("performance regression lane manifest", () => {
 });
 
 describe("paired performance regression policy", () => {
+  it("rejects a candidate that pins a lower resolution scale while allowing a shared numeric setting", () => {
+    const compareScales = (baselineScale: string, candidateScale: string) =>
+      evaluatePairedComparison(
+        {
+          lane: "native-linux",
+          workload: "midway-production",
+          requiredMetrics: ["frameP95Ms"],
+          pairs: [0, 1, 2].map((index) => {
+            const evidenceRun = (arm: "baseline" | "candidate", scale: string) =>
+              productionEvidenceToPerformanceRun(
+                {
+                  artifact: { sha256: `${arm}-artifact` },
+                  command: "profile:production",
+                  identity: {
+                    architecture: "x86_64",
+                    deviceClass: "device-class-a",
+                    graphicsBackend: "vulkan",
+                    gpuClass: "gpu-class-a",
+                    jsRuntime: "v8",
+                    nativeBinarySha256: `${arm}-binary`,
+                    osClass: "linux",
+                    presentMode: "immediate",
+                    renderHeight: 720,
+                    renderWidth: 1280,
+                    resolutionScaleSetting: scale,
+                    workloadHash: "midway-workload",
+                  },
+                  metrics: { p95FrameMs: arm === "baseline" ? 16 : 10 },
+                  runId: `${arm}-${index}`,
+                  source: { dirty: false, sha: `${arm}-source` },
+                  target: "desktop",
+                  timestamps: {
+                    endedAt: "2026-09-22T00:00:01.000Z",
+                    startedAt: "2026-09-22T00:00:00.000Z",
+                  },
+                },
+                { id: "native-linux", platform: "native-linux", workload: "midway-production" },
+              );
+            return {
+              baseline: evidenceRun("baseline", baselineScale),
+              candidate: evidenceRun("candidate", candidateScale),
+              order: index === 1 ? ("candidate-first" as const) : ("baseline-first" as const),
+            };
+          }),
+        },
+        POLICY,
+      );
+
+    const cut = compareScales("auto", "0.5");
+    expect(cut.verdict).toBe("BLOCKED");
+    expect(cut.reasons.join(" ")).toContain("resolution differs");
+    expect(compareScales("auto", "auto").verdict).toBe("PASS");
+    expect(compareScales("0.5", "0.5").verdict).toBe("PASS");
+  });
+
   it("passes equality and requires both the absolute and relative threshold", () => {
     expect(comparison(11).verdict).toBe("PASS");
     expect(comparison(10.5).verdict).toBe("PASS");

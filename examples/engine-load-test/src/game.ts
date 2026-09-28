@@ -3,12 +3,16 @@
 // device arms of Phase 4 can drive the same file.
 import {
   BoxGeometry,
+  type BufferGeometry,
   DirectionalLight,
+  Group,
   InstancedMesh,
+  type Material,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  type OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
@@ -19,13 +23,19 @@ import {
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
+  DEFAULT_AXES,
   type ICubePlacement,
+  type IWorkloadAxes,
   type RenderMode,
+  assertRungAxesSupported,
   cameraPose,
   createPlacements,
   cubeBobY,
   cubeRotationX,
   cubeRotationY,
+  culledOffsetX,
+  isMutated,
+  latticeExtent,
   positionHash,
 } from "./workload.js";
 
@@ -62,15 +72,181 @@ export interface ILoadTestHarness {
 interface IRungState {
   collapse: SceneRenderProjection | undefined;
   cubes: Mesh[];
+  geometries: BufferGeometry[];
+  groups: Group[];
   instanced: InstancedMesh | undefined;
+  materials: Material[];
   placements: ICubePlacement[];
   rung: ILoadTestRung;
+}
+
+// A hierarchy-depth chain hangs the whole rung under nested groups; depth 0 keeps the cubes direct
+// scene children, which is the PRD-117 scene.
+function attachHierarchy(scene: Scene, depth: number): { groups: Group[]; parent: Object3D } {
+  let parent: Object3D = scene;
+  const groups: Group[] = [];
+  for (let level = 0; level < depth; level += 1) {
+    const group = new Group();
+    parent.add(group);
+    groups.push(group);
+    parent = group;
+  }
+  return { groups, parent };
+}
+
+// The shadow camera has to cover the lattice, whose extent is a function of the rung.
+function configureShadowCamera(light: DirectionalLight, objectCount: number): void {
+  const extent = latticeExtent(objectCount);
+  const shadowCamera = light.shadow.camera as OrthographicCamera;
+  shadowCamera.left = -extent;
+  shadowCamera.right = extent;
+  shadowCamera.top = extent;
+  shadowCamera.bottom = -extent;
+  shadowCamera.near = 0.1;
+  shadowCamera.far = extent * 4 + 200;
+  shadowCamera.updateProjectionMatrix();
+}
+
+interface IAuthoredCubes {
+  cubes: Mesh[];
+  geometries: BufferGeometry[];
+  materials: Material[];
+}
+
+// The authored L1/L3 rung: shared geometry and material by default, per-object clones when either
+// uniqueness axis is on, and culled objects pushed past the far plane.
+function buildAuthoredCubes(
+  placements: readonly ICubePlacement[],
+  parent: Object3D,
+  axes: IWorkloadAxes,
+  cubeGeometry: BoxGeometry,
+  material: Material,
+  shadowCasterCount: number,
+): IAuthoredCubes {
+  const cubes: Mesh[] = [];
+  const geometries: BufferGeometry[] = [];
+  const materials: Material[] = [];
+  for (let index = 0; index < placements.length; index += 1) {
+    const placement = placements[index] as ICubePlacement;
+    const uniqueGeometry = axes.geometry === "unique";
+    const uniqueMaterial = axes.material === "unique";
+    const geometry = uniqueGeometry ? cubeGeometry.clone() : cubeGeometry;
+    const meshMaterial = uniqueMaterial ? material.clone() : material;
+    if (uniqueGeometry) geometries.push(geometry);
+    if (uniqueMaterial) materials.push(meshMaterial);
+    const cube = new Mesh(geometry, meshMaterial);
+    cube.position.set(
+      placement.x + culledOffsetX(index, axes.visibleFraction),
+      placement.y,
+      placement.z,
+    );
+    if (index < shadowCasterCount) cube.castShadow = true;
+    parent.add(cube);
+    cubes.push(cube);
+  }
+  return { cubes, geometries, materials };
+}
+
+function writeAuthoredTransforms(
+  cubes: readonly Mesh[],
+  placements: readonly ICubePlacement[],
+  frameIndex: number,
+  axes: IWorkloadAxes,
+): void {
+  for (let index = 0; index < cubes.length; index += 1) {
+    if (!isMutated(index, axes.mutationRate)) continue;
+    const cube = cubes[index] as Mesh;
+    const placement = placements[index] as ICubePlacement;
+    cube.position.y = cubeBobY(index, frameIndex, placement.y);
+    cube.rotation.x = cubeRotationX(index, frameIndex);
+    cube.rotation.y = cubeRotationY(index, frameIndex);
+  }
+}
+
+// One instance's transform: the lattice pose with the cull offset, bobbed and rotated only when the
+// instance is dirty this frame. `mutated` false is the base pose baked into the buffer at `setRung`.
+function writeInstanceMatrix(
+  target: Matrix4,
+  index: number,
+  placement: ICubePlacement,
+  frameIndex: number,
+  mutated: boolean,
+  axes: IWorkloadAxes,
+  dummy: Object3D,
+): void {
+  dummy.position.set(
+    placement.x + culledOffsetX(index, axes.visibleFraction),
+    mutated ? cubeBobY(index, frameIndex, placement.y) : placement.y,
+    placement.z,
+  );
+  dummy.rotation.set(
+    mutated ? cubeRotationX(index, frameIndex) : 0,
+    mutated ? cubeRotationY(index, frameIndex) : 0,
+    0,
+  );
+  dummy.updateMatrix();
+  target.copy(dummy.matrix);
+}
+
+// The base pose every instance starts from, written once per rung before the measured window. A
+// mutation rate of 0 still draws the lattice because of this; without it the batch would sit at the
+// origin. The upload is requested once here, never per frame.
+export function initInstanceMatrices(
+  instanced: InstancedMesh,
+  placements: readonly ICubePlacement[],
+  axes: IWorkloadAxes,
+  dummy: Object3D,
+  instanceMatrix: Matrix4,
+): void {
+  for (let index = 0; index < placements.length; index += 1) {
+    writeInstanceMatrix(
+      instanceMatrix,
+      index,
+      placements[index] as ICubePlacement,
+      0,
+      false,
+      axes,
+      dummy,
+    );
+    instanced.setMatrixAt(index, instanceMatrix);
+  }
+  instanced.instanceMatrix.needsUpdate = true;
+}
+
+// Only the instances the mutation rate selects are rewritten; the return is whether anything moved,
+// which gates the GPU upload. At the default 1 every instance is dirty, preserving the old all-dirty
+// frame; at 0 the buffer is never touched after `initInstanceMatrices`.
+export function writeInstanceMatrices(
+  instanced: InstancedMesh,
+  placements: readonly ICubePlacement[],
+  frameIndex: number,
+  axes: IWorkloadAxes,
+  dummy: Object3D,
+  instanceMatrix: Matrix4,
+): boolean {
+  let changed = false;
+  for (let index = 0; index < placements.length; index += 1) {
+    if (!isMutated(index, axes.mutationRate)) continue;
+    writeInstanceMatrix(
+      instanceMatrix,
+      index,
+      placements[index] as ICubePlacement,
+      frameIndex,
+      true,
+      axes,
+      dummy,
+    );
+    instanced.setMatrixAt(index, instanceMatrix);
+    changed = true;
+  }
+  return changed;
 }
 
 export async function createLoadTestHarness(
   canvas: HTMLCanvasElement,
   adapterLabel = "unknown",
   animateObjects = true,
+  axes: IWorkloadAxes = DEFAULT_AXES,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -82,8 +258,9 @@ export async function createLoadTestHarness(
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, VIEWPORT_WIDTH / VIEWPORT_HEIGHT, 0.1, 4000);
-  // One shared lit material for ground and cubes, one directional light, no shadows: two shaders
-  // would be two experiments (PRD-117 §3.1).
+  // One shared lit material for ground and cubes, one directional light: two shaders would be two
+  // experiments (PRD-117 §3.1). Shadows are off at the default axes and enabled only by the
+  // shadow-caster-share axis.
   const material = new MeshStandardMaterial({ color: 0xb8c4cc, metalness: 0, roughness: 0.75 });
   const cubeGeometry = new BoxGeometry(1, 1, 1);
   const ground = new Mesh(new PlaneGeometry(200, 200), material);
@@ -94,6 +271,11 @@ export async function createLoadTestHarness(
   const light = new DirectionalLight(0xffffff, 2.4);
   light.position.set(40, 80, 25);
   scene.add(light);
+  if (axes.shadowCasterShare > 0) {
+    renderer.shadowMap.enabled = true;
+    light.castShadow = true;
+    ground.receiveShadow = true;
+  }
 
   const dummy = new Object3D();
   const instanceMatrix = new Matrix4();
@@ -105,37 +287,69 @@ export async function createLoadTestHarness(
     // rung's geometry; leaving them alive across a rung change would draw the previous rung's
     // objects on top of the next one's.
     state.collapse?.dispose();
-    for (const cube of state.cubes) scene.remove(cube);
+    for (const cube of state.cubes) cube.removeFromParent();
     if (state.instanced !== undefined) {
-      scene.remove(state.instanced);
+      state.instanced.removeFromParent();
       state.instanced.dispose();
     }
+    // The unique-geometry/material axis clones per rung, so the clones are this rung's to release.
+    for (const group of state.groups) group.removeFromParent();
+    for (const geometry of state.geometries) geometry.dispose();
+    for (const owned of state.materials) owned.dispose();
     state = undefined;
   };
 
   const setRung = (rung: ILoadTestRung): void => {
+    // Fail before anything is torn down: an unsupported L2 cell is a configuration error, not a
+    // scene to measure.
+    assertRungAxesSupported(rung.mode, axes);
     clearRung();
     // Cleared per rung, not per collapse: a stale report made an L2 rung inherit the previous L3
     // rung's `movingParts`, which is the one number the frozen-scene guard reads.
     collapseReport = undefined;
     const placements = createPlacements(rung.objectCount);
+    const { groups, parent } = attachHierarchy(scene, axes.hierarchyDepth);
     const cubes: Mesh[] = [];
+    const geometries: BufferGeometry[] = [];
+    const materials: Material[] = [];
     let instanced: InstancedMesh | undefined;
+    const shadowCasterCount = Math.ceil(rung.objectCount * axes.shadowCasterShare);
     if (rung.mode === "L1" || rung.mode === "L3") {
-      for (const placement of placements) {
-        const cube = new Mesh(cubeGeometry, material);
-        cube.position.set(placement.x, placement.y, placement.z);
-        scene.add(cube);
-        cubes.push(cube);
-      }
+      const authored = buildAuthoredCubes(
+        placements,
+        parent,
+        axes,
+        cubeGeometry,
+        material,
+        shadowCasterCount,
+      );
+      cubes.push(...authored.cubes);
+      geometries.push(...authored.geometries);
+      materials.push(...authored.materials);
     } else if (rung.objectCount > 0) {
       instanced = new InstancedMesh(cubeGeometry, material, rung.objectCount);
       // The batch is one cull unit on both engines; leaving it in makes the cull depend on a
       // bounding volume each engine derives differently, which is not what L2 is measuring.
       instanced.frustumCulled = false;
-      scene.add(instanced);
+      if (shadowCasterCount > 0) instanced.castShadow = true;
+      parent.add(instanced);
+      // Base poses baked once, not every frame: the per-frame writer then touches only the dirty
+      // subset, so a mutation rate of 0 leaves the batch static and never re-uploads it.
+      initInstanceMatrices(instanced, placements, axes, dummy, instanceMatrix);
     }
-    state = { collapse: undefined, cubes, instanced, placements, rung };
+    if (axes.shadowCasterShare > 0) {
+      configureShadowCamera(light, rung.objectCount);
+    }
+    state = {
+      collapse: undefined,
+      cubes,
+      geometries,
+      groups,
+      instanced,
+      materials,
+      placements,
+      rung,
+    };
   };
 
   // Driven by the ladder before the measured window opens: the pass watches, bakes across frames,
@@ -177,19 +391,14 @@ export async function createLoadTestHarness(
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
-    // 100% dirty transforms every frame — the honest worst case a game with moving actors pays.
+    // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
+    // transform moves, which is the honest worst case a game with moving actors pays.
     if (state.rung.mode === "L1" || state.rung.mode === "L3") {
       // Diagnostic only: with the animation off, `stepMs` is the framework's refresh alone, which
       // is what separates "the engine is slow" from "the game's own gameplay loop is slow". A
       // framework fix can only ever address the first.
       if (animateObjects) {
-        for (let index = 0; index < state.cubes.length; index += 1) {
-          const cube = state.cubes[index] as Mesh;
-          const placement = state.placements[index] as ICubePlacement;
-          cube.position.y = cubeBobY(index, frameIndex, placement.y);
-          cube.rotation.x = cubeRotationX(index, frameIndex);
-          cube.rotation.y = cubeRotationY(index, frameIndex);
-        }
+        writeAuthoredTransforms(state.cubes, state.placements, frameIndex, axes);
       }
       // L3 pays this on the game side every frame: the collapse pass reads the same moved meshes
       // and pushes their transforms into the baked draw. It is part of the frame, not a setup cost.
@@ -204,15 +413,12 @@ export async function createLoadTestHarness(
       stepMs = performance.now() - startedAt;
       return;
     }
-    for (let index = 0; index < state.placements.length; index += 1) {
-      const placement = state.placements[index] as ICubePlacement;
-      dummy.position.set(placement.x, cubeBobY(index, frameIndex, placement.y), placement.z);
-      dummy.rotation.set(cubeRotationX(index, frameIndex), cubeRotationY(index, frameIndex), 0);
-      dummy.updateMatrix();
-      instanceMatrix.copy(dummy.matrix);
-      instanced.setMatrixAt(index, instanceMatrix);
+    if (
+      writeInstanceMatrices(instanced, state.placements, frameIndex, axes, dummy, instanceMatrix)
+    ) {
+      // Only a frame that actually moved an instance asks for the upload.
+      instanced.instanceMatrix.needsUpdate = true;
     }
-    instanced.instanceMatrix.needsUpdate = true;
     stepMs = performance.now() - startedAt;
   };
 
@@ -230,8 +436,10 @@ export async function createLoadTestHarness(
       // its own rAF, so the per-frame counters are ours to clear.
       renderer.info.reset();
       // The projection's own render input when L3 has one, the authored scene otherwise. Same
-      // resolution `defineGame` performs, so this rung draws what a shipped game draws.
-      await renderer.render(state?.collapse?.root ?? scene, camera);
+      // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
+      // pass-count axis re-renders the same input; the default is one pass.
+      const root = state?.collapse?.root ?? scene;
+      for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
     },
     beginCollapse,
     collapseStatus,
@@ -247,8 +455,11 @@ export async function createLoadTestHarness(
     stats: () => {
       const drawCalls = renderer.info.render.drawCalls;
       const triangles = renderer.info.render.triangles;
+      // `drawCalls` totals every render pass, so the per-object count divides the pass count.
       const visibleObjects =
-        state?.rung.mode === "L1" ? Math.max(0, drawCalls - 1) : (state?.rung.objectCount ?? 0);
+        state?.rung.mode === "L1"
+          ? Math.max(0, drawCalls / axes.passCount - 1)
+          : (state?.rung.objectCount ?? 0);
       // L3's draw count is the finding: if the collapse applied, it is small; if it declined, this
       // is L1 with extra steps and the report must show that rather than hide it.
       return { drawCalls, triangles, visibleObjects };
