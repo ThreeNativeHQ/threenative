@@ -242,20 +242,25 @@ function squareOf(name: string): { readonly key: string; readonly x: number; rea
 }
 
 /**
- * The two halves: `main` is what the main camera draws, one mesh per `asset:level:part`; `casters`
- * is one mesh per `(key, @x,z)`, alone on the shadow caster layer.
+ * The main pass and the two caster granularities: `main` is what the main camera draws, one mesh per
+ * `asset:level:part`; `casters` is one mesh per `(key, @x,z)` on the cluster layer, which the fine
+ * levels cull; `wide` is one mesh per key on the wide-caster layer, which a level whose window holds
+ * most of the ring submits instead. `world-wide-casters.spec.ts` asserts the wide half's own claims.
  */
 function split(world: WorldCells): {
   readonly casters: [string, InstancedMesh][];
   readonly main: [string, InstancedMesh][];
+  readonly wide: [string, InstancedMesh][];
 } {
   const casters: [string, InstancedMesh][] = [];
   const main: [string, InstancedMesh][] = [];
+  const wide: [string, InstancedMesh][] = [];
   for (const [name, mesh] of clusters(world)) {
     if (mesh.layers.mask === 1 << 28) casters.push([name, mesh]);
+    else if (mesh.layers.mask === 1 << 27) wide.push([name, mesh]);
     else main.push([name, mesh]);
   }
-  return { casters, main };
+  return { casters, main, wide };
 }
 
 function originsOf(mesh: InstancedMesh): Vector3[] {

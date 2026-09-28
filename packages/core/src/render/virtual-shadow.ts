@@ -161,6 +161,21 @@ export const VIRTUAL_SHADOW_MOVER_LAYER = 29;
 // caster that lives only on it is reachable from the cascade and from nothing else. 28 is below the
 // mover layer and off the main camera, which renders layer 0.
 export const VIRTUAL_SHADOW_CASTER_LAYER = 28;
+/**
+ * The wide counterpart of {@link VIRTUAL_SHADOW_CASTER_LAYER}: one caster mesh per
+ * `asset:level:part` holding every resident cell's records, for the levels whose window covers the
+ * whole resident ring. A level renders exactly one of the two caster layers — clustered when its
+ * window is a small fraction of the ring, wide when it is most of it — because a cluster per square
+ * is a draw per square for the same pixels once the window holds the ring. `WorldCells` writes both
+ * halves of every key, so whichever a level picks is there; the main camera renders neither.
+ */
+export const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
+/**
+ * How much of the resident ring a level's window may cover and still be worth clustering. Below
+ * this fraction of the ring's area, culling clusters down to the window's squares pays; above it,
+ * the window holds most of the ring and the key-wide mesh is one draw instead of one per square.
+ */
+const WIDE_CASTER_FRACTION = 0.35;
 const MIN_MOVER_MAP_SIZE = 256;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
 const DEFAULT_MARKER_EVERY = 300;
@@ -619,15 +634,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * One traverse for both automatic fixes: the world bounding sphere of every shadow-relevant mesh
-   * goes into the pool, and every caster too small for this level's texel grid is hidden until the
-   * level's render is over. Mirrors the sphere three's own cull reads, so the gate drops exactly the
-   * volumes that cull would have kept and the depth below measures the same boxes it will draw.
+   * One traverse for three automatic fixes: the world bounding sphere of every shadow-relevant mesh
+   * goes into the pool, every caster too small for this level's texel grid is hidden until the
+   * level's render is over, and the level's caster granularity is chosen from how much of the
+   * resident ring its window covers. Mirrors the sphere three's own cull reads, so the gate drops
+   * exactly the volumes that cull would have kept and the depth below measures the same boxes it
+   * will draw.
+   *
+   * The ring is read off the casters themselves rather than configured: the caster-only layers hold
+   * the world's batch meshes, and the widest of them is the world the level is shadowing. Their
+   * centres, not their bounds, because a cluster's own sphere is its whole grid square and would
+   * report a ring a square larger than the one the records are spread over.
    */
-  #probe(level: ILevel): void {
+  #probe(level: ILevel, centre: IVector3Like): void {
     const gate = (this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize;
+    const casterLayers =
+      (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
     this.#poolCount = 0;
     this.#hidden.length = 0;
+    let spread = 0;
     this.#root().traverse((object) => {
       if (object.visible !== true) return;
       if ((object as { isMesh?: boolean }).isMesh !== true) return;
@@ -666,6 +691,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         box = ownBox;
       }
       _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
+      if ((mesh.layers.mask & casterLayers) !== 0) {
+        const reach = Math.hypot(_sphere.center.x - centre.x, _sphere.center.z - centre.z);
+        if (reach > spread) spread = reach;
+      }
       if (box === null || box === undefined) {
         _box.min.set(_sphere.center.x, _sphere.center.y - _sphere.radius, _sphere.center.z);
         _box.max.set(_sphere.center.x, _sphere.center.y + _sphere.radius, _sphere.center.z);
@@ -701,6 +730,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
         this.#hidden.push(object);
       }
     });
+    // One of the two caster layers, never both: a window covering much of the ring submits one
+    // key-wide mesh per key rather than one cluster per square, and a small window culls the
+    // clusters down to the squares it covers. Layer 0 stays on, because the terrain and everything
+    // else in the world casts from it. A world with no caster batch has `spread` 0, so every level
+    // takes the wide layer and draws nothing extra: there is nothing to cluster.
+    const window = 2 * level.extent;
+    const clustered = window * window < WIDE_CASTER_FRACTION * 4 * spread * spread;
+    level.shadow.camera.layers.set(0);
+    level.shadow.camera.layers.enable(
+      clustered ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+    );
   }
 
   /** Put back every caster `#probe` hid, so the next camera sees the world as it was. */
@@ -1102,7 +1142,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // the level needs to cover what can actually shadow it, and the casters too small for its
           // texels. Both are undone the moment the render is over — the hidden casters by
           // `#restoreHidden`, which the mover maps and the main pass both need back.
-          this.#probe(level);
+          this.#probe(level, centre);
           if (this.#autoDepth) this.#deriveDepth(level, centre);
           this.#place(level, centre);
           try {

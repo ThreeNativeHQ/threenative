@@ -498,7 +498,14 @@ function clustersOf(world: WorldCells, asset: string, level: number, part = 0): 
   const key = `${asset}:${String(level)}:${String(part)}@`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name.startsWith(key)) meshes.push(object);
+    // The layer, not the name: the key-wide half of the same split is `key@*` on the wide-caster
+    // layer, and it is one mesh per key rather than one per square.
+    if (
+      object instanceof InstancedMesh &&
+      object.name.startsWith(key) &&
+      object.layers.mask === 1 << 28
+    )
+      meshes.push(object);
   });
   return meshes;
 }

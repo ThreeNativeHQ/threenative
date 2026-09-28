@@ -104,6 +104,16 @@ const PREWARM_WARM_UPDATES = 2;
  */
 const VIRTUAL_SHADOW_CASTER_LAYER = 28;
 /**
+ * The layer the wide shadow levels render and the fine ones do not: one caster mesh per
+ * `asset:level:part` holding every cell's records, for a level whose window covers the whole
+ * resident ring, where a cluster per square is a draw per square for the same pixels. Duplicated
+ * from `index.ts` like the layer above, and a bit of its own so a level camera renders one caster
+ * granularity or the other and never both.
+ */
+const VIRTUAL_SHADOW_WIDE_CASTER_LAYER = 27;
+/** The whole ring, as one caster cluster: `@*` is every square's records in one mesh. */
+const WIDE_CLUSTER = "*";
+/**
  * Placements filtered per unit of admission work.
  *
  * One unit is what a frame can overshoot its budget by, so it is sized to stay small rather than to
@@ -315,6 +325,13 @@ interface ICellBatch {
    */
   caster: SharedBatch | undefined;
   casterSegment: number;
+  /**
+   * The wide-caster half, and its segment there (-1: none): the same records again, in one mesh per
+   * key covering the whole ring, alone on the wide caster layer. A shadow level whose window covers
+   * the ring would otherwise submit one cluster per square for the same pixels.
+   */
+  wide: SharedBatch | undefined;
+  wideSegment: number;
   lastFilterX: number;
   lastFilterZ: number;
 }
@@ -324,8 +341,8 @@ interface ICellBatch {
 /** One asset's placements, waiting to be built, or already holding their own cell's records. */
 interface IPrewarmEntry {
   readonly asset: string;
-  /** The follow point's own caster cluster, not the main pass's one mesh per key. */
-  readonly caster: boolean;
+  /** Which half of the split this mesh is: the main pass's key, its caster cluster, or its wide. */
+  readonly role: "cluster" | "main" | "wide";
   readonly geometry: BufferGeometry;
   readonly key: string;
   readonly level: number;
@@ -1789,7 +1806,7 @@ export class WorldCells extends Group implements IComputeDriven {
       entry.key,
       this.#extentBounds,
     );
-    this.#dressMesh(shared.mesh, entry.caster, !entry.caster && this.#receiveShadow);
+    this.#dressMesh(shared.mesh, entry.role, entry.role === "main" && this.#receiveShadow);
     shared.mesh.visible = true;
     this.#shared.set(entry.key, shared);
     this.add(shared.mesh);
@@ -1798,7 +1815,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // A main batch is owed a draw by `#awaitDraw`; nothing made a shadow level draw a caster, and
     // a caster never reaches the main pass, so the hook would wait on a draw that cannot happen.
     // The minting update invalidates the levels instead, which is what builds the caster's node.
-    if (!entry.caster) this.#awaitDraw(shared.mesh);
+    if (entry.role === "main") this.#awaitDraw(shared.mesh);
   }
 
   /** Count this mesh's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
@@ -1858,17 +1875,20 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const [level, parts] of asset.levels.entries()) {
       for (const [part, entry] of parts.entries()) {
         const key = `${asset.id}:${String(level)}:${String(part)}`;
-        for (const caster of [false, true]) {
+        for (const role of ["main", "cluster", "wide"] as const) {
           // Only a level that casts has a caster half at all; see `#casts`.
-          if (caster && !this.#casts(level)) continue;
-          const name = caster ? `${key}@${this.#followCluster()}` : key;
+          if (role !== "main" && !this.#casts(level)) continue;
+          const name =
+            role === "main"
+              ? key
+              : `${key}@${role === "cluster" ? this.#followCluster() : WIDE_CLUSTER}`;
           // A retained key is already paid for; see `#mintPrewarm`.
           if (this.#shared.has(name) || this.#retired.has(name) || this.#prewarmKeys.has(name))
             continue;
           this.#prewarmKeys.add(name);
           this.#prewarmQueue.push({
             asset: asset.id,
-            caster,
+            role,
             geometry: entry.geometry,
             key: name,
             level,
@@ -2231,6 +2251,12 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#meshStalled = true;
         return false;
       }
+      // The wide half, by the same no-hole rule: a key with a cluster and no wide caster draws into
+      // a level that may already be reading the wide layer with nothing in it.
+      if (!this.#claimWide(job.asset.id, entry)) {
+        this.#meshStalled = true;
+        return false;
+      }
     }
     for (const entry of job.replaced) {
       const at = cell.batches.indexOf(entry);
@@ -2241,6 +2267,7 @@ export class WorldCells extends Group implements IComputeDriven {
       cell.batches.push(entry);
       if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
       if (entry.caster !== undefined) entry.caster.write(entry.casterSegment, entry.batch);
+      if (entry.wide !== undefined) entry.wide.write(entry.wideSegment, entry.batch);
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
@@ -2263,14 +2290,32 @@ export class WorldCells extends Group implements IComputeDriven {
     return true;
   }
 
+  /**
+   * Claim this cell's block in its key's wide caster mesh, when the level casts and it does not
+   * have one. `false` means the frame's fresh allowance is spent and the swap waits, so the
+   * clusters and the wide half are never half attached.
+   */
+  #claimWide(assetId: string, entry: ICellBatch): boolean {
+    if (entry.wideSegment >= 0 || !this.#casts(entry.level)) return true;
+    const wide = this.#wideFor(assetId, entry);
+    const at = wide === undefined ? undefined : this.#segmentIn(wide, entry.batch.count);
+    if (wide === undefined || at === undefined) return false;
+    entry.wide = wide;
+    entry.wideSegment = at;
+    return true;
+  }
+
   #clearSegment(entry: ICellBatch): void {
     if (entry.shared !== undefined && entry.segment >= 0) entry.shared.clear(entry.segment);
     if (entry.caster !== undefined && entry.casterSegment >= 0)
       entry.caster.clear(entry.casterSegment);
+    if (entry.wide !== undefined && entry.wideSegment >= 0) entry.wide.clear(entry.wideSegment);
     entry.shared = undefined;
     entry.segment = -1;
     entry.caster = undefined;
     entry.casterSegment = -1;
+    entry.wide = undefined;
+    entry.wideSegment = -1;
   }
 
   /**
@@ -2365,6 +2410,8 @@ export class WorldCells extends Group implements IComputeDriven {
         batch: levelBatches[part] as InstancedBatch,
         caster: undefined,
         casterSegment: -1,
+        wide: undefined,
+        wideSegment: -1,
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
         level,
@@ -2380,7 +2427,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   /** The main pass's one mesh for an asset part at a level, covering every resident cell. */
   #sharedFor(assetId: string, entry: ICellBatch, cell: IResidentCell): SharedBatch | undefined {
-    return this.#batchFor(assetId, entry, this.#keyOf(entry), false, this.#receiveShadow);
+    return this.#batchFor(assetId, entry, this.#keyOf(entry), "main", this.#receiveShadow);
   }
 
   /**
@@ -2396,9 +2443,22 @@ export class WorldCells extends Group implements IComputeDriven {
       assetId,
       entry,
       `${this.#keyOf(entry)}@${this.#clusterOf(cell)}`,
-      true,
+      "cluster",
       false,
     );
+  }
+
+  /**
+   * The wide caster for one asset part at one level, or `undefined` when the level does not cast or
+   * the frame's fresh allowance is spent.
+   *
+   * One per key, holding every cell's records, on the wide caster layer: a level whose window
+   * covers the whole resident ring pays one draw for the key instead of one per square, and the fine
+   * levels that cull clusters never see this layer.
+   */
+  #wideFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
+    if (!this.#casts(entry.level)) return undefined;
+    return this.#batchFor(assetId, entry, `${this.#keyOf(entry)}@${WIDE_CLUSTER}`, "wide", false);
   }
 
   /** `asset:level:part`, the main pass's one mesh per key. */
@@ -2430,7 +2490,7 @@ export class WorldCells extends Group implements IComputeDriven {
     assetId: string,
     entry: ICellBatch,
     key: string,
-    caster: boolean,
+    role: "cluster" | "main" | "wide",
     receiveShadow: boolean,
   ): SharedBatch | undefined {
     const existing = this.#shared.get(key);
@@ -2444,7 +2504,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#retiredBytes -= this.#heldBytes(released);
       released.rebind(entry.batch.geometry, entry.batch.material);
       released.mesh.name = key;
-      this.#dressMesh(released.mesh, caster, receiveShadow);
+      this.#dressMesh(released.mesh, role, receiveShadow);
       this.#shared.set(key, released);
       this.add(released.mesh);
       return released;
@@ -2455,28 +2515,36 @@ export class WorldCells extends Group implements IComputeDriven {
       entry.batch.geometry,
       entry.batch.material,
       this.#runMax.get(assetId) ?? entry.batch.count,
-      // A caster cluster's block count is bounded by the cluster's own cells, the main pass's one
-      // mesh per key by the ring; either way the one a refilter holds beside the block it replaces.
-      caster ? this.#cellsPerCluster * this.#cellsPerCluster + 1 : this.#budgets.residentCells + 1,
+      // A caster cluster's block count is bounded by the cluster's own cells; a wide caster and the
+      // main pass's one mesh per key are both bounded by the whole ring, so either way the one a
+      // refilter holds beside the block it replaces.
+      role === "cluster"
+        ? this.#cellsPerCluster * this.#cellsPerCluster + 1
+        : this.#budgets.residentCells + 1,
       key,
       this.#extentBounds,
     );
-    this.#dressMesh(shared.mesh, caster, receiveShadow);
+    this.#dressMesh(shared.mesh, role, receiveShadow);
     this.#shared.set(key, shared);
     this.add(shared.mesh);
     return shared;
   }
 
   /**
-   * The shadow half of the split. A caster mesh lives alone on `VIRTUAL_SHADOW_CASTER_LAYER` — the
-   * level cameras draw it, the main camera never does — and never receives, because nothing but a
-   * shadow level ever sees it. A main mesh keeps layer 0 and casts nothing: its records reach the
-   * shadow maps only through the caster cluster, so the main pass pays one draw per key and a level
-   * pays one per cluster its window covers.
+   * The shadow half of the split, and the two granularities of it. A caster mesh lives alone on
+   * `VIRTUAL_SHADOW_CASTER_LAYER` — one per world-grid square, which a level whose window is a
+   * fraction of the ring culls down to the squares it covers — and a wide mesh alone on
+   * `VIRTUAL_SHADOW_WIDE_CASTER_LAYER`, one per key, which a level whose window covers the ring
+   * submits once. The level cameras draw one of the two layers and never both, so a key costs the
+   * main pass one draw, a fine level a few and a wide level one. Neither receives: nothing but a
+   * shadow level ever sees either. A main mesh keeps layer 0 and casts nothing, because its records
+   * reach the shadow maps only through a caster half.
    */
-  #dressMesh(mesh: InstancedMesh, caster: boolean, receiveShadow: boolean): void {
-    if (caster) {
-      mesh.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
+  #dressMesh(mesh: InstancedMesh, role: "cluster" | "main" | "wide", receiveShadow: boolean): void {
+    if (role !== "main") {
+      mesh.layers.set(
+        role === "cluster" ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+      );
       mesh.castShadow = true;
       mesh.receiveShadow = false;
       return;

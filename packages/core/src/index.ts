@@ -810,6 +810,7 @@ export {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
