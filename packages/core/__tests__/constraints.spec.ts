@@ -69,12 +69,18 @@ describe("core constraints", () => {
           file !== "instanced-batch.ts" &&
           // WorldCells streams a package: it reads the geometry and surface out of the package's
           // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
-          // light, colour or shader, and reads no appearance property. The word "light" the
-          // generic filter trips on is inside `loadsInFlight`.
+          // light, colour or shader, and reads no appearance property — a cutout is
+          // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
+          // "light" the generic filter trips on is inside `loadsInFlight`.
           file !== "world-cells.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          // The mesh pool parks a streamed world's instanced meshes by the (geometry, material)
+          // pair they draw, so the cell after a walk gets a parked object back instead of a fresh
+          // NodeBuilder build. It constructs no material, configures no property of one, and uses
+          // the surface only as a map key; which surface exists and how it looks is the game's.
+          file !== "render/mesh-pool.ts" &&
           // The census records material/object provenance at the renderer boundary; it observes
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
@@ -89,6 +95,28 @@ describe("core constraints", () => {
           // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
           // texture behind it — stays entirely the game's. The assertions below keep that true.
           file !== "render/alpha-antialiasing.ts" &&
+          // Material identity compares a material's parameters and texture images to decide that
+          // two package materials draw the same, so a streamed world shares one surface between
+          // them. It reads appearance fields only to compare them; it constructs, sets and chooses
+          // nothing, and the surface kept is the package's own.
+          file !== "render/material-key.ts" &&
+          // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
+          // the game must supply — every colour, angle, intensity, density and exposure is a
+          // required option. It constructs the objects those values need and chooses none of them.
+          file !== "render/daylight.ts" &&
+          // The pool is a Map keyed by the caller's own geometry and material so a recycled
+          // InstancedMesh keeps the surface it was drawn with. It names a Material only as a key
+          // type, reads no property that describes how anything looks, and constructs none.
+          file !== "render/mesh-pool.ts" &&
+          // The splat terrain surface builds its material from the world package's own table:
+          // textures, tiles, tints, thresholds and noise scales are all the package's values.
+          file !== "world-terrain-splat.ts" &&
+          // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
+          // map's texel size and moves the cutoff the alpha is compared against, so a needle card
+          // survives the mip chain instead of being discarded at mip one. The cutoff itself, the
+          // map, the colour, the geometry and every other appearance value stay the game's, and the
+          // assertions below keep it that way.
+          file !== "render/foliage-alpha.ts" &&
           // The geometry capture counts what the renderer submitted. It is handed a material by
           // `onBeforeRender` and puts it in a Set to report how many DISTINCT surfaces an object
           // was drawn with — identity, exactly as `warmup.ts` reads it. It constructs no material,
@@ -171,6 +199,18 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(alphaAntialiasing.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    const foliageAlpha = readFileSync(
+      path.join(sourceDirectory, "render/foliage-alpha.ts"),
+      "utf8",
+    );
+    expect(foliageAlpha).not.toMatch(
+      /new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // A map is read for its texel size, and for nothing else: naming a look — a colour, a
+    // roughness, a metalness, an opacity — is how a framework starts deciding one.
+    expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(
@@ -289,6 +329,15 @@ describe("core constraints", () => {
     expect(sceneBvh).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(sceneBvh).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(sceneBvh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `render/mesh-pool.ts` is exempt on the same terms as `instanced-batch.ts`: the surface is
+    // named to key a pool by, never built and never tuned. The assertions below keep that true.
+    const meshPool = readFileSync(path.join(sourceDirectory, "render/mesh-pool.ts"), "utf8");
+    expect(meshPool).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(meshPool).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(meshPool.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.

@@ -1,4 +1,4 @@
-import { availableParallelism } from "node:os";
+import { availableParallelism, totalmem } from "node:os";
 import { Worker } from "node:worker_threads";
 
 import type { IAppliedPasses } from "./pass-chain.js";
@@ -21,8 +21,25 @@ export interface IPassPool {
   dispose(): Promise<void>;
 }
 
-/** The default bound: useful parallelism without a 6.8 GB pack deciding the machine's fate. */
-export const DEFAULT_CONCURRENCY = Math.min(4, Math.max(1, availableParallelism() - 1));
+/** Resident memory one cook worker is budgeted: a 7 GB world pack measured ~1 GB per worker. */
+const WORKER_MEMORY_BYTES = 2 * 1024 ** 3;
+/** Past this, a bake is bound by disk and the encoder's own threads, not by more workers. */
+const MAX_DEFAULT_CONCURRENCY = 12;
+
+/**
+ * The default bound: every core but one, as many as total memory affords at ~2 GB a worker, at
+ * most 12. The old fixed ceiling of 4 turned a full world bake on a 24-core machine into a 70+
+ * minute wait; a pack still queues through a fixed resident set, so a 6.8 GB pack cannot decide
+ * the machine's fate on a small one either (8 cores / 16 GB -> 7 workers).
+ */
+export function defaultConcurrency(cores = availableParallelism(), memory = totalmem()): number {
+  return Math.max(
+    1,
+    Math.min(cores - 1, Math.floor(memory / WORKER_MEMORY_BYTES), MAX_DEFAULT_CONCURRENCY),
+  );
+}
+
+export const DEFAULT_CONCURRENCY = defaultConcurrency();
 
 export function resolveConcurrency(requested: number | undefined): number {
   if (requested === undefined) return DEFAULT_CONCURRENCY;
