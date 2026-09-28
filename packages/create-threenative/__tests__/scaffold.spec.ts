@@ -430,7 +430,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // arm64 cache-key fix: the distributed `patches/three@0.185.1.patch` carries #358's hunks without
   // the render-target samples line, so every scaffold that embeds it moved and all ten trees were
   // re-measured through `createProject` on the merged tree.
-  "action-rpg": "e3149e6e6b8345697e641bd1cf000c8157614091c1c6babbcba64d58037f7164",
+  // Recomputed 2026-09-28 for PRD-470: the action RPG is cut from the prototype test scene and
+  // built on `mannequin-combat.glb`. One rig, six instances, a real doorway between the rooms, and
+  // a `Play` scene the game starts in, so only this tree moves.
+  "action-rpg": "344589bfc1511a96b8e75f920fbd1f65352911d58c3721e984909b6b4b7c5e28",
   defense: "24a9310e62a73572aae2d46b3f2437a08899f33a93845ac7da2a4923befcc0fc",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
