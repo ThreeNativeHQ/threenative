@@ -100,7 +100,10 @@ function settledScene(meshCount: number): {
  * The elements are compared, not the object: a batched slot comes back through a `Float32Array`, so
  * the baked matrix is the authored one to single precision and never bit-identical to it.
  */
-function baked(projection: SceneRenderProjection, mesh: Mesh): {
+function baked(
+  projection: SceneRenderProjection,
+  mesh: Mesh,
+): {
   elements: number[];
   visible: boolean;
   lane: string;
@@ -115,11 +118,7 @@ function baked(projection: SceneRenderProjection, mesh: Mesh): {
 }
 
 /** The baked transform against the authored one, to the precision the batch actually stores. */
-function expectBaked(
-  projection: SceneRenderProjection,
-  mesh: Mesh,
-  visible: boolean,
-): void {
+function expectBaked(projection: SceneRenderProjection, mesh: Mesh, visible: boolean): void {
   const found = baked(projection, mesh);
   expect(found.visible).toBe(visible);
   const authored = [...mesh.matrixWorld.elements];
@@ -566,12 +565,13 @@ describe("projection fast-path guards", () => {
     try {
       const realGetAttribute = BufferGeometry.prototype.getAttribute;
       let reads = 0;
-      const spy = vi
-        .spyOn(BufferGeometry.prototype, "getAttribute")
-        .mockImplementation(function (this: BufferGeometry, name: string) {
-          reads += 1;
-          return realGetAttribute.call(this, name);
-        });
+      const spy = vi.spyOn(BufferGeometry.prototype, "getAttribute").mockImplementation(function (
+        this: BufferGeometry,
+        name: string | number | symbol,
+      ) {
+        reads += 1;
+        return realGetAttribute.call(this, name);
+      });
       try {
         for (let frame = 0; frame < 5; frame += 1) {
           // Every transform moves, which is the workload the skip has to survive: the scan reads no
@@ -599,12 +599,13 @@ describe("projection fast-path guards", () => {
       const geometry = (meshes[0] as Mesh).geometry;
       const realGetAttribute = BufferGeometry.prototype.getAttribute;
       let reads = 0;
-      const spy = vi
-        .spyOn(BufferGeometry.prototype, "getAttribute")
-        .mockImplementation(function (this: BufferGeometry, name: string) {
-          reads += 1;
-          return realGetAttribute.call(this, name);
-        });
+      const spy = vi.spyOn(BufferGeometry.prototype, "getAttribute").mockImplementation(function (
+        this: BufferGeometry,
+        name: string | number | symbol,
+      ) {
+        reads += 1;
+        return realGetAttribute.call(this, name);
+      });
       try {
         projection.reconcile();
         const settledReads = reads;
