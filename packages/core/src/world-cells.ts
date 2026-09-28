@@ -3,7 +3,7 @@ import {
   type BufferGeometry,
   Group,
   InstancedBufferAttribute,
-  InstancedMesh,
+  type InstancedMesh,
   type Material,
   Matrix4,
   Mesh,
@@ -187,21 +187,15 @@ export interface IWorldCellsLoadOptions {
     readonly castLevels?: number;
     readonly receive?: boolean;
     /**
-     * Metres from the follow point within which a scattered record still casts. Set, every
-     * castable batch stops casting itself and gains a companion mesh that carries only the records
-     * inside that radius and is drawn into the shadow levels and not into the main pass, so a level
-     * render submits the near set instead of every resident record in the ring. The companions are
-     * rebuilt once the follow point has moved `castDistance / 8`; omitted (the default) every
-     * record casts, as before.
+     * @deprecated Accepted and ignored. Clusters replace it: what a shadow level submits is bounded
+     * by the clusters its own window covers, not by a hand-tuned radius. It still validates, so a
+     * game that set it keeps compiling and keeps loading.
      */
     readonly castDistance?: number;
     /**
-     * Called once after a companion is rebuilt, so the shadow levels that read it redraw.
-     * `VirtualShadowNode.invalidateRegion` is the whole of it, handed the union of the bounds that
-     * changed, old bounds included: a level whose window does not reach that region draws the same
-     * shadow either way. A refresh that changed nothing does not call it at all, and a call with no
-     * region is a full redraw (`VirtualShadowNode.invalidateAll`). Not called per frame, and not
-     * called at all without `castDistance`.
+     * Called at most once a second after streamed records changed, so the shadow levels that read
+     * them redraw. `VirtualShadowNode.invalidateAll` is the whole of it, and a call with no region
+     * is exactly that. Not called per frame, and not called at all when nothing changed.
      */
     readonly invalidate?: (region?: IShadowRegion) => void;
   };
@@ -233,6 +227,14 @@ export interface IWorldCellsLoadOptions {
    * is spread over frames instead of stacked into one; recycled meshes are not counted.
    */
   readonly freshMeshesPerUpdate?: number;
+  /**
+   * Side of the world-grid square one shared batch's records are clustered into, in world units.
+   * Defaults to the package's own `cellSize`, which is the square the placements are already cut
+   * on. Each `(key, cluster)` is its own InstancedMesh with its own bounds, so every camera — the
+   * main one and each virtual-shadow level's — submits only the clusters it covers instead of the
+   * whole resident ring. A larger square means fewer meshes and more of the world in every draw.
+   */
+  readonly clusterSize?: number;
   /**
    * Milliseconds one `update` may spend admitting streamed content — cell batches, terrain tiles,
    * colliders and `maxDistance`/`lods` refilters together. Defaults to 2, and `Infinity` opts out
@@ -309,19 +311,8 @@ interface ICellBatch {
 }
 
 /** One key a loaded asset's levels contributed to the prewarm queue. */
-/** What a companion's records were at its last refresh, and where they reached. */
-interface ICasterRecords {
-  readonly box: Box3;
-  readonly count: number;
-}
 
-/** One companion owed a mint, in ask order. */
-interface ICasterMintEntry {
-  readonly key: string;
-  readonly level: number;
-  readonly shared: SharedBatch;
-}
-
+/** One asset's placements, waiting to be built, or already holding their own cell's records. */
 interface IPrewarmEntry {
   readonly asset: string;
   readonly geometry: BufferGeometry;
@@ -332,40 +323,12 @@ interface IPrewarmEntry {
 
 /**
  * A plain `{ min, max }` region, the shape a shadow level's invalidation reads and the shape a game
- * can be handed without importing three. Plain numbers, so the object a companion records its
- * bounds in is the object that crosses the boundary.
+ * can be handed without importing three. Plain numbers, so the object a caller records its bounds
+ * in is the object that crosses the boundary.
  */
 export interface IShadowRegion {
   min: { x: number; y: number; z: number };
   max: { x: number; y: number; z: number };
-}
-
-function emptyBounds(): IShadowRegion {
-  return {
-    min: { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY, z: Number.POSITIVE_INFINITY },
-    max: { x: Number.NEGATIVE_INFINITY, y: Number.NEGATIVE_INFINITY, z: Number.NEGATIVE_INFINITY },
-  };
-}
-
-/** Grow `region` to hold a `Box3`. An empty box — a companion whose records all left — is not a hole. */
-function expandBounds(region: IShadowRegion, box: Box3): void {
-  if (box.min.x > box.max.x) return;
-  for (const axis of ["x", "y", "z"] as const) {
-    if (box.min[axis] < region.min[axis]) region.min[axis] = box.min[axis] as number;
-    if (box.max[axis] > region.max[axis]) region.max[axis] = box.max[axis] as number;
-  }
-}
-
-/** Whether two boxes hold the same space, to the millimetre a shadow texel is not. */
-function boundsMatch(a: IShadowRegion, b: IShadowRegion): boolean {
-  return (
-    Math.abs(a.min.x - b.min.x) <= 1e-3 &&
-    Math.abs(a.min.y - b.min.y) <= 1e-3 &&
-    Math.abs(a.min.z - b.min.z) <= 1e-3 &&
-    Math.abs(a.max.x - b.max.x) <= 1e-3 &&
-    Math.abs(a.max.y - b.max.y) <= 1e-3 &&
-    Math.abs(a.max.z - b.max.z) <= 1e-3
-  );
 }
 
 /**
@@ -798,6 +761,15 @@ class SharedBatch {
     // being culled.
     this.mesh.frustumCulled = true;
   }
+}
+
+/**
+ * The `@x,z` half of a cluster key, for a cell index. `cellsPerCluster` squares of cells per
+ * cluster, so the answer is stable for as long as the grid is: placements never move, so a record is
+ * only ever clustered when the cell holding it is admitted or evicted.
+ */
+function clusterOf(cellX: number, cellZ: number, cellsPerCluster: number): string {
+  return `${String(Math.floor(cellX / cellsPerCluster))},${String(Math.floor(cellZ / cellsPerCluster))}`;
 }
 
 interface IResidentCell {
@@ -1304,9 +1276,10 @@ class AdmissionBudget implements IAdmissionBudget {
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
  * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
- * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `shadows.castDistance` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
+ * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
  * @constraint `prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number
- * @constraint `shadows.castDistance` needs `shadows.cast`; it puts a shadow-only companion mesh on `VIRTUAL_SHADOW_CASTER_LAYER` per castable batch and `shadows.invalidate` is called once after a rebuild
+ * @constraint every `asset:level:part` is one InstancedMesh per world-grid square of `clusterSize`, each with its own bounds, so each camera culls clusters and a shadow level submits only the squares it covers
+ * @constraint `shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed
  * @example
  * const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
  * scene.add(world);
@@ -1394,31 +1367,25 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #castShadowLevels: number;
   readonly #receiveShadow: boolean;
   /**
-   * How near the follow point a scattered record has to be to cast at all, in metres; 0 is the
-   * unpatched behaviour, where every record in the ring casts into every level.
+   * Side of a world-grid square, and how many cells fit in one. One `SharedBatch` per
+   * `asset:level:part` per square, so the mesh's bounds are that square's records and every camera
+   * culls at square granularity. A cell's placements never move, so a record's square is the one
+   * its own cell sits in and nothing is ever re-clustered.
    */
-  readonly #castDistance: number;
-  /** The follow point the companions were last built for, and the move it takes to rebuild them. */
-  readonly #castFollow = new Vector3(Number.NaN, 0, Number.NaN);
-  /** Scratch for the record bounds below, so the copy allocates nothing per rebuild. */
-  readonly #castPoint = new Vector3();
-  #castMoved = true;
-  #castRefreshedAt = Number.NEGATIVE_INFINITY;
-  /** Scratch region for one `#updateCasters` pass, so a refresh allocates nothing. */
-  #castRegion: IShadowRegion | undefined;
+  readonly #clusterSize: number;
+  readonly #cellsPerCluster: number;
+  /**
+   * Streamed records changed since the shadow levels were last told, and when they were last told.
+   * One blanket `invalidate` a second, and only for a game that passed the hook: the companions
+   * used to make the hook necessary, and now the levels cull clusters themselves.
+   */
+  // `true` so the first `update` runs a residency pass: `#residencyStale` reads it, and a fresh
+  // world has admitted nothing.
+  #shadowMoved = true;
+  #shadowToldAt = Number.NEGATIVE_INFINITY;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
-  /** `asset:level:part` -> the shadow-only companion mesh for that shared batch; `#updateCasters`. */
-  readonly #casters = new Map<string, InstancedMesh>();
-  /**
-   * Keys whose shadow companion is owed but not yet minted, and the allowance that mints them. A
-   * companion's first draw is the draw three builds its shadow node from, and a node build inside
-   * a shadow pass is a millisecond of shader compile in the middle of a walk's frame — the same
-   * reason `PREWARM_PER_UPDATE` exists. The prewarm covers the map ahead of the player, so a key the
-   * walk reaches first is minted here instead, and at two an update they never pile into one frame.
-   */
-  readonly #casterQueue: ICasterMintEntry[] = [];
-  /** The game's hook to refresh the shadow levels after a companion's records changed. */
+  /** The game's hook to refresh the shadow levels after streamed records changed. */
   readonly #invalidateShadows: ((region?: IShadowRegion) => void) | undefined;
   /** Cell-asset builds waiting for budget, in admission order: nearest cell first. */
   #jobs: IBuildJob[] = [];
@@ -1490,11 +1457,16 @@ export class WorldCells extends Group implements IComputeDriven {
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
         : 0;
     this.#receiveShadow = init.shadows?.receive === true;
-    // The near set, and the one invalidation a rebuild of it is worth. See `#updateCasters`.
-    this.#castDistance =
-      init.shadows?.castDistance === undefined
-        ? 0
-        : positiveInteger(init.shadows.castDistance, "shadows.castDistance");
+    // Validated and dropped. Clusters bound what a shadow level submits now, so a game that set
+    // this keeps compiling and keeps loading; see the option's TSDoc.
+    if (init.shadows?.castDistance !== undefined)
+      positiveInteger(init.shadows.castDistance, "shadows.castDistance");
+    this.#clusterSize =
+      init.clusterSize === undefined
+        ? this.#cellSize
+        : positiveInteger(init.clusterSize, "clusterSize");
+    // Rounded, so a cluster is a whole number of cells and a cell belongs to exactly one of them.
+    this.#cellsPerCluster = Math.max(1, Math.round(this.#clusterSize / this.#cellSize));
     this.#invalidateShadows = init.shadows?.invalidate;
     if (this.#transparentScatter !== "cutout" && this.#transparentScatter !== "blend")
       throw new Error("WorldCells transparentScatter must be 'cutout' or 'blend'.");
@@ -1622,8 +1594,8 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * The residency pass itself is skipped while the follow point has moved less than half a metre
    * since the last one and nothing is pending (a load, a cell build, a deferred terrain admission, a
-   * prewarm mint or an unrebuilt caster), because the pass would re-derive the set the world already
-   * holds. The drain, the prewarm and the caster pass below it run every time.
+   * prewarm mint or a shadow level not yet told), because the pass would re-derive the set the
+   * world already holds. The drain, the prewarm and the invalidation below it run every time.
    */
   update(renderer?: IRendererLike): void {
     if (this.#released) return;
@@ -1639,7 +1611,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // and a world with nothing pending has the same answer as the last update: hundreds of cells
     // walked and re-sorted, every resident cell refiltered, every terrain tile re-levelled, all of
     // it to reach the set it already holds. Skipped while both hold. A move, a load, a build, a
-    // deferred admission or a caster that moved runs the pass exactly as before.
+    // deferred admission or a shadow level not yet told runs the pass exactly as before.
     if (this.#residencyStale(x, z)) {
       this.#residencyPoint.set(x, 0, z);
       try {
@@ -1673,9 +1645,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
     this.#drainPrewarm();
-    this.#drainCasterMints();
-    // After the drain, so the companions read this update's records and not the previous one's.
-    this.#updateCasters(x, z);
+    // After the drain, so the levels are told about this update's records and not the last one's.
+    this.#tellShadows();
     this.#admission = {
       backlog: this.#backlog(),
       deferred: this.#jobs.length,
@@ -1702,7 +1673,7 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#jobs.length > 0 ||
       this.#prewarmQueue.length > 0 ||
       this.#prewarmPending > 0 ||
-      this.#castMoved === true ||
+      this.#shadowMoved === true ||
       this.#terrain.deferredAdmissions > 0
     );
   }
@@ -1751,8 +1722,10 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * The empty batch for one prewarmed key, built exactly as `#sharedFor` builds the real one so a
-   * placement that later wants the key draws into this mesh and keeps the node three built for it.
+   * The empty batch for one prewarmed (key, cluster), built exactly as `#sharedFor` builds the real
+   * one so a placement that later wants it draws into this mesh and keeps the node three built for
+   * it. Only the cluster under the follow point is prewarmed: it is the one the first cell wants, and
+   * a mesh per cell of the map would be a prewarm of the whole package.
    */
   #mintPrewarm(entry: IPrewarmEntry): void {
     // A key the retained set is holding needs no prewarmed batch: `#sharedFor` rebinds that mesh
@@ -1770,18 +1743,14 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     shared.mesh.castShadow = this.#casts(entry.level);
     shared.mesh.receiveShadow = this.#receiveShadow;
-    this.#attachCaster(entry.key, shared, entry.level);
     shared.mesh.visible = true;
     this.#shared.set(entry.key, shared);
     this.add(shared.mesh);
     this.#prewarmPending += 1;
     this.#prewarmMinted += 1;
-    // Both meshes owe a first draw — the batch in the main context, the companion in whichever
-    // shadow level covers it — and `renderObject` runs `onBeforeRender` once per drawn mesh per
-    // pass, so the hook is the draw itself rather than a guess from the frame count. A companion no
-    // level covers simply never confirms, which is honest: nothing built a node for it.
+    // `renderObject` runs `onBeforeRender` once per drawn mesh per pass, so the hook is the draw
+    // itself rather than a guess from the frame count.
     this.#awaitDraw(shared.mesh);
-    this.#awaitDraw(this.#casters.get(entry.key));
   }
 
   /** Count this mesh's first submitted draw, once, then hand `onBeforeRender` back to whoever had it. */
@@ -1797,21 +1766,29 @@ export class WorldCells extends Group implements IComputeDriven {
     }) as typeof mesh.onBeforeRender;
   }
 
-  /** Every level and every part of one asset, queued to be minted empty. */
+  /**
+   * Every level and every part of one asset, queued to be minted empty. One square — the follow
+   * point's own — because a key is now one mesh per world-grid square (see `clusterSize`) and a
+   * prewarm covering the whole ring would mint a mesh per cell of it. The squares a walk reaches
+   * first are the ones around it, and their meshes are minted by residency, two an update.
+   */
   #queuePrewarm(asset: IAssetState): void {
     for (const [level, parts] of asset.levels.entries()) {
       for (const [part, entry] of parts.entries()) {
-        const key = `${asset.id}:${String(level)}:${String(part)}`;
-        // A retained key is already paid for; see `#mintPrewarm`.
-        if (this.#shared.has(key) || this.#retired.has(key) || this.#prewarmKeys.has(key)) continue;
-        this.#prewarmKeys.add(key);
-        this.#prewarmQueue.push({
-          asset: asset.id,
-          geometry: entry.geometry,
-          key,
-          level,
-          material: entry.material,
-        });
+        {
+          const key = `${asset.id}:${String(level)}:${String(part)}@${this.#followCluster()}`;
+          // A retained key is already paid for; see `#mintPrewarm`.
+          if (this.#shared.has(key) || this.#retired.has(key) || this.#prewarmKeys.has(key))
+            continue;
+          this.#prewarmKeys.add(key);
+          this.#prewarmQueue.push({
+            asset: asset.id,
+            geometry: entry.geometry,
+            key,
+            level,
+            material: entry.material,
+          });
+        }
       }
     }
   }
@@ -1913,9 +1890,6 @@ export class WorldCells extends Group implements IComputeDriven {
     // refcount path above, which is why they are disposed and not reused.
     for (const shared of this.#retired.values()) shared.mesh.dispose();
     this.#retired.clear();
-    // The companions the retired batches were holding.
-    for (const caster of this.#casters.values()) caster.dispose();
-    this.#casters.clear();
     this.#retiredBytes = 0;
     // A world torn down mid-prewarm must not leave a game awaiting its gate.
     this.#prewarmQueue.length = 0;
@@ -2146,7 +2120,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // Every segment first, so a frame out of fresh meshes leaves the old batches drawing whole.
     for (const entry of job.fresh) {
       if (entry.batch.count === 0 || entry.segment >= 0) continue;
-      const shared = this.#sharedFor(job.asset.id, entry);
+      const shared = this.#sharedFor(job.asset.id, entry, cell);
       const segment = shared === undefined ? undefined : this.#segmentIn(shared, entry.batch.count);
       if (shared === undefined || segment === undefined) {
         this.#meshStalled = true;
@@ -2164,11 +2138,9 @@ export class WorldCells extends Group implements IComputeDriven {
       cell.batches.push(entry);
       if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
     }
-    // A batch the walk just wrote to, cleared or compacted holds new records, so the companion
-    // shadowing it is stale. `#castMoved` used to be set only when a companion was minted, so a
-    // cell admitted, evicted or refiltered near the player left its caster drawing the records
-    // from up to 15 m away until the next `#attachCaster`. One flag, one rebuild per update.
-    if (job.fresh.length > 0 || job.replaced.length > 0) this.#castCellMoved(cell.x, cell.z);
+    // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
+    // that drew the old ones are stale. One flag, told at most once a second.
+    if (job.fresh.length > 0 || job.replaced.length > 0) this.#shadowRecordsMoved();
     return true;
   }
 
@@ -2179,18 +2151,28 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Mark the companions dirty for one cell's records, but only for a cell the near set can reach. A
-   * rebuild ends in `#invalidateShadows`, so marking it for every cell that streams in and out put
-   * every shadow level's redraw on every frame of a walk (~25 % more draws) to fix staleness that
-   * no caster could have. A cell centre further than `castDistance` plus a cell from the follow
-   * point cannot hold a record the companions draw.
+   * One cell's records changed, so the shadow levels that cover it redraw — at most once a second,
+   * and only for a game that passed the hook. The levels cull clusters themselves now, so nothing
+   * has to be copied for them; the flag only says "what you last drew is out of date".
    */
-  #castCellMoved(cellX: number, cellZ: number): void {
-    if (this.#castDistance <= 0) return;
-    const follow = this.#follow.position;
-    if (Math.hypot(cellX - follow.x, cellZ - follow.z) > this.#castDistance + this.#cellSize)
-      return;
-    this.#castMoved = true;
+  #shadowRecordsMoved(): void {
+    this.#shadowMoved = true;
+  }
+
+  /**
+   * Tell the shadow levels once, if anything changed and a second has passed.
+   *
+   * The companions used to make this the expensive call it still is; the levels redraw from
+   * scratch, so the cadence is the only lever and once a second is the one that keeps a walk's
+   * frames off the shadow lane without leaving the ground stale behind a player.
+   */
+  #tellShadows(): void {
+    if (!this.#shadowMoved || this.#invalidateShadows === undefined) return;
+    const now = this.#now();
+    if (now - this.#shadowToldAt < 1e3) return;
+    this.#shadowToldAt = now;
+    this.#shadowMoved = false;
+    this.#invalidateShadows();
   }
 
   /**
@@ -2277,8 +2259,8 @@ export class WorldCells extends Group implements IComputeDriven {
    * this is the size that stops growing. Cost: the buffer's `instanceMatrix` is ring-sized for
    * assets that never fill it; give `residentCells` a smaller value if that outweighs a re-mint.
    */
-  #sharedFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
-    const key = `${assetId}:${String(entry.level)}:${String(entry.part)}`;
+  #sharedFor(assetId: string, entry: ICellBatch, cell: IResidentCell): SharedBatch | undefined {
+    const key = `${assetId}:${String(entry.level)}:${String(entry.part)}@${clusterOf(cell.x, cell.z, this.#cellsPerCluster)}`;
     const existing = this.#shared.get(key);
     if (existing !== undefined) return existing;
     // The batch released when this asset's last cell left the ring is the one to draw into again,
@@ -2287,12 +2269,11 @@ export class WorldCells extends Group implements IComputeDriven {
     const released = this.#retired.get(key);
     if (released !== undefined) {
       this.#retired.delete(key);
-      this.#retiredBytes -= this.#heldBytes(key, released);
+      this.#retiredBytes -= this.#heldBytes(released);
       released.rebind(entry.batch.geometry, entry.batch.material);
       released.mesh.name = key;
       released.mesh.castShadow = this.#casts(entry.level);
       released.mesh.receiveShadow = this.#receiveShadow;
-      this.#attachCaster(key, released, entry.level);
       this.#shared.set(key, released);
       this.add(released.mesh);
       return released;
@@ -2303,25 +2284,31 @@ export class WorldCells extends Group implements IComputeDriven {
       entry.batch.geometry,
       entry.batch.material,
       this.#runMax.get(assetId) ?? entry.batch.count,
-      this.#budgets.residentCells + 1,
+      // One block per cell of this cluster, plus the one a refilter holds beside the block it
+      // replaces: the ring no longer bounds a cluster's block count, the cluster's own cells do.
+      this.#cellsPerCluster * this.#cellsPerCluster + 1,
       key,
       this.#extentBounds,
     );
     shared.mesh.castShadow = this.#casts(entry.level);
     shared.mesh.receiveShadow = this.#receiveShadow;
-    this.#attachCaster(key, shared, entry.level);
     this.#shared.set(key, shared);
     this.add(shared.mesh);
     return shared;
   }
 
-  /** What a released batch costs to keep: its instance buffer, and its companion's, which is all of it. */
-  #heldBytes(key: string, shared: SharedBatch): number {
-    const companion = this.#casters.get(key);
-    return (
-      (shared.mesh.instanceMatrix.array as Float32Array).byteLength +
-      (companion === undefined ? 0 : (companion.instanceMatrix.array as Float32Array).byteLength)
+  /** The world-grid square the follow point is in, as the `@x,z` half of a cluster key. */
+  #followCluster(): string {
+    return clusterOf(
+      Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
+      Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
+      this.#cellsPerCluster,
     );
+  }
+
+  /** What a released batch costs to keep: its instance buffer, which is all of it. */
+  #heldBytes(shared: SharedBatch): number {
+    return (shared.mesh.instanceMatrix.array as Float32Array).byteLength;
   }
 
   /**
@@ -2333,288 +2320,31 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #retire(key: string, shared: SharedBatch): void {
     if (shared.mesh.count > 0) {
-      this.#dropCaster(key);
       shared.mesh.dispose();
       return;
     }
-    // A batch kept for the walk back keeps its companion too. Dropping it meant the re-acquire
-    // minted a second InstancedMesh — a uuid three had never built a node for, in every shadow
-    // pass as well — for the exact mesh the prewarm had already paid for. Zeroed rather than
-    // stale, so it draws nothing while no batch holds the records it copied.
-    const kept = this.#casters.get(key);
-    // Parked before the budget is measured, batch and companion together, or the retained set is
-    // charged for buffers nothing keeps and the byte budget evicts entries as they arrive — the walk
-    // then finds nothing to hand back and mints a second mesh for every key it returns to.
+    // Parked before the budget is measured, or the retained set is charged for buffers nothing keeps
+    // and the byte budget evicts entries as they arrive — the walk then finds nothing to hand back
+    // and mints a second mesh for every key it returns to.
     shared.park();
-    if (kept !== undefined) {
-      kept.count = 0;
-      kept.visible = false;
-      kept.instanceMatrix = new InstancedBufferAttribute(new Float32Array(16), 16);
-    }
-    const bytes = this.#heldBytes(key, shared);
+    const bytes = this.#heldBytes(shared);
     this.#retired.delete(key);
     this.#retired.set(key, shared);
     this.#retiredBytes += bytes;
     for (const [oldest, held] of this.#retired) {
       if (this.#retiredBytes <= RETIRED_SHARED_BYTES) break;
       this.#retired.delete(oldest);
-      this.#retiredBytes -= this.#heldBytes(oldest, held);
-      this.#dropCaster(oldest);
+      this.#retiredBytes -= this.#heldBytes(held);
       held.mesh.dispose();
     }
   }
 
-  /** Whether a level's own batch still casts, which is only true without a companion beside it. */
+  /**
+   * Whether a level's own batches cast. Every cluster mesh of that level carries the flag, so a
+   * shadow level submits the clusters its window covers and nothing else.
+   */
   #casts(level: number): boolean {
-    return this.#castDistance <= 0 && this.#castShadowLevels > level;
-  }
-
-  /**
-   * The shadow-only companion for one castable batch — a second InstancedMesh over the same
-   * geometry and material, on the layer the level shadow cameras render and the main camera does
-   * not, so it is a caster and never a draw in the main pass. Minted here, beside the batch it
-   * shadows and at the same ring capacity (so its records can never overflow it and its node is
-   * built during loading, not the frame a walk needs it), and it exists to make the level renders
-   * submit the near set instead of every resident record in the ring.
-   */
-  #attachCaster(key: string, shared: SharedBatch, level: number): void {
-    if (this.#castDistance <= 0 || this.#castShadowLevels <= level) return;
-    const existing = this.#casters.get(key);
-    // A batch handed back by `rebind` or the retire path points at fresh parts, and the companion
-    // has to point at the same ones: it shares the batch's geometry and material, not its buffer.
-    if (existing !== undefined) {
-      existing.geometry = shared.mesh.geometry;
-      existing.material = shared.mesh.material as Material;
-      // A companion parked beside a retired batch comes back at the batch's capacity, or its records
-      // would be written into a one-record buffer.
-      if (existing.instanceMatrix.count !== shared.mesh.instanceMatrix.count) {
-        existing.instanceMatrix = new InstancedBufferAttribute(
-          new Float32Array(shared.mesh.instanceMatrix.count * 16),
-          16,
-        );
-      }
-      // `#dropCaster` parks the mesh rather than disposing it, so the same object — and so the shadow
-      // node three built for it — comes back for a key that streams out and back. Minting a fresh
-      // `InstancedMesh` instead is what put 33 builds for one fern key into a 6 s walk: three keys
-      // its node cache by `object.uuid`, so every companion that came back with a new uuid was built
-      // again in a shadow pass, on the frame the walk first needed its shadow. A re-attached
-      // companion starts visible and empty, which is what `#rebuildCaster` expects and the state
-      // the prewarm drew it in.
-      existing.visible = true;
-      existing.count = 0;
-      this.add(existing);
-      this.#castMoved = true;
-      return;
-    }
-    // Past the prewarm, a companion waits its turn with the batch mints do. Its first draw is a
-    // shadow node build, and a walk streams in new keys continuously, so minting them the moment
-    // residency asks put every one of those builds in a walk frame. At two an update the worst a
-    // frame owes is two builds.
-    if (this.#prewarmSettled) {
-      this.#casterQueue.push({ key, level, shared });
-      return;
-    }
-    this.#mintCaster(key, shared, level);
-  }
-
-  /** This update's share of the queued companions, oldest ask first. */
-  #drainCasterMints(): void {
-    let minted = 0;
-    while (minted < this.#freshMeshesPerUpdate && this.#casterQueue.length > 0) {
-      const entry = this.#casterQueue.shift() as ICasterMintEntry;
-      const shared = this.#shared.get(entry.key);
-      if (shared === undefined || this.#casters.has(entry.key)) continue;
-      this.#mintCaster(entry.key, shared, entry.level);
-      minted += 1;
-    }
-  }
-
-  #mintCaster(key: string, shared: SharedBatch, level: number): void {
-    const caster = new InstancedMesh(
-      shared.mesh.geometry,
-      shared.mesh.material as Material,
-      shared.mesh.instanceMatrix.count,
-    );
-    caster.name = `${key}:caster`;
-    caster.castShadow = true;
-    caster.receiveShadow = false;
-    caster.frustumCulled = true;
-    caster.visible = true;
-    caster.count = 0;
-    // The package extent, not an empty sphere, while the companion holds no records. An empty
-    // sphere is culled by every camera, so the mesh three had to build a node for was first
-    // projected — and first built in the shadow pass — on the frame a walk needed its shadow,
-    // which is the mid-walk build this companion exists to remove. The extent is a real box, so the
-    // prewarm's render submits the (empty) draw and the node is built during loading; the first
-    // rebuild replaces it with the records' own bounds. Same rule as a shared batch's.
-    caster.boundingBox = this.#extentBounds.clone();
-    caster.boundingSphere = this.#extentBounds.getBoundingSphere(new Sphere());
-    caster.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
-    // A companion with no records still submits one draw in every shadow level that covers it, and
-    // the prewarm mints one for every key on the map, each keeping the package extent so that
-    // nothing culls it. The one draw that builds its shadow node is the only draw it is ever owed,
-    // so that draw is also where an empty one goes invisible; the next rebuild that gives it records
-    // brings it back.
-    this.#hideWhenEmpty(caster);
-    this.#casters.set(key, caster);
-    this.add(caster);
-    this.#castMoved = true;
-    // The same one-shot the prewarm hands its own companions. The load-time ones are minted into a
-    // bar that counts the draw half of a mint; a companion a walk mints was owed nothing, so the
-    // build it causes was invisible to every counter that watched for it.
-    this.#awaitDraw(caster);
-  }
-
-  /**
-   * One companion's prewarm draw is the whole of what it is owed, so the draw that pays for its
-   * shadow node is also the draw that empties it. Independent of the prewarm gate's own hook, and it
-   * only ever hides, so a companion minted by residency rather than by the queue is covered by the
-   * same rule.
-   */
-  #hideWhenEmpty(caster: InstancedMesh): void {
-    const own = caster.onBeforeRender;
-    const borrow = own as ((...args: unknown[]) => void) | undefined;
-    caster.onBeforeRender = ((...args: unknown[]): void => {
-      caster.onBeforeRender = own;
-      if (caster.count === 0) caster.visible = false;
-      borrow?.apply(caster, args as []);
-    }) as typeof caster.onBeforeRender;
-  }
-
-  /**
-   * The companion for a key that no longer has a batch. It leaves the graph and stays, parked: a key
-   * that streams out and back wants the same uuid, and a uuid three has never built a node for is
-   * built in a shadow pass on the frame the walk needs it — the mid-walk build this all exists to
-   * remove. The buffer it holds is the ring capacity it was minted at, and there is one per key the
-   * world has seen, so the parking is bounded by the package.
-   */
-  #dropCaster(key: string): void {
-    const caster = this.#casters.get(key);
-    if (caster === undefined) return;
-    caster.removeFromParent();
-    caster.count = 0;
-    caster.visible = false;
-  }
-
-  /**
-   * Refresh every companion's records for the follow point, and the shadow levels that read them,
-   * once the follow point has moved far enough to be worth it. The threshold is
-   * `castDistance / 8`, so at a walk's 6 m/s that is every 2.5 s and a standing frame pays nothing
-   * at all.
-   *
-   * The invalidation carries the union of what changed rather than being blanket, because most of a
-   * refresh changes nothing at all: a 15 m step only re-aims a record filter, so most companions
-   * write back the same records and a level that does not reach them draws the same shadow anyway.
-   */
-  #updateCasters(x: number, z: number): void {
-    if (this.#castDistance <= 0 || this.#casters.size === 0) return;
-    const moved =
-      Math.hypot(x - this.#castFollow.x, z - this.#castFollow.z) >= this.#castDistance / 8;
-    // A record change near the player (a LOD switch, an admission) refreshes at most once per
-    // second. Each refresh rebuilds every companion and redraws every shadow level, and while
-    // walking those changes land nearly every frame; the move threshold stays immediate.
-    const now = this.#now();
-    if (!moved && (this.#castMoved === false || now - this.#castRefreshedAt < 1e3)) return;
-    this.#castRefreshedAt = now;
-    this.#castFollow.set(x, 0, z);
-    this.#castMoved = false;
-    this.#castRegion ??= emptyBounds();
-    const region = this.#castRegion;
-    let changed = false;
-    for (const [key, caster] of this.#casters) {
-      const shared = this.#shared.get(key);
-      if (shared === undefined) continue;
-      if (this.#rebuildCaster(caster, shared.mesh, region)) changed = true;
-    }
-    if (changed) this.#invalidateShadows?.(region);
-  }
-
-  /**
-   * One companion's records, copied out of its batch and narrowed to the ones within
-   * `castDistance` of the follow point. The test is on x/z against the part's own radius, because
-   * that is the axis the ring and the shadow windows are built on, and the radius is what keeps a
-   * tree whose origin is just outside the sphere from casting into it.
-   *
-   * The upload is one coalesced range over the records just written, the same rule the batches use:
-   * three's WebGPU backend turns every entry of `updateRanges` into its own `GPUQueue.writeBuffer`.
-   *
-   * The bounds pad by `|centre| + radius`, not by the radius alone. A bounding sphere whose centre
-   * is off the origin — a tree's pivot at the base of the trunk, a rock's at a corner — reaches
-   * `|centre| + radius` from the instance origin, so a radius pad let every such companion's box
-   * cut through its own geometry and the shadow cull dropped trunks. The pad is per record, scaled
-   * by that record's basis, which is what keeps a placement authored above scale one inside its own
-   * box; the same arithmetic `SharedBatch`'s `#boxOf` does, on a sphere instead of a box.
-   */
-  #rebuildCaster(caster: InstancedMesh, batch: InstancedMesh, region: IShadowRegion): boolean {
-    const geometry = batch.geometry;
-    if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
-    const sphere = geometry.boundingSphere;
-    const pad = sphere === null ? 0 : sphere.center.length() + sphere.radius;
-    const limit = (this.#castDistance + pad) ** 2;
-    const x = this.#castFollow.x;
-    const z = this.#castFollow.z;
-    const source = batch.instanceMatrix.array as Float32Array;
-    const target = caster.instanceMatrix.array as Float32Array;
-    caster.boundingBox ??= new Box3();
-    const box = caster.boundingBox;
-    const point = this.#castPoint;
-    // What the records in the buffer are, from the last refresh. A refresh that writes back the
-    // same records draws the same shadow, so the levels that cover them need no redraw: this is
-    // what turns "a caster changed" into "these levels changed".
-    const previous = caster.userData.records as ICasterRecords | undefined;
-    let drawn = 0;
-    box.makeEmpty();
-    for (let index = 0; index < batch.count; index += 1) {
-      const at = index * 16;
-      const px = source[at + 12] as number;
-      const py = source[at + 13] as number;
-      const pz = source[at + 14] as number;
-      const dx = px - x;
-      const dz = pz - z;
-      if (dx * dx + dz * dz > limit) continue;
-      target.set(source.subarray(at, at + 16), drawn * 16);
-      // The largest column norm of the basis: the scale this record draws the part at, and so the
-      // factor its own extent is covered by.
-      const m0 = source[at] as number;
-      const m1 = source[at + 1] as number;
-      const m2 = source[at + 2] as number;
-      const m4 = source[at + 4] as number;
-      const m5 = source[at + 5] as number;
-      const m6 = source[at + 6] as number;
-      const m8 = source[at + 8] as number;
-      const m9 = source[at + 9] as number;
-      const m10 = source[at + 10] as number;
-      const scale = Math.max(
-        Math.hypot(m0, m1, m2),
-        Math.hypot(m4, m5, m6),
-        Math.hypot(m8, m9, m10),
-      );
-      const reach = pad * scale;
-      box.expandByPoint(point.set(px - reach, py - reach, pz - reach));
-      box.expandByPoint(point.set(px + reach, py + reach, pz + reach));
-      drawn += 1;
-    }
-    const matrix = caster.instanceMatrix;
-    matrix.clearUpdateRanges();
-    if (drawn > 0) {
-      matrix.addUpdateRange(0, drawn * 16);
-      caster.boundingSphere ??= new Sphere();
-      box.getBoundingSphere(caster.boundingSphere);
-    }
-    matrix.needsUpdate = true;
-    caster.count = drawn;
-    caster.visible = drawn > 0;
-    // `true` when the shadow this companion draws is not the shadow it drew last time — the same
-    // records in the same place. The union of what changed, old bounds included, goes in `region`,
-    // because a record that *left* the radius dirtied the ground where it was.
-    const changed =
-      previous === undefined || previous.count !== drawn || !boundsMatch(previous.box, box);
-    if (changed) {
-      if (previous !== undefined) expandBounds(region, previous.box);
-      expandBounds(region, box);
-      caster.userData.records = { box: box.clone(), count: drawn } satisfies ICasterRecords;
-    }
-    return changed;
+    return this.#castShadowLevels > level;
   }
 
   /** A block in `shared` for one cell's `count` records, growing the buffer when it is full. */
@@ -2890,8 +2620,8 @@ export class WorldCells extends Group implements IComputeDriven {
     });
     for (const entry of cell.batches) this.#clearSegment(entry);
     // The same invalidation `#swap` makes, for the eviction path: the records that just left the
-    // ring were the near set's if this cell was inside it.
-    this.#castCellMoved(cell.x, cell.z);
+    // ring are ground the levels were drawing.
+    this.#shadowRecordsMoved();
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();

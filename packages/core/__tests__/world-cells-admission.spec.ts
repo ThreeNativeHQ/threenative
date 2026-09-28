@@ -94,12 +94,18 @@ function terrainOf(world: WorldCells): TerrainTiles {
   return terrain;
 }
 
-/** One batch mesh, by the name `#buildOne` gives it. */
-/** The shared mesh an asset's level draws through; every resident cell has a segment in it. */
+/**
+ * The shared mesh an asset's level draws through; every resident cell has a segment in one of them.
+ * There is one per world-grid cluster now (PRD-458), and the first is the follow point's own.
+ */
 function batchOf(world: WorldCells, _cell: string, asset: string, level: number): InstancedMesh {
-  const name = `${asset}:${String(level)}:0`;
-  const mesh = world.getObjectByName(name);
-  if (!(mesh instanceof InstancedMesh)) throw new Error(`No batch mesh named '${name}'.`);
+  const key = `${asset}:${String(level)}:0`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
+  });
+  const mesh = meshes[0];
+  if (mesh === undefined) throw new Error(`No batch mesh named '${key}'.`);
   return mesh;
 }
 
@@ -245,7 +251,14 @@ describe("WorldCells admission budget", () => {
     const unbounded = await makeWorld({ admissionBudgetMs: Number.POSITIVE_INFINITY });
     unbounded.world.update();
     await flush();
-    unbounded.world.update();
+    // One mesh per world-grid cluster per key (PRD-458), and two fresh meshes an update, so an
+    // unbounded ring still needs as many updates as it has clusters to mint. What this compares is
+    // the answer, not how many frames it took.
+    for (let frame = 0; frame < 200; frame += 1) {
+      unbounded.world.update();
+      await flush(1);
+      if (unbounded.world.stats().admission.deferred === 0) break;
+    }
 
     // Nothing dropped, nothing doubled: the same meshes, with the same instances, however many
     // frames it took to admit them.

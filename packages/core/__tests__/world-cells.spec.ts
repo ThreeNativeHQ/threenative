@@ -330,15 +330,22 @@ function levelLoader(refuse: (url: string) => boolean = () => false): ILevelLoad
 }
 
 /** The cell `1:1` batch of `asset` at `level`, the runtime's own name for it. */
+/**
+ * The first cluster mesh one asset level and part draws through. A key is one mesh per world-grid
+ * square (PRD-458), so this is the first of them rather than the only one.
+ */
 function levelMesh(
   world: WorldCells,
   asset: string,
   level: number,
   part = 0,
 ): InstancedMesh | undefined {
-  return world.getObjectByName(`${asset}:${String(level)}:${String(part)}`) as
-    | InstancedMesh
-    | undefined;
+  const key = `${asset}:${String(level)}:${String(part)}`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
+  });
+  return meshes[0];
 }
 
 /** Instances a shared batch actually draws: a free segment's slots are zero matrices. */
@@ -464,17 +471,20 @@ function batchMaterial(mesh: InstancedMesh | undefined): Material {
   return material;
 }
 
-/** Every batch mesh the world drew for `asset`'s level and part, across every resident cell. */
+/**
+ * Every batch mesh the world drew for `asset`'s level and part, across every resident cell and
+ * every world-grid cluster that key is split into (PRD-458): one mesh per `key@x,z` now.
+ */
 function partsOf(
   world: WorldCells,
   asset: string,
   level: number,
   part: number,
 ): readonly InstancedMesh[] {
-  const name = `${asset}:${String(level)}:${String(part)}`;
+  const key = `${asset}:${String(level)}:${String(part)}`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name === name) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name.startsWith(`${key}@`)) meshes.push(object);
   });
   return meshes;
 }
@@ -1325,16 +1335,33 @@ describe("WorldCells", () => {
     world.update();
     await flushed(world);
 
+    // The three cells ring 2 reaches each sit in their own world-grid square (PRD-458), so each one
+    // mints its own lod cluster mesh, at two fresh meshes an update. Let the ring finish admitting.
+    for (let frame = 0; frame < 60; frame += 1) {
+      world.update();
+      await flushed(world);
+      if (world.stats().residentCells === 3 && world.stats().admission.backlog === 0) {
+        if (
+          [...world.children].every(
+            (child) =>
+              !(child instanceof InstancedMesh) || child.count > 0 || child.name.includes(":"),
+          )
+        )
+          break;
+      }
+    }
+
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
-    expect(before).toBe(0);
     expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
-    // The three cells ring 2 reaches from the extent's corner cell share one lod mesh, and the
-    // only other mesh is a prewarmed batch for a key no placement has asked for yet — it draws
-    // nothing, and it is why its node is built during loading rather than mid-walk.
+    // One cluster mesh per resident cell, and the only other meshes are prewarmed squares no
+    // placement has asked for yet — they draw nothing, and they are why those nodes are built during
+    // loading rather than mid-walk.
     expect(world.stats().residentCells).toBe(3);
-    expect(meshes.filter((mesh) => mesh.count > 0)).toHaveLength(1);
-    expect(meshes.length).toBeLessThanOrEqual(2);
+    expect(meshes.filter((mesh) => mesh.count > 0)).toHaveLength(3);
+    // The rest are the prewarmed square the follow point is in, one per level, minted empty so the
+    // walk's first shadow pass builds no node for the key the walk reaches first.
+    expect(meshes.length).toBeLessThanOrEqual(5);
 
     // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
     // asset, on this move alone.

@@ -1,6 +1,6 @@
 # PRD-458 — Streamed open worlds hold 60 fps with no per-game tuning
 
-**Status:** PROPOSED — filed 2026-09-27.
+**Status:** IN PROGRESS — filed 2026-09-27; Phase 1 part A (clustered shared batches) landed 2026-09-27.
 **Complexity:** 7 (HIGH): 11+ implementation files, a new clustered-batch system, streaming state across frames. Risk override: none.
 **Owner:** engine
 **Depends on:** [PRD-459 smooth streaming](PRD-459-smooth-streaming-one-admission-budget-per-frame.md) (per-frame admission budget, prefetch, pipeline prewarm), [PRD-453 per-instance LOD](PRD-453-worldcells-use-existing-lods.md), [PRD-456 distant cell proxies](PRD-456-distant-world-cell-proxies.md), [PRD-457 shadow pages](PRD-457-virtual-shadows-scale-by-measurement.md), and [PRD-377 AutoLOD on by default](../assets/PRD-377-auto-lod-is-on-by-default.md). This PRD owns only what those leave out (below). It does not repeat their work.
@@ -37,7 +37,8 @@ Risks:
 - Atlasing breaks tiling UVs. Mitigated by atlasing only textures whose UVs stay within [0, 1].
 
 ## Acceptance Criteria
-- [ ] AC-1 [local]: on the world-flythrough fixture, a fine-level (48 m) shadow render submits only clusters that intersect its window: ≤ 150 draws per level render, down from ~614 today. proof: `pnpm vitest run packages/core/__tests__/world-shared-batch-clusters.spec.ts` plus the flythrough pass census — Evidence: pending.
+- [x] AC-1 [local]: on the world-flythrough fixture, a fine-level (48 m) shadow render submits only clusters that intersect its window: ≤ 150 draws per level render, down from ~614 today. proof: `pnpm vitest run packages/core/__tests__/world-shared-batch-clusters.spec.ts` (4/4, red on the unclustered src by stashing only `world-cells.ts`) plus an instrumented level-window census over the same fixture (10 keys, 9-cell ring, 64 m cells): before 10 draws per level render, after **26 median / 32 worst** at `clusterSize = cellSize` and 26/34 at `2 × cellSize` — under the 150 bound. Evidence: the spec's per-cluster 48 m ortho window, three's own `Frustum.intersectsSphere` against each mesh's world sphere.
+  - **The 1.3x main-draw cap is missed on this fixture, and that is the honest number**: 10 keys drew 10 meshes in the main pass before, 70 at `1 x cellSize` and 34 at `2 x cellSize` after. A cluster per cell is what makes the shadow cull work at all, and the main camera sees the whole ring, so it pays for every cluster in it. Take the coarser grid when main-pass draw cost binds, the fine one when shadow submission does.
 - [ ] AC-2 [local]: world-flythrough renders at most one shadow level per frame and logs 0 console errors, with no `ShadowDepthTexture` destroyed while bound. proof: `node packages/playtest … --scenario world-flythrough` diagnostics `consoleErrors: 0` — Evidence: pending.
 - [ ] AC-3 [local]: after warm-up, walking the flythrough records 0 shadow-context node builds attributable to streamed batches or clusters. proof: playtest pipeline census (extends PRD-459 AC-3 to the shadow context) — Evidence: pending.
 - [ ] AC-4 [local]: the cook gives a real conifer asset with `BLEND` needles a cutout material and an AutoLOD chain of ≥ 2 levels, each drawing every LOD0 material. proof: `pnpm vitest run packages/assets/__tests__/foliage-lod.spec.ts` on a tree fixture with bark + needle primitives — Evidence: pending.
@@ -52,7 +53,7 @@ Risks:
 ## Integration Ledger
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
-| Clustered scatter batches | `WorldCells.load` → `#sharedFor` → cluster meshes, culled by three per camera | Replaces the `shadows.castDistance` companion path. The option is deprecated, then removed once machinefall drops it | AC-1, AC-7 |
+| Clustered scatter batches | `WorldCells.load` → `#sharedFor` → one pooled mesh per `asset:level:part@cluster`, bounds from its own records, culled by three per camera and per shadow level | Replaces the `shadows.castDistance` companion path, which is gone. The option is accepted and ignored, then removed once machinefall drops it | AC-1, AC-7 |
 | Shadow level scheduling | `VirtualShadowNode.updateBefore` | Replaces "every due level this frame" | AC-2 |
 | Shadow-context prewarm | WorldCells admission (PRD-459 budget) | Extends the prewarm gate | AC-3 |
 | Foliage cutout + LOD | `threenative build` model pass → `classifyPrimitive` / LOD bake | Lifts the `material-unsupported` rejection for eligible `MASK` | AC-4 |
@@ -61,10 +62,11 @@ Risks:
 ## Decisions
 - 2026-09-27 (owner): 60 fps is required. Do it automatically in the engine, Unreal-5-style, in as few PRDs as possible. Build on PRDs 453–457 / 459–461 instead of duplicating them.
 - 2026-09-27 (agent, measured): BatchedMesh is rejected for draw merging (three r185 WebGPU draws per instance). Merge draw count through clusters plus material dedupe instead.
+- 2026-09-27 (agent, measured): `clusterSize` defaults to the package `cellSize` — a cluster is a whole number of cells, so a record is clustered only when its own cell is admitted or evicted and nothing is ever re-clustered. `2 x cellSize` halves the meshes and misses the shadow bound by the same amount (34 vs 32 worst draws per level render), so it buys nothing on the fixture and stays the game's override. The 1.3x main-draw cap is not met at either size; see the AC-1 line.
 
 ## Execution Phases
 #### Phase 1: Shadow submission scales with the window
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — part A (clustered shared batches, AC-1) done; scheduling, depth-texture lifetime and shadow prewarm open
 **Files:** `packages/core/src/world-cells.ts`, the shared-batch module / `render/mesh-pool.ts`, `render/virtual-shadow.ts`, `render/virtual-shadow-pages.ts`, new `__tests__/world-shared-batch-clusters.spec.ts`.
 **Implementation:** Cluster records per shared-batch key, one pooled mesh per cluster with its own bounds. Retire `castDistance` companions. One-level-per-frame scheduling. Fix the depth-texture lifetime. Build the shadow-context prewarm for clusters at admission.
 **Verification:** clusters spec plus world-flythrough (pass census, diagnostics, pipeline census). Covers AC-1, AC-2 and AC-3.
