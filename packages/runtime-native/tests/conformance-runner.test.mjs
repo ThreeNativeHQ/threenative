@@ -2,7 +2,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,6 +35,7 @@ import {
   androidRotationRestoreTarget,
   androidDisplaySize,
   androidForegroundBlocker,
+  androidLog,
   androidWindowDump,
   androidFocusedWindowOwner,
   androidSystemDialog,
@@ -1248,6 +1249,38 @@ test("Android capture uses reference dimensions and restores the prior display o
     source,
     /function restoreOnDevice[\s\S]*?allowFailure: true[\s\S]*?"wait-for-device"[\s\S]*?return run\(\);/u,
   );
+});
+
+test("Android log capture retries one transient adbd failure", () => {
+  const temp = makeTempDirSync("tn-android-log-retry-");
+  try {
+    const state = join(temp, "state.txt");
+    const adb = join(temp, "adb");
+    writeFileSync(
+      adb,
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == *"logcat -d -v threadtime"* ]]; then
+  if [[ ! -f "${state}" ]]; then
+    touch "${state}"
+    exit 255
+  fi
+  printf '09-27 22:59:00.000  123  456 I MystralRuntime: TN_SURFACE_FRAME:{"view":true}\n'
+  exit 0
+fi
+if [[ "$*" == *"wait-for-device"* ]]; then
+  exit 0
+fi
+echo "unexpected adb args: $*" >&2
+exit 2
+`,
+    );
+    chmodSync(adb, 0o755);
+
+    assert.match(androidLog(adb, "emulator-5554"), /TN_SURFACE_FRAME/u);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 test("Android checks liveness after its marker, settle window, and screenshot", () => {

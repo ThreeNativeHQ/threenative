@@ -163,7 +163,10 @@ jobs:
     needs: publish
     if: github.event_name == 'push' || inputs.dry_run == false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Raised from 20 when the `android` step joined this job: the same evidence now costs a Gradle
+    # build and its first-run dependency download, and a job killed by its own clock reports a
+    # failure nobody earned.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -171,6 +174,21 @@ jobs:
         with:
           node-version: 20.19.0
           cache: pnpm
+      # What the `android` step needs, and nothing it does not: Gradle and the Kotlin plugin want
+      # JDK 17, and `zipalign`/`apksigner` come from the SDK's build-tools. The step packages the
+      # published `arm64-v8a` cohort into `jniLibs/`, so no NDK, CMake or emulator is involved -
+      # the same NDK-free SDK `native-release.yml`'s consumer job builds its packed APK against.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      # `packages:` is explicit because the action's default is `tools platform-tools`, and
+      # Google removed the obsolete `tools` package from the SDK repository: the default
+      # now fails the whole step with `Failed to find package 'tools'`.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - run: pnpm install --frozen-lockfile
       - name: Install native desktop runtime dependencies
         run: |
