@@ -1052,25 +1052,108 @@ function countScenarioErrors(playtest) {
   return errors.filter((item) => item?.severity === "error" || /GPU|WebGPU|validation/iu.test(JSON.stringify(item))).length;
 }
 
-export function evaluateLifecycleObservation(after, before = undefined) {
+/**
+ * The operations this claim rests on, in the order it reads them: the app went away, came back,
+ * and turned. Any phase after the rotation is a resume, so the report may carry more of them.
+ */
+const LIFECYCLE_OPERATIONS = ["background", "foreground", "rotate"];
+
+/** The device has to have turned, not merely been asked to. */
+function rotationErrors(phase, previous, label) {
+  if (phase.windowRotation !== phase.requestedRotation) return [`${label}.windowRotation is ${String(phase.windowRotation)}, not the requested rotation ${String(phase.requestedRotation)}`];
+  if (phase.windowRotation === previous?.windowRotation) return [`${label}.windowRotation is still ${String(phase.windowRotation)}, so the device never turned`];
+  return [];
+}
+
+/** What one phase's own reading has to carry: a time, a frame count, the session, and its focus. */
+function phaseReadingErrors(phase, previous, pid, label) {
   const errors = [];
-  if (!isRecord(after)) return { valid: false, errors: ["scenario after observation is missing"] };
-  const phases = ["background", "foreground", "supported-rotation", "resume"];
-  if (!Array.isArray(after.lifecycleEvents) || after.lifecycleEvents.length !== phases.length) errors.push("scenario lifecycleEvents must contain four observed events");
+  if (!Number.isFinite(phase.at) || phase.at < 0) errors.push(`${label}.at is missing or non-finite`);
+  if (!Number.isInteger(phase.frames) || phase.frames < 0) errors.push(`${label}.frames is not a whole device frame count`);
+  if (phase.pid !== pid) errors.push(`${label}.pid is ${String(phase.pid)}, not the session process ${String(pid)}`);
+  if (phase.focused !== (phase.phase !== "background")) errors.push(`${label}.focused is ${String(phase.focused)}; the device should report ${String(phase.phase !== "background")} here`);
+  if (Number.isFinite(phase.at) && Number.isFinite(previous?.at) && phase.at <= previous.at) errors.push(`${label}.at is ${String(phase.at)}, not after the previous phase's ${String(previous.at)}`);
+  if (Number.isInteger(phase.frames) && Number.isInteger(previous?.frames) && phase.frames < previous.frames) errors.push(`${label}.frames is ${String(phase.frames)}, below the previous phase's ${String(previous.frames)}; a device frame count does not run backwards`);
+  return errors;
+}
+
+/** The phases themselves: one process throughout, unfocused only while away, and a real turn. */
+function lifecyclePhaseErrors(phases, pid) {
+  const errors = [];
+  phases.forEach((phase, index) => {
+    const operation = LIFECYCLE_OPERATIONS[index] ?? "foreground";
+    const label = `observations.deviceLifecycle.phases[${index}]`;
+    if (!isRecord(phase) || phase.phase !== operation) {
+      errors.push(`${label} is not the ${operation} operation this claim needs`);
+      return;
+    }
+    errors.push(...phaseReadingErrors(phase, phases[index - 1], pid, label));
+    if (operation === "rotate") errors.push(...rotationErrors(phase, phases[index - 1], label));
+  });
+  return errors;
+}
+
+/** What the phases' own counts show: nothing drawn while away, and movement again after the return. */
+function renderClaimsFromPhases(phases) {
+  const [background, resumed] = [phases[0], phases.at(-1)];
+  if (![background, resumed].every((phase) => isRecord(phase) && Number.isInteger(phase.frames))) return {};
+  const advanced = resumed.frames > background.frames;
+  return {
+    advanced,
+    errors: [
+      ...(background.framesPaused === true ? [] : [`observations.deviceLifecycle.phases[0].framesPaused is ${String(background.framesPaused)}; the backgrounded reading itself has to show the frame counter stopping`]),
+      ...(advanced ? [] : [`observations.deviceLifecycle.phases: the resumed frame count ${String(resumed.frames)} did not advance past the backgrounded ${String(background.frames)}`]),
+    ],
+    paused: background.framesPaused,
+  };
+}
+
+/** The summary the phases must agree with: the surface stopped while away, and both counters moved after. */
+function lifecycleContinuityErrors(observation, phases) {
+  const { errors: renderErrors, paused, advanced } = renderClaimsFromPhases(phases);
+  const errors = [...renderErrors];
+  const render = isRecord(observation.render) ? observation.render : undefined;
+  if (render === undefined) errors.push("observations.deviceLifecycle.render is missing");
   else {
-    after.lifecycleEvents.forEach((event, index) => {
-      if (!isRecord(event) || event.phase !== phases[index]) errors.push(`scenario lifecycleEvents[${index}] is not the expected ${phases[index]} observation`);
-    });
+    if (render.framesPaused !== true) errors.push("observations.deviceLifecycle.render.framesPaused is not true; the device's frame counter did not stop while the app was unfocused");
+    if (render.framesAdvanced !== true) errors.push("observations.deviceLifecycle.render.framesAdvanced is not true");
+    if (paused !== undefined && render.framesPaused !== paused) errors.push(`observations.deviceLifecycle.render.framesPaused is ${String(render.framesPaused)}, but phases[0].framesPaused is ${String(paused)}`);
+    if (advanced !== undefined && render.framesAdvanced !== advanced) errors.push(`observations.deviceLifecycle.render.framesAdvanced is ${String(render.framesAdvanced)}, but the phases' own counts ${advanced ? "advance" : "do not advance"} past the backgrounded frame count`);
   }
-  if (typeof after.sessionNonce !== "string" || after.sessionNonce.length === 0) errors.push("scenario sessionNonce is missing");
-  if (before?.sessionNonce !== undefined && before.sessionNonce !== after.sessionNonce) errors.push("scenario sessionNonce changed across lifecycle");
-  if (after.stateContinuity !== true) errors.push("scenario stateContinuity is not true");
-  if (after.framesPaused !== true) errors.push("scenario did not observe paused frames");
-  if (after.framesAdvanced !== true) errors.push("scenario did not observe advanced frames after resume");
-  if (after.surfaceValidAfterResume !== true) errors.push("scenario did not observe a valid surface after resume");
-  if (after.backgroundGapIntegrated !== false) errors.push("scenario integrated the background wall-clock gap");
-  if (!Number.isFinite(after.maxFrameIntervalMs) || after.maxFrameIntervalMs < 0) errors.push("scenario maxFrameIntervalMs is missing or non-finite");
-  if (!Number.isFinite(after.physicsStepDelta) || after.physicsStepDelta < 0) errors.push("scenario physicsStepDelta is missing or non-finite");
+  const physics = observation.physics;
+  const label = "observations.deviceLifecycle.physics";
+  if (!isRecord(physics)) return [...errors, `${label} is missing`];
+  if (physics.available !== true) return [...errors, `${label} is unavailable: ${String(physics.reason ?? "it reported no reason")}`];
+  const steps = isRecord(physics.steps) ? physics.steps : {};
+  const [before, back, afterAdvance] = [steps.beforeBackground, steps.afterForeground, steps.afterAdvance];
+  if (![before, back, afterAdvance].every((value) => Number.isInteger(value) && value >= 0)) errors.push(`${label}.steps must carry three whole counts (beforeBackground, afterForeground, afterAdvance)`);
+  else {
+    if (back !== before) errors.push(`${label}: the simulation stepped from ${String(before)} to ${String(back)} while the app was away`);
+    if (afterAdvance <= back) errors.push(`${label}: the simulation did not advance after the resume (${String(back)} to ${String(afterAdvance)})`);
+    if (physics.stepsPaused !== (back === before)) errors.push(`${label}.stepsPaused is ${String(physics.stepsPaused)}, but the step counts around the away period are ${String(before)} and ${String(back)}`);
+    if (physics.stepsAdvanced !== (afterAdvance > back)) errors.push(`${label}.stepsAdvanced is ${String(physics.stepsAdvanced)}, but the step counts after the return are ${String(back)} and ${String(afterAdvance)}`);
+  }
+  if (physics.stepsPaused !== true) errors.push(`${label}.stepsPaused is not true`);
+  if (physics.stepsAdvanced !== true) errors.push(`${label}.stepsAdvanced is not true`);
+  return errors;
+}
+
+/**
+ * Certify the lifecycle from the runner's own device observation, never from the game's.
+ *
+ * Every value here was read off the phone, so a `GameState` resource — the game's own account of
+ * whether it went away and came back — certifies nothing and is not read. The summary booleans the
+ * producer reported are re-derived from the phases' own counts, and may not contradict them.
+ */
+export function evaluateLifecycleObservation(observation) {
+  if (!isRecord(observation)) return { valid: false, errors: ["observations.deviceLifecycle is missing; the run reported no device-observed lifecycle"] };
+  const errors = [];
+  const phases = Array.isArray(observation.phases) ? observation.phases : [];
+  if (!Array.isArray(observation.phases)) errors.push("observations.deviceLifecycle.phases is missing");
+  const pid = isRecord(observation.session) ? observation.session.pid : undefined;
+  if (!Number.isInteger(pid) || pid <= 0) errors.push("observations.deviceLifecycle.session.pid is missing or is not a live process id");
+  if (phases.length < LIFECYCLE_OPERATIONS.length) errors.push(`observations.deviceLifecycle.phases reported ${phases.length} operations; this claim needs at least ${LIFECYCLE_OPERATIONS.join(", then ")}`);
+  errors.push(...lifecyclePhaseErrors(phases, pid), ...lifecycleContinuityErrors(observation, phases));
   return { valid: errors.length === 0, errors };
 }
 
@@ -1083,6 +1166,22 @@ function actualArtifactRecord(path, producerCommand, retention = "ignored-raw") 
     producerCommand,
     retention,
   };
+}
+
+/**
+ * The v1 evidence document's lifecycle block, which this runner cannot fill honestly.
+ *
+ * `physicalDeviceEvidenceV1` wants four ordered rows, each with a wall-clock `at`, a `sessionNonce`
+ * and a `physicsStepCount` read *during* that phase. A device observation carries phase offsets from
+ * the run's own clock, no session nonce, and three step counts bracketing the away period rather
+ * than keyed to a phase. Restating a neighbouring read would put a timestamp and a count in the
+ * evidence that no read produced, so the collector refuses by name and writes no document.
+ */
+function unrepresentableLifecycle(observation) {
+  throw new QualificationError(
+    `observations.deviceLifecycle reported ${observation.phases.length} device-observed phases (${observation.phases.map(({ phase }) => phase).join(", ")}) with its physics steps keyed as ${Object.keys(observation.physics.steps).join(", ")}, and physicalDeviceEvidenceV1 carries four ordered lifecycle rows that each need a wall-clock time, a session nonce and a step count read during that phase. No evidence document is written until the schema reads what the device actually reported.`,
+    { code: "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE", status: "fail" },
+  );
 }
 
 export function buildProductionEvidence({
@@ -1101,13 +1200,16 @@ export function buildProductionEvidence({
   gateEvidence,
 }) {
   const playtest = playtestRun?.report ?? playtestRun;
-  const after = playtest?.observations?.resources?.GameState?.after;
-  const before = playtest?.observations?.resources?.GameState?.before;
-  const lifecycle = evaluateLifecycleObservation(after, before);
+  // A game-authored `observations.resources.GameState` restates the scenario's own account of
+  // itself, so it is not read: phases, focus, rotation and frames all came off the device.
+  const observation = playtest?.observations?.deviceLifecycle;
+  const lifecycle = evaluateLifecycleObservation(observation);
   if (!lifecycle.valid) throw new QualificationError(lifecycle.errors.join("; "), { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  const frames = observation.phases.at(-1).frames;
   if (!Array.isArray(playtest.assertionResults) || playtest.assertionResults.length === 0) throw new QualificationError("Physical lifecycle scenario produced no assertions.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
-  if (!Number.isInteger(after.frames) || after.frames < 300) throw new QualificationError("Physical lifecycle scenario did not observe 300 frames.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (frames < 300) throw new QualificationError(`Physical lifecycle scenario did not observe 300 frames; the device counted ${frames}.`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (!Number.isInteger(pid) || pid <= 0) throw new QualificationError("Physical lifecycle scenario did not provide the app process id.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
+  if (observation.session.pid !== pid) throw new QualificationError(`The device reported process ${observation.session.pid} across the lifecycle, not the launched process ${pid}.`, { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (processLiveness !== true) throw new QualificationError("Physical lifecycle scenario did not observe a live app process.", { code: "TN_QUALIFY_LIFECYCLE_CONTINUITY", status: "fail" });
   if (!isRecord(artifact) || artifact.sourceSha !== source.headSha || artifact.artifactSha256 === undefined) throw new QualificationError("Supplied artifact provenance is absent or does not match source HEAD.", { code: "TN_QUALIFY_ARTIFACT_PROVENANCE_MISMATCH" });
   if (!isRecord(device) || device.nativeGpu !== true) throw new QualificationError("Physical device observation did not prove a native GPU.", { code: "TN_QUALIFY_NATIVE_GPU_REQUIRED" });
@@ -1155,11 +1257,10 @@ export function buildProductionEvidence({
       installStartedAt: timestamps.installStartedAt,
       launchStartedAt: timestamps.launchStartedAt,
       pid,
-      sessionNonce: after.sessionNonce,
       readyAt: timestamps.readyAt,
       firstFrameAt: timestamps.firstFrameAt,
       frame300At: timestamps.frame300At,
-      frames: after.frames,
+      frames,
       nonBlankCaptureSha256: artifactPaths.find((item) => item.capture === true)?.sha256 ?? "",
       gpuErrorCount: countScenarioErrors(playtest),
       arm64: /^(?:arm64-v8a|arm64|aarch64)$/iu.test(publicDevice.cpuAbi),
@@ -1167,17 +1268,7 @@ export function buildProductionEvidence({
       processLiveness,
       assertionCount: playtest.assertionResults.length,
     },
-    lifecycle: {
-      events: after.lifecycleEvents.map((event) => ({ ...event, pid, sessionNonce: after.sessionNonce })),
-      sameSession: before?.sessionNonce === after.sessionNonce,
-      framesPaused: after.framesPaused,
-      framesAdvanced: after.framesAdvanced,
-      maxFrameIntervalMs: after.maxFrameIntervalMs,
-      surfaceValidAfterResume: after.surfaceValidAfterResume,
-      stateContinuity: after.stateContinuity,
-      physicsStepDelta: after.physicsStepDelta,
-      backgroundGapIntegrated: after.backgroundGapIntegrated,
-    },
+    lifecycle: unrepresentableLifecycle(observation),
     consumption: productionConsumption(preflightResult, candidateSha),
     telemetry,
     artifacts: artifactPaths.map(({ capture: _capture, ...record }) => record),

@@ -116,26 +116,44 @@ function withPrerequisiteReports(callback, overrides = {}) {
   }
 }
 
-function productionLifecycleState(sessionNonce = "native-smoke-real") {
+const LIFECYCLE_PID = 7123;
+
+/**
+ * One device-observed lifecycle, exactly as the Android runner reports it: the phases were read off
+ * the phone (`pidof`, `dumpsys window`, `dumpsys gfxinfo`) and the step counts come from the
+ * runtime's own physics counter. A game-authored `GameState` cannot produce any of it, which is
+ * what makes it worth certifying — the game restates the scenario, the device does not.
+ */
+function deviceLifecycleObservation({ pid = LIFECYCLE_PID, phases = null } = {}) {
   return {
-    backgroundGapIntegrated: false,
-    frames: 420,
-    framesAdvanced: true,
-    framesPaused: true,
-    lifecycleEvents: ["background", "foreground", "supported-rotation", "resume"].map((phase, index) => ({
-      at: `2026-08-09T01:00:${String(index + 1).padStart(2, "0")}.000Z`,
-      frameCount: 320 + index,
-      phase,
-      physicsStepCount: 10,
-      surfaceValid: phase !== "background",
-      viewport: { width: 2340, height: 1080 },
-    })),
-    maxFrameIntervalMs: 31.25,
-    physicsStepDelta: 0,
-    sessionNonce,
-    stateContinuity: true,
-    surfaceValidAfterResume: true,
+    phases: phases ?? [
+      { at: 940, focused: false, frames: 320, framesPaused: true, phase: "background", pid },
+      { at: 2_410, focused: true, frames: 327, phase: "foreground", pid, windowRotation: 0 },
+      { at: 3_120, focused: true, frames: 418, phase: "rotate", pid, requestedRotation: 1, windowRotation: 1 },
+      { at: 4_260, focused: true, frames: 420, phase: "foreground", pid, windowRotation: 1 },
+    ],
+    physics: {
+      available: true,
+      steps: { afterAdvance: 1023, afterForeground: 1021, beforeBackground: 1021 },
+      stepsAdvanced: true,
+      stepsPaused: true,
+    },
+    render: { framesAdvanced: true, framesPaused: true },
+    session: { pid },
   };
+}
+
+/** The same observation with one claim replaced, so a control changes exactly one thing. */
+function withLifecycleClaim(claim, value) {
+  const observation = deviceLifecycleObservation();
+  return { ...observation, [claim]: value };
+}
+
+/** The same observation with one field of one phase replaced. */
+function withLifecyclePhase(index, change) {
+  const { phases } = deviceLifecycleObservation();
+  const observation = deviceLifecycleObservation();
+  return { ...observation, phases: phases.map((phase, position) => (position === index ? { ...phase, ...change } : phase)) };
 }
 
 function productionGateEvidence() {
@@ -255,7 +273,7 @@ function withConsumerRun(callback, {
       assertionResults: [{ id: "visibility.player", pass: true }],
       diagnostics: [],
       observations: {
-        resources: { GameState: { before: { sessionNonce: "consumer-session" }, after: productionLifecycleState("consumer-session") } },
+        deviceLifecycle: deviceLifecycleObservation(),
         runtimeDiagnostics: { recentRuntimeErrors: [] },
       },
       ...reportOverrides,
@@ -349,24 +367,21 @@ test("should reject artifact and prerequisite reports from another SHA", () => {
 });
 
 test("parses the final pretty multi-line playtest JSON report after diagnostics", () => {
+  const final = {
+    pass: true,
+    assertionResults: [{ id: "lifecycle", pass: true }],
+    observations: { deviceLifecycle: deviceLifecycleObservation() },
+  };
   const stdout = [
     "native runner: preparing device",
     JSON.stringify({ pass: false, diagnostics: [{ message: "intermediate" }] }, null, 2),
-    JSON.stringify({
-      pass: true,
-      assertionResults: [{ id: "lifecycle", pass: true }],
-      observations: { resources: { GameState: { after: { frames: 420 } } } },
-    }, null, 2),
+    JSON.stringify(final, null, 2),
   ].join("\n");
-  assert.deepEqual(parsePlaytestReport(stdout), {
-    pass: true,
-    assertionResults: [{ id: "lifecycle", pass: true }],
-    observations: { resources: { GameState: { after: { frames: 420 } } } },
-  });
+  assert.deepEqual(parsePlaytestReport(stdout), final);
   assert.equal(parsePlaytestReport("diagnostic only\n"), null);
 });
 
-test("production evidence is built from supplied observations, never fixture lifecycle or telemetry", () => {
+test("production evidence refuses to certify a lifecycle the v1 evidence schema cannot represent", () => {
   withPrerequisiteReports((paths, directory) => {
     const reportRecords = Object.fromEntries(Object.entries(paths).map(([name, path]) => [name, {
       path,
@@ -383,8 +398,7 @@ test("production evidence is built from supplied observations, never fixture lif
     const playtestPath = join(directory, "playtest-report.json");
     writeFileSync(capturePath, "real capture bytes");
     writeFileSync(playtestPath, "real playtest observation");
-    const state = productionLifecycleState();
-    const evidence = buildProductionEvidence({
+    const request = {
       platform: "android",
       source: sourceIdentity(),
       artifact: { sourceSha: LANE_CANDIDATE_SHA, artifactSha256: ARTIFACT_SHA, packageVersion: "0.1.13", releaseRun: null },
@@ -419,7 +433,7 @@ test("production evidence is built from supplied observations, never fixture lif
           assertionResults: [{ id: "lifecycle", pass: true }],
           diagnostics: [],
           observations: {
-            resources: { GameState: { before: { sessionNonce: state.sessionNonce }, after: state } },
+            deviceLifecycle: deviceLifecycleObservation(),
             runtimeDiagnostics: { recentRuntimeErrors: [] },
           },
         },
@@ -448,13 +462,28 @@ test("production evidence is built from supplied observations, never fixture lif
         { path: ".runtime/prd056/test/after.png", sha256: sha256File(capturePath), size: 18, producerCommand: "playtest", retention: "ignored-raw", capture: true },
       ],
       gateEvidence: productionGateEvidence(),
+    };
+    // The device observation is accepted, and the run then stops on the one thing the v1 evidence
+    // schema has no field for: four ordered rows carrying a wall-clock phase time and a per-phase
+    // physics step count, against phase offsets from the run's own clock and three step reads. A
+    // collector that filled those in would put numbers in the evidence no read produced, so it
+    // refuses by name and writes no document.
+    assert.throws(() => buildProductionEvidence(request), (error) => {
+      assert.equal(error.code, "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE");
+      assert.match(error.message, /observations\.deviceLifecycle/u);
+      return true;
     });
-    assert.equal(evidence.execution.sessionNonce, "native-smoke-real");
-    assert.equal(evidence.execution.frames, 420);
-    assert.equal(evidence.telemetry.frame.samples[0].value, 12.5);
-    assert.notEqual(evidence.execution.sessionNonce, "fixture-session-android");
-    assert.notEqual(evidence.telemetry.memory.samples[0].value, 1000000);
-    assert.equal(evidence.source.artifactSourceSha, LANE_CANDIDATE_SHA);
+    // A device claim that is false is refused first, by the guard that reads the phone.
+    assert.throws(
+      () => buildProductionEvidence({ ...request, playtestRun: { report: { ...request.playtestRun.report, observations: { ...request.playtestRun.report.observations, deviceLifecycle: withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true }) } } } }),
+      (error) => error.code === "TN_QUALIFY_LIFECYCLE_CONTINUITY",
+    );
+    // The shape a real consumer scenario drives — background, foreground, rotate — is a valid
+    // lifecycle and is refused for the schema's four rows, not for the observation.
+    assert.throws(
+      () => buildProductionEvidence({ ...request, playtestRun: { report: { ...request.playtestRun.report, observations: { ...request.playtestRun.report.observations, deviceLifecycle: withLifecycleClaim("phases", deviceLifecycleObservation().phases.slice(0, 3)) } } } }),
+      (error) => error.code === "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE" && error.message.includes("3 device-observed phases"),
+    );
   });
 });
 
@@ -645,19 +674,58 @@ test("iOS signed-device telemetry has a guarded unavailable path and a valid bri
 });
 
 test("lifecycle, unsigned-artifact, and missing-prerequisite controls execute their guards", () => {
-  const valid = productionLifecycleState();
-  assert.equal(evaluateLifecycleObservation(valid, { sessionNonce: valid.sessionNonce }).valid, true);
-  assert.equal(evaluateLifecycleObservation({ ...valid, framesAdvanced: false }).valid, false);
+  const valid = deviceLifecycleObservation();
+  assert.equal(evaluateLifecycleObservation(valid).valid, true);
+  assert.equal(evaluateLifecycleObservation(withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true })).valid, false);
   const lifecycleGreen = qualifyPhysicalMobile({ platform: "android", device: DEVICE_IDENTIFIER, app: "/tmp/candidate.apk", candidateSha: LANE_CANDIDATE_SHA, out: ".runtime/prd056/control", durationMs: 100, cadenceMs: 50, prerequisiteReports: {}, control: "break-resume", controlObservation: valid });
   assert.equal(lifecycleGreen.status, "pass");
-  const lifecycleRed = qualifyPhysicalMobile({ platform: "android", device: DEVICE_IDENTIFIER, app: "/tmp/candidate.apk", candidateSha: LANE_CANDIDATE_SHA, out: ".runtime/prd056/control", durationMs: 100, cadenceMs: 50, prerequisiteReports: {}, control: "break-resume", controlObservation: { ...valid, framesAdvanced: false } });
+  const lifecycleRed = qualifyPhysicalMobile({ platform: "android", device: DEVICE_IDENTIFIER, app: "/tmp/candidate.apk", candidateSha: LANE_CANDIDATE_SHA, out: ".runtime/prd056/control", durationMs: 100, cadenceMs: 50, prerequisiteReports: {}, control: "break-resume", controlObservation: withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true }) });
   assert.equal(lifecycleRed.status, "fail");
+  assert.ok(lifecycleRed.errors.some((error) => error.includes("render.framesAdvanced")));
   const unsigned = qualifyPhysicalMobile({ platform: "android", device: DEVICE_IDENTIFIER, app: "/tmp/does-not-exist-prd056.apk", candidateSha: LANE_CANDIDATE_SHA, control: "reject-unsigned" });
   assert.equal(unsigned.status, "blocked");
   assert.equal(unsigned.code, "TN_QUALIFY_SIGNING_REQUIRED");
   const missing = qualifyPhysicalMobile({ platform: "android", device: DEVICE_IDENTIFIER, app: "/tmp/candidate.apk", candidateSha: LANE_CANDIDATE_SHA, control: "missing-prerequisite", prerequisiteReports: {} });
   assert.equal(missing.status, "blocked");
   assert.ok(missing.blockers.some((blocker) => blocker.includes("prd053")));
+});
+
+test("the lifecycle guard certifies the runner's device observation, never a game's own account", () => {
+  const valid = deviceLifecycleObservation();
+  // No observation at all is the shape every real report has today unless the scenario drove one: a
+  // game-authored resource is the one thing that is never a substitute for it.
+  const absent = evaluateLifecycleObservation(undefined);
+  assert.equal(absent.valid, false);
+  assert.match(absent.errors[0], /observations\.deviceLifecycle/u);
+  const falseClaims = {
+    "a process that changed mid-run": withLifecycleClaim("phases", valid.phases.map((phase, index) => (index === 3 ? { ...phase, pid: 9999 } : phase))),
+    "a phase that never reached the foreground": withLifecycleClaim("phases", [valid.phases[0], { ...valid.phases[1], focused: false }]),
+    "the phases in the wrong order": withLifecycleClaim("phases", [valid.phases[1], valid.phases[0], valid.phases[2], valid.phases[3]]),
+    "a lifecycle that never turned": withLifecycleClaim("phases", valid.phases.slice(0, 2)),
+    "a phase after the rotation that is not a resume": withLifecycleClaim("phases", [...valid.phases, { at: 5_000, focused: true, frames: 424, phase: "background", pid: LIFECYCLE_PID }]),
+    "a frame counter that never stopped while backgrounded": withLifecycleClaim("render", { framesAdvanced: true, framesPaused: false }),
+    "a backgrounded reading that never recorded the pause": withLifecyclePhase(0, { framesPaused: false }),
+    "frames that did not resume": withLifecycleClaim("phases", valid.phases.map((phase, index) => (index === 3 ? { ...phase, frames: 320 } : phase))),
+    "a frame count that ran backwards": withLifecyclePhase(2, { frames: 100 }),
+    "phase times that did not advance": withLifecyclePhase(2, { at: 1_000 }),
+    "a summary that denies frames the phases' counts show": withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true }),
+    "a physics summary that denies steps the counts show": withLifecycleClaim("physics", { ...valid.physics, stepsPaused: false }),
+    "a rotation the device never actually turned to": withLifecycleClaim("phases", valid.phases.map((phase) => (phase.phase === "rotate" ? { ...phase, windowRotation: 0 } : phase))),
+    "a rotation the app was already in": withLifecycleClaim("phases", valid.phases.map((phase) => (phase.windowRotation === undefined ? phase : { ...phase, windowRotation: 1 }))),
+    "a build that installs no physics plugin": withLifecycleClaim("physics", { available: false, reason: "the bridge does not advertise runtime.physics" }),
+    "a simulation that kept stepping while the app was away": withLifecycleClaim("physics", { ...valid.physics, steps: { ...valid.physics.steps, afterForeground: 1040 } }),
+    "a simulation that never advanced after the resume": withLifecycleClaim("physics", { ...valid.physics, steps: { ...valid.physics.steps, afterAdvance: 1021 } }),
+  };
+  for (const [claim, observation] of Object.entries(falseClaims)) {
+    const result = evaluateLifecycleObservation(observation);
+    assert.equal(result.valid, false, claim);
+    // Every diagnostic names the channel it read, so a red says which observation to go look at.
+    assert.ok(result.errors.length > 0 && result.errors.every((error) => error.startsWith("observations.deviceLifecycle")), `${claim}: ${result.errors.join("; ")}`);
+  }
+  // The three operations the claim rests on are enough on their own; a run that also steps the app
+  // back to the foreground afterwards reports the same continuity.
+  assert.equal(evaluateLifecycleObservation(withLifecycleClaim("phases", valid.phases.slice(0, 3))).valid, true);
+  assert.equal(evaluateLifecycleObservation(withLifecycleClaim("render", { framesAdvanced: true, framesPaused: true })).valid, true);
 });
 
 test("unsigned and missing-prerequisite controls are not hardcoded outcomes", () => {
@@ -816,16 +884,12 @@ test("the declared subject resolves one application id, project and scenario for
   }
 });
 
-test("a declared consumer project qualifies on the device that actually holds its artifact", () => {
+test("a declared consumer project installs and drives its own artifact on the phone it names", () => {
   withConsumerRun(({ declared, host, result }) => {
-    assert.equal(result.status, "pass", JSON.stringify(result));
-    assert.equal(result.code, "TN_QUALIFY_PHYSICAL_PASS");
-    assert.equal(result.subject.applicationId, CONSUMER_APP_ID);
-    assert.equal(result.subject.scenarioName, CONSUMER_SCENARIO_NAME);
-    const evidence = JSON.parse(readFileSync(result.report, "utf8"));
-    assert.equal(evidence.signing.applicationId, CONSUMER_APP_ID);
-    assert.equal(evidence.source.artifactSha256, declared.artifactSha256);
-    assert.equal(evidence.execution.assertionCount, 1);
+    // Every device guard ran — the declared package is what was installed, launched and driven —
+    // and the run then stops at the lifecycle claim the v1 evidence schema cannot represent.
+    assert.equal(result.status, "fail", JSON.stringify(result));
+    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE");
     const scenarioCall = host.calls.find((call) => call.executable === process.execPath);
     const args = scenarioCall.args;
     assert.equal(args[1], declared.scenario);
@@ -892,14 +956,18 @@ test("should reject a scenario that is absent, outside its project, or not the o
   }, { reportOverrides: { scenario: "some-other-scenario" } });
 });
 
-test("should reject a consumer run without lifecycle or persisted-state evidence", () => {
+test("should reject a consumer run without a device-observed lifecycle or any assertion", () => {
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "fail");
+    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
+  }, { reportOverrides: { observations: { runtimeDiagnostics: { recentRuntimeErrors: [] } } } });
   withConsumerRun(({ result }) => {
     assert.equal(result.status, "fail");
     assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
   }, {
     reportOverrides: {
       observations: {
-        resources: { GameState: { before: { sessionNonce: "consumer-session" }, after: { ...productionLifecycleState("consumer-session"), stateContinuity: false } } },
+        deviceLifecycle: withLifecycleClaim("render", { framesAdvanced: false, framesPaused: true }),
         runtimeDiagnostics: { recentRuntimeErrors: [] },
       },
     },
@@ -908,6 +976,20 @@ test("should reject a consumer run without lifecycle or persisted-state evidence
     assert.equal(result.status, "fail");
     assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
   }, { reportOverrides: { assertionResults: [] } });
+  withConsumerRun(({ result }) => {
+    assert.equal(result.status, "fail");
+    assert.equal(result.code, "TN_QUALIFY_LIFECYCLE_CONTINUITY");
+    assert.ok(result.errors.some((error) => error.includes("300 frames")));
+  }, {
+    reportOverrides: {
+      observations: {
+        // A lifecycle the device did observe, on a process that stopped drawing far short of 300
+        // frames — the one claim the phase count alone has to carry.
+        deviceLifecycle: deviceLifecycleObservation({ phases: [{ at: 940, focused: false, frames: 10, framesPaused: true, phase: "background", pid: LIFECYCLE_PID }, { at: 2_410, focused: true, frames: 10, phase: "foreground", pid: LIFECYCLE_PID, windowRotation: 0 }, { at: 3_120, focused: true, frames: 20, phase: "rotate", pid: LIFECYCLE_PID, requestedRotation: 1, windowRotation: 1 }, { at: 4_260, focused: true, frames: 40, phase: "foreground", pid: LIFECYCLE_PID, windowRotation: 1 }] }),
+        runtimeDiagnostics: { recentRuntimeErrors: [] },
+      },
+    },
+  });
 });
 
 test("PATH still wins over the SDK, and an explicit override wins over both", () => {

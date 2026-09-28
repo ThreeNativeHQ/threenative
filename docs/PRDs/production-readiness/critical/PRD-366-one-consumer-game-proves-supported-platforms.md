@@ -262,11 +262,11 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
 
 **Remaining lifecycle producer slice (2026-09-27; no physical credit):**
 
-- [ ] [engine; local] The Android playtest runner drives background, foreground and rotation as
+- [x] [engine; local] The Android playtest runner drives background, foreground and rotation as
       explicit scenario steps, then reports device-observed lifecycle phases and render/physics
       continuity. Missing observations fail rather than becoming game-authored `GameState` values.
       proof: focused runner red-green test with the real step parser and Android driver boundary.
-      **Landed; the box stays open on a real orientation-change proof.** `{ "kind": "lifecycle", "lifecycle":
+      **Verified on an emulator with a real orientation change.** `{ "kind": "lifecycle", "lifecycle":
       { "operation": "background" | "foreground" | "rotate", "rotation": 0-3 } }` is a real
       scenario step (`schema-base.ts` / `schema-validate.ts`, with rejection cases), driven through
       `AdbAndroidDriver` as `input keyevent 3` / `am start` / `wm user-rotation lock`, each op
@@ -336,8 +336,14 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       gameplay assertions, pid 4585 unchanged, render paused/resumed, physics steps 1021 before
       background = 1021 after foreground before advance, then 1023 after the foreground and
       rotation advances. Rotation 1 was already active, so an actual orientation change is still
-      unproven. The emulator was stopped after the run; no Pixel 8 use or physical performance
-      credit. **Prebuilt consumer blocker:** the same project rebuilt against its installed
+      unproven on the default landscape config. A second source-built APK with
+      `display.orientation: "sensor"` (SHA-256
+      `24dbcbd47860d9e833a234bb3658414aca9445ed7c85cd520c4e12987836afc0`) passed the
+      same 944-frame scenario with five gameplay assertions and a real window rotation 1 → 3,
+      pid 3205 unchanged, render paused/advanced and physics steps 1021 → 1021 → 1023. This
+      closes the runner's local rotation proof; the release consumer's default landscape
+      behavior and physical cohort are separate open claims. No Pixel 8 use or physical
+      performance credit. **Prebuilt consumer blocker:** the same project rebuilt against its installed
       `@threenative/runtime-native@0.3.3` prebuilt produced APK SHA-256
       `aa75e0ffdb274e842b6ebc239e00ce08fafe3647f1dce11e7887f9f0d572b1dd` and crashed
       at activity startup with `UnsatisfiedLinkError` for
@@ -349,6 +355,46 @@ acceptance boxes stay open. The Pixel 8 was not touched for this slice.
       to the exact scenario and installed APK already checked above, and rejects absent or
       inconsistent continuity. proof: collector false-value controls and a real Android emulator
       lifecycle scenario. An emulator pass grants no physical performance credit.
+      **Landed and unit-proven; the box stays open because the evidence document itself is
+      blocked.** `evaluateLifecycleObservation` reads `observations.deviceLifecycle` and nothing
+      else: `observations.resources.GameState` is no longer read, so a game can no longer certify its
+      own resume. It requires the ordered phases (`background` → `foreground` → `rotate`, then
+      foreground resumes) with `at` and `frames` nondecreasing across them, one pid across every
+      phase that is the pid the collector launched, unfocused only while away, a rotation that
+      actually turned — `windowRotation` equal to `requestedRotation` **and** different from the
+      previous phase's, so the "requested rotation 1 while the window was already at 1" run above is
+      a named rejection instead of a pass — and the continuity of the counters, re-derived from the
+      phases' own readings rather than trusted: `phases[0].framesPaused` must be `true` and
+      the backgrounded reading itself, rather than the `render` summary, proves the surface stopped;
+      the last phase's count must advance
+      past it, and `render.framesPaused` / `framesAdvanced` and `physics.stepsPaused` /
+      `stepsAdvanced` must agree with those counts rather than contradict them. The 300-frame floor
+      is read off the device's own counter. Absent, malformed, reordered, nonmonotone and false
+      data each fail with a diagnostic naming the field, under `TN_QUALIFY_LIFECYCLE_CONTINUITY`;
+      the installed-APK SHA, the reported-scenario identity check and the telemetry / prerequisite /
+      signing / device guards still run ahead of it, unchanged.
+      **The gap, named rather than papered over:** the run then stops at
+      `TN_QUALIFY_LIFECYCLE_EVIDENCE_UNREPRESENTABLE` and writes no document, because
+      `physicalDeviceEvidenceV1` (PRD-056's `physical-device-evidence.mjs`, outside this slice's
+      file budget) wants exactly four lifecycle rows, each carrying a wall-clock `at`, a
+      `sessionNonce` and a `physicsStepCount` read *during* that phase, while a report carries
+      phase offsets from the run's own clock, no session nonce, and three step reads around the
+      away period, none of them keyed to a phase. The lifecycle block is refused by name rather
+      than filled with a neighbouring reading or a synthesised timestamp; that schema has to grow before a collector run can be
+      evidence. No emulator, Pixel 8 or physical run happened for this slice, so the box stays open.
+      proof: `pnpm exec vitest run --config vitest.config.ts
+      tests/physical-mobile-qualification.test.mjs` from `packages/runtime-native` — **31 passed**:
+      one positive device observation, the absent / reordered / turned-never / pid-changed /
+      unfocused / rotation-never-turned / physics-unavailable / stepping-while-away controls, the
+      monotonicity and summary-contradiction controls added with this pass (each checked to be
+      refused by its own named diagnostic, not merely by some other one), and the evidence
+      rejection for both a four-phase and a three-phase observation.
+      `pnpm exec biome check` on both files reports no error; the script carries 14 warnings — the
+      12 complexity warnings already at HEAD plus `lifecycleContinuityErrors` and
+      `buildProductionEvidence`, which are new with this slice, and the rule is warn-level — and the
+      test file its 1 pre-existing `noDelete`. `pnpm check:docs`, `git diff --check`, `pnpm typecheck`,
+      and `pnpm lint` passed. `pnpm test` passed: runtime-native 1454 passed / 59 skipped, repository
+      vitest 6150 passed / 8 skipped. No collector-produced physical evidence was run or claimed.
 
 **Carried in from phase 2 (2026-09-15), both with concrete evidence rather than theory:**
 
