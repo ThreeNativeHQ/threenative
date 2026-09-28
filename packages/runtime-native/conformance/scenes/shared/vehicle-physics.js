@@ -52,15 +52,15 @@ async function simulationForThisRuntime() {
     const raw = nativeSimulation(host.createSimulation({}));
     return { kind: "native", simulation: createNativePhysicsSimulation(raw, host.version) };
   }
-  const RAPIER = await import("@dimforge/rapier3d-compat");
-  await RAPIER.init();
+  const rapier = await import("@dimforge/rapier3d-compat");
+  await rapier.init();
   return {
     kind: "web",
     simulation: createWebPhysicsSimulation({
-      eventQueue: new RAPIER.EventQueue(true),
-      rapier: RAPIER,
-      version: RAPIER.version(),
-      world: new RAPIER.World({ x: 0, y: -9.81, z: 0 }),
+      eventQueue: new rapier.EventQueue(true),
+      rapier: rapier,
+      version: rapier.version(),
+      world: new rapier.World({ x: 0, y: -9.81, z: 0 }),
     }),
   };
 }
