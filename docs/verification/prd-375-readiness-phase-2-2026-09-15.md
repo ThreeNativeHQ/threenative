@@ -88,7 +88,7 @@ mismatch, empty brand, malformed config.
 - EDIT `packages/runtime-native/scripts/verify-starter-desktop.mjs`
 - EDIT `packages/runtime-native/tests/starter-desktop.test.mjs`
 - EDIT `packages/create-threenative/README.md`
-- EDIT `docs/PRDs/production-readiness/PRD-375-release-artifacts-carry-the-game-brand.md`
+- EDIT `docs/PRDs/done/PRD-375-release-artifacts-carry-the-game-brand.md`
 - NEW `docs/verification/prd-375-readiness-phase-2-2026-09-15.md`
 
 ## Review correction — 2026-09-15
