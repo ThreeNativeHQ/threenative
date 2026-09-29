@@ -1,7 +1,7 @@
 import { defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import config from "../threenative.config.js";
-import { NeuralSnapshotScene, type NeuralSandboxState } from "./scenes/NeuralSnapshotScene.js";
+import { type NeuralSandboxState, NeuralSnapshotScene } from "./scenes/NeuralSnapshotScene.js";
 
 export default defineGame<NeuralSandboxState>({
   plugins: [playtest()],

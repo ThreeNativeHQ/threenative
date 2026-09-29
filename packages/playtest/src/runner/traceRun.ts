@@ -184,9 +184,6 @@ export function installGpuPipelineDiagnostics(): void {
   // installed (core's), not in this package. `createRenderPipelineAsync` carries the real
   // `GPURenderPipelineDescriptor` shape, and this probe has to observe descriptors the typed method
   // would reject, so it is read through the looser shape.
-  // quality-allow: the cast widens the descriptor this probe inspects; `create` still comes off the
-  // same prototype and is called with the same receiver and descriptor. `unknown` first because the
-  // real method's descriptor and this looser probe shape deliberately do not overlap.
   const prototype = (globalThis as { GPUDevice?: { prototype?: unknown } }).GPUDevice?.prototype as
     | { createRenderPipelineAsync?: (descriptor: PipelineDescriptor) => Promise<unknown> }
     | undefined;

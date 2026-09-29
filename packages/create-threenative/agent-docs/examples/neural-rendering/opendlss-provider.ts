@@ -1,4 +1,4 @@
-import { requireSynchronous, type INeuralComputeProvider } from "./gpu-contract.js";
+import { type INeuralComputeProvider, requireSynchronous } from "./gpu-contract.js";
 import { ImageKernel, validateImagePair } from "./image-kernel.js";
 import { OPEN_DLSS_COMPOSE, OPEN_DLSS_INPUT } from "./opendlss-shaders.js";
 
@@ -64,16 +64,37 @@ function paddedGeometry(validWidth: number, validHeight: number): readonly [numb
   return [width, height];
 }
 
-function conditioningBytes(width: number, height: number, fullWidth: number, fullHeight: number,
-  options: IOpenDLSSSnapshotConditioning): ArrayBuffer {
-  const keys = ["paperWhite", "localTone", "localStructure", "skinStructure", "autoMask", "intensity", "colorStrength", "seed"];
-  if (options === null || typeof options !== "object" || Array.isArray(options) ||
-      Object.keys(options).some((key) => !keys.includes(key))) {
-    throw new Error("NEURAL_CONDITIONING: only snapshot controls are supported; temporal and style are unavailable");
+function conditioningBytes(
+  width: number,
+  height: number,
+  fullWidth: number,
+  fullHeight: number,
+  options: IOpenDLSSSnapshotConditioning,
+): ArrayBuffer {
+  const keys = [
+    "paperWhite",
+    "localTone",
+    "localStructure",
+    "skinStructure",
+    "autoMask",
+    "intensity",
+    "colorStrength",
+    "seed",
+  ];
+  if (
+    options === null ||
+    typeof options !== "object" ||
+    Array.isArray(options) ||
+    Object.keys(options).some((key) => !keys.includes(key))
+  ) {
+    throw new Error(
+      "NEURAL_CONDITIONING: only snapshot controls are supported; temporal and style are unavailable",
+    );
   }
   const value = (v: number | undefined, fallback: number, min: number, max: number) => {
     const n = v ?? fallback;
-    if (!Number.isFinite(n) || n < min || n > max) throw new Error("NEURAL_CONDITIONING: value outside supported range");
+    if (!Number.isFinite(n) || n < min || n > max)
+      throw new Error("NEURAL_CONDITIONING: value outside supported range");
     return n;
   };
   const result = new ArrayBuffer(64);
@@ -84,7 +105,8 @@ function conditioningBytes(width: number, height: number, fullWidth: number, ful
   floats[5] = value(options.localTone, 1, 0, 1);
   floats[6] = value(options.localStructure, 1, 0, 1);
   floats[7] = value(options.skinStructure, -1, -1, 1);
-  if (options.autoMask !== undefined && typeof options.autoMask !== "boolean") throw new Error("NEURAL_CONDITIONING: autoMask must be boolean");
+  if (options.autoMask !== undefined && typeof options.autoMask !== "boolean")
+    throw new Error("NEURAL_CONDITIONING: autoMask must be boolean");
   floats[8] = options.autoMask === true ? 1 : -1;
   floats[9] = value(options.intensity, 1, 0, 1);
   floats[10] = value(options.colorStrength, 1, 0, 1);
@@ -98,70 +120,127 @@ function conditioningBytes(width: number, height: number, fullWidth: number, ful
  * Real GPU adapter: scene texture -> sixteen feature lanes -> recorder.encode -> HDR texture.
  * Does not load weights, run the upstream CPU transport, acquire a device, or call Network.destroy().
  */
-export function createOpenDLSSNRProvider(device: GPUDevice, options: IOpenDLSSSnapshotOptions): INeuralComputeProvider {
+export function createOpenDLSSNRProvider(
+  device: GPUDevice,
+  options: IOpenDLSSSnapshotOptions,
+): INeuralComputeProvider {
   const { network } = options;
-  if (options.sourceRevision !== OPEN_DLSS_NR_REVISION) throw new Error("NEURAL_REVISION: unqualified source revision");
-  if (network.device !== device) throw new Error("NEURAL_DEVICE: network must use the renderer's device");
+  if (options.sourceRevision !== OPEN_DLSS_NR_REVISION)
+    throw new Error("NEURAL_REVISION: unqualified source revision");
+  if (network.device !== device)
+    throw new Error("NEURAL_DEVICE: network must use the renderer's device");
   if (!(device.limits.maxComputeWorkgroupStorageSize >= 32768)) {
     throw new Error("NEURAL_DEVICE_LIMIT: maxComputeWorkgroupStorageSize requires 32768 bytes");
   }
-  const { validWidth: width, validHeight: height, fullWidth, fullHeight, fullRows } = network.geometry;
+  const {
+    validWidth: width,
+    validHeight: height,
+    fullWidth,
+    fullHeight,
+    fullRows,
+  } = network.geometry;
   for (const n of [width, height]) {
-    if (!Number.isSafeInteger(n) || n < 33 || n > 512) throw new Error("NEURAL_GEOMETRY: invalid snapshot dimensions");
+    if (!Number.isSafeInteger(n) || n < 33 || n > 512)
+      throw new Error("NEURAL_GEOMETRY: invalid snapshot dimensions");
   }
   const [expectedWidth, expectedHeight] = paddedGeometry(width, height);
-  if (fullWidth !== expectedWidth || fullHeight !== expectedHeight || fullRows !== fullWidth * fullHeight ||
-      network.graph.head.rows !== fullRows || fullWidth > 2 * width - 1 || fullHeight > 2 * height - 1 ||
-      Math.ceil(fullWidth / 2 / 4) * 4 % 8 !== 0 || Math.ceil(fullHeight / 2 / 4) * 4 % 8 !== 0) {
+  if (
+    fullWidth !== expectedWidth ||
+    fullHeight !== expectedHeight ||
+    fullRows !== fullWidth * fullHeight ||
+    network.graph.head.rows !== fullRows ||
+    fullWidth > 2 * width - 1 ||
+    fullHeight > 2 * height - 1 ||
+    (Math.ceil(fullWidth / 2 / 4) * 4) % 8 !== 0 ||
+    (Math.ceil(fullHeight / 2 / 4) * 4) % 8 !== 0
+  ) {
     throw new Error("NEURAL_GEOMETRY: padded graph or single-reflection boundary is unsupported");
   }
-  for (const [buffer, bytes] of [[network.features.buffer, fullRows * 64], [network.graph.head.buffer, fullRows * 16]] as const) {
-    if (buffer.size < bytes || (buffer.usage & 128) !== 128 || buffer.mapState !== "unmapped" ||
-        !(bytes <= device.limits.maxStorageBufferBindingSize)) {
+  for (const [buffer, bytes] of [
+    [network.features.buffer, fullRows * 64],
+    [network.graph.head.buffer, fullRows * 16],
+  ] as const) {
+    if (
+      buffer.size < bytes ||
+      (buffer.usage & 128) !== 128 ||
+      buffer.mapState !== "unmapped" ||
+      !(bytes <= device.limits.maxStorageBufferBindingSize)
+    ) {
       throw new Error("NEURAL_BUFFER: truncated, mapped, non-storage or over-limit tensor");
     }
   }
   const lowerBound = network.tensors.total + network.model.bytesUploaded;
-  if (!Number.isSafeInteger(network.tensors.total) || network.tensors.total < fullRows * 80 ||
-      !Number.isSafeInteger(network.model.bytesUploaded) || network.model.bytesUploaded < 1 ||
-      !Number.isSafeInteger(options.peakBytes) || options.peakBytes < lowerBound ||
-      !Number.isSafeInteger(options.peakBytes + 64)) {
+  if (
+    !Number.isSafeInteger(network.tensors.total) ||
+    network.tensors.total < fullRows * 80 ||
+    !Number.isSafeInteger(network.model.bytesUploaded) ||
+    network.model.bytesUploaded < 1 ||
+    !Number.isSafeInteger(options.peakBytes) ||
+    options.peakBytes < lowerBound ||
+    !Number.isSafeInteger(options.peakBytes + 64)
+  ) {
     throw new Error("NEURAL_MEMORY: a conservative whole-network peak estimate is required");
   }
-  const parameters = conditioningBytes(width, height, fullWidth, fullHeight, options.conditioning ?? {});
+  const parameters = conditioningBytes(
+    width,
+    height,
+    fullWidth,
+    fullHeight,
+    options.conditioning ?? {},
+  );
   const input = new ImageKernel(device, OPEN_DLSS_INPUT, "input_features");
   const compose = new ImageKernel(device, OPEN_DLSS_COMPOSE, "compose_hdr");
   let uniform: GPUBuffer | undefined;
   let closed = false;
   return {
-    device, width, height, id: `opendlss-nr-webgpu@${OPEN_DLSS_NR_REVISION}`, kind: "neural",
+    device,
+    width,
+    height,
+    id: `opendlss-nr-webgpu@${OPEN_DLSS_NR_REVISION}`,
+    kind: "neural",
     estimatedBytes: options.peakBytes + 64,
     encode(encoder, { original, enhanced }) {
       if (closed) throw new Error("NEURAL_CLOSED: adapter disposed");
       validateImagePair(original, enhanced, width, height);
       if (uniform === undefined) {
         // GPUBufferUsage.UNIFORM | COPY_DST. No global GPU access at module-import time.
-        uniform = device.createBuffer({ label: "neural snapshot parameters", size: 64, usage: 0x48 });
+        uniform = device.createBuffer({
+          label: "neural snapshot parameters",
+          size: 64,
+          usage: 0x48,
+        });
         device.queue.writeBuffer(uniform, 0, parameters);
       }
-      input.encode(encoder, [
-        { binding: 0, resource: { buffer: uniform } },
-        { binding: 1, resource: original.createView() },
-        { binding: 2, resource: { buffer: network.features.buffer, size: fullRows * 64 } },
-      ], fullWidth, fullHeight);
+      input.encode(
+        encoder,
+        [
+          { binding: 0, resource: { buffer: uniform } },
+          { binding: 1, resource: original.createView() },
+          { binding: 2, resource: { buffer: network.features.buffer, size: fullRows * 64 } },
+        ],
+        fullWidth,
+        fullHeight,
+      );
       requireSynchronous(network.recorder.encode(encoder), "network recording");
-      compose.encode(encoder, [
-        { binding: 0, resource: { buffer: uniform } },
-        { binding: 1, resource: original.createView() },
-        { binding: 2, resource: { buffer: network.graph.head.buffer, size: fullRows * 16 } },
-        { binding: 3, resource: enhanced.createView() },
-      ], width, height);
+      compose.encode(
+        encoder,
+        [
+          { binding: 0, resource: { buffer: uniform } },
+          { binding: 1, resource: original.createView() },
+          { binding: 2, resource: { buffer: network.graph.head.buffer, size: fullRows * 16 } },
+          { binding: 3, resource: enhanced.createView() },
+        ],
+        width,
+        height,
+      );
     },
     dispose() {
       if (closed) return;
       closed = true;
-      uniform?.destroy(); uniform = undefined;
-      input.dispose(); compose.dispose();
+      uniform?.destroy();
+      uniform = undefined;
+      input.dispose();
+      compose.dispose();
       // The prepared graph, tensors, model and renderer device remain caller-owned.
     },
   };

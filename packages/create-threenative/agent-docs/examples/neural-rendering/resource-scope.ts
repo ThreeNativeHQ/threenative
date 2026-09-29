@@ -19,7 +19,8 @@ export class NeuralResourceScope {
     if (resource === null || (typeof resource !== "object" && typeof resource !== "function")) {
       throw new Error("NEURAL_OWNERSHIP: expected an object");
     }
-    if (this.#owned.has(resource as INeuralDestroyable)) throw new Error("NEURAL_OWNERSHIP: already owned");
+    if (this.#owned.has(resource as INeuralDestroyable))
+      throw new Error("NEURAL_OWNERSHIP: already owned");
     this.#borrowed.add(resource);
     return resource;
   }
@@ -41,21 +42,30 @@ export class NeuralResourceScope {
    */
   retireAfter(fence: PromiseLike<void>): Promise<void> {
     if (this.#retirement !== undefined) return this.#retirement;
-    if (fence === null || typeof fence?.then !== "function") throw new Error("NEURAL_FENCE: required");
+    if (fence === null || typeof fence?.then !== "function")
+      throw new Error("NEURAL_FENCE: required");
     this.#closing = true;
-    this.#retirement = Promise.resolve(fence).then(() => {
-      const errors: unknown[] = [];
-      for (const resource of this.#owned) {
-        // Remove before calling external code so an exception cannot cause a double destroy.
-        this.#owned.delete(resource);
-        try { resource.destroy(); } catch (error) { errors.push(error); }
-      }
-      this.#borrowed.clear();
-      if (errors.length > 0) throw new AggregateError(errors, "NEURAL_CLEANUP: one or more allocations failed");
-    }, (error: unknown) => {
-      this.#retirement = undefined;
-      throw error;
-    });
+    this.#retirement = Promise.resolve(fence).then(
+      () => {
+        const errors: unknown[] = [];
+        for (const resource of this.#owned) {
+          // Remove before calling external code so an exception cannot cause a double destroy.
+          this.#owned.delete(resource);
+          try {
+            resource.destroy();
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        this.#borrowed.clear();
+        if (errors.length > 0)
+          throw new AggregateError(errors, "NEURAL_CLEANUP: one or more allocations failed");
+      },
+      (error: unknown) => {
+        this.#retirement = undefined;
+        throw error;
+      },
+    );
     return this.#retirement;
   }
 

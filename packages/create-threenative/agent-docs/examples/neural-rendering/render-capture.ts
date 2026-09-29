@@ -2,7 +2,11 @@ import { HalfFloatType, LinearSRGBColorSpace } from "three";
 import { select, texture, uniform, uv } from "three/tsl";
 import { type Node, type PassNode, StorageTexture } from "three/webgpu";
 import type { NeuralFrameResetReason } from "./frame-gate.js";
-import { requireSynchronous, type INeuralComputeProvider, type INeuralGPUBridge } from "./gpu-contract.js";
+import {
+  type INeuralComputeProvider,
+  type INeuralGPUBridge,
+  requireSynchronous,
+} from "./gpu-contract.js";
 import { ImageKernel } from "./image-kernel.js";
 import { afterRenderedPass } from "./render-hook.js";
 import { NeuralSnapshotDriver } from "./snapshot-driver.js";
@@ -75,16 +79,36 @@ export function attachNeuralCapture(options: INeuralCaptureOptions) {
     driver.afterWorld(frameId, (encoder) => {
       // The original updateBefore already queued this frame's world rendering on the same device.
       const source = bridge.texture(worldPass.getTexture("output"), {
-        width: sourceWidth, height: sourceHeight, format: "rgba16float", usage: 4,
+        width: sourceWidth,
+        height: sourceHeight,
+        format: "rgba16float",
+        usage: 4,
       });
-      const captured = bridge.texture(original, { width, height, format: "rgba16float", usage: 12, initialize: true });
-      const output = bridge.texture(enhanced, { width, height, format: "rgba16float", usage: 12, initialize: true });
+      const captured = bridge.texture(original, {
+        width,
+        height,
+        format: "rgba16float",
+        usage: 12,
+        initialize: true,
+      });
+      const output = bridge.texture(enhanced, {
+        width,
+        height,
+        format: "rgba16float",
+        usage: 12,
+        initialize: true,
+      });
       sampler ??= bridge.device.createSampler({ minFilter: "linear", magFilter: "linear" });
-      captureKernel.encode(encoder, [
-        { binding: 0, resource: source.createView() },
-        { binding: 1, resource: sampler },
-        { binding: 2, resource: captured.createView() },
-      ], width, height);
+      captureKernel.encode(
+        encoder,
+        [
+          { binding: 0, resource: source.createView() },
+          { binding: 1, resource: sampler },
+          { binding: 2, resource: captured.createView() },
+        ],
+        width,
+        height,
+      );
       return { original: captured, enhanced: output };
     });
     ready.value = driver.state.frozen ? 1 : 0;
@@ -94,10 +118,12 @@ export function attachNeuralCapture(options: INeuralCaptureOptions) {
     name: "neuralSnapshot",
     before: options.before ?? "probeVolume",
     requiresVelocity: false,
-    available: () => closed ? "neural:disabled" : true,
+    available: () => (closed ? "neural:disabled" : true),
     build(input: unknown) {
       if (input !== worldPass.getTextureNode("output")) {
-        throw new Error("NEURAL_ORDER: insert before other effects; refusing to discard an earlier stage's output");
+        throw new Error(
+          "NEURAL_ORDER: insert before other effects; refusing to discard an earlier stage's output",
+        );
       }
       const left = texture(original);
       const right = texture(enhanced);
@@ -107,7 +133,11 @@ export function attachNeuralCapture(options: INeuralCaptureOptions) {
       return select(ready.greaterThan(0), frozen, input as Node);
     },
     // RenderChain calls this on every rebuild: deactivate only, never destroy shared resources here.
-    dispose() { installed = false; ready.value = 0; driver.reset("scale-change"); },
+    dispose() {
+      installed = false;
+      ready.value = 0;
+      driver.reset("scale-change");
+    },
   };
 
   return {
@@ -115,39 +145,68 @@ export function attachNeuralCapture(options: INeuralCaptureOptions) {
     textures: Object.freeze({ original, enhanced }),
     get state() {
       const state = driver.state;
-      return Object.freeze({ ...state, gpuMs: undefined,
+      return Object.freeze({
+        ...state,
+        gpuMs: undefined,
         resultAgeFrames: state.frameId === undefined ? undefined : frameId - state.frameId,
-        resampling: "bilinear", outputDomain: "scene-linear-hdr" });
+        resampling: "bilinear",
+        outputDomain: "scene-linear-hdr",
+      });
     },
-    get settled() { return driver.settled; },
-    capture() { ready.value = 0; driver.request(); },
-    reset(reason: NeuralFrameResetReason) { ready.value = 0; driver.reset(reason); },
+    get settled() {
+      return driver.settled;
+    },
+    capture() {
+      ready.value = 0;
+      driver.request();
+    },
+    reset(reason: NeuralFrameResetReason) {
+      ready.value = 0;
+      driver.reset(reason);
+    },
     setDivider(value: number) {
-      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("NEURAL_DIVIDER: expected [0, 1]");
+      if (!Number.isFinite(value) || value < 0 || value > 1)
+        throw new Error("NEURAL_DIVIDER: expected [0, 1]");
       divider.value = value;
     },
     setView(value: "split" | "original" | "enhanced") {
-      if (!["split", "original", "enhanced"].includes(value)) throw new Error("NEURAL_VIEW: unsupported view");
+      if (!["split", "original", "enhanced"].includes(value))
+        throw new Error("NEURAL_VIEW: unsupported view");
       view.value = value === "original" ? 1 : value === "enhanced" ? 2 : 0;
     },
     dispose(): Promise<void> {
       if (disposal !== undefined) return disposal;
-      closed = true; installed = false; ready.value = 0; detach();
+      closed = true;
+      installed = false;
+      ready.value = 0;
+      detach();
       const stopped = driver.stop();
-      try { requireSynchronous(options.rebuildGraph(), "render-chain detachment"); }
-      catch (error) {
+      try {
+        requireSynchronous(options.rebuildGraph(), "render-chain detachment");
+      } catch (error) {
         // Retain allocations if the game could not remove their display bindings; a retry is safe.
         return Promise.reject(error);
       }
-      disposal = stopped.then(() => bridge.retire()).then(() => {
-        const errors: unknown[] = [];
-        for (const release of [() => captureKernel.dispose(), () => provider.dispose(),
-          () => original.dispose(), () => enhanced.dispose()]) {
-          try { release(); } catch (error) { errors.push(error); }
-        }
-        sampler = undefined;
-        if (errors.length > 0) throw new AggregateError(errors, "NEURAL_CLEANUP: allocation cleanup failed");
-      });
+      disposal = stopped
+        .then(() => bridge.retire())
+        .then(() => {
+          const errors: unknown[] = [];
+          for (const release of [
+            () => captureKernel.dispose(),
+            () => provider.dispose(),
+            () => original.dispose(),
+            () => enhanced.dispose(),
+          ]) {
+            try {
+              release();
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          sampler = undefined;
+          if (errors.length > 0)
+            throw new AggregateError(errors, "NEURAL_CLEANUP: allocation cleanup failed");
+        });
       return disposal;
     },
   };

@@ -75,7 +75,7 @@ fn proxy_rgb(rgb: vec3<f32>) -> vec3<f32> {
 fn centre(code: f32) -> f32 { return round_f16(round_f16(round_f16(code) - 0.5) * 0.125); }
 `;
 
-export const OPEN_DLSS_INPUT = COMMON + /* wgsl */ `
+export const OPEN_DLSS_INPUT = `${COMMON}
 @group(0) @binding(2) var<storage, read_write> features: array<f32>;
 fn hash_uniform(value: u32) -> f32 {
   var mixed = value;
@@ -128,7 +128,7 @@ fn input_features(@builtin(global_invocation_id) id: vec3<u32>) {
   features[base + 15u] = 0.0;
 }`;
 
-export const OPEN_DLSS_COMPOSE = COMMON + /* wgsl */ `
+export const OPEN_DLSS_COMPOSE = `${COMMON}
 @group(0) @binding(2) var<storage, read> head: array<f32>;
 @group(0) @binding(3) var enhanced: texture_storage_2d<rgba16float, write>;
 fn truncate_half(value: f32) -> u32 {

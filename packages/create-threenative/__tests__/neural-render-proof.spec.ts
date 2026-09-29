@@ -13,7 +13,12 @@ test("diagnostic proof checks actual HDR pixels, channel routing, alpha and curr
 });
 
 test("an empty, all-zero, truncated or non-HDR readback cannot pass the fixture", () => {
-  for (const pixels of [new Uint16Array(), new Uint16Array(4), new Uint16Array(3), new Uint16Array([0x3c00, 0, 0, 0x3c00])]) {
+  for (const pixels of [
+    new Uint16Array(),
+    new Uint16Array(4),
+    new Uint16Array(3),
+    new Uint16Array([0x3c00, 0, 0, 0x3c00]),
+  ]) {
     assert.throws(() => verifyFixturePixels(pixels, pixels, [4, 0.25, 0.5]));
   }
 });

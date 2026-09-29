@@ -1,10 +1,23 @@
 /** Scheduling/identity only: no texture capture, GPU submission, or transform-history system. */
 const RESET_REASONS = [
-  "camera-cut", "scene-change", "projection-change", "resize", "scale-change",
-  "provider-change", "model-change", "conditioning-change", "device-recovered",
+  "camera-cut",
+  "scene-change",
+  "projection-change",
+  "resize",
+  "scale-change",
+  "provider-change",
+  "model-change",
+  "conditioning-change",
+  "device-recovered",
 ] as const;
 export type NeuralFrameResetReason = (typeof RESET_REASONS)[number];
-type GateReason = NeuralFrameResetReason | "enabled" | "disabled" | "device-lost" | "provider-error" | "invalid-frame";
+type GateReason =
+  | NeuralFrameResetReason
+  | "enabled"
+  | "disabled"
+  | "device-lost"
+  | "provider-error"
+  | "invalid-frame";
 
 export interface INeuralFrameTicket {
   readonly frameId: number;
@@ -34,9 +47,14 @@ export class NeuralFrameGate {
   #reason: GateReason = "disabled";
 
   get state(): INeuralFrameState {
-    return Object.freeze({ enabled: this.#enabled, generation: this.#generation,
-      inFlight: this.#active !== undefined, pendingFrameId: this.#pending,
-      publishedFrameId: this.#published, reason: this.#reason });
+    return Object.freeze({
+      enabled: this.#enabled,
+      generation: this.#generation,
+      inFlight: this.#active !== undefined,
+      pendingFrameId: this.#pending,
+      publishedFrameId: this.#published,
+      reason: this.#reason,
+    });
   }
 
   setEnabled(enabled: boolean): void {
@@ -58,7 +76,8 @@ export class NeuralFrameGate {
 
   request(frameId: number): boolean {
     this.#validateFrame(frameId);
-    if (!this.#enabled || (this.#lastRequested !== undefined && frameId <= this.#lastRequested)) return false;
+    if (!this.#enabled || (this.#lastRequested !== undefined && frameId <= this.#lastRequested))
+      return false;
     this.#lastRequested = frameId;
     this.#pending = frameId;
     return true;
@@ -67,10 +86,15 @@ export class NeuralFrameGate {
   /** Call only AFTER the matching source pass is encoded, never from an arbitrary promise callback. */
   begin(renderedFrameId: number): INeuralFrameTicket | undefined {
     this.#validateFrame(renderedFrameId);
-    if (!this.#enabled || this.#active !== undefined || this.#pending !== renderedFrameId) return undefined;
+    if (!this.#enabled || this.#active !== undefined || this.#pending !== renderedFrameId)
+      return undefined;
     const historyFrameId = this.#history === renderedFrameId - 1 ? this.#history : undefined;
-    const ticket = Object.freeze({ frameId: renderedFrameId, generation: this.#generation,
-      historyFrameId, resetHistory: historyFrameId === undefined });
+    const ticket = Object.freeze({
+      frameId: renderedFrameId,
+      generation: this.#generation,
+      historyFrameId,
+      resetHistory: historyFrameId === undefined,
+    });
     this.#active = ticket;
     this.#pending = undefined;
     return ticket;
@@ -104,7 +128,8 @@ export class NeuralFrameGate {
   }
 
   #invalidate(reason: GateReason): void {
-    if (!Number.isSafeInteger(this.#generation + 1)) throw new Error("NEURAL_GENERATION: exhausted");
+    if (!Number.isSafeInteger(this.#generation + 1))
+      throw new Error("NEURAL_GENERATION: exhausted");
     this.#generation += 1;
     this.#pending = undefined;
     this.#lastRequested = undefined;

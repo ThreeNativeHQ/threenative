@@ -13,20 +13,37 @@ fn fixture_channel_swap(@builtin(global_invocation_id) id: vec3<u32>) {
 }`;
 
 /** An actual deterministic WGSL transform. It is deliberately NOT a neural model. */
-export function createFixtureProvider(device: GPUDevice, width: number, height: number): INeuralComputeProvider {
+export function createFixtureProvider(
+  device: GPUDevice,
+  width: number,
+  height: number,
+): INeuralComputeProvider {
   for (const value of [width, height]) {
-    if (!Number.isSafeInteger(value) || value < 1 || value > 512) throw new Error("NEURAL_DIMENSION: invalid fixture size");
+    if (!Number.isSafeInteger(value) || value < 1 || value > 512)
+      throw new Error("NEURAL_DIMENSION: invalid fixture size");
   }
   const kernel = new ImageKernel(device, SHADER, "fixture_channel_swap");
   return {
-    device, width, height, id: "integration-fixture/channel-swap", kind: "fixture", estimatedBytes: 0,
+    device,
+    width,
+    height,
+    id: "integration-fixture/channel-swap",
+    kind: "fixture",
+    estimatedBytes: 0,
     encode(encoder, { original, enhanced }) {
       validateImagePair(original, enhanced, width, height);
-      kernel.encode(encoder, [
-        { binding: 0, resource: original.createView() },
-        { binding: 1, resource: enhanced.createView() },
-      ], width, height);
+      kernel.encode(
+        encoder,
+        [
+          { binding: 0, resource: original.createView() },
+          { binding: 1, resource: enhanced.createView() },
+        ],
+        width,
+        height,
+      );
     },
-    dispose() { kernel.dispose(); },
+    dispose() {
+      kernel.dispose();
+    },
   };
 }

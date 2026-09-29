@@ -6,13 +6,23 @@ import { NeuralResourceScope } from "../agent-docs/examples/neural-rendering/res
 function deferred() {
   let resolve = () => {};
   let reject = (_error: Error) => {};
-  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<void>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
 
 function trackedResource() {
   let destroyed = 0;
-  return { destroy() { destroyed += 1; }, get destroyed() { return destroyed; } };
+  return {
+    destroy() {
+      destroyed += 1;
+    },
+    get destroyed() {
+      return destroyed;
+    },
+  };
 }
 
 function begin(gate: NeuralFrameGate, frameId: number) {
@@ -62,7 +72,17 @@ test("uses history only when the completed source frame is exactly the predecess
   assert.equal(skipped.historyFrameId, undefined);
 });
 
-for (const reason of ["camera-cut", "scene-change", "projection-change", "resize", "scale-change", "provider-change", "model-change", "conditioning-change", "device-recovered"] as const) {
+for (const reason of [
+  "camera-cut",
+  "scene-change",
+  "projection-change",
+  "resize",
+  "scale-change",
+  "provider-change",
+  "model-change",
+  "conditioning-change",
+  "device-recovered",
+] as const) {
   test(`${reason} rejects late results and preserves the new generation's pending request`, () => {
     const gate = new NeuralFrameGate();
     gate.setEnabled(true);
@@ -149,7 +169,7 @@ test("ignores repeated/backward requests and makes tickets immutable", () => {
   assert.ok(begin(gate, 0));
 });
 
-for (const id of [-1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+for (const id of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
   test(`rejects invalid frame identity ${id}`, () => {
     const gate = new NeuralFrameGate();
     gate.setEnabled(true);
@@ -224,7 +244,12 @@ test("a rejected fence is not GPU retirement; preserve allocations until a safe 
 
 test("one failing cleanup does not leak other allocations or repeat a destructive call", async () => {
   let attempts = 0;
-  const broken = { destroy() { attempts += 1; throw new Error("cleanup failed"); } };
+  const broken = {
+    destroy() {
+      attempts += 1;
+      throw new Error("cleanup failed");
+    },
+  };
   const other = trackedResource();
   const scope = new NeuralResourceScope([]);
   scope.own(broken);
