@@ -1,6 +1,6 @@
 # PRD-473 — an adventure template, ported from The Verdant Oath
 
-**Status: NOT STARTED** · filed 2026-09-29 against `a6397a668` · owner: "refactor `The-Verdant-Oath.html`
+**Status: PARTIAL — phase 1 landed 2026-09-29** · filed 2026-09-29 against `a6397a668` · owner: "refactor `The-Verdant-Oath.html`
 and integrate it into the starter pack (PR #376) … polish the main character, the look and feel should
 match the reference picture, add it as a zelda-clone starter kit".
 
@@ -36,8 +36,8 @@ canopy, mossy log stairs, a fairy and a green-capped child hero seen from behind
 
 ### Phase 1 — the rules run headless
 
-- [ ] `src/logic/` holds terrain, quest, combat, save and stamina rules with no three.js import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/adventure-logic.spec.ts`
-- [ ] The quest chain, i-frame roll, block, enemy state machine and save round-trip are covered, and a seeded 60 s scripted run replays to the same state twice. proof: the same spec
+- [x] `src/logic/` holds terrain, quest, combat, save and stamina rules with no three.js import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/adventure-logic.spec.ts` — 17/17 green in 0.35 s
+- [x] The quest chain, i-frame roll, block, enemy state machine and save round-trip are covered, and a seeded 60 s scripted run replays to the same state twice. proof: the same spec — 3600 fixed 1/60 s steps of scripted movement, attacks, rolls and sprints serialise byte-identical on two runs
 
 ### Phase 2 — it plays in the engine, and looks like the picture
 

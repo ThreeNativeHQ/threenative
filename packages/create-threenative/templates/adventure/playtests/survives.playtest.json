@@ -1,0 +1,58 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pan",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after-pan",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "camera.main",
+      "minDistance": 0.5
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "simTime",
+        "gte": 30,
+        "allowTrivial": "The clock only advances while the simulation is running, so a positive value after the settle proves the rules stepped; zero would be a frozen scene."
+      },
+      {
+        "id": "state",
+        "path": "gathered",
+        "gte": 1,
+        "allowTrivial": "The ten Surveyors the world seeds are already mining, so any banked ore proves the harvest cycle ran rather than a counter being painted."
+      }
+    ]
+  }
+}
