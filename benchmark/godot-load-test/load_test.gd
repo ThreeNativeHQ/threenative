@@ -271,11 +271,16 @@ func _ready() -> void:
 	add_child(ground)
 
 	var light := DirectionalLight3D.new()
-	light.light_energy = 2.4
+	# three's physical lights divide diffuse by pi and Godot's do not, so the same 2.4 is a 3x brighter
+	# sun here; dividing by pi is what makes the two arms light the same scene the same way.
+	light.light_energy = 2.4 / PI
 	light.shadow_enabled = false
 	light.look_at_from_position(Vector3(40, 80, 25), Vector3.ZERO, Vector3.UP)
 	add_child(light)
 	_sun = light
+
+	# The ThreeNative page draws on #0b0f14 behind a transparent canvas; Godot's default is mid grey.
+	RenderingServer.set_default_clear_color(Color(0.043, 0.059, 0.078))
 
 	_camera = Camera3D.new()
 	_camera.fov = 60.0
@@ -456,7 +461,7 @@ func _apply_ladder(mode: String) -> void:
 	if rank >= 1:
 		for index in LADDER_POINT_LIGHTS:
 			var point := OmniLight3D.new()
-			point.light_energy = 1.2
+			point.light_energy = 1.2 / PI
 			point.shadow_enabled = false
 			point.position = _point_light_position(index, 0, extent)
 			add_child(point)
