@@ -2236,3 +2236,100 @@ describe("WorldGpuScene gate tables against the owner's own distances", () => {
     scene.dispose();
   });
 });
+
+/**
+ * The GPU-selected main-pass tally: what the kernel wrote into the indirect records, not the mesh
+ * capacity three reports as `tri=`. The readback rides the same path and staging buffer a validation
+ * uses, a frame whose predecessor is still in flight is skipped rather than queued, and nothing is
+ * asked for at all when neither the tally nor a validation is on.
+ */
+describe("WorldGpuScene GPU-selected main-pass tally", () => {
+  /** One main key: one indirect record, which is what the readback's bytes stand for. */
+  function tallyScene(): WorldGpuScene {
+    const scene = new WorldGpuScene();
+    scene.key("pine:0:0", LOCAL, 16, { group: "pine:0", part: 0, parts: 1 });
+    return scene;
+  }
+
+  /** A renderer whose readback answers with whatever the test hands it, and counts every request. */
+  function tallyRenderer(
+    read: () => ArrayBuffer | Promise<ArrayBuffer>,
+    requests: { count: number },
+  ): IRendererLike {
+    return {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (): void => {},
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: (): Promise<ArrayBuffer> => {
+        requests.count += 1;
+        return Promise.resolve(read());
+      },
+    } as unknown as IRendererLike;
+  }
+
+  it("sums instanceCount and instanceCount x indexCount / 3, and ages the sample in dispatches", async () => {
+    const scene = tallyScene();
+    const requests = { count: 0 };
+    // Record: indexCount 36, instanceCount 5, so 5 x 36 / 3 = 60 triangles.
+    const renderer = tallyRenderer(
+      () => Uint32Array.from([36, 5, 0, 0, 0]).buffer.slice(0),
+      requests,
+    );
+    expect(scene.enable(renderer, true, false, true)).toBe(true);
+    const { camera } = cameraAt(0, 0);
+    scene.dispatch(renderer, camera);
+    await flush();
+    const landed = scene.report();
+    expect(landed.gpuInstances).toBe(5);
+    expect(landed.gpuTriangles).toBe(60);
+    expect(landed.gpuTallyAgeFrames).toBe(0);
+    expect(requests.count).toBe(1);
+    // Five dispatches later the sample is five old, and the thirty-dispatch clock has not fired.
+    for (let index = 0; index < 5; index += 1) scene.dispatch(renderer, camera);
+    expect(scene.report().gpuTallyAgeFrames).toBe(5);
+    expect(requests.count).toBe(1);
+    scene.dispose();
+  });
+
+  it("adds no GPU work when neither the tally nor a validation is on", async () => {
+    const scene = tallyScene();
+    const requests = { count: 0 };
+    const renderer = tallyRenderer(() => Uint32Array.from([36, 5, 0, 0, 0]).buffer, requests);
+    scene.enable(renderer, true, false, false);
+    const { camera } = cameraAt(0, 0);
+    for (let index = 0; index < 90; index += 1) scene.dispatch(renderer, camera);
+    await flush();
+    expect(requests.count).toBe(0);
+    expect(scene.report().gpuTriangles).toBeUndefined();
+    scene.dispose();
+  });
+
+  it("skips a readback while the previous one is still in flight", async () => {
+    const scene = tallyScene();
+    const requests = { count: 0 };
+    let settle: ((bytes: ArrayBuffer) => void) | undefined;
+    const renderer = tallyRenderer(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          settle = resolve;
+        }),
+      requests,
+    );
+    expect(scene.enable(renderer, true, false, true)).toBe(true);
+    const { camera } = cameraAt(0, 0);
+    scene.dispatch(renderer, camera);
+    expect(requests.count).toBe(1);
+    // Sixty more dispatches while the first is in flight: not one queued behind it.
+    for (let index = 0; index < 60; index += 1) scene.dispatch(renderer, camera);
+    expect(requests.count).toBe(1);
+    expect(scene.report().gpuTriangles).toBeUndefined();
+    settle?.(Uint32Array.from([36, 5, 0, 0, 0]).buffer);
+    await flush();
+    expect(scene.report().gpuInstances).toBe(5);
+    // The clock is measured from the issued dispatch, so the next request is allowed now.
+    scene.dispatch(renderer, camera);
+    expect(requests.count).toBe(2);
+    scene.dispose();
+  });
+});

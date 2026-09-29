@@ -263,6 +263,18 @@ export interface IFrameBudgetWindow {
    */
   readonly passes?: Readonly<Partial<Record<FramePassKind, IFrameBudgetPassSummary>>>;
   /**
+   * Instances and triangles the GPU actually selected in the main pass, from the streamed world's
+   * own indirect-args tally when it has one.
+   *
+   * These are the honest counterpart of `passes.main`: three's `renderer.info.render.triangles`
+   * counts a mesh's CPU window/capacity for an indirect draw, so `passes.main.triangles` is an upper
+   * bound over what the GPU could draw, while `mainGpuTriangles` is the sum over the indirect
+   * records of `instanceCount x indexCount / 3` — what the kernel selected. Main pass only: shadow
+   * passes are not tallied. Absent, never zero, before the first sample lands.
+   */
+  readonly mainGpuInstances?: number;
+  readonly mainGpuTriangles?: number;
+  /**
    * The resolution and sampling this window's frames were drawn at, when the loop reported one.
    * Absent rather than defaulted: a consumer asserting on it must fail loudly instead of reading
    * a fabricated `1.0` that no frame was ever drawn at.
@@ -370,6 +382,15 @@ export interface IFrameBudgetOptions {
   readonly readPresentCount?: () => number | undefined;
   /** Reads the successful GPU query frame age, not the age of the last resolve attempt. */
   readonly readGpuAgeFrames?: () => number | undefined;
+  /**
+   * The GPU-selected main-pass instance and triangle count, read once per reported window.
+   *
+   * Wired by the game from the streamed world's own tally; `undefined` until its first sample lands
+   * or when the world has none, so a window reports absent rather than a fabricated zero.
+   */
+  readonly readGpuTally?: () =>
+    | { readonly instances: number; readonly triangles: number }
+    | undefined;
 }
 
 const DEFAULT_REPORT_EVERY = 300;
@@ -492,6 +513,9 @@ export class FrameBudget {
   #readSurface: (() => IFrameSurfaceState) | undefined;
   #readTarget: (() => ITargetFps | undefined) | undefined;
   #readGpuAgeFrames: (() => number | undefined) | undefined;
+  #readGpuTally:
+    | (() => { readonly instances: number; readonly triangles: number } | undefined)
+    | undefined;
   #scratch: Float64Array;
   #presented: Ring;
   #frame: Ring;
@@ -551,6 +575,7 @@ export class FrameBudget {
     this.#readTarget = options.readTarget;
     this.#readPresentCount = options.readPresentCount ?? hostPresentCountReader();
     this.#readGpuAgeFrames = options.readGpuAgeFrames;
+    this.#readGpuTally = options.readGpuTally;
     this.#scratch = new Float64Array(capacity);
     this.#presented = new Ring(capacity);
     this.#frame = new Ring(capacity);
@@ -839,6 +864,7 @@ export class FrameBudget {
     const surface =
       this.#readSurface === undefined ? undefined : requireSurface(this.#readSurface());
     const gpuAgeFrames = this.#readGpuAgeFrames?.();
+    const gpuTally = this.#readGpuTally?.();
     if (gpuAgeFrames !== undefined && (!Number.isInteger(gpuAgeFrames) || gpuAgeFrames < 0))
       throw new Error(
         `Frame budget gpuAgeFrames must be a non-negative integer, received ${String(gpuAgeFrames)}.`,
@@ -897,6 +923,11 @@ export class FrameBudget {
       },
       substeps: this.#substeps.summarize(this.#scratch),
       ...(Object.keys(passes).length === 0 ? {} : { passes }),
+      // The GPU-selected main-pass count, beside the pass record it refines: absent until the
+      // world's tally has a sample, so a reader never sees a zero that no frame selected.
+      ...(gpuTally === undefined
+        ? {}
+        : { mainGpuInstances: gpuTally.instances, mainGpuTriangles: gpuTally.triangles }),
       // One series, two readers: `gpu` is the distribution and `gpuMs` is its mean for the scaler
       // and the perf record, which want a single number.
       ...(gpu === undefined ? {} : { gpu }),

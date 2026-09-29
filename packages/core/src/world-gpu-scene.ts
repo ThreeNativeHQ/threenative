@@ -101,6 +101,14 @@ function storageAttribute<A extends BufferAttribute>(
 }
 /** Dispatches between readbacks: a mapped buffer is a queue submission, so not every frame. */
 const VALIDATE_EVERY = 30;
+/**
+ * Dispatches between the tally's own readbacks, on the same budget as a validation.
+ *
+ * The tally reads the same indirect args buffer a validation reads, so it reuses that readback path
+ * and the renderer's one staging buffer rather than adding a second copy: when validation is on its
+ * landed bytes feed the tally, and when it is off this is the interval alone.
+ */
+const TALLY_EVERY = 30;
 /** Keys a mismatch line names before the rest are counted and not printed. */
 const VALIDATE_REPORTED_KEYS = 10;
 /** Keys a matrix or indirect-record line names, which carry more numbers than a count line does. */
@@ -669,13 +677,28 @@ function uncapturedMessage(event: unknown): string {
   return `${kind}: ${(error?.message ?? "no message").replace(/\s+/gu, " ").trim()}`;
 }
 
-/** What `TN_WORLD_GPU_SCENE` reports, and what `stats().gpuScene` carries. */
+/**
+ * What `TN_WORLD_GPU_SCENE` reports, and what `stats().gpuScene` carries.
+ *
+ * `dispatches`/`instances`/`keys` are the scene's own tables — the placements it holds and the keys
+ * it is ready to draw. The optional `gpu*` trio is different in kind: it is a sample of what the GPU
+ * actually selected in the **main** pass, read back from the same indirect args records the draw
+ * uses (sum of `instanceCount`, and sum of `instanceCount x indexCount / 3`). Shadow passes are not
+ * tallied, and a count three reports from `renderer.info.render.triangles` is an upper bound over a
+ * mesh's CPU capacity, not a GPU-selected count — see {@link IFrameBudgetWindow.mainGpuTriangles}.
+ */
 export interface IWorldGpuSceneReport {
   readonly dispatches: number;
   readonly instances: number;
   readonly keys: number;
   readonly on: boolean;
   readonly reason: string;
+  /** Instances the GPU selected in the main pass, from the last landed tally. */
+  readonly gpuInstances?: number;
+  /** Triangles the GPU selected in the main pass (`instanceCount x indexCount / 3`), from the tally. */
+  readonly gpuTriangles?: number;
+  /** Dispatches between the tally's bytes being issued and now; grows until the first lands. */
+  readonly gpuTallyAgeFrames?: number;
 }
 
 interface IGpuSceneBuffers {
@@ -926,8 +949,14 @@ export class WorldGpuScene {
    * once, and never silent. `validate` holds every dispatch's args against the CPU reference; see
    * {@link gpuSceneValidationRequested}.
    */
-  enable(renderer: IRendererLike | undefined, wanted: boolean, validate = false): boolean {
+  enable(
+    renderer: IRendererLike | undefined,
+    wanted: boolean,
+    validate = false,
+    tally = false,
+  ): boolean {
     this.#validate = validate;
+    this.#tally = tally;
     if (this.#on) return true;
     if (this.#reported) return false;
     if (renderer === undefined) {
@@ -1044,6 +1073,15 @@ export class WorldGpuScene {
       keys: this.#regions.length,
       on: this.#on,
       reason: this.#reason,
+      // Absent until a sample lands, never zero: "the GPU selected nothing" and "nothing has been
+      // read back yet" are different facts, and a zero would merge them.
+      ...(this.#tallySample < 0
+        ? {}
+        : {
+            gpuInstances: this.#tallyInstances,
+            gpuTallyAgeFrames: this.#dispatched - this.#tallySample,
+            gpuTriangles: this.#tallyTriangles,
+          }),
     };
   }
 
@@ -1325,6 +1363,16 @@ export class WorldGpuScene {
       this.#dispatched % VALIDATE_EVERY === 0
     )
       this.#compare(renderer);
+    // A validation's own readback already holds the args, so it feeds the tally and this never adds
+    // a second copy beside it. With validation off the tally reads on its own slower clock, and a
+    // frame whose predecessor has not landed is skipped rather than queued.
+    else if (
+      this.#validate === false &&
+      this.#tally === true &&
+      this.#tallyPending === false &&
+      (this.#tallyRequested < 0 || this.#dispatched - this.#tallyRequested >= TALLY_EVERY)
+    )
+      this.#tallyRead(renderer);
   }
 
   /**
@@ -1374,6 +1422,15 @@ export class WorldGpuScene {
   #lines: string[] = [];
   #validate = false;
   #validating = false;
+  /** Whether the owner asked for the GPU-selected main-pass tally; a validation turns it on too. */
+  #tally = false;
+  #tallyPending = false;
+  /** Dispatch the in-flight tally readback was issued on, or `-1` when none is in flight. */
+  #tallyRequested = -1;
+  /** Dispatch whose GPU state the landed tally bytes hold, or `-1` before the first lands. */
+  #tallySample = -1;
+  #tallyInstances = 0;
+  #tallyTriangles = 0;
   #watched = false;
   /**
    * The main meshes the owner has dressed against these buffers, and the main meshes it holds. It is
@@ -1383,6 +1440,50 @@ export class WorldGpuScene {
   #census = { dressed: 0, meshes: 0 };
   /** The device's last uncaptured error, reported by the next check and then cleared. */
   #deviceError = "";
+
+  /**
+   * Ask for the indirect args back, once, and tally what the GPU selected into them.
+   *
+   * This is the certificate the frame budget could not have: `renderer.info.render.triangles` counts
+   * a mesh's CPU window, which for an indirect draw is its capacity and therefore an upper bound,
+   * while the args record holds the instance count the kernel actually wrote. The readback is the
+   * same one a validation uses — the renderer's one staging buffer — on a slower clock, and a frame
+   * whose predecessor is still in flight is skipped rather than queued.
+   */
+  #tallyRead(renderer: IRendererLike): void {
+    const args = this.#buffers?.args;
+    if (args === undefined) return;
+    const issued = this.#dispatched;
+    this.#tallyRequested = issued;
+    this.#tallyPending = true;
+    renderer
+      .readback(args)
+      .then((bytes) => this.#landTally(bytes, issued))
+      .catch(() => {
+        this.#tallyPending = false;
+      });
+  }
+
+  /**
+   * Sum the landed args records: `instanceCount` over every record, and `instanceCount x indexCount`
+   * divided by three. A record the GPU never wrote reads as the zero it holds, which is correct —
+   * a key that selected nothing draws nothing.
+   */
+  #landTally(bytes: ArrayBuffer, issued: number): void {
+    this.#tallyPending = false;
+    const words = new Uint32Array(bytes);
+    let instances = 0;
+    let products = 0;
+    for (const region of this.#regions) {
+      const record = region.argsIndex * DRAW_ARGS_WORDS;
+      const count = word(words, record + 1);
+      instances += count;
+      products += count * word(words, record);
+    }
+    this.#tallyInstances = instances;
+    this.#tallyTriangles = products / 3;
+    this.#tallySample = issued;
+  }
 
   /**
    * Read the indirect args and the compacted matrices back and hold both against the reference, over
@@ -1414,10 +1515,13 @@ export class WorldGpuScene {
     const reference = cullAndSelect(snapshot);
     // Taken now, with the snapshot, and not when the readback lands: see `drawsFrom`.
     const draws = this.#draws?.() ?? [];
+    const issued = this.#dispatched;
     this.#validating = true;
     Promise.all([renderer.readback(snapshot.args), renderer.readback(snapshot.drawn)])
       .then(([argsBytes, drawnBytes]) => {
         this.#validating = false;
+        // The same landed args feed the tally, so a validation pays for it and this adds no copy.
+        this.#landTally(argsBytes, issued);
         this.#publish(
           renderer,
           this.#against(
@@ -1591,6 +1695,9 @@ export class WorldGpuScene {
     this.#free.length = 0;
     this.#live = 0;
     this.#on = false;
+    this.#tallyPending = false;
+    this.#tallyRequested = -1;
+    this.#tallySample = -1;
   }
 
   readonly #planeVectors = Array.from({ length: 6 }, () => new Vector4());
@@ -1815,10 +1922,16 @@ export class WorldGpuScene {
     const report = this.report();
     const name =
       "log" in renderer ? (renderer.log as ((message: string) => void) | undefined) : undefined;
+    // The GPU-selected counts ride the line only once a tally has landed. `instances` above is what
+    // the scene holds; `gpuInstances` is what the GPU drew, main pass only.
+    const tally =
+      report.gpuTriangles === undefined
+        ? ""
+        : ` gpuInstances=${String(report.gpuInstances)} gpuTriangles=${String(report.gpuTriangles)}`;
     const line =
       `TN_WORLD_GPU_SCENE ${report.on ? "on" : "off"} reason=${report.reason || "none"} ` +
       `instances=${String(report.instances)} keys=${String(report.keys)} ` +
-      `dressed=${String(this.#census.dressed)}/${String(this.#census.meshes)}`;
+      `dressed=${String(this.#census.dressed)}/${String(this.#census.meshes)}${tally}`;
     if (typeof name === "function") name(line);
     else console.info(line);
   }

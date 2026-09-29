@@ -478,6 +478,14 @@ export interface IWorldCellsLoadOptions {
    */
   readonly gpuSceneValidate?: boolean;
   /**
+   * Sample what the GPU actually selects in the main pass — a readback of the indirect args every
+   * 30 dispatches — and report it as `stats().gpuScene` and on the `TN_WORLD_GPU_SCENE`
+   * line. Off unless asked: the engine asks when the frame budget is on, and a validation turns it on
+   * by itself, so `TN_FRAME_BUDGET`'s `mainGpuTriangles` is the GPU-selected count and not the mesh
+   * capacity `tri=` reports. Set it explicitly when driving the world without a frame budget.
+   */
+  readonly gpuSceneTally?: boolean;
+  /**
    * Record every GPU-dressed main batch mesh into one `BundleGroup` and replay the bundle instead of
    * re-walking three's per-object path for each draw. Off by default: measured on machinefall's
    * map-walk, bundles gave no CPU p50/p95 gain (the main thread is mostly idle and the frame is
@@ -491,6 +499,20 @@ export interface IWorldCellsLoadOptions {
    * shadow node's texel gate skips a bundled mesh for the same reason.
    */
   readonly bundles?: boolean;
+}
+
+/**
+ * What the GPU actually selected in the main pass, from the scene's last landed tally.
+ *
+ * `triangles` is the GPU-selected count (`instanceCount x indexCount / 3` summed over the indirect
+ * records), never the mesh-capacity upper bound `renderer.info.render.triangles` reports, and it
+ * covers the main pass only: shadow passes are not tallied. `ageFrames` is how many dispatches have
+ * passed since those bytes were issued, so a caller never mistakes a stale sample for this frame's.
+ */
+export interface IWorldCellsGpuTally {
+  readonly instances: number;
+  readonly triangles: number;
+  readonly ageFrames: number;
 }
 
 export interface IWorldCellsStats {
@@ -564,6 +586,14 @@ export interface IWorldCellsStats {
     readonly keys: number;
     readonly dressed: number;
     readonly meshes: number;
+    /**
+     * Instances and triangles the GPU actually selected in the main pass, and the age of that
+     * sample in dispatches. Absent until the first tally lands, never zero: the scene's own
+     * `instances` above is what it holds, and `gpuInstances` is what the GPU drew.
+     */
+    readonly gpuInstances?: number;
+    readonly gpuTriangles?: number;
+    readonly gpuTallyAgeFrames?: number;
   };
   /**
    * What the main pass's draw bundles are doing: `children` is how many GPU-dressed meshes are
@@ -3046,6 +3076,12 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #gpuWanted: boolean;
   /** `gpuSceneValidate` as the load asked for it, before the query string and the environment. */
   readonly #gpuValidate: boolean | undefined;
+  /**
+   * Whether the GPU scene samples what it actually draws, so `TN_FRAME_BUDGET` and
+   * `stats().gpuScene` can report a GPU-selected count. A validation turns it on too; the engine
+   * also turns it on when the frame budget is, so a game pays nothing when neither is.
+   */
+  #gpuTally = false;
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
   /**
@@ -3119,6 +3155,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
     this.#bundlesWanted = init.bundles ?? bundlesRequested();
     this.#gpuValidate = init.gpuSceneValidate;
+    this.#gpuTally = init.gpuSceneTally === true;
     this.#castShadowLevels =
       init.shadows?.cast === true
         ? positiveInteger(init.shadows.castLevels ?? 1, "shadows.castLevels")
@@ -3306,6 +3343,7 @@ export class WorldCells extends Group implements IComputeDriven {
         renderer,
         this.#gpuWanted,
         this.#gpuValidate ?? gpuSceneValidationRequested(),
+        this.#gpuTally,
       );
     // The one check the scene cannot make for itself, and the only one that reads this class's own
     // numbers rather than the scene's tables: a dressed main mesh's own indirect record, against the
@@ -3895,6 +3933,33 @@ export class WorldCells extends Group implements IComputeDriven {
     return counts;
   }
 
+  /**
+   * Turn on the GPU-selected tally for the rest of the world's life.
+   *
+   * The engine calls this when the frame budget is on, and a `gpuSceneValidate` turns it on without
+   * it. Set `gpuSceneTally: true` at load instead when a world is driven outside a frame budget.
+   */
+  enableGpuSceneTally(): void {
+    this.#gpuTally = true;
+  }
+
+  /**
+   * The GPU's own main-pass selection from the last landed tally, or `undefined` before one lands.
+   *
+   * `triangles` is the GPU-selected count, which `renderer.info.render.triangles` cannot give for an
+   * indirect draw: three counts the mesh capacity there, an upper bound over what the kernel could
+   * select. This is what the kernel selected. Main pass only, and `ageFrames` is its staleness.
+   */
+  gpuSceneTally(): IWorldCellsGpuTally | undefined {
+    const gpu = this.#gpuScene.report();
+    if (gpu.gpuTriangles === undefined) return undefined;
+    return {
+      ageFrames: gpu.gpuTallyAgeFrames ?? 0,
+      instances: gpu.gpuInstances ?? 0,
+      triangles: gpu.gpuTriangles,
+    };
+  }
+
   stats(): IWorldCellsStats {
     const gpu = this.#gpuScene.report();
     const census = this.#gpuCensus();
@@ -3915,6 +3980,13 @@ export class WorldCells extends Group implements IComputeDriven {
         reason: gpu.reason,
         dressed: census.dressed,
         meshes: census.meshes,
+        ...(gpu.gpuTriangles === undefined
+          ? {}
+          : {
+              gpuInstances: gpu.gpuInstances,
+              gpuTallyAgeFrames: gpu.gpuTallyAgeFrames,
+              gpuTriangles: gpu.gpuTriangles,
+            }),
       },
       instances: this.#instances,
       loadsInFlight: this.#limiter.inFlight,

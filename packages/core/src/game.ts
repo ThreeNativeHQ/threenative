@@ -1237,6 +1237,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
+    // The GPU-selected main-pass tally, registered by whichever streamed world is added to the
+    // scene. The frame budget reads it once per window; a world with no sample reports undefined, so
+    // the window carries nothing rather than a zero no frame selected.
+    let gpuTallyProvider:
+      | (() => { readonly instances: number; readonly triangles: number } | undefined)
+      | undefined;
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
@@ -1253,6 +1259,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (activeRenderer === undefined)
             throw new Error("Cannot add a compute-driven object before the game starts.");
           this.#computeDriven.add(node, activeRenderer);
+        }
+        // A streamed world that can say what the GPU selected, so `TN_FRAME_BUDGET` reports the
+        // GPU-selected main-pass count beside its pass record. The tally is asked for only when the
+        // frame budget is on: with it off and no validation, the world adds no readback at all.
+        const tallySource = node as {
+          enableGpuSceneTally?: () => void;
+          gpuSceneTally?: () =>
+            | { readonly instances: number; readonly triangles: number }
+            | undefined;
+        };
+        if (typeof tallySource.gpuSceneTally === "function") {
+          gpuTallyProvider = tallySource.gpuSceneTally.bind(node);
+          if (this.#config.frameBudget !== false) tallySource.enableGpuSceneTally?.();
         }
         return object;
       },
@@ -1462,6 +1481,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
+            // The world's own count of what the GPU selected, not `info.render.triangles`' upper
+            // bound over mesh capacity. Absent until the world's first tally lands.
+            readGpuTally: () => gpuTallyProvider?.(),
             // The resolved budget rides the window rather than a marker of its own, so a harness
             // reads the target and the frames it was judged against out of one line. It lags the
             // window by one, because the window is built before this callback runs.
