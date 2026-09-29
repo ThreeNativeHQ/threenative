@@ -29,6 +29,8 @@ benchmark/godot-load-test/.godot/
 # The bytes live in the git-ignored artifact tree and are digest-checked before the copy.
 benchmark/godot-load-test/fox.glb
 benchmark/godot-load-test/fox.glb.import
+benchmark/godot-load-test/fox_0.png
+benchmark/godot-load-test/fox_0.png.import
 # The retention index is generated on demand from the citation scan (PRD-323). It derives from
 # every benchmark/verification file and every PRD or script that cites one, so tracking it meant
 # it restaled on nearly every doc edit and conflicted on concurrent branches. Read it with
