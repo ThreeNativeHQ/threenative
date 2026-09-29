@@ -49,6 +49,28 @@ const LOD0_TRIANGLES = 16;
 const LEVEL_TRIANGLES = [8, 4];
 
 /**
+ * A two-part asset whose parts carry chains of *different* depth: bark reduces 4742 -> 1128 in one
+ * terminal step with a large error, needles 11222 -> 5759 -> 2904 -> 1500. The shallow part's
+ * terminal error is bigger than the deep part's middle errors — the scots pine shape that collapsed
+ * the merged chain to two levels and drew needles level 1 at 394 m.
+ */
+const BARK_LOD0 = 4742;
+const BARK_COUNTS = [1128];
+const BARK_ERRORS = [2.0];
+const NEEDLE_LOD0 = 11222;
+const NEEDLE_COUNTS = [5759, 2904, 1500];
+const NEEDLE_ERRORS = [0.4, 0.6, 1.0];
+const [BARK_LAST = 0] = BARK_COUNTS;
+const [NEEDLE_FIRST = 0, NEEDLE_SECOND = 0, NEEDLE_LAST = 0] = NEEDLE_COUNTS;
+/** Level 0 draws both parts whole; above it a part at its last level keeps that level's shape. */
+const MERGED_TRIANGLES = [
+  BARK_LOD0 + NEEDLE_LOD0,
+  BARK_LAST + NEEDLE_FIRST,
+  BARK_LAST + NEEDLE_SECOND,
+  BARK_LAST + NEEDLE_LAST,
+];
+
+/**
  * The budget the chain is registered with, and the one the world batches at by default. They are
  * different numbers on purpose, and the gap is the point: see `IWorldCellsLoadOptions.autoLod`.
  */
@@ -57,6 +79,10 @@ const AUTO_LOD_PIXEL_ERROR = 4;
 
 /** Where a level of the chain takes over at the default projection and the default batched budget. */
 const SWITCH = ERRORS.map((error) => (error * PIXELS_PER_UNIT) / AUTO_LOD_PIXEL_ERROR);
+/** The deep chain's switches: the merged chain keeps every one of them, in order. */
+const MERGED_SWITCH = NEEDLE_ERRORS.map(
+  (error) => (error * PIXELS_PER_UNIT) / AUTO_LOD_PIXEL_ERROR,
+);
 /** The same switches at the budget the chain was registered with, which is `SWITCH` times four. */
 const REGISTERED_SWITCH = ERRORS.map((error) => (error * PIXELS_PER_UNIT) / REGISTERED_PIXEL_ERROR);
 
@@ -128,6 +154,97 @@ async function chainedModel(maxPixelError: number): Promise<Group> {
   });
   await plugin.afterRoot({});
   plugin.attach(group, { hysteresis: 0.15, maxPixelError });
+  return group;
+}
+
+/** A mesh of `triangles` triangles over one quad; only the index count is under test. */
+function quadGeometry(triangles: number): BufferGeometry {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new BufferAttribute(new Float32Array([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0]), 3),
+  );
+  const indices = new Uint32Array(triangles * 3);
+  for (let triangle = 0; triangle < triangles; triangle += 1) {
+    const at = triangle * 3;
+    indices[at] = 0;
+    indices[at + 1] = 1;
+    indices[at + 2] = 2;
+  }
+  geometry.setIndex(new BufferAttribute(indices, 1));
+  return geometry;
+}
+
+/**
+ * The two-part asset the scots pine is: bark and needles, each with its own baked chain, registered
+ * through the real plugin exactly as {@link chainedModel} registers one.
+ */
+async function chainedTwoPartModel(): Promise<Group> {
+  const group = new Group();
+  const bark = new Mesh(quadGeometry(BARK_LOD0), new MeshBasicMaterial());
+  const needles = new Mesh(quadGeometry(NEEDLE_LOD0), new MeshBasicMaterial());
+  group.add(bark);
+  group.add(needles);
+  const levels = [...BARK_COUNTS, ...NEEDLE_COUNTS].map((triangles) => {
+    const indices = new Uint32Array(triangles * 3);
+    for (let triangle = 0; triangle < triangles; triangle += 1) {
+      const at = triangle * 3;
+      indices[at] = 0;
+      indices[at + 1] = 1;
+      indices[at + 2] = 2;
+    }
+    return indices;
+  });
+  const def = (lod0Triangles: number, counts: number[], errors: number[], indices: number[]) => ({
+    absoluteErrors: errors,
+    counts,
+    errors,
+    indices,
+    lod0Triangles,
+    schemaVersion: DISCRETE_LOD_SCHEMA_VERSION,
+  });
+  const plugin = new DiscreteLodPlugin();
+  plugin.setParser({
+    associations: new Map<object, { meshes: number; primitives: number }>([
+      [bark, { meshes: 0, primitives: 0 }],
+      [needles, { meshes: 1, primitives: 0 }],
+    ]),
+    getDependency: async (_type: string, index: number) => ({ array: levels[index] }),
+    json: {
+      meshes: [
+        {
+          primitives: [
+            {
+              extensions: {
+                [TN_DISCRETE_LOD]: def(
+                  BARK_LOD0,
+                  BARK_COUNTS,
+                  BARK_ERRORS,
+                  BARK_COUNTS.map((_count, index) => index),
+                ),
+              },
+            },
+          ],
+        },
+        {
+          primitives: [
+            {
+              extensions: {
+                [TN_DISCRETE_LOD]: def(
+                  NEEDLE_LOD0,
+                  NEEDLE_COUNTS,
+                  NEEDLE_ERRORS,
+                  NEEDLE_COUNTS.map((_count, index) => BARK_COUNTS.length + index),
+                ),
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await plugin.afterRoot({});
+  plugin.attach(group, { hysteresis: 0.15, maxPixelError: REGISTERED_PIXEL_ERROR });
   return group;
 }
 
@@ -373,6 +490,37 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
         if (upper !== undefined) expect(distance).toBeLessThanOrEqual(upper);
       }
     }
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("keeps every level of the deepest part's chain when a sibling's chain is shallower", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const model = await chainedTwoPartModel();
+    stubManifestFetch(withoutAuthoredLods());
+
+    const follow = { position: { x: -64, z: -64 } };
+    const world = await loadWorld({
+      budgets,
+      follow,
+      loadModel: chainLoader(model),
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+
+    // Four levels, not two: needles walks its whole ladder at the distances its own errors project
+    // to, and bark — whose one-step chain cannot offer a finer shape past level 1 — rides along at
+    // its last shape instead of collapsing its sibling's intermediate levels away.
+    const distances = MERGED_SWITCH.map((distance) => distance.toFixed(1)).join(",");
+    expect(markers()).toEqual([
+      `TN_WORLD_LOD_CHAIN pine: levels=4 distances=0.0,${distances} ` +
+        `tris=${MERGED_TRIANGLES.join(",")}`,
+    ]);
+    for (let level = 1; level < MERGED_SWITCH.length; level += 1)
+      expect(MERGED_SWITCH[level] as number).toBeGreaterThan(MERGED_SWITCH[level - 1] as number);
     expect(world.stats().failures).toBe(0);
     world.dispose();
   });

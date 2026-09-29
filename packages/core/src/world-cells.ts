@@ -2517,9 +2517,11 @@ interface IChainLevels {
  * `error * pixelsPerUnit / maxPixelError`, with each part's own registered budget.
  *
  * Level `i` is `chain.levels[min(i, length - 1)]` per part, so a part without a chain — and one
- * whose chain ran out below `i` — keeps the shape above it. The switch distance is the **max**
- * across the parts, so a part that still wants detail at that distance holds the whole asset back
- * rather than being drawn coarse by a sibling that does not.
+ * whose chain ran out below `i` — keeps the shape above it. The switch distances come from the
+ * parts that descend the furthest, the **max** across those at each level, so the deepest chain's
+ * whole ladder survives. A part with a shallower chain clamps to its last level and does not set a
+ * switch: it cannot be drawn finer there anyway, so its error must not push the switch past the
+ * deepest chain's own last error and collapse the ladder to one far step.
  */
 function chainDistances(
   chains: readonly (ILodChain | undefined)[],
@@ -2534,8 +2536,13 @@ function chainDistances(
   for (let level = 1; level < deepest; level += 1) {
     let error = 0;
     for (const chain of chains) {
-      if (chain === undefined) continue;
-      error = Math.max(error, chain.errors[Math.min(level, chain.levels.length - 1)] ?? 0);
+      // Only the parts that descend the furthest set the schedule. A part whose chain ran out has
+      // no finer shape to offer past its last level, so letting its — often terminal, and so huge —
+      // error gate this switch cannot buy that part any detail back. It would only deny every
+      // sibling the coarser level and collapse the chain to a single far switch, which is how a
+      // bark primitive's 2-level chain truncated a pine's 4-level needles chain to two levels.
+      if (chain === undefined || chain.levels.length !== deepest) continue;
+      error = Math.max(error, chain.errors[level] ?? 0);
     }
     const at = (error * pixelsPerUnit) / maxPixelError;
     // A chain's errors only ascend, so a switch that does not move outward — or that lands at or
@@ -2586,9 +2593,11 @@ function chainLevelParts(
  * {@link IWorldCellsLoadOptions.autoLod} for why a batch cannot use the registered one.
  *
  * Level `i` is `chain.levels[min(i, length - 1)]` per part, so a part without a chain — and one
- * whose chain ran out below `i` — keeps the shape above it. The switch distance is the **max**
- * across the parts, so a part that still wants detail at that distance holds the whole asset back
- * rather than being drawn coarse by a sibling that does not.
+ * whose chain ran out below `i` — keeps the shape above it. The switch distances come from the
+ * parts that descend the furthest, the **max** across those at each level, so the deepest chain's
+ * whole ladder survives. A part with a shallower chain clamps to its last level and does not set a
+ * switch: it cannot be drawn finer there anyway, so its error must not push the switch past the
+ * deepest chain's own last error and collapse the ladder to one far step.
  */
 function chainLevels(
   parts: readonly IAssetPart[],
