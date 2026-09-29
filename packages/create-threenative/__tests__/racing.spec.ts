@@ -8,6 +8,7 @@ import { headingError } from "../templates/racing/src/entities/LineDriver.js";
 import { cameraBank, chaseCamera } from "../templates/racing/src/render/camera.js";
 import { toon } from "../templates/racing/src/render/palette.js";
 import { rankRacers, routeProgress } from "../templates/racing/src/track/Ranking.js";
+import { TOTAL_LAPS, gridPosition, intersectRay } from "../templates/racing/src/track/Track.js";
 import {
   CIRCUIT,
   GRID,
@@ -17,7 +18,6 @@ import {
   TRACK_WIDTH,
   groundHeight,
 } from "../templates/racing/src/track/circuit.js";
-import { TOTAL_LAPS, gridPosition, intersectRay } from "../templates/racing/src/track/Track.js";
 
 const racingRoot = path.resolve("packages/create-threenative/templates/racing");
 const read = (file: string): string => readFileSync(path.join(racingRoot, file), "utf8");
