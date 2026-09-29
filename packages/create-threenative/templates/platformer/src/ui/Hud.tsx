@@ -20,34 +20,36 @@ export function Hud() {
   if (state === undefined) return null;
   return (
     <div className="pointer-events-none absolute inset-0 p-6 text-[11px] uppercase tracking-[0.14em] text-text">
-      <div className="flex items-center gap-2">
-        <span aria-label={`${state.hearts} of 3 hearts left`} className="text-lume">
-          {"♥".repeat(Math.max(0, state.hearts))}
-          <span className="text-dim">{"♡".repeat(Math.max(0, 3 - state.hearts))}</span>
-        </span>
-        <span>
-          coins{" "}
-          <b id="coins" className="text-lume">
-            {state.coins}
-          </b>
-        </span>
-        <span>
-          gems{" "}
-          <b id="gems" className="text-lume">
-            {state.gems}/{state.gemTotal}
-          </b>
-        </span>
-        <span>
-          stars{" "}
-          <b id="stars" className="text-lume">
-            {state.stars}
-          </b>
-        </span>
-      </div>
-      <div className="mt-2 flex gap-5 text-dim">
-        <span id="clock">{clock(state.time)}</span>
-        <span>checkpoint {state.checkpoint}</span>
-        {state.finished ? <span className="text-lume">level clear</span> : null}
+      <div className="w-fit rounded bg-black/70 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span aria-label={`${state.hearts} of 3 hearts left`} className="text-lume">
+            {"♥".repeat(Math.max(0, state.hearts))}
+            <span className="text-dim">{"♡".repeat(Math.max(0, 3 - state.hearts))}</span>
+          </span>
+          <span>
+            coins{" "}
+            <b id="coins" className="text-lume">
+              {state.coins}
+            </b>
+          </span>
+          <span>
+            gems{" "}
+            <b id="gems" className="text-lume">
+              {state.gems}/{state.gemTotal}
+            </b>
+          </span>
+          <span>
+            stars{" "}
+            <b id="stars" className="text-lume">
+              {state.stars}
+            </b>
+          </span>
+        </div>
+        <div className="mt-2 flex gap-5 text-dim">
+          <span id="clock">{clock(state.time)}</span>
+          <span>checkpoint {state.checkpoint}</span>
+          {state.finished ? <span className="text-lume">level clear</span> : null}
+        </div>
       </div>
       {state.toast !== "" ? (
         <div className="absolute left-1/2 top-16 -translate-x-1/2 text-[13px] text-lume">

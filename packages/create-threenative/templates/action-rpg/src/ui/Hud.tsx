@@ -11,7 +11,7 @@ export function Hud() {
   const enemies = state.enemiesDefeated;
   const blocked = state.lineOfSightBlocked;
   return (
-    <section className="pointer-events-none absolute left-6 top-5 w-72 text-[10px] uppercase tracking-[0.16em]">
+    <section className="pointer-events-none absolute left-6 top-5 w-72 rounded bg-black/70 p-3 text-[10px] uppercase tracking-[0.16em]">
       <div className="text-dim">grid dungeon / action rpg</div>
       <div className="mt-2 text-3xl leading-none text-amber">room {room} / 3</div>
       <div className="mt-2 text-cyan">three rooms · boss clear · death fails</div>

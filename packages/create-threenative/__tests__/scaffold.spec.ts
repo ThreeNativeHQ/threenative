@@ -433,7 +433,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-28 for PRD-470: the action RPG is cut from the prototype test scene and
   // built on `mannequin-combat.glb`. One rig, six instances, a real doorway between the rooms, and
   // a `Play` scene the game starts in, so only this tree moves.
-  "action-rpg": "4a6b4a024bc8b20b198010e0707a4ec13655dac67bee1710587fcab0d265b79e",
+  "action-rpg": "e1294be96b6fa1603e4491a00e4950efe953980216544970da2e930c899983d7",
   defense: "08c5712fc67937b1cc10354413f7d8d950aba72784cba3e3f6e66ad150d1d53b",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
@@ -447,7 +447,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
   minimal: "ba6e045a12666636587f1338a10c61a966b8261eff315387883a919c378052c9",
-  platformer: "9a6bc853013a078e35bf2f9d70a40d34dc106f1315746f3c824950432b347369",
+  platformer: "f057c1384a45ff9ed2799a0d54c5439533ed02628de545a57e18d09f975efd70",
   runner: "2b6844ced6e5591839b746deab922a866ff0c9a5afd2ea435a5b15c935d21ffd",
   puzzle: "15d0dd06e372b024df52f48ed4f78ed08734cdc47b2c41b41ee1702a69f7b56c",
   racing: "f1018eeb9a833794dbe1a2f7dfa0899d87b6cf2c5821682a203c4fa8ff2b803a",
