@@ -82,3 +82,70 @@ Risks:
    - [ ] `bundleGroup.needsUpdate` moves only on a structural change, and `stats().bundle` counts the records against the keys minted and retired. proof: the same spec's 200-frame streaming walk.
 3. Impostors (AC-3) and HLOD (AC-4), in parallel: they are independent.
 4. Measure and tune (AC-5).
+
+## Phase 3 executable plan
+
+**First step (pick one): cook-time per-cell HLOD caster proxies, not GPU-driven indirect casters.**
+
+Why, from the code:
+- A merged, position-only caster already exists and is already correct for a depth pass:
+  `buildChunkShadowProxies` groups a chunk's covered opaque meshes by `side`, builds
+  `shadowProxyGeometry`, flips `castShadow = false` on the covered meshes and puts the proxy on
+  `VIRTUAL_SHADOW_CASTER_LAYER` (`packages/core/src/world-cells.ts:2019-2058`, `2067-2109`), and
+  `#probe` bills it as a cluster and window-culls it for free
+  (`packages/core/src/render/virtual-shadow.ts:1015-1020`). Cooking the same proxy per cell, from a
+  simplified merge, changes where the geometry comes from and nothing else — no new layer, no new
+  dispatch, no fallback path.
+- Indirect casters cannot bring the w=640 count down. The wide layer is already one draw per
+  `asset:level:part` mesh (`virtual-shadow.ts:1018-1019`); `BufferGeometry.setIndirect` moves only
+  the instance *count* into a GPU buffer, so the record, the mesh and its draw submission stay one
+  per key. The measured w=640 break is per-draw JS (11–19 ms), so only fewer draws cuts it.
+- The coarse level already submits the chain's coarsest geometry (`virtual-shadow.ts:941-946`), so
+  the wide bill is now draw count, not LOD detail; a per-cell merge is the only candidate that
+  collapses many keys into one draw.
+- It is also exactly AC-4's bake, so the shadow fix rides on work already required rather than a
+  parallel mechanism. GPU casters stay the documented fallback (step 4).
+
+Steps (each: files, the number that proves it, the smallest test):
+
+0. Baseline marker, no production change. Add `draws` to `IVirtualShadowLevelStat`
+   (`virtual-shadow.ts:246-253`), set from `clusterDraws + wideDraws` in `#probe`, print it in the
+   `TN_VIRTUAL_SHADOW` line (`virtual-shadow.ts:1645-1672`). proof: a `?tnShadowStats=1` walk prints
+   the width=640 row; it is ~336 today. test: `world-shadow-caster-cost.spec.ts`, assert the reported
+   count equals the meshes the level's camera actually submits.
+1. Cook bakes one merged, simplified, position-only proxy per cell. Files:
+   `packages/assets/src/lod/hlod.ts` (new; error budget in cell-local units), wired through
+   `packages/assets/src/pass-chain.ts` and `packages/assets/src/compile.ts`; input is the cells the
+   world export already names (`tn_world_chunk`, `packages/blender-mcp/src/index.ts:101`); output one
+   GLB plus material-group count and error per cell, keyed on the source hash so it caches. proof:
+   `TN_WORLD_HLOD cells=N proxies=M maxError=…` at build, mirroring `TN_WORLD_CHUNK_MERGE`
+   (`world-cells.ts:5726`); each proxy's triangles ≤ the budget, deterministic across runs. test:
+   `packages/assets/__tests__/hlod.spec.ts`.
+2. WorldCells draws the proxy beyond its distance, main and caster. Files:
+   `packages/core/src/world-cells.ts` — load the cell proxy with the cell; past the distance hide
+   `cell.chunks` and show the proxy; a copy on `VIRTUAL_SHADOW_CASTER_LAYER` with `castShadow = true`
+   and `frustumCulled = false`, on the fold where `#cullCells`/refilter already flips cell
+   visibility. Distance comes from the proxy's own projected error, no game option. proof:
+   `TN_WORLD_HLOD draws=… replaced=…` and the `TN_VIRTUAL_SHADOW` width=640 draw count below 120.
+   test: extend `world-shadow-caster-cost.spec.ts` — a cell past the distance submits one caster draw
+   per material group, near cells submit their chunks. red-green: remove the swap, the count returns
+   to ~336 and the test fails.
+3. Far-tree impostors (AC-3), independent of 1–2. Cook: `packages/assets/src/lod/impostor.ts` (new)
+   bakes an N×N octahedral atlas (albedo+alpha, normal) from the chain's base geometry; emit it as an
+   extra level after the last discrete level, carrying the chain's own `error` and 2 triangles. The
+   switch distance is `chainDistances`' formula (`world-cells.ts:2533-2549`) fed the last level's
+   error, so no game-side value exists. Runtime: `packages/core/src/model-lod.ts` already selects by
+   projected error, so the impostor switches like any level; put its quad on both caster layers.
+   proof: `TN_WORLD_IMPOSTOR asset=… levels=… switch=…`; past the switch, triangles per tree are 2,
+   read from `?tnShadowStats=1` plus a `visuals:baseline` capture at the switch. test:
+   `packages/core/__tests__/world-impostors.spec.ts` + `packages/assets/__tests__/impostor.spec.ts`.
+4. Risks and what to cut. Cook cost and package size grow by one proxy per cell: bake behind the
+   content-hash cache and skip a cell whose merged error already fits the budget (proxy == chunks, no
+   win). Pop at the swap distance: switch by projected error, not metres; if it still pops, cut step
+   2's main-pass half and ship the caster proxy alone, because the measured break is the shadow
+   level. Impostor parallax or lighting at the switch: normals in the atlas, switch by the chain's
+   last error; if it still reads wrong, fall back to the coarse chain and leave AC-3's box open (it
+   is independent). If step 2 cannot get width=640 under 120 draws, re-plan the wide half onto
+   GPU-driven indirect casters (`packages/core/src/world-gpu-scene.ts`), which removes the per-draw
+   JS even though one record per key remains; never plan per-level `BundleGroup`s (see the
+   feasibility section above).
