@@ -20,7 +20,7 @@ import type { ImpactSurface } from "../surfaces.js";
 /**
  * A white disc that falls off to nothing at the rim: the smoke and dust sprite.
  *
- * Written here rather than imported from `@threenative/core` because nothing under
+ * Written here rather than imported from the core package because nothing under
  * `src/render/` may import a package — this file is the user's to rewrite, and a
  * framework call in it is one more thing to unlearn when the look changes. It is the
  * same 20 lines the framework ships, and the reason it exists at all is in

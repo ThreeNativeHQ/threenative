@@ -65,7 +65,7 @@ export const scale = {
 } as const;
 
 // Measurement and normalisation live in the engine now: `normaliseToMetres` from
-// `@threenative/core` does crown-bone height and longest-axis scaling. This file keeps
+// the core package does crown-bone height and longest-axis scaling. This file keeps
 // only this game's real-world metre table and the audit rules that check it.
 
 /** Which measured dimension a check reads. */
