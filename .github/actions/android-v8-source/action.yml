@@ -7,6 +7,14 @@ inputs:
     required: false
     default: packages/runtime-native
 
+outputs:
+  recipe-hash:
+    description: Hash of the files that define the payload; names the published release asset.
+    value: ${{ steps.recipe.outputs.hash }}
+  published:
+    description: "'true' when the payload came from the published release asset."
+    value: ${{ steps.published.outputs.hit }}
+
 runs:
   using: composite
   steps:
@@ -24,10 +32,35 @@ runs:
             'packages/runtime-native/scripts/download-deps.mjs',
             'packages/runtime-native/android/gradle.properties') }}
       run: echo "hash=$RECIPE_HASH" >> "$GITHUB_OUTPUT"
+    # The durable copy. The Actions cache alone could not hold the payload: the repository's 10 GiB
+    # budget is shared by every lane, and on 2026-09-28 the nightly's payload (saved 12:06) was
+    # evicted before 15:48, so every PR cold-built V8 for two hours. It was also branch-scoped: a
+    # payload a PR saved was invisible to every other PR. A release asset is neither. Only trusted
+    # refs publish it (native-platforms.yml `publish-android-v8`); the build step below still
+    # verifies the receipt and rebuilds anything that fails it.
+    - name: Download the published Android V8 payload
+      id: published
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ASSET: v8-android-${{ steps.recipe.outputs.hash }}.tgz
+        DEST: ${{ inputs.runtime-root }}/third_party/v8-android
+      run: |
+        set -euo pipefail
+        if gh release download ci-v8-android --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" \
+          --dir "$RUNNER_TEMP" --clobber; then
+          mkdir -p "$DEST"
+          tar -xzf "$RUNNER_TEMP/$ASSET" -C "$DEST"
+          echo "hit=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No published $ASSET; falling back to the Actions cache and the source build."
+          echo "hit=false" >> "$GITHUB_OUTPUT"
+        fi
     # The built payload is the expensive thing and it is stable per recipe. Its key carries no run
     # id, so every run of the same recipe restores it instead of cold-building V8 into the timeout.
     - name: Restore the pinned Android V8 payload
       id: payload
+      if: steps.published.outputs.hit != 'true'
       uses: actions/cache/restore@v4
       with:
         path: ${{ inputs.runtime-root }}/third_party/v8-android
@@ -35,7 +68,7 @@ runs:
     # Only a payload miss needs the resumable source state. Its key keeps a per-run suffix because
     # a resumed build must save to a unique key rather than collide with the run that produced it.
     - name: Restore the resumable V8 source state
-      if: steps.payload.outputs.cache-hit != 'true'
+      if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true'
       uses: actions/cache/restore@v4
       with:
         path: |
@@ -61,6 +94,8 @@ runs:
         # and needed a manual re-run. 180 minutes lets one run complete and cache the payload.
         # The remaining 30 minutes let actions/cache/save archive the prepared checkout and Ninja
         # outputs after an interrupted compile, so the next run resumes instead of starting over.
+        # A published payload makes this a receipt check that returns in seconds.
+        export THREENATIVE_V8_BUILD_JOBS="${THREENATIVE_V8_BUILD_JOBS:-$(nproc)}"
         timeout --signal=TERM --kill-after=30s 180m \
           node scripts/download-deps.mjs --only v8-android
     # Payload-only verification is valid: `--verify` inspects the installed payload and its receipt
@@ -74,16 +109,20 @@ runs:
         set -euo pipefail
         node scripts/build-android-v8.mjs --verify
     - name: Save the prebuilt Android V8 payload
-      if: steps.payload.outputs.cache-hit != 'true' && steps.verify.outcome == 'success'
+      if: steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' && steps.verify.outcome == 'success'
       uses: actions/cache/save@v4
       with:
         path: ${{ inputs.runtime-root }}/third_party/v8-android
         key: android-v8-payload-${{ runner.os }}-${{ runner.arch }}-${{ steps.recipe.outputs.hash }}
     # The 3.2 GB source state only ever saves when the build was cut off mid-compile (timeout or
     # cancel); a successful build saves the payload alone. Saving it always is what evicted every
-    # other repo cache entry.
+    # other repo cache entry. A cancelled pull request is superseded, not interrupted: its newer run
+    # starts its own build, and each such 3 GB save evicted the ccache, Gradle and Cargo entries.
     - name: Save resumable V8 source state
-      if: always() && steps.payload.outputs.cache-hit != 'true' && (steps.build.outcome == 'failure' || steps.build.outcome == 'cancelled')
+      if: >-
+        always() && steps.published.outputs.hit != 'true' && steps.payload.outputs.cache-hit != 'true' &&
+        (steps.build.outcome == 'failure' ||
+        (steps.build.outcome == 'cancelled' && github.event_name != 'pull_request'))
       uses: actions/cache/save@v4
       with:
         path: |

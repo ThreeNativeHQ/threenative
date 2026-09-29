@@ -700,17 +700,28 @@ const box1000 = {
 };
 
 describe("ThreeNative against Godot scoreboard", () => {
-  const tableOf = (html: string): string =>
+  // The cube scoreboard's own section. PRD-464's realistic-scene ladder is rendered above it and
+  // uses the same table markup, so a bare "first compare-table" would read the ladder instead.
+  const cubeSection = (html: string): string =>
     html.slice(
-      html.indexOf('<table class="compare-table">'),
-      html.indexOf("</table>", html.indexOf('<table class="compare-table">')),
+      html.indexOf('<section class="panel" aria-label="ThreeNative against Godot scoreboard">'),
     );
 
-  const bannerOf = (html: string): string =>
-    html.slice(
-      html.indexOf('<div class="verdict-banner">'),
-      html.indexOf('<table class="compare-table">'),
+  const tableOf = (html: string): string => {
+    const section = cubeSection(html);
+    return section.slice(
+      section.indexOf('<table class="compare-table">'),
+      section.indexOf("</table>", section.indexOf('<table class="compare-table">')),
     );
+  };
+
+  const bannerOf = (html: string): string => {
+    const section = cubeSection(html);
+    return section.slice(
+      section.indexOf('<div class="verdict-banner">'),
+      section.indexOf('<table class="compare-table">'),
+    );
+  };
 
   it("calls a win only when the gap beats the run-to-run spread, and reports the spread beside it", () => {
     const html = renderProgressHtml(
@@ -938,5 +949,149 @@ describe("ThreeNative against Godot scoreboard", () => {
     const html = renderProgressHtml(data({ pilots: attempts, attemptsRoot: root }));
     expect(html).toContain("Evidence unavailable:");
     expect(html).toContain("Godot upstream benchmark file");
+  });
+});
+
+// PRD-464's realistic-scene ladder. A rung that did not record its own counts and a non-blank
+// read-back frame never became a report, so every number here is behind a scene that was proved to
+// have rendered; what the monitor has to get right is which rung is in which run file, and what it
+// says when a rung is not there yet.
+describe("the realistic-scene ladder on the monitor page", () => {
+  /** The ladder's own run files: R1-R4 at 720p, R5 in its own 1080p family. */
+  function ladderRuns(
+    engine: "godot" | "threenative",
+    rows: IRowFixture[],
+    family: "ladder" | "ladder1080" = "ladder",
+  ): IAttempt[] {
+    const label = engine === "godot" ? "godot" : "tn";
+    const runCount = Math.max(...rows.map((row) => row.p50s.length));
+    return Array.from({ length: runCount }, (_, run) =>
+      scoreboardRun(
+        `pilots/${family}-${label}-r${run + 1}-2026-09-27.json`,
+        engine,
+        rows.flatMap((row) => {
+          const p50 = row.p50s[run];
+          return p50 === undefined
+            ? []
+            : [
+                {
+                  drawCalls: row.drawCalls ?? 3,
+                  mode: row.mode,
+                  objectCount: row.objectCount ?? 4096,
+                  p50,
+                  p95: row.p95 ?? p50 * 1.5,
+                },
+              ];
+        }),
+      ),
+    );
+  }
+
+  const sectionOf = (html: string): string =>
+    html.slice(
+      html.indexOf('<section class="panel" aria-label="Realistic scene ladder">'),
+      html.indexOf('<section class="panel" aria-label="ThreeNative against Godot scoreboard">'),
+    );
+
+  const LADDER_TN = [
+    { mode: "R1" as TRenderMode, p50s: [8, 8.1, 8.2] },
+    { mode: "R2" as TRenderMode, p50s: [9, 9.1, 9.2] },
+    { mode: "R3" as TRenderMode, p50s: [10, 10.1, 10.2] },
+    { mode: "R4" as TRenderMode, p50s: [12, 12.1, 12.2] },
+  ];
+  const LADDER_GODOT = [
+    { mode: "R1" as TRenderMode, p50s: [6, 6.1, 6.2] },
+    { mode: "R2" as TRenderMode, p50s: [6.5, 6.6, 6.7] },
+    { mode: "R3" as TRenderMode, p50s: [7, 7.1, 7.2] },
+    { mode: "R4" as TRenderMode, p50s: [9, 9.1, 9.2] },
+  ];
+
+  it("opens on the 1080p headline in frames per second, with the ladder under it", () => {
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          // The tag comes from the cube scoreboard's own run files, so one of them is present.
+          scoreboardRun(TN_R1, "threenative", [
+            { drawCalls: 3, mode: "L3", objectCount: 4096, p50: 2, p95: 3 },
+          ]),
+          ...ladderRuns("threenative", LADDER_TN),
+          ...ladderRuns("godot", LADDER_GODOT),
+          ...ladderRuns("threenative", [{ mode: "R5", p50s: [16.7, 16.7, 16.7] }], "ladder1080"),
+          ...ladderRuns("godot", [{ mode: "R5", p50s: [20, 20, 20] }], "ladder1080"),
+        ],
+      }),
+    );
+    const section = sectionOf(html);
+    // 1000 / the median p50 of the retained runs, and the verdict is the scoreboard's own rule.
+    expect(section).toContain("Full scene at 1080p: ThreeNative 59.9 fps vs Godot 50.0 fps");
+    expect(section).toContain('<span class="pill win-tn">TN</span>');
+    expect(section).toContain("ThreeNative — 1.2x faster on a typical frame");
+    // Every rung, what it added, and both engines' medians with the spread beside them.
+    for (const label of [
+      "R1 Sun",
+      "R2 Lights",
+      "R3 Characters",
+      "R4 Post",
+      "R5 Full scene at 1920x1080",
+    ])
+      expect(section).toContain(label);
+    expect(section).toContain("Fifty Khronos Fox glTFs, each playing Run at a staggered offset.");
+    expect(section).toContain("8.10 ms (±0.20, 3 runs)");
+    expect(section).toContain("6.10 ms (±0.20, 3 runs)");
+    // A rung Godot took is called a Godot win, in the same runs as the table.
+    expect(section).toContain('<span class="pill win-godot">Godot</span>');
+    // The 1080p rung is read out of its own run files, and every run file is named.
+    expect(section).toContain('href="pilots/ladder1080-tn-r1-2026-09-27.json"');
+    expect(section).toContain('href="pilots/ladder-tn-r1-2026-09-27.json"');
+    expect(section).toContain('href="pilots/ladder-godot-r3-2026-09-27.json"');
+    // The headline and the ladder come before the cube scoreboard, not after it.
+    expect(html.indexOf("Full scene at 1080p:")).toBeLessThan(
+      html.indexOf("ThreeNative vs Godot — 1,024 + 4,096 cubes"),
+    );
+    expect(html.indexOf("Realistic scene ladder")).toBeLessThan(
+      html.indexOf("ThreeNative vs Godot — 1,024 + 4,096 cubes"),
+    );
+  });
+
+  it("reads a missing rung as pending, in the headline and in the table", () => {
+    const html = renderProgressHtml(
+      data({
+        pilots: [
+          scoreboardRun(TN_R1, "threenative", [
+            { drawCalls: 3, mode: "L3", objectCount: 4096, p50: 2, p95: 3 },
+          ]),
+          // R1-R4 measured; the 1080p run was never taken.
+          ...ladderRuns("threenative", LADDER_TN),
+          ...ladderRuns("godot", LADDER_GODOT),
+        ],
+      }),
+    );
+    const section = sectionOf(html);
+    // No fabricated fps from a rung that has no runs, and no verdict either.
+    expect(section).toContain(
+      "Full scene at 1080p: ThreeNative pending — no retained runs yet fps vs Godot pending — no retained runs yet fps",
+    );
+    expect(section).not.toContain("1080p: ThreeNative 0.0 fps");
+    // The R5 row is pending on both sides, and names the run files that would fill it.
+    expect(section).toContain("ladder1080-tn-r1-2026-09-27.json");
+    expect(section).toContain("ladder1080-godot-r3-2026-09-27.json");
+    // The rungs that did run are still read as numbers.
+    expect(section).toContain("8.10 ms (±0.20, 3 runs)");
+  });
+
+  it("claims no fps and no rung at all when no ladder run is retained", () => {
+    const section = sectionOf(renderProgressHtml(data()));
+    expect(section).toContain("Full scene at 1080p: ThreeNative pending");
+    expect(section).toContain("fps vs Godot pending");
+    expect(section).not.toMatch(/\d+\.\d fps/u);
+    // Every rung is still named, so a reader can see what is missing rather than an empty section.
+    for (const label of [
+      "R1 Sun",
+      "R2 Lights",
+      "R3 Characters",
+      "R4 Post",
+      "R5 Full scene at 1920x1080",
+    ])
+      expect(section).toContain(label);
   });
 });
