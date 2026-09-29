@@ -459,19 +459,20 @@
         "entity": "enemy",
         "component": "decelPeakMs2",
         "lte": 10,
-        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 \u2014 WALK_DECEL exactly \u2014 when it coasts"
+        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 — WALK_DECEL exactly — when it coasts"
       },
       {
         "entity": "enemy-2",
         "component": "decelPeakMs2",
         "lte": 10,
-        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 \u2014 WALK_DECEL exactly \u2014 when it coasts"
-      },
+        "allowTrivial": "the peak only grows and rests at zero before he has walked anywhere, which is the honest baseline for a worst-case metric; it reads 78.7 when a patrol pause teleports the body to rest and 9.0 — WALK_DECEL exactly — when it coasts"
+      }
+    ],
+    "animation": [
       {
         "entity": "enemy",
-        "component": "locomotionRatePeak",
-        "gte": 1.5,
-        "allowTrivial": "the peak is sticky and the soldiers patrol from spawn, so warmup may already have banked a walking rate before the baseline snapshot"
+        "strideSynced": true,
+        "allowTrivial": "a soldier standing still plays an idle clip, which reports synced false; the decel metric beside it fails when the body is what snapped"
       }
     ],
     "resources": [

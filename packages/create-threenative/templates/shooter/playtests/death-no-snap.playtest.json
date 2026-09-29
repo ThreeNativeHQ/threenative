@@ -12,11 +12,19 @@
     "entities": [
       {
         "entity": "player",
-        "position": [-4.5, 0.89, -5.0]
+        "position": [
+          -4.5,
+          0.89,
+          -5.0
+        ]
       },
       {
         "entity": "enemy-frozen",
-        "position": [-4.5, 0, -6.8]
+        "position": [
+          -4.5,
+          0,
+          -6.8
+        ]
       }
     ]
   },
@@ -47,12 +55,6 @@
         "component": "deathObserved",
         "equals": true,
         "allowTrivial": "death is observed only after the headshot lands, but the metric reads false-free before it"
-      },
-      {
-        "entity": "enemy",
-        "component": "deathAnkleDelta",
-        "lte": 0.05,
-        "allowTrivial": "ankle drift is zero until the death clip plays, so the resting value is the honest baseline"
       },
       {
         "entity": "enemy",

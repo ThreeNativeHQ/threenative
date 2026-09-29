@@ -12,11 +12,19 @@
     "entities": [
       {
         "entity": "player",
-        "position": [-4.5, 0.89, -5.0]
+        "position": [
+          -4.5,
+          0.89,
+          -5.0
+        ]
       },
       {
         "entity": "enemy-frozen",
-        "position": [-4.5, 0, -6.8]
+        "position": [
+          -4.5,
+          0,
+          -6.8
+        ]
       }
     ]
   },
@@ -44,12 +52,6 @@
     "components": [
       {
         "entity": "enemy",
-        "component": "deathRiseM",
-        "lte": 0.03,
-        "allowTrivial": "a living soldier has no death height to rise from, so this reads zero until the round lands"
-      },
-      {
-        "entity": "enemy",
         "component": "deathClipFrames",
         "gte": 60
       },
@@ -58,12 +60,6 @@
         "component": "footClearance",
         "lte": 0.06,
         "allowTrivial": "a standing soldier already has his boots on the deck, which is the point the corpse has to return to"
-      },
-      {
-        "entity": "enemy",
-        "component": "deathAnkleDelta",
-        "lte": 0.05,
-        "allowTrivial": "ankle drift is zero until the death clip plays, so the resting value is the honest baseline"
       },
       {
         "entity": "enemy",

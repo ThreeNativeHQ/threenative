@@ -1,0 +1,77 @@
+{
+  "name": "enemy-body-is-a-body",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [0, 0.89, 5.2],
+        "rotation": [-0.05722, 0, 0, 0.99836]
+      },
+      {
+        "entity": "enemy-frozen",
+        "position": [0, 0, 0]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "idle",
+      "waitTicks": 40,
+      "release": true,
+      "screenshot": "standing"
+    },
+    {
+      "kind": "wait",
+      "label": "walked",
+      "waitTicks": 260,
+      "release": true,
+      "screenshot": "running"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "headHeight",
+        "gte": 1.5,
+        "allowTrivial": "the head joint's authored height above the body's own origin is 1.545 m and it is a property of the loaded rig, not of scenario input; a body folded at the waist or bound to the wrong skeleton reads far below the floor"
+      },
+      {
+        "entity": "enemy",
+        "component": "headHeight",
+        "lte": 1.62,
+        "allowTrivial": "a stretched skin reaches above the authored joint height, which is the other half of the same check; a body standing taller than the rig is what this bounds"
+      },
+      {
+        "entity": "enemy",
+        "component": "footClearance",
+        "lte": 0.03,
+        "allowTrivial": "grounded soldier contact is a standing invariant of the patrol loop"
+      }
+    ],
+    "animation": [
+      {
+        "entity": "enemy",
+        "strideSynced": true,
+        "allowTrivial": "an idle clip reports synced false, and the run is held by the clearance and head-height bounds either way"
+      }
+    ]
+  }
+}

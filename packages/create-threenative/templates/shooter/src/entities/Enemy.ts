@@ -1,6 +1,8 @@
 import {
-  AnimationPlayer,
+  GroundSnap,
   type ICtx,
+  type IStrideReport,
+  SkeletalMesh3D,
   attachToBone,
   measureThreePose,
   normaliseToMetres,
@@ -8,10 +10,9 @@ import {
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import {
   type AnimationClip,
-  AnimationMixer,
   Box3,
   BoxGeometry,
-  Euler,
+  Color,
   Group,
   MathUtils,
   Mesh,
@@ -35,19 +36,15 @@ export type EnemyPhase = "patrol" | "suspicious" | "engage" | "search" | "return
 const MAX_HEALTH = 36;
 const WALK_SPEED = 2.4;
 /**
- * Chase pace, capped at what this rig can be animated doing.
+ * Chase pace, in metres per second.
  *
- * It was 3.6 m/s. The only locomotion clip in the asset is a walk that covers 1.307 m/s at rate 1,
- * so a 3.6 m/s chase drove `setEffectiveTimeScale` to 2.75 and clipped against a ceiling of 3 —
- * a walk cycle on fast-forward, which is exactly the "moving faster than he is animated" read.
- * Measured over a 45 s run: `maxRate` 3.00 on both engaging soldiers, i.e. saturated.
- *
- * 2.75 m/s is rate 2.10 against the same clip: a brisk jog, which a walk cycle can pass for, and
- * `#applyCarriage` now leans him into it. The honest fix is a run cycle retargeted onto this
- * skeleton — the asset is "CC-BY-4.0 carrying retargeted Mixamo clips" and a run is one more of
- * those — and until there is one, the pace is bounded by the animation rather than the reverse.
+ * It was 3.6, bounded to 2.75 by a rig that had no run cycle: the only locomotion clip was a
+ * walk, so a 3.6 m/s chase drove its playback rate to 2.75 against a ceiling of 3 — a walk cycle
+ * on fast-forward, which is the "moving faster than he is animated" read. `Jog_Fwd_Loop` exists
+ * on this asset, so a chase is a clip choice (see `RUN_PACE`) and the pace is bounded by the
+ * soldier rather than by the animation.
  */
-const CHASE_SPEED = 2.75;
+const CHASE_SPEED = 3.4;
 const HEAR_RANGE = 26;
 const VIEW_RANGE = 30;
 const VIEW_HALF_ANGLE = MathUtils.degToRad(46);
@@ -76,27 +73,30 @@ const LOCOMOTION_FADE = 0.26;
 const LOCOMOTION_HOLD_SECONDS = 0.3;
 const STILL_BEFORE_IDLE_SECONDS = 0.16;
 /**
- * Locomotion playback rate, in clip-seconds per world-second.
+ * Ground speed below which the rate is meaningless and a footstep is not a footstep.
  *
- * The walk clip carries the body 1.7 m per 1.30 s cycle; patrol speed is 2.4 m/s and a chase
- * is 3.6 m/s, so at rate 1 the feet travel at half or a third of the ground speed and skate.
- * The rate is therefore derived from the measured stride (`#measureClipGroundSpeed`) and the
- * speed the body is actually making. The clamp is the honest limit of a nine-clip rig with no
- * run cycle: above it a sprint would read as a cartoon, below it a crawl would freeze.
- *
- * The floor is 0.15 and not 0.35 because the body now accelerates. The measured walk clip
- * covers 1.307 m/s at rate 1, so 0.35 cannot represent any ground speed under 0.46 m/s — and
- * every start and every stop passes through that band. Clamped there, the feet run visibly
- * faster than the ground and `strideErrorPeak` goes to 0.5 against a gate that allows 0.15.
- * 0.15 represents everything from 0.196 m/s up, which is below `LOCOMOTION_RATE_FLOOR`, so
- * the clamp is no longer reachable by anything the stride metric scores.
+ * The playback rate itself is the engine's business: `SkeletalMesh3D` holds the clip against
+ * the ground the body actually covered, off the root's own world motion, so a game never has to
+ * measure a stride and re-time an action itself. This floor only decides when the squad has
+ * stopped so far that the question is meaningless.
  */
-const LOCOMOTION_RATE_MIN = 0.15;
-const LOCOMOTION_RATE_MAX = 2.1;
-/** Ground speed below which the rate is meaningless and the stride metric is not scored. */
-const LOCOMOTION_RATE_FLOOR = 0.3;
-/** Frames used to sample one clip cycle when measuring its stride. */
-const STRIDE_SAMPLES = 96;
+const MOVING_SPEED_FLOOR = 0.3;
+/**
+ * Pace above which a soldier is running rather than walking, in metres per second, and so plays
+ * `Jog_Fwd_Loop` rather than `Walk_Loop`.
+ *
+ * The previous rig had no run cycle at all, so a chase was faked by playing the walk clip at up
+ * to 2.1× — the feet moved at the right speed and the body read as a moonwalk. This asset ships
+ * a jog, so the run is a *clip choice* and the rate stays near 1.
+ */
+const RUN_PACE = 2.55;
+/**
+ * Ground speed `Crouch_Fwd_Loop` carries at rate 1, in metres per second, measured off this
+ * asset's own feet. It is the slowest locomotion clip the game has, so it is the one whose
+ * playback rate the engine's stride convention has to push hardest when a body changes gait.
+ */
+const CROUCH_PACE = 0.81;
+
 /**
  * How a body gets up to walking pace and back down again, in metres per second squared.
  *
@@ -159,46 +159,43 @@ const ARRIVE_FLOOR = 0.3;
  * forward walk clip moonwalks. 0.75 rad is as far as the feet can be wrong before that shows.
  */
 const AIM_LEAD_MAX = 0.75;
-/**
- * Upper-body carriage, layered on top of the clip after the mixer has written the pose.
- *
- * A rifle carry clip holds the torso rigid, so a soldier who turns is a statue rotating about
- * its own axis. These are the three cues that read as a person: the chest banks into a turn,
- * the shoulders lag it, and the head leads it. All three are driven by angular velocity and
- * acceleration, so a soldier standing still gets exactly zero of them and every frozen-sentry
- * scenario keeps the pose it had.
- */
-const CARRIAGE_BANK = 0.055;
-const CARRIAGE_BANK_MAX = 0.1;
-const CARRIAGE_LAG = 0.05;
-const CARRIAGE_LAG_MAX = 0.085;
-const CARRIAGE_LEAD = 0.075;
-const CARRIAGE_LEAD_MAX = 0.14;
-const CARRIAGE_PITCH = 0.014;
-const CARRIAGE_PITCH_MAX = 0.055;
-/**
- * Forward lean at full chase pace, in radians, on top of the acceleration pitch above.
- *
- * The acceleration pitch is a transient: it exists while he is speeding up and decays to nothing
- * once he is at pace, which is correct for what it models and leaves a soldier travelling flat out
- * standing as upright as one strolling. A run is a *sustained* posture, and the lean is most of
- * what separates the two silhouettes at a glance. Driven by `#pace` rather than by acceleration so
- * it holds for as long as the chase does — and it is zero at walking pace, so a patrol, a frozen
- * sentry and a corpse are all untouched.
- */
-const RUN_LEAN = 0.17;
-/** Seconds the carriage takes to catch up with a change, so it never pops. */
-const CARRIAGE_SETTLE = 7;
-/**
- * Seconds between precise corpse ground measurements. The precise pass is the per-vertex
- * `Box3` the skin envelope exists to avoid, so a corpse pays it at 20 Hz rather than 60 —
- * invisible on a body that is settling, and a fifth of the cost.
- */
-const CORPSE_GROUND_INTERVAL = 0.05;
 /** Reactions and deaths are sharp events, but three frames is still a pop. */
 const REACTION_FADE = 0.12;
 const DEATH_FADE = 0.14;
 const FIRE_FADE = 0.1;
+
+/**
+ * The clips this rig plays, by the name the AI states them under.
+ *
+ * `SkeletalMesh3D` is given the whole list as `requiredClips`, so a template shipped against an
+ * asset that lost one of them throws at load with the missing name rather than quietly playing
+ * nothing. Every name is a real clip on `assets/mannequin-combat.glb`; the pack also carries
+ * `Sprint_Loop`, `Jump_*`, `Roll` and the pistol aim variants, which this game has no state for.
+ */
+export const ENEMY_CLIPS = [
+  "Idle_Loop",
+  "Walk_Loop",
+  "Jog_Fwd_Loop",
+  "Crouch_Idle_Loop",
+  "Crouch_Fwd_Loop",
+  "Pistol_Aim_Neutral",
+  "Pistol_Idle_Loop",
+  "Pistol_Shoot",
+  "Hit_Chest",
+  "Hit_Head",
+  "Death01",
+] as const;
+
+/**
+ * The tint every soldier wears, in the template's own dark grey.
+ *
+ * The mannequin ships near-white, and the player's first-person hands are white gloves at the
+ * bottom of the same frame. Two white figures in one image, one of which the player is looking
+ * through and one of which he is shooting, is the readability problem the whole crate-blue /
+ * orange-plate palette is built to avoid.
+ */
+const ENEMY_TINT = 0x4a4f57;
+
 const ROUTE: readonly Vector3[] = [
   new Vector3(-4.5, 0, -9.5),
   new Vector3(-11.5, 0, -13.0),
@@ -262,18 +259,6 @@ const scratchGoal = new Vector3();
 const scratchTo = new Vector3();
 const scratchFacing = new Vector3();
 const scratchFlat = new Vector3();
-// Scratch for the upper-body carriage: five soldiers × six rotations × 60 Hz is real garbage.
-const scratchEuler = new Euler();
-const scratchDelta = new Quaternion();
-const scratchBody = new Quaternion();
-const scratchInverse = new Quaternion();
-const scratchParent = new Quaternion();
-const scratchLocal = new Quaternion();
-
-function worldScaleOf(object: Object3D): number {
-  const e = object.matrixWorld.elements;
-  return Math.hypot(e[0] as number, e[1] as number, e[2] as number);
-}
 
 /** Shortest signed rotation from one yaw to another, in radians. */
 function angleDelta(from: number, to: number): number {
@@ -350,10 +335,21 @@ class EasedYaw {
  *   magazine   0.14 long, below at z 0.02      the tell that reads as "rifle" from the front
  *   stock      0.24 long, behind at z -0.26    what puts the shoulder line in the right place
  *   grip       0.10 long, below at z -0.04     the block the fist closes around
+ *
+ * ## The one rotation, and why it is a constant
+ *
+ * `hand_r`'s own axes run *down the arm* — its local +Y points from the wrist toward the
+ * fingertips, because that is the direction the skeleton chain travels. Welding a prop whose
+ * barrel is +Z straight onto it therefore points the rifle sideways across the chest, which is
+ * what the first capture of this template showed. One quarter turn about the hand's X axis
+ * points the barrel along the arm instead, so a walking soldier carries his rifle the way a
+ * walking soldier carries a rifle. It is a constant rather than a lookup because it is a
+ * property of the bind pose, and the bind pose is a constant.
  */
 function buildRifle(): Group {
   const rifle = new Group();
   rifle.name = "enemy-rifle";
+  rifle.rotation.x = -Math.PI / 2;
   const part = (
     name: string,
     size: readonly [number, number, number],
@@ -417,21 +413,28 @@ export type EnemyOptions = {
   readonly frozen?: boolean;
 };
 
-/**
- * Metres the body travels per second of a locomotion clip played at rate 1.
- *
- * Cached on the clip itself: every soldier shares one `AnimationClip[]` from the loader, so
- * the sampling pass below runs once for the whole squad rather than once per man.
- */
-const CLIP_GROUND_SPEED = new WeakMap<AnimationClip, number>();
-
-/** First bone whose name matches, for models that do not use the Mixamo naming. */
+/** First bone whose name matches, for a model that renames the bones this rig relies on. */
 function findBone(root: Object3D, pattern: RegExp): Object3D | undefined {
   let found: Object3D | undefined;
   root.traverse((object) => {
     if (found === undefined && pattern.test(object.name)) found = object;
   });
   return found;
+}
+
+/**
+ * Recolour one body material in place.
+ *
+ * The asset's own materials are per-soldier clones — `SkeletalMesh3D` clones the skeleton for
+ * every man, and a clone carries its own materials — so painting them is what makes five
+ * identically-white mannequins read as five soldiers rather than as one ghost. `color` is written
+ * rather than `set`, and `needsUpdate` is left alone: the diffuse colour is a uniform the
+ * pipeline already carries, so a soldier joining the squad costs no shader compile.
+ */
+function tintEnemyMaterial(material: MeshStandardMaterial | MeshStandardMaterial[]): void {
+  for (const one of Array.isArray(material) ? material : [material]) {
+    one.color.setHex(ENEMY_TINT);
+  }
 }
 
 export class Enemy {
@@ -462,7 +465,18 @@ export class Enemy {
    * either way, so a scenario can still see where the body actually is.
    */
   groundSnap = true;
-  #animation: AnimationPlayer | undefined;
+  /**
+   * The rig, driven by its own clips.
+   *
+   * `SkeletalMesh3D` is the whole body layer: it clones the skeleton once per soldier, normalises
+   * the clone, and mounts the clips with `requiredClips` so a missing one throws by name at load.
+   * Its stride convention holds the current clip's playback rate against the ground the body
+   * actually covered, measured off the root's world motion — which is what this file used to do
+   * itself, with ninety lines of stride sampling and its own rate clamps.
+   */
+  #character: SkeletalMesh3D;
+  /** Keeps the lowest posed point of the body on the deck, off a cached skin envelope. */
+  #ground: GroundSnap;
   #clips: ReadonlySet<string>;
   #clipDurations = new Map<string, number>();
   #routeIndex = 0;
@@ -475,19 +489,10 @@ export class Enemy {
   #strafe = 1;
   #strafeTimer = 0;
   #deadFor = 0;
-  #deathSettleReady = false;
-  /**
-   * World Y the body stood at when it died. A corpse settles onto the deck it fell on; it
-   * never climbs off it, so this is a hard ceiling on the grounding correction while dead.
-   */
-  #deathGroundCeiling: number | null = null;
-  /** Precise corpse ground measurement, refreshed on a timer rather than every frame. */
-  #corpseGroundTimer = 0;
   #fade = 1;
   #bodyClearance: number | null = null;
   #footClearance: number | null = null;
   #deathObserved = false;
-  #deathAnkleDelta = 0;
   /**
    * Sticky record of the last death: which clip ran and how many frames it advanced. Sticky
    * because the corpse is gone 4.5 s later, so a scenario sampling after the respawn would
@@ -495,7 +500,7 @@ export class Enemy {
    */
   #deathClip: string | null = null;
   #deathClipFrames = 0;
-  /** Travel direction of the round that last connected, for choosing which way the body falls. */
+  /** Travel direction of the round that last connected, so the body falls away from the shooter. */
   #lastHitDirection: Vector3 | null = null;
   #hips: Object3D | undefined;
   /** Hip world position at the instant of death, so the fall direction can be measured. */
@@ -510,7 +515,7 @@ export class Enemy {
   #suppressed = 0;
   #suppressedPeak = 0;
   /**
-   * Frames each clip has actually advanced this session. The rig ships nine clips; without a
+   * Frames each clip has actually advanced this session. The rig ships twenty clips; without a
    * per-clip count nothing catches four of them quietly going unused again.
    */
   #clipFrames = new Map<string, number>();
@@ -520,10 +525,8 @@ export class Enemy {
   /** Walk-cycle phase bookkeeping for the footstep hook: which half-cycle last planted a foot. */
   #lastStepClip = "";
   #lastStepHalf = -1;
-  /** Clips by name, so a locomotion action can be re-timed through the mixer that owns it. */
+  /** Clips by name, so a footstep can be read off the action the engine is playing. */
   #clipsByName = new Map<string, AnimationClip>();
-  /** Metres per second each clip covers at rate 1, measured off this rig's own feet. */
-  #clipGroundSpeed = new Map<string, number>();
   /** Where the body stood at the top of this frame, so ground speed is measured, not assumed. */
   #frameStart = new Vector3();
   #groundSpeed = 0;
@@ -532,8 +535,6 @@ export class Enemy {
    * current behaviour asked for rather than adopted outright — see `WALK_ACCEL`.
    */
   #pace = 0;
-  /** Change in `#pace` per second, for the forward lean. Smoothed; raw it is frame noise. */
-  #paceRate = 0;
   /** True when a movement branch ran `#step` this frame; if none did, he coasts to a stop. */
   #stepped = false;
   /** Direction he is travelling, and which way the body is pointed. Both eased, both stateful. */
@@ -545,47 +546,19 @@ export class Enemy {
    * the same run puts every soldier in the same place.
    */
   #gait = 1;
-  /** Torso, shoulders and head, for the carriage layered over the clip. */
-  #spine: Object3D | undefined;
-  #chest: Object3D | undefined;
-  #neck: Object3D | undefined;
-  /** Smoothed carriage inputs, so a turn does not snap the torso on its first frame. */
-  #carriageTurn = 0;
-  #carriagePush = 0;
-  /** Body yaw last frame, so the carriage measures the turn instead of trusting one turner. */
-  #lastYaw = 0;
-  /** Playback rate the locomotion clip is running at, and how well it matches the ground. */
   /**
    * Seconds the flinch still owns the pose.
    *
-   * Without it `HitReaction` was set by `hurt` and overwritten by `#playLocomotion` on the very
+   * Without it `Hit_Chest` was set by `hurt` and overwritten by `#playLocomotion` on the very
    * next frame, because the locomotion branch re-asserts its clip every frame and `#play` only
    * declines when the clip it is asked for is already current. Measured over two 45 s runs and
-   * 678 samples: `HitReaction` was never the current clip on a single one. A soldier who does not
+   * 678 samples: the flinch was never the current clip on a single one. A soldier who does not
    * flinch when hit is the loudest "this is a state machine" cue in the game, and it was one line.
    */
   #reactionHold = 0;
-  #locomotionRate = 1;
-  #locomotionRatePeak = 0;
-  #strideErrorRatio = 1;
-  #strideErrorPeak = 0;
   /** Seconds the body has been continuously still, so one blocked frame is not a stop. */
   #stillFor = 0;
   #lastHitMultiplier = 1;
-  /**
-   * Skin envelope: one bone per entry with the radius of the furthest skin vertex bound to
-   * it, measured once in the bind pose. See `#calibrateSkinEnvelope`.
-   */
-  #envelopeBones: Object3D[] = [];
-  #envelopeRadii: number[] = [];
-  #envelopeBias = 0;
-  /**
-   * Largest sphere radius in the envelope. Published because a degenerate calibration is
-   * invisible in every other number: it cancels itself in the bind pose and only shows up
-   * once the body leaves it. No bone on a 1.78 m man owns skin half a metre away, so a
-   * radius above that means the vertex walk measured the wrong thing.
-   */
-  #maxEnvelopeRadius = 0;
   #modelHeightMeasured: number = scale.humanHeight;
   #hitboxWidth: number = scale.shoulderWidth;
   #hitboxHeight: number = scale.humanHeight;
@@ -608,10 +581,6 @@ export class Enemy {
   #rifleLocalMaxZ = scale.rifleLength * 0.65;
   #rightHand: Object3D | undefined;
   #leftHand: Object3D | undefined;
-  #leftUpLeg: Object3D | undefined;
-  #leftFoot: Object3D | undefined;
-  #rightUpLeg: Object3D | undefined;
-  #rightFoot: Object3D | undefined;
   #weaponNodes: string[] = [];
   #renderedRifleLength: number | null = null;
   /** Seconds left before it may fire after first seeing the player — it is not a turret. */
@@ -656,17 +625,33 @@ export class Enemy {
     model.rotation.set(0, 0, 0);
     model.scale.setScalar(1);
     model.updateWorldMatrix(false, true);
-    // No crown bone on this rig, so the head joint is the top of the body for measurement.
-    this.#crown = findBone(model, /^head$/i) ?? findBone(model, /head/i);
-    this.#head = findBone(model, /^head$/i) ?? findBone(model, /head/i);
-    // The mannequin's knees are its calves: `calf_l` / `calf_r`, no Mixamo `LeftLeg`.
-    this.#leftKnee = findBone(model, /^calf_l$/i) ?? findBone(model, /left.*knee|left.*leg/i);
-    this.#rightKnee = findBone(model, /^calf_r$/i) ?? findBone(model, /right.*knee|right.*leg/i);
-    // `Head` is the base of the skull on this skeleton, not the crown, so 1.545 m at that
-    // joint is the 1.8 m figure the rest of the game is measured against — the same
-    // convention `minimal` opens every project with (see its `src/conventions.ts`).
-    normaliseToMetres(model, { axis: "height", metres: 1.545, top: this.#head ?? this.#crown });
-    model.traverse((object) => {
+    // Bone names are read off the *source*, because `SkeletalMesh3D` clones it and remaps the
+    // requested measurement joint onto its own copy.
+    const sourceHead = model.getObjectByName("Head") ?? findBone(model, /head/i);
+    this.#clips = new Set(clips.map((clip) => clip.name));
+    this.#clipDurations = new Map(clips.map((clip) => [clip.name, clip.duration]));
+    this.#clipsByName = new Map(clips.map((clip) => [clip.name, clip]));
+    // `Head` is the base of the skull on this skeleton, not the crown, so 1.545 m at that joint
+    // is the 1.8 m figure the rest of the game is measured against — the same convention
+    // `minimal` opens every project with (see its `src/conventions.ts`).
+    this.#character = new SkeletalMesh3D({
+      clips,
+      requiredClips: [...ENEMY_CLIPS],
+      // Stride is measured from the *body's* motion, not the figure's: `group` is what `#step`
+      // moves, and it is what `GroundSnap` corrects.
+      strideRoot: this.group,
+      size: { axis: "height", metres: 1.545, top: sourceHead ?? undefined },
+      source: model,
+    });
+    const figure = this.#character.root;
+    this.#crown = figure.getObjectByName("Head") ?? findBone(figure, /head/i);
+    this.#head = this.#crown;
+    // The mannequin's knees are its calves: `calf_l` / `calf_r`.
+    this.#leftKnee = figure.getObjectByName("calf_l") ?? findBone(figure, /left.*knee|left.*leg/i);
+    this.#rightKnee =
+      figure.getObjectByName("calf_r") ?? findBone(figure, /right.*knee|right.*leg/i);
+    this.#hips = figure.getObjectByName("pelvis") ?? findBone(figure, /hips/i);
+    figure.traverse((object) => {
       if (/pelvis|hips|thigh|upleg|calf|leg|foot|ball|toe|head/i.test(object.name))
         this.#poseBones.push(object);
       const mesh = object as Mesh;
@@ -674,21 +659,12 @@ export class Enemy {
         this.#bodyMeshes.push(mesh);
         mesh.castShadow = false;
         mesh.receiveShadow = false;
+        tintEnemyMaterial(mesh.material as MeshStandardMaterial | MeshStandardMaterial[]);
       }
     });
-    this.#hips = findBone(model, /^pelvis$/i) ?? findBone(model, /hips/i);
-    // The mannequin numbers its spine `spine_01` (waist) to `spine_03` (chest) and its
-    // neck `neck_01`. The carriage banks the lower torso, lags the upper one and leads with
-    // the head; missing any of them just drops that cue.
-    this.#spine = findBone(model, /^spine_01$/i) ?? findBone(model, /spine/i);
-    this.#chest = findBone(model, /^spine_03$/i) ?? findBone(model, /^spine_02$/i);
-    this.#neck = findBone(model, /neck/i);
-    this.#leftUpLeg = findBone(model, /^thigh_l$/i) ?? findBone(model, /leftupleg/i);
-    this.#leftFoot = findBone(model, /^foot_l$/i) ?? findBone(model, /leftfoot/i);
-    this.#rightUpLeg = findBone(model, /^thigh_r$/i) ?? findBone(model, /rightupleg/i);
-    this.#rightFoot = findBone(model, /^foot_r$/i) ?? findBone(model, /rightfoot/i);
-    this.group.add(model);
-    this.#equip(model);
+    this.group.add(figure);
+    this.#ground = new GroundSnap(figure, { enabled: false, meshes: this.#bodyMeshes });
+    this.#equip(figure);
     // Before the first draw, not on the first death. `#respawn` also calls this, but `#respawn`
     // only ever runs off the death timer, so a soldier that has never died would otherwise reach
     // his own death still carrying the blend state the asset shipped with — which is both a
@@ -712,15 +688,13 @@ export class Enemy {
     );
     this.#heading.set(this.group.rotation.y);
     this.#facing.set(this.group.rotation.y);
-    this.#lastYaw = this.group.rotation.y;
     // Seeded per soldier: 0.94–1.06 is enough to break the squad out of lockstep and still
-    // leaves the walk clip re-timed between 1.73 and 1.95, well clear of both rate clamps.
+    // leaves a walking soldier well clear of the walk/jog switch.
     this.#gait = ctx.random.range(0.94, 1.06);
 
     // Skinned meshes are the slow path for picking, so the rifle traces a plain
     // box proxy that follows the body. Invisible, but still raycastable.
     this.#modelHeightMeasured = this.modelHeight || scale.humanHeight;
-    this.#calibrateSkinEnvelope();
     // Width and depth are declared sizes, not measurements. A whole-body AABB is not a
     // hitbox: in the bind pose this rig measures 1.11 m across because the arms are out in a
     // T, and over a walk cycle it measures 1.13 m deep because the stride reaches fore and
@@ -752,22 +726,34 @@ export class Enemy {
     });
     this.#syncCollisionBody();
 
-    this.#clips = new Set(clips.map((clip) => clip.name));
-    this.#clipDurations = new Map(clips.map((clip) => [clip.name, clip.duration]));
-    this.#clipsByName = new Map(clips.map((clip) => [clip.name, clip]));
-    // Measure the stride before the player exists: the sampling pass poses the rig, and the
-    // envelope and hitbox above were both measured in the bind pose that it would disturb.
-    for (const clip of clips) {
-      this.#clipGroundSpeed.set(clip.name, this.#measureClipGroundSpeed(clip));
-    }
-    if (clips.length > 0) {
-      this.#animation = new AnimationPlayer({ clips, root: this.group });
-      this.#play("Walk_Loop");
-    }
+    this.#play("Walk_Loop");
   }
 
   get alive(): boolean {
     return this.phase !== "dead";
+  }
+
+  /**
+   * What the playtest bridge reads off a registered entity, and what `assert.animation[]` bounds.
+   *
+   * The harness already has a first-class assertion for the thing this file used to measure by
+   * hand — `maxFootSlide` over `|feet - ground| / ground`, and `strideSynced` to prove the
+   * convention is actually applied rather than bypassed. Publishing the engine's own stride
+   * report is what makes those scenarios possible; without it a scenario has to re-derive the
+   * same ratio from game-side numbers and can only agree with itself.
+   */
+  get animation(): {
+    current: string;
+    advancedFrames: number;
+    finished: boolean;
+    stride: IStrideReport;
+  } {
+    return {
+      advancedFrames: this.#character.advancedFrames,
+      current: this.#character.current ?? "",
+      finished: this.#character.finished,
+      stride: this.#character.stride,
+    };
   }
 
   /** Chest height, used as the eye and muzzle origin. */
@@ -784,7 +770,9 @@ export class Enemy {
    *
    * A `Box3` over a skinned mesh reports the *bind pose* transformed by the world matrix,
    * not the posed body — which is precisely how a 2.68 m soldier stood beside a 1.66 m
-   * player without any gate noticing. The head-top bone is posed, so it tells the truth.
+   * player without any gate noticing. The head-top bone is posed, so it tells the truth, and
+   * `getWorldPosition` refreshes the bone chain itself rather than trusting a matrix written
+   * by the last frame.
    */
   get modelHeight(): number {
     const crown =
@@ -793,7 +781,6 @@ export class Enemy {
       findBone(this.group, /head/i);
     this.#crown = crown;
     if (crown === undefined) return 0;
-    this.#syncWorldMatrices();
     return crown.getWorldPosition(new Vector3()).y - this.group.position.y;
   }
 
@@ -902,144 +889,6 @@ export class Enemy {
     return Math.max(size.x, size.y, size.z);
   }
 
-  /**
-   * Refresh this soldier's world matrices, including the skinned meshes' bind matrices.
-   *
-   * `Object3D.updateWorldMatrix` recurses through `updateWorldMatrix`, which is *not* the
-   * method `SkinnedMesh` overrides. `SkinnedMesh.updateMatrixWorld` is, and in the default
-   * `attached` bind mode that override is the only thing that keeps `bindMatrixInverse`
-   * equal to `matrixWorld.invert()`.
-   *
-   * That matters here because `SkeletonUtils.clone` — how every soldier in this game is
-   * made — ends by calling `bind(skeleton, bindMatrix)`, which sets
-   * `bindMatrixInverse = bindMatrix⁻¹`. This asset's `bindMatrix` is the identity, so a
-   * freshly cloned rig carries an identity `bindMatrixInverse` until something runs the
-   * override. Until then `getVertexPosition` returns *world* coordinates rather than
-   * geometry-local ones, and every caller that follows the documented contract and
-   * multiplies by `matrixWorld` — three's own precise `Box3`, `computeBoundingBox`, and the
-   * envelope calibration below — folds the body onto the model origin. The renderer runs
-   * `scene.updateMatrixWorld` every frame, so this only ever bit measurements taken before
-   * the first frame: the constructor's, which is where the envelope is calibrated.
-   */
-  #syncWorldMatrices(): void {
-    this.group.updateWorldMatrix(true, false);
-    this.group.updateMatrixWorld(true);
-  }
-
-  #measureBodyPose(): ReturnType<typeof measureThreePose> {
-    this.#syncWorldMatrices();
-    for (const object of this.#bodyMeshes) {
-      const mesh = object as Mesh & { isSkinnedMesh?: boolean; skeleton?: { update(): void } };
-      if (mesh.isSkinnedMesh === true) mesh.skeleton?.update();
-    }
-    return measureThreePose(this.group, { bounds: this.#bodyMeshes });
-  }
-
-  /**
-   * Build the skin envelope: for every bone, the distance to the furthest skin vertex it
-   * dominates, plus a bias that makes the envelope agree exactly with the true posed bounds
-   * in the bind pose.
-   *
-   * This exists because `measureThreePose(..., { bounds })` is a *precise* `Box3` pass:
-   * `Box3.expandByObject` calls `SkinnedMesh.applyBoneTransform` on every vertex, which is
-   * four matrix multiplies each. Over this soldier that is the single most expensive thing
-   * in the frame — a CPU profile put it at 4.2 s of every 5 s wall clock and held the game
-   * at single-digit FPS. Grounding needs one number, the lowest posed point, so pay for the
-   * vertex walk once here and approximate it per frame from bone transforms alone.
-   *
-   * A sphere per bone is conservative under rotation, which is what a falling corpse needs:
-   * the estimate never suddenly loses the limb that is actually touching the deck.
-   */
-  #calibrateSkinEnvelope(): void {
-    this.#syncWorldMatrices();
-    const radii = new Map<Object3D, number>();
-    const bonePositions = new Map<Object3D, Vector3>();
-    const vertex = new Vector3();
-
-    for (const object of this.#bodyMeshes) {
-      const mesh = object as Mesh & {
-        isSkinnedMesh?: boolean;
-        skeleton?: { bones: Object3D[]; update(): void };
-      };
-      const position = mesh.geometry?.getAttribute("position");
-      if (position === undefined) continue;
-
-      if (mesh.isSkinnedMesh !== true || mesh.skeleton === undefined) {
-        // A rigid prop welded to the body still has to be grounded. It never deforms, so a
-        // single sphere around its own origin covers it for every pose the body reaches.
-        mesh.geometry.computeBoundingSphere();
-        const sphere = mesh.geometry.boundingSphere;
-        if (sphere === null) continue;
-        const centre = sphere.center.clone().applyMatrix4(mesh.matrixWorld);
-        const scale = mesh.getWorldScale(new Vector3());
-        const radius = sphere.radius * Math.max(scale.x, scale.y, scale.z);
-        radii.set(mesh, radius + centre.distanceTo(mesh.getWorldPosition(new Vector3())));
-        continue;
-      }
-
-      mesh.skeleton.update();
-      const bones = mesh.skeleton.bones;
-      const indexAttribute = mesh.geometry.getAttribute("skinIndex");
-      const weightAttribute = mesh.geometry.getAttribute("skinWeight");
-      for (let i = 0; i < position.count; i += 1) {
-        mesh.getVertexPosition(i, vertex);
-        vertex.applyMatrix4(mesh.matrixWorld);
-        // Bind the vertex to the bone that actually drives it. A vertex on a blended seam
-        // lands on the heavier of the two, which is the one whose motion it follows.
-        // Read the components directly: these attributes may be interleaved, which rules
-        // out `Vector4.fromBufferAttribute`.
-        let dominant = indexAttribute.getX(i);
-        let best = weightAttribute.getX(i);
-        for (const [weight, index] of [
-          [weightAttribute.getY(i), indexAttribute.getY(i)],
-          [weightAttribute.getZ(i), indexAttribute.getZ(i)],
-          [weightAttribute.getW(i), indexAttribute.getW(i)],
-        ] as const) {
-          if (weight > best) {
-            best = weight;
-            dominant = index;
-          }
-        }
-        const bone = bones[dominant];
-        if (bone === undefined) continue;
-        let bonePosition = bonePositions.get(bone);
-        if (bonePosition === undefined) {
-          bonePosition = bone.getWorldPosition(new Vector3());
-          bonePositions.set(bone, bonePosition);
-        }
-        const radius = vertex.distanceTo(bonePosition);
-        if (radius > (radii.get(bone) ?? 0)) radii.set(bone, radius);
-      }
-    }
-
-    this.#envelopeBones = [...radii.keys()];
-    this.#envelopeRadii = this.#envelopeBones.map((bone) => radii.get(bone) ?? 0);
-    this.#maxEnvelopeRadius = this.#envelopeRadii.reduce((a, b) => Math.max(a, b), 0);
-    if (this.#envelopeBones.length === 0) return;
-    // The spheres always reach below the real skin. Measure that gap once against the true
-    // posed bounds so the estimate is exact here and stays within a centimetre elsewhere.
-    this.#envelopeBias = 0;
-    const truth = this.#measureBodyPose().bounds?.min[1];
-    if (truth !== undefined) this.#envelopeBias = truth - this.#lowestSkinY();
-  }
-
-  /**
-   * Lowest posed point of the body, in world Y. O(bones) with no allocation, against the
-   * O(vertices × 4 matrix multiplies) of a precise `Box3`. Assumes world matrices are
-   * current — `#groundToDeck` refreshes them before calling.
-   */
-  #lowestSkinY(): number {
-    let lowest = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < this.#envelopeBones.length; i += 1) {
-      // elements[13] is the world-matrix Y translation: the bone's world height, decomposed
-      // by hand because `getWorldPosition` allocates and this runs on every bone every frame.
-      const y = (this.#envelopeBones[i] as Object3D).matrixWorld.elements[13] as number;
-      const candidate = y - (this.#envelopeRadii[i] as number);
-      if (candidate < lowest) lowest = candidate;
-    }
-    return lowest + this.#envelopeBias;
-  }
-
   #syncCollisionBody(): void {
     const proxy = this.#bodyProxy;
     const body = this.#body;
@@ -1126,135 +975,17 @@ export class Enemy {
    * `override` is what makes the flinch survive.
    *
    * Every branch of the state machine re-asserts its own clip every frame, so a one-shot pose set
-   * from outside the machine — `hurt` setting `HitReaction`, which is the only one — was replaced
-   * on the next frame by whichever branch ran. Guarding the two call sites was not enough: the
-   * spawn-grace branch plays `RifleIdle` directly rather than through `#playLocomotion`, and the
-   * burst plays `FiringRifle` on every round. One refusal here covers all of them, and death
-   * passes `override` because a corpse outranks a flinch.
+   * from outside the machine — the flinch, which is the only one — was replaced on the next frame
+   * by whichever branch ran. Guarding the two call sites was not enough: the spawn-grace branch
+   * plays `Idle_Loop` directly rather than through `#playLocomotion`, and the burst plays
+   * `Pistol_Shoot` on every round. One refusal here covers all of them, and death passes
+   * `override` because a corpse outranks a flinch.
    */
   #play(name: string, fade = 0.18, mode: "loop" | "once" = "loop", override = false): void {
-    if (this.#animation === undefined || !this.#clips.has(name)) return;
+    if (!this.#clips.has(name)) return;
     if (!override && this.#reactionHold > 0) return;
-    if (this.#animation.current === name) return;
-    this.#animation.play(name, { fade, mode });
-  }
-
-  /**
-   * Metres per second a clip covers when played at rate 1, measured off this rig's feet.
-   *
-   * Every clip in this asset is authored in place — no hips translation track in any of the
-   * nine, verified against the GLB — so the distance is not in the file and has to be read
-   * out of the gait. Each foot's forward excursion over one cycle is its step length, and a
-   * stride is one step from each foot; that agrees with integrating the planted foot's
-   * backward slip to within 6% on the walk cycle, and unlike the naive
-   * "lowest foot is the planted one" rule it does not fall apart on the crouch cycle where
-   * both feet stay low.
-   *
-   * The result is cached on the `AnimationClip`, which the whole squad shares, so this runs
-   * once per clip rather than once per soldier. The rig is left in the pose it started in.
-   */
-  #measureClipGroundSpeed(clip: AnimationClip): number {
-    const cached = CLIP_GROUND_SPEED.get(clip);
-    if (cached !== undefined) return cached;
-    const left = this.#leftFoot;
-    const right = this.#rightFoot;
-    if (left === undefined || right === undefined || clip.duration <= 0) {
-      CLIP_GROUND_SPEED.set(clip, 0);
-      return 0;
-    }
-
-    // Snapshot every posed bone: this walks the clip, and the caller measured the bind pose.
-    const restored: {
-      bone: Object3D;
-      position: Vector3;
-      quaternion: Quaternion;
-      scale: Vector3;
-    }[] = [];
-    this.group.traverse((object) => {
-      restored.push({
-        bone: object,
-        position: object.position.clone(),
-        quaternion: object.quaternion.clone(),
-        scale: object.scale.clone(),
-      });
-    });
-
-    const mixer = new AnimationMixer(this.group);
-    mixer.clipAction(clip).reset().play();
-    const forward = new Vector3();
-    const root = new Vector3();
-    let leftMin = Number.POSITIVE_INFINITY;
-    let leftMax = Number.NEGATIVE_INFINITY;
-    let rightMin = Number.POSITIVE_INFINITY;
-    let rightMax = Number.NEGATIVE_INFINITY;
-    for (let sample = 0; sample <= STRIDE_SAMPLES; sample += 1) {
-      mixer.setTime((sample / STRIDE_SAMPLES) * clip.duration);
-      this.#syncWorldMatrices();
-      this.group.getWorldPosition(root);
-      // The body's own forward axis, so a rig that is not authored along +Z still measures.
-      forward.set(0, 0, 1).applyQuaternion(this.group.getWorldQuaternion(new Quaternion()));
-      forward.y = 0;
-      if (forward.lengthSq() < 1e-6) forward.set(0, 0, 1);
-      forward.normalize();
-      const leftAt = left.getWorldPosition(new Vector3()).sub(root).dot(forward);
-      const rightAt = right.getWorldPosition(new Vector3()).sub(root).dot(forward);
-      leftMin = Math.min(leftMin, leftAt);
-      leftMax = Math.max(leftMax, leftAt);
-      rightMin = Math.min(rightMin, rightAt);
-      rightMax = Math.max(rightMax, rightAt);
-    }
-    mixer.stopAllAction();
-    mixer.uncacheRoot(this.group);
-    for (const entry of restored) {
-      entry.bone.position.copy(entry.position);
-      entry.bone.quaternion.copy(entry.quaternion);
-      entry.bone.scale.copy(entry.scale);
-    }
-    this.#syncWorldMatrices();
-
-    const stride = leftMax - leftMin + (rightMax - rightMin);
-    const speed = Number.isFinite(stride) ? Math.max(0, stride) / clip.duration : 0;
-    CLIP_GROUND_SPEED.set(clip, speed);
-    return speed;
-  }
-
-  /**
-   * Play the locomotion clip at the rate the body is actually travelling.
-   *
-   * `timeScale` lives on the mixer action, not on the player, so the clip is looked up by
-   * name and re-timed directly. A clip with no measurable stride (idle, the crouch-to-stand
-   * transition) keeps rate 1: scaling it by ground speed would make a standing man twitch.
-   */
-  #applyLocomotionRate(name: string): void {
-    const player = this.#animation;
-    const clip = this.#clipsByName.get(name);
-    if (player === undefined || clip === undefined) return;
-    const action = player.mixer.existingAction(clip);
-    if (action === null || action === undefined) return;
-    const clipSpeed = this.#clipGroundSpeed.get(name) ?? 0;
-    if (clipSpeed <= 0.05) {
-      this.#locomotionRate = 1;
-      this.#strideErrorRatio = 1;
-      action.setEffectiveTimeScale(1);
-      return;
-    }
-    const rate = MathUtils.clamp(
-      this.#groundSpeed / clipSpeed,
-      LOCOMOTION_RATE_MIN,
-      LOCOMOTION_RATE_MAX,
-    );
-    this.#locomotionRate = rate;
-    action.setEffectiveTimeScale(rate);
-    if (this.#groundSpeed >= LOCOMOTION_RATE_FLOOR) {
-      this.#locomotionRatePeak = Math.max(this.#locomotionRatePeak, rate);
-    }
-    // How fast the feet believe the body is going, over how fast it is. 1 is no slip.
-    if (this.#groundSpeed >= LOCOMOTION_RATE_FLOOR) {
-      this.#strideErrorRatio = (clipSpeed * rate) / this.#groundSpeed;
-      this.#strideErrorPeak = Math.max(this.#strideErrorPeak, Math.abs(this.#strideErrorRatio - 1));
-    } else {
-      this.#strideErrorRatio = 1;
-    }
+    if (this.#character.current === name) return;
+    this.#character.play(name, { fade, mode });
   }
 
   /**
@@ -1263,8 +994,19 @@ export class Enemy {
    * Two things this fixes beyond using more of the rig: the walk cycle no longer plays while
    * the soldier is standing still against a blocked path, and standing up out of a crouch runs
    * its authored transition instead of popping straight to idle.
+   *
+   * `armed` is the one state the locomotion set cannot express. A planted soldier on `Idle_Loop`
+   * has both arms at his sides while his rifle is welded to one of them, which reads as a man
+   * carrying a rifle in his teeth; `Pistol_Aim_Neutral` is the asset's own two-handed ready pose
+   * and is what a soldier who has stopped to shoot should be playing.
    */
-  #playLocomotion(moving: boolean, crouched: boolean, dt: number, poseLocked = false): void {
+  #playLocomotion(
+    moving: boolean,
+    crouched: boolean,
+    dt: number,
+    poseLocked = false,
+    armed = false,
+  ): void {
     // Ground speed is measured from where the body actually got to this frame, not from the
     // speed constant it was asked for: a blocked step, a corner, or a slow turn all cut it.
     this.#groundSpeed =
@@ -1301,13 +1043,19 @@ export class Enemy {
     if (travelling) {
       // Crouch state changes on the frame he is suppressed or wounded, but the body takes
       // `WALK_DECEL` to shed the pace it was carrying. Dropping onto the crouch clip during
-      // that window puts a 0.807 m/s creep under a body still making walking pace, which is
-      // the same foot slide `#clipPaceCap` exists to prevent — so the clip waits for the legs.
-      const creeping = this.#groundSpeed <= this.#clipPaceCap(true) * 1.02;
+      // that window puts a 0.807 m/s creep under a body still making walking pace, which reads
+      // as foot slide — so the clip waits for the legs.
+      const creeping = this.#groundSpeed <= CROUCH_PACE * 1.02;
       wanted =
         crouched && creeping && this.#clips.has("Crouch_Fwd_Loop")
           ? "Crouch_Fwd_Loop"
-          : "Walk_Loop";
+          : // A chase is a run clip, not a walk clip played fast. The old rig had no run cycle
+            // and faked one by re-timing, which is why `#applyLocomotionRate` and its two clamps
+            // used to live here; this asset ships `Jog_Fwd_Loop`, so the run is a clip choice and
+            // the rate the engine holds against the ground stays near 1.
+            this.#groundSpeed > RUN_PACE && this.#clips.has("Jog_Fwd_Loop")
+            ? "Jog_Fwd_Loop"
+            : "Walk_Loop";
     } else if (this.#crouchMoving && this.#clips.has("Crouch_Idle_Loop")) {
       // Standing up runs its authored transition, and owns the pose until it finishes.
       this.#crouchMoving = false;
@@ -1315,11 +1063,10 @@ export class Enemy {
       this.#locomotion = "Crouch_Idle_Loop";
       this.#locomotionHold = this.#standUp;
       this.#play("Crouch_Idle_Loop", LOCOMOTION_FADE, "once");
-      this.#applyLocomotionRate("Crouch_Idle_Loop");
       return;
     } else {
       if (this.#standUp > 0) return;
-      wanted = "Idle_Loop";
+      wanted = armed && this.#clips.has("Pistol_Aim_Neutral") ? "Pistol_Aim_Neutral" : "Idle_Loop";
     }
 
     // Commit to a locomotion clip for a beat. Crouch state can flicker as suppression decays
@@ -1330,7 +1077,6 @@ export class Enemy {
     this.#crouchMoving = wanted === "Crouch_Fwd_Loop";
     this.#standUp = travelling ? 0 : this.#standUp;
     this.#play(wanted, LOCOMOTION_FADE);
-    this.#applyLocomotionRate(wanted);
   }
 
   /**
@@ -1350,7 +1096,7 @@ export class Enemy {
   }
 
   #countClipFrame(): void {
-    const current = this.#animation?.current;
+    const current = this.#character.current;
     if (current === undefined) return;
     this.#clipFrames.set(current, (this.#clipFrames.get(current) ?? 0) + 1);
   }
@@ -1362,10 +1108,10 @@ export class Enemy {
    * phase so the first frame of a new clip cannot read as a plant.
    */
   #updateFootsteps(hooks: EnemyHooks): void {
-    if (hooks.onFootstep === undefined || this.#groundSpeed < LOCOMOTION_RATE_FLOOR) return;
+    if (hooks.onFootstep === undefined || this.#groundSpeed < MOVING_SPEED_FLOOR) return;
     const clip = this.#clipsByName.get(this.#locomotion);
     if (clip === undefined || clip.duration <= 0) return;
-    const action = this.#animation?.mixer.existingAction(clip);
+    const action = this.#character.mixer.existingAction(clip);
     if (action === null || action === undefined) return;
     const half = Math.floor(((action.time / clip.duration) % 1) * 2);
     if (this.#locomotion !== this.#lastStepClip) {
@@ -1616,7 +1362,7 @@ export class Enemy {
    * legs were still mid-stride. Measured on patrol before this existed: ground speed went
    * 2.31 -> 0 with no intermediate frame, twice in 2.6 s, and the locomotion clip snapped to
    * idle underneath a body that had already teleported to rest. It reads as a stutter, and it is
-   * the same foot-slide defect `#clipPaceCap` guards on the other end of the speed range.
+   * the same foot-slide defect a clip played too fast causes on the other end of the range.
    *
    * Returns whether he is still under way, so the caller can keep the walk clip on until the
    * body has actually finished moving rather than the frame the decision was made.
@@ -1657,40 +1403,7 @@ export class Enemy {
    * `faceTravel` is off for combat, where `#engage` owns the facing so the rifle can stay on
    * the player while the feet go somewhere else.
    */
-  /**
-   * The fastest this soldier may travel while the clip that carries him still keeps up, in
-   * metres per second.
-   *
-   * `#applyLocomotionRate` re-times the locomotion clip to the ground speed and clamps the
-   * result at `LOCOMOTION_RATE_MAX`. Whenever that clamp bites, the clamp is what gives — the
-   * body keeps its speed and the feet stop matching it, which is foot slide by another name and
-   * is silent from inside `#applyLocomotionRate`, which has already moved the body by then.
-   *
-   * Measured, before this existed: a soldier searching crouched ran `RifleCrouchWalk`, a clip
-   * that carries 0.807 m/s at rate 1, at 2.25 m/s — rate 2.79 asked for, 2.1 delivered, feet
-   * making 1.69 m/s under a body making 2.25. `strideErrorPeak` 0.248 against a gate of 0.15.
-   * The uncrouched chase saturated too, mildly: 2.886 m/s against a walk ceiling of 2.744.
-   *
-   * So the ceiling is applied where it belongs — to the speed that is asked for, before the
-   * body travels — and the rate clamp goes back to being unreachable. Divided by nothing:
-   * `#step` applies `#gait` first and this caps the product, so the fastest-gaited soldier is
-   * bounded by the same clip as the slowest.
-   */
-  #clipPaceCap(crouched: boolean): number {
-    const name = crouched && this.#clips.has("Crouch_Fwd_Loop") ? "Crouch_Fwd_Loop" : "Walk_Loop";
-    const clipSpeed = this.#clipGroundSpeed.get(name) ?? 0;
-    // A clip with no measurable stride cannot bound anything; leave the caller's speed alone.
-    return clipSpeed <= 0.05 ? Number.POSITIVE_INFINITY : clipSpeed * LOCOMOTION_RATE_MAX;
-  }
-
-  #step(
-    dt: number,
-    toX: number,
-    toZ: number,
-    speed: number,
-    faceTravel = true,
-    crouched = false,
-  ): boolean {
+  #step(dt: number, toX: number, toZ: number, speed: number, faceTravel = true): boolean {
     this.#stepped = true;
     this.#replanIn -= dt;
     this.#goalReplanIn -= dt;
@@ -1745,10 +1458,9 @@ export class Enemy {
       this.#pathIndex >= this.#path.length - 1
         ? MathUtils.clamp(distance / ARRIVE_DISTANCE, ARRIVE_FLOOR, 1)
         : 1;
-    const wanted = Math.min(speed * this.#gait, this.#clipPaceCap(crouched)) * cornering * arriving;
+    const wanted = speed * this.#gait * cornering * arriving;
     const gained = MathUtils.clamp(wanted - this.#pace, -WALK_DECEL * dt, WALK_ACCEL * dt);
     this.#pace += gained;
-    this.#paceRate = dt > 0 ? gained / dt : 0;
 
     const travel = Math.min(distance, this.#pace * dt);
     const nextX = this.group.position.x + Math.sin(heading) * travel;
@@ -1819,14 +1531,10 @@ export class Enemy {
       this.voice?.death(this.group.position);
       this.#deadFor = 0;
       this.#deathObserved = true;
-      this.#deathSettleReady = false;
       this.#bodyClearance = null;
       this.#footClearance = null;
-      this.#deathAnkleDelta = 0;
       this.#deathClipFrames = 0;
       this.#deathFallMeasured = null;
-      this.#deathGroundCeiling = this.group.position.y;
-      this.#corpseGroundTimer = 0;
       this.#deathHipStart = this.#hips?.getWorldPosition(new Vector3()) ?? null;
       const clip = this.#deathClipFor();
       this.#deathClip = this.#clips.has(clip) ? clip : null;
@@ -1840,9 +1548,11 @@ export class Enemy {
     this.#suppressedPeak = Math.max(this.#suppressedPeak, this.#suppressed);
     this.voice?.pain(this.group.position);
     // "once", and held: the clip is a one-shot flinch, and the hold is what stops locomotion
-    // reclaiming the rig before a single frame of it has been drawn.
-    this.#reactionHold = Math.min(this.#clipDurations.get("Hit_Chest") ?? 0.4, 0.45);
-    this.#play("Hit_Chest", REACTION_FADE, "once", true);
+    // reclaiming the rig before a single frame of it has been drawn. A head hit gets the head
+    // clip, which this asset ships; `recordHit` runs before `hurt`, so the multiplier is known.
+    const flinch = this.#lastHitMultiplier >= 4 ? "Hit_Head" : "Hit_Chest";
+    this.#reactionHold = Math.min(this.#clipDurations.get(flinch) ?? 0.4, 0.45);
+    this.#play(flinch, REACTION_FADE, "once", true);
     // A frozen sentry flinches at the impact but holds his ground: engaging here
     // would walk him out of a scenario-placed spawn on the first non-killing round.
     if (!this.#frozen && this.phase !== "engage") this.phase = "engage";
@@ -1869,13 +1579,9 @@ export class Enemy {
     this.#locomotionHold = 0;
     this.#stillFor = 0;
     this.#lastHitDirection = null;
-    this.#deathSettleReady = false;
-    this.#deathGroundCeiling = null;
-    this.#corpseGroundTimer = 0;
     this.#reattachWeapon();
     this.#bodyClearance = null;
     this.#footClearance = null;
-    this.#groundInitialised = false;
     // Blend state first, and only here: it is what costs a pipeline, so it is set once per
     // soldier and never again. The fade below is a uniform on the pipeline this just built.
     this.#fixBlendState();
@@ -1906,93 +1612,21 @@ export class Enemy {
     // from the one that died — otherwise he respawns already leaning out of a corner.
     this.#heading.set(this.group.rotation.y);
     this.#facing.set(this.group.rotation.y);
-    this.#lastYaw = this.group.rotation.y;
     this.#pace = 0;
-    this.#paceRate = 0;
-    this.#carriageTurn = 0;
-    this.#carriagePush = 0;
     this.#play("Walk_Loop", LOCOMOTION_FADE, "loop", true);
-  }
-
-  /**
-   * Layer a walking carriage over whatever the clip just posed.
-   *
-   * The rig's rifle clips hold the torso locked to the hips, so a soldier changing direction is
-   * a mannequin rotating about its own axis — which is most of what is left of "robot" once the
-   * path and the pace are smooth. Three cues, all driven by how hard he is turning and how hard
-   * he is accelerating, so a man standing still gets a delta of exactly zero and every
-   * frozen-sentry scenario keeps the pose it measured:
-   *
-   *   - the lower torso banks into the turn,
-   *   - the shoulders lag behind it,
-   *   - the head leads it, because people look where they are going before they get there.
-   *
-   * The delta is built in the body's own frame and rotated into each bone's parent space, so it
-   * stays a lean and a twist however the rig's bind axes happen to be oriented. It is applied
-   * after `AnimationPlayer.update`, which rewrites every bone from the clip, so it can never
-   * accumulate.
-   */
-  #applyCarriage(dt: number): void {
-    // How fast the body actually turned this frame, read off the transform rather than off any
-    // one branch's turner: patrol, suspicion, search and combat all steer the yaw differently,
-    // and a soldier standing in a patrol pause has to read as zero without extra bookkeeping.
-    const yaw = this.group.rotation.y;
-    const measured = dt > 0 ? angleDelta(this.#lastYaw, yaw) / dt : 0;
-    this.#lastYaw = yaw;
-    const spine = this.#spine;
-    if (spine === undefined) return;
-    // Smoothed, not raw: angular velocity changes fast enough near a waypoint to pop the torso.
-    const blend = 1 - Math.exp(-dt * CARRIAGE_SETTLE);
-    this.#carriageTurn += (measured - this.#carriageTurn) * blend;
-    this.#carriagePush += (this.#paceRate - this.#carriagePush) * blend;
-    const turn = this.#carriageTurn;
-    const push = this.#carriagePush;
-    // Sustained lean, from pace rather than acceleration. Zero at walking pace by construction,
-    // so a patrol, a pause and a scenario-frozen sentry all still get a delta of exactly zero.
-    const run =
-      MathUtils.clamp((this.#pace - WALK_SPEED) / Math.max(0.1, CHASE_SPEED - WALK_SPEED), 0, 1) *
-      RUN_LEAN;
-    if (Math.abs(turn) < 1e-3 && Math.abs(push) < 1e-3 && run < 1e-3) return;
-
-    const bank = MathUtils.clamp(turn * CARRIAGE_BANK, -CARRIAGE_BANK_MAX, CARRIAGE_BANK_MAX);
-    const lag = MathUtils.clamp(-turn * CARRIAGE_LAG, -CARRIAGE_LAG_MAX, CARRIAGE_LAG_MAX);
-    const lead = MathUtils.clamp(turn * CARRIAGE_LEAD, -CARRIAGE_LEAD_MAX, CARRIAGE_LEAD_MAX);
-    const pitch = MathUtils.clamp(push * CARRIAGE_PITCH, -CARRIAGE_PITCH_MAX, CARRIAGE_PITCH_MAX);
-
-    const body = this.group.getWorldQuaternion(scratchBody);
-    const inverse = scratchInverse.copy(body).invert();
-    const apply = (bone: Object3D | undefined, x: number, y: number, z: number): void => {
-      if (bone === undefined || bone.parent === null) return;
-      scratchEuler.set(x, y, z, "YXZ");
-      // Body frame → world, then world → this bone's parent frame.
-      const world = scratchDelta.setFromEuler(scratchEuler).premultiply(body).multiply(inverse);
-      const parent = bone.parent.getWorldQuaternion(scratchParent);
-      scratchLocal.copy(parent).invert().multiply(world).multiply(parent);
-      bone.quaternion.premultiply(scratchLocal);
-    };
-    // Leaning forward under acceleration belongs to the lower torso, banking with it. The run
-    // lean rides the same bone, and the chest takes a fraction of it back so the head and the
-    // rifle stay level — a torso that pitches as one piece points the weapon at the pavement.
-    apply(spine, -pitch - run, 0, bank);
-    apply(this.#chest, run * 0.42, lag, bank * 0.5);
-    apply(this.#neck, 0, lead, 0);
   }
 
   update(ctx: GameCtx, dt: number, playerEye: Vector3, deckY: number, hooks: EnemyHooks): void {
     this.#frameStart.copy(this.group.position);
     if (this.phase === "dead") {
       this.#deadFor += dt;
-      // The authored fall plays out first; the leg damp below only takes over once it has
-      // ended. Running both at once has the IK fighting the clip, and skipping the clip
-      // entirely leaves the soldier standing upright as a corpse.
-      this.#animation?.update(dt);
+      this.#character.update(dt);
       this.#countClipFrame();
-      this.#deathClipFrames = Math.max(this.#deathClipFrames, this.#animation?.advancedFrames ?? 0);
+      this.#deathClipFrames = Math.max(this.#deathClipFrames, this.#character.advancedFrames);
       const fall = this.#deathFallDot();
       if (fall !== null && (this.#deathFallMeasured === null || fall > this.#deathFallMeasured)) {
         this.#deathFallMeasured = fall;
       }
-      if (this.#deathClipFinished) this.#settleDeath(dt, deckY);
       this.#updateDetachedWeapon(dt, deckY);
       this.#groundToDeck(deckY, dt);
       this.#syncCollisionBody();
@@ -2066,7 +1700,7 @@ export class Enemy {
         if (this.group.position.distanceTo(this.#lastSeen) >= 1.6 && this.#alertTimer <= 7) {
           // Closing on a position someone was just shooting from: move low and quick.
           this.#playLocomotion(
-            this.#step(dt, this.#lastSeen.x, this.#lastSeen.z, CHASE_SPEED * 0.85, true, true),
+            this.#step(dt, this.#lastSeen.x, this.#lastSeen.z, CHASE_SPEED * 0.85, true),
             true,
             dt,
           );
@@ -2095,18 +1729,11 @@ export class Enemy {
     }
     // A branch that never called `#step` — a patrol pause, a burst, standing and listening —
     // is a soldier coming to a halt, not one who was never moving. Coast the pace down.
-    if (!this.#stepped) {
-      const before = this.#pace;
-      this.#brake(dt);
-      this.#paceRate = dt > 0 ? (this.#pace - before) / dt : 0;
-    }
+    if (!this.#stepped) this.#brake(dt);
     this.#standUp = Math.max(0, this.#standUp - dt);
     this.#suppressed = Math.max(0, this.#suppressed - dt);
     this.#locomotionHold = Math.max(0, this.#locomotionHold - dt);
-    this.#animation?.update(dt);
-    // Straight after the mixer writes the pose and before anything reads the bones: the
-    // carriage is a delta on top of the clip, and the clip is rewritten every frame.
-    this.#applyCarriage(dt);
+    this.#character.update(dt);
     this.#countClipFrame();
     this.#updateFootsteps(hooks);
     this.#groundToDeck(deckY, dt);
@@ -2116,128 +1743,17 @@ export class Enemy {
     }
   }
 
-  #groundInitialised = false;
-
-  /**
-   * True once the one-shot death clip has played out and is holding its last frame. The
-   * duration is the fallback for a mixer that has not reported yet, so nothing downstream
-   * waits forever on a clip that finished.
-   */
-  get #deathClipFinished(): boolean {
-    if (this.phase !== "dead") return false;
-    if (this.#animation === undefined) return true;
-    return this.#animation.finished || this.#deadFor >= (this.#clipDurations.get("Death01") ?? 0);
-  }
-
-  /**
-   * Keep the rendered rifle at its declared length after parent-bone animation updates.
-   *
-   * The length is a constant of the asset; only the animated scale of the hand bone above it
-   * varies. So the vertex walk happens once, and every frame after that is one division: the
-   * local scale that cancels the parent's current world scale and lands on `rifleLength`.
-   */
-
-  /**
-   * Lowest posed body point for a corpse, measured precisely rather than estimated.
-   *
-   * The skin envelope is a sphere per bone whose radius is fixed at calibration and whose
-   * error is cancelled by one scalar bias in the bind pose. A collapsing body rotates every
-   * limb out of that pose, and the spheres then reach as much as 1.2 m below the real skin —
-   * measured on this rig, with the head sphere the offender. `#groundToDeck` turns that
-   * error into height one-for-one, which is exactly how the corpse ended up floating with
-   * its hips 1.36 m in the air. Returns null on the frames between measurements, where the
-   * caller leaves the body where it is.
-   */
-  #corpseLowestY(dt: number): number | null {
-    this.#corpseGroundTimer -= dt;
-    if (this.#corpseGroundTimer > 0) return null;
-    this.#corpseGroundTimer = CORPSE_GROUND_INTERVAL;
-    return this.#measureBodyPose().bounds?.min[1] ?? null;
-  }
-
-  /** Keep the lowest posed body point on the requested deck with a bounded correction. */
+  /** Keep the lowest posed body point on the requested deck, and report the real clearance. */
   #groundToDeck(deckY: number, dt: number): void {
-    if (this.#envelopeBones.length === 0) return;
-    this.#syncWorldMatrices();
-    const dead = this.phase === "dead";
-    const minimum = dead ? this.#corpseLowestY(dt) : this.#lowestSkinY();
-    if (minimum === null || !Number.isFinite(minimum)) return;
-    const correction = deckY - minimum;
-    // While the death clip is still playing the body must track the fall exactly, or it
-    // hovers above its own pose. Only the settle that follows is damped, so the corpse
-    // cannot twitch once it has come to rest.
-    //
-    // That settle is also one-way. `#settleDeath` rotates the legs down until the ankles
-    // reach the deck, which puts the soles a few centimetres through it; grounding then
-    // reads a body below the floor and lifts it, and the two ratchet the corpse into the air
-    // at the damping rate. Once the fall has played out the body may only sink.
-    const damped =
-      dead && this.#groundInitialised && this.#deathClipFinished
-        ? MathUtils.clamp(correction, -1 * dt, 0)
-        : correction;
-    // Grounding off still measures and reports; it just does not move the body.
-    const wanted = this.groundSnap ? damped : 0;
-    // A corpse settles onto the deck it fell on. Whatever the clip does with an arm that
-    // swings through the floor, the body may never end up higher than the man was standing.
-    const ceiling = this.#deathGroundCeiling;
-    const applied =
-      dead && ceiling !== null && this.groundSnap
-        ? Math.min(wanted, ceiling - this.group.position.y)
-        : wanted;
-    this.group.position.y += applied;
-    this.#syncWorldMatrices();
-    // The estimate moves one-for-one with the group, so the settled height follows from the
-    // correction that was actually applied. No second measurement is needed to read it back.
-    const settled = minimum + applied;
-    this.#bodyClearance = Math.abs(settled - deckY);
-    this.#footClearance = Math.max(0, settled - deckY);
-    this.#groundInitialised = true;
-  }
-
-  /** Compute a target leg orientation every frame, then approach it instead of applying a snap. */
-  #settleDeath(dt: number, deckY: number): void {
-    // `deathAnkleDelta` is the gate on B6, "the leg suddenly snaps". It has to measure the
-    // motion *this correction* causes, not every ankle movement while dead — a raw
-    // frame-to-frame delta also counts the authored fall, so the only way to pass it is to
-    // stop animating the death, which is how the corpse ended up standing upright.
-    const beforeLeft = this.#leftFoot?.getWorldPosition(new Vector3()).y;
-    const beforeRight = this.#rightFoot?.getWorldPosition(new Vector3()).y;
-    const alpha = 1 - Math.exp(-dt * 2.4);
-    for (const [upLeg, foot] of [
-      [this.#leftUpLeg, this.#leftFoot],
-      [this.#rightUpLeg, this.#rightFoot],
-    ] as const) {
-      if (upLeg === undefined || foot === undefined || upLeg.parent === null) continue;
-      this.#syncWorldMatrices();
-      const hip = upLeg.getWorldPosition(new Vector3());
-      const ankle = foot.getWorldPosition(new Vector3());
-      const current = ankle.sub(hip);
-      const length = current.length();
-      if (length < 1e-4) continue;
-      const desiredY = MathUtils.clamp(deckY + scale.ankleHeight - hip.y, -length, length);
-      const horizontal = new Vector3(current.x, 0, current.z);
-      if (horizontal.lengthSq() < 1e-6) horizontal.set(0, 0, 1);
-      horizontal.setLength(Math.sqrt(Math.max(0, length * length - desiredY * desiredY)));
-      const desired = horizontal.setY(desiredY);
-      const worldDelta = new Quaternion().setFromUnitVectors(
-        current.normalize(),
-        desired.normalize(),
-      );
-      const parentWorld = upLeg.parent.getWorldQuaternion(new Quaternion());
-      const localDelta = parentWorld.clone().invert().multiply(worldDelta).multiply(parentWorld);
-      const target = localDelta.multiply(upLeg.quaternion.clone());
-      upLeg.quaternion.slerp(target, alpha);
-      upLeg.updateWorldMatrix(false, true);
-    }
-    const afterLeft = this.#leftFoot?.getWorldPosition(new Vector3()).y;
-    const afterRight = this.#rightFoot?.getWorldPosition(new Vector3()).y;
-    if (beforeLeft !== undefined && afterLeft !== undefined) {
-      this.#deathAnkleDelta = Math.max(this.#deathAnkleDelta, Math.abs(afterLeft - beforeLeft));
-    }
-    if (beforeRight !== undefined && afterRight !== undefined) {
-      this.#deathAnkleDelta = Math.max(this.#deathAnkleDelta, Math.abs(afterRight - beforeRight));
-    }
-    this.#deathSettleReady = true;
+    // `GroundSnap` is the engine's own render grounding: a skin envelope calibrated once, so a
+    // frame loop never runs the precise per-vertex bounds path, plus the clearance it measured.
+    // `groundSnap` off is a range, not a mute — the measurement and both numbers below stay
+    // truthful, which is what a scenario asserts against.
+    this.#ground.enabled = this.groundSnap;
+    this.#ground.apply(this.group, deckY, dt);
+    const clearance = this.#ground.clearance;
+    this.#footClearance = clearance === null ? null : Math.max(0, clearance);
+    this.#bodyClearance = clearance === null ? null : Math.abs(clearance);
   }
 
   #engage(ctx: GameCtx, dt: number, playerEye: Vector3, hooks: EnemyHooks, sees: boolean): void {
@@ -2266,7 +1782,7 @@ export class Enemy {
 
     if (this.#reaction > 0) {
       // Detection means pursuit immediately; tactical spacing begins only after reacting.
-      moved = this.#step(dt, knownTarget.x, knownTarget.z, CHASE_SPEED * settle, false, crouched);
+      moved = this.#step(dt, knownTarget.x, knownTarget.z, CHASE_SPEED * settle, false);
     } else {
       // Every later combat route is still derived from the player: close distance when far,
       // back off when rushed, and flank rather than running straight into the muzzle.
@@ -2288,7 +1804,6 @@ export class Enemy {
         combatGoal.z,
         (flatDistance > ENGAGE_RANGE ? CHASE_SPEED : WALK_SPEED) * settle,
         false,
-        crouched,
       );
     }
     // Facing is the engage branch's, not `#step`'s. Standing, he squares up on the player;
@@ -2300,7 +1815,7 @@ export class Enemy {
       : aim;
     this.group.rotation.y = this.#facing.step(carry, dt, 1.25);
     // The firing clip owns the pose for as long as the burst lasts; locomotion resumes after.
-    this.#playLocomotion(moved, crouched, dt, firing);
+    this.#playLocomotion(moved, crouched, dt, firing, sees);
 
     this.#cooldown -= dt;
     this.#burstTimer -= dt;
@@ -2371,7 +1886,6 @@ export class Enemy {
     legZoneMaxY: number;
     underWalkway: boolean;
     deathObserved: boolean;
-    deathAnkleDelta: number;
     wounded: boolean;
     suppressedPeak: number;
     crouchClipFrames: number;
@@ -2384,15 +1898,19 @@ export class Enemy {
     decelPeakMs2: number;
     groundSpeed: number;
     locomotionRate: number;
-    locomotionRatePeak: number;
     clipGroundSpeed: number;
-    strideErrorRatio: number;
-    strideErrorPeak: number;
-    deathRiseM: number;
+    /**
+     * Head joint height above the body's own origin, in metres, as the clip currently poses
+     * it. This is the number that fails on a body folded at the waist or collapsed into its
+     * own chest: 1.545 m is the authored height of the `Head` joint, and a rig that is playing
+     * the wrong clip, bound to the wrong skeleton or wound about the wrong axis reads far
+     * below it. A scenario asserts a floor on it, so a broken body cannot be a green run.
+     */
+    headHeight: number;
+    strideSynced: boolean;
     deathClip: string | null;
     deathClipFrames: number;
     clips: string[];
-    maxEnvelopeRadius: number;
     lastHitMultiplier: number;
     navigation: { goal: number[]; next: number[] | null; remaining: number };
     rifleForward: number[] | null;
@@ -2404,7 +1922,6 @@ export class Enemy {
     weaponNodes: string[];
     bodyJoints: Record<string, number[]>;
   } {
-    this.#syncWorldMatrices();
     const weaponPose =
       this.#weapon === undefined || this.#weaponModel === undefined
         ? null
@@ -2426,6 +1943,7 @@ export class Enemy {
     for (const bone of this.#poseBones) {
       bodyJoints[bone.name] = [...measureThreePose(bone, { bounds: false }).position];
     }
+    const stride = this.#character.stride;
     return {
       health: this.health,
       phase: this.phase,
@@ -2441,9 +1959,6 @@ export class Enemy {
       legZoneMaxY: this.legZoneMaxY,
       underWalkway: this.#underDeck(),
       deathObserved: this.#deathObserved,
-      deathAnkleDelta: this.#deathAnkleDelta,
-      // A frozen corpse passes every settle gate trivially, so publish how far the death
-      // clip actually advanced and let a scenario require that it played.
       wounded: this.wounded,
       suppressedPeak: this.#suppressedPeak,
       crouchClipFrames: this.#clipFrames.get("Crouch_Fwd_Loop") ?? 0,
@@ -2455,31 +1970,23 @@ export class Enemy {
       deathFallDot: this.#deathFallMeasured,
       crouching: this.#crouchMoving,
       suppressed: this.#suppressed,
-      animation: this.#animation?.current ?? null,
-      // Locomotion honesty: how fast the body is going, how fast the clip is being played,
-      // how far the clip carries the body at rate 1, and the ratio of the last two to the
-      // first. `strideErrorPeak` is sticky because a scenario samples on step boundaries and
-      // would otherwise miss the frames where the feet were skating hardest.
+      animation: this.#character.current ?? null,
+      // Locomotion honesty, straight off the engine's own stride convention: how fast the body
+      // is going, how fast the clip is being played to match, and how far the clip carries the
+      // body at rate 1. `strideSynced` is the honest half — false means the rate is 1 because
+      // the game (or a scenario) turned the convention off, not because the feet are matching.
       decelPeakMs2: this.#decelPeak,
       groundSpeed: this.#groundSpeed,
-      locomotionRate: this.#locomotionRate,
-      // Sticky: a scenario samples on step boundaries and would otherwise land on an idle
-      // frame and see rate 1, which is also what un-re-timed locomotion looks like.
-      locomotionRatePeak: this.#locomotionRatePeak,
-      clipGroundSpeed: this.#clipGroundSpeed.get(this.#locomotion) ?? 0,
-      strideErrorRatio: this.#strideErrorRatio,
-      strideErrorPeak: this.#strideErrorPeak,
-      // Metres the corpse has climbed above the spot it was standing on when it died.
-      // Negative means it settled, which is the only direction a body goes.
-      deathRiseM:
-        this.#deathGroundCeiling === null ? 0 : this.group.position.y - this.#deathGroundCeiling,
+      locomotionRate: stride.rate,
+      clipGroundSpeed: stride.clipGroundSpeed,
+      headHeight:
+        this.#head === undefined
+          ? 0
+          : this.#head.getWorldPosition(new Vector3()).y - this.group.position.y,
+      strideSynced: stride.synced,
       deathClip: this.#deathClip,
       deathClipFrames: this.#deathClipFrames,
       clips: [...this.#clips].sort(),
-      // Ground truth for `footClearance`, which is otherwise reported from the cheap skin
-      // envelope and would happily agree with itself. Off unless a probe asks: this is the
-      // per-vertex `Box3` pass the envelope exists to avoid, and it costs a whole frame.
-      maxEnvelopeRadius: this.#maxEnvelopeRadius,
       lastHitMultiplier: this.#lastHitMultiplier,
       navigation: {
         goal: this.#pathGoal.toArray(),
@@ -2519,7 +2026,7 @@ export class Enemy {
   }
 
   dispose(): void {
-    this.#animation?.dispose();
+    this.#character.dispose();
     this.#body?.dispose();
     this.#bodyProxy?.removeFromParent();
     this.group.removeFromParent();
