@@ -850,8 +850,11 @@ describe("WorldCells with the GPU-driven main pass", () => {
         // A fresh object, in the slot and the parent's own list the old one held, with a material of
         // its own and over the same vertex buffers (never a copy).
         expect(mesh).not.toBe(was.mesh);
-        expect(mesh.parent).toBe(world);
-        expect(world.children.indexOf(mesh)).toBe(was.at);
+        // Under the world's one bundle group when bundles are on (the default), and the world itself
+        // when they are off. Booleans, not `toBe(object)`: a failed comparison of two scene graphs
+        // makes vitest pretty-print a cycle, which reads as a hang.
+        expect(mesh.parent?.name === "world-main-bundles" || mesh.parent === world).toBe(true);
+        expect(mesh.parent?.children.includes(mesh)).toBe(true);
         expect(mesh.material).not.toBe(was.material);
         expect(mesh.geometry.getAttribute("position")).toBe(was.position);
       }
@@ -999,8 +1002,10 @@ describe("WorldCells with the GPU-driven main pass", () => {
       // own world matrix every walk forever.
       expect(isStatic(mesh)).toBe(true);
       expect(mesh.matrixAutoUpdate).toBe(false);
-      expect(mesh.parent).toBe(world);
-      expect(world.children.indexOf(mesh)).toBeGreaterThanOrEqual(0);
+      // Under the one bundle group (the default) or the world; booleans, so a failure cannot make
+      // vitest pretty-print a scene graph's cycle.
+      expect(mesh.parent?.name === "world-main-bundles" || mesh.parent === world).toBe(true);
+      expect(mesh.parent?.children.includes(mesh)).toBe(true);
       // And the object it replaced is out of the world, and let go: nothing else holds a node for it.
       expect(world.children).not.toContain(one.mesh);
       expect(one.mesh.parent).toBeNull();

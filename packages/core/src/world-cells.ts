@@ -16,6 +16,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
@@ -42,6 +43,7 @@ import {
   type ILiveAsset,
   type IMeshDraw,
   WorldGpuScene,
+  bundlesRequested,
   gpuSceneRequested,
   gpuSceneValidationRequested,
   liveKeyInstances,
@@ -475,6 +477,18 @@ export interface IWorldCellsLoadOptions {
    * draws fewer instances than the CPU path" and never a walk to be measured with.
    */
   readonly gpuSceneValidate?: boolean;
+  /**
+   * Record every GPU-dressed main batch mesh into one `BundleGroup` and replay the bundle instead of
+   * re-walking three's per-object path for each draw. `true` wherever the GPU scene is on, because a
+   * bundle is only worth replaying when the instance count is indirect and the cull happens on the
+   * dispatch; `bundles: false` or `?tnBundles=0` turns it off, and `stats().bundle` and the
+   * `TN_WORLD_BUNDLE` line say which way a run took.
+   *
+   * The render list inside a bundle is fixed when it is recorded, so a bundled mesh is never hidden:
+   * the dispatch draws zero instances for a key the camera cannot see, and an indirect draw of zero
+   * instances costs the GPU nothing. Toggling `visible` would force a re-record instead.
+   */
+  readonly bundles?: boolean;
 }
 
 export interface IWorldCellsStats {
@@ -548,6 +562,21 @@ export interface IWorldCellsStats {
     readonly keys: number;
     readonly dressed: number;
     readonly meshes: number;
+  };
+  /**
+   * What the main pass's draw bundles are doing: `children` is how many GPU-dressed meshes are
+   * parented under the one `BundleGroup`, and `records` is how many times that group has been
+   * re-recorded since the world loaded.
+   *
+   * A record is a structural change and nothing else — a key minted or retired, a geometry or
+   * material swapped, or a GPU-scene buffer regrow that re-dresses its meshes. Streaming, culling and
+   * LOD do not move it, which is the whole claim: a 200-frame walk holds `records` at the number of
+   * keys that came and went, and a settled camera holds it still.
+   */
+  readonly bundle: {
+    readonly on: boolean;
+    readonly children: number;
+    readonly records: number;
   };
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
@@ -745,6 +774,16 @@ class SharedBatch {
         readonly key: string;
       }
     | undefined;
+  /**
+   * Whether this batch's mesh is parented under the world's one `BundleGroup`. Set by
+   * `WorldCells#bundleIn` and cleared by `#bundleOut`.
+   *
+   * It is a field rather than `mesh.parent` because a bundled mesh's `visible` is never written
+   * again: three fixes a bundle's render list when it records it, and the replay never re-reads
+   * visibility — so the two places that hide an empty batch have to know, and a mesh that has just
+   * been detached from the group by a retire has still been in the last recorded one.
+   */
+  bundled = false;
   /**
    * The same descriptor, recorded whether or not the GPU scene is on, which is the whole of what
    * lets a mesh minted before the scene came up be dressed after it: `gpu` says the mesh draws from
@@ -1510,7 +1549,7 @@ class SharedBatch {
     // one exception is the prewarm draw, which stays visible *because* it is empty: that submission
     // is what builds the node and the pipeline.
     if (this.gpu !== undefined) {
-      this.mesh.visible = this.#awaitingPrewarm;
+      if (this.bundled === false) this.mesh.visible = this.#awaitingPrewarm;
       return;
     }
     this.mesh.visible = count > 0 || this.#awaitingPrewarm;
@@ -1557,6 +1596,10 @@ class SharedBatch {
   prewarmDrew(): void {
     this.#awaitingPrewarm = false;
     (this.mesh as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = false;
+    // A bundled mesh is in a render list three fixed when it recorded the bundle, and the replay
+    // never re-reads visibility — so hiding it here would not save this frame's draw and would lose
+    // the mesh from every record after the next structural change. See `bundled`.
+    if (this.bundled === true) return;
     this.mesh.visible = this.mesh.count > 0;
   }
 }
@@ -2991,6 +3034,18 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #gpuValidate: boolean | undefined;
   /** Resident placements per canonical asset, which is the capacity a key of that asset needs. */
   readonly #gpuResident = new Map<string, number>();
+  /**
+   * The one `BundleGroup` every GPU-dressed main batch mesh is parented under, and the number of
+   * times it has been re-recorded. Minted by the first dress that bundles, so a world that never
+   * dresses a mesh has no group to pay for.
+   *
+   * A re-record is a structural change and nothing else: see `IWorldCellsStats.bundle` and
+   * {@link #bumpBundle}. Streaming, culling and LOD are GPU-side answers and never move it.
+   */
+  #bundle: BundleGroup | undefined;
+  #bundleRecords = 0;
+  /** `bundles` as the load asked for it, before the query string and the environment. */
+  readonly #bundlesWanted: boolean;
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
 
@@ -3048,6 +3103,7 @@ export class WorldCells extends Group implements IComputeDriven {
     );
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
+    this.#bundlesWanted = init.bundles ?? bundlesRequested();
     this.#gpuValidate = init.gpuSceneValidate;
     this.#castShadowLevels =
       init.shadows?.cast === true
@@ -3375,14 +3431,17 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#cullScratch.clear();
     }
     const gpu = this.#gpuScene;
-    for (const shared of this.#shared.values()) {
+    for (const shared of [...this.#shared.values()]) {
       if (shared.role !== "main") continue;
       // A dressed batch draws from the GPU scene's own buffers, so the frame's per-instance answer is
       // the dispatch's and this mesh's own window would be a second, stale copy of it. What the CPU
       // still decides is the one coarse thing: whether any of its visibility cells is in the frustum.
       if (gpu.on && shared.gpu !== undefined) {
         this.#dressGpu(shared, shared.gpu);
-        shared.visibleFrom(this.#visibleSquares);
+        // A bundled mesh is in a render list three fixed when it recorded the bundle, and the
+        // dispatch has already culled per instance: there is nothing coarse left to hide, and a
+        // `visible` written here is one the replay never reads. See `#bundleIn`.
+        if (shared.bundled === false) shared.visibleFrom(this.#visibleSquares);
         continue;
       }
       const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
@@ -3610,7 +3669,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // before its first placement is swapped, so this is where the whole gate table comes from.
     this.#adoptGpu(shared, entry.asset, entry.key, entry.level, entry.part);
     this.#shared.set(entry.key, shared);
-    this.add(shared.mesh);
+    this.#attach(shared);
     this.#prewarmPending += 1;
     this.#prewarmMinted += 1;
     // Every role is owed a draw by `#awaitDraw` and is shown while empty until that draw is counted:
@@ -3827,6 +3886,11 @@ export class WorldCells extends Group implements IComputeDriven {
     const census = this.#gpuCensus();
     return {
       admission: { ...this.#admission },
+      bundle: {
+        children: this.#bundle?.children.length ?? 0,
+        on: this.#bundlesWanted && this.#gpuScene.on,
+        records: this.#bundleRecords,
+      },
       evictions: this.#evictions,
       failures: this.#failures,
       gpuScene: {
@@ -4389,6 +4453,15 @@ export class WorldCells extends Group implements IComputeDriven {
         `clusterTris=${String(clusterTriangles)} wideTris=${String(wideTriangles)} ` +
         `dressed=${String(dressed)}/${String(mainMeshes)}`,
     );
+    // The bundles on their own line, because the pair reads against a different question: how many
+    // meshes are recorded, and how many times the recording was thrown away and redone. A walk
+    // streaming and culling holds `records` at the keys that came and went; a walk that repacks it
+    // every frame is drawing a moving set, which is the bug a bundle cannot have.
+    const bundle = this.#bundle;
+    console.info(
+      `TN_WORLD_BUNDLE ${this.#bundlesWanted && this.#gpuScene.on ? "on" : "off"} ` +
+        `children=${String(bundle?.children.length ?? 0)} records=${String(this.#bundleRecords)}`,
+    );
   }
 
   /**
@@ -4651,7 +4724,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // record and the shared matrix buffer belong to the mesh, not to the batch.
       this.#adoptGpu(released, entry.asset, key, entry.level, entry.part);
       this.#shared.set(key, released);
-      this.add(released.mesh);
+      this.#attach(released);
       return released;
     }
     if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
@@ -4674,7 +4747,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#dressMesh(shared, receiveShadow);
     this.#adoptGpu(shared, entry.asset, key, entry.level, entry.part);
     this.#shared.set(key, shared);
-    this.add(shared.mesh);
+    this.#attach(shared);
     return shared;
   }
 
@@ -4716,6 +4789,73 @@ export class WorldCells extends Group implements IComputeDriven {
     // because a batch that drew nothing is hidden and three never reaches an invisible mesh's own
     // hooks — a mesh that could only re-narrow itself in its `onBeforeRender` would stay hidden for
     // as long as the camera looked away. That leaves `onBeforeRender` to the prewarm borrow alone.
+  }
+
+  /**
+   * Parent one dressed main mesh under the world's single `BundleGroup`, so a settled frame replays
+   * its draw instead of re-walking three's per-object path for it.
+   *
+   * A mesh is shown once, here, and never hidden again: the bundle's render list is fixed when it is
+   * recorded, the dispatch already decided which instances each key draws, and an indirect draw of
+   * zero instances is close to free on the GPU — where a `visible` write would force the whole group
+   * to be recorded again. The prewarm draw this batch may still owe comes out of that same record.
+   *
+   * The re-record is the caller's {@link #bumpBundle}, not this one: the group is a record of what
+   * the frame that just dressed these meshes drew, and it is only true once the mesh is in it.
+   */
+  #bundleIn(shared: SharedBatch): void {
+    if (this.#bundlesWanted === false) return;
+    this.#bundle ??= this.#newBundle();
+    const group = this.#bundle as BundleGroup;
+    if (shared.mesh.parent !== group) group.add(shared.mesh);
+    shared.bundled = true;
+    shared.mesh.visible = true;
+  }
+
+  /**
+   * Take a mesh back out of the group, because the key it was minted under is leaving the world.
+   *
+   * A retire is a structural change — the recorded bundle still holds this render object, and
+   * replaying it would draw a key nothing owns — so it is one of the two events that re-records.
+   */
+  #bundleOut(shared: SharedBatch): void {
+    if (shared.bundled === false) return;
+    shared.bundled = false;
+    if (shared.mesh.parent === this.#bundle) (this.#bundle as BundleGroup).remove(shared.mesh);
+    if (this.#bundle !== undefined) this.#bumpBundle();
+  }
+
+  /** One re-record, counted: `BundleGroup.needsUpdate` is a version bump, and nothing else. */
+  #bumpBundle(): void {
+    if (this.#bundle === undefined) return;
+    this.#bundleRecords += 1;
+    this.#bundle.needsUpdate = true;
+  }
+
+  /**
+   * Where a dressed main batch's mesh belongs: the one bundle group, or the world itself when there is
+   * none — a world with bundles off, and the very first dress of a batch the mint has not attached yet.
+   */
+  #bundleHome(): Object3D | null {
+    return this.#bundlesWanted ? (this.#bundle ?? null) : this;
+  }
+
+  /** The one group, as a child of the world so it is projected with everything else. */
+  #newBundle(): BundleGroup {
+    const group = new BundleGroup();
+    group.name = "world-main-bundles";
+    this.add(group);
+    return group;
+  }
+
+  /**
+   * Where a freshly bound or grown main batch's mesh goes: the bundle group when it has been dressed
+   * into one, the world otherwise. Three re-parents on `add`, so a bundled mesh has to be asked for
+   * or it silently leaves the group it was recorded in.
+   */
+  #attach(shared: SharedBatch): void {
+    if (shared.bundled === true) (this.#bundle as BundleGroup).add(shared.mesh);
+    else this.add(shared.mesh);
   }
 
   /**
@@ -4778,7 +4918,11 @@ export class WorldCells extends Group implements IComputeDriven {
       settled !== undefined &&
       shared.mesh.instanceMatrix === settled &&
       shared.mesh.frustumCulled === false &&
-      (held?.capacity ?? 0) >= capacity
+      (held?.capacity ?? 0) >= capacity &&
+      // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
+      // by a rebind is a child of the world again, and the bundle that last recorded it no longer
+      // draws it. Without this the walk would re-mint a key into a bundle that is missing it.
+      shared.mesh.parent === this.#bundleHome()
     )
       return;
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
@@ -4829,6 +4973,12 @@ export class WorldCells extends Group implements IComputeDriven {
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.
     scene.slot(key.asset, this.#gatesOf(key.asset, asset));
+    // The bundle the last settled frame replayed is now wrong: this pass minted or regrown a key,
+    // swapped the geometry, or took a fresh mesh object onto the scene's new buffers. Reaching here
+    // is one of the three, which is why this is the only place a re-record happens — the fast path
+    // above is every other frame of the walk.
+    this.#bundleIn(shared);
+    this.#bumpBundle();
   }
 
   /**
@@ -4928,7 +5078,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * and off the CPU repack and the refilter.
    */
   #seedGpuKeys(): void {
-    for (const shared of this.#shared.values()) this.#seedGpuKey(shared);
+    for (const shared of [...this.#shared.values()]) this.#seedGpuKey(shared);
     for (const shared of this.#retired.values()) this.#seedGpuKey(shared);
   }
 
@@ -5157,7 +5307,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // have to be dressed onto it again — a grown caster that kept layer 0 would be drawn by the main
     // camera and lost to the shadow level, and a grown main batch would stop narrowing at all.
     this.#dressMesh(shared, shared.role === "main" && this.#receiveShadow);
-    this.add(shared.mesh);
+    this.#attach(shared);
     // The mesh this grow replaced goes back to the pool: a cached shadow level can still replay a
     // draw of it until its window next moves, and the pool keeps the buffer and the uuid rather
     // than letting one array of retired meshes grow without bound.
@@ -5750,6 +5900,9 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const [key, shared] of this.#shared) {
       if (assetId !== undefined && !key.startsWith(`${assetId}:`)) continue;
       shared.mesh.removeFromParent();
+      // The mesh is out of the world, so it is out of the bundle the world recorded. A key that comes
+      // back is minted or rebound into the group again, and each of those is one re-record.
+      this.#bundleOut(shared);
       this.#shared.delete(key);
       // Retired, not dropped, so the cell that comes back draws into the same mesh.
       this.#retire(key, shared);
