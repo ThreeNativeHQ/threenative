@@ -54,6 +54,8 @@ export type { MetaHumanErrorCode } from "./errors.js";
  *   instantiated, and nothing is fetched from a CDN
  * @constraint every returned array is a copy, so no view survives a memory growth; a disposed
  *   evaluator throws instead of reading freed memory
+ * @constraint a native host that installed the MetaHuman resident gets its C++ evaluator from
+ *   `create` and the WASM is never fetched; `RigEvaluator.backend()` says which one runs
  * @requires npm i @threenative/metahuman
  * @example const rig = await RigEvaluator.create(dna); rig.setGuiControls(gui); rig.evaluate(true); rig.jointOutputs();
  */
@@ -75,6 +77,8 @@ export type {
  *   switch re-evaluates the current controls before the replacement mesh is shown
  * @constraint an undeclared control, an out-of-domain value, an undeclared LOD and any call after
  *   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced
+ * @constraint in a native host that installed the MetaHuman resident the C++ evaluator runs and
+ *   `diagnostics().backend` reads "native"; the game code does not change
  * @requires npm i @threenative/metahuman
  * @example const human = await loadMetaHuman({ assets: ctx.assets, model: "metahuman/head.glb",
  *   dna: "metahuman/head.dna", bindings: "metahuman/bindings.json" });
@@ -85,7 +89,7 @@ export type {
 export const loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> =>
   createMetaHuman(
     {
-      name: "wasm",
+      name: RigEvaluator.backend(),
       create: (dna) => RigEvaluator.create(dna),
       openRigLogic: () => RigEvaluator.upstreamCommit(),
     },

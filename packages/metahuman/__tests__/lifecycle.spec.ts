@@ -1,3 +1,4 @@
+import "./file-fetch.js";
 import type { MeshBasicMaterial } from "three";
 import { describe, expect, it } from "vitest";
 

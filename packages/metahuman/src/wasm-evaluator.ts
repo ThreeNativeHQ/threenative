@@ -1,4 +1,10 @@
+// Imported statically: the glue is built for `-sENVIRONMENT=web`, so it carries no Node branch
+// and no dynamic import, and instantiating it does nothing until the factory is called.
+import createRigLogicModule from "../wasm/riglogic.mjs";
 import { MetaHumanAssetError, type MetaHumanErrorCode } from "./errors.js";
+import { installedNativeMetaHumanHost } from "./native/host.js";
+import { NativeRigEvaluator } from "./native/native-evaluator.js";
+import { sha256Hex } from "./sha256.js";
 
 export { JOINT_STRIDE } from "./abi.js";
 
@@ -78,29 +84,21 @@ type RigLogicFactory = (options: {
 
 // `dist/` and `src/` are both one level below the package root, so the same relative URLs
 // resolve in the test run and in the published bundle. Nothing is fetched from a CDN.
-const WASM_MODULE_URL = new URL("../wasm/riglogic.mjs", import.meta.url);
 const WASM_BINARY_URL = new URL("../wasm/riglogic.wasm", import.meta.url);
 const WASM_CHECKSUMS_URL = new URL("../wasm/checksums.json", import.meta.url);
 
-const isNode = typeof process === "object" && process.versions?.node !== undefined;
-
+/**
+ * The package's own payload, by `fetch` alone.
+ *
+ * No Node-only branch and no dynamic `import()`: this file is the default entry a native bundle
+ * also resolves on a WebAssembly-capable host, and the native bundler refuses any runtime import.
+ * A Node caller provides a `fetch` that can read `file:` URLs.
+ */
 async function readPackageBytes(url: URL): Promise<Uint8Array> {
-  if (isNode) {
-    const { readFile } = await import("node:fs/promises");
-    const { fileURLToPath } = await import("node:url");
-    return new Uint8Array(await readFile(fileURLToPath(url)));
-  }
   const response = await fetch(url);
   if (!response.ok)
     throw new MetaHumanAssetError("TN_MH_WASM_LOAD", `${url.pathname} returned ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
-}
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes)));
-  let hex = "";
-  for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
-  return hex;
 }
 
 /**
@@ -133,8 +131,7 @@ async function loadModule(): Promise<IRigLogicModule> {
         "TN_MH_WASM_CHECKSUM",
         `riglogic.wasm sha256 ${actual} does not match the shipped ${expected}`,
       );
-    const factory = (await import(WASM_MODULE_URL.href)) as { default: RigLogicFactory };
-    const created = await factory.default({ wasmBinary: binary });
+    const created = await (createRigLogicModule as RigLogicFactory)({ wasmBinary: binary });
     loadedModule = created;
     return created;
   })();
@@ -194,15 +191,32 @@ export class RigEvaluator implements IRigEvaluator {
     }
   }
 
-  /** Parse a DNA blob. The bytes are copied by the ABI, so the caller keeps its buffer. */
-  static async create(dnaBytes: Uint8Array): Promise<RigEvaluator> {
+  /**
+   * Parse a DNA blob. The bytes are copied by the ABI, so the caller keeps its buffer.
+   *
+   * A native host that installed the MetaHuman resident gets the C++ evaluator and the WASM is
+   * never fetched; everywhere else the checksum-verified WASM build is loaded on first use.
+   */
+  static async create(dnaBytes: Uint8Array): Promise<IRigEvaluator> {
     if (!(dnaBytes instanceof Uint8Array) || dnaBytes.length === 0)
       throw new MetaHumanAssetError("TN_MH_LENGTH", "dna must be a non-empty Uint8Array");
+    const host = installedNativeMetaHumanHost();
+    if (host !== undefined) return NativeRigEvaluator.create(dnaBytes, host);
     return new RigEvaluator(await loadModule(), dnaBytes);
   }
 
-  /** The pinned OpenRigLogic commit the shipped binary was built from. */
+  /** `"native"` when the host installed the C++ resident, otherwise `"wasm"`. */
+  static backend(): "native" | "wasm" {
+    return installedNativeMetaHumanHost() === undefined ? "wasm" : "native";
+  }
+
+  /**
+   * The pinned OpenRigLogic revision the selected backend was built from: the native host's own
+   * version string, or the commit the shipped WASM manifest records.
+   */
   static async upstreamCommit(): Promise<string> {
+    const host = installedNativeMetaHumanHost();
+    if (host !== undefined) return host.version;
     const manifest = JSON.parse(
       new TextDecoder().decode(await readPackageBytes(WASM_CHECKSUMS_URL)),
     ) as { openRigLogicCommit?: unknown };
@@ -218,6 +232,8 @@ export class RigEvaluator implements IRigEvaluator {
    * shows up as a number rather than as a slow death.
    */
   static liveHandleCount(): number {
+    const host = installedNativeMetaHumanHost();
+    if (host !== undefined) return host.liveCount();
     return moduleLiveCount();
   }
 

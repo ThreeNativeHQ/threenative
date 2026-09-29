@@ -1,3 +1,4 @@
+import "./file-fetch.js";
 import { Object3D } from "three";
 import { describe, expect, it } from "vitest";
 

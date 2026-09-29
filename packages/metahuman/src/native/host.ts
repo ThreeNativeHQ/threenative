@@ -48,8 +48,20 @@ function nativeGlobal(): { readonly metahuman?: INativeMetaHumanHost } | undefin
  * the native bundle at all.
  */
 export function nativeMetaHumanHost(): INativeMetaHumanHost {
+  const host = installedNativeMetaHumanHost();
+  if (host === undefined)
+    throw new Error("TN_NATIVE_METAHUMAN_MISSING: runtime did not install the metahuman ABI");
+  return host;
+}
+
+/**
+ * The installed resident, or `undefined` where there is none — a browser, or a native runtime
+ * built without `TN_ENABLE_METAHUMAN`. The default entry uses it to choose its backend; the
+ * native entry keeps failing closed through `nativeMetaHumanHost`.
+ */
+export function installedNativeMetaHumanHost(): INativeMetaHumanHost | undefined {
   const host = nativeGlobal()?.metahuman;
   if (host === undefined || typeof host.version !== "string" || typeof host.create !== "function")
-    throw new Error("TN_NATIVE_METAHUMAN_MISSING: runtime did not install the metahuman ABI");
+    return undefined;
   return host;
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageVersion = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
@@ -419,7 +419,10 @@ export async function installPrebuilt(options = {}) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Real paths on both sides: pnpm runs this hook through a symlinked `node_modules` path, and a
+// plain comparison with the module's real URL silently skipped the install.
+if (process.argv[1] && existsSync(process.argv[1]) &&
+    realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   const sourceCheckout = existsSync(join(packageRoot, 'src')) && existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout) {
     console.log('ThreeNative runtime source checkout detected; prebuilt install is deferred to package testing.');

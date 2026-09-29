@@ -1,3 +1,4 @@
+import "./file-fetch.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -5,7 +6,7 @@ import { join } from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { RigEvaluator } from "../src/wasm-evaluator.js";
+import { type IRigEvaluator, RigEvaluator } from "../src/wasm-evaluator.js";
 
 interface IVector {
   readonly name: string;
@@ -65,7 +66,7 @@ function compare(actual: Float32Array, expected: readonly number[], where: strin
 }
 
 /** One case, driven exactly as its vector names it. */
-function playCase(evaluator: RigEvaluator, vector: IVector): void {
+function playCase(evaluator: IRigEvaluator, vector: IVector): void {
   evaluator.setLod(vector.lod);
   if (vector.mode === "gui") {
     evaluator.setGuiControls(Float32Array.from(vector.values));
@@ -82,7 +83,7 @@ function syntheticDna(): Uint8Array {
 
 /** Every vector against its reference case, matched by name so a missing case is fatal. */
 function playAndCompare(
-  evaluator: RigEvaluator,
+  evaluator: IRigEvaluator,
   vectors: readonly IVector[],
   reference: IReference,
   label: string,

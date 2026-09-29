@@ -10,6 +10,7 @@ import {
 } from "./asset-contract.js";
 import { type IMetaHumanBasis, metaHumanBasis } from "./coordinates.js";
 import { MetaHumanAssetError, type MetaHumanErrorCode } from "./errors.js";
+import { sha256Hex } from "./sha256.js";
 import type { IRigEvaluator } from "./wasm-evaluator.js";
 
 /**
@@ -175,13 +176,6 @@ async function readBytes(assets: IMetaHumanAssets, path: string): Promise<Uint8A
     "TN_MH_WASM_LOAD",
     `'${path}' is not served from any of ${String(candidates.length)} candidate url(s): ${failures.join("; ")}`,
   );
-}
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", Uint8Array.from(bytes)));
-  let hex = "";
-  for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
-  return hex;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

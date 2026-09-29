@@ -2,7 +2,7 @@
   "openRigLogicCommit": "7b9e7a88898f51f29aa308acb4877276f27e1507",
   "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 4.0.15 (09f52557f0d48b65b8c724853ed8f4e8bf80e669)",
   "files": {
-    "riglogic.mjs": "6d4f8888edf103e181b68da14f08f209cbe7f710fd7deea5b8a801fb5f117611",
+    "riglogic.mjs": "c221b77bf30bb0061c9c1d60e1de83e52873113040c50afb12d3732cd091eeaa",
     "riglogic.wasm": "17af572313bb5b53b88d8b579deeb5db8a6853eb2d933b78a261fe31c32b141a"
   }
 }

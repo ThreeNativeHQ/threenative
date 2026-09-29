@@ -2968,14 +2968,14 @@ assertAssetPath("metahuman/specimen.glb");
 
 ### `loadMetaHuman`
 
-`function` — Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced
+`function` — Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced   `diagnostics().backend` reads "native"; the game code does not change
 
 ```ts
 loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }
 ```
 
 - **Use when:** put a MetaHuman head in a browser game without an Unreal import or a baked clip
-- **Constraints:** the model is loaded through the game's own asset loader and cloned per instance, so · the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD · an undeclared control, an out-of-domain value, an undeclared LOD and any call after
+- **Constraints:** the model is loaded through the game's own asset loader and cloned per instance, so · the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD · an undeclared control, an out-of-domain value, an undeclared LOD and any call after · in a native host that installed the MetaHuman resident the C++ evaluator runs and
 - **Requires:** npm i @threenative/metahuman
 
 ```ts
@@ -3004,14 +3004,14 @@ if (error instanceof MetaHumanAssetError && error.code === "TN_MH_HASH_MISMATCH"
 
 ### `RigEvaluator`
 
-`class` — One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory
+`class` — One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory   `create` and the WASM is never fetched; `RigEvaluator.backend()` says which one runs
 
 ```ts
 export class RigEvaluator implements IRigEvaluator { … }
 ```
 
 - **Use when:** drive a prepared MetaHuman head's expression from the browser without an Unreal import
-- **Constraints:** the binary's SHA-256 is checked against the shipped manifest before it is · every returned array is a copy, so no view survives a memory growth; a disposed
+- **Constraints:** the binary's SHA-256 is checked against the shipped manifest before it is · every returned array is a copy, so no view survives a memory growth; a disposed · a native host that installed the MetaHuman resident gets its C++ evaluator from
 - **Requires:** npm i @threenative/metahuman
 
 ```ts

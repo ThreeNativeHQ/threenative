@@ -58,7 +58,10 @@ const LINK = [
   "-sMODULARIZE=1",
   "-sEXPORT_ES6=1",
   "-sEXPORT_NAME=createRigLogicModule",
-  "-sENVIRONMENT=web,node",
+  // Web only: the glue is imported statically by the default entry, which a native bundle also
+  // resolves, and the Node branch Emscripten emits is a dynamic `import("module")` the native
+  // bundler refuses. Node tests pass `wasmBinary` through the same fetch path as the browser.
+  "-sENVIRONMENT=web",
   "-sALLOW_MEMORY_GROWTH=1",
   "-sMAXIMUM_MEMORY=536870912",
   "-sFILESYSTEM=0",

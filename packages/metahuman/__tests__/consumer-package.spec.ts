@@ -86,6 +86,15 @@ describe("packed @threenative/metahuman", () => {
     expect(createHash("sha256").update(wasm).digest("hex")).toBe(manifest.files?.["riglogic.wasm"]);
   }, 60_000);
 
+  it("should keep the default entry bundleable by a native host that has WebAssembly", async () => {
+    // A V8 desktop host bundles the default entry, and the native bundler refuses any runtime
+    // import (`runtime-native/scripts/bundle.mjs`). So the entry names no Node builtin and has no
+    // dynamic `import()`: the Emscripten glue is inlined, and the payload is fetched.
+    const source = await read("package/dist/index.js".replace(/^package\//u, ""));
+    expect(source).not.toMatch(/\bimport\s*\(/u);
+    expect(source).not.toMatch(/["'](?:node:)?(?:fs|fs\/promises|url|module|path)["']/u);
+  });
+
   it("should give the native export condition a target that cannot reach the WASM payload", async () => {
     const manifest = JSON.parse(await read("package.json")) as {
       exports?: Record<string, Record<string, string>>;
@@ -170,9 +179,11 @@ describe("packed @threenative/metahuman", () => {
     await writeFile(
       probe,
       [
-        'import { writeFile } from "node:fs/promises";',
+        'import { readFile, writeFile } from "node:fs/promises";',
         "const calls = [];",
-        "globalThis.fetch = (...args) => { calls.push(String(args[0])); throw new Error('the packed index fetched on import'); };",
+        // Node's fetch refuses `file:`; a browser and the native host answer it. Anything else is
+        // the network, which the package must never reach.
+        "globalThis.fetch = async (url) => { calls.push(String(url)); if (!String(url).startsWith('file:')) throw new Error('the packed index reached the network'); return new Response(await readFile(new URL(url))); };",
         `const module = await import(${JSON.stringify(pathToFileURL(path.join(packed.root, "dist/index.js")).href)});`,
         "let liveBefore = '';",
         "try { liveBefore = String(module.RigEvaluator.liveHandleCount()); }",
@@ -205,7 +216,11 @@ describe("packed @threenative/metahuman", () => {
     // — the ABI rejects the signature, which it can only do from inside the instantiated module.
     expect(observed.rejection).not.toBe("");
     expect(observed.liveAfter).toBe(0);
-    expect(observed.calls, "the Node path reads files and never fetches").toEqual([]);
+    // The payload comes from the package itself, beside the entry, by `fetch` alone: the same
+    // path a browser and a native host take, and no CDN.
+    expect(
+      observed.calls.map((url) => path.relative(packed.root, new URL(url).pathname)).sort(),
+    ).toEqual(["wasm/checksums.json", "wasm/riglogic.wasm"]);
   }, 60_000);
 
   it("should load nothing from the integration for an app that never asks for it", async () => {
