@@ -403,6 +403,7 @@ export async function createLoadTestHarness(
   // output node is the scene pass plus a bloom of it. It is null in every other rung, which is how
   // `renderFrame` knows to draw straight to the target instead of through the chain.
   let postPipeline: RenderPipeline | undefined;
+  let postScenePass: ReturnType<typeof pass> | undefined;
   let ladderPost = false;
   const pointLights: PointLight[] = [];
   let characterRoots: Object3D[] = [];
@@ -414,6 +415,7 @@ export async function createLoadTestHarness(
     characterRoots = [];
     postPipeline?.dispose();
     postPipeline = undefined;
+    postScenePass = undefined;
     renderer.toneMapping = NoToneMapping;
     ladder = undefined;
     ladderPost = false;
@@ -471,6 +473,7 @@ export async function createLoadTestHarness(
       renderer.toneMapping = ACESFilmicToneMapping;
       const size = resolutionOf(rung);
       const scenePass = pass(scene, camera);
+      postScenePass = scenePass;
       const colour = scenePass.getTextureNode();
       postPipeline = new RenderPipeline(renderer);
       postPipeline.outputNode = colour.add(
@@ -740,7 +743,12 @@ export async function createLoadTestHarness(
     // is the one that renders the scene pass, so the two paths never both run for one frame.
     for (let pass = 0; pass < axes.passCount; pass += 1) {
       if (postPipeline === undefined) await renderer.render(root, camera);
-      else postPipeline.render();
+      else {
+        // The pass was built on the authored scene; every other rung draws the projection's root, so
+        // aim the pass at the same input or R4 measures an unbatched scene the other rungs never draw.
+        if (postScenePass !== undefined) postScenePass.scene = root;
+        postPipeline.render();
+      }
     }
     if (passes !== undefined) passes.cameraCull.restore();
     // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
