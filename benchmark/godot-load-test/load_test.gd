@@ -573,6 +573,9 @@ func _probe_frame() -> void:
 	# way out (glibc "corrupted size vs. prev_size") and cost the run its report. The copy is the
 	# pixels; the walk is arithmetic over a buffer nothing else writes to.
 	var image: Image = get_viewport().get_texture().get_image().duplicate()
+	# Diagnostic only: `TN_BENCH_SHOT=<file.png>` keeps the frame the rung just drew, for a human to look at.
+	if OS.get_environment("TN_BENCH_SHOT") != "":
+		image.save_png(OS.get_environment("TN_BENCH_SHOT"))
 	var width := image.get_width()
 	var height := image.get_height()
 	var colors := {}
