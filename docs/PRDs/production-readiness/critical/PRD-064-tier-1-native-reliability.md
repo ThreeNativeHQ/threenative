@@ -730,9 +730,10 @@ Each unticked box names why it is unticked and where the measurement that kept i
   no observed red is written `UNVERIFIED`. **UNVERIFIED, not failed.**
 - [x] 2. The camera-parented overlay **is visible in the desktop capture** within tolerance, or
   desktop multitouch appears in `registry.json`'s `exclusions[]` with an owner and reason —
-  no row remains a silent `blocked`. The second branch holds: `desktop-multitouch-input` is in
-  `packages/runtime-native/conformance/registry.json` `exclusions[]` with an owner and a reason, so no
-  row is a silent `blocked`.
+  no row remains a silent `blocked`. **Both branches hold.** `25-camera-parented-overlay`, the one
+  desktop failure the 2026-08-29 ledger recorded, **passes** in the 2026-09-29 desktop run, and
+  `desktop-multitouch-input` is in `packages/runtime-native/conformance/registry.json`
+  `exclusions[]` with an owner and a reason, so no row is a silent `blocked`.
 - [ ] 3. `pnpm parity` reports Android as **executed** — a real pass/fail split over 67 rows, from a
   booted emulator, with the device-blocked path proven to exit non-zero. It now executes: 93 rows,
   per-row verdicts, `0 pass / 90 fail / 3 blocked`, exit 1, from the booted `threenative_api35` AVD.
