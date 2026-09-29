@@ -18,12 +18,14 @@ import type { IRendererLike } from "../src/renderer.js";
 import {
   type IGpuPlacement,
   type IKernelInput,
+  type ILiveAsset,
   type IMeshDraw,
   type IRegion,
   WorldGpuScene,
   compareMeshDraws,
   cullAndSelect,
   gpuSceneUnsupported,
+  liveKeyInstances,
   storageElementBytes,
   validationReport,
 } from "../src/world-gpu-scene.js";
@@ -882,6 +884,63 @@ describe("WorldCells with the GPU-driven main pass", () => {
     ).toBe(true);
     expect((back.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
     expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("names the live level selection in the mesh check, over a ring the camera can see", async () => {
+    /**
+     * The reference the mesh check compares against, over a real ring, in one number.
+     *
+     * The stub readback below is the zeros a dispatch that never ran leaves behind, so the counts
+     * are wrong by construction and this proves nothing about the kernel. What it does prove is the
+     * wiring of the third check: the expected set is built from the owner's live gates, so a `mesh=`
+     * line names `live=N` with N the placements the camera and `asset.distances` select — a reference
+     * built from the CPU path's stale per-cell records would name a different N, and an empty one
+     * would name nothing at all. The camera faces east into the ring: `playerCamera` looks west, out
+     * of the world, where nothing is in the frustum and every expected set is legitimately empty.
+     */
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      gpuSceneValidate: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    await flushed(world);
+    const lines: string[] = [];
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (message: string): void => {
+        lines.push(message);
+      },
+      readback: async (attribute: { array: Uint32Array | Float32Array }): Promise<ArrayBuffer> =>
+        attribute.array.slice().buffer as ArrayBuffer,
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    const centre = cellCentre(0, 1);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(centre.x, 4, centre.z);
+    camera.lookAt(centre.x + CELL * 4, 4, centre.z);
+    camera.updateMatrixWorld();
+    for (let index = 0; index < 40; index += 1) world.update(renderer, camera);
+    await flush();
+    const meshes = lines.filter((line) => line.includes(" count gpu="));
+    expect(meshes.length).toBeGreaterThan(0);
+    for (const line of meshes) {
+      const live = Number(line.match(/live=(\d+)/u)?.[1]);
+      expect(live).toBeGreaterThan(0);
+      expect(line).toMatch(/ count gpu=0 /u);
+    }
+    // More than one key is named, so this is the whole dressed set and not one key's own accident.
+    expect(new Set(meshes.map((line) => line.match(/mesh=(\S+)/u)?.[1])).size).toBeGreaterThan(1);
     world.dispose();
   });
 
@@ -1871,5 +1930,110 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(report(stale.lines).detail[0]).toContain(
       "rock:0:0 first gpu=[0.000,0.000,0.000] cpu=[0.000,0.000,12.000] firstInstance gpu=6 expected=4",
     );
+  });
+});
+
+/**
+ * The gate table against the owner's own `distances`, which is the question a browser walk cannot
+ * answer from the inside: the kernel and `cullAndSelect` read the same table, so a table written
+ * before the model's chain widened its levels makes both agree with each other while both are wrong.
+ */
+describe("WorldGpuScene gate tables against the owner's own distances", () => {
+  /** One pine, one part per level, the six placements `placed` files at 12, 24 … 72 m. */
+  function pine(): WorldGpuScene {
+    return wired([{ name: "pine", levels: [0] }], 1, 64);
+  }
+
+  /** The keys the prewarm mints for a chain's two extra levels. */
+  function widen(scene: WorldGpuScene, cull?: number): void {
+    for (const level of [1, 2])
+      scene.key(`pine:${String(level)}:0`, LOCAL, 64, {
+        group: `pine:${String(level)}`,
+        part: 0,
+        parts: 1,
+      });
+    scene.slot("pine", {
+      cull,
+      distances: [0, 20, 60],
+      levels: [0, 1, 2].map(
+        (level) => scene.levelKeys(`pine:${String(level)}`) ?? { firstKey: 0, parts: 0 },
+      ),
+    });
+  }
+
+  /** What the dispatch that is running now would draw per key, over the table it reads. */
+  function run(scene: WorldGpuScene): ReturnType<typeof cullAndSelect> {
+    return cullAndSelect({
+      camera: { planes: cameraAt(0, 0).planes, x: 0, y: 0, z: 0 },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    });
+  }
+
+  it("re-registers an asset whose gates widen after its first placement, and its cull with it", () => {
+    const scene = pine();
+    placed(scene, 0, 6, 12);
+    // The fault, before the chain arrives: the table says one level, so every placement draws at it.
+    expect(scene.gates()[0]?.distances).toEqual([0]);
+    expect(run(scene).counts[keyOf(scene, "pine:0:0")]).toBe(6);
+
+    // The order a real adoption takes — the keys for the chain's levels are minted, and the asset's
+    // own `distances` are what the slot is re-registered with.
+    widen(scene);
+    expect(scene.gates()[0]?.distances).toEqual([0, 20, 60]);
+    expect(scene.footprint().levels?.count).toBeGreaterThanOrEqual(3);
+    const after = run(scene);
+    // 12 m; 24, 36, 48 and 60 m, which the second switch takes at 60 exclusive; and 72 m.
+    expect(after.counts[keyOf(scene, "pine:0:0")]).toBe(1);
+    expect(after.counts[keyOf(scene, "pine:1:0")]).toBe(4);
+    expect(after.counts[keyOf(scene, "pine:2:0")]).toBe(1);
+
+    // And `maxDistance` on its own, which the cull gate is read from: a distance is the only thing
+    // that changes, and everything past it draws nowhere.
+    widen(scene, 40);
+    expect(scene.gates()[0]?.cull).toBe(40);
+    const culled = run(scene);
+    expect(culled.counts[keyOf(scene, "pine:1:0")]).toBe(2);
+    expect(culled.counts[keyOf(scene, "pine:2:0")]).toBe(0);
+    scene.dispose();
+  });
+
+  it("answers a stale table at the level the owner's distances name, which is what it is for", () => {
+    // The needles sit three metres up the trunk, so a level that did not take the part's own offset
+    // is caught by a number rather than by a count.
+    const needles = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 3, 0, 1]);
+    // A table left holding the pre-widening distances, and the owner's live ones beside it.
+    const scene = pine();
+    placed(scene, 0, 6, 12);
+    for (const level of [1, 2])
+      scene.key(`pine:${String(level)}:0`, LOCAL, 64, {
+        group: `pine:${String(level)}`,
+        part: 0,
+        parts: 1,
+      });
+    const live: ILiveAsset = {
+      cull: undefined,
+      distances: [0, 20, 60],
+      id: "pine",
+      locals: [[LOCAL], [needles], [LOCAL]],
+    };
+    const expected = liveKeyInstances(
+      scene.placements,
+      (slot: number) => (slot === 0 ? live : undefined),
+      { planes: cameraAt(0, 0).planes, x: 0, y: 0, z: 0 },
+    );
+    expect((expected.get("pine:0:0")?.length ?? 0) / 16).toBe(1);
+    expect((expected.get("pine:1:0")?.length ?? 0) / 16).toBe(4);
+    expect((expected.get("pine:2:0")?.length ?? 0) / 16).toBe(1);
+    // The kernel's own reference, reading the same stale table, puts all six at level 0 — so the two
+    // references disagree exactly where a far tree is drawn at its near shape.
+    expect(run(scene).counts[keyOf(scene, "pine:0:0")]).toBe(6);
+    // And the part's own offset is composed in, as the dispatch composes it.
+    expect(expected.get("pine:1:0")?.[13]).toBe(3);
+    expect(expected.get("pine:0:0")?.[13]).toBe(0);
+    scene.dispose();
   });
 });
