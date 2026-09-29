@@ -2,7 +2,7 @@
 
 **Status: PARTIAL — phases 1–3 landed 2026-09-29; only the reference-match judge box is open** · filed 2026-09-29 against `a6397a668` · owner: "refactor `The-Verdant-Oath.html`
 and integrate it into the starter pack (PR #376) … polish the main character, the look and feel should
-match the reference picture, add it as a zelda-clone starter kit".
+match the reference picture, add it as a starter kit".
 
 ## Why
 
@@ -12,8 +12,8 @@ adventure with a stone stair, a log bridge, a heightfield with analytic stair co
 collectible sigils, a chest, breakable pots, six briarling enemies (idle/chase/windup/recover), sword,
 shield block, dodge roll with i-frames, stamina, lock-on, a fairy companion, a keeper NPC with
 dialogue, a quest chain (`meet → seek → altar → complete`), a minimap, a heart HUD and a save file.
-The reference picture is Ocarina-of-Time-on-Switch-2's Kokiri forest: mist, god-rays through a giant
-canopy, mossy log stairs, a fairy and a green-capped child hero seen from behind.
+The reference picture is a misty ancient-forest clearing: mist, god-rays through a giant canopy,
+mossy log stairs, a fairy companion and a small hero seen from behind.
 
 ## What changes in the port
 
@@ -77,8 +77,8 @@ canopy, mossy log stairs, a fairy and a green-capped child hero seen from behind
   wake at 7 m, so a fixed key sequence is a fight that depends on the fight; the full quest is one
   headless spec case, and the keeper, a fight and a pickup are playtests.
 
-- 2026-09-29: the kit ships `adventure`, not `zelda` — kits are named for the genre (`rts`, `racing`),
-  and the fantasy is an original one (the keeper, the sigils, the briarlings), not a franchise's.
+- 2026-09-29: the kit ships as `adventure` — kits are named for the genre (`rts`, `racing`), and the
+  fantasy is an original one (the keeper, the sigils, the briarlings).
 - 2026-09-29: no `@threenative/physics`, as in PRD-471. Ground is one analytic function shared by the
   render mesh, the hero and the enemies, and collision is circles on the xz-plane; a Rapier world
   beside it would buy nothing the rules do not already do deterministically.
