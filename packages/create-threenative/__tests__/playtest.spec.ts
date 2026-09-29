@@ -40,7 +40,7 @@ describe("starter playtest proof", () => {
       };
 
       // The subject is the template's own, not a literal: `minimal` proves its `player` moved,
-      // `defense` its camera, and the `rts` kit its camera, because a strategy game has no avatar
+      // `tower-defense` its camera, and the `rts` kit its camera, because a strategy game has no avatar
       // and its durable proof is that a held key pans a battlefield. What every one of them shares
       // is the claim underneath: a named registered entity, a held input step, and a distance.
       // Any of the four arrows, not one of them. Every kit binds `input.vector("move")` to all
@@ -60,23 +60,17 @@ describe("starter playtest proof", () => {
     },
   );
 
-  it("should register defense's input-controlled player subject", async () => {
-    const scene = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/scenes/Defense.ts"),
-      "utf8",
-    );
-    const player = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/entities/Player.ts"),
+  it("should pan the tower-defense camera from the move axis its durable scenario holds", async () => {
+    const rig = await readFile(
+      path.resolve("packages/create-threenative/templates/tower-defense/src/camera-rig.ts"),
       "utf8",
     );
     const game = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/game.ts"),
+      path.resolve("packages/create-threenative/templates/tower-defense/src/game.ts"),
       "utf8",
     );
 
-    expect(scene).toContain('ctx.entities.add("player", player)');
-    expect(scene).toContain("player.update(frameCtx, dt)");
-    expect(player).toContain('ctx.input.vector("move")');
+    expect(rig).toContain('input.vector("move")');
     expect(game).toContain("move: {");
   });
 

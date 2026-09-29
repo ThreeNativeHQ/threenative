@@ -434,7 +434,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // built on `mannequin-combat.glb`. One rig, six instances, a real doorway between the rooms, and
   // a `Play` scene the game starts in, so only this tree moves.
   "action-rpg": "1eee879799687d8b675693846d3ef405588ec67d07b044523f27ba21738e3f9b",
-  defense: "e00c00376798af696a9c17b4f13cc21f5aac3b95e3a7d3068afbdfd2f07cc4b0",
+  "tower-defense": "ba09b8606bd524d4246f6613c030bd1c29f7e7b33ba7f0467b15a5a3cf070a55",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.

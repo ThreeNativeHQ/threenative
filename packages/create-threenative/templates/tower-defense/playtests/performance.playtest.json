@@ -1,0 +1,76 @@
+{
+  "acceptanceId": "tower-defense-production-performance",
+  "name": "production-performance",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "arm-sentry",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sentry",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arc",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "auto",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "under-load",
+      "waitTicks": 1500,
+      "release": true
+    }
+  ],
+  "assert": {
+    "performance": {
+      "maxDrawCalls": 340,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 29000,
+      "minFps": 30
+    },
+    "renderChain": {
+      "tier": "high"
+    }
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}

@@ -411,7 +411,7 @@
       "id": "request.tower-defense-game",
       "query": "tower defense game",
       "scope": "request",
-      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
       "expect": ["Scheduler"],
       "reject": []
     },
@@ -462,7 +462,7 @@
       "id": "request.spawn-waves",
       "query": "spawn waves of enemies",
       "scope": "request",
-      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
       "expect": ["Scheduler"],
       "reject": [
         "WaveField",

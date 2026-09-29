@@ -1,0 +1,124 @@
+{
+  "name": "tower-defense-upgrade-recycle",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "arm",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "built",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgraded",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "recycled",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "credits",
+        "equals": 295,
+        "atSteps": [
+          {
+            "label": "built",
+            "equals": 260
+          },
+          {
+            "label": "upgraded",
+            "equals": 175
+          },
+          {
+            "label": "recycled",
+            "equals": 295
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "spent",
+        "equals": 185,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [
+          {
+            "label": "built",
+            "equals": 2
+          },
+          {
+            "label": "upgraded",
+            "equals": 2
+          },
+          {
+            "label": "recycled",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "selected",
+        "atSteps": [
+          {
+            "label": "upgraded",
+            "equals": true
+          },
+          {
+            "label": "recycled",
+            "equals": false
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "tower.1",
+        "component": "level",
+        "atSteps": [
+          {
+            "label": "upgraded",
+            "equals": 2
+          }
+        ]
+      }
+    ]
+  }
+}

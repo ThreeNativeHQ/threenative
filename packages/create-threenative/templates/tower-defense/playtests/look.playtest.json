@@ -1,0 +1,130 @@
+{
+  "name": "tower-defense-look",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "arm-sentry",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sentry",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arc",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch-1",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-1",
+      "waitTicks": 800,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-cryo",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cryo",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch-2",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fight",
+      "waitTicks": 200,
+      "release": true,
+      "screenshot": "fight"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [
+          {
+            "label": "arc",
+            "equals": 3
+          },
+          {
+            "label": "cryo",
+            "equals": 4
+          },
+          {
+            "label": "fight",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 8,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 10,
+        "changed": true
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}
