@@ -34,6 +34,7 @@ import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
+  VIRTUAL_SHADOW_REFRESH_MARKER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
   readVirtualShadowMarker,
@@ -1370,5 +1371,181 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     expect(tree.castShadow).toBe(true);
     expect(cutout.castShadow).toBe(true);
     node.dispose();
+  });
+});
+
+/**
+ * Adaptive refresh: a level whose own render costs a large share of the frame re-renders less often,
+ * up to the widest trail its window can hold without the camera's own view of the level leaving the
+ * map that view is served from. The walk is the one the measurement came from — a 20 m/s flyover at
+ * 60 Hz over the 24 / 96 / 320 cascade, where the finest level is the one a camera re-renders most.
+ */
+describe("VirtualShadowNode adaptive refresh", () => {
+  const CASCADE = { clipExtents: [24, 96, 320], mapSize: 64 };
+  const PERIOD = 1 / 60;
+  const SPEED = 20;
+  const FRAMES = 115;
+  /** Every level's step as configured: an eighth of its own extent. */
+  const BASE = 0.125;
+  /**
+   * The half-width of the region a level serves around the window it was rendered with, as a share of
+   * its extent: the configured guard of 0.9 less its step. What a window can trail by without
+   * leaving the camera outside that region — the margin the widening is capped at — is the rest of
+   * the extent.
+   */
+  const SERVED = 0.775;
+  const SAFE = 1 - SERVED;
+  /** Over the 0.4 share of a 16.7 ms frame by more than twice, so the widening runs to its cap. */
+  const EXPENSIVE_MS = 15;
+
+  interface IWalk {
+    /** Level renders per level over the walk, settle included. */
+    readonly renders: number[];
+    /** The `TN_SHADOW_REFRESH` lines the walk printed. */
+    readonly notes: string[];
+    /** The widest trail each level's rendered window held from the camera, as a share of its extent. */
+    readonly maxTrail: number[];
+  }
+
+  /**
+   * A 20 m/s flyover, with `charges[i]` milliseconds charged to level `i`'s render. The draws are the
+   * clock, so what the node measures around a render is that render's own cost.
+   *
+   * Every frame asserts the two things the widening owes, for every level: the camera is still inside
+   * the region its own level serves (`trail <= extent * guard`), and that region is inside the
+   * window the level rendered (`trail <= extent * (1 - guard)`). The second is the bound the cap is
+   * written from; the first is what a trail past the margin would break, a level that has stopped
+   * serving the ground the player is standing on.
+   */
+  function walk(charges: readonly number[], options: object = {}): IWalk {
+    const { camera, light } = world();
+    const node = setupNode(light, { ...CASCADE, ...options });
+    const clock = { ms: 0 };
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const renders = node.levelNodes.map(() => 0);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        renders[index] = (renders[index] as number) + 1;
+        clock.ms += charges[index] ?? 0;
+      };
+    });
+    const maxTrail = node.levelNodes.map(() => 0);
+    let time = 0;
+    try {
+      for (let frame = 0; frame < FRAMES; frame += 1) {
+        time += PERIOD;
+        const walked = time * SPEED;
+        camera.position.set(walked, 5, walked);
+        node.updateBefore({
+          camera,
+          renderer: {},
+          time,
+          deltaTime: PERIOD,
+        } as unknown as NodeFrame);
+        const here = node.clipmap.project(camera.position);
+        for (const [index, level] of node.levelLights.entries()) {
+          const centre = (level as unknown as { target: { position: Vector3 } }).target.position;
+          const there = node.clipmap.project(centre);
+          const trail = Math.max(Math.abs(here.u - there.u), Math.abs(here.v - there.v));
+          const extent = node.options.clipExtents[index] as number;
+          const where = `level ${String(index)} at frame ${String(frame)}`;
+          expect(
+            trail,
+            `${where} left the camera outside the region it serves`,
+          ).toBeLessThanOrEqual(extent * SERVED);
+          expect(
+            trail,
+            `${where} uncovered the region it serves from the map it is served out of`,
+          ).toBeLessThanOrEqual(extent * SAFE);
+          maxTrail[index] = Math.max(maxTrail[index] as number, trail / extent);
+        }
+      }
+      return {
+        maxTrail,
+        notes: info.mock.calls
+          .map((call) => String(call[0]))
+          .filter((line) => line.startsWith(VIRTUAL_SHADOW_REFRESH_MARKER)),
+        renders,
+      };
+    } finally {
+      now.mockRestore();
+      info.mockRestore();
+      node.dispose();
+    }
+  }
+
+  /** The trail a `TN_SHADOW_REFRESH` line reports, as a number. */
+  function trailOf(line: string): number {
+    return Number(/ trail=([\d.]+)/u.exec(line)?.[1]);
+  }
+
+  it("should widen an expensive level's trail and re-render it less often over the walk", () => {
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    const today = walk([EXPENSIVE_MS, 0, 0], { adaptiveRefresh: false });
+    // The same walk, the same costs, the same configured steps — and the fine level draws about
+    // half as often, because the coarse two were already too wide to be what a walk re-renders.
+    expect(adapted.renders[0]).toBeGreaterThan(0);
+    expect(adapted.renders[0]).toBeLessThan(today.renders[0] as number);
+    // It widened, and it widened to the margin rather than past it: the cap is what keeps the
+    // camera's view inside the map, so a level four times over the share does not buy four times
+    // the trail.
+    expect(adapted.maxTrail[0]).toBeGreaterThan(BASE);
+    expect(adapted.maxTrail[0]).toBeLessThanOrEqual(SAFE);
+    expect(adapted.notes.length).toBeGreaterThan(0);
+    for (const line of adapted.notes) {
+      expect(line).toMatch(/^TN_SHADOW_REFRESH level=0 width=48 ms=\d+\.\d trail=[\d.]+$/u);
+      expect(trailOf(line)).toBeGreaterThan(BASE);
+      expect(trailOf(line)).toBeLessThanOrEqual(SAFE);
+    }
+    // At most one line a second for the level, so 1.92 s of walk prints two or fewer.
+    expect(adapted.notes.length).toBeLessThanOrEqual(2);
+  });
+
+  it("should leave a cheap level exactly as it was, and say nothing about it", () => {
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    const allCheap = walk([0, 0, 0]);
+    // Levels 1 and 2 are measured every frame and always under the share, so they are stepped with
+    // the number they were configured with and render on exactly today's cadence.
+    expect(adapted.renders.slice(1)).toEqual(allCheap.renders.slice(1));
+    for (const index of [1, 2]) {
+      expect(adapted.maxTrail[index]).toBeLessThanOrEqual(BASE);
+    }
+    // Nothing widened, so nothing is printed: the marker names a level that changed, not every one.
+    expect(adapted.notes.some((line) => / level=1 | level=2 /u.test(line))).toBe(false);
+    expect(allCheap.notes).toEqual([]);
+  });
+
+  it("should keep the camera inside what every level serves, and that inside its map, at every step", () => {
+    // `walk` asserts both bounds on every frame of this walk, so this test is about the walk having
+    // something to assert: a trail past `extent * (1 - guard)` is what leaves a fragment sampling
+    // outside the map it is selected from, and one past `extent * guard` is what leaves the player
+    // standing on a level that no longer serves them.
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    expect(adapted.maxTrail[0]).toBeGreaterThan(BASE);
+    expect(adapted.maxTrail.every((trail) => trail <= SAFE && trail <= SERVED)).toBe(true);
+  });
+
+  it("should count today's renders with adaptiveRefresh off, expensive or not", () => {
+    const off = walk([EXPENSIVE_MS, 0, 0], { adaptiveRefresh: false });
+    const allCheap = walk([0, 0, 0]);
+    const { camera, light } = world();
+    const node = setupNode(light, { ...CASCADE, adaptiveRefresh: false });
+    expect(node.options.adaptiveRefresh).toBe(false);
+    // A level that costs 15 ms a render re-renders exactly as often as one that costs nothing: the
+    // switch is the measurement's own, and without it the step is the configured one.
+    expect(off.renders).toEqual(allCheap.renders);
+    expect(off.maxTrail).toEqual(allCheap.maxTrail);
+    expect(off.notes).toEqual([]);
+    node.dispose();
+  });
+
+  it("should refuse a share of the frame period that is not a share of it", () => {
+    const { light } = world();
+    expect(() => setupNode(light, { expensiveRefreshShare: 0 })).toThrow(/expensiveRefreshShare/u);
+    expect(() => setupNode(light, { expensiveRefreshShare: 1.5 })).toThrow(
+      /TN_VIRTUAL_SHADOW_INVALID/u,
+    );
+    expect(setupNode(light).options.expensiveRefreshShare).toBe(0.4);
   });
 });

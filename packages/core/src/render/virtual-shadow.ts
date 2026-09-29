@@ -32,6 +32,7 @@ import {
   type UniformNode,
 } from "three/webgpu";
 import { lodChainOf } from "../model-lod.js";
+import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -90,6 +91,33 @@ export interface IVirtualShadowOptions {
    * walking camera re-renders most, so it is the one that wants the larger step.
    */
   readonly refreshStep?: number | readonly number[];
+  /**
+   * Let a level buy itself a wider `refreshStep` out of what its own last render cost, default true.
+   *
+   * A level render is a whole scene draw, so the engine cannot know what one is worth until it has
+   * paid for it: the node measures the draw it just took and smooths that reading, and a level whose
+   * smoothed cost is a large share of the frame period is re-rendered less often. This is automatic
+   * because the value it reacts to is a measurement, not a setting — a game sets nothing, and a
+   * cheap level is never widened and behaves exactly as before. The widened trail is capped by the
+   * window's own margin, so the camera stays inside the region that level serves and everything that
+   * level serves stays inside the map; a level with no such margin is never widened at all.
+   *
+   * `false` puts every level back on the `refreshStep` it was given, which is also what a harness
+   * that wants to count today's renders uses.
+   */
+  readonly adaptiveRefresh?: boolean;
+  /**
+   * Fraction of the display period a level's smoothed render cost may take before its refresh trail
+   * widens, `(0, 1]`, default 0.4.
+   *
+   * The period is the frame's own `deltaTime`, so this is a share of the frame the level is in rather
+   * than a constant: on a 120 Hz panel the same render is twice the share it is at 60. Below the
+   * share nothing changes at all, and above it the trail widens in proportion to the overshoot,
+   * because that is the ratio between what the level costs and what a frame can afford to spend on
+   * it — a level four times over the share refreshs about four times less often, until the cap
+   * below it runs out.
+   */
+  readonly expensiveRefreshShare?: number;
   /**
    * How long a level waits after its own last render before an invalidation may re-render it, in
    * seconds. One value for every level, or one per level finest first, the last entry standing in
@@ -226,6 +254,20 @@ export interface IVirtualShadowLevelStat {
 
 export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
 /**
+ * One line per level whose refresh trail adaptive refresh widened, at most once a second: the level,
+ * the width of the window it re-renders, the smoothed cost of that render in ms, and the trail it
+ * bought. A browser run can see which level is being throttled and by how much, which is the only
+ * way to tell an expensive level from a slow frame.
+ */
+export const VIRTUAL_SHADOW_REFRESH_MARKER = "TN_SHADOW_REFRESH";
+/** Seconds between two `TN_SHADOW_REFRESH` lines for the same level. */
+const REFRESH_MARKER_SECONDS = 1;
+/**
+ * How much of a level's last two render costs the smoothed cost keeps, `(0, 1]`. Half and half, so a
+ * first draw with a cold pipeline is not the level's price for the rest of the session.
+ */
+const COST_SMOOTHING = 0.5;
+/**
  * The object layer tracked casters are enabled on, so each level's mover camera sees only them.
  * Keep it free of other uses; the main camera never needs it (tracked objects keep layer 0).
  */
@@ -274,6 +316,13 @@ const STATS_QUERY_EVERY = 60;
  */
 const BASE_INVALIDATION_DELAY = 0.25;
 const DEFAULT_MIN_CASTER_TEXELS = 1.5;
+/**
+ * The share of the display period a level's render may cost before adaptive refresh widens its
+ * trail: two frames in five, 6.7 ms of a 60 Hz frame. A draw that big is worth a whole frame of its
+ * own, and a share rather than a millisecond count is what makes the same number mean the same thing
+ * on a 120 Hz panel.
+ */
+const DEFAULT_EXPENSIVE_REFRESH_SHARE = 0.4;
 /**
  * The floor on a light's horizontal magnitude, so a sun on the horizon divides by a `cos` that is
  * not zero: the reach of a caster grows without limit as the sun sets, and a level that spans the
@@ -350,6 +399,20 @@ interface ILevel {
    */
   pending: RenderReason;
   /**
+   * Smoothed cost of this level's own last render, in milliseconds, and 0 until it has rendered
+   * once. This is the only measure of what a level's render is worth there is — a level render is a
+   * whole scene draw — and what it buys is a wider refresh trail; see `adaptiveRefresh`.
+   */
+  costMs: number;
+  /**
+   * The trail this level is actually being stepped with, which is its configured `refreshStep`
+   * until a measurement widens it. Held so a level that got cheap again is put back rather than
+   * left on the trail it bought.
+   */
+  appliedStep: number;
+  /** Engine clock of this level's last `TN_SHADOW_REFRESH` line, in seconds. */
+  lastRefreshNote: number;
+  /**
    * Where this level's *rendered* map sits, relative to the centre the fragment test measures
    * from. A level whose re-render was deferred still holds an older window, and its selection has
    * to be made against that window rather than the followed centre: the sampler reads through this
@@ -368,6 +431,11 @@ const _direction = new Vector3();
 const _center = new Vector3();
 const _sphere = new Sphere();
 const _box = new Box3();
+
+/** The per-level entry of a scalar-or-array option, the last entry standing in for the rest. */
+function at(values: readonly number[], level: number): number {
+  return values[Math.min(level, values.length - 1)] as number;
+}
 
 /**
  * The diameter a shadow level's texel gate judges one caster by: the part's own geometry radius
@@ -564,6 +632,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: minCasterTexels must be zero or positive, got ${String(minCasterTexels)}.`,
       );
     }
+    const expensiveRefreshShare = options.expensiveRefreshShare ?? DEFAULT_EXPENSIVE_REFRESH_SHARE;
+    if (
+      !Number.isFinite(expensiveRefreshShare) ||
+      expensiveRefreshShare <= 0 ||
+      expensiveRefreshShare > 1
+    ) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: expensiveRefreshShare must be in the range (0, 1], got ${String(expensiveRefreshShare)}.`,
+      );
+    }
     // Both halves or neither: one of the two alone cannot place a camera, so a half-specified
     // override is read as no override at all and the span is derived.
     this.#autoDepth = options.lightDistance === undefined || options.depthRange === undefined;
@@ -639,8 +717,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
     this.options = {
+      adaptiveRefresh: options.adaptiveRefresh ?? true,
       clipExtents: [...clipExtents],
       depthRange: options.depthRange ?? 400,
+      expensiveRefreshShare,
       invalidationDelay,
       lightDistance: options.lightDistance ?? 200,
       mapSize,
@@ -985,7 +1065,75 @@ export class VirtualShadowNode extends ShadowBaseNode {
    */
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean): void {
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
-    node.updateShadow(frame);
+    // What a level's own render costs, measured around the draw and smoothed over the reading
+    // before it. A mover map is a handful of tracked casters and is never scheduled against, so it
+    // is not measured, and with adaptive refresh off nothing is: the switch is the measurement's
+    // own off switch. What the reading buys is set on the next frame, by `#adaptiveTrails`.
+    if (mover || !this.options.adaptiveRefresh) {
+      node.updateShadow(frame);
+      return;
+    }
+    const started = performance.now();
+    try {
+      node.updateShadow(frame);
+    } finally {
+      const measured = performance.now() - started;
+      level.costMs =
+        level.costMs <= 0 ? measured : level.costMs + (measured - level.costMs) * COST_SMOOTHING;
+    }
+  }
+
+  /**
+   * Step each level's window with the trail its own render cost can afford, before the clipmap
+   * computes this frame's windows. Nothing here runs unless adaptive refresh is on, and a level
+   * under the share comes out of it with the step it was configured with — the same number, so the
+   * same window, so the same counts.
+   *
+   * The widening is proportional to the overshoot: a level costing `n` times the share refreshs
+   * about `n` times less often, because that is the ratio between what the level costs and what a
+   * frame can afford to spend on it. It is then capped by the window's own margin, which is what
+   * makes it safe rather than merely useful:
+   *
+   * ```
+   * trail ≤ extent − extent × guard = extent × (1 − guard)
+   * ```
+   *
+   * `extent` is the rendered window's half-width, and `extent × guard` is the half-width around that
+   * window's own centre within which a fragment is served by this level at all — the camera's own
+   * surroundings, measured from the map rather than from the centre being followed, which is what
+   * the selection's offsets are for. The inequality says the window may trail the camera by
+   * everything that region does not already use, so the camera stays inside the region its own level
+   * serves, and everything the level serves stays inside the map it is served from. A level with no
+   * margin left (`guard: 1`, or a step already at it) is never widened at all.
+   */
+  #adaptiveTrails(frame: NodeFrame, now: number): void {
+    if (!this.options.adaptiveRefresh) return;
+    // The period is the frame's own, so the share is read against the panel this is running on. A
+    // frame that carries none — a harness, a held frame — falls back to the engine's own answer for
+    // a display it has not measured.
+    const delta = (frame as { deltaTime?: number }).deltaTime ?? 0;
+    const affordableMs =
+      this.options.expensiveRefreshShare * (delta > 0 ? delta * 1000 : 1000 / DEFAULT_TARGET_FPS);
+    this.#levels.forEach((level, index) => {
+      const base = at(this.options.refreshStep, index);
+      // What is left of that margin once the clipmap has rounded the step to a whole number of
+      // texels: it rounds up by at most half of one, and one of those is `extent / mapSize` of
+      // extent, so the trail it actually steps by is still inside the margin. A level with no such
+      // margin left is held at the step it was given and is not widened at all.
+      const margin = Math.max(
+        base,
+        1 - at(this.options.selectionGuard, index) - 1 / this.options.mapSize,
+      );
+      const step = Math.min(base * Math.max(1, level.costMs / affordableMs), margin);
+      if (step === level.appliedStep) return;
+      this.clipmap.setRefreshStep(index, step);
+      level.appliedStep = step;
+      if (step <= base || now - level.lastRefreshNote < REFRESH_MARKER_SECONDS) return;
+      level.lastRefreshNote = now;
+      console.info(
+        `${VIRTUAL_SHADOW_REFRESH_MARKER} level=${String(index)} width=${String(2 * level.extent)} ms=${level.costMs.toFixed(1)} trail=${step.toFixed(3)}`,
+      );
+    });
   }
 
   /**
@@ -1125,6 +1273,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const light = new LevelLight(levelShadow);
       light.name = `VirtualShadowLevel${String(index)}`;
       this.#levels.push({
+        appliedStep: at(this.options.refreshStep, index),
+        costMs: 0,
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
         dirty: false,
@@ -1132,6 +1282,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         extent,
         extentUniform: uniform(extent),
         lastRender: Number.NEGATIVE_INFINITY,
+        lastRefreshNote: Number.NEGATIVE_INFINITY,
         light,
         mapped: uniform(0),
         minX: Number.NaN,
@@ -1282,6 +1433,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     });
     camera.updateMatrixWorld(true);
     const cameraPosition = _center.setFromMatrixPosition(camera.matrixWorld);
+    // The engine's own frame clock, in seconds. This is what a level's invalidation delay is
+    // measured against, so a test drives time instead of frames and a 3.33 s delay means 3.33 s
+    // whatever the frame rate is. Read once, here, because the levels below all measure against it.
+    const now = (frame as { time?: number }).time ?? 0;
+    this.#adaptiveTrails(frame, now);
     const windows = this.clipmap.updateCenter({
       x: cameraPosition.x,
       y: cameraPosition.y,
@@ -1324,10 +1480,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     }
     this.#regions.length = 0;
     const canRender = (frame as { renderer?: unknown }).renderer !== undefined;
-    // The engine's own frame clock, in seconds. This is what a level's invalidation delay is
-    // measured against, so a test drives time instead of frames and a 3.33 s delay means 3.33 s
-    // whatever the frame rate is.
-    const now = (frame as { time?: number }).time ?? 0;
 
     let moved = 0;
     let invalidated = 0;
