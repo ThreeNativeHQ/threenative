@@ -40,8 +40,8 @@ numbers stay in the template.
 
 ### Phase 3 — the racing template drives
 
-- [ ] The player car and the rival are `VehicleBody3D`s; kerbs, tyre walls and hoardings collide; the rival spawns on its own grid slot; the camera leads with velocity. proof: capture + `TN_TEMPLATE_ONLY=racing pnpm test:templates`
-- [ ] Every racing scenario re-measured on real physics; changed assertions carry the new measured truth. proof: same gate
+- [ ] The player car and the rival are `VehicleBody3D`s; kerbs, tyre walls and hoardings collide; the rival spawns on its own grid slot; the camera leads with velocity. proof: capture + `TN_TEMPLATE_ONLY=racing pnpm test:templates` — **open.** The behaviour is written and unit-proven (`pnpm exec vitest run packages/physics packages/create-threenative` → 986 green, only the owner-recomputed `scaffold.spec.ts` byte-stable hash failing; `pnpm typecheck` green; `pnpm native:build` and `pnpm native:verify:desktop` green with the Rust filter change), but the playtest suite is red: 6 of 9 scenarios fail on real physics, so the capture and the gate are not yet in hand. See *Blocked on*.
+- [ ] Every racing scenario re-measured on real physics; changed assertions carry the new measured truth. proof: same gate — **open**, not attempted on the new physics. Measured so far and still to fold in: `production-performance` passes; `racing-boost-expires` never started (browser closed, `frames: 0`); `racing-route-ranking` fails `trackProgress`; `racing-rescue-transform` fails `rescueHeadingError`; `racing-reverse-finish-rejected` and `racing-shortcut-rejected` report their reject counters as stagnated; `racing-finish-behind-rival-is-dnf` reaches 0 of 3 laps; `survives` fails with `TN_PLAYTEST_CAPABILITY_MISSING` on `runtime.components`.
 
 ## Decisions
 
@@ -70,6 +70,36 @@ numbers stay in the template.
   numbers only. The native adapter implements none yet, so `new VehicleBody3D()` throws
   `TN_VEHICLE_NATIVE_UNAVAILABLE` there rather than simulating a car that is not there.
 
+- **2026-09-28, phase 3: a vehicle's wheel rays exclude sensors on both backends.** An `Area3D`
+  gate or boost pad is a sensor, and a wheel ray that hits one reads as a fully compressed strut, so
+  the lap gates threw the car into the air on the straight it was supposed to measure. `simulation.ts`
+  and `native/physics/src/lib.rs` both pass `EXCLUDE_SENSORS` on the vehicle ray filter. Proven
+  natively by `pnpm native:build` + `pnpm native:verify:desktop` (9/9, non-blank frame), and on web
+  by a racing scene that now completes three laps with zero rescues under the recorder harness.
+- **2026-09-28, phase 3: a lap gate counts once, whichever way it is crossed.** `Area3D`'s
+  `bodyEntered` and the per-frame sweep between a car's transforms both see the same crossing, so
+  the second one read as a shortcut. `Lap` arms a gate on the near side of its plane and disarms it
+  on the crossing, so the sweep can only catch a crossing the sensor missed. The car's **measured**
+  travel direction still decides: backwards is a `reverseReject`, out of order is a `shortcutReject`.
+- **2026-09-28, phase 3: the rival projects, it does not extrapolate.** Advancing a target by the
+  clock let the target run away from a car that was off the line, and a `cos(error)` throttle floor
+  left the rival stationary against a barrier for the rest of the race. It now projects its own
+  position onto the route, unwraps that distance for laps, aims a speed-scaled look-ahead ahead, and
+  holds a 0.3 throttle floor. Measured: 6 laps in 70 s at 10.6–11.3 m/s, no rescues, on the line.
+
 ## Blocked on
 
-- Nothing yet.
+- The racing playtest suite is red on real physics: 6 of 9 scenarios fail (numbers above), and the
+  open-loop key scripts that passed on the old arcade car no longer follow the new chassis. A closed
+  loop recorded in a headless harness laps three times with zero rescues, but the recorded pattern
+  does not replay open-loop, so it is not yet a scenario. This is the next piece of work.
+- `survives` fails `TN_PLAYTEST_CAPABILITY_MISSING` for `runtime.components`, which the bridge offers
+  only when a named entity publishes a JSON-safe field. The racing scene does register `player` and
+  `rival` with fields, and a new spec
+  (`template-runtime-cost.spec.ts` → "publishes a JSON-safe component snapshot") proves the snapshot
+  is non-empty and finite in a headless scene, so the browser is describing the bridge before the
+  race scene has entered. `Race.load()` now awaits the sky photograph, which delays that entry. The
+  runner's describe-before-ready order is pinned by `setup-ordering.spec.ts`, so the fix belongs in
+  the template: the scene must not withhold its first frame for a texture decode. Not done yet.
+- `pnpm exec vitest run packages/create-threenative` reports one failure,
+  `keeps every no-install scaffold tree byte-stable`, which the owner recomputes after this change.

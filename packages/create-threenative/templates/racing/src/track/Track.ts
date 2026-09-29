@@ -46,17 +46,21 @@ export const LAYER = { barrier: 8, car: 1, field: 4, road: 2 } as const;
  * chassis collider clears it by 40 mm, so this is the number that makes a kerb drivable: measured
  * on the physics, 80 mm lifts the car 8 mm and costs no speed, and 120 mm stops it dead.
  */
-export const KERB_HEIGHT = 0.08;
+export const KERB_HEIGHT = 0.05;
 const KERB_WIDTH = 0.5;
 
 /**
  * The starting grid, in world metres on the `z = -18` straight between the last corner and the
  * finish line. The player is second and the rival is on pole: the ranking playtest asserts the
  * rival leads from the grid, and two cars that spawn in the same place is the defect this replaces.
+ *
+ * `z = -20` rather than the road's centre line, which is a grid and not a parking spot: the racing
+ * line runs down the middle of a 7 m road, so a car parked on it is rear-ended by the rival's first
+ * corner. Two metres aside, both cars are on tarmac and the line is clear.
  */
 export const GRID = {
-  player: new Vector3(-3, 0, -18),
-  rival: new Vector3(1, 0, -18),
+  player: new Vector3(-3, 0, -20),
+  rival: new Vector3(1.5, 0, -20),
 } as const;
 export const ROUTE_POINTS = [
   new Vector3(10, 0, -18),
@@ -66,7 +70,30 @@ export const ROUTE_POINTS = [
   new Vector3(-18, 0, -18),
 ] as const;
 
-export const RACING_LINE = new PathFollow3D({ loop: true, points: ROUTE_POINTS });
+/**
+ * The racing line: the same corners with points every few metres along each straight.
+ *
+ * Five points is not a racing line, it is a hint. `PathFollow3D` is a centripetal Catmull-Rom curve,
+ * and with the corners 36 m apart the curve **bulges 4.5 m outside the circuit** halfway down every
+ * straight — measured — which is 1 m past the edge of a 7 m road. The rival drove that line until
+ * the template had a car with a body, and drove off the circuit. Subdividing brings the curve onto
+ * the tarmac (0.38 m at its worst) and rounds the corners the way a racing line should.
+ */
+const LINE_SUBDIVISIONS = 6;
+
+function racingLinePoints(): Vector3[] {
+  const points: Vector3[] = [];
+  for (let index = 0; index < ROUTE_POINTS.length; index += 1) {
+    const a = ROUTE_POINTS[index] as Vector3;
+    const b = ROUTE_POINTS[(index + 1) % ROUTE_POINTS.length] as Vector3;
+    points.push(a.clone());
+    for (let step = 1; step <= LINE_SUBDIVISIONS; step += 1)
+      points.push(new Vector3().lerpVectors(a, b, step / (LINE_SUBDIVISIONS + 1)));
+  }
+  return points;
+}
+
+export const RACING_LINE = new PathFollow3D({ loop: true, points: racingLinePoints() });
 
 export interface ITrackBuild {
   readonly boost: Boost;
@@ -313,10 +340,12 @@ export function roadRayProbe(meshes: readonly Mesh[]): IntersectRay {
 
 export function buildTrack(ctx: TrackCtx): ITrackBuild {
   const materials = createMaterials();
-  // The infield sits 160 mm below the tarmac, so the road reads as a raised ribbon and a car that
-  // drops a wheel off the edge falls a car's ride height rather than half a metre.
+  // The infield sits **20 mm** below the tarmac, not 160. The road is a 280 mm-thick box, so a
+  // deeper field made its side a step the car could not climb: anything that left the road was
+  // stuck on the grass for good, which is a rescue for the player and a dead AI for the rival. A
+  // circuit is tarmac at ground level with a kerb at the edge, and that is what this is now.
   const field = new Mesh(new BoxGeometry(120, 0.3, 120), materials.field);
-  field.position.y = -0.31;
+  field.position.y = -0.17;
   field.receiveShadow = true;
   ctx.add(field);
   new RigidBody3D({

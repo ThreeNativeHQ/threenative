@@ -115,6 +115,19 @@ export const SAG = CAR.gravity / (4 * CAR.suspensionStiffness);
  */
 export const RIDE = CAR.suspensionRestLength - SAG;
 
+/**
+ * The one place the two yaw conventions meet.
+ *
+ * A heading here is always measured the way a map is: `atan2(z, x)` of the direction the car's
+ * nose points. three's `rotation.y` turns **+x toward -z**, and Rapier's `teleport` yaw is that same
+ * +y rotation, so a heading has to be negated on the way in. Getting this wrong points the car 2θ
+ * away from where the caller asked — which reads as "the rival spawns facing the wrong way and the
+ * pursuit controller steers it into the tyre wall".
+ */
+export function noseRotation(yaw: number): number {
+  return -yaw;
+}
+
 const DEG = Math.PI / 180;
 const _box = new Box3();
 const _size = new Vector3();
@@ -190,10 +203,9 @@ export class CarBody {
   ) {
     this.mesh = new Group();
     this.mesh.position.set(options.spawn.x, options.spawn.y, options.spawn.z);
-    // Rapier turns a positive steering angle toward the chassis's own -z, and three's `rotation.y`
-    // turns the car's nose the same way, so the chassis yaw and the car's nose agree at every
-    // heading: a positive steering input takes the nose toward the driver's right.
-    this.mesh.rotation.y = options.yaw;
+    // `yaw` is a heading (`atan2(z, x)` of where the nose points); `noseRotation` converts it to the
+    // +y rotation three and Rapier both use.
+    this.mesh.rotation.y = noseRotation(options.yaw);
     this.mesh.castShadow = true;
     const chassis = vehicle(options.materials);
     this.normaliseFactor = prepareVehicleConventions(chassis);
@@ -301,9 +313,9 @@ export class CarBody {
       MathUtils.clamp(this.longLoad / FEEL.lateral, -1, 1) * FEEL.leanPitch * DEG;
   }
 
-  /** Godot's `VehicleBody3D.teleport`: move the chassis and face `yaw` radians. */
+  /** Godot's `VehicleBody3D.teleport`: move the chassis and face the heading `yaw`. */
   teleport(position: Pick<Vector3, "x" | "y" | "z">, yaw: number): void {
-    this.body.teleport(position, yaw);
+    this.body.teleport(position, noseRotation(yaw));
     this.#last.set(0, 0, 0);
     this.measure(1 / 60);
   }

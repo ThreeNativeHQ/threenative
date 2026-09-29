@@ -704,6 +704,55 @@ describe("generated template ordinary-frame runtime cost", () => {
       racingPhysics.dispose();
     }
   });
+  it("publishes a JSON-safe component snapshot for the racing scene, as `survives` requires", async () => {
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const { snapshotEntities } = await import("../../core/src/entity-snapshot.js");
+    const racingPhysics = await physicsFixture();
+    try {
+      const context = sceneContext(racingPhysics.physics, Race.initialState);
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never) as (ctx: unknown, dt: number) => void;
+      // The capability query lands between `enter()` and the first update, so the snapshot has to
+      // be honest before anything has moved.
+      const probe = (): Record<string, Record<string, unknown>> => {
+        const registry = context.entities;
+        const named = new Map<string, object>();
+        for (const id of ["camera.main", "player", "rival"]) {
+          const entity = registry.get(id) as object | undefined;
+          if (entity !== undefined) named.set(id, entity);
+        }
+        return snapshotEntities(named as ReadonlyMap<string, object>);
+      };
+      const atEnter = probe();
+      for (const [id, fields] of Object.entries(atEnter)) {
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number")
+            expect(Number.isFinite(value), `racing ${id}.${key} finite at enter`).toBe(true);
+        }
+      }
+      racingPhysics.step(DT);
+      frame(context, DT);
+      // The `runtime.components` capability is offered only when at least one named entity
+      // publishes a JSON-safe field, and `survives` fails closed without it. A car that owns only
+      // nested objects and no scalar of its own silently withdraws the whole capability.
+      const snapshot = probe();
+      const observed = Object.entries(snapshot).filter(
+        ([, fields]) => Object.keys(fields).length > 0,
+      );
+      expect(observed.length, "racing entities publishing component fields").toBeGreaterThan(0);
+      for (const [id, fields] of observed) {
+        expect(() => JSON.stringify(fields), `racing component fields for ${id}`).not.toThrow();
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number") {
+            expect(Number.isFinite(value), `racing component ${id}.${key} is finite`).toBe(true);
+          }
+        }
+      }
+    } finally {
+      racingPhysics.dispose();
+    }
+  });
   it("executes the racing scene player scan without an iterator", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
     const racingPhysics = await physicsFixture();

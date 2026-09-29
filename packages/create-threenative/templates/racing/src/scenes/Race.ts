@@ -167,7 +167,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let positionLabel = `P${place}`;
     const lastOnRoad: [number, number, number] = [SPAWN.x, SPAWN.y, SPAWN.z];
     const observedPosition = SPAWN.clone();
-    sector.update(SPAWN, car.forward, 0);
+    sector.update(SPAWN, car.forward, 0, 0);
     chaseCamera(camera, car.body.position, car.forward, 1, undefined);
 
     const advanceRace = (frameCtx: GameCtx, dt: number): void => {
@@ -180,7 +180,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
       );
       rival.update(dt);
-      sector.update(car.body.position, car.forward, dt);
+      sector.update(car.body.position, car.forward, dt, car.speed);
       if (sector.rescue(car)) {
         rescues += 1;
         rescuePositionError = quantize(

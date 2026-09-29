@@ -4,6 +4,7 @@ import type { Checkline } from "./Checkline.js";
 
 export interface ILapTarget {
   readonly body: PhysicsBody3D;
+  /** Where the car is measured to be **going**, not where it points. */
   readonly forward: Vector3;
 }
 
@@ -18,6 +19,17 @@ export class Lap {
   #gateNormals: Vector3[] = [];
   #onLap: (lap: number) => void;
   #unsubscribe: (() => void)[] = [];
+  /**
+   * Whether each gate will accept a crossing.
+   *
+   * Two things report the same crossing: the `Area3D` sensor the engine drains after the step, and
+   * the swept plane test in {@link observe}, which exists so a fast body cannot skip a thin sensor.
+   * The second one to arrive used to be counted as an out-of-order gate, so **every** legitimate
+   * crossing also raised `shortcutRejects` — which is how a scenario could prove a shortcut was
+   * rejected without the game ever being asked to take one. A gate re-arms only once the car is back
+   * on the near side of its plane, so one pass counts once.
+   */
+  #armed: boolean[] = [];
   #targetDirection = new Vector3();
   #gateDirection = new Vector3();
   #before = new Vector3();
@@ -41,6 +53,7 @@ export class Lap {
       if (gate === undefined) throw new Error("Lap gate is missing.");
       const expected = gate.forward.clone().setY(0).normalize();
       this.#gateNormals.push(expected);
+      this.#armed.push(true);
       this.#unsubscribe.push(
         gate.area.on("bodyEntered", (body) => {
           if (body !== this.#target.body || this.completed >= this.totalLaps) return;
@@ -56,7 +69,11 @@ export class Lap {
       this.shortcutRejects += 1;
       return false;
     }
+    if (this.#armed[index] !== true) return false;
+    this.#armed[index] = false;
     const direction = gateForward ?? gate.forward;
+    // The car's **measured** travel direction, so a car crossing a line sideways is rejected the way
+    // a car crossing it backwards is.
     const travel = this.#targetDirection
       .copy(this.#target.forward)
       .setY(0)
@@ -87,9 +104,12 @@ export class Lap {
       if (normal === undefined) throw new Error("Lap gate normal is missing.");
       const before = this.#before.copy(previous).sub(gate.at).dot(normal);
       const after = this.#after.copy(current).sub(gate.at).dot(normal);
-      const crossedForward = before < 0 && after >= 0;
-      const crossedReverse = before >= 0 && after < 0;
-      if (crossedForward || crossedReverse) this.cross(index);
+      // Back on the near side: whatever counted this gate has been counted, and the next pass over
+      // is a real crossing again.
+      if (after < 0) {
+        this.#armed[index] = true;
+      }
+      if ((before < 0 && after >= 0) || (before >= 0 && after < 0)) this.cross(index);
     }
   }
 

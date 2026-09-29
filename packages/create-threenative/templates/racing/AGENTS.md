@@ -4,7 +4,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the car feel, track, race rules, rescue, HUD, and look; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the car feel, track, race rules, rescue, HUD, and look; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. A bullet that passes through a wall is not a collider bug: `RigidBody3D` defaults to continuous collision, `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web and native.
 
 ## Start every change
 
@@ -17,8 +17,6 @@ ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics b
    this kit uses `VehicleBody3D` for the cars and `PathFollow3D` for the rival's line, and no navmesh.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
-
 ## When the framework blocks you, write plain Three.js
 
 When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that
@@ -52,17 +50,15 @@ pnpm typecheck
 `src/track/Track.ts` owns the circuit, its collision layers and the grid; `Lap.ts` orders `Area3D` gates
 and counts a lap on the car's **measured** travel direction; `TrackSector.ts` ray-probes the road and
 rescues from it; `Ranking.ts` ranks route progress. `src/entities/CarBody.ts` builds the one chassis both
-cars drive — a `VehicleBody3D` whose wheels are read off the four **named** wheel groups in `shapes.ts`,
-so reshaping the car moves its suspension with it. `RacingCar.ts` turns input into `engineForce` /
-`brake` / `steering` and nothing else; `Rival.ts` is that same car under a pure-pursuit controller at a
-constant pace. Keep `playtests/survives.playtest.json` as the smoke proof; the React HUD reads published
-state, and on a touch-primary device `src/render/touch-controls.ts` adds the stick and buttons.
+cars drive — a `VehicleBody3D` whose wheels are read off the four **named** wheel groups in `shapes.ts`.
+`RacingCar.ts` turns input into `engineForce` / `brake` / `steering` and nothing else; `Rival.ts` is that
+same car under a pure-pursuit controller at a constant pace. Keep `playtests/survives.playtest.json` as
+the smoke proof, and on a touch device `src/render/touch-controls.ts` adds the stick and buttons.
 
 **Two things about the vehicle are invisible in the API.** `suspensionStiffness` is a frequency
-squared, so the strut sags `gravity / (4 * stiffness)` and Godot's default of 20 bottoms it out; and a
-positive steering angle turns the chassis toward its own `-z`, which is why the input is negated once
-and the visual front wheels take that same signed angle. `CarBody.ts` carries every other fact, and
-every number in its `CAR` and `FEEL` is measured rather than chosen.
+squared, so the strut sags `gravity / (4 * stiffness)` and Godot's default of 20 bottoms it out, and a
+positive steering angle turns the chassis toward its own `-z` — so the input is negated once and the
+visual front wheels take that same signed angle. `CarBody.ts` carries every other number.
 
 ## Portable authoring contracts
 
