@@ -1,0 +1,81 @@
+{
+  "name": "same-input-twice-same-vault",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "fall-and-settle",
+      "waitTicks": 400,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "start-the-check",
+      "press": "KeyV",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "first-pass",
+      "waitTicks": 220,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "second-pass",
+      "waitTicks": 260,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "world": {
+      "seed": 6132
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "replayPhase",
+        "equals": "done",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "replayMatch",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "replayTicks",
+        "gte": 32,
+        "allowTrivial": "The pass length is a constant of the check, published so the report records how long each pass actually ran rather than leaving it to the reader to trust."
+      },
+      {
+        "id": "state",
+        "path": "replayDrift",
+        "lte": 0.0001,
+        "allowTrivial": "Zero before the check runs and zero-or-tiny after; the row exists so the report carries the measured disagreement between the two passes, not just the verdict derived from it."
+      }
+    ],
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 100,
+        "allowTrivial": "The vault is one fixed shot and the warden is framed in it from the first tick; this row is a held invariant and exists to catch a warden that leaves the picture."
+      }
+    ]
+  }
+}

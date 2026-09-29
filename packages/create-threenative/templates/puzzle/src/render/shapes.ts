@@ -1,134 +1,135 @@
-// Generated for you: ordinary Three.js. Every shape in this kit is built from box, cylinder,
-// sphere and torus primitives, so the game ships with no downloaded asset and nothing to license.
-// Replace any of these with a loaded model when you have one; nothing here is framework API.
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// Rounded, cached primitives — the single highest-leverage thing in this
+// folder. A sharp BoxGeometry reads as Minecraft; the same box with a 0.14
+// corner radius reads as a toy, and that soft corner-wrap is most of what
+// separates a stack of boxes from something that looks designed.
+//
+// Nothing here is textured, on purpose. Surface variety comes from alternating
+// palette entries across a run of meshes, never from a bitmap: `CanvasTexture`
+// samples BLACK under `WebGPURenderer`, which is a trap worth knowing about
+// before you spend an afternoon painting one.
 import {
   BoxGeometry,
+  type BufferGeometry,
+  ConeGeometry,
   CylinderGeometry,
-  Group,
+  type Material,
+  MathUtils,
   Mesh,
-  type MeshStandardMaterial,
   SphereGeometry,
-  TorusGeometry,
+  Vector3,
 } from "three";
-import { createMaterials } from "./materials.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
-export const CRATE_SIZE = 1.1;
-export const BALL_RADIUS = 0.42;
-export const GOAL_RADIUS = 1.15;
-
-function solid(mesh: Mesh): Mesh {
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
-/** The floor slab. Its collider comes from `buildStaticColliders`, not from a hand-written box. */
-export function floorSlab(width: number, depth: number): Mesh {
-  const mesh = new Mesh(new BoxGeometry(width, 0.4, depth), createMaterials().floor);
-  mesh.position.y = -0.2;
-  mesh.receiveShadow = true;
-  mesh.name = "room-floor";
-  return mesh;
-}
-
-export function wallSlab(width: number, height: number, depth: number): Mesh {
-  const mesh = solid(new Mesh(new BoxGeometry(width, height, depth), createMaterials().wall));
-  mesh.name = "room-wall";
-  return mesh;
-}
-
-/** The shallow rise the ball has to be helped over. Deliberately too steep to roll unaided. */
-export function ramp(width: number, rise: number, run: number): Mesh {
-  const mesh = solid(new Mesh(new BoxGeometry(width, rise, run), createMaterials().wall));
-  mesh.name = "room-ramp";
-  return mesh;
-}
-
-export function crate(): Mesh {
-  const mesh = solid(
-    new Mesh(new BoxGeometry(CRATE_SIZE, CRATE_SIZE, CRATE_SIZE), createMaterials().crate),
-  );
-  mesh.name = "crate";
-  return mesh;
-}
-
-export function ball(): Mesh {
-  const mesh = solid(new Mesh(new SphereGeometry(BALL_RADIUS, 20, 14), createMaterials().ball));
-  mesh.name = "ball";
-  return mesh;
-}
-
-/** The hinge frame: two posts and a beam. The bob hangs from the beam on a `Joint3D`. */
-export function gantry(span: number, height: number): Group {
-  const materials = createMaterials();
-  const group = new Group();
-  group.name = "gantry";
-  for (const side of [-1, 1]) {
-    const post = solid(new Mesh(new CylinderGeometry(0.16, 0.2, height, 10), materials.steel));
-    post.position.set((side * span) / 2, height / 2, 0);
-    group.add(post);
-  }
-  const beam = solid(new Mesh(new BoxGeometry(span, 0.22, 0.32), materials.steel));
-  beam.position.y = height;
-  group.add(beam);
-  return group;
-}
-
-export function weight(radius: number): Mesh {
-  const mesh = solid(new Mesh(new SphereGeometry(radius, 18, 12), createMaterials().steel));
-  mesh.name = "weight";
-  return mesh;
-}
-
-/** The goal ring, lying flat. Its `Area3D` is a separate, invisible volume in the scene. */
-export function goalRing(): Group {
-  const materials = createMaterials();
-  const group = new Group();
-  group.name = "goal";
-  const ring = new Mesh(new TorusGeometry(GOAL_RADIUS, 0.09, 10, 28), materials.goal);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.09;
-  const pad = new Mesh(new CylinderGeometry(GOAL_RADIUS, GOAL_RADIUS, 0.04, 28), materials.goal);
-  pad.position.y = 0.02;
-  pad.receiveShadow = true;
-  group.add(ring, pad);
-  return group;
-}
+const roundedCache = new Map<string, BufferGeometry>();
 
 /**
- * The player: a hovering claw that carries one crate at a time.
- *
- * It wears the accent, and it is the only accent-coloured thing that is not a crate. The first
- * version was steel on a dark floor and read as debris in the frame — a player who cannot find
- * themselves in one glance has no game to play.
+ * A box with rounded edges: every vertex of a segmented box pushed outward
+ * from the clamped "inner" box by `radius`, then welded so normals interpolate
+ * smoothly across the seams instead of faceting at them.
  */
-export function gripper(): Group {
-  const materials = createMaterials();
-  const group = new Group();
-  const body = solid(new Mesh(new SphereGeometry(0.4, 18, 12), materials.crate));
-  body.position.y = 1.05;
-  body.scale.y = 0.72;
-  const mast = solid(new Mesh(new CylinderGeometry(0.07, 0.09, 0.75, 8), materials.steel));
-  mast.position.y = 0.62;
-  const foot = solid(new Mesh(new CylinderGeometry(0.34, 0.42, 0.12, 12), materials.steel));
-  foot.position.y = 0.06;
-  for (const side of [-1, 1]) {
-    const claw = solid(new Mesh(new BoxGeometry(0.12, 0.42, 0.12), materials.crate));
-    claw.position.set(side * 0.24, 0.34, 0);
-    claw.rotation.z = side * 0.3;
-    group.add(claw);
+export function roundedBox(
+  width: number,
+  height: number,
+  depth: number,
+  radius = 0.14,
+  segments = 3,
+): BufferGeometry {
+  const key = `${width},${height},${depth},${radius},${segments}`;
+  const cached = roundedCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const limit = Math.min(radius, width / 2 - 1e-3, height / 2 - 1e-3, depth / 2 - 1e-3);
+  const geometry = new BoxGeometry(width, height, depth, segments, segments, segments);
+  // No UVs and no normals: both are rebuilt after welding, and a geometry with
+  // stale UVs is a geometry someone will eventually try to texture.
+  geometry.deleteAttribute("uv");
+  geometry.deleteAttribute("normal");
+
+  const position = geometry.attributes.position;
+  if (position === undefined) throw new Error("Rounded box lost its position attribute.");
+  const inner = new Vector3(width / 2 - limit, height / 2 - limit, depth / 2 - limit);
+  const vertex = new Vector3();
+  const clamped = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    vertex.fromBufferAttribute(position, index);
+    clamped.set(
+      MathUtils.clamp(vertex.x, -inner.x, inner.x),
+      MathUtils.clamp(vertex.y, -inner.y, inner.y),
+      MathUtils.clamp(vertex.z, -inner.z, inner.z),
+    );
+    vertex.sub(clamped);
+    const length = vertex.length();
+    if (length > 1e-6) vertex.multiplyScalar(limit / length);
+    position.setXYZ(index, vertex.x + clamped.x, vertex.y + clamped.y, vertex.z + clamped.z);
   }
-  group.add(body, mast, foot);
-  return group;
+
+  const welded = mergeVertices(geometry, 1e-4);
+  welded.computeVertexNormals();
+  roundedCache.set(key, welded);
+  return welded;
 }
 
-/** One floor tile's geometry and material, handed to an `InstancedBatch` by the room builder. */
-export function floorTile(size: number): {
-  geometry: BoxGeometry;
-  material: MeshStandardMaterial;
-} {
-  // A floor pattern, not a chessboard. The first version used the wall grey against the darker
-  // floor and the contrast read louder than the crates, which are the thing the player is meant
-  // to look at. `tile` is a half-step above the slab it sits on.
-  return { geometry: new BoxGeometry(size, 0.06, size), material: createMaterials().tile };
+export interface IShapeOptions {
+  readonly castShadow?: boolean;
+  readonly radius?: number;
+  readonly receiveShadow?: boolean;
+  readonly segments?: number;
 }
+
+function shadowed(mesh: Mesh, options: IShapeOptions): Mesh {
+  mesh.castShadow = options.castShadow ?? true;
+  mesh.receiveShadow = options.receiveShadow ?? true;
+  return mesh;
+}
+
+/** The workhorse: a rounded box that casts and receives shadows. */
+export function block(
+  width: number,
+  height: number,
+  depth: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = roundedBox(width, height, depth, options.radius ?? 0.14, options.segments ?? 3);
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+export function ball(radius: number, material: Material, options: IShapeOptions = {}): Mesh {
+  const segments = options.segments ?? 16;
+  const geometry = new SphereGeometry(radius, segments, Math.max(6, Math.round(segments / 2)));
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+export function tube(
+  radiusTop: number,
+  radiusBottom: number,
+  height: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = new CylinderGeometry(radiusTop, radiusBottom, height, options.segments ?? 16);
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+export function spike(
+  radius: number,
+  height: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = new ConeGeometry(radius, height, options.segments ?? 14);
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+// A hand-rolled seeded PRNG used to live here, and it was a line-for-line copy of the
+// `createRandom` the framework already exports — same multiplier, same increment, same
+// sequence. It is gone. Nothing in this folder may import a framework package (that is what
+// keeps `src/render/` portable Three.js), so a scene builds the seeded source and hands it
+// down: see `createScenery` below and its caller in `src/scenes/Play.ts`.
+//
+// Never `Math.random` for anything the world is built from. The world has to be byte-identical
+// on every reload or a screenshot diff cannot tell a bug from a reroll, and `ctx.random` is
+// what a playtest reads to prove the level was seeded at all.

@@ -7,6 +7,9 @@ import { templatesShipping } from "../../../test-support/templates.js";
 // tomorrow is covered the day it ships one rather than the day somebody extends a list.
 const DURABLE_PLAYTEST_TEMPLATES = templatesShipping("playtests/survives.playtest.json");
 
+/** The four keys every kit binds to `input.vector("move")`. */
+const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
 describe("starter playtest proof", () => {
   it.each(DURABLE_PLAYTEST_TEMPLATES)(
     "should name survives as the durable scenario in the %s guide",
@@ -40,13 +43,19 @@ describe("starter playtest proof", () => {
       // `defense` its camera, and the `rts` kit its camera, because a strategy game has no avatar
       // and its durable proof is that a held key pans a battlefield. What every one of them shares
       // is the claim underneath: a named registered entity, a held input step, and a distance.
+      // Any of the four arrows, not one of them. Every kit binds `input.vector("move")` to all
+      // four, and a room whose first move is sideways — the vault crosses east — is not a kit that
+      // failed to prove anything. Demanding `ArrowUp` rejected a correct durable scenario over the
+      // direction its own game happens to start in.
       const inputStep = scenario.steps?.find(
-        (step) => step.kind === "input" && step.press === "ArrowUp",
+        (step) => step.kind === "input" && MOVE_KEYS.has(step.press ?? ""),
       );
       expect(scenario.subject).toBeTruthy();
       expect(scenario.assert?.movement?.entity).toBe(scenario.subject);
       expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
-      expect(inputStep).toMatchObject({ kind: "input", press: "ArrowUp" });
+      expect(inputStep, `${template}: no movement key in the durable scenario`).toMatchObject({
+        kind: "input",
+      });
       expect(inputStep?.holdTicks).toBeGreaterThan(0);
     },
   );
