@@ -600,7 +600,9 @@ describe("generated template ordinary-frame runtime cost", () => {
     const defensePhysics = await physicsFixture();
     try {
       const context = sceneContext(defensePhysics.physics, defense.Defense.initialState);
-      const frame = new defense.Defense().enter(context as never);
+      const scene = new defense.Defense();
+      await scene.load(context as never);
+      const frame = scene.enter(context as never);
       const reduceSpy = vi.spyOn(Array.prototype, "reduce");
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {

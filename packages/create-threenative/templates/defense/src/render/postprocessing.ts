@@ -30,5 +30,7 @@ export function setupPost(
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
   const world = new WorldEnvironment(qualityPreset(tier));
-  world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
+  world.apply(renderer, scene, camera, {
+    godraysLight: environment.godraysLight,
+  });
 }
