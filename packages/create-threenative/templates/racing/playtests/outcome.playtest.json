@@ -2,73 +2,50 @@
   "name": "racing-finish-behind-rival-is-dnf",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
     {
       "kind": "input",
-      "label": "first-straight",
-      "press": "ArrowUp",
-      "holdTicks": 90,
+      "label": "autopilot",
+      "press": "KeyP",
+      "holdTicks": 2,
       "release": true
     },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
     {
-      "kind": "input",
-      "label": "first-finish",
-      "press": "ArrowUp",
-      "holdTicks": 160,
+      "kind": "wait",
+      "label": "three-laps",
+      "waitTicks": 10600,
       "release": true
     },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
     {
-      "kind": "input",
-      "label": "second-finish",
-      "press": "ArrowUp",
-      "holdTicks": 160,
+      "kind": "wait",
+      "label": "observe-dnf",
+      "waitTicks": 20,
       "release": true
-    },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 110, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 137, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": "ArrowUp", "holdTicks": 187, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 60, "release": true },
-    { "kind": "input", "press": ["ArrowUp", "ArrowRight"], "holdTicks": 12, "release": true },
-    {
-      "kind": "input",
-      "label": "third-finish",
-      "press": "ArrowUp",
-      "holdTicks": 160,
-      "release": true
-    },
-    { "kind": "wait", "label": "observe-dnf", "waitTicks": 20, "release": true }
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "completedLaps", "gte": 3, "changed": true },
+      {
+        "id": "state",
+        "path": "completedLaps",
+        "gte": 3,
+        "changed": true
+      },
       {
         "id": "state",
         "path": "place",
-        "gte": 2,
-        "allowTrivial": "The outcome fixture starts with a qualifying place; this row records the held ranking bound while the finish transition proves the race."
+        "equals": 2,
+        "allowTrivial": "The demo driver starts second on the grid and stays there, so the place is a held invariant; the DNF transition below is what proves the finish."
       },
       {
         "id": "state",
@@ -81,7 +58,12 @@
         "path": "raceStatus",
         "equals": "DNF",
         "changed": true,
-        "atSteps": [{ "label": "observe-dnf", "equals": "DNF" }]
+        "atSteps": [
+          {
+            "label": "observe-dnf",
+            "equals": "DNF"
+          }
+        ]
       }
     ]
   }

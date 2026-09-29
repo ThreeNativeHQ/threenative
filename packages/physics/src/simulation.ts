@@ -1235,7 +1235,16 @@ export function createWebPhysicsSimulation(
       options.world.timestep = deltaTime;
       // The wheels ray-cast and write the chassis' velocity, so they run before the solver.
       for (const vehicle of vehicles.values()) {
-        vehicle.controller.updateVehicle(deltaTime, undefined, vehicle.rayGroups);
+        // Sensors are excluded from the wheel rays, exactly as every other query on this seam does.
+        // An `Area3D` is a trigger volume — the finish-line gate a car drives under, a boost pad, a
+        // pickup — and a wheel that rests on one reads the strut as fully compressed: measured on
+        // the racing template, a car crossing a gate sensor was thrown 30 cm into the air and then
+        // landed on its own chassis collider. A trigger volume is never ground.
+        vehicle.controller.updateVehicle(
+          deltaTime,
+          options.rapier.QueryFilterFlags.EXCLUDE_SENSORS,
+          vehicle.rayGroups,
+        );
         // A loaded wheel is holding the car up, and `updateVehicle` writes velocity rather than
         // impulses. Rapier skips a sleeping body, so a car that dozed off mid-drop would hang in
         // the air for good; only an unloaded car is left alone to sleep.
@@ -1490,8 +1499,14 @@ export function createWebPhysicsSimulation(
           "TN_PHYSICS_NON_FINITE: vehicle input needs a finite engineForce, brake and steering.",
         );
       const { controller, steering, traction } = requireVehicle(id, "setVehicleInput");
-      for (const wheel of traction) controller.setWheelEngineForce(wheel, input.engineForce);
-      for (const wheel of steering) controller.setWheelSteering(wheel, input.steering);
+      // Indexed, not `for…of`: a car writes engine force, brake and steering every physics step, so
+      // this runs three times a frame per car and the iterator call it avoids is the one a
+      // template's allocation sentinel measures (`create-threenative`'s `template-runtime-cost`
+      // spec refuses an array iteration in a scene's ordinary frame).
+      for (let index = 0; index < traction.length; index += 1)
+        controller.setWheelEngineForce(traction[index] as number, input.engineForce);
+      for (let index = 0; index < steering.length; index += 1)
+        controller.setWheelSteering(steering[index] as number, input.steering);
       for (let wheel = 0; wheel < controller.numWheels(); wheel += 1)
         controller.setWheelBrake(wheel, input.brake);
     },

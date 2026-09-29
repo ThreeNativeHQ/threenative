@@ -90,6 +90,16 @@ const WARMUP_FRAMES = 30;
 const MEASURED_FRAMES = 600;
 const DT = 1 / 60;
 
+/**
+ * Every other template's car here is kinematic, so the zero-gravity default below costs it
+ * nothing. Racing's is a real `VehicleBody3D`: its suspension is a spring pre-loaded against the
+ * car's own weight, and with no gravity to load it, the strut fully extends and launches the
+ * chassis — wheels losing contact one at a time — within a few frames of spawning. `-24` matches
+ * `src/game.ts`'s own plugin gravity, the value the suspension's `SAG` and `stiffness` are tuned
+ * against.
+ */
+const RACING_GRAVITY = { x: 0, y: -24, z: 0 };
+
 interface IPhysicsFixture {
   readonly physics: IPhysicsContext;
   dispose(): void;
@@ -116,9 +126,11 @@ function measureVector2Allocations(step: () => void): number {
   return probeState.vector2Allocations;
 }
 
-async function physicsFixture(): Promise<IPhysicsFixture> {
+async function physicsFixture(
+  gravity: { readonly x: number; readonly y: number; readonly z: number } = { x: 0, y: 0, z: 0 },
+): Promise<IPhysicsFixture> {
   const owner = { add: () => undefined } as never;
-  const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+  const plugin = rapier({ gravity });
   await plugin.setup?.(owner);
   const physics = (owner as { physics?: IPhysicsFixture["physics"] }).physics;
   if (physics === undefined) throw new Error("Allocation fixture did not install physics.");
@@ -366,10 +378,10 @@ describe("generated template ordinary-frame runtime cost", () => {
         routeProgress: number;
       }> = [];
       const projectionTarget = {
-        distanceFromStart: 0,
-        lateralDistance: 0,
+        curvature: 0,
+        distance: 0,
+        lateral: 0,
         point: new Vector3(),
-        segment: 0,
         tangent: new Vector3(),
       };
       const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };
@@ -620,10 +632,15 @@ describe("generated template ordinary-frame runtime cost", () => {
 
   it("executes the racing scene player scan for 600 measured frames", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       const update = frame as (ctx: unknown, dt: number) => void;
       if (typeof update !== "function")
         throw new Error("Allocation fixture returned no race frame.");
@@ -656,12 +673,66 @@ describe("generated template ordinary-frame runtime cost", () => {
       racingPhysics.dispose();
     }
   });
-  it("executes the racing scene player scan without an iterator", async () => {
+  it("publishes a JSON-safe component snapshot for the racing scene, as `survives` requires", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const { snapshotEntities } = await import("../../core/src/entity-snapshot.js");
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never) as (ctx: unknown, dt: number) => void;
+      // The capability query lands between `enter()` and the first update, so the snapshot has to
+      // be honest before anything has moved.
+      const probe = (): Record<string, Record<string, unknown>> => {
+        const registry = context.entities;
+        const named = new Map<string, object>();
+        for (const id of ["camera.main", "player", "rival"]) {
+          const entity = registry.get(id) as object | undefined;
+          if (entity !== undefined) named.set(id, entity);
+        }
+        return snapshotEntities(named as ReadonlyMap<string, object>);
+      };
+      const atEnter = probe();
+      for (const [id, fields] of Object.entries(atEnter)) {
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number")
+            expect(Number.isFinite(value), `racing ${id}.${key} finite at enter`).toBe(true);
+        }
+      }
+      racingPhysics.step(DT);
+      frame(context, DT);
+      // The `runtime.components` capability is offered only when at least one named entity
+      // publishes a JSON-safe field, and `survives` fails closed without it. A car that owns only
+      // nested objects and no scalar of its own silently withdraws the whole capability.
+      const snapshot = probe();
+      const observed = Object.entries(snapshot).filter(
+        ([, fields]) => Object.keys(fields).length > 0,
+      );
+      expect(observed.length, "racing entities publishing component fields").toBeGreaterThan(0);
+      for (const [id, fields] of observed) {
+        expect(() => JSON.stringify(fields), `racing component fields for ${id}`).not.toThrow();
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number") {
+            expect(Number.isFinite(value), `racing component ${id}.${key} is finite`).toBe(true);
+          }
+        }
+      }
+    } finally {
+      racingPhysics.dispose();
+    }
+  });
+  it("executes the racing scene player scan without an iterator", async () => {
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
+    try {
+      const context = sceneContext(racingPhysics.physics, Race.initialState);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       if (typeof frame !== "function")
         throw new Error("Allocation fixture returned no race frame.");
       const originalIterator = Array.prototype[Symbol.iterator];

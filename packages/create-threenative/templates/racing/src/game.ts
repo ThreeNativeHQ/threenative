@@ -20,6 +20,11 @@ const game = defineGame<GameState, IPhysicsContext>({
     brake: { buttons: [1], keys: ["ShiftLeft", "ShiftRight"] },
     boost: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
+    // The demo driver: the same closed-loop controller the rival uses, on the player's car. It is
+    // a game-owned control, not a harness hook — a player can watch a lap of the circuit, and a
+    // playtest that needs a car to follow the track presses the same key the rival obeys instead
+    // of a recorded key timing the chassis would not reproduce.
+    autopilot: { keys: ["KeyP"] },
   },
   plugins: [rapier({ gravity: { x: 0, y: -24, z: 0 } }), playtest({ events })],
   display: config.display,

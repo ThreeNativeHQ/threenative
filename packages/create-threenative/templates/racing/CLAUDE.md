@@ -6,8 +6,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the car feel, track, race rules, rescue, HUD, and look;
-`src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the car feel, track, race rules, rescue, HUD, and look; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. A bullet that passes through a wall is not a collider bug: `RigidBody3D` defaults to continuous collision, `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web and native.
 
 ## Start every change
 
@@ -17,11 +16,9 @@ ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics b
 2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
-   this kit uses `PathFollow3D` and a measured route instead of a vehicle or navmesh abstraction.
+   this kit uses `VehicleBody3D` for the cars and `PathFollow3D` for the rival's line, and no navmesh.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
-For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
-
 ## When the framework blocks you, write plain Three.js
 
 When an `@threenative/*` API is broken, missing, or does not do what you need, replace only that
@@ -52,14 +49,18 @@ pnpm test
 pnpm typecheck
 ```
 
-`src/track/Track.ts` owns the circuit; `Lap.ts` orders `Area3D` gates; `TrackSector.ts` records
-the last ray-probed road transform; `Ranking.ts` ranks route progress. `RacingCar.ts` uses
-`CharacterBody3D`; there is no vehicle node or racing-line solver. Register entities and keep
-`playtests/survives.playtest.json` as the smoke proof. The one React HUD reads published state.
+`src/track/Track.ts` owns the circuit, its collision layers and the grid; `Lap.ts` orders `Area3D` gates
+and counts a lap on the car's **measured** travel direction; `TrackSector.ts` ray-probes the road and
+rescues from it; `Ranking.ts` ranks route progress. `src/entities/CarBody.ts` builds the one chassis both
+cars drive — a `VehicleBody3D` whose wheels are read off the four **named** wheel groups in `shapes.ts`.
+`RacingCar.ts` turns input into `engineForce` / `brake` / `steering` and nothing else; `Rival.ts` is that
+same car under a pure-pursuit controller at a constant pace. Keep `playtests/survives.playtest.json` as
+the smoke proof, and on a touch device `src/render/touch-controls.ts` adds the stick and buttons.
 
-
-On a touch-primary device, the local `src/render/touch-controls.ts` adds a left steering/throttle
-stick and right boost and brake buttons. Keyboard input remains the desktop fallback.
+**Two things about the vehicle are invisible in the API.** `suspensionStiffness` is a frequency
+squared, so the strut sags `gravity / (4 * stiffness)` and Godot's default of 20 bottoms it out, and a
+positive steering angle turns the chassis toward its own `-z` — so the input is negated once and the
+visual front wheels take that same signed angle. `CarBody.ts` carries every other number.
 
 ## Portable authoring contracts
 
@@ -67,9 +68,7 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `normaliseToMetres` for authored vehicle scale; suspension owns floor contact.
-`input.vector("move").y` is +up and means throttle here; forward still uses one explicit `-move.y`
-conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without
+Generated conventions call `normaliseToMetres` for authored vehicle scale; the four `VehicleBody3D` wheels own floor contact, so no car gets `GroundSnap`. `input.vector("move").y` is +up and means throttle, and `+x` is right. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without
 resetting game state; from a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.

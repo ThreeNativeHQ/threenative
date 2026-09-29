@@ -1111,10 +1111,14 @@ impl Simulation {
                 // excluded outright, because a wheel ray starts inside the chassis box and Rapier
                 // 0.30 reports that as a hit at zero distance, which reads as a fully compressed
                 // strut and launches the car. Rapier 0.19.3 missed the same ray on its own; a
-                // vehicle must never stand on itself.
+                // vehicle must never stand on itself. Sensors are excluded for the same reason the
+                // web adapter excludes them: an `Area3D` is a trigger volume, and a wheel that
+                // rests on the finish-line gate reads a fully compressed strut and is thrown into
+                // the air. A trigger volume is never ground.
                 let filter = QueryFilter {
                     groups: Some(ray_groups),
                     exclude_rigid_body: Some(chassis),
+                    flags: QueryFilterFlags::EXCLUDE_SENSORS,
                     ..QueryFilter::default()
                 };
                 let queries = self.broad_phase.as_query_pipeline_mut(
