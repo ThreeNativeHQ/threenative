@@ -19,6 +19,8 @@ export interface IDesktopLadder {
   ladder: string;
   modes: string;
   repeats: number;
+  /** Stated by the operator, stamped into the bundle so the report names its own build. */
+  sourceSha?: string;
   warmup: number;
   width: number;
 }
@@ -253,6 +255,9 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
     TN_BENCH_PASSES: String(options.axes.passCount),
     TN_BENCH_REPEATS: String(options.repeats),
     TN_BENCH_SHADOW_CASTER_SHARE: String(options.axes.shadowCasterShare),
+    // Stamped into the bundle so the report names the build. The web arm carries the same value in
+    // its URL; this one has no URL.
+    TN_BENCH_SOURCE_SHA: options.sourceSha,
     TN_BENCH_TARGET: "native",
     TN_BENCH_VISIBLE_FRACTION: String(options.axes.visibleFraction),
     TN_BENCH_WARMUP: String(options.warmup),

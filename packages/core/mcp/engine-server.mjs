@@ -155,6 +155,9 @@ function manifestError(file, reason) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
 function validateManifest(value, file) {
   if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries) || !Array.isArray(value.notOwned)) {
     throw manifestError(
@@ -163,7 +166,7 @@ function validateManifest(value, file) {
     );
   }
   for (const [index, raw] of value.entries.entries()) {
-    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !Array.isArray(raw.requires) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string") || Array.isArray(raw.requires) && !raw.requires.every((requirement) => typeof requirement === "string")) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !isStringArray(raw.requires) || raw.deprecated !== void 0 && !isStringArray(raw.deprecated) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
   }
@@ -521,7 +524,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.4" }
       });
     }
     if (request.method === "tools/list") {

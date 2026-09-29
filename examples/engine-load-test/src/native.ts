@@ -30,6 +30,7 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
   ladder: number[];
   modes: RenderMode[];
   repeats: number;
+  sourceSha?: string;
   warmup: number;
   width: number;
 }>;
@@ -218,6 +219,10 @@ async function main(): Promise<void> {
       renderer: "three/webgpu WebGPURenderer (native host)",
     },
     engine: { name: "threenative", version: "workspace" },
+    // Only the one field the host can know: the module graph and adapter identity the web arm
+    // derives need an HTTP server this target has none of, and a partial identity is read as
+    // "not an accepted baseline" rather than as a claim.
+    ...(config.sourceSha === undefined ? {} : { identity: { sourceSha: config.sourceSha } }),
     rungs,
   };
   // Android's logcat truncates a line at ~1 KB, which silently cut every report this arm emitted

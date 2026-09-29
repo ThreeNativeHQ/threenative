@@ -119,6 +119,10 @@ export default defineConfig({
       ladder: integers("TN_BENCH_LADDER", [256, 1024, 4096, 16384]),
       modes: modes(),
       repeats: integer("TN_BENCH_REPEATS", 3),
+      // Stated by the operator, the same way `refreshHz` is: the native host has no URL to carry
+      // `--source-sha` in, so without this a desktop report cannot name the build that produced it,
+      // which is the one field a paired before/after needs to be readable as evidence.
+      sourceSha: process.env.TN_BENCH_SOURCE_SHA,
       warmup: integer("TN_BENCH_WARMUP", 120),
     }),
   },

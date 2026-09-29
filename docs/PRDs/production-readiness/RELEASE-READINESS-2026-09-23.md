@@ -147,10 +147,10 @@ box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) b
 1. **Proof on real hardware.** One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
    0/42 boxes. Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
    the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md).
-2. **The stable-API contract is partial.** PRD-446 now snapshots the public surface and defines
-   deprecation policy; its prepublication upgrade path is wired, but real N-1 starter/platformer
-   runs and 1.0 acceptance remain open. Owner:
-   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md) (11/14 phase boxes).
+2. **The stable-API contract is met.** [PRD-446](../done/PRD-446-stable-api-and-upgrade-contract.md)
+   (14/14 phase, 4/4 acceptance) guards published symbols with a committed snapshot and a breaking
+   note, ships the deprecation policy, and proves an N-1 starter/platformer upgrade before any
+   cohort moves `latest`.
 3. **Web/native parity is not proven.** [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md):
    browser 66/1/0, desktop 65/1/1, Android 0/0/67 blocked. Audio parity is at its review cap —
    [PRD-057](../BLOCKED/review-cap/PRD-057-native-audio-parity.md) (0/56).

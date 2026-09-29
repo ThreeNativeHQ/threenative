@@ -167,6 +167,8 @@ place: [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md).
   refuses to be, and the rules that decide both. Binding.
 - [`docs/architecture/AGENT-INTERFACE.md`](docs/architecture/AGENT-INTERFACE.md) — the surface an
   authoring agent reads.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md#versioning-and-deprecation) — what the public surface is, what
+  each version number promises before and after 1.0, and how a symbol gets deprecated.
 - [`packages/create-threenative/README.md`](packages/create-threenative/README.md) — templates and
   the scaffold command.
 
