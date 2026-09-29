@@ -122,7 +122,11 @@ export interface IModelLodOptions {
 }
 
 export const LOD_GENERATOR = "threenative-discrete-lod";
-export const LOD_GENERATOR_VERSION = 1;
+/**
+ * Bumped when the *generated levels* change, so a stale cook cache cannot serve the old chain. The
+ * artifact schema stays put: a chain with or without the terminal level reads the same.
+ */
+export const LOD_GENERATOR_VERSION = 2;
 /** Bumped with the output layout so a stale cache entry cannot hide a schema change. */
 export const LOD_ARTIFACT_SCHEMA_VERSION = 1;
 /** The pinned simplifier this artifact's error metric was produced with. */
@@ -144,6 +148,29 @@ export const LOD_ERROR_TARGETS: readonly number[] = [0.002, 0.006, 0.02, 0.06];
 export const LOD_MIN_SAVING = 0.2;
 
 export const DEFAULT_LOD_MAX_LEVELS = 4;
+
+/**
+ * Every chain ends in one terminal coarse level, so a distant instance is never stranded on the
+ * error-target ladder's floor. Measured on machinefall, the coarsest error level kept 87% of LOD0,
+ * so a far pine cost 16k triangles at 285 m and the shadow levels drew tens of millions.
+ *
+ * The terminal level is cut by triangle count rather than error — `max` of this floor and
+ * {@link LOD_TERMINAL_KEEP_RATIO} of LOD0 — and is exempt from the saving gate. A mesh already
+ * under the floor gets no terminal level; there is nothing to gain.
+ */
+export const LOD_TERMINAL_MIN_TRIANGLES = 1500;
+export const LOD_TERMINAL_KEEP_RATIO = 0.05;
+
+/** The triangle target of a chain's terminal coarse level, in triangles. */
+export function terminalLevelTriangles(lod0Triangles: number): number {
+  return Math.max(LOD_TERMINAL_MIN_TRIANGLES, Math.ceil(LOD_TERMINAL_KEEP_RATIO * lod0Triangles));
+}
+
+/**
+ * An effectively unbounded error target, used only for the terminal level: the count binds and the
+ * simplifier reports the error it measured, which is the field the runtime's distance switch reads.
+ */
+const TERMINAL_TARGET_ERROR = 1e9;
 /**
  * Cheap pre-filter floor in triangles, not the benefit gate.
  *
@@ -653,6 +680,37 @@ async function generateChain(
   if (kept.length === 0) return null;
   const keptSet = new Set(kept);
   const chain = candidates.filter((candidate) => keptSet.has(candidate));
+
+  // One terminal level past the cap, cut by triangle count and not by the saving gate: the far
+  // instance needs *some* coarse step to reach, and an error ladder that stalls at 87% of LOD0 never
+  // gives it one. It drops the border lock — a level this far out owes no stitch fidelity — while
+  // keeping the attribute weights, so the material does not smear. `Prune` lets whole isolated
+  // components go; the target count is the binding constraint and the measured error is recorded
+  // exactly as the error-target levels' is, so the runtime's distance switch reads it the same way.
+  const previous = chain[chain.length - 1] as (typeof chain)[number];
+  const terminalTriangles = terminalLevelTriangles(lod0Triangles);
+  if (terminalTriangles < previous.triangles) {
+    const [simplified, error] = MeshoptSimplifier.simplifyWithAttributes(
+      indices,
+      positions,
+      3,
+      attributes.data,
+      attributes.stride,
+      attributes.weights,
+      null,
+      terminalTriangles * 3,
+      TERMINAL_TARGET_ERROR,
+      ["Prune"],
+    );
+    const triangles = Math.floor(simplified.length / 3);
+    if (triangles > 0 && triangles < previous.triangles) {
+      chain.push({
+        error: Math.max(error, previous.error),
+        indices: Uint32Array.from(simplified),
+        triangles,
+      });
+    }
+  }
   return {
     absoluteErrors: chain.map((level) => level.error * scale),
     baselineTriangles: lod0Triangles,
@@ -684,7 +742,15 @@ function generateCardsChain(
   const vertexCount = Math.floor(positions.length / 3);
   const indices = sourceIndices(primitive, vertexCount);
   const scale = MeshoptSimplifier.getScale(positions, 3);
-  const chain = generateCardChain(positions, indices, maxLevels, minSaving, scale);
+  const chain = generateCardChain(
+    positions,
+    indices,
+    maxLevels,
+    minSaving,
+    scale,
+    undefined,
+    terminalLevelTriangles(Math.floor(indices.length / 3)),
+  );
   if (chain === null) return null;
   return {
     absoluteErrors: [...chain.absoluteErrors],

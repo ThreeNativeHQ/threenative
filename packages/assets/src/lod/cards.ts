@@ -220,6 +220,37 @@ function placeCards(
 }
 
 /**
+ * Deterministic order of the cards in one bucket: cell key first, then the card's own position hash,
+ * then its centroid and index as a total tie-break. Reproducible, and spread through each bucket
+ * rather than clipped from one side of it.
+ */
+function orderPlaced(a: IPlacedCard, b: IPlacedCard): number {
+  return (
+    a.key - b.key ||
+    a.card.centroid[0] - b.card.centroid[0] ||
+    a.card.centroid[1] - b.card.centroid[1] ||
+    a.card.centroid[2] - b.card.centroid[2] ||
+    a.first - b.first
+  );
+}
+
+/** The cards of `placed`, bucketed by cell and ordered deterministically within each bucket. */
+function bucketsOf(placed: readonly IPlacedCard[]): {
+  buckets: Map<number, IPlacedCard[]>;
+  cells: number[];
+} {
+  const buckets = new Map<number, IPlacedCard[]>();
+  for (const entry of placed) {
+    const bucket = buckets.get(entry.cell);
+    if (bucket === undefined) buckets.set(entry.cell, [entry]);
+    else bucket.push(entry);
+  }
+  const cells = [...buckets.keys()].sort((a, b) => a - b);
+  for (const cell of cells) (buckets.get(cell) as IPlacedCard[]).sort(orderPlaced);
+  return { buckets, cells };
+}
+
+/**
  * One level of the card ladder: the cards kept at `keep`, concatenated in a deterministic order.
  *
  * At least one card survives in every occupied cell, so coverage is a property of the selection
@@ -232,28 +263,13 @@ function thinLevel(
   lod0Area: number,
   lod0Cells: number,
 ): { cards: ICard[]; summary: ICardLevelSummary } {
-  const buckets = new Map<number, IPlacedCard[]>();
-  for (const entry of placed) {
-    const bucket = buckets.get(entry.cell);
-    if (bucket === undefined) buckets.set(entry.cell, [entry]);
-    else bucket.push(entry);
-  }
+  const { buckets, cells: order } = bucketsOf(placed);
   const kept: ICard[] = [];
   let area = 0;
   let cells = 0;
-  // Bucket order is by cell key, cards by their own position hash: reproducible, and spread through
-  // each bucket rather than clipped from one side of it.
-  for (const cell of [...buckets.keys()].sort((a, b) => a - b)) {
+  for (const cell of order) {
     const bucket = buckets.get(cell) as IPlacedCard[];
     const survivors = Math.max(1, Math.min(bucket.length, Math.round(keep * bucket.length)));
-    bucket.sort(
-      (a, b) =>
-        a.key - b.key ||
-        a.card.centroid[0] - b.card.centroid[0] ||
-        a.card.centroid[1] - b.card.centroid[1] ||
-        a.card.centroid[2] - b.card.centroid[2] ||
-        a.first - b.first,
-    );
     for (const entry of bucket.slice(0, survivors)) {
       kept.push(entry.card);
       area += entry.card.area;
@@ -287,6 +303,84 @@ function indicesOf(cards: readonly ICard[], source: Uint32Array): Uint32Array {
   return out;
 }
 
+/** Triangles a card submits (one entry in `triangles` per triangle). */
+function cardTriangles(card: ICard): number {
+  return card.triangles.length;
+}
+
+/**
+ * The terminal level: the coarsest crown the triangle target allows.
+ *
+ * The ladder's per-cell floor (`Math.max(1, ...)`) means no keep ratio can go below one card per
+ * LOD0 cell, and a dense canopy therefore stalls well above the target. The terminal level is
+ * allowed to merge LOD0 cells into a coarser grid: it keeps at least one card per *coarse* cell,
+ * then spends what is left of the target on further cards within each cell. Every occupied coarse
+ * region stays populated, the level is never empty, and the triangle count reaches the target.
+ *
+ * Returns the level and the grid factor that reached it, so the caller can report the coarse cell
+ * width as the level's error (see {@link generateCardChain}).
+ */
+function terminalCardLevel(
+  cards: readonly ICard[],
+  lod0Placed: readonly IPlacedCard[],
+  lod0Cells: number,
+  lod0Area: number,
+  cellSize: number,
+  target: number,
+  previousTriangles: number,
+): { cards: ICard[]; factor: number; summary: ICardLevelSummary } | null {
+  if (target >= previousTriangles) return null;
+  let factor = 1;
+  let { buckets, cells } = bucketsOf(lod0Placed);
+  const baseTriangles = (): number =>
+    cells.reduce(
+      (total, cell) =>
+        total + cardTriangles((buckets.get(cell) as IPlacedCard[])[0]?.card as ICard),
+      0,
+    );
+  // Widen the grid until one card per occupied coarse cell fits the target. `factor` growing without
+  // bound ends at a single cell and a single card, which is always under the target.
+  while (baseTriangles() > target && cells.length > 1) {
+    factor *= 2;
+    ({ buckets, cells } = bucketsOf(placeCards(cards, cellSize * factor).placed));
+  }
+  const kept: ICard[] = [];
+  const keptSet = new Set<ICard>();
+  let triangles = 0;
+  for (const cell of cells) {
+    const first = (buckets.get(cell) as IPlacedCard[])[0] as IPlacedCard;
+    kept.push(first.card);
+    keptSet.add(first.card);
+    triangles += cardTriangles(first.card);
+  }
+  for (const cell of cells) {
+    const bucket = buckets.get(cell) as IPlacedCard[];
+    for (let index = 1; index < bucket.length; index += 1) {
+      const card = (bucket[index] as IPlacedCard).card;
+      const cost = cardTriangles(card);
+      if (triangles + cost > target) continue;
+      kept.push(card);
+      keptSet.add(card);
+      triangles += cost;
+    }
+  }
+  if (kept.length === 0) return null;
+  const covered = new Set<number>();
+  for (const entry of lod0Placed) if (keptSet.has(entry.card)) covered.add(entry.cell);
+  let area = 0;
+  for (const card of kept) area += card.area;
+  return {
+    cards: kept,
+    factor,
+    summary: {
+      areaCoverage: lod0Area === 0 ? 1 : area / lod0Area,
+      cards: kept.length,
+      cellCoverage: lod0Cells === 0 ? 1 : covered.size / lod0Cells,
+      keep: kept.length / cards.length,
+    },
+  };
+}
+
 /**
  * Builds the card chain for one primitive, or `null` when it is not a card set or cannot save
  * enough to be worth a level.
@@ -300,6 +394,9 @@ function indicesOf(cards: readonly ICard[], source: Uint32Array): Uint32Array {
  * The reported error is `cellSize * (1 - keep)`: the width of the cell a dropped card leaves behind,
  * which is the distance from a kept card to the nearest surface the level no longer draws. It rises
  * as the level coarsens, which is the monotonicity the runtime's selection requires.
+ *
+ * `terminalTriangles`, when given, is the triangle target of one extra terminal level past the
+ * ratio ladder (see {@link terminalCardLevel}); it reaches below the ladder's per-cell floor.
  */
 export function generateCardChain(
   positions: Float32Array,
@@ -308,6 +405,7 @@ export function generateCardChain(
   minSaving: number,
   scale: number,
   keepRatios: readonly number[] = CARD_KEEP_RATIOS,
+  terminalTriangles?: number,
 ): ICardChain | null {
   const cards = findCards(positions, indices);
   if (cards === null) return null;
@@ -360,6 +458,34 @@ export function generateCardChain(
     previousTriangles = triangles;
   }
   if (levels.length === 0) return null;
+  // One terminal level past the cap, exempt from the saving gate: the ladder's per-cell floor can
+  // stall well above the target, and the far instance still needs a coarse step to reach. Its error
+  // is the coarse cell width, always wider than any ratio level's, so the runtime's distance switch
+  // lands outward from the last ratio level.
+  if (terminalTriangles !== undefined && terminalTriangles < previousTriangles) {
+    const terminal = terminalCardLevel(
+      cards,
+      placed,
+      lod0Cells,
+      lod0Area,
+      cellSize,
+      terminalTriangles,
+      previousTriangles,
+    );
+    if (terminal !== null) {
+      const buffer = indicesOf(terminal.cards, indices);
+      const triangles = Math.floor(buffer.length / TRIANGLE);
+      if (triangles > 0 && triangles < previousTriangles) {
+        const absoluteError = cellSize * terminal.factor;
+        levels.push(terminal.summary);
+        counts.push(triangles);
+        absoluteErrors.push(absoluteError);
+        errors.push(absoluteError / Math.max(scale, 1e-6));
+        buffers.push(buffer);
+        previousTriangles = triangles;
+      }
+    }
+  }
   return {
     absoluteErrors,
     counts,

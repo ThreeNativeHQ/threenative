@@ -1,13 +1,18 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Document, Logger, NodeIO } from "@gltf-transform/core";
+import { Document, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it } from "vitest";
 import type { ICardLevelSummary } from "../src/lod/cards.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
-import { type IModelLodSummary, LOD_MIN_SAVING } from "../src/lod/generate.js";
+import {
+  type IModelLodSummary,
+  LOD_MIN_SAVING,
+  LOD_TERMINAL_KEEP_RATIO,
+  LOD_TERMINAL_MIN_TRIANGLES,
+} from "../src/lod/generate.js";
 import { type IModelPassOptions, modelPass } from "../src/passes/model.js";
 import { TNVirtualGeometry } from "../src/virtual/extension.js";
 
@@ -87,6 +92,68 @@ function chains(
     }
   }
   return { levels, lod0Materials };
+}
+
+/**
+ * A synthetic card set: `cards` isolated alpha-tested quads spread through a volume. Every vertex is
+ * on a component border, so LockBorder refuses every collapse — the shape that routes foliage to the
+ * card reducer and the shape whose per-cell floor the terminal level has to get below.
+ */
+async function cardsGlb(cards: number): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const positions: number[] = [];
+  const indices: number[] = [];
+  let seed = 1_234_567;
+  const random = (): number => {
+    seed = (seed * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
+    return seed / 0x7f_ff_ff_ff;
+  };
+  for (let card = 0; card < cards; card += 1) {
+    const x = random() * 2 - 1;
+    const y = random() * 2 - 1;
+    const z = random() * 2 - 1;
+    const size = 0.02;
+    const base = positions.length / 3;
+    positions.push(
+      x - size,
+      y - size,
+      z,
+      x + size,
+      y - size,
+      z,
+      x + size,
+      y + size,
+      z,
+      x - size,
+      y + size,
+      z,
+    );
+    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(positions))
+        .setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from(indices))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("leaf").setAlphaMode("MASK").setAlphaCutoff(0.5));
+  scene.addChild(
+    document.createNode("leaves").setMesh(document.createMesh("leaves").addPrimitive(primitive)),
+  );
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
 
 describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
@@ -219,6 +286,54 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
         expect((previous - count) / previous).toBeGreaterThanOrEqual(LOD_MIN_SAVING);
         previous = count;
       }
+    }
+  }, 300_000);
+
+  it("ends a card chain in a terminal level at the target without emptying it", async () => {
+    // 4,000 quads: LOD0 is 8,000 triangles, so the target is max(1,500, 400) = 1,500. The ratio
+    // ladder floors at one card per LOD0 cell and stalls above 1,500; only the terminal level, on a
+    // coarser grid, reaches the target.
+    const input = await cardsGlb(4_000);
+    const result = await modelPass({ compact: false, lod: true, virtual: "none" }).apply(
+      input,
+      "leaves.glb",
+    );
+    if (Buffer.isBuffer(result)) throw new Error("the model pass returned an unchanged buffer");
+    const summary = result.entry?.lod as IModelLodSummary;
+    const entry = summary.primitives[0];
+    if (entry === undefined) throw new Error("no card chain");
+    const target = Math.max(
+      LOD_TERMINAL_MIN_TRIANGLES,
+      Math.ceil(LOD_TERMINAL_KEEP_RATIO * entry.trianglesBefore),
+    );
+    expect(entry.strategy).toBe("cards");
+    const terminal = entry.levels.at(-1);
+    const card = (entry.cardLevels ?? []).at(-1) as ICardLevelSummary;
+    expect(entry.levels.length).toBeGreaterThanOrEqual(2);
+    expect(terminal?.triangles ?? 0).toBeLessThanOrEqual(target);
+    expect(terminal?.triangles ?? 0).toBeGreaterThan(0);
+    expect(terminal?.triangles ?? 0).toBeLessThan(entry.levels.at(-2)?.triangles ?? 0);
+    // Never empty: the terminal level drops below the ratio ladder's floor, but every coarse cell
+    // it lands on still holds at least one card.
+    expect(card.cards).toBeGreaterThan(0);
+    expect(card.keep).toBeGreaterThan(0);
+    expect(card.cellCoverage).toBeGreaterThan(0);
+
+    // Read back out of the shipped bytes: the terminal is a non-empty subset of LOD0's own indices.
+    const document = await readWithLod(result.buffer);
+    const primitive = document
+      .getRoot()
+      .listMeshes()
+      .find((mesh) => mesh.getName() === "leaves")
+      ?.listPrimitives()[0];
+    const lod0 = Uint32Array.from(primitive?.getIndices()?.getArray() as ArrayLike<number>);
+    const chain = primitive?.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+    const accessors = chain?.getIndices() ?? [];
+    expect(accessors).toHaveLength(entry.levels.length);
+    for (const accessor of accessors) {
+      const level = Uint32Array.from(accessor.getArray() as ArrayLike<number>);
+      expect(level.length).toBeGreaterThan(0);
+      for (const index of level) expect(lod0).toContain(index);
     }
   }, 300_000);
 

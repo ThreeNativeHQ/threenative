@@ -149,3 +149,18 @@ Steps (each: files, the number that proves it, the smallest test):
    GPU-driven indirect casters (`packages/core/src/world-gpu-scene.ts`), which removes the per-draw
    JS even though one record per key remains; never plan per-level `BundleGroup`s (see the
    feasibility section above).
+
+## Cook: a terminal coarse level on every chain (shipped ahead of GPU scene)
+
+The problem table's "distant trees keep 37–58% of LOD0 triangles" is a *generation* stall, not a
+culling one: `LockBorder` on an open or thin tree lets the error ladder stop at 87% kept, so a far
+tree still submits ~16k triangles and the shadow levels tens of millions. The cook now appends one
+terminal level to every chain — `packages/assets/src/lod/generate.ts` for triangles, cut by
+`max(1500, 5% of LOD0)` with `Prune` and no border lock; `packages/assets/src/lod/cards.ts` for
+foliage cards, which merges LOD0 cells into a coarser grid to get under the same target. It is
+exempt from the saving gate, needs no game option, and the runtime already reads its recorded error
+through `chainDistances` (`packages/core/src/world-cells.ts:2524`). `LOD_GENERATOR_VERSION` moved to
+2 so a re-cook replaces stale chains; the artifact schema stayed at 1, so chains baked before this
+still load. Measured on the synthetic open mesh (16 patches x 24 segments, 18,432 triangles): the
+ladder reaches 1,536 and the terminal level 1,500. Proof:
+`pnpm exec vitest run packages/assets/__tests__/lod-generation.spec.ts packages/assets/__tests__/foliage-lod.spec.ts`.
