@@ -5,7 +5,14 @@
 // re-skinning the woods — autumn, snow, a burnt grove — is this file plus `palette.ts`. The wind is
 // a node graph on the vertex stage (`three/tsl`), not a shader string, which is the one form that
 // compiles for the browser's WebGPU and for the native host alike.
-import { AdditiveBlending, DoubleSide, MeshBasicMaterial, type Texture } from "three";
+import {
+  AdditiveBlending,
+  DoubleSide,
+  MeshBasicMaterial,
+  RepeatWrapping,
+  SRGBColorSpace,
+  type Texture,
+} from "three";
 import {
   color,
   cos,
@@ -25,14 +32,11 @@ import {
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { palette } from "./palette.js";
 import {
-  barkTexture,
   blobShadowTexture,
   bubbleTexture,
   fernTexture,
   glowTexture,
-  groundTexture,
   leafTexture,
-  stoneTexture,
 } from "./textures.js";
 
 /** The forest's clock, in seconds. The scene writes `.value` once a frame; wind and water read it. */
@@ -80,6 +84,8 @@ export interface IForestMaterials {
   readonly grass: MeshStandardNodeMaterial;
   readonly ground: MeshStandardNodeMaterial;
   readonly leaf: MeshStandardNodeMaterial;
+  /** Fallen leaves on the ground: flat, plain, coloured per instance. */
+  readonly litter: MeshStandardNodeMaterial;
   readonly moss: MeshStandardNodeMaterial;
   readonly mushroom: MeshStandardNodeMaterial;
   readonly pale: MeshStandardNodeMaterial;
@@ -96,11 +102,27 @@ export interface IForestMaterials {
   readonly dispose: () => void;
 }
 
-export function createForestMaterials(): IForestMaterials {
-  const bark = barkTexture();
-  const stone = stoneTexture();
-  const ground = groundTexture();
-  ground.repeat.set(39, 39);
+/** The three photographs the scene loads from `assets/` and hands in: this folder loads nothing itself. */
+export interface IPhotos {
+  readonly bark: Texture;
+  readonly ground: Texture;
+  readonly rock: Texture;
+}
+
+/** Colour data, tiling, and enough anisotropy that a furrow stays sharp at a grazing angle. */
+function tiled(texture: Texture, repeatX: number, repeatY = repeatX): Texture {
+  texture.colorSpace = SRGBColorSpace;
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.anisotropy = 4;
+  texture.repeat.set(repeatX, repeatY);
+  return texture;
+}
+
+export function createForestMaterials(photos: IPhotos): IForestMaterials {
+  const bark = tiled(photos.bark, 1, 2);
+  const stone = tiled(photos.rock, 1.5);
+  const ground = tiled(photos.ground, 30);
   const leafMap = leafTexture();
   const fernMap = fernTexture();
   const glowMap = glowTexture();
@@ -147,7 +169,7 @@ export function createForestMaterials(): IForestMaterials {
   water.opacityNode = oneMinus(smoothstep(0.36, 0.5, length(uv().sub(0.5)))).mul(0.66);
 
   const materials: IForestMaterials = {
-    bark: standard(0x6d6048, { bumpMap: bark, bumpScale: 0.13, map: bark }),
+    bark: standard(0xd6c4a4, { bumpMap: bark, bumpScale: 0.13, map: bark }),
     blob: new MeshBasicMaterial({
       depthWrite: false,
       map: blobMap,
@@ -157,8 +179,8 @@ export function createForestMaterials(): IForestMaterials {
     bubble,
     black: standard(0x272a1d),
     brass: standard(0xb7a468, { metalness: 0.43, roughness: 0.55 }),
-    darkStone: standard(0x858b71, { bumpMap: stone, bumpScale: 0.16, map: stone }),
-    darkWood: standard(0x615740, { bumpMap: bark, bumpScale: 0.08, map: bark }),
+    darkStone: standard(0xb9bda9, { bumpMap: stone, bumpScale: 0.16, map: stone }),
+    darkWood: standard(0xa08c6a, { bumpMap: bark, bumpScale: 0.08, map: bark }),
     fern,
     flower: standard(0xb9a6bc),
     glow: standard(0xffe2a0, { emissive: 0xf2af44, emissiveIntensity: 2.2, roughness: 0.42 }),
@@ -171,19 +193,19 @@ export function createForestMaterials(): IForestMaterials {
       vertexColors: true,
     }),
     leaf,
-    moss: standard(0x526139, { bumpMap: stone, bumpScale: 0.04, map: stone }),
+    litter: standard(0xffffff, { roughness: 1, side: DoubleSide }),
+    moss: standard(0x8aa860, { bumpMap: stone, bumpScale: 0.04, map: stone }),
     mushroom: standard(0x965d40),
     pale: standard(0xbdb08b),
     purple: standard(0x8e6aa3),
     rope: standard(0x827551),
-    soil: standard(0x5c4e38, { bumpMap: ground, bumpScale: 0.1, map: ground }),
+    soil: standard(0x8a7855, { bumpMap: ground, bumpScale: 0.1, map: ground }),
     stem: standard(0x53663c),
-    stone: standard(0xdad3b6, { bumpMap: stone, bumpScale: 0.1, map: stone }),
+    stone: standard(0xe2dcc2, { bumpMap: stone, bumpScale: 0.1, map: stone }),
     water,
-    wood: standard(0xa59570, { bumpMap: bark, bumpScale: 0.07, map: bark }),
+    wood: standard(0xd8c39a, { bumpMap: bark, bumpScale: 0.07, map: bark }),
     dispose: () => {
-      for (const texture of [bark, stone, ground, leafMap, fernMap, glowMap, blobMap, bubble])
-        texture.dispose();
+      for (const texture of [leafMap, fernMap, glowMap, blobMap, bubble]) texture.dispose();
       for (const value of Object.values(materials)) if ("isMaterial" in value) value.dispose();
     },
   };

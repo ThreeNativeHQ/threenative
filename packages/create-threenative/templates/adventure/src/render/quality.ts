@@ -78,7 +78,7 @@ const shared: IWorldEnvironmentOptions = {
   bloomThreshold: 0.9,
   exposure: 1.0,
   tonemapMode: "aces",
-  vignetteAmount: 0.3,
+  vignetteAmount: 0.42,
 };
 
 /**

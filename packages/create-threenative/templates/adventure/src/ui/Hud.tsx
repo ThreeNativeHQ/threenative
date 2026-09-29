@@ -1,3 +1,4 @@
+import { useUiIntent } from "@threenative/ui";
 import type { GameState } from "../state.js";
 
 /** One heart holds two hit points; `fill` is 0, 0.5 or 1. */
@@ -67,6 +68,7 @@ function Slot({
 
 /** Hearts, gems and stamina; the place banner; the item slots; the quest; prompts and the toast. */
 export function Hud({ state }: { state: GameState }) {
+  const send = useUiIntent();
   const [title, detail] = QUEST[state.stage] ?? QUEST.meet ?? ["", ""];
   return (
     <>
@@ -123,7 +125,32 @@ export function Hud({ state }: { state: GameState }) {
         <p className="m-0 mt-1 text-[8px] tracking-[0.26em] opacity-80">THE ELDER GROVE · DAWN</p>
       </header>
 
-      <aside className="pointer-events-none absolute top-6 right-8 flex gap-3">
+      <aside className="pointer-events-none absolute top-6 right-8 flex items-start gap-3">
+        <button
+          aria-label={state.sound ? "Mute sound" : "Unmute sound"}
+          aria-pressed={state.sound}
+          className="pointer-events-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full border border-line/50 bg-ink/60 text-lume hover:bg-panel"
+          onClick={() => send("toggleSound")}
+          title={state.sound ? "Sound on · M" : "Sound off · M"}
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M11 5L6 9H3v6h3l5 4z" />
+            {state.sound ? (
+              <path d="M15 9q3 3 0 6M18 6q6 6 0 12" />
+            ) : (
+              <path d="M15 9l6 6M21 9l-6 6" />
+            )}
+          </svg>
+        </button>
         <Slot hint="J" label="Sword">
           <svg aria-hidden="true" className="h-11 w-11" viewBox="0 0 48 48">
             <path d="M13 37L35 9l5-2-1 6L17 40z" fill="#cdd9ce" stroke="#9caa99" />

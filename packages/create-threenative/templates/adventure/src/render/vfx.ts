@@ -55,6 +55,7 @@ type Recipe = {
   readonly extent?: readonly [number, number, number];
   readonly blend?: "additive" | "normal";
   readonly fadeIn?: number;
+  readonly opacity?: number;
   readonly lineStart?: readonly [number, number, number];
   readonly lineEnd?: readonly [number, number, number];
   readonly radius: number;
@@ -176,7 +177,7 @@ function createEmitter(recipe: Recipe, seed: number): IVfxOptions {
     mask(recipe.style)
       .mul(float(1).sub(smoothstep(0.96, 1, particlePhase)))
       .mul(recipe.fadeIn === undefined ? 1 : smoothstep(0, recipe.fadeIn, particlePhase))
-      .mul(0.96),
+      .mul(recipe.opacity ?? 0.96),
   );
   const start = ({ positions, velocities }: IVfxBuffers): ComputeNode =>
     Fn(() => {
@@ -361,6 +362,32 @@ export function createFallingLeaves(seed = 97): IVfxOptions {
       shape: "box",
       size: 0.16,
       speed: [0.05, 0.2],
+      style: "glow",
+    },
+    seed,
+  );
+}
+
+/** Low mist lying on the paths: big soft puffs, mostly transparent, drifting slowly along the ground. */
+export function createGroundMist(seed = 101): IVfxOptions {
+  return createEmitter(
+    {
+      acceleration: [0, 0, 0],
+      amount: 90,
+      blend: "normal",
+      colour: [0.78, 0.8, 0.68],
+      cone: Math.PI,
+      direction: [0.3, 0.02, 0.1],
+      drag: 0,
+      extent: [46, 0.9, 74],
+      fadeIn: 0.25,
+      highlight: [0.92, 0.92, 0.8],
+      lifetime: [10, 17],
+      opacity: 0.11,
+      radius: 0,
+      shape: "box",
+      size: 3.2,
+      speed: [0.05, 0.22],
       style: "glow",
     },
     seed,

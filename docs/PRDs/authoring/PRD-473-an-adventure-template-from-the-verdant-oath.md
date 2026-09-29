@@ -55,10 +55,14 @@ canopy, mossy log stairs, a fairy and a green-capped child hero seen from behind
 
 ## Decisions
 
-- 2026-09-29: audio is out of this PRD. The original synthesised its music and effects with WebAudio
-  oscillators, which the native host does not have; the portable route is `AudioBus` with authored
-  clips, and the kit ships none. Add clips and an `AudioBus` in `Play.ts`'s `react()`, which is where every
-  event already lands.
+- 2026-09-29: the original synthesised its music and effects with WebAudio oscillators, which the native
+  host does not have, so the kit plays clips through `AudioBus`. The 14 clips (11 one-shots, a wind-and-birds
+  bed, a melody; 790 KB) are synthesised by `scripts/adventure-audio.ts`, so they are original and carry no
+  licence. Cues are labelled, and `survives`, `adventure-talk` and `adventure-combat` assert `step`, `gem`,
+  `talk`, `swing` and `hit` counts. Not heard by a person in this session: only the ledger is proved.
+- 2026-09-29: bark, rock and forest floor are three CC0 Poly Haven photographs (bark_brown_02, mossy_rock,
+  forrest_ground_01), 1 K diffuse maps resized to 512 px and brightened, 67 + 64 + 66 KB. Nothing else uses a
+  photograph: the sprites stay procedural so they run on the native host.
 - 2026-09-29: `Heightfield`, `CharacterBody3D`, `WaveField`/`WaterSurface3D` and `TerrainTiles` were searched
   and left unused. `Heightfield.fromSampler` stores a grid and interpolates it, which would round the
   0.65 m log steps the rules walk on; the brook is a lit TSL ripple, not a wave field; the world is

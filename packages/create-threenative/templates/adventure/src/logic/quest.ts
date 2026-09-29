@@ -25,7 +25,7 @@ export function newGame(): ISave {
     hp: MAX_HP,
     openedChests: [],
     sigils: [],
-    sound: false,
+    sound: true,
     stage: "meet",
     version: 1,
   };
@@ -78,7 +78,7 @@ export function restoreSave(raw: string | null | undefined): ISave | undefined {
     save.openedChests = Array.isArray(a.openedChests)
       ? a.openedChests.filter((id) => id === "oak")
       : [];
-    save.sound = a.sound === true;
+    save.sound = a.sound !== false;
     return save;
   } catch {
     return undefined;

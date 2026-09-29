@@ -19,7 +19,7 @@ import { palette } from "./palette.js";
 /** The JPEG is linear radiance × 0.4 sRGB-encoded, so white in the file is 2.5 in the sky. */
 const SKY_RANGE = 2.5;
 /** How much of that fill reaches the forest floor: the canopy takes most of it. */
-const FILL = 0.5;
+const FILL = 0.4;
 
 /** Unit vector toward the sun: 37° up, ahead (north, −z) and a little to the right. */
 export const SUN_DIRECTION = new Vector3(0.3, 0.6, -0.74).normalize();

@@ -33,6 +33,8 @@ export interface IRock {
 }
 
 const HERO_TREE: ITree = { h: 19, hero: true, r: 2.25, x: -9, z: -20 };
+/** The colossal elder at the head of the valley: far past the walkable rim, it is what the mist hides. */
+const LANDMARK_TREE: ITree = { h: 52, hero: true, r: 7, x: 2, z: -56 };
 const NAMED_TREES: readonly (readonly [number, number, number, number])[] = [
   [-16, 11, 1.2, 20],
   [18, 8, 1.4, 23],
@@ -68,6 +70,16 @@ export interface ILayout {
 }
 
 /** The keeper stands here; she is an obstacle so the hero walks round her. */
+/** Flat, moss-capped rock ledges: `[x, z, width, depth, yaw]`. Each blocks like a boulder of its own size. */
+export const LEDGES: readonly (readonly [number, number, number, number, number])[] = [
+  [12.5, -18.5, 3.4, 2.4, 0.4],
+  [-2.5, -13.5, 3, 2.2, -0.5],
+  [-13, 12.5, 3.6, 2.6, 0.2],
+  [22, -4.5, 3, 2.4, 1.1],
+  [-26, -14, 3.4, 2.6, -0.3],
+  [16.5, 12, 3, 2.2, 0.7],
+];
+
 export const KEEPER = { x: 13.2, z: 2 } as const;
 export const ALTAR = { x: 3, z: -26 } as const;
 export const CHEST = { x: -14, z: -14 } as const;
@@ -132,6 +144,7 @@ export function createLayout(seed = 147_923): ILayout {
   const range = (a: number, b: number): number => a + (b - a) * rand();
   const trees: ITree[] = [
     HERO_TREE,
+    LANDMARK_TREE,
     ...NAMED_TREES.map(([x, z, r, h]) => ({ h, hero: false, r, x, z })),
   ];
   for (let i = 0; i < 36; i += 1) {
@@ -161,6 +174,7 @@ export function createLayout(seed = 147_923): ILayout {
     ...rocks
       .filter((rock) => rock.r > 1.05)
       .map((rock) => ({ r: rock.r * 0.7, x: rock.x, z: rock.z })),
+    ...LEDGES.map(([x, z, w, d]) => ({ r: Math.min(w, d) * 0.5, x, z })),
     { r: 0.39, x: KEEPER.x, z: KEEPER.z },
   ];
   return { farTrunks, obstacles, rocks, trees };

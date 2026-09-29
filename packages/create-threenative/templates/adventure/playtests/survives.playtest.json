@@ -56,6 +56,16 @@
           }
         ]
       }
+    ],
+    "audio": [
+      {
+        "cue": "gem",
+        "minPlays": 1
+      },
+      {
+        "cue": "step",
+        "minPlays": 4
+      }
     ]
   }
 }

@@ -50,7 +50,7 @@ pnpm test
 ```
 
 Controls: WASD move; mouse orbits (click to capture); wheel zooms; J/left-click sword; K/right-click shield; Space rolls
-(i-frames, 24 stamina); Shift sprints; E talks, takes and opens; Q locks on; R recenters; C hides the HUD; H pauses.
+(i-frames, 24 stamina); Shift sprints; E talks, takes and opens; Q locks on; R recenters; C hides the HUD; M mutes; H pauses.
 
 `src/logic/adventure.ts` is the whole ruleset — quest, sword, shield, roll, briarlings, pots, gems, chest, altar, respawn — plain TypeScript with no renderer import,
 so it runs headless in `pnpm test` and replays from its inputs. `update(dt, input)` is the only thing that moves time and every visible happening leaves as an entry in `events`.
@@ -74,8 +74,8 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 `src/render/sky.ts` puts the mist colour behind everything and uses `assets/sky.jpg` (Poly Haven, CC0) only as the environment fill; `SUN_DIRECTION` sits ahead of the camera, so the hero's shadow falls
-toward the player. Godrays raymarch that sun's shadow map (`quality.ts`, `high`/`medium`); `palette.ts` and `materials.ts` are the whole re-skin. Every texture is a `DataTexture` drawn from noise in `textures.ts` — no canvas, so it runs on
-native. Wind is a TSL vertex node reading `clock`; `Play.ts` writes it once a frame. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with
+toward the player. Godrays raymarch that sun's shadow map (`quality.ts`, `high`/`medium`); `palette.ts` and `materials.ts` are the whole re-skin. Bark, rock and forest floor are 512 px photographs in `assets/` (Poly Haven, CC0) that `Play.load` hands to `createForestMaterials`; leaf, fern and glow sprites are `DataTexture`s drawn in `textures.ts` — no canvas, so it runs on
+native. `src/audio.ts` plays the `assets/*.wav` clips (synthesised by the engine repo's `scripts/adventure-audio.ts`) through two `AudioBus` mixers with labelled cues, which `audio` assertions count. Wind is a TSL vertex node reading `clock`; `Play.ts` writes it once a frame. `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with
 `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports the source. `pnpm test` proves behavior, never the look. Touch: a left stick, sword/roll/talk buttons and a drag to orbit (`render/touch-controls.ts`).
 
 Two loading conventions come from `@threenative/core`, not from your own loops: `loadAll(items, load)` fetches six at a time and returns results **in the input's order** (a pool that pushes returns completion order, so a positional pick lands a different asset every load), and `addInSlices(objects, (object) => ctx.add(object))` attaches 256 per presented frame so hundreds of objects never land in one long frame; override `concurrency`/`sliceSize`, pass `while: () => alive` to stop a torn-down scene without throwing, and `marker: false` silences `TN_LOAD_ALL`/`TN_ADD_SLICES` but never the measurement.

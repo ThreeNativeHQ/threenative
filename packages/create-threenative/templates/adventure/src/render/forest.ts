@@ -33,7 +33,7 @@ import {
   Vector3,
 } from "three";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { type ILayout, LAKE, LANTERNS, mulberry32 } from "../logic/layout.js";
+import { type ILayout, LAKE, LANTERNS, LEDGES, mulberry32 } from "../logic/layout.js";
 import {
   BRIDGE,
   PATHS,
@@ -158,7 +158,7 @@ export function createForest(
     );
     const path = 1 - smooth(1.5, 3.4, pathDistance(x, z));
     const n = noise(((x + 65) / 130) % 1, ((z + 75) / 130) % 1, 90);
-    tint.setRGB(0.22 + n * 0.09, 0.4 + n * 0.1, 0.12 + n * 0.04).lerp(dirt, path * 0.9);
+    tint.setRGB(0.26 + n * 0.1, 0.5 + n * 0.1, 0.14 + n * 0.05).lerp(dirt, path * 0.9);
     colors.set([tint.r, tint.g, tint.b], i * 3);
   }
   ground.setAttribute("color", new BufferAttribute(colors, 3));
@@ -351,7 +351,7 @@ export function createForest(
   }
   // Understory: low clusters of bright foliage over and beside the footpaths, at head-of-the-stair
   // height, so the canopy is in the frame instead of forty metres above it.
-  for (let placed = 0; placed < 70; ) {
+  for (let placed = 0; placed < 120; ) {
     const x = r(-30, 30);
     const z = r(-32, 22);
     const d = pathDistance(x, z);
@@ -481,7 +481,7 @@ export function createForest(
 
   // --- rocks -----------------------------------------------------------------------------------------------------------
   const rockGeometry = (x: number, z: number): BufferGeometry => {
-    const g = new IcosahedronGeometry(1, 2);
+    const g = new IcosahedronGeometry(1, 1);
     const p = g.getAttribute("position");
     for (let j = 0; j < p.count; j += 1) {
       const n =
@@ -574,6 +574,177 @@ export function createForest(
     );
   }
 
+  // --- rock ledges: slabs with a mossy cap, the layered stone of the reference ----------------------------------------------------
+  for (const [x, z, w, d, yaw] of LEDGES) {
+    const slab = new BoxGeometry(w, 0.9, d, 8, 3, 6);
+    const sp = slab.getAttribute("position");
+    for (let k = 0; k < sp.count; k += 1) {
+      const px = sp.getX(k);
+      const py = sp.getY(k);
+      const pz = sp.getZ(k);
+      // Taper the top, ripple the faces, and let the corners wander: a slab, not a box.
+      const taper = 1 - Math.max(0, py) * 0.32;
+      const lift = Math.sin(px * 1.9 + x) * 0.11 + Math.cos(pz * 2.3 + z) * 0.09;
+      sp.setX(k, px * taper + Math.sin(pz * 3.1 + x + py * 2) * 0.18);
+      sp.setY(k, py + lift);
+      sp.setZ(k, pz * taper + Math.cos(px * 2.7 + z + py * 2) * 0.18);
+    }
+    slab.computeVertexNormals();
+    const y = groundHeight(x, z);
+    add(slab, mats.darkStone, x, y + 0.32, z, undefined, yaw);
+    add(
+      new SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.4),
+      mats.moss,
+      x + 0.2,
+      y + 0.72,
+      z,
+      [w * 0.42, 0.16, d * 0.4],
+      yaw,
+    );
+    add(
+      slab.clone().scale(0.6, 0.6, 0.6),
+      mats.darkStone,
+      x + 0.35,
+      y + 0.75,
+      z - 0.2,
+      undefined,
+      yaw + 0.5,
+    );
+  }
+  // The landmark's doorway: a dark hollow at the foot of the colossal elder, lit from within.
+  {
+    const lx = 2;
+    const lz = -56 + 6.6;
+    const ly = terrainHeight(lx, lz);
+    add(new SphereGeometry(1, 24, 16), mats.black, lx, ly + 3.4, lz, [2.1, 3.4, 0.5]);
+    add(
+      new TorusGeometry(2.3, 0.35, 10, 28, Math.PI),
+      mats.wood,
+      lx,
+      ly + 3.4,
+      lz + 0.35,
+    ).rotation.z = 0;
+    glow(lx, ly + 3.2, lz + 1.2, 0xffd9a0, 11, 0.55);
+  }
+
+  // --- undergrowth: moss at the trunks, fallen logs, stumps, pebbles, flower drifts -------------------------------------------
+  for (const t of layout.trees) {
+    if (t.r < 0.6) continue;
+    const base = terrainHeight(t.x, t.z);
+    add(
+      new SphereGeometry(1, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.42),
+      mats.moss,
+      t.x,
+      base + 0.12,
+      t.z,
+      [t.r * 1.35, t.r * 0.55, t.r * 1.35],
+      r(0, 6.28),
+    );
+  }
+  const fallen: readonly (readonly [number, number, number])[] = [
+    [-6.5, 9.5, 0.5],
+    [12, -7.2, 1.9],
+    [-17.5, -8.5, 2.6],
+    [5.5, -22, 0.2],
+    [21, 4.5, 1.2],
+    [-4, -28, 0.9],
+  ];
+  for (const [x, z, yaw] of fallen) {
+    const log = new CylinderGeometry(0.27, 0.23, 3.4, 10, 6);
+    log.rotateZ(Math.PI / 2);
+    const lp = log.getAttribute("position");
+    for (let k = 0; k < lp.count; k += 1) {
+      const wobble = 1 + Math.sin(lp.getX(k) * 2.1 + x) * 0.07;
+      lp.setY(k, lp.getY(k) * wobble);
+      lp.setZ(k, lp.getZ(k) * wobble);
+    }
+    log.computeVertexNormals();
+    const y = groundHeight(x, z);
+    add(log, mats.bark, x, y + 0.2, z, undefined, yaw);
+    add(
+      new SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.5),
+      mats.moss,
+      x,
+      y + 0.4,
+      z,
+      [1.5, 0.11, 0.2],
+      yaw,
+    );
+    add(
+      new ConeGeometry(0.06, 0.5, 6),
+      mats.darkWood,
+      x + Math.cos(yaw) * 0.6,
+      y + 0.5,
+      z - Math.sin(yaw) * 0.6,
+      [1, 1, 1],
+      yaw,
+    ).rotation.z = 0.5;
+  }
+  for (let placed = 0; placed < 9; ) {
+    const x = r(-28, 26);
+    const z = r(-30, 20);
+    if (
+      pathDistance(x, z) < 3.4 ||
+      groundHeight(x, z) < -0.3 ||
+      layout.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 1)
+    )
+      continue;
+    const y = groundHeight(x, z);
+    const radius = r(0.3, 0.5);
+    add(new CylinderGeometry(radius * 0.9, radius, 0.4, 12), mats.bark, x, y + 0.18, z);
+    add(new CylinderGeometry(radius * 0.86, radius * 0.86, 0.03, 12), mats.wood, x, y + 0.385, z);
+    add(
+      new SphereGeometry(1, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.45),
+      mats.moss,
+      x + radius * 0.4,
+      y + 0.36,
+      z,
+      [radius * 0.5, 0.06, radius * 0.4],
+    );
+    placed += 1;
+  }
+  for (let i = 0; i < 160; i += 1) {
+    const path = PATHS[i % PATHS.length] as (typeof PATHS)[number];
+    const j = Math.floor(r(1, path.length));
+    const a = path[j - 1] as readonly [number, number];
+    const b = path[j] as readonly [number, number];
+    const t = rand();
+    const side = rand() < 0.5 ? -1 : 1;
+    const x = a[0] + (b[0] - a[0]) * t + side * r(1.5, 2.7);
+    const z = a[1] + (b[1] - a[1]) * t + r(-0.6, 0.6);
+    if (x > 4.5 && x < 11.5 && z < 3.5 && z > -10.6) continue;
+    const size = r(0.05, 0.13);
+    add(
+      new IcosahedronGeometry(1, 1),
+      mats.darkStone,
+      x,
+      groundHeight(x, z) + size * 0.3,
+      z,
+      [size, size * 0.7, size * 0.9],
+      r(0, 6.28),
+    );
+  }
+  for (let drift = 0; drift < 14; drift += 1) {
+    const cx = r(-26, 26);
+    const cz = r(-28, 19);
+    if (pathDistance(cx, cz) < 2 || groundHeight(cx, cz) < -0.3) continue;
+    for (let k = 0; k < 9; k += 1) {
+      const x = cx + r(-1.1, 1.1);
+      const z = cz + r(-1.1, 1.1);
+      const y = groundHeight(x, z);
+      const h = r(0.16, 0.34);
+      rod(mats.stem, [x, y, z], [x, y + h, z], 0.008, 0.005, 4);
+      add(
+        new SphereGeometry(1, 6, 4),
+        drift % 2 === 0 ? mats.flower : mats.purple,
+        x,
+        y + h,
+        z,
+        [0.06, 0.03, 0.06],
+      );
+    }
+  }
+
   // --- bake the static meshes: one draw per material ------------------------------------------------------------------------------
   const noShadow = new Set<Material>([
     mats.flower,
@@ -649,6 +820,25 @@ export function createForest(
     placed += 1;
   }
   meadow.build({ name: "grass", parent: root, receiveShadow: true });
+  // Leaf litter: flat scraps in autumn colours, denser beside the paths.
+  const litter = tools.batch(new PlaneGeometry(0.17, 0.1).rotateX(-Math.PI / 2), mats.litter);
+  const litterColours: Color[] = [];
+  const shades = [0xb98a45, 0x9c6b32, 0x7d8a3e, 0xc7a35a, 0x8a6a3a];
+  for (let placed = 0; placed < 1100; ) {
+    const x = r(-32, 30);
+    const z = r(-34, 22);
+    const d = pathDistance(x, z);
+    if (d > 7 || (d > 3.2 && rand() < 0.55) || (x > 4.5 && x < 11.5 && z < 3.5 && z > -10.6))
+      continue;
+    const y = groundHeight(x, z);
+    if (y < -0.4) continue;
+    litter.place({ position: [x, y + 0.03, z], rotation: [0, r(0, 6.28), 0], scale: r(0.7, 1.5) });
+    litterColours.push(new Color(shades[Math.floor(rand() * shades.length)] as number));
+    placed += 1;
+  }
+  const litterMesh = litter.build({ name: "leaf-litter", parent: root, receiveShadow: true });
+  litterColours.forEach((c, i) => litterMesh?.setColorAt(i, c));
+  if (litterMesh?.instanceColor) litterMesh.instanceColor.needsUpdate = true;
   const fronds = tools.batch(new PlaneGeometry(1, 1.4).translate(0, 0.7, 0), mats.fern);
   const scratch = new Object3D();
   const matrix = new Matrix4();

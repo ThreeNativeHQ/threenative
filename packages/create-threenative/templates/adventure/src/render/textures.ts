@@ -1,9 +1,9 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// Every surface in the forest is drawn here, from noise, into a `DataTexture`: no image files, no
-// canvas, no DOM. A canvas is a browser object the native host does not have; a byte array is a
-// byte array on every target, so the bark on a trunk is the same bark on a phone. Noise wraps at
-// its lattice edge, so a tile repeated 40 times across the ground has no seams to find.
+// The cut-out and glow sprites, drawn from noise into a `DataTexture`: no image files, no canvas, no
+// DOM. A canvas is a browser object the native host does not have; a byte array is a byte array on
+// every target. The three big surfaces — bark, rock, forest floor — are photographs in `assets/`
+// (Poly Haven, CC0), loaded by the scene, because noise cannot draw a furrow or a lichen patch.
 import {
   DataTexture,
   LinearFilter,
@@ -78,96 +78,6 @@ function tile(
       data[i + 3] = 255;
     }
   return finish(data, size, true);
-}
-
-function fbm(u: number, v: number): number {
-  return (
-    noise(u, v, 9) * 0.5 +
-    noise(u, v, 27) * 0.28 +
-    noise(u, v, 96) * 0.14 +
-    hash((u * 4096) | 0, (v * 4096) | 0) * 0.08
-  );
-}
-
-/** Furrowed bark: vertical grooves that wander, warm brown, a little moss on the shaded side. */
-export function barkTexture(size = 512): DataTexture {
-  return tile(size, (u, v) => {
-    const groove = (0.5 + 0.5 * Math.sin(u * Math.PI * 2 * 16 + noise(u, v, 8) * 13)) ** 5;
-    const grain = noise(u, v, 128) * 0.4 + noise(u, v, 34) * 0.6;
-    const r = 47 + grain * 52 + groove * 29 + fbm(u, v) * 12;
-    const moss = noise(u, v, 14) > 0.63;
-    return [moss ? r - 4 : r, moss ? r * 0.82 + 8 : r * 0.82, r * 0.6];
-  });
-}
-
-/** Weathered flagstone with veins and green lichen patches. */
-export function stoneTexture(size = 512): DataTexture {
-  const rand = stream(7);
-  const cracks: number[] = [];
-  for (let k = 0; k < 28; k += 1) {
-    let x = rand();
-    let y = rand();
-    for (let s = 0; s < 7; s += 1) {
-      const nx = x + (rand() - 0.3) * 0.06;
-      const ny = y + (0.006 + rand() * 0.05);
-      cracks.push(x, y, nx, ny);
-      x = nx;
-      y = ny;
-    }
-  }
-  const texture = tile(size, (u, v) => {
-    const f = fbm(u, v);
-    let r = 91 + f * 88;
-    let g = 91 + f * 83;
-    let b = 80 + f * 71;
-    if (noise(u, v, 8) > 0.62) {
-      r *= 0.74;
-      g *= 0.87;
-      b *= 0.57;
-    }
-    return [r, g, b];
-  });
-  const data = texture.image.data as Uint8Array;
-  for (let c = 0; c < cracks.length; c += 4) {
-    const [x0, y0, x1, y1] = [
-      cracks[c] ?? 0,
-      cracks[c + 1] ?? 0,
-      cracks[c + 2] ?? 0,
-      cracks[c + 3] ?? 0,
-    ];
-    const steps = 24;
-    for (let s = 0; s <= steps; s += 1) {
-      const px = Math.floor((x0 + (x1 - x0) * (s / steps)) * size) % size;
-      const py = Math.floor((y0 + (y1 - y0) * (s / steps)) * size) % size;
-      const i = (py * size + px) * 4;
-      data[i] = (data[i] ?? 0) * 0.6;
-      data[i + 1] = (data[i + 1] ?? 0) * 0.6;
-      data[i + 2] = (data[i + 2] ?? 0) * 0.62;
-    }
-  }
-  texture.needsUpdate = true;
-  return texture;
-}
-
-/** Forest floor: warm and cool speckle over soft noise. Vertex colours carry the actual green. */
-export function groundTexture(size = 512): DataTexture {
-  const rand = stream(11);
-  const texture = tile(size, (u, v) => {
-    const f = fbm(u, v);
-    return [92 + f * 60, 104 + f * 64, 62 + f * 42];
-  });
-  const data = texture.image.data as Uint8Array;
-  for (let k = 0; k < 2600; k += 1) {
-    const x = Math.floor(rand() * size);
-    const y = Math.floor(rand() * size);
-    const light = rand() > 0.5;
-    const i = (y * size + x) * 4;
-    data[i] = (data[i] ?? 0) * (light ? 1.22 : 0.62);
-    data[i + 1] = (data[i + 1] ?? 0) * (light ? 1.2 : 0.7);
-    data[i + 2] = (data[i + 2] ?? 0) * (light ? 1.1 : 0.55);
-  }
-  texture.needsUpdate = true;
-  return texture;
 }
 
 /** Cutout sprites are RGBA with an opaque body and zero alpha outside it (the material alpha-tests). */

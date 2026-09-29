@@ -3,6 +3,7 @@ import type { GameState } from "../state.js";
 import { Dialog, Pause, Victory } from "./Dialog.js";
 import { Hud } from "./Hud.js";
 import { Minimap } from "./Minimap.js";
+import { Title } from "./Title.js";
 
 /**
  * Everything the player sees that is not the forest.
@@ -26,6 +27,7 @@ function Screens() {
   return (
     <>
       <Hud state={state} />
+      <Title state={state} />
       <Minimap state={state} />
       <Dialog state={state} />
       <Pause state={state} />

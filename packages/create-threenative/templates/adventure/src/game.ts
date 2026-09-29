@@ -30,6 +30,7 @@ const game = defineGame<GameState, undefined>({
     sprint: { keys: ["ShiftLeft", "ShiftRight"] },
     recenter: { keys: ["KeyR"] },
     hideUi: { keys: ["KeyC"] },
+    mute: { keys: ["KeyM"] },
     pause: { keys: ["KeyH", "Escape"] },
   },
   // `playtest()` installs the bridge a scenario needs to observe entities and state. Without it,

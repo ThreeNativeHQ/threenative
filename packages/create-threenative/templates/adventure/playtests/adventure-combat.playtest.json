@@ -229,6 +229,16 @@
         "path": "enemies",
         "lte": 5
       }
+    ],
+    "audio": [
+      {
+        "cue": "swing",
+        "minPlays": 10
+      },
+      {
+        "cue": "hit",
+        "minPlays": 3
+      }
     ]
   }
 }

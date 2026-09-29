@@ -6,9 +6,11 @@ import {
   type SceneFrame,
   isMobile,
   isTouchscreenAvailable,
+  loadAll,
   mergeByMaterial,
 } from "@threenative/core";
-import { MathUtils, type Object3D, type PerspectiveCamera, Vector3 } from "three";
+import { MathUtils, type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { type Clips, createSound, loadClips } from "../audio.js";
 import { Adventure, type IEvent, type IInput } from "../logic/adventure.js";
 import { KEEPER, SIGIL_SITES } from "../logic/layout.js";
 import type { SigilId } from "../logic/quest.js";
@@ -19,7 +21,7 @@ import { createFairy } from "../render/fairy.js";
 import { createForest } from "../render/forest.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { clock, createForestMaterials } from "../render/materials.js";
+import { type IPhotos, clock, createForestMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createProps } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
@@ -29,6 +31,7 @@ import {
   createAttackArc,
   createFallingLeaves,
   createGemGlint,
+  createGroundMist,
   createHitBurst,
   createMotes,
   createPotBurst,
@@ -53,10 +56,17 @@ export class Play extends Scene<GameState, undefined> {
   static override readonly initialState: GameState = INITIAL_STATE;
 
   #sky: Parameters<typeof setupSky>[1] | undefined;
+  #clips: Clips = {};
+  #photos: IPhotos | undefined;
   #dispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     this.#sky = await ctx.assets.texture("sky.jpg");
+    const [bark, ground, rock] = await loadAll(["bark.jpg", "ground.jpg", "rock.jpg"], (name) =>
+      ctx.assets.texture(name),
+    );
+    this.#photos = { bark: bark as Texture, ground: ground as Texture, rock: rock as Texture };
+    this.#clips = await loadClips(ctx);
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, undefined> {
@@ -88,7 +98,9 @@ export class Play extends Scene<GameState, undefined> {
     });
     const loading = createLoadingScreen(ctx);
 
-    const materials = createForestMaterials();
+    if (this.#photos === undefined)
+      throw new Error("Play.enter ran before load() loaded its textures.");
+    const materials = createForestMaterials(this.#photos);
     const forest = createForest(tools, materials, sim.layout, { mobile });
     const props = createProps(tools, materials);
     const hero = createCharacter(tools, "hero");
@@ -124,6 +136,7 @@ export class Play extends Scene<GameState, undefined> {
     };
     ctx.add(new GPUParticles3D(createMotes())).position.set(0, 4.5, -8);
     ctx.add(new GPUParticles3D(createFallingLeaves())).position.set(0, 13, -8);
+    ctx.add(new GPUParticles3D(createGroundMist())).position.set(0, 0.5, -8);
 
     const touch =
       mobile && isTouchscreenAvailable()
@@ -147,7 +160,10 @@ export class Play extends Scene<GameState, undefined> {
     };
 
     let time = 0;
+    const sound = createSound(ctx, this.#clips, sim.save.sound);
     let paused = false;
+    let stride = 0;
+    let lastLine = -1;
     let saveTimer = 0;
     let saveDirty = false;
     let saves = 0;
@@ -164,6 +180,7 @@ export class Play extends Scene<GameState, undefined> {
     onSceneIntent((intent) => {
       if (intent === "pause") paused = true;
       else if (intent === "resume") paused = false;
+      else if (intent === "toggleSound") toggleSound();
       else if (intent === "continue") sim.advanceDialog();
       else if (intent === "stay") {
         sim.victory = false;
@@ -179,39 +196,56 @@ export class Play extends Scene<GameState, undefined> {
       }
     });
 
+    const toggleSound = (): void => {
+      sim.save.sound = !sim.save.sound;
+      sound.setOn(sim.save.sound);
+      saveDirty = true;
+    };
+
     const react = (event: IEvent): void => {
       switch (event.kind) {
         case "attack": {
+          sound.cue("swing");
           const p = sim.player;
           fx.arc(p.x + Math.sin(p.angle) * 0.9, p.y + 0.85, p.z + Math.cos(p.angle) * 0.9);
           break;
         }
+        case "roll":
+          sound.cue("roll");
+          break;
         case "enemyHit":
+          sound.cue("hit");
           fx.hit(event.x, event.y, event.z);
           rig.shake(0.035);
           break;
         case "enemyDown":
+          sound.cue("hit", 0.7);
           fx.sigil(event.x, event.y, event.z);
           break;
         case "block":
+          sound.cue("block");
           fx.hit(event.x, event.y, event.z);
           break;
         case "hurt":
+          sound.cue("hurt");
           fx.hit(event.x, event.y, event.z);
           rig.shake(0.14);
           hurtId += 1;
           saveDirty = true;
           break;
         case "potBreak":
+          sound.cue("pot");
           fx.pot(event.x, event.y, event.z);
           break;
         case "gem":
+          sound.cue("gem");
           fx.gem(event.x, event.y, event.z);
           saveDirty = true;
           break;
         case "sigil":
         case "chest":
         case "altar":
+          sound.cue(event.kind);
           fx.sigil(event.x, event.y, event.z);
           saveDirty = true;
           break;
@@ -220,7 +254,11 @@ export class Play extends Scene<GameState, undefined> {
           toastId += 1;
           break;
         case "dead":
+          sound.cue("hurt");
+          saveDirty = true;
+          break;
         case "respawn":
+          sound.cue("sigil", 0.6);
           saveDirty = true;
           break;
         default:
@@ -245,6 +283,7 @@ export class Play extends Scene<GameState, undefined> {
       const look = frameCtx.input.vector("look");
       if (frameCtx.input.justPressed("pause")) paused = !paused;
       if (frameCtx.input.justPressed("hideUi")) cinematic = !cinematic;
+      if (frameCtx.input.justPressed("mute")) toggleSound();
       if (frameCtx.input.justPressed("recenter")) {
         orbit.yaw = sim.player.angle - Math.PI;
         orbit.pitch = DEFAULT_ORBIT.pitch;
@@ -296,6 +335,18 @@ export class Play extends Scene<GameState, undefined> {
       }
       const p = sim.player;
       const lock = sim.lock;
+      sound.duck(paused);
+      const line = sim.dialog === undefined ? -1 : sim.dialog.index;
+      if (line !== lastLine) {
+        if (line >= 0) sound.cue("talk");
+        lastLine = line;
+      }
+      const footfall = Math.floor(p.walk / Math.PI);
+      if (footfall !== stride) {
+        stride = footfall;
+        if (!paused && p.speed > 1 && p.roll === 0 && p.dead === 0)
+          sound.cue("step", Math.min(0.9, 0.35 + p.speed * 0.07));
+      }
       if (lock !== undefined && !lock.dead && !paused)
         orbit.yaw = angleLerp(orbit.yaw, p.angle - Math.PI, 1 - Math.exp(-dt * 3));
 
@@ -420,6 +471,7 @@ export class Play extends Scene<GameState, undefined> {
       patch.dead = p.dead > 0;
       patch.hurtId = hurtId;
       patch.paused = paused;
+      patch.sound = sim.save.sound;
       patch.cinematic = cinematic;
       patch.playerX = round(p.x);
       patch.playerY = round(p.y);

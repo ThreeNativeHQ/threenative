@@ -30,6 +30,8 @@ export type GameState = {
   /** True from the altar's awakening until the player chooses to stay. */
   victory: boolean;
   dead: boolean;
+  /** Whether sound is on; it is saved with the game. */
+  sound: boolean;
   /** Counts hits taken, so the HUD can flash on each one even when two land in a row. */
   hurtId: number;
   /** Hero position and heading, rounded to a centimetre. */
@@ -63,6 +65,7 @@ export const INITIAL_STATE: GameState = {
   clock: 0,
   damageTaken: 0,
   dead: false,
+  sound: true,
   hurtId: 0,
   dialog: "",
   dialogMore: false,
