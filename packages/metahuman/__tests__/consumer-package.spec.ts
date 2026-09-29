@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { publicWorkspacePackages, workspacePackages } from "../../../scripts/workspace-packages.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -56,9 +56,13 @@ beforeAll(async () => {
       .filter((entry) => entry.length > 0),
     root: path.join(archiveDirectory, "package"),
   };
-  // `makeTempDir` owns the cleanup: the archive, the extracted tree, the probe and the consumer
-  // all live inside one sandbox directory, so there is nothing left to unlink by hand.
+  // Created in beforeAll, outside any test, so makeTempDir can only register process-exit cleanup,
+  // which a vitest worker does not reliably reach: remove the one sandbox directory explicitly.
 }, 120_000);
+
+afterAll(async () => {
+  if (sandbox !== undefined) await rm(sandbox, { force: true, recursive: true });
+});
 
 async function read(relative: string): Promise<string> {
   return await readFile(path.join(packed.root, relative), "utf8");

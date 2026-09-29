@@ -1,8 +1,9 @@
 import "./file-fetch.js";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 import { afterAll, describe, expect, it } from "vitest";
 
@@ -297,7 +298,7 @@ describe("browser WASM evaluator against the standalone upstream evaluator", () 
       }));
     });
 
-    const directory = mkdtempSync(join(tmpdir(), "tn-metahuman-reference-"));
+    const directory = makeTempDirSync("tn-metahuman-reference-");
     temporary.push(directory);
     const vectorsPath = join(directory, "vectors.json");
     const outputPath = join(directory, "reference.json");
