@@ -30,7 +30,11 @@ function noise(seed: number): () => number {
 const env = (t: number, attack: number, decay: number): number =>
   (t < attack ? t / attack : 1) * Math.exp(-Math.max(0, t - attack) / decay);
 
-function render(seconds: number, rate: number, sample: (t: number, i: number) => number): Float32Array {
+function render(
+  seconds: number,
+  rate: number,
+  sample: (t: number, i: number) => number,
+): Float32Array {
   const out = new Float32Array(Math.floor(seconds * rate));
   for (let i = 0; i < out.length; i += 1) out[i] = sample(i / rate, i);
   return out;
@@ -71,7 +75,9 @@ function write(name: string, data: Float32Array, rate = SR): void {
   header.write("data", 36);
   header.writeUInt32LE(pcm.length, 40);
   writeFileSync(path.join(OUT, name), Buffer.concat([header, pcm]));
-  console.info(`${name}: ${(data.length / rate).toFixed(2)} s, ${((44 + pcm.length) / 1024).toFixed(0)} KB`);
+  console.info(
+    `${name}: ${(data.length / rate).toFixed(2)} s, ${((44 + pcm.length) / 1024).toFixed(0)} KB`,
+  );
 }
 
 /** Folds the last `seconds` of a loop into its start so the wrap point is continuous. */
@@ -92,19 +98,36 @@ mkdirSync(OUT, { recursive: true });
 {
   const n = noise(1);
   const raw = render(0.3, SR, (t) => n() * env(t, 0.03, 0.09));
-  write("swing.wav", normalise(lowpass(raw, SR, (t) => 500 + t * 9000), 0.55));
+  write(
+    "swing.wav",
+    normalise(
+      lowpass(raw, SR, (t) => 500 + t * 9000),
+      0.55,
+    ),
+  );
 }
 {
   const n = noise(2);
   const raw = render(0.34, SR, (t) => n() * Math.sin((Math.PI * t) / 0.34) ** 2);
-  write("roll.wav", normalise(lowpass(raw, SR, () => 1100), 0.4));
+  write(
+    "roll.wav",
+    normalise(
+      lowpass(raw, SR, () => 1100),
+      0.4,
+    ),
+  );
 }
 {
   const n = noise(3);
   write(
     "hit.wav",
     normalise(
-      render(0.26, SR, (t) => sine(140 - 90 * (t / 0.26), t) * env(t, 0.004, 0.07) + n() * env(t, 0.001, 0.02) * 0.6),
+      render(
+        0.26,
+        SR,
+        (t) =>
+          sine(140 - 90 * (t / 0.26), t) * env(t, 0.004, 0.07) + n() * env(t, 0.001, 0.02) * 0.6,
+      ),
       0.8,
     ),
   );
@@ -112,21 +135,39 @@ mkdirSync(OUT, { recursive: true });
 write(
   "hurt.wav",
   normalise(
-    render(0.42, SR, (t) => Math.tanh(2.2 * sine(96 - 50 * (t / 0.42), t)) * env(t, 0.005, 0.12) + sine(55, t) * env(t, 0.01, 0.2) * 0.5),
+    render(
+      0.42,
+      SR,
+      (t) =>
+        Math.tanh(2.2 * sine(96 - 50 * (t / 0.42), t)) * env(t, 0.005, 0.12) +
+        sine(55, t) * env(t, 0.01, 0.2) * 0.5,
+    ),
     0.85,
   ),
 );
 write(
   "block.wav",
   normalise(
-    render(0.42, SR, (t) => (sine(880, t) + 0.7 * sine(1327, t) + 0.5 * sine(1782, t) + 0.3 * sine(2365, t)) * env(t, 0.002, 0.09)),
+    render(
+      0.42,
+      SR,
+      (t) =>
+        (sine(880, t) + 0.7 * sine(1327, t) + 0.5 * sine(1782, t) + 0.3 * sine(2365, t)) *
+        env(t, 0.002, 0.09),
+    ),
     0.6,
   ),
 );
 write(
   "gem.wav",
   normalise(
-    render(0.5, SR, (t) => sine(880, t) * env(t, 0.004, 0.09) + (t > 0.07 ? sine(1320, t - 0.07) * env(t - 0.07, 0.004, 0.14) : 0)),
+    render(
+      0.5,
+      SR,
+      (t) =>
+        sine(880, t) * env(t, 0.004, 0.09) +
+        (t > 0.07 ? sine(1320, t - 0.07) * env(t - 0.07, 0.004, 0.14) : 0),
+    ),
     0.55,
   ),
 );
@@ -150,7 +191,10 @@ write(
     "pot.wav",
     normalise(
       render(0.4, SR, (t) => {
-        const bursts = [0, 0.05, 0.11, 0.19].reduce((a, b) => a + (t > b ? env(t - b, 0.001, 0.035) : 0), 0);
+        const bursts = [0, 0.05, 0.11, 0.19].reduce(
+          (a, b) => a + (t > b ? env(t - b, 0.001, 0.035) : 0),
+          0,
+        );
         return n() * bursts * (0.6 + 0.4 * sine(190, t));
       }),
       0.6,
@@ -167,7 +211,15 @@ write(
   write(
     "chest.wav",
     normalise(
-      render(1.4, SR, (t, i) => (i < shaped.length ? (shaped[i] as number) * 0.7 : 0) + (t > 0.45 ? (sine(659.25, t - 0.45) + 0.5 * sine(987.77, t - 0.45)) * env(t - 0.45, 0.01, 0.35) : 0)),
+      render(
+        1.4,
+        SR,
+        (t, i) =>
+          (i < shaped.length ? (shaped[i] as number) * 0.7 : 0) +
+          (t > 0.45
+            ? (sine(659.25, t - 0.45) + 0.5 * sine(987.77, t - 0.45)) * env(t - 0.45, 0.01, 0.35)
+            : 0),
+      ),
       0.6,
     ),
   );
@@ -178,30 +230,57 @@ write(
     render(3.2, SR, (t) => {
       const swell = env(t, 1.1, 1.3);
       let v = 0;
-      for (const f of [130.81, 196, 261.63, 329.63, 392, 523.25]) v += sine(f, t) * (1 + 0.2 * sine(5, t));
+      for (const f of [130.81, 196, 261.63, 329.63, 392, 523.25])
+        v += sine(f, t) * (1 + 0.2 * sine(5, t));
       return v * swell + sine(1046.5, t - 0.6) * (t > 0.6 ? env(t - 0.6, 0.02, 0.8) * 0.6 : 0);
     }),
     0.6,
   ),
 );
-write("talk.wav", normalise(render(0.11, SR, (t) => sine(392, t) * env(t, 0.005, 0.03)), 0.35));
+write(
+  "talk.wav",
+  normalise(
+    render(0.11, SR, (t) => sine(392, t) * env(t, 0.005, 0.03)),
+    0.35,
+  ),
+);
 {
   const n = noise(6);
-  write("step.wav", normalise(lowpass(render(0.13, SR, (t) => n() * env(t, 0.004, 0.03)), SR, () => 650), 0.45));
+  write(
+    "step.wav",
+    normalise(
+      lowpass(
+        render(0.13, SR, (t) => n() * env(t, 0.004, 0.03)),
+        SR,
+        () => 650,
+      ),
+      0.45,
+    ),
+  );
 }
 
 // --- the bed: wind that breathes, and three distant birds ---------------------------------------------
 {
   const seconds = 7;
   const n = noise(7);
-  const wind = lowpass(render(seconds, SR, () => n()), SR, (t) => 380 + 260 * (0.5 + 0.5 * sine(0.19, t)));
+  const wind = lowpass(
+    render(seconds, SR, () => n()),
+    SR,
+    (t) => 380 + 260 * (0.5 + 0.5 * sine(0.19, t)),
+  );
   const bird = (t: number, at: number, base: number): number => {
     const u = t - at;
     if (u < 0 || u > 0.35) return 0;
     const warble = base + 500 * Math.sin(TAU * 9 * u) * u + 900 * u;
     return sine(warble, u) * Math.sin((Math.PI * u) / 0.35) ** 2;
   };
-  const bed = render(seconds, SR, (t, i) => (wind[i] as number) * 5 + 0.05 * (bird(t, 1.2, 2300) + bird(t, 1.55, 2650) + bird(t, 4.6, 2100)));
+  const bed = render(
+    seconds,
+    SR,
+    (t, i) =>
+      (wind[i] as number) * 5 +
+      0.05 * (bird(t, 1.2, 2300) + bird(t, 1.55, 2650) + bird(t, 4.6, 2100)),
+  );
   write("ambience.wav", normalise(loop(bed, SR, 0.6), 0.5));
 }
 
@@ -218,7 +297,8 @@ write("talk.wav", normalise(render(0.11, SR, (t) => sine(392, t) * env(t, 0.005,
       if (u > 0) v += (sine(f, u) + 0.18 * sine(f * 2, u)) * env(u, 0.06, 1.2) * 0.5;
     });
     v += sine(98, t) * (0.16 + 0.05 * sine(0.25, t)) + sine(147, t) * 0.07;
-    for (const at of [3.1, 8.3]) if (t > at) v += sine(1568, t - at) * env(t - at, 0.01, 0.35) * 0.05;
+    for (const at of [3.1, 8.3])
+      if (t > at) v += sine(1568, t - at) * env(t - at, 0.01, 0.35) * 0.05;
     return v;
   });
   write("music.wav", normalise(loop(song, rate, 2.4), 0.5), rate);
