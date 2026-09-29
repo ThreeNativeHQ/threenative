@@ -35,6 +35,7 @@ import {
   float,
   max,
   mix,
+  normalWorld,
   oneMinus,
   positionLocal,
   positionWorld,
@@ -504,17 +505,14 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   const subpixel = smoothstep(0.4, 4, footprint);
   const detail = far.mul(oneMinus(subpixel));
 
-  const normalAt = (fade: Node<"float">): Node<"vec3"> => {
-    const slope = surfaceSlope(ocean, worldX, worldZ).add(
-      rippleSlope(ripples, seaTime, fade).mul(0.47).mul(fade),
-    );
-    return vec3(slope.x.negate(), 1, slope.y.negate()).normalize();
-  };
-  // `transformNormalToView`, not the raw vector. `normalNode` overrides `normalView`, so a
-  // material handed a world-space normal lights the surface in the camera's frame instead of the
-  // world's: the sun's reflection stopped being a place on the sea and became a column of glare
-  // pointing at the camera, sliding across the water as the ship turned.
-  material.normalNode = Fn(() => transformNormalToView(normalAt(far)))();
+  // The swell's own slope, once, in the vertex stage. `transformNormalToView`, not the raw vector:
+  // `normalNode` overrides `normalView`, so a material handed a world-space normal lights the
+  // surface in the camera's frame instead of the world's — the sun's reflection stopped being a
+  // place on the sea and became a column of glare pointing at the camera.
+  material.normalNode = Fn(() => {
+    const slope = surfaceSlope(ocean, worldX, worldZ);
+    return transformNormalToView(vec3(slope.x.negate(), 1, slope.y.negate()).normalize());
+  })();
 
   // Colour by height: deep in the troughs, lit water on the shoulders, foam on the crests. The
   // band is narrower than the wave amplitude on purpose, so the tops read as foam-lit rather than
@@ -584,7 +582,15 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // is what a scene without a planar mirror has to do — would count the same cloud bank twice over,
   // and at the grazing angles a chase camera spends most of its frame in, twice is a white sheet.
   material.emissiveNode = Fn(() => {
-    const normal = normalAt(detail);
+    // The interpolated vertex normal, which is the swell, plus this fragment's own ripple. Adding
+    // the ripple here rather than in the vertex stage is what makes it affordable: the swell's
+    // central difference is four cascade reads, and doing that per *fragment* on a full-screen sea
+    // cost sixteen texture fetches a pixel to arrive at a vector the vertex stage had already
+    // computed. The ripple is a texture read either way, and per fragment is finer, which is the
+    // whole point of a normal map.
+    const normal = normalWorld
+      .add(vec3(rippleSlope(ripples, seaTime, detail).mul(-0.47).mul(detail), 0))
+      .normalize();
     const facing = saturate(dot(normal, eye.normalize()));
     // Exponent five is water's own Schlick curve, and the 0.97963/0.02037 pair is its reflectance
     // at the horizon and at normal incidence.
