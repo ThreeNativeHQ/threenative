@@ -1,0 +1,114 @@
+{
+  "name": "enemy-rifle-grip",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "enemy",
+  "setup": {
+    "entities": [
+      {
+        "entity": "player",
+        "position": [
+          0,
+          0.89,
+          4
+        ],
+        "rotation": [
+          -0.05722,
+          0,
+          0,
+          0.99836
+        ]
+      },
+      {
+        "entity": "enemy",
+        "position": [
+          0,
+          0,
+          0
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "body-shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fight",
+      "waitTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "handContactPeak",
+        "path": "Rifle_Idle",
+        "lte": 0.05,
+        "allowTrivial": "worst boneContact metres from either hand joint to the rifle's bounds while this clip played (after its first 12 frames); a clip that never played has no key and fails"
+      },
+      {
+        "entity": "enemy",
+        "component": "handContactPeak",
+        "path": "Rifle_Walk",
+        "lte": 0.05,
+        "allowTrivial": "worst boneContact metres from either hand joint to the rifle's bounds while this clip played (after its first 12 frames); a clip that never played has no key and fails"
+      },
+      {
+        "entity": "enemy",
+        "component": "handContactPeak",
+        "path": "Rifle_Crouch_Walk",
+        "lte": 0.05,
+        "allowTrivial": "worst boneContact metres from either hand joint to the rifle's bounds while this clip played (after its first 12 frames); a clip that never played has no key and fails"
+      },
+      {
+        "entity": "enemy",
+        "component": "handContactPeak",
+        "path": "Rifle_Shoot",
+        "lte": 0.05,
+        "allowTrivial": "worst boneContact metres from either hand joint to the rifle's bounds while this clip played (after its first 12 frames); a clip that never played has no key and fails"
+      },
+      {
+        "entity": "enemy",
+        "component": "handContactPeak",
+        "path": "Rifle_Hit",
+        "lte": 0.05,
+        "allowTrivial": "worst boneContact metres from either hand joint to the rifle's bounds while this clip played (after its first 12 frames); a clip that never played has no key and fails"
+      },
+      {
+        "entity": "enemy",
+        "component": "rightHandToGrip",
+        "lte": 0.05,
+        "allowTrivial": "hand joint to the rifle's grip origin at the last frame, metres"
+      },
+      {
+        "entity": "enemy",
+        "component": "leftHandToRifle",
+        "lte": 0.06,
+        "allowTrivial": "hand joint to the rifle's barrel line at the last frame, metres; the rifle bounds boneContact reads are an axis-aligned box, so this is the tighter check"
+      }
+    ]
+  }
+}

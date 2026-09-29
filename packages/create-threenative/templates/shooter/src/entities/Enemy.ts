@@ -4,6 +4,7 @@ import {
   type IStrideReport,
   SkeletalMesh3D,
   attachToBone,
+  boneContact,
   measureThreePose,
   normaliseToMetres,
 } from "@threenative/core";
@@ -40,9 +41,8 @@ const WALK_SPEED = 2.4;
  *
  * It was 3.6, bounded to 2.75 by a rig that had no run cycle: the only locomotion clip was a
  * walk, so a 3.6 m/s chase drove its playback rate to 2.75 against a ceiling of 3 — a walk cycle
- * on fast-forward, which is the "moving faster than he is animated" read. `Jog_Fwd_Loop` exists
- * on this asset, so a chase is a clip choice (see `RUN_PACE`) and the pace is bounded by the
- * soldier rather than by the animation.
+ * on fast-forward, which is the "moving faster than he is animated" read. The engine's stride
+ * convention now holds `Rifle_Walk` against the ground, so the pace is bounded by the soldier.
  */
 const CHASE_SPEED = 3.4;
 const HEAR_RANGE = 26;
@@ -82,16 +82,7 @@ const STILL_BEFORE_IDLE_SECONDS = 0.16;
  */
 const MOVING_SPEED_FLOOR = 0.3;
 /**
- * Pace above which a soldier is running rather than walking, in metres per second, and so plays
- * `Jog_Fwd_Loop` rather than `Walk_Loop`.
- *
- * The previous rig had no run cycle at all, so a chase was faked by playing the walk clip at up
- * to 2.1× — the feet moved at the right speed and the body read as a moonwalk. This asset ships
- * a jog, so the run is a *clip choice* and the rate stays near 1.
- */
-const RUN_PACE = 2.55;
-/**
- * Ground speed `Crouch_Fwd_Loop` carries at rate 1, in metres per second, measured off this
+ * Ground speed `Rifle_Crouch_Walk` carries at rate 1, in metres per second, measured off this
  * asset's own feet. It is the slowest locomotion clip the game has, so it is the one whose
  * playback rate the engine's stride convention has to push hardest when a body changes gait.
  */
@@ -173,18 +164,29 @@ const FIRE_FADE = 0.1;
  * `Sprint_Loop`, `Jump_*`, `Roll` and the pistol aim variants, which this game has no state for.
  */
 export const ENEMY_CLIPS = [
-  "Idle_Loop",
-  "Walk_Loop",
-  "Jog_Fwd_Loop",
-  "Crouch_Idle_Loop",
-  "Crouch_Fwd_Loop",
-  "Pistol_Aim_Neutral",
-  "Pistol_Idle_Loop",
-  "Pistol_Shoot",
-  "Hit_Chest",
-  "Hit_Head",
+  "Rifle_Idle",
+  "Rifle_Walk",
+  "Rifle_Crouch_To_Idle",
+  "Rifle_Crouch_Walk",
+  "Rifle_Shoot",
+  "Rifle_Hit",
   "Death01",
 ] as const;
+
+/**
+ * Rifle rotation in `hand_r` space, degrees XYZ, per rifle clip: the barrel points at `hand_l`
+ * and the sights at the sky. Measured off the retargeted clips
+ * (hand_l in the hand_r frame, twelve samples a clip; the spread never exceeds 6 cm, so one
+ * rotation per clip holds the whole cycle). Clips not listed keep the last hold.
+ */
+const RIFLE_HOLD: Readonly<Record<string, readonly [number, number, number]>> = {
+  Rifle_Idle: [-80.1, -13.4, -148.4],
+  Rifle_Walk: [-80.2, -21.4, -158.1],
+  Rifle_Crouch_Walk: [-72.2, -17.9, -161.2],
+  Rifle_Crouch_To_Idle: [-72.6, -16.3, -147.6],
+  Rifle_Shoot: [-83.4, -20.1, -170],
+  Rifle_Hit: [-70.4, -27.7, -113.4],
+};
 
 /**
  * The tint every soldier wears, in the template's own dark grey.
@@ -336,20 +338,17 @@ class EasedYaw {
  *   stock      0.24 long, behind at z -0.26    what puts the shoulder line in the right place
  *   grip       0.10 long, below at z -0.04     the block the fist closes around
  *
- * ## The one rotation, and why it is a constant
+ * ## The hold
  *
- * `hand_r`'s own axes run *down the arm* — its local +Y points from the wrist toward the
- * fingertips, because that is the direction the skeleton chain travels. Welding a prop whose
- * barrel is +Z straight onto it therefore points the rifle sideways across the chest, which is
- * what the first capture of this template showed. One quarter turn about the hand's X axis
- * points the barrel along the arm instead, so a walking soldier carries his rifle the way a
- * walking soldier carries a rifle. It is a constant rather than a lookup because it is a
- * property of the bind pose, and the bind pose is a constant.
+ * `hand_r`'s own axes run *down the arm*, so the rifle's barrel (+Z) has to be turned toward the
+ * left hand and its sights toward the sky in that bone's space. Where that is depends on the
+ * clip, so `RIFLE_HOLD` carries one rotation per rifle clip and `#holdRifle` applies it on every
+ * clip change; `rightHandContact` and `leftHandContact` (engine `boneContact`) prove both fists
+ * reach the gun.
  */
 function buildRifle(): Group {
   const rifle = new Group();
   rifle.name = "enemy-rifle";
-  rifle.rotation.x = -Math.PI / 2;
   const part = (
     name: string,
     size: readonly [number, number, number],
@@ -541,6 +540,8 @@ export class Enemy {
    * per-clip count nothing catches four of them quietly going unused again.
    */
   #clipFrames = new Map<string, number>();
+  /** Worst `boneContact` metres either hand has been from the rifle, per clip, sampled every 4th frame. */
+  #contactPeak = new Map<string, number>();
   /** Locomotion clip currently committed to, and how long before another switch is allowed. */
   #locomotion = "";
   #locomotionHold = 0;
@@ -571,7 +572,7 @@ export class Enemy {
   /**
    * Seconds the flinch still owns the pose.
    *
-   * Without it `Hit_Chest` was set by `hurt` and overwritten by `#playLocomotion` on the very
+   * Without it `Rifle_Hit` was set by `hurt` and overwritten by `#playLocomotion` on the very
    * next frame, because the locomotion branch re-asserts its clip every frame and `#play` only
    * declines when the clip it is asked for is already current. Measured over two 45 s runs and
    * 678 samples: the flinch was never the current clip on a single one. A soldier who does not
@@ -722,10 +723,11 @@ export class Enemy {
     // Width and depth are declared sizes, not measurements. A whole-body AABB is not a
     // hitbox: in the bind pose this rig measures 1.11 m across because the arms are out in a
     // T, and over a walk cycle it measures 1.13 m deep because the stride reaches fore and
-    // aft. Both would make a man a barn door to shoot at. Height stays measured, because it
-    // comes off the posed head-top bone rather than a box.
+    // aft. Both would make a man a barn door to shoot at. Height stays measured, from the `Head`
+    // joint, which is the base of the skull: the skull itself stands one head above it, so the box
+    // adds that. Without it every round aimed above 1.545 m passed over a 1.80 m soldier.
     this.#hitboxWidth = scale.shoulderWidth;
-    this.#hitboxHeight = this.#modelHeightMeasured;
+    this.#hitboxHeight = this.#modelHeightMeasured + scale.headRadius * 2;
     this.#hitboxDepth = scale.bodyDepth;
     this.hitbox = new Mesh(
       new BoxGeometry(this.#hitboxWidth, this.#hitboxHeight, this.#hitboxDepth),
@@ -750,7 +752,7 @@ export class Enemy {
     });
     this.#syncCollisionBody();
 
-    this.#play("Walk_Loop");
+    this.#play("Rifle_Walk");
   }
 
   get alive(): boolean {
@@ -867,6 +869,7 @@ export class Enemy {
     attachToBone(model, hand.name, rifle);
     this.#weapon = rifle;
     normaliseToMetres(rifle, { axis: "longest", metres: scale.rifleLength });
+    this.#holdRifle("Rifle_Idle");
     this.#renderedRifleLength = this.#measureRenderedWeapon(rifle);
   }
 
@@ -1002,8 +1005,8 @@ export class Enemy {
    * Every branch of the state machine re-asserts its own clip every frame, so a one-shot pose set
    * from outside the machine — the flinch, which is the only one — was replaced on the next frame
    * by whichever branch ran. Guarding the two call sites was not enough: the spawn-grace branch
-   * plays `Idle_Loop` directly rather than through `#playLocomotion`, and the burst plays
-   * `Pistol_Shoot` on every round. One refusal here covers all of them, and death passes
+   * plays `Rifle_Idle` directly rather than through `#playLocomotion`, and the burst plays
+   * `Rifle_Shoot` on every round. One refusal here covers all of them, and death passes
    * `override` because a corpse outranks a flinch.
    */
   #play(name: string, fade = 0.18, mode: "loop" | "once" = "loop", override = false): void {
@@ -1011,6 +1014,14 @@ export class Enemy {
     if (!override && this.#reactionHold > 0) return;
     if (this.#character.current === name) return;
     this.#character.play(name, { fade, mode });
+    this.#holdRifle(name);
+  }
+
+  #holdRifle(clip: string): void {
+    const hold = RIFLE_HOLD[clip];
+    if (hold !== undefined) {
+      this.#weaponModel?.rotation.set(...(hold.map(MathUtils.degToRad) as [number, number, number]));
+    }
   }
 
   /**
@@ -1020,10 +1031,10 @@ export class Enemy {
    * the soldier is standing still against a blocked path, and standing up out of a crouch runs
    * its authored transition instead of popping straight to idle.
    *
-   * `armed` is the one state the locomotion set cannot express. A planted soldier on `Idle_Loop`
+   * `armed` is the one state the locomotion set cannot express. A planted soldier on `Rifle_Idle`
    * has both arms at his sides while his rifle is welded to one of them, which reads as a man
-   * carrying a rifle in his teeth; `Pistol_Aim_Neutral` is the asset's own two-handed ready pose
-   * and is what a soldier who has stopped to shoot should be playing.
+   * carrying a rifle in his teeth; `Rifle_Idle` is a retargeted rifle-ready pose with both hands on
+   * the gun.
    */
   #playLocomotion(
     moving: boolean,
@@ -1072,26 +1083,20 @@ export class Enemy {
       // as foot slide — so the clip waits for the legs.
       const creeping = this.#groundSpeed <= CROUCH_PACE * 1.02;
       wanted =
-        crouched && creeping && this.#clips.has("Crouch_Fwd_Loop")
-          ? "Crouch_Fwd_Loop"
-          : // A chase is a run clip, not a walk clip played fast. The old rig had no run cycle
-            // and faked one by re-timing, which is why `#applyLocomotionRate` and its two clamps
-            // used to live here; this asset ships `Jog_Fwd_Loop`, so the run is a clip choice and
-            // the rate the engine holds against the ground stays near 1.
-            this.#groundSpeed > RUN_PACE && this.#clips.has("Jog_Fwd_Loop")
-            ? "Jog_Fwd_Loop"
-            : "Walk_Loop";
-    } else if (this.#crouchMoving && this.#clips.has("Crouch_Idle_Loop")) {
+        crouched && creeping && this.#clips.has("Rifle_Crouch_Walk")
+          ? "Rifle_Crouch_Walk"
+          : "Rifle_Walk";
+    } else if (this.#crouchMoving && this.#clips.has("Rifle_Crouch_To_Idle")) {
       // Standing up runs its authored transition, and owns the pose until it finishes.
       this.#crouchMoving = false;
-      this.#standUp = this.#clipDurations.get("Crouch_Idle_Loop") ?? 0.5;
-      this.#locomotion = "Crouch_Idle_Loop";
+      this.#standUp = this.#clipDurations.get("Rifle_Crouch_To_Idle") ?? 0.5;
+      this.#locomotion = "Rifle_Crouch_To_Idle";
       this.#locomotionHold = this.#standUp;
-      this.#play("Crouch_Idle_Loop", LOCOMOTION_FADE, "once");
+      this.#play("Rifle_Crouch_To_Idle", LOCOMOTION_FADE, "once");
       return;
     } else {
       if (this.#standUp > 0) return;
-      wanted = armed && this.#clips.has("Pistol_Aim_Neutral") ? "Pistol_Aim_Neutral" : "Idle_Loop";
+      wanted = "Rifle_Idle";
     }
 
     // Commit to a locomotion clip for a beat. Crouch state can flicker as suppression decays
@@ -1099,7 +1104,7 @@ export class Enemy {
     if (wanted !== this.#locomotion && this.#locomotionHold > 0) return;
     if (wanted !== this.#locomotion) this.#locomotionHold = LOCOMOTION_HOLD_SECONDS;
     this.#locomotion = wanted;
-    this.#crouchMoving = wanted === "Crouch_Fwd_Loop";
+    this.#crouchMoving = wanted === "Rifle_Crouch_Walk";
     this.#standUp = travelling ? 0 : this.#standUp;
     this.#play(wanted, LOCOMOTION_FADE);
   }
@@ -1123,7 +1128,12 @@ export class Enemy {
   #countClipFrame(): void {
     const current = this.#character.current;
     if (current === undefined) return;
-    this.#clipFrames.set(current, (this.#clipFrames.get(current) ?? 0) + 1);
+    const frames = (this.#clipFrames.get(current) ?? 0) + 1;
+    this.#clipFrames.set(current, frames);
+    // Not the first frames: a clip that has only just started is still a crossfade from the last.
+    if (frames < 12 || frames % 4 !== 0 || this.#weaponDetached) return;
+    const worst = Math.max(this.#contact("hand_r") ?? 0, this.#contact("hand_l") ?? 0);
+    this.#contactPeak.set(current, Math.max(this.#contactPeak.get(current) ?? 0, worst));
   }
 
   /**
@@ -1573,9 +1583,8 @@ export class Enemy {
     this.#suppressedPeak = Math.max(this.#suppressedPeak, this.#suppressed);
     this.voice?.pain(this.group.position);
     // "once", and held: the clip is a one-shot flinch, and the hold is what stops locomotion
-    // reclaiming the rig before a single frame of it has been drawn. A head hit gets the head
-    // clip, which this asset ships; `recordHit` runs before `hurt`, so the multiplier is known.
-    const flinch = this.#lastHitMultiplier >= 4 ? "Hit_Head" : "Hit_Chest";
+    // reclaiming the rig before a single frame of it has been drawn.
+    const flinch = "Rifle_Hit";
     this.#reactionHold = Math.min(this.#clipDurations.get(flinch) ?? 0.4, 0.45);
     this.#play(flinch, REACTION_FADE, "once", true);
     // A frozen sentry flinches at the impact but holds his ground: engaging here
@@ -1638,7 +1647,7 @@ export class Enemy {
     this.#heading.set(this.group.rotation.y);
     this.#facing.set(this.group.rotation.y);
     this.#pace = 0;
-    this.#play("Walk_Loop", LOCOMOTION_FADE, "loop", true);
+    this.#play("Rifle_Walk", LOCOMOTION_FADE, "loop", true);
   }
 
   update(ctx: GameCtx, dt: number, playerEye: Vector3, deckY: number, hooks: EnemyHooks): void {
@@ -1680,7 +1689,7 @@ export class Enemy {
     switch (this.phase) {
       case "patrol": {
         if (this.#spawnGrace > 0) {
-          this.#play("Idle_Loop");
+          this.#play("Rifle_Idle");
           break;
         }
         if (this.#patrolPause > 0) {
@@ -1870,7 +1879,7 @@ export class Enemy {
         hooks.onMuzzleFlash(muzzle, missDirection, playerEye.distanceTo(muzzle));
         // `#play` declines while a flinch is held, so a soldier hit mid-burst keeps the reaction
         // rather than having it stomped by the very next round 110 ms later.
-        this.#play("Pistol_Shoot", FIRE_FADE);
+        this.#play("Rifle_Shoot", FIRE_FADE);
         if (this.#burstLeft === 0) {
           // Break contact for an irregular beat, longer when he is rattled. A fixed 3.2 s
           // gap between bursts is learnable within two engagements.
@@ -1953,6 +1962,9 @@ export class Enemy {
     rifleLength: number | null;
     rightHandToGrip: number | null;
     leftHandToRifle: number | null;
+    rightHandContact: number | null;
+    leftHandContact: number | null;
+    handContactPeak: Record<string, number>;
     weaponNodes: string[];
     bodyJoints: Record<string, number[]>;
   } {
@@ -1997,7 +2009,7 @@ export class Enemy {
       deathObserved: this.#deathObserved,
       wounded: this.wounded,
       suppressedPeak: this.#suppressedPeak,
-      crouchClipFrames: this.#clipFrames.get("Crouch_Fwd_Loop") ?? 0,
+      crouchClipFrames: this.#clipFrames.get("Rifle_Crouch_Walk") ?? 0,
       // Every clip the rig has actually run, so an unused animation is visible to a scenario.
       clipsPlayed: [...this.#clipFrames.keys()].sort(),
       groundSnap: this.groundSnap,
@@ -2048,9 +2060,20 @@ export class Enemy {
         leftHandPosition === null || rifleStart === null || rifleEnd === null
           ? null
           : this.#distanceToSegment(leftHandPosition, rifleStart, rifleEnd),
+      // Engine `boneContact`: nearest rifle vertex to the hand joint, so a fist in the air reads
+      // as a distance rather than as a screenshot.
+      rightHandContact: this.#contact("hand_r"),
+      leftHandContact: this.#contact("hand_l"),
+      handContactPeak: Object.fromEntries(this.#contactPeak),
       weaponNodes: this.#weaponNodes,
       bodyJoints,
     };
+  }
+
+  #contact(bone: string): number | null {
+    return this.#weaponModel === undefined
+      ? null
+      : boneContact(this.group, bone, this.#weaponModel).distance;
   }
 
   #distanceToSegment(point: Vector3, start: Vector3, end: Vector3): number {
