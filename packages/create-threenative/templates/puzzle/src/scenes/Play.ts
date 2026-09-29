@@ -15,7 +15,6 @@ import {
   NearestFilter,
   type PerspectiveCamera,
   type Quaternion,
-  type Texture,
   Vector3,
 } from "three";
 import { Crate, type CrateKind, WORLD_LAYER } from "../entities/Crate.js";
@@ -26,10 +25,11 @@ import { CRATE_SIZE } from "../render/crateShape.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import {
+  crateBraceMaterial,
+  crateMaterials,
   createBannerMaterial,
+  phaseCoreMaterial,
   phaseMaterial,
-  propBrace,
-  propMaterial,
 } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky } from "../render/sky.js";
@@ -91,6 +91,8 @@ function replayInput(tick: number): { readonly x: number; readonly z: number } {
 const PUSH_CRATE_INDEX = 22;
 
 interface ICrateAuthoring {
+  /** Which of the three crate tints this body wears. */
+  readonly colour: number;
   readonly kind: CrateKind;
   readonly rotationY: number;
   readonly x: number;
@@ -105,7 +107,6 @@ interface IPose {
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   #banner: Mesh | undefined;
-  #sky: Texture | undefined;
   #statics: RigidBody3D[] = [];
 
   static override readonly initialState: GameState = {
@@ -139,12 +140,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // The packaged proof pair still loads, and still prints the marker the desktop asset gate
     // greps for. In this game the triangle earns its place as the pennant on the east wall
     // rather than as a debug object parked over the level.
-    const [texture, model, sky] = await Promise.all([
+    const [texture, model] = await Promise.all([
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
-      ctx.assets.texture("sky.jpg"),
     ]);
-    this.#sky = sky;
     // A 16-pixel check filtered smoothly is a grey smear at banner size; nearest keeps it square.
     texture.magFilter = NearestFilter;
     let banner: Mesh | undefined;
@@ -189,13 +188,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const bannerMesh = this.#banner;
-    const sky = this.#sky;
-    if (bannerMesh === undefined || sky === undefined)
-      throw new Error("Vault scene did not finish loading.");
+    if (bannerMesh === undefined) throw new Error("Vault scene did not finish loading.");
 
     // --- room ------------------------------------------------------------------------------
-    setupSky(ctx.scene, sky);
-    const { key: sun } = setupLighting(
+    setupSky(ctx.scene);
+    const sun = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       isMobile(),
@@ -254,7 +251,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       clearCrates();
       crates = authored.map((plan, index) => {
         const pose = poses?.[index];
-        return new Crate(ctx, crateMaterials(plan), {
+        return new Crate(ctx, crateFinishes(plan), {
           entity: `crate.${index}`,
           kind: plan.kind,
           quaternion: pose?.quaternion,
@@ -377,7 +374,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       clearRig();
       rig = REPLAY_RIG.map(
         (pose, index) =>
-          new Crate(ctx, crateMaterials({ kind: "solid" }), {
+          new Crate(ctx, crateFinishes({ colour: 2, kind: "solid" }), {
             entity: `rig.${index}`,
             kind: "solid",
             rotationY: 0,
@@ -558,12 +555,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 /**
  * The two finishes a crate is built from: its own face, and the battens nailed across it.
  *
- * The palette carries exactly one saturated blue for everything pushable, so a phase crate swaps
- * the pair rather than adding a colour — it is the one body a capsule does not collide with, and
- * the material is the only thing that says so before the player tries.
+ * A solid crate wears one of the three tints cycled across the pile — forty bodies in one colour
+ * are forty of the same thing — while a phase crate swaps the pair outright: it is the one body a
+ * capsule does not collide with, and its glass shell is the only thing that says so before the
+ * player tries.
  */
-function crateMaterials(plan: Pick<ICrateAuthoring, "kind">): readonly Material[] {
-  return plan.kind === "phase" ? [phaseMaterial, propBrace] : [propMaterial, propBrace];
+function crateFinishes(plan: Pick<ICrateAuthoring, "colour" | "kind">): readonly Material[] {
+  if (plan.kind === "phase") return [phaseMaterial, phaseCoreMaterial];
+  const tint = crateMaterials[plan.colour % crateMaterials.length];
+  if (tint === undefined) throw new Error("Crate colour index fell outside the palette.");
+  return [tint, crateBraceMaterial];
 }
 
 /** The glowing ward's footprint, used to count the warden walking through it. */
@@ -591,6 +592,12 @@ function phaseWallBounds(): {
 // read it, so the table stays in one place.
 function authorCrates(random: IRandom): readonly ICrateAuthoring[] {
   const plans: ICrateAuthoring[] = [];
+  // A seeded rotation through the three tints rather than three independent draws. Random draws
+  // clumped: one load came up amber-heavy on the whole east half of the pile, which reads as a
+  // palette with two colours in it rather than three.
+  const start = Math.floor(random.range(0, 2.999));
+  let drawn = 0;
+  const colour = (): number => (start + drawn++) % 3;
   const jitter = (amount: number): number => random.range(-amount, amount);
 
   // The pile: four columns, two deep, three high, in the middle of the room.
@@ -601,6 +608,7 @@ function authorCrates(random: IRandom): readonly ICrateAuthoring[] {
         // reads as a wall, and the silhouette is most of what makes a pile look like a pile.
         if (level === 2 && ((column === 3 && row === 0) || (column === 0 && row === 1))) continue;
         plans.push({
+          colour: colour(),
           kind: "solid",
           rotationY: jitter(0.05),
           x: -2.55 + column * 0.95 + jitter(0.03),
@@ -618,7 +626,14 @@ function authorCrates(random: IRandom): readonly ICrateAuthoring[] {
   // it the entire crossing and covered 6.8 m of a 9.5 m lane in the time a proof allows; offset,
   // the first contact deflects it north and the warden walks on. It is still the first thing the
   // player touches, and it is still what the reference picture shows.
-  plans.push({ kind: "solid", rotationY: jitter(0.1), x: -2.9, y: 0.5, z: WARDEN_SPAWN.z - 0.44 });
+  plans.push({
+    colour: colour(),
+    kind: "solid",
+    rotationY: jitter(0.1),
+    x: -2.9,
+    y: 0.5,
+    z: WARDEN_SPAWN.z - 0.44,
+  });
 
   // Singles around the room, clear of the seal's footprint.
   // The warden's lane runs the length of the room at z = 2.0, and the three crates nearest it are
@@ -651,6 +666,7 @@ function authorCrates(random: IRandom): readonly ICrateAuthoring[] {
   ];
   for (const [index, [x, z]] of singles.entries())
     plans.push({
+      colour: colour(),
       kind: "solid",
       rotationY: laneAdjacent.has(index) ? random.range(-0.16, 0.16) : random.range(-0.5, 0.5),
       x: x + jitter(0.05),
@@ -665,13 +681,20 @@ function authorCrates(random: IRandom): readonly ICrateAuthoring[] {
     [0.55, 2.45, -1.3],
   ];
   for (const [x, y, z] of topplers)
-    plans.push({ kind: "solid", rotationY: random.range(0.3, 0.45), x, y, z });
+    plans.push({ colour: colour(), kind: "solid", rotationY: random.range(0.3, 0.45), x, y, z });
 
   // The ward: three wide, two high, standing across the seal's approach. Every route from the
   // warden's lane to the seal goes through it, and none of it stops the warden.
   for (let column = 0; column < 3; column += 1)
-    plans.push({ kind: "phase", rotationY: 0, x: 3.15 + column * 0.94, y: 0.5, z: 0.85 });
-  plans.push({ kind: "phase", rotationY: 0, x: 4.09, y: 1.44, z: 0.85 });
+    plans.push({
+      colour: 0,
+      kind: "phase",
+      rotationY: 0,
+      x: 3.15 + column * 0.94,
+      y: 0.5,
+      z: 0.85,
+    });
+  plans.push({ colour: 0, kind: "phase", rotationY: 0, x: 4.09, y: 1.44, z: 0.85 });
 
   assertClearOfSeal(plans);
   assertLaneClear(plans);

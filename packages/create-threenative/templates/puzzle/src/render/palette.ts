@@ -1,14 +1,21 @@
 // Generated for you. Keep these roles coherent when you change the look.
-// Neutral greys carry the light; one saturated blue marks what you can touch, and one cyan marks
-// what you can walk through. Six names, and the last two are the only things allowed to be loud.
+//
+// Six names, and each is a job rather than a swatch: the room is a dark cool box, the crates are the
+// only warm mass in it, and exactly two things emit — the lanterns and the seal. That two-source
+// split is what the picture is made of. The room's other tints are named constants in
+// `materials.ts` beside the material that wears them, because a tint is a choice, a role is a
+// contract, and only the contract is worth spending one of the six on.
 export const palette = {
-  floor: 0xb4b1ae,
-  structure: 0x747578,
-  gridLine: 0x3a3a3c,
-  /** Pushable crates, and every other thing a body can shove. The one saturated blue. */
-  prop: 0x2a6cf0,
+  /** Beyond the walls, and the fog the far corners fade into. Almost black, faintly blue. */
+  void: 0x0a0e16,
+  /** The flagstone floor. */
+  floor: 0x2a3341,
+  /** The plaster band the lantern light lands on — the one warm surface that is not a crate. */
+  wall: 0xbb9155,
+  /** Pillars, capping rail, lantern housings. */
+  timber: 0x6b4a32,
+  /** Solid crates, and every other thing a body can shove. */
+  prop: 0xd05a33,
   /** Phase crates and the seal: the way through, and the way out. Deliberately the cyan end. */
   accent: 0x2fd2f0,
-  /** The sky photograph's own horizon, measured from its HDR: distance fades into this. */
-  horizon: 0xacb1c1,
 } as const;

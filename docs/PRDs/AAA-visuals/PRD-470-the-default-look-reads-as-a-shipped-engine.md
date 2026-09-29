@@ -58,6 +58,7 @@ body, not here (R2).
 - `shooter` is rebuilt from `sandbox/fps-framework`, keeping only its hands — owner, 2026-09-28.
 - The AstraCraft RTS template (PRD-471) and racing's vehicle physics (PRD-472) are their own PRDs but ship in this PR: "keep everything in a single PR for simplicity sake" — owner, 2026-09-28 (overrides one-PR-per-PRD for this work).
 - Engine fix found on the way: `CollisionShape3D.fromMesh` centres its box on the mesh origin, so off-centre geometry silently gets a displaced collider (it floated the mannequin 0.4 m). The template now uses `buildStaticColliders`; the engine guard is tracked as its own change.
+- `puzzle` keeps the warden-vault's own look instead of the default one: "for this one you could have used the same look as on the sandbox, it looks better" — owner, 2026-09-28. So it ships the dark lantern-lit room (three wall lanterns, plaster band, flagstone seams, three crate tints, cyan phase ward and seal, bloom over a 0.85 threshold) instead of the photo sky, the metre grid and the one sun. It is the one template that opts out of this PRD's floor; `lit.playtest.json`'s second region's `maxDarkPixelRatio` moved 0.35 → 0.5 with it, because the reference frame itself measures 0.4432 there.
 
 ## Blocked on
 

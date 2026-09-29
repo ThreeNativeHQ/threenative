@@ -1,44 +1,55 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
-// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
-import { DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
-import { SUN_DIRECTION } from "./sky.js";
+// A dark room with two warm lamps in it (authored with the props themselves, in `vault.ts`). The
+// whole read of this picture is that the *ambient* is almost nothing and every bright surface is
+// bright because a named source is pointing at it, so the temptation to raise the fill until the
+// crates are comfortably visible has to be resisted: the moment the floor stops being near-black
+// the picture stops being a vault.
+import { DirectionalLight, HemisphereLight, PCFSoftShadowMap, type Scene } from "three";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
+/** Returns the key light: the godrays stage raymarches a shadow map and refuses a shadowless one. */
 export function setupLighting(
   scene: Scene,
   renderer: ShadowRenderer,
   mobile = false,
-): { key: DirectionalLight } {
+): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // Warm white, matched by eye to the photographed midday sun against its own sky.
-  const key = new DirectionalLight(0xfff1e0, 4.5);
-  key.position.copy(SUN_DIRECTION).multiplyScalar(30);
+  // Sky above, floor bounce below, both cold and both very quiet.
+  scene.add(new HemisphereLight(0x33456a, 0x171d29, 0.6));
+
+  // The key. Warm, high, and from the lantern side, so crate tops catch a little of the same
+  // colour the plaster does and the shadows all fall the same way.
+  const key = new DirectionalLight(0xf4e8da, 0.8);
+  key.position.set(-7, 15, 5);
   key.castShadow = true;
-  // One map fitted to the vault: 4096² is under 2 cm a texel across its 12 m span, so every crate
-  // casts the same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds.
-  const size = mobile ? 2048 : 4096;
+  const size = mobile ? 1024 : 2048;
   key.shadow.mapSize.set(size, size);
-  key.shadow.radius = 2;
   key.shadow.camera.near = 1;
-  key.shadow.camera.far = 80;
-  // Half the vault's diagonal. Wider and the texels it spends outside the walls are spent on
-  // nothing, and the shadow under a crate is where the player reads that a crate is *on* the floor.
-  const extent = 8;
+  key.shadow.camera.far = 46;
+  // The extent covers the whole room and nothing else: the vault is 16 x 11 metres and a shadow
+  // camera any wider spends its texels outside the walls.
+  const extent = 10;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
   key.shadow.camera.bottom = -extent;
-  // Small biases: a large normal bias is what lifted a crate's shadow off the floor it rests on.
-  key.shadow.bias = -0.0002;
-  key.shadow.normalBias = 0.005;
+  key.shadow.bias = -0.0006;
+  // Rounded geometry self-shadows at grazing angles without this, and the bias alone would have
+  // to grow big enough to detach the contact shadow under every crate.
+  key.shadow.normalBias = 0.035;
   scene.add(key);
-  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
-  // shadow map, so `setupPost` needs the light itself.
-  return { key };
+
+  // The rim: cold, low and shadowless, from the far corner the lanterns never reach. A crate's
+  // shadowed side is otherwise the same black as the floor it stands on, and the pile stops
+  // reading as forty separate boxes.
+  const rim = new DirectionalLight(0x5f7fb0, 0.24);
+  rim.position.set(9, 5, -7);
+  scene.add(rim);
+
+  return key;
 }

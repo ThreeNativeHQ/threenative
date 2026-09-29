@@ -15,17 +15,11 @@
 // `unmeasured` rather than guessing, and your scene is not that scene: read `TN_FRAME_BUDGET`
 // back after you change a tier.
 //
-// One cost that is **not** a stage here and outweighs most of them: the prefiltered reflection
-// probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
-// in `sky.ts`, not in this file.
-//
-// **This template runs no SSGI and no bloom at any tier, and both are measurements rather than
+// **This template runs no SSGI and no SSR at any tier, and both are measurements rather than
 // tastes.** Forty-five simulated bodies are already the frame's budget, and SSGI is the most
 // expensive stage in the reference ablation by a factor of two (~9.2 ms of a 14.7 ms frame with
-// its two denoise passes). Bloom is off because there is nothing here brighter than white to bloom:
-// the photo sky is the background, every lit surface is under 1 after the exposure below, and a
-// threshold under 1 would bloom the grey walls and flatten the whole frame. Turn either on and read
-// the p95 back out of `TN_FRAME_BUDGET`.
+// its two denoise passes); in a room this dark, one bounce of indirect light off a flagstone floor
+// buys nothing the three lanterns do not already put there.
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -71,41 +65,77 @@ export function resolveQualityTier(
 }
 
 /**
- * The look every tier shares: the tone curve, the exposure the photo sky is authored for, and a
- * corner falloff. Antialiasing is on in every tier that installs a chain; see `screenSpaceAA` in
- * `worldEnvironment.ts`.
+ * The look every tier shares: the tone curve, a corner falloff, and bloom over a high threshold.
  *
- * No bloom and no sharpen, on purpose, for the reasons in the header. Every surface already
- * reflects the captured sky (`sky.ts`), and the two stage effects left are occlusion, which is what
- * separates a crate *resting on* a crate from a crate painted next to one.
+ * Bloom is the one stage this look cannot do without. Exactly two things in the vault emit — the
+ * three lantern flames and the seal — and a threshold high enough to clear them and nothing lit
+ * is what keeps the glow on the two warm sources and off the forty crates.
  */
 const shared: IWorldEnvironmentOptions = {
-  // Off, and it defaults to ON: `worldEnvironment.ts` resolves an absent flag to `true`, so
-  // leaving it out is not the same as turning it off.
-  bloomEnabled: false,
-  exposure: 0.62,
+  // ~4.6 ms in the ablation named above, at that scene's own strength.
+  bloomEnabled: true,
+  bloomRadius: 0.42,
+  bloomStrength: 0.5,
+  // High, on purpose: the lantern flames and the seal plate clear it and nothing lit does.
+  bloomThreshold: 0.85,
+  exposure: 1.06,
   tonemapMode: "aces",
-  vignetteAmount: 0.22,
+  vignetteAmount: 0.34,
 };
 
 /**
- * What a desktop gets: contact occlusion — the dark line where a crate meets the floor and one
- * crate meets the next, which on a pile of forty-five is most of what makes the pile read as a
- * stack rather than as a decal. Gathered at full resolution and denoised: at half, the upsample
- * left a grain around every contact.
+ * What a desktop gets.
+ *
+ * Contact occlusion, because a pile of forty crates is nothing but contacts, and a sharpen pass,
+ * because RCAS is what puts the edge back on the plank braces the occlusion pass softens.
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
-  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
+  // Contact scale, in metres. A crate is 0.92 m, so half a metre gathers the crease where two
+  // crates meet and the shadow where one meets the floor, and no further.
+  // unmeasured in that ablation — it is not one of the five stages it measured.
   gtaoEnabled: true,
-  gtaoRadius: 0.35,
+  gtaoRadius: 0.5,
+  gtaoResolutionScale: 0.5,
+  gtaoSamples: 12,
+  gtaoScale: 1.25,
+  // unmeasured in that ablation, as with GTAO. RCAS is a radius: 0.95 is nearly full sharpening.
+  sharpenEnabled: true,
+  sharpenStrength: 0.95,
 };
 
-/** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
+/** A machine between the two: the same look with a cheaper occlusion gather. */
+const medium: IWorldEnvironmentOptions = {
+  ...shared,
+  bloomRadius: 0.38,
+  bloomStrength: 0.56,
+  bloomThreshold: 0.84,
+  exposure: 1.05,
+  // unmeasured, as at `high`; this tier is the same gather at fewer samples.
+  gtaoEnabled: true,
+  gtaoRadius: 0.45,
+  gtaoResolutionScale: 0.4,
+  gtaoSamples: 8,
+  gtaoScale: 1.2,
+  sharpenEnabled: false,
+  vignetteAmount: 0.3,
+};
 
-/** What a phone gets: the tone curve and the vignette, nothing screen-space. */
-const low: IWorldEnvironmentOptions = shared;
+/**
+ * What a phone gets: bloom and a vignette, no screen-space gather at all. The occlusion is the
+ * first thing to go — forty simulated bodies are already the frame's budget on a phone.
+ */
+const low: IWorldEnvironmentOptions = {
+  // ~4.6 ms in the ablation named above, at that scene's own strength.
+  bloomEnabled: true,
+  bloomRadius: 0.32,
+  bloomStrength: 0.48,
+  bloomThreshold: 0.86,
+  exposure: 1.04,
+  gtaoEnabled: false,
+  sharpenEnabled: false,
+  vignetteAmount: 0.28,
+};
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 

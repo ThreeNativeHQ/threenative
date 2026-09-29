@@ -1,41 +1,24 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
 //
-// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
-// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
-// The same image is the background, the environment light every surface reflects and is filled by,
-// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
-// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
-import {
-  EquirectangularReflectionMapping,
-  FogExp2,
-  SRGBColorSpace,
-  type Scene,
-  type Texture,
-  Vector3,
-} from "three";
+// There is no sky in this game. The vault is a closed room, so what a camera sees past its 1.9 m
+// walls is the dark the room sits in, and the only light in the frame is light a named source put
+// there. `scene.background` is therefore a colour, not a photograph: swapping in a sky dome or an
+// equirectangular capture is a two-line change here, and everything downstream — fog, the tone
+// curve, bloom's threshold — is already reading the same palette role.
+import { Color, FogExp2, type Scene } from "three";
 import { palette } from "./palette.js";
 
 /**
- * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
- * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
- * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
+ * Thin enough to be felt and not seen: under 1.5% across the room's 12 m diagonal, so the far
+ * corners fall away a little without the crate the player is pushing going hazy.
  */
-const SKY_RANGE = 2.5;
+const FOG_DENSITY = 0.005;
 
-/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
-export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
-
-export function setupSky(scene: Scene, sky: Texture): void {
-  sky.mapping = EquirectangularReflectionMapping;
-  sky.colorSpace = SRGBColorSpace;
-  scene.background = sky;
-  scene.backgroundIntensity = SKY_RANGE;
-  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
-  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
-  // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
-  // a kilometre — so the floor meets the sky instead of ending at a line.
-  scene.fog = new FogExp2(palette.horizon, 0.003);
+export function setupSky(scene: Scene): void {
+  scene.background = new Color(palette.void);
+  scene.backgroundIntensity = 1;
+  // The room is the horizon, so the fog is the colour beyond it rather than a lit distance: a
+  // grey fog in a room this dark would be the brightest thing in the frame.
+  scene.fog = new FogExp2(palette.void, FOG_DENSITY);
 }
