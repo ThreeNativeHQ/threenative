@@ -6,7 +6,7 @@ import {
   Frustum,
   Group,
   InstancedBufferAttribute,
-  type InstancedMesh,
+  InstancedMesh,
   type Material,
   Matrix4,
   Mesh,
@@ -33,7 +33,7 @@ import {
   pooledMesh,
 } from "./render/mesh-pool.js";
 import type { IRendererLike } from "./renderer.js";
-import { markStatic } from "./static-transform.js";
+import { isStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
 import { within, yieldToHost } from "./warmup.js";
 import {
@@ -1047,6 +1047,26 @@ class SharedBatch {
     // records as the zeros it was created with.
     this.#touched(0, this.#drawn);
     this.#rebound();
+    return old;
+  }
+
+  /**
+   * Swap in the object this batch draws with, and hand back the one it replaces.
+   *
+   * Every reference the batch holds is `this.mesh` read at the moment it is needed, so the swap is
+   * the field. What does not follow the field is what the batch derives rather than stores — the
+   * bounds, the instance scale, the count and the visibility published on the object, and the two
+   * containers a fresh object starts out without them in. Those are republished here from the
+   * batch's own records, so a replacement draws exactly what the object it replaced drew.
+   */
+  replaceMesh(next: ICasterScaleMesh): ICasterScaleMesh {
+    const old = this.mesh;
+    this.mesh = next;
+    this.mesh.boundingBox = this.mesh.boundingBox ?? new Box3();
+    this.mesh.boundingSphere = this.mesh.boundingSphere ?? new Sphere();
+    (next as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = this.#awaitingPrewarm;
+    this.#rebound();
+    this.#publish(this.#drawn);
     return old;
   }
 
@@ -2354,9 +2374,38 @@ function indirectView(
 const redressed = new WeakMap<InstancedMesh, readonly Material[]>();
 
 /**
- * Give an already-compiled mesh a material of its own, so three builds its nodes again against what
- * the mesh holds now (see `#dressGpu`). The clones share every texture; only the material objects are
- * new, and they leave with the mesh.
+ * A new object drawing `geometry`, carrying everything `old` carried.
+ *
+ * Three builds an `InstancedMesh`'s instancing node when the object is first compiled, from the
+ * `instanceMatrix` it holds then, and keeps that node for the object's whole life — so a mesh the
+ * prewarm already compiled is not pointed at the GPU scene's storage buffer by writing a field onto
+ * it. Measured on machinefall: 3,724 indirect draws submitted in 2 s, over indirect records and
+ * drawn matrices that were correct at draw time, and a dressed forest that drew nothing at all,
+ * until every dressed mesh was a fresh object. A fresh object costs a uuid and a node build, which
+ * is what the prewarm paid for a mesh that was about to be replaced anyway; see `#dressGpu`.
+ */
+function freshMeshFor(old: InstancedMesh, geometry: BufferGeometry, count: number): InstancedMesh {
+  const next = new InstancedMesh(geometry, old.material, count);
+  next.name = old.name;
+  next.layers.mask = old.layers.mask;
+  next.castShadow = old.castShadow;
+  next.receiveShadow = old.receiveShadow;
+  next.renderOrder = old.renderOrder;
+  next.userData = old.userData;
+  next.matrix.copy(old.matrix);
+  next.matrixAutoUpdate = old.matrixAutoUpdate;
+  next.matrixWorld.copy(old.matrixWorld);
+  next.matrixWorldAutoUpdate = old.matrixWorldAutoUpdate;
+  // A dressed batch is frozen, and the freeze is keyed by the object: a replacement that did not
+  // re-arm it would compose its own world matrix every walk forever.
+  if (isStatic(old)) markStatic(next);
+  return next;
+}
+
+/**
+ * Give a mesh a material of its own, so the node three builds for it is its own rather than a shared
+ * one's, and dispose those materials with the mesh. The clones share every texture; only the
+ * material objects are new. See `#dressGpu`.
  */
 function redressMaterial(mesh: InstancedMesh): void {
   for (const material of redressed.get(mesh) ?? []) material.dispose();
@@ -3588,7 +3637,16 @@ export class WorldCells extends Group implements IComputeDriven {
     // batch that has drawn since looking permanently hooked, and the projection's `hasRenderHook`
     // reads own properties — so the borrow has to remember whether there was one to give back.
     const hadOwn = Object.hasOwn(mesh, "onBeforeRender");
-    const own = hadOwn ? mesh.onBeforeRender : undefined;
+    this.#borrowDraw(shared, mesh, hadOwn, hadOwn ? mesh.onBeforeRender : undefined);
+  }
+
+  /**
+   * The borrow that counts `mesh`'s first submitted draw and then gives the mesh its own hook back,
+   * keyed by the mesh object — so an object that is replaced has to be handed the borrow of the one
+   * it replaces; see `#carryPrewarm`.
+   */
+  #borrowDraw(shared: SharedBatch, mesh: InstancedMesh, hadOwn: boolean, own: unknown): void {
+    const caster = shared.role !== "main";
     const borrow = own as ((...args: unknown[]) => void) | undefined;
     const counted = (...args: unknown[]): void => {
       this.#prewarmDrawn += 1;
@@ -4734,29 +4792,83 @@ export class WorldCells extends Group implements IComputeDriven {
     const args = scene.args;
     const args2 = scene.regionOf(key.key);
     if (drawn === undefined || args === undefined || args2 === undefined) return;
+    // Before the mesh is dressed, so the republish a replacement does takes the dressed branch: a
+    // batch that draws from the scene's buffers is shown by `visibleFrom`, not by its own count.
+    shared.gpu = key;
     const mesh = shared.mesh;
-    const compiled = mesh.instanceMatrix !== drawn;
-    mesh.instanceMatrix = drawn;
     // Its own geometry object, so the indirect record is this mesh's, over the SAME attributes: the
     // original is the shape the caster halves and a rebind still draw with. `clone()` would copy
     // every vertex buffer of every key a second time.
-    mesh.geometry = indirectView(mesh.geometry, args, args2.argsIndex * DRAW_ARGS_BYTES);
-    mesh.frustumCulled = false;
-    // Three builds an instanced mesh's instancing node when the mesh is first compiled, from the
-    // `instanceMatrix` it had then, and keeps it: a mesh the prewarm already drew keeps reading its
-    // old per-mesh buffer, which nothing writes once the GPU scene culls. Measured on machinefall:
-    // validation matched every count and matrix while the distant forest drew nowhere. A material of
-    // its own gives the mesh a fresh build against the storage buffer; it is disposed with the mesh.
-    if (compiled) redressMaterial(mesh);
-    shared.gpu = key;
+    const view = indirectView(mesh.geometry, args, args2.argsIndex * DRAW_ARGS_BYTES);
+    // A mesh three has already compiled cannot be re-dressed by writing fields onto it: its node
+    // binds the `instanceMatrix` the object held at that compile, and three keeps that binding for
+    // the object's whole life. A regrow is the same case — a new `drawn` attribute is a new binding
+    // for the same reason — so both take the same road: a fresh object carrying everything the old
+    // one had, and the old one let go. Measured on machinefall, where the prewarm had compiled every
+    // main batch on the CPU path: 3,724 indirect draws submitted in 2 s over records that were
+    // correct at draw time, and a dressed forest that drew nothing, until the meshes were fresh
+    // objects; a material of its own (below) never changed that on its own.
+    if (mesh.instanceMatrix !== drawn) {
+      const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
+      redressMaterial(next);
+      this.#carryPrewarm(mesh, next);
+      this.#seat(shared.replaceMesh(next), next);
+      next.instanceMatrix = drawn;
+      next.frustumCulled = false;
+    } else {
+      mesh.geometry = view;
+      mesh.instanceMatrix = drawn;
+      mesh.frustumCulled = false;
+    }
     // What the record has to say for the draw to name a triangle: the view's own index count, which
     // is the shape this key draws. The scene is told rather than left to guess, so its validation can
     // hold the record against it.
-    scene.indexCount(key.key, mesh.geometry.index?.count ?? 0);
+    scene.indexCount(key.key, view.index?.count ?? 0);
     // The asset's gate table is built from the keys minted so far, so a level whose key is not minted
     // yet carries no parts and the dispatch draws that level nowhere. Re-registering is a no-op while
     // the table holds, and a rewrite when a key joined it.
     scene.slot(key.asset, this.#gatesOf(key.asset, asset));
+  }
+
+  /**
+   * Hand a replaced mesh's prewarm borrow to the object that replaced it.
+   *
+   * The borrow is keyed by the mesh object and counts *that* object's first submitted draw, so an
+   * object that goes away before its draw would take the owed draw with it: the batch would sit
+   * visible at count 0 for the rest of the load, and the owed counters would never balance. Nothing
+   * new is prewarmed here — the batch still owes exactly the one draw it owed.
+   */
+  #carryPrewarm(old: InstancedMesh, next: InstancedMesh): void {
+    const entry = this.#awaited.get(old);
+    if (entry === undefined) return;
+    this.#awaited.delete(old);
+    this.#borrowDraw(entry.batch, next, entry.hadOwn, entry.own);
+  }
+
+  /**
+   * The replacement takes the old object's place, and the old one is let go: `InstancedMesh.dispose`
+   * frees nothing the replacement shares — the vertex buffers and the part's own material belong to
+   * the refcount path that made them.
+   *
+   * Through `add` and `removeFromParent` rather than by writing `parent` and `children`, because
+   * three fires `childadded`/`childremoved` on the way and the clustered-mesh tracker answers the
+   * world's arrivals and departures by those alone. The old slot is restored afterwards, so the
+   * parent's traversal order — and so every draw's order within a frame — is what it was.
+   */
+  #seat(old: InstancedMesh, next: InstancedMesh): void {
+    const parent = old.parent;
+    if (parent === null) this.add(next);
+    else {
+      const at = parent.children.indexOf(old);
+      old.removeFromParent();
+      parent.add(next);
+      const here = parent.children.indexOf(next);
+      if (at >= 0 && here >= 0) {
+        parent.children.splice(here, 1);
+        parent.children.splice(at, 0, next);
+      }
+    }
+    old.dispose();
   }
 
   /**

@@ -15,6 +15,7 @@ import {
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
+import { isStatic } from "../src/static-transform.js";
 import {
   type IGpuPlacement,
   type IKernelInput,
@@ -234,14 +235,18 @@ function fileResponse(buffer: Buffer): object {
 
 /**
  * The package with `pine`'s authored `lods` removed, so every one of its placements is drawn at level
- * 0 and a cell's worth of a key is exactly the count its run states.
+ * 0 and a cell's worth of a key is exactly the count its run states. `authoredLods` keeps them, for
+ * the tests about what minting a level's key regrows.
  */
-function stubManifestFetch(): void {
+function stubManifestFetch(authoredLods = false): void {
   const pine = manifest.assets.pine;
   if (pine === undefined) throw new Error("the committed package has no pine asset.");
   const pkg: IWorldPackage = {
     ...manifest,
-    assets: { ...manifest.assets, pine: { bounds: pine.bounds, glb: pine.glb } },
+    assets: {
+      ...manifest.assets,
+      pine: authoredLods ? pine : { bounds: pine.bounds, glb: pine.glb },
+    },
   };
   const body = JSON.stringify(pkg);
   vi.stubGlobal(
@@ -304,6 +309,25 @@ function mainMesh(world: WorldCells): InstancedMesh {
  */
 function mainKeys(world: WorldCells): InstancedMesh[] {
   return worldMeshes(world).filter((one) => one.name !== "" && !one.name.includes("@"));
+}
+
+/**
+ * A WebGPU renderer with no GPU behind it, which is what lets the world's own dispatch and its
+ * markers run: the args it reads back are the zeros the clear dispatch never wrote, so the counts
+ * mismatch the reference by construction and only `compared` — the number of regions the dispatch
+ * had, the number that was `0` in the real run — is worth reading.
+ */
+function gpuRendererStub(log: string[] = []): IRendererLike {
+  return {
+    compute: (): void => {},
+    kind: "webgpu",
+    log: (message: string): void => {
+      log.push(message);
+    },
+    readback: async (args: { array: Uint32Array }): Promise<ArrayBuffer> =>
+      args.array.slice().buffer as ArrayBuffer,
+    raw: { backend: { hasFeature: (): boolean => true } },
+  } as unknown as IRendererLike;
 }
 
 async function flush(rounds = 12): Promise<void> {
@@ -775,29 +799,27 @@ describe("WorldCells with the GPU-driven main pass", () => {
       ).toBeUndefined();
     }
     expect(world.stats().gpuScene.keys).toBe(0);
-    // What each mesh was compiled with before the scene came up: three keeps an instanced mesh's
-    // instancing node from its first build, so a dressed mesh must not keep the material it had.
+    // What each mesh was compiled with before the scene came up, and where it sat: three keeps an
+    // instanced mesh's instancing node from its first build, so a dressed mesh cannot be the object
+    // the prewarm compiled — it has to be a fresh one carrying what that object carried.
     const before = new Map(
-      minted.map((mesh) => [
-        mesh,
-        { material: mesh.material, position: mesh.geometry.getAttribute("position") },
-      ]),
+      minted.map((mesh) => {
+        const was = {
+          at: world.children.indexOf(mesh),
+          freed: 0,
+          material: mesh.material,
+          mesh,
+          position: mesh.geometry.getAttribute("position"),
+        };
+        mesh.addEventListener("dispose", () => {
+          was.freed += 1;
+        });
+        return [mesh.name, was] as const;
+      }),
     );
 
     const lines: string[] = [];
-    const renderer = {
-      compute: (): void => {},
-      kind: "webgpu",
-      log: (message: string): void => {
-        lines.push(message);
-      },
-      // No GPU here, so the args read back are the zeros the clear dispatch never wrote: the counts
-      // mismatch the reference by construction. What this test reads is `compared`, which is the
-      // number of regions the dispatch had — the number that was `0` in the real run.
-      readback: async (args: { array: Uint32Array }): Promise<ArrayBuffer> =>
-        args.array.slice().buffer as ArrayBuffer,
-      raw: { backend: { hasFeature: (): boolean => true } },
-    } as unknown as IRendererLike;
+    const renderer = gpuRendererStub(lines);
     const camera = playerCamera();
     world.update(renderer, camera);
     await flushed(world);
@@ -823,15 +845,27 @@ describe("WorldCells with the GPU-driven main pass", () => {
       const record = geometry.indirectOffset / 4;
       expect(geometry.indirect.array[record]).toBe(geometry.index?.count);
       expect(geometry.indirect.array[record]).toBeGreaterThan(0);
-      const was = before.get(mesh);
+      const was = before.get(mesh.name);
       if (was !== undefined) {
-        // A fresh build: a material of its own, over the same vertex buffers (never a copy).
+        // A fresh object, in the slot and the parent's own list the old one held, with a material of
+        // its own and over the same vertex buffers (never a copy).
+        expect(mesh).not.toBe(was.mesh);
+        expect(mesh.parent).toBe(world);
+        expect(world.children.indexOf(mesh)).toBe(was.at);
         expect(mesh.material).not.toBe(was.material);
         expect(mesh.geometry.getAttribute("position")).toBe(was.position);
       }
     }
+    // The object the prewarm compiled is out of the world and let go: the node three built for it
+    // binds the per-mesh buffer nothing writes any more, and it is that node a dressed forest was
+    // measured drawing nothing through.
+    for (const was of before.values()) {
+      expect(world.children).not.toContain(was.mesh);
+      expect(was.mesh.parent).toBeNull();
+      expect(was.freed).toBe(1);
+    }
     // The material a dressed mesh was given leaves with it.
-    const probe = main.find((mesh) => before.has(mesh));
+    const probe = main.find((mesh) => before.has(mesh.name));
     expect(probe).toBeDefined();
     if (probe !== undefined) {
       let disposed = 0;
@@ -862,8 +896,9 @@ describe("WorldCells with the GPU-driven main pass", () => {
     expect(validation).toContain("meshMismatched=0");
 
     // A key the walk retires into the pool and comes back to: the rebind replaces the instance
-    // buffer, so the mesh is no longer the one the scene dressed, and the pool hands back the mesh
-    // rather than a key.
+    // buffer, so the key is not the one the scene dressed and the batch is re-dressed onto a fresh
+    // object — the retained batch keeps its records and its fresh allowance, and the object three
+    // compiled against the parked buffer is not the object that draws.
     const held = mainMesh(world);
     const away = cellCentre(6, 1);
     follow.position.x = away.x;
@@ -877,12 +912,170 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.update(renderer, camera);
     await flushed(world);
     const back = mainMesh(world);
-    expect(back).toBe(held);
+    expect(back).not.toBe(held);
+    expect(back.name).toBe(held.name);
+    expect(back.instanceMatrix).not.toBe(held.instanceMatrix);
     expect(
       (back.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
         .isStorageInstancedBufferAttribute,
     ).toBe(true);
     expect((back.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
+  it("hands a dressed main batch a fresh object, carrying everything the compiled one had", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      shadows: { receive: true },
+      surface,
+      url: "/world/world.json",
+    });
+    await flushed(world);
+    // The prewarm mints the whole ring while the scene is off, and three compiles each of these
+    // meshes the first time it draws it — against its own per-mesh `instanceMatrix`, which the GPU
+    // scene's dispatch never writes. That node is kept for the object's whole life, so the object
+    // itself is what a dress has to replace: measured on machinefall, 3,724 indirect draws submitted
+    // in 2 s over correct records over a forest that drew nothing, until each dressed mesh was fresh.
+    const compiled = mainKeys(world);
+    expect(compiled.length).toBeGreaterThan(0);
+    const was = new Map(
+      compiled.map((mesh) => [
+        mesh.name,
+        {
+          castShadow: mesh.castShadow,
+          freed: 0,
+          layers: mesh.layers.mask,
+          matrix: mesh.matrix.clone(),
+          matrixAutoUpdate: mesh.matrixAutoUpdate,
+          matrixWorld: mesh.matrixWorld.clone(),
+          mesh,
+          receiveShadow: mesh.receiveShadow,
+          renderOrder: mesh.renderOrder,
+          userData: mesh.userData,
+        },
+      ]),
+    );
+    for (const one of was.values())
+      one.mesh.addEventListener("dispose", () => {
+        one.freed += 1;
+      });
+
+    const renderer = gpuRendererStub();
+    const camera = playerCamera();
+    world.update(renderer, camera);
+    await flushed(world);
+    for (let index = 0; index < 8; index += 1) world.update(renderer, camera);
+
+    // Every dressed main batch draws with an object the prewarm never saw, and everything the
+    // compiled one carried came with it: the name the world's own checks and markers address it by,
+    // the layer and the two shadow flags its pass is chosen by, the frozen transform, and the slot
+    // it held in the world's own children.
+    const dressed = mainKeys(world);
+    expect(dressed.length).toBe(was.size);
+    for (const mesh of dressed) {
+      const one = was.get(mesh.name);
+      expect(one).toBeDefined();
+      if (one === undefined) continue;
+      expect(mesh).not.toBe(one.mesh);
+      expect(mesh.name).toBe(one.mesh.name);
+      expect(mesh.layers.mask).toBe(one.layers);
+      expect(mesh.castShadow).toBe(one.castShadow);
+      expect(mesh.receiveShadow).toBe(one.receiveShadow);
+      expect(mesh.renderOrder).toBe(one.renderOrder);
+      expect(mesh.userData).toBe(one.userData);
+      expect(mesh.matrix.equals(one.matrix)).toBe(true);
+      expect(mesh.matrixAutoUpdate).toBe(one.matrixAutoUpdate);
+      expect(mesh.matrixWorld.equals(one.matrixWorld)).toBe(true);
+      // The freeze is keyed by the object, so a replacement that did not re-arm it would compose its
+      // own world matrix every walk forever.
+      expect(isStatic(mesh)).toBe(true);
+      expect(mesh.matrixAutoUpdate).toBe(false);
+      expect(mesh.parent).toBe(world);
+      expect(world.children.indexOf(mesh)).toBeGreaterThanOrEqual(0);
+      // And the object it replaced is out of the world, and let go: nothing else holds a node for it.
+      expect(world.children).not.toContain(one.mesh);
+      expect(one.mesh.parent).toBeNull();
+      expect(one.freed).toBe(1);
+    }
+    // The world's own bookkeeping answers to the new object: the cull narrows what it publishes on
+    // it, and the census counts it.
+    const stats = world.stats();
+    expect(stats.gpuScene.keys).toBe(dressed.length);
+    expect(stats.failures).toBe(0);
+    expect(mainMesh(world).count).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("replaces the mesh again when the scene regrows its own drawn buffer", async () => {
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    // The fixture's authored lods rather than the stubbed single level: a level's key is minted when
+    // that level is first dressed, and minting one is what regrows the scene's shared drawn buffer —
+    // a new attribute object every dressed mesh's node has to bind.
+    stubManifestFetch(true);
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    await flushed(world);
+    expect(mainKeys(world).length).toBeGreaterThan(1);
+    // Every generation of every key's mesh is watched, because a replacement is a dispose of the
+    // generation before it: a key whose count reaches two was dressed, regrown under, and dressed
+    // again.
+    const watched = new WeakSet<InstancedMesh>();
+    const freed = new Map<string, number>();
+    const watch = (): void => {
+      for (const mesh of mainKeys(world)) {
+        if (watched.has(mesh)) continue;
+        watched.add(mesh);
+        if (freed.has(mesh.name) === false) freed.set(mesh.name, 0);
+        mesh.addEventListener("dispose", () => {
+          freed.set(mesh.name, (freed.get(mesh.name) ?? 0) + 1);
+        });
+      }
+    };
+    watch();
+
+    const renderer = gpuRendererStub();
+    const camera = playerCamera();
+    for (let index = 0; index < 12; index += 1) {
+      world.update(renderer, camera);
+      watch();
+    }
+    await flushed(world);
+
+    // Every key's mesh was replaced when the scene came up, and at least one was replaced again
+    // because the regrow gave the world a new drawn buffer: the same case as the first dress, a node
+    // bound to an attribute nothing writes any more, so the same road.
+    const counts = [...freed.values()];
+    expect(counts.length).toBeGreaterThan(1);
+    expect(counts.every((count) => count > 0)).toBe(true);
+    expect(counts.some((count) => count > 1)).toBe(true);
+    // And the replacements are the objects that draw, over the live buffer.
+    for (const mesh of mainKeys(world)) {
+      expect(
+        (mesh.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+          .isStorageInstancedBufferAttribute,
+      ).toBe(true);
+      expect((mesh.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+      expect(watched.has(mesh)).toBe(true);
+    }
+    expect(world.stats().gpuScene.keys).toBe(mainKeys(world).length);
     expect(world.stats().failures).toBe(0);
     world.dispose();
   });
