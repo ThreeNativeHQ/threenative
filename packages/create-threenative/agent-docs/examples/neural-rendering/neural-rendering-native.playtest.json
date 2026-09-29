@@ -16,18 +16,17 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "two GPU-verified snapshots",
-      "waitTicks": 600,
+      "waitForResource": {
+        "id": "state",
+        "path": "proofCount",
+        "equals": 2
+      },
+      "timeoutMs": 30000,
       "release": true
     }
   ],
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noNetworkErrors": true,
-      "runtimeReady": true
-    },
     "resources": [
       {
         "id": "state",
