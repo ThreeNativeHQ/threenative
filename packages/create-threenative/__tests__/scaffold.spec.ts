@@ -449,7 +449,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   minimal: "ba6e045a12666636587f1338a10c61a966b8261eff315387883a919c378052c9",
   platformer: "f057c1384a45ff9ed2799a0d54c5439533ed02628de545a57e18d09f975efd70",
   runner: "2b6844ced6e5591839b746deab922a866ff0c9a5afd2ea435a5b15c935d21ffd",
-  puzzle: "15d0dd06e372b024df52f48ed4f78ed08734cdc47b2c41b41ee1702a69f7b56c",
+  puzzle: "baeecb5a1df06608051117d3b222a63b08b213b413b1875d0ea9950953b9f82d",
   racing: "eccc53ef4dcb042b6b7bdc39aca1d6943ead0704a1783221c9fd9e0b9ea1627d",
   shooter: "bbdfa39fea54c495fa9ac78893a4157172fdd2a01119fa3b6a0cc0398b01bbcb",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine

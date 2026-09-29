@@ -428,7 +428,7 @@
       "id": "request.enemy-ai",
       "query": "enemy AI that chases the player",
       "scope": "request",
-      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person arena shooter",
+      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person town firefight",
       "expect": ["NavigationAgent3D", "CharacterBody3D"],
       "reject": []
     },

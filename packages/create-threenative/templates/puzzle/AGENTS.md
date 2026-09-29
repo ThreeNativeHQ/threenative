@@ -66,7 +66,6 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
 The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the
 camera reads the body in the frame function; a trailing follow camera is a different game.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
