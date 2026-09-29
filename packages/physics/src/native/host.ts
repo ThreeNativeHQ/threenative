@@ -139,13 +139,38 @@ export interface INativePhysicsHost {
   createSimulation(options?: unknown): INativeSimulation;
 }
 
+/**
+ * The MetaHuman facial rig resident, installed by
+ * `packages/runtime-native/src/metahuman/native_bindings.cpp` when the runtime is built with
+ * `TN_ENABLE_METAHUMAN=ON`. Declared here because this file owns the global; the interface
+ * itself, and the accessor that fails closed with `TN_NATIVE_METAHUMAN_MISSING`, live in
+ * `@threenative/metahuman` (`src/native/host.ts`), which must not declare the global twice.
+ */
+export interface INativeMetaHumanResident {
+  readonly version: string;
+  create(dna: ArrayBuffer | Uint8Array): number;
+  count(id: number, kind: number): number;
+  name(id: number, kind: number, index: number): string;
+  setLod(id: number, lod: number): void;
+  setGui(id: number, values: Float32Array): void;
+  setRaw(id: number, values: Float32Array): void;
+  evaluate(id: number, useGui: boolean): void;
+  jointOutputs(id: number): Float32Array;
+  blendShapeOutputs(id: number): Float32Array;
+  animatedMapOutputs(id: number): Float32Array;
+  neutralJoints(id: number): Float32Array;
+  destroy(id: number): void;
+  lastError(): string;
+}
+
 declare global {
-  // One global, two residents: the physics host and the playtest mailbox bridge
-  // (packages/playtest/src/three/device.ts reads `playtest`). Declared where the
-  // name was first declared; keep both shapes in sync with their readers.
+  // One global, three residents: the physics host, the MetaHuman rig host and the playtest
+  // mailbox bridge (packages/playtest/src/three/device.ts reads `playtest`). Declared where
+  // the name was first declared; keep both shapes in sync with their readers.
   var __THREENATIVE_NATIVE__:
     | {
         readonly physics?: INativePhysicsHost;
+        readonly metahuman?: INativeMetaHumanResident;
         readonly playtest?: {
           receive?(path: string): string | undefined;
           respond?(path: string, payload: string): boolean;

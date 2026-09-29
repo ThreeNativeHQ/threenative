@@ -21,6 +21,16 @@ describe("adapterTextureLimits", () => {
     });
   });
 
+  it("requests texture array layers past the portable 256, which morph-heavy rigs need", async () => {
+    // A MetaHuman head stores 821 morph targets as layers of one texture array.
+    withAdapter({ maxTextureArrayLayers: 2048, maxSampledTexturesPerShaderStage: 16 });
+    expect(await adapterTextureLimits()).toEqual({
+      requiredLimits: { maxTextureArrayLayers: 2048 },
+    });
+    withAdapter({ maxTextureArrayLayers: 256 });
+    expect(await adapterTextureLimits()).toEqual({});
+  });
+
   it("asks for nothing on a 16-limit adapter, with no adapter, or without WebGPU", async () => {
     withAdapter({ maxSampledTexturesPerShaderStage: 16, maxSamplersPerShaderStage: 16 });
     expect(await adapterTextureLimits()).toEqual({});

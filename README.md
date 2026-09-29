@@ -127,6 +127,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
 | `create-threenative` | Scaffold a readable game project from eight templates |
+| `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |

@@ -208,6 +208,16 @@
         "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }"
       }
     },
+    "@threenative/metahuman": {
+      "exports": [".", "./package.json"],
+      "symbols": {
+        "@threenative/metahuman#assertAssetPath": "export function assertAssetPath(path: string): string { … }",
+        "@threenative/metahuman#loadMetaHuman": "loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }",
+        "@threenative/metahuman#MetaHumanAssetError": "export class MetaHumanAssetError extends Error { … }",
+        "@threenative/metahuman#RigEvaluator": "export class RigEvaluator implements IRigEvaluator { … }",
+        "@threenative/metahuman#validateMetaHumanAssets": "export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHumanBindings { … }"
+      }
+    },
     "@threenative/physics": {
       "exports": [".", "./navigation", "./package.json"],
       "symbols": {

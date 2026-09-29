@@ -155,6 +155,29 @@
       ]
     },
     {
+      "directory": "tn-linux-contracts-metahuman",
+      "preset": "tn-linux",
+      "cacheVariables": {
+        "TN_ENABLE_METAHUMAN": "ON"
+      },
+      "owner": "MetaHuman facial rig contract \u2014 the only configuration threenative-metahuman-bindings-test links in; built on demand by scripts/verify-desktop-metahuman.mjs, which also fetches the pinned OpenRigLogic source",
+      "runs": [
+        "threenative-metahuman-bindings-test"
+      ]
+    },
+    {
+      "directory": "tn-linux-asan-metahuman",
+      "preset": "tn-linux",
+      "cacheVariables": {
+        "TN_ENABLE_METAHUMAN": "ON",
+        "TN_ENABLE_SANITIZERS": "ON"
+      },
+      "owner": "MetaHuman facial rig contract under ASan and UBSan \u2014 the lane that reads untrusted DNA bytes into the C ABI; built on demand by scripts/verify-desktop-metahuman.mjs --sanitize",
+      "runs": [
+        "threenative-metahuman-bindings-test"
+      ]
+    },
+    {
       "directory": "tn-linux-contracts-video",
       "preset": "tn-linux",
       "cacheVariables": {

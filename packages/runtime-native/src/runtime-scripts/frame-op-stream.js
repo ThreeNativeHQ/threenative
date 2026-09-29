@@ -812,11 +812,39 @@
       raw(copy);
     });
   };
+  // Texel block height of a compressed format (BC, ETC2/EAC: 4; ASTC: its declared height), so the
+  // rows a copy reads are block rows. Uncompressed formats are one texel high.
+  const blockHeight = (format) => {
+    if (typeof format !== "string") return 1;
+    if (/^(?:bc\d|etc2|eac)/u.test(format)) return 4;
+    const astc = /^astc-\d+x(\d+)-/u.exec(format);
+    return astc ? Number(astc[1]) : 1;
+  };
+  // Only the bytes this copy reads, from `layout.offset` onward, so a caller that points into a
+  // larger buffer — three uploads each layer of an array texture as the whole array plus an
+  // offset — records one layer, not the whole array once per layer. The last row is bounded by
+  // `bytesPerRow`, which covers any block size, and the slice by the source. A layout without
+  // `bytesPerRow` is a single-row copy and keeps everything after the offset, as before.
+  const textureUploadSlice = (d, data, l, z) => {
+    const bytes = upload(data, 0);
+    const offset = opt(l.offset, 0);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > bytes.byteLength)
+      throw new RangeError("frame op stream: writeTexture offset exceeds source");
+    const bytesPerRow = l.bytesPerRow;
+    if (bytesPerRow === undefined) return bytes.subarray(offset);
+    const height = Array.isArray(z) ? opt(z[1], 1) : opt(z.height, 1);
+    const layers = Array.isArray(z) ? opt(z[2], 1) : opt(z.depthOrArrayLayers, 1);
+    const rows = Math.ceil(height / blockHeight(d.texture?.format));
+    const rowsPerImage = opt(l.rowsPerImage, rows);
+    const needed =
+      rows === 0 || layers === 0 ? 0 : bytesPerRow * (rowsPerImage * (layers - 1) + rows);
+    return bytes.subarray(offset, Math.min(bytes.byteLength, offset + needed));
+  };
   queue.writeTexture = (d, data, l, z) => {
-    const copy = upload(data, 0);
+    const copy = textureUploadSlice(d, data, l, z);
     emit(30, () => {
       textureCopy(d);
-      f64(opt(l.offset, 0));
+      f64(0);
       u32(opt(l.bytesPerRow, 0));
       u32(opt(l.rowsPerImage, 0));
       extent(z);
