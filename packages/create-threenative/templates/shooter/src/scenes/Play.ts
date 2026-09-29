@@ -4,6 +4,7 @@ import {
   Scene,
   type SceneFrame,
   TracerPool3D,
+  isMobile,
 } from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import type { AnimationClip, Group, Object3D, PerspectiveCamera, Quaternion, Texture } from "three";
@@ -75,17 +76,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
     aiming: false,
     ammo: MAGAZINE,
-    assetsLoaded: 0,
-    assetsTotal: 0,
     blips: [],
     distanceMoved: 0,
     health: 100,
     hitFlash: 0,
+    hurtFlash: 0,
     phase: "playing",
     playerX: 0,
     playerYaw: 0,
     playerZ: 32,
-    ready: false,
     reloads: 0,
     reserve: RESERVE,
     score: 0,
@@ -103,18 +102,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
-    // Boot progress is counted, not faked: each asset ticks the HUD's bar as it
-    // resolves, so a slow cold load shows movement instead of a black canvas.
-    let loaded = 0;
-    let total = 0;
-    const track = <T>(job: Promise<T>): Promise<T> => {
-      total += 1;
-      return job.then((value) => {
-        loaded += 1;
-        ctx.state.set({ assetsLoaded: loaded, assetsTotal: total });
-        return value;
-      });
-    };
     // Three files, and one of them is the whole town: the geometry is procedural
     // (`render/town.ts`), so the only downloads are two rigs and one photograph.
     //
@@ -124,10 +111,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     //  - `sky.jpg` is Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)" by
     //    Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky),
     //    and is background, environment light and fog colour at once (`render/sky.ts`).
+    // No per-asset progress is published to the HUD: `src/render/loading.ts` is the one boot
+    // surface, it rides `ctx.startup`, and a second bar drawn over it was the two-bar screen.
     const [enemy, viewmodel, sky] = await Promise.all([
-      track(ctx.assets.model<LoadedModel>("mannequin-combat.glb")),
-      track(ctx.assets.model<LoadedModel>("player-viewmodel.glb")),
-      track(ctx.assets.texture("sky.jpg")),
+      ctx.assets.model<LoadedModel>("mannequin-combat.glb"),
+      ctx.assets.model<LoadedModel>("player-viewmodel.glb"),
+      ctx.assets.texture("sky.jpg"),
     ]);
     this.#assets = { enemy, viewmodel, sky };
   }
@@ -144,11 +133,19 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const camera = ctx.camera as PerspectiveCamera;
     setupSky(ctx.scene, assets.sky);
+    // The shadow map is fitted to the town, not to the arena this template's lighting was
+    // written for, and both this call and the post chain below are told whether this is a phone
+    // — a 2048² map and the `low` tier instead of a 4096² map plus full-resolution GTAO over 832
+    // renderables, which is not a phone's frame. `isMobile` is passed in rather than imported
+    // because `src/render/` reads no framework package.
+    const mobile = isMobile();
     const { key } = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      TOWN_HALF,
+      mobile,
     );
-    setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: key });
+    setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: key, mobile });
     ctx.add(camera);
 
     // The in-canvas launch screen. It rides `startup.whenReady()` and prewarms the pipelines
@@ -463,6 +460,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     let elapsed = 0;
     let hitFlash = 0;
+    // How red the screen is *right now*, because a round is landing. A separate scalar from
+    // `hitFlash` (which is the crosshair's scoring marker) and from `health`, because the
+    // vignette answers "am I being shot" and not "am I nearly dead": reading it off `health`
+    // gave a soldier at 40 with nobody shooting him a permanent red screen, and no feedback at
+    // all for the 70 rounds it takes to get there.
+    let hurtFlash = 0;
     const eye = new Vector3();
 
     const fire = (frameCtx: GameCtx, aimRay: { origin: Vector3; direction: Vector3 }): void => {
@@ -610,18 +613,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const hooks = {
       lineOfSight,
-      damagePlayer: (amount: number): void => player.hurt(amount),
+      damagePlayer: (amount: number): void => {
+        player.hurt(amount);
+        hurtFlash = 1;
+      },
       onMuzzleFlash: (at: Vector3, direction: Vector3, distance: number): void => {
         enemyFlashes.spawn(at, direction, shotRng);
         if (enemyTracerDue()) enemyTracers.spawn(at, direction, distance, tracerShot(distance));
         spawnSmoke(at, direction, ctx);
       },
     };
-
-    // The scene is built: geometry, physics, soldiers and the viewmodel all
-    // exist. Flip the boot flag here rather than when the last byte arrived,
-    // because the black canvas lasts until the first frame actually draws.
-    ctx.state.set({ ready: true });
 
     // What the renderer actually drew last frame, so a scenario can fail on an empty picture.
     //
@@ -675,65 +676,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     ctx.entities.remove("render");
     ctx.entities.add("render", { debug: renderInfo });
-    // DIAGNOSTIC (temporary): which (geometry, material, castShadow, receiveShadow, layers)
-    // groups sit below the projection's 4-member floor and on the exact lane? Prints once a
-    // few seconds in, from the live scene, so draw-cut work targets real populations.
-    ctx.after(6, () => {
-      const groups = new Map<string, { count: number; names: Set<string> }>();
-      const pathOf = (object: { name?: string; parent?: unknown }): string => {
-        const parts: string[] = [];
-        let node: { name?: string; parent?: unknown } | undefined = object;
-        while (node !== undefined && node !== null && parts.length < 3) {
-          if (node.name) parts.unshift(node.name);
-          node = node.parent as { name?: string; parent?: unknown } | undefined;
-        }
-        return parts.join("/") || "(root)";
-      };
-      ctx.scene.traverse((object) => {
-        const mesh = object as {
-          isMesh?: boolean;
-          geometry?: { uuid?: string };
-          material?: unknown;
-          castShadow?: boolean;
-          receiveShadow?: boolean;
-          visible?: boolean;
-          layers?: { mask: number };
-          renderOrder?: number;
-          name?: string;
-          parent?: unknown;
-        };
-        if (mesh.isMesh !== true || mesh.geometry === undefined) return;
-        if ((mesh as unknown as { visible?: boolean }).visible !== true) return;
-        const material = mesh.material as { uuid?: string } | undefined;
-        if (material === undefined || Array.isArray(mesh.material)) return;
-        const key = [
-          mesh.geometry?.uuid?.slice(0, 8) ?? "?",
-          material.uuid?.slice(0, 8) ?? "?",
-          mesh.castShadow === true ? 1 : 0,
-          mesh.receiveShadow === true ? 1 : 0,
-        ].join("|");
-        const entry = groups.get(key) ?? { count: 0, names: new Set<string>() };
-        entry.count += 1;
-        const own = (mesh as unknown as { name?: string }).name;
-        entry.names.add(own || `⟨${pathOf(mesh)}⟩`);
-        groups.set(key, entry);
-      });
-      const summary = new Map<string, number>();
-      for (const g of groups.values()) {
-        if (g.count >= 4) continue;
-        for (const name of g.names) summary.set(name, (summary.get(name) ?? 0) + g.count);
-      }
-      const ranked = [...summary.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
-      console.info(
-        `TN_DRAW_DIAG:${JSON.stringify({
-          groups: groups.size,
-          belowFloorMeshes: [...groups.values()]
-            .filter((g) => g.count < 4)
-            .reduce((n, g) => n + g.count, 0),
-          byMeshName: Object.fromEntries(ranked),
-        })}`,
-      );
-    });
     return (frameCtx, dt) => {
       loading.update();
       // The totals of the frame that just finished, read before this frame's
@@ -778,6 +720,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       elapsed += dt;
       hitFlash = Math.max(0, hitFlash - dt * 2.4);
+      // About a third of a second: long enough to be a hit, short enough not to be a state.
+      hurtFlash = Math.max(0, hurtFlash - dt * 3);
       const timeRemaining = Math.max(0, RUN_SECONDS - elapsed);
 
       // Any press on the surface buys the pointer, which is what makes the mouse steer.
@@ -828,6 +772,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         distanceMoved: player.distanceMoved,
         health: player.health,
         hitFlash,
+        hurtFlash,
         phase,
         playerX: player.mesh.position.x,
         playerYaw: player.look.yaw,

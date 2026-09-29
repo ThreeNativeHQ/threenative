@@ -7,6 +7,12 @@ export type GameState = {
   distanceMoved: number;
   health: number;
   hitFlash: number;
+  /**
+   * Red damage vignette, 1 on the frame a round lands and decaying to 0 over about a third of a
+   * second. Published as a scalar rather than derived from `health` so "am I being shot" and "am
+   * I nearly dead" are two different facts, and the player gets the first one.
+   */
+  hurtFlash: number;
   phase: "playing" | "complete" | "failed";
   reloads: number;
   reserve: number;
@@ -20,15 +26,6 @@ export type GameState = {
   playerYaw: number;
   /** Enemy positions for the minimap, one entry per soldier. */
   blips: Blip[];
-  /**
-   * Boot progress. The town loads ~23 textures and three rigged GLBs totalling
-   * about 23 MB, which is a few seconds of black canvas on a cold cache; the
-   * HUD shows a real progress bar over it rather than nothing. `ready` flips
-   * when the scene has finished building, not when the last byte arrives.
-   */
-  ready: boolean;
-  assetsLoaded: number;
-  assetsTotal: number;
 };
 
 /** Shared objective contract for the scene and the HUD. */

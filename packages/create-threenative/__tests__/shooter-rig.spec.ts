@@ -1,7 +1,7 @@
-import { clipBoneCoverage, clipTrackBindings } from "@threenative/core";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { clipBoneCoverage, clipTrackBindings } from "@threenative/core";
 import { describe, expect, it } from "vitest";
 import { parseGltfAsset } from "../src/inspect.js";
 import { ENEMY_CLIPS } from "../templates/shooter/src/entities/Enemy.js";

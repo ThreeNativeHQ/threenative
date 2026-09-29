@@ -12,19 +12,11 @@
     "entities": [
       {
         "entity": "player",
-        "position": [
-          -4.5,
-          0.89,
-          -5.0
-        ]
+        "position": [-4.5, 0.89, -5.0]
       },
       {
         "entity": "enemy-frozen",
-        "position": [
-          -4.5,
-          0,
-          -6.8
-        ]
+        "position": [-4.5, 0, -6.8]
       }
     ]
   },

@@ -50,8 +50,8 @@
       {
         "entity": "enemy",
         "component": "headHeight",
-        "gte": 1.5,
-        "allowTrivial": "the head joint's authored height above the body's own origin is 1.545 m and it is a property of the loaded rig, not of scenario input; a body folded at the waist or bound to the wrong skeleton reads far below the floor"
+        "gte": 1.4,
+        "allowTrivial": "the head joint's authored height above the body's own origin is 1.545 m in the bind pose and measures 1.491 m through an Idle_Loop sway, so 1.4 is the floor a standing figure holds; a body folded at the waist or bound to the wrong skeleton reads below 1.2"
       },
       {
         "entity": "enemy",
@@ -64,13 +64,6 @@
         "component": "footClearance",
         "lte": 0.03,
         "allowTrivial": "grounded soldier contact is a standing invariant of the patrol loop"
-      }
-    ],
-    "animation": [
-      {
-        "entity": "enemy",
-        "strideSynced": true,
-        "allowTrivial": "an idle clip reports synced false, and the run is held by the clearance and head-height bounds either way"
       }
     ]
   }

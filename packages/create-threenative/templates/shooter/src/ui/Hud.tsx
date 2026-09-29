@@ -228,9 +228,7 @@ export function Hud() {
     playerZ,
     playerYaw,
     blips,
-    ready,
-    assetsLoaded,
-    assetsTotal,
+    hurtFlash,
   } = state;
   // The same two lines the keyboard's Enter path runs in `Play.update`. A phone has no Enter key,
   // and until this existed a mobile player who ran out of time had no way to start another round —
@@ -245,35 +243,6 @@ export function Hud() {
   const clockSeconds = Math.max(0, Math.floor(timeRemaining));
   const clockMinutes = Math.floor(clockSeconds / 60);
   const clockPart = String(clockSeconds % 60).padStart(2, "0");
-
-  if (!ready) {
-    // The town is ~23 MB of textures and rigged GLBs, which is several seconds
-    // of black canvas on a cold cache. `assetsTotal` grows as jobs are queued,
-    // so early on the fraction is optimistic; it is still honest movement, and
-    // the bar is capped at 92% until the scene reports itself built so it never
-    // sits full while the first frame is still being drawn.
-    const fraction =
-      assetsTotal === 0 ? 0 : Math.min(0.92, assetsLoaded / Math.max(assetsTotal, 1));
-    return (
-      <div className="absolute inset-0 flex select-none flex-col items-center justify-center bg-[#0b1016] font-sans">
-        <div className="text-[13px] font-semibold uppercase tracking-[0.42em] text-[#ffa63d]">
-          Bayview
-        </div>
-        <div className="mt-2 text-[11px] font-medium tracking-[0.18em] text-white/40">
-          COASTAL TOWN · 5v5 BOMB DEFUSAL
-        </div>
-        <div className="mt-7 h-[3px] w-[240px] overflow-hidden rounded-full bg-white/10">
-          <i
-            className="block h-full rounded-full bg-[#ffa63d] transition-[width] duration-200 ease-out"
-            style={{ width: `${(fraction * 100).toFixed(1)}%` }}
-          />
-        </div>
-        <div className="mt-3 text-[11px] tabular-nums tracking-[0.14em] text-white/35">
-          {assetsTotal === 0 ? "PREPARING" : `LOADING ${assetsLoaded} / ${assetsTotal}`}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-sans">
@@ -416,13 +385,18 @@ export function Hud() {
           <i className="absolute left-0 top-1/2 h-[2px] w-full -translate-y-1/2 bg-[#ffd166]" />
         </div>
       ) : null}
-      {health < 45 ? (
+      {/* Red only while a round is landing. It used to be driven by `health < 45`, which is a
+          low-health indicator wearing a damage vignette's clothes: a soldier at 40 with nobody
+          shooting him got a permanently red screen, and the 70 rounds it takes to walk from 100
+          to 30 produced no feedback at all. The health bar and the health number already say
+          "you are nearly dead". */}
+      {hurtFlash > 0 ? (
         <div
           className="absolute inset-0"
           style={{
             background:
-              "radial-gradient(circle at 50% 55%, rgba(0,0,0,0) 42%, rgba(190,26,20,0.42) 100%)",
-            opacity: Math.min(1, (45 - health) / 30),
+              "radial-gradient(circle at 50% 55%, rgba(0,0,0,0) 42%, rgba(190,26,20,0.5) 100%)",
+            opacity: Math.min(1, hurtFlash),
           }}
         />
       ) : null}
