@@ -1020,7 +1020,9 @@ export class Enemy {
   #holdRifle(clip: string): void {
     const hold = RIFLE_HOLD[clip];
     if (hold !== undefined) {
-      this.#weaponModel?.rotation.set(...(hold.map(MathUtils.degToRad) as [number, number, number]));
+      this.#weaponModel?.rotation.set(
+        ...(hold.map(MathUtils.degToRad) as [number, number, number]),
+      );
     }
   }
 

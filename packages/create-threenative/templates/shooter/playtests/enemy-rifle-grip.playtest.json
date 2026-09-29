@@ -12,25 +12,12 @@
     "entities": [
       {
         "entity": "player",
-        "position": [
-          0,
-          0.89,
-          4
-        ],
-        "rotation": [
-          -0.05722,
-          0,
-          0,
-          0.99836
-        ]
+        "position": [0, 0.89, 4],
+        "rotation": [-0.05722, 0, 0, 0.99836]
       },
       {
         "entity": "enemy",
-        "position": [
-          0,
-          0,
-          0
-        ]
+        "position": [0, 0, 0]
       }
     ]
   },
