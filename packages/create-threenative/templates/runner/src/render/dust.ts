@@ -94,10 +94,10 @@ export function createDustTrail(): IDustOptions {
   material.scaleNode = vec2(0.42).mul(mix(0.5, 1.5, life));
   const birth = new Array(3)
     .fill(0)
-    .map((_, index) => ((palette.rail >> (16 - index * 8)) & 255) / 255);
+    .map((_, index) => ((palette.structure >> (16 - index * 8)) & 255) / 255);
   const death = new Array(3)
     .fill(0)
-    .map((_, index) => ((palette.skyLow >> (16 - index * 8)) & 255) / 255);
+    .map((_, index) => ((palette.horizon >> (16 - index * 8)) & 255) / 255);
   material.colorNode = vec4(
     mix(
       vec3(birth[0] ?? 0, birth[1] ?? 0, birth[2] ?? 0),
