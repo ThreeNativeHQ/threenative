@@ -50,7 +50,7 @@ export function sha256Portable(bytes: Uint8Array): Uint8Array {
       const s1 = ((b >>> 17) | (b << 15)) ^ ((b >>> 19) | (b << 13)) ^ (b >>> 10);
       w[t] = ((w[t - 16] as number) + s0 + (w[t - 7] as number) + s1) >>> 0;
     }
-    let [a, b, c, d, e, f, g, hh] = h as unknown as number[];
+    let [a, b, c, d, e, f, g, hh] = Array.from(h);
     for (let t = 0; t < 64; t += 1) {
       const e0 = e as number;
       const a0 = a as number;
