@@ -250,6 +250,33 @@ export interface IVirtualShadowLevelStat {
   readonly invalidated: number;
   readonly moved: number;
   readonly rendered: number;
+  /** Caster meshes this level's chosen camera layers submit this frame. Zero if it did not render. */
+  readonly draws: number;
+  /** The same bill split by kind; the five parts sum to {@link draws}. */
+  readonly drawsBy: IVirtualShadowDraws;
+}
+
+/** One level's caster draws, by the kind of mesh that submitted them. */
+export interface IVirtualShadowDraws {
+  /** Caster batch meshes on the cluster layer, when the cluster half is the level's choice. */
+  readonly cluster: number;
+  /** Key-wide caster meshes on the wide layer, when the wide half is the level's choice. */
+  readonly wide: number;
+  /** Small casters, submitted by the finest level and by any level rendering a prewarm. */
+  readonly small: number;
+  /** Merged per-chunk shadow proxies (`<name>-shadow`), drawn with the cluster half. */
+  readonly chunkProxy: number;
+  /** Everything else casting from layer 0 — terrain, props — which every level draws. */
+  readonly layer0: number;
+}
+
+/** The mutable tally `#probe` fills; the public row only ever reads it. */
+interface IVirtualShadowDrawTally {
+  cluster: number;
+  wide: number;
+  small: number;
+  chunkProxy: number;
+  layer0: number;
 }
 
 export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
@@ -887,10 +914,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * the key-wide meshes waiting for it. A cluster's own sphere is its whole grid square, so the
    * window test is on its centre, which is where the records actually are.
    */
-  #probe(level: ILevel, centre: IVector3Like, index: number): void {
+  #probe(
+    level: ILevel,
+    centre: IVector3Like,
+    index: number,
+    stat: { draws: number; drawsBy: IVirtualShadowDrawTally },
+  ): void {
     const gate = (this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize;
     const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
     const wideLayer = 1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
+    const smallLayer = 1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER;
     // A square inside the level's window is within a half-diagonal of its centre whichever way the
     // light is turned, so this is the bound that holds for every sun angle.
     const window = level.extent * Math.SQRT2;
@@ -904,6 +937,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const biased = index >= 1 && this.options.shadowLodBias;
     let clusterDraws = 0;
     let wideDraws = 0;
+    // The level's bill by kind, tallied on the same walk and summed by the chosen halves once the
+    // choice is known. Numbers, not objects: a frame allocates nothing for this.
+    let nCluster = 0;
+    let nWide = 0;
+    let nSmall = 0;
+    let nChunk = 0;
+    let nLayer0 = 0;
     // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
     // node is built by the next shadow render that draws it, so the level that draws it here is
     // what moves the build off the walk. Both layers are therefore rendered while one is owed, since
@@ -1018,6 +1058,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
       } else if ((mesh.layers.mask & wideLayer) !== 0) {
         wideDraws += 1;
       }
+      // The same bill by kind, for what the level's chosen layers end up submitting. Only a caster
+      // counts, and the merged per-chunk proxies — named `<name>-shadow`, on the cluster layer —
+      // are bucketed apart from the batches they stand in for so they are not counted twice. The
+      // small layer and layer 0's own casters take no part in the cluster/wide choice above.
+      if (mesh.castShadow === true) {
+        if (mesh.name.endsWith("-shadow")) nChunk += 1;
+        else if ((mesh.layers.mask & smallLayer) !== 0) nSmall += 1;
+        else if ((mesh.layers.mask & clusterLayer) !== 0) nCluster += 1;
+        else if ((mesh.layers.mask & wideLayer) !== 0) nWide += 1;
+        else if ((mesh.layers.mask & 1) !== 0) nLayer0 += 1;
+      }
     });
     // One of the two caster layers, never both, and the cheaper bill: clusters when the squares the
     // window covers are fewer than the keys waiting on the wide layer, one mesh per key when they are
@@ -1040,6 +1091,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // player's reach; the prewarm owes their draw too, exactly as it owes both caster layers'.
     if (index === 0 || prewarming)
       level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
+    // The bill the chosen layers will actually submit: a half that was not picked submits none of
+    // its meshes, and the proxies on the cluster layer go with that half.
+    const chosenCluster = clustered || prewarming;
+    const chosenWide = !clustered || prewarming;
+    const chosenSmall = index === 0 || prewarming;
+    const by = stat.drawsBy;
+    by.cluster = chosenCluster ? nCluster : 0;
+    by.chunkProxy = chosenCluster ? nChunk : 0;
+    by.wide = chosenWide ? nWide : 0;
+    by.small = chosenSmall ? nSmall : 0;
+    by.layer0 = nLayer0;
+    stat.draws = by.cluster + by.wide + by.small + by.chunkProxy + by.layer0;
   }
 
   /**
@@ -1576,13 +1639,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
         } else {
           level.pending = REASON_NONE;
         }
-        perLevel.push({
+        const stat = {
           deferred: due && !grant ? 1 : 0,
+          // Filled by `#probe` on the frame's granted render, from the meshes it walked; a level
+          // that keeps its map submits no caster draws of its own, so it reports none.
+          draws: 0,
+          drawsBy: { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 },
           extent: level.extent,
           invalidated: asked ? 1 : 0,
           moved: windowMoved ? 1 : 0,
           rendered: grant ? 1 : 0,
-        });
+        };
+        perLevel.push(stat);
         // The level camera sits on the window its map was rendered with, deferred or not. A level
         // that has never rendered takes this frame's: it has no map to hold, and `mapped` keeps
         // every fragment out of it until it does.
@@ -1607,7 +1675,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // the level needs to cover what can actually shadow it, and the casters too small for its
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
-          this.#probe(level, centre, index);
+          this.#probe(level, centre, index, stat);
           if (this.#autoDepth) this.#deriveDepth(level, centre);
           this.#place(level, centre);
           try {

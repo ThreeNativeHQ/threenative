@@ -394,10 +394,20 @@ describe("VirtualShadowNode", () => {
     node.updateBefore(frameFor(camera));
     expect(reentered).toBeGreaterThan(0);
     expect(node.stats).toMatchObject({ deferred: 1, levels: 2, rendered: 1 });
-    // Per level, finest first: the one that took the render, and the one held behind it.
+    // Per level, finest first: the one that took the render, and the one held behind it. No caster
+    // meshes are in this world, so the granted level reports a bill of zero.
+    const noDraws = { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 };
     expect(node.stats.perLevel).toEqual([
-      { deferred: 0, extent: 8, invalidated: 0, moved: 1, rendered: 1 },
-      { deferred: 1, extent: 32, invalidated: 0, moved: 1, rendered: 0 },
+      { deferred: 0, draws: 0, drawsBy: noDraws, extent: 8, invalidated: 0, moved: 1, rendered: 1 },
+      {
+        deferred: 1,
+        draws: 0,
+        drawsBy: noDraws,
+        extent: 32,
+        invalidated: 0,
+        moved: 1,
+        rendered: 0,
+      },
     ]);
     // The next presented frame spends its single render on the level the first one deferred, and
     // the frame after that has nothing left to do.
