@@ -141,6 +141,13 @@ export class RacingCar {
     } else if (speed > FEEL.reverseEnterSpeed) {
       body.engineForce = 0;
       body.brake = FEEL.brake;
+    } else if (move.y === 0) {
+      // **Handbrake at a standstill.** The main straight climbs at 1.6% and a ray-cast vehicle has no
+      // rolling resistance, so a car left on the grid with no input freewheels backwards down the
+      // hill: measured, 75 m of it before the race began, which put the grid slot 862 m around the
+      // lap and made the ranking scenario's baseline a car that had already been rescued.
+      body.engineForce = 0;
+      body.brake = FEEL.brake * 0.5;
     } else {
       body.engineForce =
         move.y * FEEL.engineForce * Math.max(0, 1 - Math.abs(speed) / FEEL.reverseTopSpeed);

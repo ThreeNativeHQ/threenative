@@ -70,8 +70,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     position: "P1",
     raceStatus: "RACING",
     rescueHeading: 0,
-    rescueHeadingError: -1,
-    rescuePositionError: -1,
+    // Before any rescue, both errors are the worst they could be: the car is facing the wrong way
+    // and it is a whole lap from where it belongs. A sentinel of -1 satisfies an "at most 0.05 rad"
+    // assertion before the game has done anything, which is how a bound stops being a bound.
+    rescueHeadingError: Math.PI,
+    rescuePositionError: Math.PI,
     rescues: 0,
     shortcutRejects: 0,
     speed: 0,
@@ -170,8 +173,11 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let elapsed = 0;
     let status: RaceStatus = "RACING";
     let rescues = 0;
-    let rescueHeadingError = -1;
-    let rescuePositionError = -1;
+    // Before any rescue, both are the worst they can be: a car facing the wrong way, a whole lap
+    // from where it belongs. A sentinel of -1 satisfies an "at most 0.05 rad" bound before the game
+    // has done anything, which is how a bound stops being a bound.
+    let rescueHeadingError = Math.PI;
+    let rescuePositionError = Math.PI;
     let sameDistanceRanking = initialRanked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
     let place = initialPlayer.place;
     let positionLabel = `P${place}`;

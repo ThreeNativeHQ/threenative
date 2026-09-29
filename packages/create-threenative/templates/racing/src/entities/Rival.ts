@@ -9,7 +9,7 @@ import { LineDriver } from "./LineDriver.js";
  * fixed 7.6 m/s along the route whatever the player did, and rubber-banding it towards or away from
  * the player would be the same lie with more code. A fixed pace is beatable, and it is honest.
  */
-export const RIVAL_PACE = 16.1;
+export const RIVAL_PACE = 17.4;
 
 /** The side of the road the rival keeps, so it and the demo driver never share a line. */
 const RIVAL_OFFSET = 1.5;

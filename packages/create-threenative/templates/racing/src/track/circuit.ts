@@ -471,8 +471,8 @@ export const LINE_AT = {
 export const GRID = { player: -2.2, rival: 2.2 } as const;
 
 export const GRID_DISTANCE = {
-  player: LINE_AT.gridNear,
-  rival: LINE_AT.gridFar,
+  player: lineDistance(LINE_AT.gridNear),
+  rival: lineDistance(LINE_AT.gridFar),
 } as const;
 
 export function lineDistance(fraction: number): number {

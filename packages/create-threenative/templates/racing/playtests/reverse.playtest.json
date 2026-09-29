@@ -2,28 +2,45 @@
   "name": "racing-reverse-finish-rejected",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
     {
       "kind": "input",
-      "label": "reach-mid-course",
-      "press": "ArrowUp",
-      "holdTicks": 100,
+      "label": "autopilot",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "cross-the-line",
+      "waitTicks": 148,
       "release": true
     },
     {
       "kind": "input",
       "label": "reverse-through-finish",
       "press": "ArrowDown",
-      "holdTicks": 150,
+      "holdTicks": 110,
       "release": true
     },
-    { "kind": "wait", "label": "observe-rejection", "waitTicks": 20, "release": true }
+    {
+      "kind": "wait",
+      "label": "observe-rejection",
+      "waitTicks": 20,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
       {
         "id": "state",
@@ -31,7 +48,12 @@
         "equals": 0,
         "allowTrivial": "Reverse steering tests rejection before a lap completes; zero completed laps is the intentional held race-start invariant."
       },
-      { "id": "state", "path": "reverseRejects", "gte": 1, "changed": true }
+      {
+        "id": "state",
+        "path": "reverseRejects",
+        "gte": 1,
+        "changed": true
+      }
     ]
   }
 }

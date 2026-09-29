@@ -519,17 +519,10 @@ function gate(
   // and reads as a bar going nowhere.
   group.rotation.y = along ? Math.PI / 2 : 0;
   ctx.add(group);
-  const half = TRACK_WIDTH / 2 + 1.4;
-  const area = new Area3D({
-    collisionMask: LAYER.car,
-    entity: `gate.${id}`,
-    physics: ctx.physics,
-    position: { x: at.x, y: at.y + 0.9, z: at.z },
-    // The plane lies across the road, so its long axis is the track's width. A gate whose box is
-    // aligned to the world instead is a gate a car drives past, which is how a lap goes uncounted.
-    shape: along ? CollisionShape3D.box(0.8, 1.3, half) : CollisionShape3D.box(half, 1.3, 0.8),
-  });
-  return new Checkline(id, at, forward, area, half + 1.5);
+  // The line is where the gantry's posts stand, and it is as wide as the road plus a car's width:
+  // a car that is off the tarmac is not crossing the start line.
+  void along;
+  return new Checkline(id, at, forward, TRACK_WIDTH / 2 + 1.8);
 }
 
 function boostPad(

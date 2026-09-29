@@ -10,7 +10,7 @@
       "kind": "input",
       "label": "rescue",
       "press": ["ArrowUp", "ArrowRight"],
-      "holdTicks": 150,
+      "holdTicks": 300,
       "release": true
     }
   ],
@@ -21,7 +21,7 @@
       { "id": "state", "path": "lastOnRoad", "changed": true },
       { "id": "state", "path": "rescueHeading", "changed": true },
       { "id": "state", "path": "rescuePositionError", "equals": 0, "changed": true },
-      { "id": "state", "path": "rescueHeadingError", "equals": 0, "changed": true }
+      { "id": "state", "path": "rescueHeadingError", "lte": 0.05, "changed": true }
     ],
     "visibility": [
       {
