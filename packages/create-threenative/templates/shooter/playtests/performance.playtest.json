@@ -57,8 +57,7 @@
       "maxDrawCalls": 1300,
       "maxFrameMsP95": 33,
       "maxTriangles": 500000,
-      "minFps": 30,
-      "allowTrivial": "the town's own draw and triangle counts, measured over a 60 s round with five soldiers: 990-1177 draw calls (TN_PROJECTION drawsActual 990, 832 renderables considered, 382 frustum-culled, 134 shadow-exempt) and 422 877 triangles. The 400/400 000 these replace were set before the town was rebuilt and had never been re-measured"
+      "minFps": 30
     },
     "visual": [
       {
