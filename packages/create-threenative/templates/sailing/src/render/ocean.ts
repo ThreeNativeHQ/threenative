@@ -539,7 +539,6 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // and is why every sea past a hundred metres was one even sheet of cloud.
   material.envMapIntensity = 0.32;
 
-
   const worldX = positionLocal.x.add(seaOrigin.x);
   const worldZ = positionLocal.z.add(seaOrigin.y);
   const offset = displacementAt(ocean, worldX, worldZ);
@@ -583,7 +582,9 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // The light coming through a wave from behind, which is green and is the difference between a
   // crest and a ridge. It needs a face turned away from the sun and a height near the surface, so
   // it is the product of the two, and it is added rather than mixed so a deep trough stays deep.
-  const through = saturate(normalWorld.dot(vec3(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z).negate()))
+  const through = saturate(
+    normalWorld.dot(vec3(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z).negate()),
+  )
     .mul(shade)
     .mul(0.26);
   // Foam on the tops, not on the faces. The band has to sit near the **highest** water the field
@@ -638,10 +639,7 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // The wash at the hull's own waterline: an ellipse in the ship's plan, and a band just outside
   // it. Cheaper than the wake and it is the half the player is closest to — without it the hull
   // meets the sea on a clean line, and a clean line is the tell that nothing here is water.
-  const plan = vec2(
-    astern.div(HULL_WASH.halfLength),
-    across.div(HULL_WASH.halfBeam),
-  );
+  const plan = vec2(astern.div(HULL_WASH.halfLength), across.div(HULL_WASH.halfBeam));
   //
   // It is **not** gated on way on, and that is a deliberate lie of about thirty per cent: a hull
   // lying to in a one-metre swell is still working water against its own topsides, and more to the

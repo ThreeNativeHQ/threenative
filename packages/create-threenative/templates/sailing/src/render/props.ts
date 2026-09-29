@@ -546,7 +546,11 @@ function mast(
       const rise = head - drop * t;
       // The shrouds splay fore and aft, so the rung runs across the pair at the same height.
       const reach = Math.abs(beam) * (1 - t);
-      const rafter = piece(new CylinderGeometry(0.007, 0.007, reach * 2, 4), materials.cordage, false);
+      const rafter = piece(
+        new CylinderGeometry(0.007, 0.007, reach * 2, 4),
+        materials.cordage,
+        false,
+      );
       rafter.rotation.z = Math.PI / 2;
       rafter.position.set(side * (Math.abs(beam) - reach), rise, options.z);
       rigid.add(rafter);
