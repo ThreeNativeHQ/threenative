@@ -459,10 +459,11 @@ export interface IWorldCellsLoadOptions {
    * record. The CPU keeps only the coarse per-cell visibility, so a walking camera costs no repack
    * and no `maxDistance`/`lods` refilter.
    *
-   * `false` by default, and `TN_GPU_SCENE=1` or `?tnGpuScene=1` turns it on: it needs compute,
-   * storage buffers and `drawIndexedIndirect`, and a backend without them falls back to exactly
-   * this class's CPU path — a lost saving, never a wrong picture. `stats().gpuScene` and the
-   * `TN_WORLD_GPU_SCENE` line say which path a run took.
+   * `true` by default where the backend can run it: it needs compute, storage buffers and
+   * `drawIndexedIndirect`, and a backend without them falls back to exactly this class's CPU path —
+   * a lost saving, never a wrong picture. `gpuScene: false`, `TN_GPU_SCENE=0` or `?tnGpuScene=0`
+   * turns it off, and `stats().gpuScene` and the `TN_WORLD_GPU_SCENE` line say which path a run
+   * took.
    */
   readonly gpuScene?: boolean;
   /**

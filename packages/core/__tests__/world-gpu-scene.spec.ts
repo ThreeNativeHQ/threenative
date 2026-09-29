@@ -1180,6 +1180,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
       admissionBudgetMs: Number.POSITIVE_INFINITY,
       budgets,
       follow,
+      gpuScene: false,
       loadModel: async () => plainModel(),
       prefetchSeconds: 0,
       ring: 1,
@@ -1193,7 +1194,7 @@ describe("WorldCells with the GPU-driven main pass", () => {
     } as unknown as IRendererLike;
     world.update(renderer, playerCamera());
     await flushed(world);
-    // Off, and it says so: the option was not asked for, so a WebGL renderer is never even the
+    // Off, and it says so: the option was asked to be off, so a WebGL renderer is never even the
     // interesting answer — the marker names the option.
     expect(world.stats().gpuScene.on).toBe(false);
     expect(world.stats().gpuScene.reason).toBe("option-off");

@@ -779,29 +779,59 @@ function nodes(value: unknown): Kernel {
 export const GPU_SCENE_FLAG = "TN_GPU_SCENE";
 
 /**
- * Whether `TN_GPU_SCENE` asks for the GPU-driven main pass on this launch.
+ * Did this launch ask for `flag` to be **off**? The environment variable, the query string and the
+ * global a test sets are the three ways one is asked, and `0` and `false` are the only answers that
+ * count: an unset or empty variable is the same as no variable, and a saved URL that used to enable
+ * a switch still says "off".
+ */
+function askedOff(flag: string, parameter: string, globalName: string): boolean {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const fromEnv = host.process?.env?.[flag];
+  if (fromEnv === "0" || fromEnv === "false") return true;
+  const query = globalThis.location?.search;
+  if (
+    typeof query === "string" &&
+    new RegExp(`[?&]${parameter}=(?:0|false)(?:&|$)`, "u").test(query)
+  )
+    return true;
+  const set = host[globalName];
+  return set === false || set === 0 || set === "0" || set === "false";
+}
+
+/**
+ * Whether the GPU-driven main pass should run on this launch, on by default where the backend can.
  *
- * @situation measure a walk with the main pass culling and LOD-selecting on the GPU
- * @constraint off by default: the flag flips once a browser capture proves the picture
+ * @situation debug a walk whose main pass culls and LOD-selects on the GPU
+ * @constraint on unless a launch asks for the CPU path: `gpuScene: false`, `?tnGpuScene=0` or
+ *   `TN_GPU_SCENE=0` turn it off, and a backend without compute, storage buffers and
+ *   `drawIndexedIndirect` falls back on its own
  * @example WorldCells.load({ ...options, gpuScene: gpuSceneRequested() });
  *
  * Read the way `renderListValidationRequested` and `terrainValidationRequested` read their own: a
  * native launch sets the environment variable, a browser asks with the query string, and a test
- * sets the global. `0` and `false` are off, so a saved URL that used to enable a switch still
- * says "off".
+ * sets the global. Measured on machinefall at 863f83258, so it flipped from opt-in to default.
  */
 export function gpuSceneRequested(): boolean {
-  const host = globalThis as {
-    process?: { env?: Record<string, unknown> };
-    __tnGpuScene?: unknown;
-  };
-  const fromEnv = host.process?.env?.[GPU_SCENE_FLAG];
-  if (typeof fromEnv === "string" && fromEnv !== "" && fromEnv !== "0" && fromEnv !== "false")
-    return true;
-  const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnGpuScene=(?!0(?:&|$))(?!false(?:&|$))[^&]/u.test(query))
-    return true;
-  return host.__tnGpuScene === true || host.__tnGpuScene === "1";
+  return askedOff(GPU_SCENE_FLAG, "tnGpuScene", "__tnGpuScene") === false;
+}
+
+/** The launch flag. */
+export const BUNDLE_FLAG = "TN_BUNDLES";
+
+/**
+ * Whether world draw bundles should be recorded and replayed, on wherever the GPU scene is on.
+ *
+ * @situation debug a walk whose main batches are replayed from a recorded bundle
+ * @constraint same default as the GPU scene — a bundle draws nothing a dispatch did not already
+ *   decide, so it needs the indirect draw to be worth replaying — and `?tnBundles=0` or
+ *   `TN_BUNDLES=0` turn it off
+ * @example WorldCells.load({ ...options, bundles: bundlesRequested() });
+ */
+export function bundlesRequested(): boolean {
+  return askedOff(BUNDLE_FLAG, "tnBundles", "__tnBundles") === false;
 }
 
 /** The validation flag. */

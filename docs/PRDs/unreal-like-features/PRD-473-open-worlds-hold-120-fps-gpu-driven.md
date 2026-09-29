@@ -61,7 +61,7 @@ Risks:
 - **Atomic append order is nondeterministic.** Draw order within a key can vary frame to frame. Opaque plus depth test makes that invisible; alpha-tested foliage is order-independent.
 
 ## Acceptance Criteria
-- [ ] AC-1 [local]: WorldCells culls and LOD-selects every batched instance on the GPU. A 200-frame walk performs 0 CPU instance-buffer repacks and 0 CPU level refilters for batched scatter, and the drawn instance set equals the CPU reference path's set, frame by frame, on the fixture. proof: `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts` plus a browser readback census on machinefall.
+- [x] AC-1 [local]: WorldCells culls and LOD-selects every batched instance on the GPU. A 200-frame walk performs 0 CPU instance-buffer repacks and 0 CPU level refilters for batched scatter, and the drawn instance set equals the CPU reference path's set, frame by frame, on the fixture. proof: `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts` plus a browser readback census on machinefall. Result: 30/30 in the spec, 2020/2022 in `pnpm exec vitest run packages/core` (2 pre-existing skips). Browser at 863f83258 on machinefall `?scene=map-walk`: `TN_WORLD_GPU_SCENE_VALIDATE ok compared=200 … meshMismatched=0`, and the same-pose screenshot is the CPU path's picture. GPU frame p50 went 10–18 ms → 9–15 ms and CPU p95 improved, so the scene flipped to the default here.
 - [ ] AC-2 [local]: world batches and static chunks replay from render bundles. A 200-frame walk re-records bundles only on key mint/retire, and per-frame JS in the render phase for the world is ≤ 1.5 ms at 400 world draws. proof: `world-bundles.spec.ts` (bundle version counters) plus `TN_FRAME_SPANS` on machinefall.
 - [ ] AC-3 [local]: a foliage asset gets an automatic octahedral impostor as its last LOD level, drawn beyond the chain, casting into the coarse shadow levels. Past the impostor distance, triangles per tree are 2. proof: `world-impostors.spec.ts` plus a visual-baseline capture at the switch distance.
 - [ ] AC-4 [local]: the cook bakes a per-cell HLOD proxy for hand-placed chunks, and WorldCells draws it beyond the HLOD distance: one draw per material group per cell. proof: `packages/assets/__tests__/hlod.spec.ts` plus the `TN_WORLD_CHUNK_MERGE` / `TN_WORLD_HLOD` markers on machinefall.
@@ -70,6 +70,11 @@ Risks:
 
 ## Phases
 1. GPU instance scene (AC-1, AC-6): the largest CPU and GPU win, and the prerequisite for bundles.
+   - [x] One compute dispatch culls and LOD-selects every resident placement into a shared compacted matrix buffer, and every main key draws its own region of it through an indirect record. proof: `pnpm exec vitest run packages/core/__tests__/world-gpu-scene.spec.ts`.
+   - [x] A backend without compute, storage buffers or `drawIndexedIndirect` falls back to the CPU path and names why in `TN_WORLD_GPU_SCENE`. proof: the same spec's `gpuSceneUnsupported` cases.
+   - [x] The scene is on by default, and `gpuScene: false` / `?tnGpuScene=0` / `TN_GPU_SCENE=0` is the CPU path. proof: the same spec, with the CPU-path test asking for `gpuScene: false` explicitly.
 2. Cached draw commands (AC-2).
+   - [ ] Every GPU-dressed main batch mesh is parented under one `BundleGroup`, so a settled walk replays its draws instead of re-walking three's per-object path. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts`.
+   - [ ] `bundleGroup.needsUpdate` moves only on a structural change, and `stats().bundle` counts the records against the keys minted and retired. proof: the same spec's 200-frame streaming walk.
 3. Impostors (AC-3) and HLOD (AC-4), in parallel: they are independent.
 4. Measure and tune (AC-5).
