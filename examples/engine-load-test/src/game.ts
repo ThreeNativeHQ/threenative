@@ -522,7 +522,9 @@ export async function createLoadTestHarness(
   const readFoxMeasurement = (): IFoxMeasurement | undefined => {
     const first = characterRoots[0];
     if (first === undefined) return undefined;
-    const bounds = new Box3().setFromObject(first, true);
+    // Bind-pose geometry box, not the skinned one: Godot's `get_aabb()` is the bind-pose box, and a
+    // posed box reads a running fox ~10% shorter than it stands, which the engines would disagree on.
+    const bounds = new Box3().setFromObject(first, false);
     if (bounds.isEmpty()) return { heightM: 0, screenFraction: 0 };
     // The box's top and bottom at its own centre x, projected through the live camera. NDC y spans
     // -1..1, so half the difference is the fraction of the viewport height the fox covers.

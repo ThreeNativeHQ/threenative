@@ -23,7 +23,7 @@ The Fox asset is already pinned in `benchmark/engine-load-test/sources.lock.json
 
 ### Phase 1: Ladder in both engines
 
-- [ ] Rungs R1–R5 as mode flags in the TN load test and the Godot load test, reusing the existing scene and placement. proof: headless or short smoke runs on both engines record the rung's asserted counts (casters, lights, skinned meshes, post passes) in the result JSON.
+- [x] Rungs R1–R5 as mode flags in the TN load test and the Godot load test, reusing the existing scene and placement. proof: headless or short smoke runs on both engines record the rung's asserted counts (casters, lights, skinned meshes, post passes) in the result JSON. Result 2026-09-29: desktop smoke, 256 cubes, all five rungs on both engines under a private Xvfb, asserted counts identical per rung (casters 256→306, lights 0→8, skinned 0→50, post passes 0→1, R5 at 1920x1080), Fox 0.5 m and 1.58% of the viewport in both (TN 0.015826, Godot 0.015826). Smoke only: no timing claimed, machine load was above 10.
 - [ ] `pnpm bench:scoreboard` runs the ladder rows after the cube rows (3 alternating runs per engine) and the report shows them, with R5 first as FPS. proof: `engine-load-test-monitor.spec.ts` covers the ladder rows and the R5 headline; screenshot.
 
 ### Phase 2: Measure and explain

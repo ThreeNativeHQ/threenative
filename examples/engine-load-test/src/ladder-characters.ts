@@ -54,7 +54,9 @@ export async function createFoxCrowd(): Promise<ICharacterCrowd> {
   // factor, and the runner's gate reads the measured height back off the scene rather than trusting
   // this arithmetic. `game.ts` applies it, because the placement is where the scale belongs.
   const probe = players[0] as SkeletalMesh3D;
-  const raw = new Box3().setFromObject(probe.root, true);
+  // Bind-pose box, the definition `game.ts` reads back and Godot's `get_aabb()` reports; a posed one
+  // would scale the fox by the pose it happened to be in when the clip started.
+  const raw = new Box3().setFromObject(probe.root, false);
   if (raw.isEmpty()) throw new Error("TN_BENCH_FOX_EMPTY_BOUNDS");
   return {
     scale: foxScale(raw.max.y - raw.min.y),
