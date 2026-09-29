@@ -1070,10 +1070,15 @@ export async function setNativeProfileEntry(project, entry, renderSize = undefin
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
   if (config !== undefined) {
-    const withEntry = config.replace(
-      /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
-      `$1"${entry}"$2`,
-    );
+    // Whether the config declares the field at all is a different question from whether its value
+    // changes, and only the first one decides where the entry lives. Reading it off `withEntry !==
+    // config` conflates the two: a config already naming this entry left the value unchanged, fell
+    // through to the package.json branch below, and declared `nativeEntry` in *both* files — which
+    // the next `threenative build --target desktop` refuses with `TN_CONFIG_CONFLICT`. A project
+    // profiled once could therefore never be profiled a second time.
+    const entryPattern = /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu;
+    const declaresEntry = entryPattern.test(config);
+    const withEntry = config.replace(entryPattern, `$1"${entry}"$2`);
     // The packaged desktop artifact carries the game's config embedded, and the native host reads
     // its window size from there before any command-line flag, so the profiled surface is only the
     // requested render size when the config states it.
@@ -1081,7 +1086,9 @@ export async function setNativeProfileEntry(project, entry, renderSize = undefin
     if (sized !== config) {
       await writeFile(configPath, sized);
     }
-    if (withEntry !== config) {
+    if (declaresEntry) {
+      // One declaration, in the file the config layer resolves first. Dropping a stale key is also
+      // how a project already corrupted by the old fall-through is repaired on its next run.
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
       if (packageJson.threenative?.nativeEntry !== undefined) {
         delete packageJson.threenative.nativeEntry;

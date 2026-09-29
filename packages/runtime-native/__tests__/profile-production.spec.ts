@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
@@ -31,6 +31,11 @@ type Instrumentation = {
     artifactPath: string,
     options: { prebuiltArtifact?: string },
   ): boolean;
+  setNativeProfileEntry(
+    project: string,
+    entry: string,
+    renderSize?: { height: number; width: number },
+  ): Promise<void>;
 };
 
 async function instrumentation(): Promise<Instrumentation> {
@@ -198,6 +203,67 @@ function primaryCheckoutLayout(): { primary: string; root: string } {
   writeFileSync(join(primary, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
   return { primary, root };
 }
+
+describe("production profile native entry", () => {
+  const CONFIG =
+    'const config = {\n  app: { id: "com.x" },\n  nativeEntry: "src/game.ts",\n  window: { width: 1280, height: 720 },\n};\nexport default config;\n';
+
+  async function project(configSource: string, packageSource = '{"name":"game"}\n') {
+    const root = realpathSync(makeTempDirSync("tn-prod-entry-"));
+    writeFileSync(join(root, "threenative.config.ts"), configSource);
+    writeFileSync(join(root, "package.json"), packageSource);
+    return root;
+  }
+
+  it("should declare the native entry in exactly one file when the config already names it", async () => {
+    const { setNativeProfileEntry } = await instrumentation();
+    const entry = "src/profile-native-entry.ts";
+    const root = await project(CONFIG.replace("src/game.ts", entry));
+    try {
+      await setNativeProfileEntry(root, entry, { height: 1080, width: 1920 });
+      // Both files declaring it is the state the config layer refuses with TN_CONFIG_CONFLICT, so
+      // the profile command could never run a second time against a project it had already staged.
+      const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+      expect(packageJson.threenative?.nativeEntry).toBeUndefined();
+      expect(readFileSync(join(root, "threenative.config.ts"), "utf8")).toContain(
+        `nativeEntry: "${entry}"`,
+      );
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should fall back to package.json only for a config that declares no native entry", async () => {
+    const { setNativeProfileEntry } = await instrumentation();
+    const entry = "src/profile-native-entry.ts";
+    const root = await project(
+      'const config = {\n  app: { id: "com.x" },\n  window: { width: 1280, height: 720 },\n};\nexport default config;\n',
+    );
+    try {
+      await setNativeProfileEntry(root, entry, { height: 1080, width: 1920 });
+      const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+      expect(packageJson.threenative.nativeEntry).toBe(entry);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("should repair a project already declaring the entry in both files", async () => {
+    const { setNativeProfileEntry } = await instrumentation();
+    const entry = "src/profile-native-entry.ts";
+    const root = await project(
+      CONFIG.replace("src/game.ts", entry),
+      `${JSON.stringify({ name: "game", threenative: { nativeEntry: entry } }, null, 2)}\n`,
+    );
+    try {
+      await setNativeProfileEntry(root, entry, { height: 1080, width: 1920 });
+      const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+      expect(packageJson.threenative).toBeUndefined();
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+});
 
 describe("production profile staging", () => {
   it("should stage a linked checkout outside the owning workspace, where a real install lands in the game", async () => {
