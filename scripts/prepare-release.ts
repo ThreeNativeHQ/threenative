@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   type IPublishPackage,
@@ -11,10 +11,57 @@ import {
   npmLookup,
   publishSet,
 } from "./check-publish-state.js";
+import { progressOf } from "./prd-progress.js";
 import { validateReleaseCohort } from "./release.js";
 
 const REPO = path.resolve(import.meta.dirname, "..");
 const TEMPLATE_ROOT = path.join(REPO, "packages", "create-threenative", "templates");
+
+/**
+ * The PRDs whose boxes must be closed before a cohort may claim `1.0.0`.
+ *
+ * 1.0.0 is the version that promises a game written against N keeps working on N+1, so the cohort
+ * may not claim it while the proof of that promise is still open. PRD-446 owns it; a second cohort
+ * that gates 1.0 adds its file here.
+ */
+export const RELEASE_1_0_0_GATES = [
+  // PRD-446 was archived under `done/` when its proof landed, and the gate stays wired to it: an
+  // unticked box there refuses a 1.0.0 cohort again, and a moved file still fails closed.
+  "docs/PRDs/done/PRD-446-stable-api-and-upgrade-contract.md",
+] as const;
+
+/**
+ * Refuse `1.0.0` while any gate PRD still has an unticked box, counting through the repository's
+ * own box reader rather than a second one that would disagree with `pnpm prd:progress`.
+ *
+ * A gate file that has moved is a failure, not a pass: a renamed PRD must not quietly retire the
+ * promise it was carrying.
+ */
+export function assertOneZeroGatesClosed(
+  repo = REPO,
+  files: readonly string[] = RELEASE_1_0_0_GATES,
+): void {
+  const open = files.flatMap((file) => {
+    const source = path.join(repo, file);
+    if (!existsSync(source))
+      throw new Error(
+        `TN_RELEASE_1_0_0_GATE_MISSING: ${source} is absent, so its open boxes are unknown.`,
+      );
+    const progress = progressOf(readFileSync(source, "utf8"));
+    if (progress.phaseBoxes === 0)
+      throw new Error(`TN_RELEASE_1_0_0_GATE_EMPTY: ${source} has no phase boxes to prove.`);
+    const remaining =
+      progress.phaseBoxes -
+      progress.phaseBoxesTicked +
+      progress.acceptanceTotal -
+      progress.acceptanceTicked;
+    return remaining === 0 ? [] : [`${file} (${remaining} open box(es), ${progress.label.name})`];
+  });
+  if (open.length > 0)
+    throw new Error(
+      `TN_RELEASE_1_0_0_GATES_OPEN: a 1.0.0 cohort promises a stable public API, and these are still open: ${open.join("; ")}. Nothing was written.`,
+    );
+}
 
 export interface IReleaseVersionState {
   readonly current: string;
@@ -261,6 +308,10 @@ function run(command: string, args: readonly string[], label: string): void {
 async function main(): Promise<void> {
   const packages = publishSet(REPO);
   const selected = selectReleaseVersions(packages, npmLookup(REPO));
+  // Before a single file is written: 1.0.0 is refused while PRD-446's upgrade proof is still open,
+  // so the version bump nobody wants to walk back never lands in the first place.
+  if ([...selected.values()].some((state) => state.next === "1.0.0"))
+    assertOneZeroGatesClosed(REPO);
   const changed = syncReleaseMetadata(REPO, packages, selected);
   process.stdout.write(
     `Prepared ${packages.length} package(s); synchronized ${changed} file(s).\nRelease cohort:\n${packages

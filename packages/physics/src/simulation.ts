@@ -1277,10 +1277,22 @@ export function createWebPhysicsSimulation(
   return simulation;
 }
 
+// One warning per process, not per node: a scene that builds a hundred bodies from the deprecated
+// option would otherwise bury the one line that says what to change.
+let warnedDeprecatedWorldOption = false;
+
 export function requirePhysicsSimulation(
   physics: { readonly simulation?: IPhysicsSimulation } | undefined,
   world: unknown,
 ): IPhysicsSimulation {
+  // Warn on the supplied option, not on the path taken: a caller that passes both still gets told
+  // the option is going away, and only the current `physics` path stays silent.
+  if (world !== undefined && !warnedDeprecatedWorldOption) {
+    warnedDeprecatedWorldOption = true;
+    console.warn(
+      "TN_DEPRECATED_PHYSICS_WORLD_OPTION: the constructor option `world` is deprecated on every physics node; pass an IPhysicsContext as `physics` instead. The node classes themselves are not deprecated.",
+    );
+  }
   if (physics?.simulation !== undefined) return physics.simulation;
   const candidate =
     typeof world === "object" && world !== null && "simulation" in world

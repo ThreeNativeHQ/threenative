@@ -5,6 +5,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 export const PHYSICAL_EVIDENCE_SCHEMA = "physicalDeviceEvidenceV1";
+/** v2 keeps every v1 block and re-reads only the lifecycle and the unmeasured timings. */
+export const PHYSICAL_EVIDENCE_V2_SCHEMA = "physicalDeviceEvidenceV2";
 export const REQUIRED_PREREQUISITES = ["prd053", "prd054", "prd046", "prd048"];
 export const REQUIRED_GATE_IDS = [
   "evidence-schema",
@@ -20,6 +22,13 @@ export const REQUIRED_GATE_IDS = [
   "qualification-rollup",
   "repository-collection",
 ];
+
+/** The operations a v2 lifecycle certifies, in the order the device reads them; any later phase is a resume. */
+const LIFECYCLE_OPERATIONS = ["background", "foreground", "rotate"];
+/** v2 lifecycle times are offsets from the run's own clock. A wall-clock reading is a time no read produced. */
+const RUN_RELATIVE_CLOCK = "run-relative-ms";
+/** Timings the collector never measured, recorded as unmeasured rather than filled from the run's start. */
+const UNMEASURED_TIMINGS = ["readyAt", "firstFrameAt", "frame300At"];
 
 const ROOT_KEYS = new Set([
   "schemaVersion",
@@ -287,6 +296,99 @@ function validateLifecycle(value, errors, execution) {
   if (value.stateContinuity !== true) add(errors, `${path}.stateContinuity`, "must be true for a physical resume report");
 }
 
+/**
+ * The v2 execution block: the facts the run measured, with the three timings it did not.
+ *
+ * `sessionNonce` is gone because a device observation carries no nonce — the session claim is the
+ * one process every reading and this block share. The unmeasured timings are `null` rather than
+ * absent, so a reader can tell "not measured" from "not written about", and a string in any of
+ * them is refused: a value copied from the run's own start would read as a measurement.
+ */
+function validateExecutionV2(value, errors) {
+  const path = "execution";
+  if (!objectAt(value, path, errors, new Set(["installStartedAt", "launchStartedAt", ...UNMEASURED_TIMINGS, "pid", "frames", "nonBlankCaptureSha256", "gpuErrorCount", "arm64", "nativeGpu", "processLiveness", "assertionCount"]))) return;
+  timestampAt(value.installStartedAt, `${path}.installStartedAt`, errors);
+  timestampAt(value.launchStartedAt, `${path}.launchStartedAt`, errors);
+  for (const key of UNMEASURED_TIMINGS) {
+    if (value[key] !== null) add(errors, `${path}.${key}`, "must be null: this run never measured it, and a time taken from the run's start would be a reading no device produced");
+  }
+  finiteNumberAt(value.pid, `${path}.pid`, errors, { integer: true, minimum: 1 });
+  finiteNumberAt(value.frames, `${path}.frames`, errors, { integer: true, minimum: 300 });
+  hashAt(value.nonBlankCaptureSha256, `${path}.nonBlankCaptureSha256`, errors);
+  finiteNumberAt(value.gpuErrorCount, `${path}.gpuErrorCount`, errors, { integer: true, minimum: 0 });
+  if (value.gpuErrorCount !== 0) add(errors, `${path}.gpuErrorCount`, "must equal zero");
+  if (value.arm64 !== true) add(errors, `${path}.arm64`, "must be true");
+  if (value.nativeGpu !== true) add(errors, `${path}.nativeGpu`, "must be true; software GPU is not physical evidence");
+  booleanAt(value.processLiveness, `${path}.processLiveness`, errors);
+  finiteNumberAt(value.assertionCount, `${path}.assertionCount`, errors, { integer: true, minimum: 1 });
+  if (value.processLiveness !== true) add(errors, `${path}.processLiveness`, "must be true for a passing physical report");
+}
+
+/**
+ * The v2 lifecycle block: one row per device-read operation, the readings it carried, and three
+ * step counts bracketing the away period.
+ *
+ * Nothing here is attributed to a phase that did not produce it — no wall-clock `at`, no session
+ * nonce, no per-phase step count, no fourth phase. Every claim v1 asserted as a standalone boolean
+ * is instead re-derived from these numbers below, and refused when the readings deny it.
+ */
+function validateLifecycleV2(value, errors, execution) {
+  const path = "lifecycle";
+  if (!objectAt(value, path, errors, new Set(["clock", "operations", "framesPaused", "framesAdvanced", "physics"]))) return;
+  if (value.clock !== RUN_RELATIVE_CLOCK) add(errors, `${path}.clock`, `must be ${RUN_RELATIVE_CLOCK}; the runner reads offsets from the run's own clock, and a wall-clock time here would be one no read produced`);
+  if (!Array.isArray(value.operations)) add(errors, `${path}.operations`, "must be an array");
+  else if (value.operations.length < LIFECYCLE_OPERATIONS.length) add(errors, `${path}.operations`, `must carry at least ${LIFECYCLE_OPERATIONS.length} device-read operations`);
+  else {
+    let previous;
+    for (const [index, operation] of value.operations.entries()) {
+      const opPath = `${path}.operations[${index}]`;
+      if (!objectAt(operation, opPath, errors, new Set(["operation", "offsetMs", "frames", "focused", "framesPaused", "pid", "windowRotation", "requestedRotation"]))) continue;
+      const expected = LIFECYCLE_OPERATIONS[index] ?? "foreground";
+      if (operation.operation !== expected) add(errors, `${opPath}.operation`, `must be the ${expected} operation this claim rests on`);
+      if (operation.focused !== (operation.operation !== "background")) add(errors, `${opPath}.focused`, `must be ${String(operation.operation !== "background")}; the device reports unfocused only while the app is away`);
+      if (index === 0 && operation.framesPaused !== true) add(errors, `${opPath}.framesPaused`, "must be true; the backgrounded reading itself has to show the frame counter stopping");
+      finiteNumberAt(operation.offsetMs, `${opPath}.offsetMs`, errors, { minimum: 0 });
+      finiteNumberAt(operation.frames, `${opPath}.frames`, errors, { integer: true, minimum: 0 });
+      finiteNumberAt(operation.pid, `${opPath}.pid`, errors, { integer: true, minimum: 1 });
+      if (operation.pid !== execution?.pid) add(errors, `${opPath}.pid`, "must be the one process the rest of the evidence recorded");
+      if (Number.isFinite(operation.offsetMs) && Number.isFinite(previous?.offsetMs) && operation.offsetMs <= previous.offsetMs) add(errors, `${opPath}.offsetMs`, `is ${String(operation.offsetMs)}, not after the previous operation's ${String(previous.offsetMs)}`);
+      if (Number.isInteger(operation.frames) && Number.isInteger(previous?.frames) && operation.frames < previous.frames) add(errors, `${opPath}.frames`, `is ${String(operation.frames)}, below the previous operation's ${String(previous.frames)}; a device frame count does not run backwards`);
+      if (expected === "rotate") {
+        if (operation.windowRotation !== operation.requestedRotation) add(errors, `${opPath}.windowRotation`, `is ${String(operation.windowRotation)}, not the requested rotation ${String(operation.requestedRotation)}; the device has to have turned, not merely been asked to`);
+        if (operation.windowRotation === previous?.windowRotation) add(errors, `${opPath}.windowRotation`, `is still ${String(operation.windowRotation)}, so the device never turned`);
+      }
+      previous = operation;
+    }
+  }
+  const [away, resumed] = [value.operations?.[0], value.operations?.at(-1)];
+  booleanAt(value.framesPaused, `${path}.framesPaused`, errors);
+  booleanAt(value.framesAdvanced, `${path}.framesAdvanced`, errors);
+  if (value.framesPaused !== true) add(errors, `${path}.framesPaused`, "must be true for a passing physical report");
+  if (value.framesAdvanced !== true) add(errors, `${path}.framesAdvanced`, "must be true for a passing physical report");
+  if (isRecord(away) && Number.isInteger(away.frames) && Number.isInteger(resumed?.frames)) {
+    if (value.framesPaused !== away.framesPaused) add(errors, `${path}.framesPaused`, `is ${String(value.framesPaused)}, but the backgrounded reading recorded ${String(away.framesPaused)}`);
+    if (value.framesAdvanced !== (resumed.frames > away.frames)) add(errors, `${path}.framesAdvanced`, `is ${String(value.framesAdvanced)}, but the readings' own frame counts ${resumed.frames > away.frames ? "advance" : "do not advance"} past the backgrounded one`);
+  }
+  validateLifecycleStepsV2(value.physics, errors);
+}
+
+/** Three step counts around the away period: a claim the counts have to agree with, not replace. */
+function validateLifecycleStepsV2(value, errors) {
+  const path = "lifecycle.physics";
+  if (!objectAt(value, path, errors, new Set(["steps", "stepsPaused", "stepsAdvanced"]))) return;
+  const stepsPath = `${path}.steps`;
+  if (!objectAt(value.steps, stepsPath, errors, new Set(["beforeBackground", "afterForeground", "afterAdvance"]))) return;
+  for (const key of ["beforeBackground", "afterForeground", "afterAdvance"]) finiteNumberAt(value.steps[key], `${stepsPath}.${key}`, errors, { integer: true, minimum: 0 });
+  booleanAt(value.stepsPaused, `${path}.stepsPaused`, errors);
+  booleanAt(value.stepsAdvanced, `${path}.stepsAdvanced`, errors);
+  if (value.stepsPaused !== true) add(errors, `${path}.stepsPaused`, "must be true for a passing physical report");
+  if (value.stepsAdvanced !== true) add(errors, `${path}.stepsAdvanced`, "must be true for a passing physical report");
+  const { beforeBackground, afterForeground, afterAdvance } = value.steps;
+  if (![beforeBackground, afterForeground, afterAdvance].every((step) => Number.isInteger(step) && step >= 0)) return;
+  if (afterForeground !== beforeBackground) add(errors, stepsPath, `the simulation stepped from ${String(beforeBackground)} to ${String(afterForeground)} while the app was away`);
+  if (afterAdvance <= afterForeground) add(errors, stepsPath, `the simulation did not advance after the return (${String(afterForeground)} to ${String(afterAdvance)})`);
+}
+
 function validateMultitouch(value, errors, path) {
   if (!objectAt(value, path, errors, new Set(["status", "reportPath", "reportSha256", "candidateSha", "deviceClass", "maxPointers", "simultaneousMovementAndJump", "onePointerControl"]))) return;
   enumAt(value.status, `${path}.status`, errors, ["pass"]);
@@ -403,7 +505,7 @@ function validateConsumption(value, errors, candidateSha) {
   for (const key of ["multitouch", "physics"]) if (value[key]?.candidateSha !== candidateSha) add(errors, `${path}.${key}.candidateSha`, `must match candidate SHA ${candidateSha ?? "from source"}`);
 }
 
-export function validatePhysicalDeviceEvidence(evidence, options = {}) {
+export function validatePhysicalDeviceEvidenceV1(evidence, options = {}) {
   const errors = [];
   if (!objectAt(evidence, "evidence", errors, ROOT_KEYS)) return { valid: false, errors };
   if (evidence.schemaVersion !== 1) add(errors, "schemaVersion", "must equal 1");
@@ -423,6 +525,32 @@ export function validatePhysicalDeviceEvidence(evidence, options = {}) {
   return { valid: errors.length === 0, errors: [...new Set(errors)] };
 }
 
+export function validatePhysicalDeviceEvidenceV2(evidence, options = {}) {
+  const errors = [];
+  if (!objectAt(evidence, "evidence", errors, ROOT_KEYS)) return { valid: false, errors };
+  if (evidence.schemaVersion !== 2) add(errors, "schemaVersion", "must equal 2");
+  validateIdentity(evidence.identity, errors);
+  validateSource(evidence.source, errors, options);
+  validateDevice(evidence.device, errors, options);
+  validateSigning(evidence.signing, errors);
+  const candidateSha = options.candidateSha ?? evidence.source?.headSha;
+  validatePrerequisites(evidence.prerequisites, errors, { candidateSha });
+  validateExecutionV2(evidence.execution, errors);
+  validateLifecycleV2(evidence.lifecycle, errors, evidence.execution);
+  validateConsumption(evidence.consumption, errors, candidateSha);
+  validateTelemetry(evidence.telemetry, errors);
+  validateArtifacts(evidence.artifacts, errors);
+  validateGateEvidence(evidence.gateEvidence, errors);
+  if (evidence.identity?.verdict === "pass" && evidence.identity?.blockers?.length > 0) add(errors, "identity.blockers", "a pass report cannot contain blockers");
+  return { valid: errors.length === 0, errors: [...new Set(errors)] };
+}
+
+export function validatePhysicalDeviceEvidence(evidence, options = {}) {
+  return evidence?.schemaVersion === 2
+    ? validatePhysicalDeviceEvidenceV2(evidence, options)
+    : validatePhysicalDeviceEvidenceV1(evidence, options);
+}
+
 export function assertValidPhysicalDeviceEvidence(evidence, options = {}) {
   const result = validatePhysicalDeviceEvidence(evidence, options);
   if (!result.valid) throw new EvidenceValidationError(result.errors);
@@ -434,6 +562,12 @@ export function physicalDeviceEvidenceV1(evidence, options = {}) {
 }
 
 physicalDeviceEvidenceV1.schema = PHYSICAL_EVIDENCE_SCHEMA;
+
+export function physicalDeviceEvidenceV2(evidence, options = {}) {
+  return validatePhysicalDeviceEvidenceV2(evidence, options);
+}
+
+physicalDeviceEvidenceV2.schema = PHYSICAL_EVIDENCE_V2_SCHEMA;
 
 export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");

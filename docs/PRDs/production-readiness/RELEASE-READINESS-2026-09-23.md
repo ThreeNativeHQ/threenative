@@ -8,7 +8,10 @@
 PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
 `alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game (phase 3, physical Android) · PRD-399 final
+**Remaining for R2 (owner):** PRD-366 registry consumer game — now
+[`BLOCKED/requires-physical-device/`](../BLOCKED/requires-physical-device/) under R6, all 19 phase
+boxes and 3 acceptance boxes ticked, so its whole remainder is a physical Android device, a Windows
+and a macOS host with registry access, and a republished cohort · PRD-399 final
 cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
 controls and web/native parity. PRD-365 and PRD-375 are closed; PRD-375's owner visual check and
 PR #271 merge completed on 2026-09-28. PRD-445 is filed in
@@ -118,7 +121,9 @@ to 0.3.3 and not released.
 ### R2 — a public beta that ships a game
 
 1. **One consumer game, installed from the registry, on every supported target.** Owner:
-   [PRD-366](critical/PRD-366-one-consumer-game-proves-supported-platforms.md) — phase 3 open, 0/5 acceptance.
+   [PRD-366](../BLOCKED/requires-physical-device/PRD-366-one-consumer-game-proves-supported-platforms.md)
+   — all 19 phase boxes and 3 acceptance boxes ticked (2026-09-28); blocked on a physical Android
+   device, Windows and macOS hosts with registry access, and a republished cohort (R6).
 2. **The packed golden path is green (closed 2026-09-27).** The ten-template packed gate and its
    mutated-package negative control pass. Owner:
    [PRD-112](../done/PRD-112-golden-path-from-packed-artifacts.md) and
@@ -142,10 +147,10 @@ box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) b
 1. **Proof on real hardware.** One codebase on a physical phone by playtest — [PRD-056](../BLOCKED/requires-physical-device/PRD-056-physical-mobile-qualification.md)
    0/42 boxes. Mobile frame budget on real hardware — met at 120 Hz (63–72 fps, Bayview), not on
    the 60 Hz baseline; [PRD-066](../performance/PRD-066-android-device-frame-rate.md).
-2. **The stable-API contract is partial.** PRD-446 now snapshots the public surface and defines
-   deprecation policy; its prepublication upgrade path is wired, but real N-1 starter/platformer
-   runs and 1.0 acceptance remain open. Owner:
-   [PRD-446](PRD-446-stable-api-and-upgrade-contract.md) (11/14 phase boxes).
+2. **The stable-API contract is met.** [PRD-446](../done/PRD-446-stable-api-and-upgrade-contract.md)
+   (14/14 phase, 4/4 acceptance) guards published symbols with a committed snapshot and a breaking
+   note, ships the deprecation policy, and proves an N-1 starter/platformer upgrade before any
+   cohort moves `latest`.
 3. **Web/native parity is not proven.** [PRD-054](../BLOCKED/requires-parity-rerun/PRD-054-write-once-run-anywhere.md):
    browser 66/1/0, desktop 65/1/1, Android 0/0/67 blocked. Audio parity is at its review cap —
    [PRD-057](../BLOCKED/review-cap/PRD-057-native-audio-parity.md) (0/56).
@@ -166,7 +171,7 @@ flowchart TD
     C[PRD-196 publish 0.3.3 cohort + runtime-native-v0.3.3] --> R1
     P[PRD-373 merge promotion #291] --> R1
     R1([R1: coherent 0.3.3 preview on latest])
-    R1 --> Q[PRD-366 phase 3: consumer game from the registry]
+    R1 --> Q[PRD-366 consumer game: physical Android + republished cohort (BLOCKED)]
     G[PRD-112 packed golden path green] --> R2
     Q --> R2
     L[PRD-399 Android UI latency at 60 Hz] --> R2

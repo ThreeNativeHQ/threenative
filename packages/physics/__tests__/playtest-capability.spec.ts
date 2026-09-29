@@ -115,6 +115,28 @@ describe("rapier playtest capability", () => {
     });
   });
 
+  it("should count one step per completed simulation.step, and count a step that never happened as none", async () => {
+    const { contribution, ctx, plugin } = await physicsHarness();
+
+    // Sampled with no `include` at all: the step count rides every observation, because a
+    // lifecycle phase reads it at moments when nothing asked for the debug series.
+    const steps = (): number =>
+      (contribution().sample({}) as { physicsSteps: number }).physicsSteps;
+
+    expect(steps()).toBe(0);
+    for (let step = 0; step < 3; step += 1) plugin.update?.(ctx, 1 / 60);
+    expect(steps()).toBe(3);
+
+    // The counter is not the game loop's tick and not an attempt count: a step the backend
+    // refused advances nothing, so a paused or failed frame cannot be read as simulation.
+    const failing = ctx.physics.simulation;
+    failing.step = () => {
+      throw new Error("TN_TEST_STEP_REFUSED");
+    };
+    expect(() => plugin.update?.(ctx, 1 / 60)).toThrow("TN_TEST_STEP_REFUSED");
+    expect(steps()).toBe(3);
+  });
+
   it("should keep position-only body observations stable", async () => {
     const { contribution, ctx, plugin, setTick } = await physicsHarness();
     const anonymous = new RigidBody3D({
