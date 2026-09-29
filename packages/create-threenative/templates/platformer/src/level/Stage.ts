@@ -172,6 +172,8 @@ export function buildStage(rng: () => number): IStage {
       new ConeGeometry(radius * 0.95, depth, 10),
       toon(C.rock, { flat: true }),
     );
+    // ConeGeometry points up; flip it so the spike hangs point-down under the disc.
+    spike.rotation.x = Math.PI;
     spike.position.y = -0.5 - depth / 2;
     chunk.add(spike);
     const underSpike = new Mesh(
@@ -179,7 +181,7 @@ export function buildStage(rng: () => number): IStage {
       toon(C.rockDark, { flat: true }),
     );
     underSpike.position.set(radius * 0.25, -0.5 - depth * 0.6, -radius * 0.2);
-    underSpike.rotation.z = 0.25;
+    underSpike.rotation.set(Math.PI, 0, 0.25);
     chunk.add(underSpike);
     const tendrils = vines(3, rng);
     tendrils.position.set(radius * 0.4, -0.6, radius * 0.5);
@@ -354,7 +356,8 @@ export function buildStage(rng: () => number): IStage {
       new ConeGeometry(radius * 0.9, radius * 2.2, 8),
       toon(C.rock, { flat: true }),
     );
-    spike.position.y = -radius * 1.2;
+    spike.rotation.x = Math.PI;
+    spike.position.y = -0.6 - radius * 1.1;
     distant.add(spike);
     for (let t = 0; t < 3; t += 1) {
       const tree =
