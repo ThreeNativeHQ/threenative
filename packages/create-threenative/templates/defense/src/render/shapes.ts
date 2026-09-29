@@ -19,10 +19,7 @@ import {
 import { palette } from "./palette.js";
 
 export function board(width = 28, depth = 20): Mesh {
-  const mesh = new Mesh(
-    worldGridUVs(new BoxGeometry(width, 0.2, depth)),
-    floorMaterial,
-  );
+  const mesh = new Mesh(worldGridUVs(new BoxGeometry(width, 0.2, depth)), floorMaterial);
   mesh.position.y = -0.1;
   mesh.receiveShadow = true;
   mesh.name = "build-ground";
