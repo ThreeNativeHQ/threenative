@@ -1073,6 +1073,11 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       fromJSON(needs.scope.outputs.plan).jobs['native-platforms'].required
+    # The ceiling, not the grant: native-platforms.yml pins every job to read except
+    # publish-android-v8, which runs only on main/develop and checks out nothing. A called job
+    # asking for more than its caller allows fails the whole run before any job starts.
+    permissions:
+      contents: write
     uses: ./.github/workflows/native-platforms.yml
     with:
       selection_plan: ${{ needs.scope.outputs.plan }}
