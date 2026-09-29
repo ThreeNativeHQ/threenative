@@ -1,13 +1,12 @@
 import { GroundSnap } from "@threenative/core";
-import { BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
+import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { describe, expect, it } from "vitest";
 import { preparePlayerConventions as prepareRpgConventions } from "../templates/action-rpg/src/conventions.js";
 import { createSword } from "../templates/action-rpg/src/render/props.js";
 import { prepareCommanderConventions } from "../templates/defense/src/conventions.js";
 import { commander } from "../templates/defense/src/render/shapes.js";
 import { preparePlayerConventions as prepareMinimalConventions } from "../templates/minimal/src/conventions.js";
-import { prepareCharacterConventions } from "../templates/platformer/src/conventions.js";
-import { createCharacterRig } from "../templates/platformer/src/render/rig.js";
+import { createFox } from "../templates/platformer/src/render/fox.js";
 import { prepareVehicleConventions } from "../templates/racing/src/conventions.js";
 import { createMaterials as createRacingMaterials } from "../templates/racing/src/render/materials.js";
 import { vehicle } from "../templates/racing/src/render/shapes.js";
@@ -92,12 +91,22 @@ describe("generated template conventions", () => {
     expect(model.position.y).toBe(beforeY);
   });
 
-  it("grounds and scales the platformer procedural character", () => {
-    const model = createCharacterRig().root;
-    const conventions = prepareCharacterConventions(model);
+  it("authors the platformer fox in metres, so it needs neither a scale nor a snap", () => {
+    // The platformer's applicability row is N/A for both generated conventions, and this is what
+    // makes that honest rather than a gap: the rig is built from primitives with its feet on
+    // y = 0, and the collider is the `CharacterBody3D` capsule the body already sits on. There is
+    // no imported scale to normalise and no visual offset from the body to snap back.
+    const fox = createFox();
+    const rig = fox.group;
+    rig.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(rig);
 
-    expectFactor(conventions.normaliseFactor);
-    expectGrounding(model, conventions);
+    expect(Number.isFinite(box.min.y)).toBe(true);
+    expect(box.min.y).toBeCloseTo(0, 5);
+    // A fox-sized character: under two metres, over one, and taller than it is long.
+    expect(box.max.y).toBeGreaterThan(1);
+    expect(box.max.y).toBeLessThan(2);
+    expect(box.max.y).toBeGreaterThan(box.max.x - box.min.x);
   });
 
   it("scales the racing vehicle", () => {

@@ -292,7 +292,8 @@ describe("threenative build", () => {
         await tree(path.join(target, "vite-dist")),
       );
     }
-  });
+    // Each template ships assets/sky.jpg, so each buildWeb pays a real texture cook (~84 s total).
+  }, 240_000);
 
   // PRD-448. The web build publishes the way a native artifact already does, so the last working
   // `dist` is what a player is served until a build that finished replaces it. A Vite run that

@@ -1,57 +1,72 @@
-import { BoxGeometry, BufferAttribute, Group, Mesh, MeshStandardMaterial } from "three";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// `palette` is the six roles the render layer shares: the loading screen's two sky bands, the
+// distance the horizon fades into, the two colours a walkable surface is made of, and one
+// saturated `accent` that marks everything the player can touch. Rename a role and every user of
+// it moves with it, which is the point — there is no second copy of "the green" anywhere.
+//
+// `C` is this game's own colour table for the procedural models below it. A fox with a jacket, a
+// gold coin and a red mushroom cap needs more than six colours and pretending otherwise buys
+// nothing: these are named per part, so swapping one creature's fur never touches a rock.
 
 export const palette = {
-  skyHigh: 0x1458bd,
-  skyLow: 0x83d8f2,
-  ground: 0x55b935,
-  character: 0xf29a38,
-  accent: 0xffc83d,
-  // Stone and crates. At 0x241d1a these read as black holes in the frame — the key comes from
-  // behind and above, so every face the camera can see is the unlit one, and the ambient alone
-  // has to carry them.
-  shadow: 0x6b5744,
+  grass: 0x5cbb37,
+  /** Distance fades into this; also the loading screen's background. */
+  horizon: 0xa8d6f5,
+  rock: 0xa8927a,
+  /** The loading screen's progress track. */
+  skyHigh: 0x2e88e0,
+  skyLow: 0xbfe4fb,
+  /** The one saturated role: coins, gems, stars, the goal. */
+  accent: 0xffd23f,
 } as const;
 
-const materialCache = new Map<number, MeshStandardMaterial>();
+/** Colours sampled from the reference frame, by part. */
+export const C = {
+  skyTop: 0x2e88e0,
+  skyBottom: 0xbfe4fb,
+  fog: 0xa8d6f5,
+  sun: 0xfff4d6,
 
-export function toon(color: number): MeshStandardMaterial {
-  const cached = materialCache.get(color);
-  if (cached !== undefined) return cached;
-  const material = new MeshStandardMaterial({ color, roughness: 0.78, metalness: 0 });
-  materialCache.set(color, material);
-  return material;
-}
+  grass: 0x5cbb37,
+  grassDark: 0x3f8f28,
+  grassLight: 0x8ede4f,
+  dirt: 0x8a6a45,
 
-function mottle(mesh: Mesh, seed = 1): void {
-  const position = mesh.geometry.getAttribute("position");
-  if (position === undefined) return;
-  const colors = new Float32Array(position.count * 3);
-  for (let index = 0; index < position.count; index += 1) {
-    const value = 0.88 + ((index * 17 + seed * 13) % 7) * 0.02;
-    colors[index * 3] = value;
-    colors[index * 3 + 1] = value;
-    colors[index * 3 + 2] = value;
-  }
-  mesh.geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  const material = (mesh.material as MeshStandardMaterial).clone();
-  material.vertexColors = true;
-  mesh.material = material;
-}
+  rock: 0xa8927a,
+  rockDark: 0x776352,
+  rockLight: 0xc6b294,
+  moss: 0x6a9b3f,
 
-export function rockBox(width: number, height: number, depth: number, seed = 1): Group {
-  const group = new Group();
-  const top = new Mesh(new BoxGeometry(width, 0.28, depth), toon(palette.ground));
-  top.position.y = height / 2 - 0.14;
-  top.castShadow = true;
-  top.receiveShadow = true;
-  mottle(top, seed);
-  const stone = new Mesh(
-    new BoxGeometry(width * 0.84, height - 0.28, depth * 0.82),
-    toon(palette.shadow),
-  );
-  stone.position.y = -0.14;
-  stone.castShadow = true;
-  stone.receiveShadow = true;
-  group.add(top, stone);
-  return group;
-}
+  wood: 0xd0904c,
+  woodDark: 0x9c6330,
+  woodPost: 0xb87a3c,
+  rope: 0xdcc08a,
+
+  fur: 0xf2952f,
+  furDark: 0xd4761b,
+  cream: 0xfbe7c9,
+  jacket: 0x2f7fd6,
+  jacketDark: 0x2263ab,
+  pack: 0x5c7ea3,
+  ink: 0x2b1a10,
+
+  gold: 0xffd23f,
+  goldDark: 0xd79a17,
+  gem: 0x3fa9f5,
+  gemLight: 0x9fe0ff,
+
+  capRed: 0xdf4a3d,
+  capDark: 0xa82f26,
+  shellRed: 0x9e3527,
+  snailBody: 0xa8c47a,
+  spot: 0xfff3e2,
+
+  water: 0x9fe3fb,
+  cloud: 0xffffff,
+  brick: 0xb08d72,
+  brickDark: 0x8a6c55,
+  roof: 0x3f7fbf,
+  metal: 0x9aa7b4,
+} as const;

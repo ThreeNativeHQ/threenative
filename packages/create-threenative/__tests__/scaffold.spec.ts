@@ -447,7 +447,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
   minimal: "ba6e045a12666636587f1338a10c61a966b8261eff315387883a919c378052c9",
-  platformer: "01c6eb7da2452567a042141aaac53b3e99ead512a569c3bb394f2faa5cb3c6b6",
+  platformer: "9a6bc853013a078e35bf2f9d70a40d34dc106f1315746f3c824950432b347369",
   runner: "2b6844ced6e5591839b746deab922a866ff0c9a5afd2ea435a5b15c935d21ffd",
   puzzle: "15d0dd06e372b024df52f48ed4f78ed08734cdc47b2c41b41ee1702a69f7b56c",
   racing: "f1018eeb9a833794dbe1a2f7dfa0899d87b6cf2c5821682a203c4fa8ff2b803a",
@@ -672,36 +672,37 @@ const PLATFORMER_PATHS = [
   "src/main.ts",
   "src/state.ts",
   "src/scenes/Boot.ts",
-  "src/scenes/Level.ts",
-  "src/entities/Character.ts",
-  "src/entities/Chaser.ts",
-  "src/entities/Patrol.ts",
+  "src/scenes/Play.ts",
+  "src/entities/Fox.ts",
   "src/entities/Pickup.ts",
+  "src/entities/Walker.ts",
   "src/level/Checkpoints.ts",
-  "src/level/Platform.ts",
-  "src/render/palette.ts",
+  "src/level/Stage.ts",
+  "src/render/blocks.ts",
   "src/render/camera.ts",
+  "src/render/fox.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
   "src/render/materials.ts",
-  "src/render/rig.ts",
-  "src/render/sky.ts",
+  "src/render/palette.ts",
+  "src/render/pickups.ts",
   "src/render/postprocessing.ts",
-  "src/render/terrain.ts",
+  "src/render/props.ts",
+  "src/render/sky.ts",
+  "src/render/scenery.ts",
+  "src/render/walkers.ts",
+  "src/render/waterfall.ts",
   "public/icon.png",
-  "playtests/jump.playtest.json",
-  "playtests/patrol.playtest.json",
+  "playtests/coyote.playtest.json",
   "playtests/collect.playtest.json",
-  "playtests/stomp.playtest.json",
-  "playtests/stomp-rise.playtest.json",
+  "playtests/damage.playtest.json",
+  "playtests/hud.playtest.json",
+  "playtests/jump.playtest.json",
+  "playtests/move.playtest.json",
   "playtests/respawn.playtest.json",
-  "playtests/oneway.playtest.json",
-  "playtests/collision-layers.playtest.json",
-  "playtests/chase.playtest.json",
-  "playtests/avoidance.playtest.json",
+  "playtests/stomp.playtest.json",
+  "playtests/survives.playtest.json",
   "playtests/performance.playtest.json",
-  "playtests/terminal-loop-win.playtest.json",
-  "playtests/terminal-loop-fail.playtest.json",
   "playtests/native/touch-controls.playtest.json",
 ];
 
@@ -718,7 +719,7 @@ describe("create-threenative", () => {
       blurb: expect.any(String),
       genre: "platformer",
       kit: true,
-      title: "Platformer",
+      title: "Fox Dash",
     });
     const help = cliHelp();
     expect(help).toContain("Templates:");
@@ -1500,10 +1501,10 @@ describe("create-threenative", () => {
         ).resolves.toBeTruthy();
       }
       await expect(
-        readFile(path.join(result.target, "src/entities/Character.ts"), "utf8"),
-      ).resolves.toContain("PLATFORMER_FEEL");
+        readFile(path.join(result.target, "src/entities/Fox.ts"), "utf8"),
+      ).resolves.toContain("FOX_FEEL");
       await expect(
-        readFile(path.join(result.target, "src/scenes/Level.ts"), "utf8"),
+        readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
       ).resolves.toContain('ctx.entities.add("player"');
     } finally {
       await rm(root, { recursive: true, force: true });

@@ -46,6 +46,7 @@ gets clean edges from the same code. No new package, no new dependency, no new a
 
 - [ ] `shooter` rebuilt from the sandbox `fps-framework` game: its hands kept, every other asset replaced by the shared mannequin, arena and sky. proof: `TN_TEMPLATE_ONLY=shooter pnpm test:templates`
 - [ ] The remaining templates take the environment light and AO; all template playtests green. proof: `pnpm test:templates`
+- [x] `platformer` becomes the sandbox fox run: the procedural route, fox, walkers and pickups, on the photo sky and one sun, with `buildStaticColliders` for collision and `mergeByMaterial` over the static scenery. proof: 14/14 scaffolded scenarios green, measured 562 draws / 186,016 triangles at 1920x1080 with a 0.5 ms p95 (2026-09-28); `pnpm exec vitest run packages/create-threenative` 796/798 (the two failures are the byte-stable hash the owner recomputes, and `build.spec.ts`'s 60 s default timeout on this machine, which passes at 84 s)
 
 A fresh judge subagent compares blind before/after captures per phase; its verdicts go in the PR
 body, not here (R2).
