@@ -28,8 +28,12 @@ export function noise(u: number, v: number, cells: number): number {
   const fy = y - j;
   const sx = fx * fx * (3 - 2 * fx);
   const sy = fy * fy * (3 - 2 * fy);
-  const at = (a: number, b: number): number => hash(((a % cells) + cells) % cells, ((b % cells) + cells) % cells);
-  return (at(i, j) * (1 - sx) + at(i + 1, j) * sx) * (1 - sy) + (at(i, j + 1) * (1 - sx) + at(i + 1, j + 1) * sx) * sy;
+  const at = (a: number, b: number): number =>
+    hash(((a % cells) + cells) % cells, ((b % cells) + cells) % cells);
+  return (
+    (at(i, j) * (1 - sx) + at(i + 1, j) * sx) * (1 - sy) +
+    (at(i, j + 1) * (1 - sx) + at(i + 1, j + 1) * sx) * sy
+  );
 }
 
 /** A small seeded stream for the speckle: same texture every run. */
@@ -59,7 +63,10 @@ function finish(data: Uint8Array, size: number, repeat: boolean): DataTexture {
 }
 
 /** Fills a tiling texture from a per-pixel colour function of (u, v). */
-function tile(size: number, pixel: (u: number, v: number, x: number, y: number) => readonly [number, number, number]): DataTexture {
+function tile(
+  size: number,
+  pixel: (u: number, v: number, x: number, y: number) => readonly [number, number, number],
+): DataTexture {
   const data = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y += 1)
     for (let x = 0; x < size; x += 1) {
@@ -74,7 +81,12 @@ function tile(size: number, pixel: (u: number, v: number, x: number, y: number) 
 }
 
 function fbm(u: number, v: number): number {
-  return noise(u, v, 9) * 0.5 + noise(u, v, 27) * 0.28 + noise(u, v, 96) * 0.14 + hash((u * 4096) | 0, (v * 4096) | 0) * 0.08;
+  return (
+    noise(u, v, 9) * 0.5 +
+    noise(u, v, 27) * 0.28 +
+    noise(u, v, 96) * 0.14 +
+    hash((u * 4096) | 0, (v * 4096) | 0) * 0.08
+  );
 }
 
 /** Furrowed bark: vertical grooves that wander, warm brown, a little moss on the shaded side. */
@@ -84,7 +96,7 @@ export function barkTexture(size = 512): DataTexture {
     const grain = noise(u, v, 128) * 0.4 + noise(u, v, 34) * 0.6;
     const r = 47 + grain * 52 + groove * 29 + fbm(u, v) * 12;
     const moss = noise(u, v, 14) > 0.63;
-    return [moss ? r - 4 : r, (moss ? r * 0.82 + 8 : r * 0.82), r * 0.6];
+    return [moss ? r - 4 : r, moss ? r * 0.82 + 8 : r * 0.82, r * 0.6];
   });
 }
 
@@ -117,7 +129,12 @@ export function stoneTexture(size = 512): DataTexture {
   });
   const data = texture.image.data as Uint8Array;
   for (let c = 0; c < cracks.length; c += 4) {
-    const [x0, y0, x1, y1] = [cracks[c] ?? 0, cracks[c + 1] ?? 0, cracks[c + 2] ?? 0, cracks[c + 3] ?? 0];
+    const [x0, y0, x1, y1] = [
+      cracks[c] ?? 0,
+      cracks[c + 1] ?? 0,
+      cracks[c + 2] ?? 0,
+      cracks[c + 3] ?? 0,
+    ];
     const steps = 24;
     for (let s = 0; s <= steps; s += 1) {
       const px = Math.floor((x0 + (x1 - x0) * (s / steps)) * size) % size;
@@ -154,7 +171,10 @@ export function groundTexture(size = 512): DataTexture {
 }
 
 /** Cutout sprites are RGBA with an opaque body and zero alpha outside it (the material alpha-tests). */
-function sprite(size: number): { data: Uint8Array; put: (x: number, y: number, r: number, g: number, b: number) => void } {
+function sprite(size: number): {
+  data: Uint8Array;
+  put: (x: number, y: number, r: number, g: number, b: number) => void;
+} {
   const data = new Uint8Array(size * size * 4);
   // Canvas y grows down; a texture's v grows up. Flip once, here, so the shapes below read as drawn.
   const put = (x: number, y: number, r: number, g: number, b: number): void => {
@@ -222,7 +242,15 @@ export function leafTexture(size = 256): DataTexture {
     for (let j = 0; j < 6; j += 1)
       for (const side of [-1, 1]) {
         const at = 10 + j * 17;
-        leaf(put, ox + dx * at, oy + dy * at, angle + side * r(0.7, 1.4), r(20, 32), r(8, 13), r(74, 105));
+        leaf(
+          put,
+          ox + dx * at,
+          oy + dy * at,
+          angle + side * r(0.7, 1.4),
+          r(20, 32),
+          r(8, 13),
+          r(74, 105),
+        );
       }
     leaf(put, ox + dx * 104, oy + dy * 104, angle, 26, 9.5, 85);
   }
@@ -240,7 +268,16 @@ export function fernTexture(size = 256): DataTexture {
     const y = size - 12 - i * 9;
     const w = 48 * Math.sin(((i + 1) / 27) * Math.PI) * (0.8 + i * 0.007);
     for (const side of [-1, 1])
-      leaf(put, size / 2 + Math.sin(((size - y) / size) * Math.PI) * 6, y, side > 0 ? -0.42 : Math.PI + 0.42, w * 1.05, 3.6, 88 + i * 0.65, 0.3 + i * 0.006);
+      leaf(
+        put,
+        size / 2 + Math.sin(((size - y) / size) * Math.PI) * 6,
+        y,
+        side > 0 ? -0.42 : Math.PI + 0.42,
+        w * 1.05,
+        3.6,
+        88 + i * 0.65,
+        0.3 + i * 0.006,
+      );
   }
   return finish(data, size, false);
 }
@@ -252,7 +289,14 @@ export function glowTexture(size = 128): DataTexture {
   for (let y = 0; y < size; y += 1)
     for (let x = 0; x < size; x += 1) {
       const d = Math.hypot(x + 0.5 - half, y + 0.5 - half) / half;
-      const a = d >= 1 ? 0 : d < 0.1 ? 1 - d * 2 : d < 0.3 ? 0.8 - (d - 0.1) * 3 : 0.2 * (1 - (d - 0.3) / 0.7) ** 2;
+      const a =
+        d >= 1
+          ? 0
+          : d < 0.1
+            ? 1 - d * 2
+            : d < 0.3
+              ? 0.8 - (d - 0.1) * 3
+              : 0.2 * (1 - (d - 0.3) / 0.7) ** 2;
       const i = (y * size + x) * 4;
       data[i] = data[i + 1] = data[i + 2] = 255;
       data[i + 3] = Math.round(a * 255);

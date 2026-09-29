@@ -20,7 +20,15 @@ export interface ISave {
 export const MAX_HP = 6;
 
 export function newGame(): ISave {
-  return { gems: 0, hp: MAX_HP, openedChests: [], sigils: [], sound: false, stage: "meet", version: 1 };
+  return {
+    gems: 0,
+    hp: MAX_HP,
+    openedChests: [],
+    sigils: [],
+    sound: false,
+    stage: "meet",
+    version: 1,
+  };
 }
 
 const isSigil = (id: unknown): id is SigilId => SIGILS.includes(id as SigilId);
@@ -53,7 +61,8 @@ export function restoreSave(raw: string | null | undefined): ISave | undefined {
   if (typeof raw !== "string") return undefined;
   try {
     const a = JSON.parse(raw) as Partial<ISave> | null;
-    if (a === null || typeof a !== "object" || a.version !== 1 || !Array.isArray(a.sigils)) return undefined;
+    if (a === null || typeof a !== "object" || a.version !== 1 || !Array.isArray(a.sigils))
+      return undefined;
     const save = newGame();
     save.sigils = [...new Set(a.sigils)].filter(isSigil);
     save.stage =
@@ -66,7 +75,9 @@ export function restoreSave(raw: string | null | undefined): ISave | undefined {
           : "meet";
     save.hp = Number.isFinite(a.hp) ? clamp(Math.round(a.hp as number), 1, MAX_HP) : MAX_HP;
     save.gems = Number.isFinite(a.gems) ? clamp(Math.floor(a.gems as number), 0, 999) : 0;
-    save.openedChests = Array.isArray(a.openedChests) ? a.openedChests.filter((id) => id === "oak") : [];
+    save.openedChests = Array.isArray(a.openedChests)
+      ? a.openedChests.filter((id) => id === "oak")
+      : [];
     save.sound = a.sound === true;
     return save;
   } catch {

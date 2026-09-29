@@ -37,7 +37,13 @@ type ButtonName = "attack" | "interact" | "roll";
 const BUTTONS: readonly ButtonName[] = ["attack", "roll", "interact"];
 
 function overlay(color: ColorRepresentation, opacity: number): MeshBasicMaterial {
-  return new MeshBasicMaterial({ color, depthTest: false, depthWrite: false, opacity, transparent: true });
+  return new MeshBasicMaterial({
+    color,
+    depthTest: false,
+    depthWrite: false,
+    opacity,
+    transparent: true,
+  });
 }
 
 /** A left stick, three right-hand buttons (sword, roll, talk), and a drag anywhere else to orbit. */
@@ -45,9 +51,19 @@ export class TouchControls {
   readonly root = new Group();
   readonly object = this.root;
   #camera: PerspectiveCamera;
-  #input = { attackPressed: false, interactPressed: false, look: new Vector2(), move: new Vector2(), rollPressed: false };
+  #input = {
+    attackPressed: false,
+    interactPressed: false,
+    look: new Vector2(),
+    move: new Vector2(),
+    rollPressed: false,
+  };
   #was: Record<ButtonName, boolean> = { attack: false, interact: false, roll: false };
-  #centres: Record<ButtonName, Vector2> = { attack: new Vector2(), interact: new Vector2(), roll: new Vector2() };
+  #centres: Record<ButtonName, Vector2> = {
+    attack: new Vector2(),
+    interact: new Vector2(),
+    roll: new Vector2(),
+  };
   #moveAnchor = new Vector2();
   #resting = new Vector2();
   #lookAt = new Vector2();
@@ -76,14 +92,20 @@ export class TouchControls {
   }
 
   update(pointers: ReadonlyMap<number, ITouchPointer>, size: ITouchViewport): ITouchInput {
-    if (size.width !== this.#lastWidth || size.height !== this.#lastHeight) this.#layoutPoints(size);
+    if (size.width !== this.#lastWidth || size.height !== this.#lastHeight)
+      this.#layoutPoints(size);
     const pressed = {} as Record<ButtonName, boolean>;
-    for (const name of BUTTONS) pressed[name] = this.#within(pointers, this.#centres[name], BUTTON_RADIUS);
+    for (const name of BUTTONS)
+      pressed[name] = this.#within(pointers, this.#centres[name], BUTTON_RADIUS);
     let movement: ITouchPointer | undefined;
     let looking: [number, ITouchPointer] | undefined;
     for (const [id, pointer] of pointers) {
       if (pointer.position.x < size.width * 0.4) movement ??= pointer;
-      else if (!BUTTONS.some((name) => pointer.position.distanceTo(this.#centres[name]) <= BUTTON_RADIUS * 1.4)) {
+      else if (
+        !BUTTONS.some(
+          (name) => pointer.position.distanceTo(this.#centres[name]) <= BUTTON_RADIUS * 1.4,
+        )
+      ) {
         if (id === this.#lookId || looking === undefined) looking = [id, pointer];
       }
     }
@@ -108,7 +130,11 @@ export class TouchControls {
       this.#lookAt.copy(looking[1].position);
     }
     const centre = this.#hasAnchor ? this.#moveAnchor : this.#resting;
-    this.#knob.position.set(centre.x + this.#input.move.x * MOVE_RADIUS, centre.y - this.#input.move.y * MOVE_RADIUS, 0);
+    this.#knob.position.set(
+      centre.x + this.#input.move.x * MOVE_RADIUS,
+      centre.y - this.#input.move.y * MOVE_RADIUS,
+      0,
+    );
     this.#input.attackPressed = pressed.attack && !this.#was.attack;
     this.#input.rollPressed = pressed.roll && !this.#was.roll;
     this.#input.interactPressed = pressed.interact && !this.#was.interact;
@@ -121,7 +147,12 @@ export class TouchControls {
   }
 
   debug(): Record<string, unknown> {
-    return { attack: this.#was.attack, interact: this.#was.interact, move: this.#input.move.toArray(), roll: this.#was.roll };
+    return {
+      attack: this.#was.attack,
+      interact: this.#was.interact,
+      move: this.#input.move.toArray(),
+      roll: this.#was.roll,
+    };
   }
 
   dispose(): void {
@@ -149,11 +180,13 @@ export class TouchControls {
     this.root.scale.set(pixels, -pixels, 1);
     const anchor = this.#hasAnchor ? this.#moveAnchor : this.#resting;
     this.#base.position.set(anchor.x, anchor.y, 0);
-    for (const name of BUTTONS) this.#buttons[name].position.set(this.#centres[name].x, this.#centres[name].y, 0);
+    for (const name of BUTTONS)
+      this.#buttons[name].position.set(this.#centres[name].x, this.#centres[name].y, 0);
   }
 
   #within(pointers: ReadonlyMap<number, ITouchPointer>, centre: Vector2, radius: number): boolean {
-    for (const pointer of pointers.values()) if (pointer.position.distanceToSquared(centre) <= radius * radius) return true;
+    for (const pointer of pointers.values())
+      if (pointer.position.distanceToSquared(centre) <= radius * radius) return true;
     return false;
   }
 }

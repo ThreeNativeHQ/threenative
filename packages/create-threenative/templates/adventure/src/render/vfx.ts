@@ -208,9 +208,22 @@ function createEmitter(recipe: Recipe, seed: number): IVfxOptions {
 export function createAttackArc(seed = 41): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0, 0, 0], amount: 150, colour: [1, 0.98, 0.9], cone: 0.34, direction: [0, 0.2, 0], drag: 0.06,
-      highlight: [0.85, 0.95, 0.6], lifetime: [0.12, 0.26], lineEnd: [0.55, 0.3, 0.2], lineStart: [-0.55, 0.1, -0.2],
-      radius: 0, ribbonWidth: 0.05, shape: "line", size: 0.08, speed: [0.15, 0.55], style: "arc",
+      acceleration: [0, 0, 0],
+      amount: 150,
+      colour: [1, 0.98, 0.9],
+      cone: 0.34,
+      direction: [0, 0.2, 0],
+      drag: 0.06,
+      highlight: [0.85, 0.95, 0.6],
+      lifetime: [0.12, 0.26],
+      lineEnd: [0.55, 0.3, 0.2],
+      lineStart: [-0.55, 0.1, -0.2],
+      radius: 0,
+      ribbonWidth: 0.05,
+      shape: "line",
+      size: 0.08,
+      speed: [0.15, 0.55],
+      style: "arc",
     },
     seed,
   );
@@ -220,9 +233,19 @@ export function createAttackArc(seed = 41): IVfxOptions {
 export function createHitBurst(seed = 53): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0, -8.5, 0], amount: 160, colour: [1, 0.95, 0.75], cone: Math.PI / 1.75, direction: [0.05, 1, 0.04],
-      drag: 0.22, highlight: [0.95, 0.6, 0.15], lifetime: [0.23, 0.6], radius: 0.08, shape: "disc", size: 0.085,
-      speed: [3.5, 6.5], style: "spark",
+      acceleration: [0, -8.5, 0],
+      amount: 160,
+      colour: [1, 0.95, 0.75],
+      cone: Math.PI / 1.75,
+      direction: [0.05, 1, 0.04],
+      drag: 0.22,
+      highlight: [0.95, 0.6, 0.15],
+      lifetime: [0.23, 0.6],
+      radius: 0.08,
+      shape: "disc",
+      size: 0.085,
+      speed: [3.5, 6.5],
+      style: "spark",
     },
     seed,
   );
@@ -232,9 +255,20 @@ export function createHitBurst(seed = 53): IVfxOptions {
 export function createPotBurst(seed = 71): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0, -9, 0], amount: 90, blend: "normal", colour: [0.62, 0.5, 0.32], cone: Math.PI / 2.2,
-      direction: [0, 1, 0], drag: 0.3, highlight: [0.34, 0.26, 0.16], lifetime: [0.4, 0.9], radius: 0.12,
-      shape: "disc", size: 0.11, speed: [1.6, 3.6], style: "glow",
+      acceleration: [0, -9, 0],
+      amount: 90,
+      blend: "normal",
+      colour: [0.62, 0.5, 0.32],
+      cone: Math.PI / 2.2,
+      direction: [0, 1, 0],
+      drag: 0.3,
+      highlight: [0.34, 0.26, 0.16],
+      lifetime: [0.4, 0.9],
+      radius: 0.12,
+      shape: "disc",
+      size: 0.11,
+      speed: [1.6, 3.6],
+      style: "glow",
     },
     seed,
   );
@@ -244,9 +278,19 @@ export function createPotBurst(seed = 71): IVfxOptions {
 export function createSigilBurst(seed = 67): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0, 0.9, 0], amount: 240, colour: [1, 0.96, 0.78], cone: Math.PI / 1.4, direction: [0, 1, 0],
-      drag: 0.18, highlight: [0.75, 1, 0.7], lifetime: [0.9, 1.7], radius: 0.25, shape: "disc", size: 0.16,
-      speed: [1.2, 3.4], style: "glow",
+      acceleration: [0, 0.9, 0],
+      amount: 240,
+      colour: [1, 0.96, 0.78],
+      cone: Math.PI / 1.4,
+      direction: [0, 1, 0],
+      drag: 0.18,
+      highlight: [0.75, 1, 0.7],
+      lifetime: [0.9, 1.7],
+      radius: 0.25,
+      shape: "disc",
+      size: 0.16,
+      speed: [1.2, 3.4],
+      style: "glow",
     },
     seed,
   );
@@ -256,9 +300,19 @@ export function createSigilBurst(seed = 67): IVfxOptions {
 export function createGemGlint(seed = 79): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0, -3, 0], amount: 40, colour: [0.8, 1, 0.85], cone: Math.PI / 2, direction: [0, 1, 0],
-      drag: 0.4, highlight: [0.3, 0.85, 0.55], lifetime: [0.3, 0.6], radius: 0.05, shape: "disc", size: 0.07,
-      speed: [1.2, 2.6], style: "spark",
+      acceleration: [0, -3, 0],
+      amount: 40,
+      colour: [0.8, 1, 0.85],
+      cone: Math.PI / 2,
+      direction: [0, 1, 0],
+      drag: 0.4,
+      highlight: [0.3, 0.85, 0.55],
+      lifetime: [0.3, 0.6],
+      radius: 0.05,
+      shape: "disc",
+      size: 0.07,
+      speed: [1.2, 2.6],
+      style: "spark",
     },
     seed,
   );
@@ -268,9 +322,21 @@ export function createGemGlint(seed = 79): IVfxOptions {
 export function createMotes(seed = 89): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0.01, 0.005, 0], amount: 170, colour: [1, 0.96, 0.7], cone: Math.PI, direction: [0, 1, 0], drag: 0,
-      extent: [64, 9, 64], fadeIn: 0.2, highlight: [1, 0.9, 0.6], lifetime: [7, 12], radius: 0, shape: "box", size: 0.09,
-      speed: [0.03, 0.14], style: "glow",
+      acceleration: [0.01, 0.005, 0],
+      amount: 170,
+      colour: [1, 0.96, 0.7],
+      cone: Math.PI,
+      direction: [0, 1, 0],
+      drag: 0,
+      extent: [64, 9, 64],
+      fadeIn: 0.2,
+      highlight: [1, 0.9, 0.6],
+      lifetime: [7, 12],
+      radius: 0,
+      shape: "box",
+      size: 0.09,
+      speed: [0.03, 0.14],
+      style: "glow",
     },
     seed,
   );
@@ -280,9 +346,22 @@ export function createMotes(seed = 89): IVfxOptions {
 export function createFallingLeaves(seed = 97): IVfxOptions {
   return createEmitter(
     {
-      acceleration: [0.03, -0.16, 0.01], amount: 46, blend: "normal", colour: [0.62, 0.72, 0.34], cone: 0.5,
-      direction: [0.2, -0.2, 0.1], drag: 0, extent: [56, 2, 56], fadeIn: 0.06, highlight: [0.72, 0.62, 0.28],
-      lifetime: [11, 16], radius: 0, shape: "box", size: 0.16, speed: [0.05, 0.2], style: "glow",
+      acceleration: [0.03, -0.16, 0.01],
+      amount: 46,
+      blend: "normal",
+      colour: [0.62, 0.72, 0.34],
+      cone: 0.5,
+      direction: [0.2, -0.2, 0.1],
+      drag: 0,
+      extent: [56, 2, 56],
+      fadeIn: 0.06,
+      highlight: [0.72, 0.62, 0.28],
+      lifetime: [11, 16],
+      radius: 0,
+      shape: "box",
+      size: 0.16,
+      speed: [0.05, 0.2],
+      style: "glow",
     },
     seed,
   );

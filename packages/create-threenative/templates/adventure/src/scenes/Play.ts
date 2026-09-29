@@ -1,7 +1,7 @@
 import {
   GPUParticles3D,
-  InstancedBatch,
   type ICtx,
+  InstancedBatch,
   Scene,
   type SceneFrame,
   isMobile,
@@ -13,7 +13,7 @@ import { Adventure, type IEvent, type IInput } from "../logic/adventure.js";
 import { KEEPER, SIGIL_SITES } from "../logic/layout.js";
 import type { SigilId } from "../logic/quest.js";
 import { onSceneIntent } from "../orders.js";
-import { DEFAULT_ORBIT, ORBIT_LIMITS, createCameraRig, type IOrbit } from "../render/camera.js";
+import { DEFAULT_ORBIT, type IOrbit, ORBIT_LIMITS, createCameraRig } from "../render/camera.js";
 import { createCharacter } from "../render/character.js";
 import { createFairy } from "../render/fairy.js";
 import { createForest } from "../render/forest.js";
@@ -45,7 +45,8 @@ const LOOK = { pitch: 0.0035, yaw: 0.0045 } as const;
 const ZOOM = 0.9;
 const SAVE_EVERY = 4;
 
-const angleLerp = (a: number, b: number, t: number): number => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+const angleLerp = (a: number, b: number, t: number): number =>
+  a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 const round = (value: number, scale = 100): number => Math.round(value * scale) / scale;
 
 export class Play extends Scene<GameState, undefined> {
@@ -70,7 +71,11 @@ export class Play extends Scene<GameState, undefined> {
 
     const sim = new Adventure({ save: loadSave() });
     setupSky(ctx.scene, this.#sky);
-    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1], mobile);
+    const sun = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      mobile,
+    );
     // The godrays stage raymarches the sun's shadow map, which exists only once the world has been
     // drawn: `beforeRender` fires per real world draw (a loader-only hold has none), so the chain is
     // built on the third one.
@@ -92,6 +97,7 @@ export class Play extends Scene<GameState, undefined> {
     ctx.add(props.root);
     ctx.add(hero.group);
     ctx.add(fairy.group);
+    ctx.add(fairy.trail);
 
     // Effects: one pooled emitter per look, re-fired from the real event that caused it.
     const burst = (make: ConstructorParameters<typeof GPUParticles3D>[0], seconds: number) => {
@@ -119,7 +125,10 @@ export class Play extends Scene<GameState, undefined> {
     ctx.add(new GPUParticles3D(createMotes())).position.set(0, 4.5, -8);
     ctx.add(new GPUParticles3D(createFallingLeaves())).position.set(0, 13, -8);
 
-    const touch = mobile && isTouchscreenAvailable() ? ctx.entities.add("touch-controls", new TouchControls(camera)) : undefined;
+    const touch =
+      mobile && isTouchscreenAvailable()
+        ? ctx.entities.add("touch-controls", new TouchControls(camera))
+        : undefined;
     const rig = createCameraRig(camera, sim.layout.trees);
     const orbit: IOrbit = { ...DEFAULT_ORBIT };
     rig.follow(sim.player, orbit, 0.1, 0, true);
@@ -219,7 +228,17 @@ export class Play extends Scene<GameState, undefined> {
       }
     };
 
-    const input: IInput = { attack: false, block: false, dodge: false, forward: 0, interact: false, lock: false, right: 0, sprint: false, yaw: 0 };
+    const input: IInput = {
+      attack: false,
+      block: false,
+      dodge: false,
+      forward: 0,
+      interact: false,
+      lock: false,
+      right: 0,
+      sprint: false,
+      yaw: 0,
+    };
     const readInput = (frameCtx: GameCtx): void => {
       const move = frameCtx.input.vector("move");
       const t = touch?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
@@ -242,10 +261,18 @@ export class Play extends Scene<GameState, undefined> {
       }
       if (dx !== 0 || dy !== 0) {
         orbit.yaw -= dx * LOOK.yaw;
-        orbit.pitch = MathUtils.clamp(orbit.pitch + dy * LOOK.pitch, ORBIT_LIMITS.pitch[0], ORBIT_LIMITS.pitch[1]);
+        orbit.pitch = MathUtils.clamp(
+          orbit.pitch + dy * LOOK.pitch,
+          ORBIT_LIMITS.pitch[0],
+          ORBIT_LIMITS.pitch[1],
+        );
         sim.lock = undefined;
       }
-      orbit.distance = MathUtils.clamp(orbit.distance - frameCtx.input.axis("zoom") * ZOOM, ORBIT_LIMITS.distance[0], ORBIT_LIMITS.distance[1]);
+      orbit.distance = MathUtils.clamp(
+        orbit.distance - frameCtx.input.axis("zoom") * ZOOM,
+        ORBIT_LIMITS.distance[0],
+        ORBIT_LIMITS.distance[1],
+      );
       input.right = move.x;
       input.forward = move.y;
       input.yaw = orbit.yaw;
@@ -269,12 +296,14 @@ export class Play extends Scene<GameState, undefined> {
       }
       const p = sim.player;
       const lock = sim.lock;
-      if (lock !== undefined && !lock.dead && !paused) orbit.yaw = angleLerp(orbit.yaw, p.angle - Math.PI, 1 - Math.exp(-dt * 3));
+      if (lock !== undefined && !lock.dead && !paused)
+        orbit.yaw = angleLerp(orbit.yaw, p.angle - Math.PI, 1 - Math.exp(-dt * 3));
 
       // --- pose everything from the rules ---------------------------------------------------------------------
       hero.group.position.set(p.x, p.y, p.z);
       hero.group.rotation.y = p.angle;
-      hero.group.visible = p.invuln <= 0 || Math.floor(time * 15) % 2 === 0 || p.roll > 0 || p.dead > 0;
+      hero.group.visible =
+        p.invuln <= 0 || Math.floor(time * 15) % 2 === 0 || p.roll > 0 || p.dead > 0;
       hero.update(p, time, dt);
       fairy.update(time, dt, p.x, p.y, p.z, orbit.yaw);
       forest.update(time);
@@ -292,11 +321,24 @@ export class Play extends Scene<GameState, undefined> {
         view.ring.rotation.y = -time * 0.43;
       }
       const complete = sim.save.stage === "complete";
-      props.altar.material.emissiveIntensity = complete ? 2.1 + Math.sin(time * 1.5) * 0.5 : sim.victory ? 2.8 : 0.3;
-      (props.altar.beam.material as { opacity: number }).opacity = complete || sim.victory ? 0.45 + Math.sin(time) * 0.07 : 0;
-      props.chest.lid.rotation.x = MathUtils.lerp(props.chest.lid.rotation.x, sim.chestOpened ? -1.5 : 0, 1 - Math.exp(-dt * 4));
+      props.altar.material.emissiveIntensity = complete
+        ? 2.1 + Math.sin(time * 1.5) * 0.5
+        : sim.victory
+          ? 2.8
+          : 0.3;
+      (props.altar.beam.material as { opacity: number }).opacity =
+        complete || sim.victory ? 0.45 + Math.sin(time) * 0.07 : 0;
+      props.chest.lid.rotation.x = MathUtils.lerp(
+        props.chest.lid.rotation.x,
+        sim.chestOpened ? -1.5 : 0,
+        1 - Math.exp(-dt * 4),
+      );
       const near = Math.hypot(p.x - KEEPER.x, p.z - KEEPER.z) < 6;
-      props.keeper.group.rotation.y = angleLerp(props.keeper.group.rotation.y, near ? Math.atan2(p.x - KEEPER.x, p.z - KEEPER.z) : -0.7, 1 - Math.exp(-dt * 3));
+      props.keeper.group.rotation.y = angleLerp(
+        props.keeper.group.rotation.y,
+        near ? Math.atan2(p.x - KEEPER.x, p.z - KEEPER.z) : -0.7,
+        1 - Math.exp(-dt * 3),
+      );
       props.keeper.update(p, time, dt);
       props.speech.visible = sim.save.stage === "meet";
       props.speech.position.y = 2.05 + Math.sin(time * 2) * 0.045;
@@ -306,13 +348,27 @@ export class Play extends Scene<GameState, undefined> {
         view.group.visible = !e.dead;
         if (e.dead) return;
         const moving = e.mode === "chase" || e.mode === "return";
-        view.group.position.set(e.x, e.y + (moving ? Math.abs(Math.sin(time * 8)) * 0.08 : Math.sin(time * 2 + e.homeX) * 0.015), e.z);
+        view.group.position.set(
+          e.x,
+          e.y +
+            (moving ? Math.abs(Math.sin(time * 8)) * 0.08 : Math.sin(time * 2 + e.homeX) * 0.015),
+          e.z,
+        );
         const d = Math.hypot(p.x - e.x, p.z - e.z);
-        if (d < 8 && e.mode !== "idle") view.group.rotation.y = angleLerp(view.group.rotation.y, Math.atan2(p.x - e.x, p.z - e.z), 1 - Math.exp(-dt * 8));
+        if (d < 8 && e.mode !== "idle")
+          view.group.rotation.y = angleLerp(
+            view.group.rotation.y,
+            Math.atan2(p.x - e.x, p.z - e.z),
+            1 - Math.exp(-dt * 8),
+          );
         view.group.rotation.z = moving ? Math.sin(time * 8) * 0.07 : 0;
         view.crown.scale.y = e.mode === "windup" ? 0.28 + Math.sin(time * 24) * 0.05 : 0.28;
-        (view.crown.material as unknown as { emissive: { setHex: (hex: number) => void } }).emissive.setHex(e.mode === "windup" ? 0xa5512b : e.hit > 0 ? 0x8b6940 : 0);
-        (view.trunk.material as unknown as { color: { setHex: (hex: number) => void } }).color.setHex(e.hit > 0 ? 0xe5cc9f : 0xa99f87);
+        (
+          view.crown.material as unknown as { emissive: { setHex: (hex: number) => void } }
+        ).emissive.setHex(e.mode === "windup" ? 0xa5512b : e.hit > 0 ? 0x8b6940 : 0);
+        (
+          view.trunk.material as unknown as { color: { setHex: (hex: number) => void } }
+        ).color.setHex(e.hit > 0 ? 0xe5cc9f : 0xa99f87);
       });
       sun.follow(p.x, p.z);
       rig.follow(p, orbit, dt, time);
@@ -329,7 +385,12 @@ export class Play extends Scene<GameState, undefined> {
         lastStage = sim.save.stage;
         mapMarks = [];
         for (const id of Object.keys(SIGIL_SITES) as SigilId[])
-          if (!sim.save.sigils.includes(id)) mapMarks.push(Math.round(SIGIL_SITES[id].x * 10), Math.round(SIGIL_SITES[id].z * 10), SIGIL_SITES[id].color);
+          if (!sim.save.sigils.includes(id))
+            mapMarks.push(
+              Math.round(SIGIL_SITES[id].x * 10),
+              Math.round(SIGIL_SITES[id].z * 10),
+              SIGIL_SITES[id].color,
+            );
         patch.mapMarks = mapMarks;
         patch.sigils = [...sim.save.sigils];
         patch.stage = sim.save.stage;

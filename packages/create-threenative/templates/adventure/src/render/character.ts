@@ -55,13 +55,19 @@ export interface ICharacter {
   readonly lookToward: (heading: number, dt: number) => void;
 }
 
-const damp = (a: number, b: number, rate: number, dt: number): number => a + (b - a) * (1 - Math.exp(-rate * dt));
+const damp = (a: number, b: number, rate: number, dt: number): number =>
+  a + (b - a) * (1 - Math.exp(-rate * dt));
 
 export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero"): ICharacter {
   const keeper = role === "keeper";
   const materials: Material[] = [];
   const geometries: BufferGeometry[] = [];
-  const std = (color: number, roughness = 0.82, metalness = 0, emissive = 0): MeshStandardMaterial => {
+  const std = (
+    color: number,
+    roughness = 0.82,
+    metalness = 0,
+    emissive = 0,
+  ): MeshStandardMaterial => {
     const material = new MeshStandardMaterial({ color, emissive, metalness, roughness });
     materials.push(material);
     return material;
@@ -78,22 +84,39 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
     red: std(0xa9382c, 0.6),
     skin: std(0xe6b78e, 0.7),
     steel: std(0xcfdadd, 0.28, 0.75),
-    tunic: std(keeper ? 0x557a4b : palette.tunic),
-    tunicDark: std(keeper ? 0x3e5d38 : 0x2f6029),
+    cap: std(0x2f8a3e),
+    tunic: std(keeper ? 0x557a4b : 0x6b8a3c),
+    tunicDark: std(keeper ? 0x3e5d38 : 0x46652a),
     white: std(0xeeead6),
     wood: std(0x81603a, 0.9),
   };
   const glowMaterial = std(0xf3dc9e, 0.4, 0, 0xe0b04d);
   glowMaterial.emissiveIntensity = 1.4;
 
-  const mesh = (geometry: BufferGeometry, material: Material, parent: Group, x = 0, y = 0, z = 0): Mesh => {
+  const mesh = (
+    geometry: BufferGeometry,
+    material: Material,
+    parent: Group,
+    x = 0,
+    y = 0,
+    z = 0,
+  ): Mesh => {
     geometries.push(geometry);
     const item = new Mesh(geometry, material);
     item.position.set(x, y, z);
     parent.add(item);
     return item;
   };
-  const ball = (parent: Group, material: Material, x: number, y: number, z: number, sx: number, sy = sx, sz = sx): Mesh => {
+  const ball = (
+    parent: Group,
+    material: Material,
+    x: number,
+    y: number,
+    z: number,
+    sx: number,
+    sy = sx,
+    sz = sx,
+  ): Mesh => {
     const item = mesh(new SphereGeometry(1, 18, 12), material, parent, x, y, z);
     item.scale.set(sx, sy, sz);
     return item;
@@ -102,7 +125,15 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
   const to = new Vector3();
   const up = new Vector3(0, 1, 0);
   /** A tapered rod from `a` to `b`. */
-  const rod = (parent: Group, material: Material, a: readonly number[], b: readonly number[], r1: number, r2 = r1, sides = 10): Mesh => {
+  const rod = (
+    parent: Group,
+    material: Material,
+    a: readonly number[],
+    b: readonly number[],
+    r1: number,
+    r2 = r1,
+    sides = 10,
+  ): Mesh => {
     from.set(a[0] ?? 0, a[1] ?? 0, a[2] ?? 0);
     to.set(b[0] ?? 0, b[1] ?? 0, b[2] ?? 0);
     const direction = to.clone().sub(from);
@@ -135,10 +166,18 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
     body,
     bake("torso", (g) => {
       mesh(new CylinderGeometry(0.16, 0.19, 0.34, 20), m.tunic, g, 0, 0.73, 0);
-      const skirt = mesh(new CylinderGeometry(0.19, 0.3, 0.27, 24, 2, true), m.tunic, g, 0, 0.53, 0);
+      const skirt = mesh(
+        new CylinderGeometry(0.19, 0.3, 0.27, 24, 2, true),
+        m.tunic,
+        g,
+        0,
+        0.53,
+        0,
+      );
       const pos = skirt.geometry.getAttribute("position");
       for (let i = 0; i < pos.count; i += 1)
-        if (pos.getY(i) < -0.05) pos.setY(i, pos.getY(i) + Math.cos(Math.atan2(pos.getZ(i), pos.getX(i)) * 7) * 0.024);
+        if (pos.getY(i) < -0.05)
+          pos.setY(i, pos.getY(i) + Math.cos(Math.atan2(pos.getZ(i), pos.getX(i)) * 7) * 0.024);
       skirt.geometry.computeVertexNormals();
       mesh(new CylinderGeometry(0.2, 0.3, 0.02, 24, 1, true), m.tunicDark, g, 0, 0.405, 0);
       mesh(new CylinderGeometry(0.197, 0.2, 0.07, 24), m.leather, g, 0, 0.635, 0);
@@ -152,7 +191,8 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
       } else {
         // The keeper's sash and a leaf-green collar.
         rod(g, m.tunicDark, [-0.17, 0.86, 0.1], [0.16, 0.66, 0.17], 0.03, 0.03, 8);
-        mesh(new TorusGeometry(0.11, 0.028, 8, 20), m.tunicDark, g, 0, 0.9, 0).rotation.x = Math.PI / 2;
+        mesh(new TorusGeometry(0.11, 0.028, 8, 20), m.tunicDark, g, 0, 0.9, 0).rotation.x =
+          Math.PI / 2;
       }
     }),
   );
@@ -161,7 +201,8 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
   const legs: Group[] = [];
   for (const side of [-1, 1]) {
     const leg = new Group();
-    leg.position.set(side * 0.085, 0.5, 0);
+    leg.position.set(side * 0.085, 0.43, 0);
+    leg.scale.y = 0.86;
     body.add(leg);
     attach(
       leg,
@@ -199,7 +240,8 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
 
   // --- head ------------------------------------------------------------------------------------------
   const head = new Group();
-  head.position.set(0, 1.13, 0);
+  head.position.set(0, 1.16, 0);
+  head.scale.setScalar(keeper ? 1 : 1.18);
   body.add(head);
   attach(
     head,
@@ -221,11 +263,21 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
       for (const side of [-1, 1]) ball(g, m.hair, side * 0.205, -0.03, 0.01, 0.048, 0.15, 0.13);
       for (let i = 0; i < 5; i += 1) {
         const a = -0.55 + i * 0.275;
-        ball(g, m.hair, Math.sin(a) * 0.19, 0.13 - Math.abs(a) * 0.05, 0.16 + Math.cos(a) * 0.03, 0.06, 0.075, 0.05);
+        ball(
+          g,
+          m.hair,
+          Math.sin(a) * 0.19,
+          0.13 - Math.abs(a) * 0.05,
+          0.16 + Math.cos(a) * 0.03,
+          0.06,
+          0.075,
+          0.05,
+        );
       }
       if (keeper) {
         // A leaf-green headband and a long ponytail.
-        mesh(new TorusGeometry(0.235, 0.024, 8, 32), m.tunicDark, g, 0, 0.08, 0).rotation.x = Math.PI / 2 - 0.15;
+        mesh(new TorusGeometry(0.235, 0.024, 8, 32), m.tunicDark, g, 0, 0.08, 0).rotation.x =
+          Math.PI / 2 - 0.15;
         rod(g, m.hair, [0, 0.02, -0.2], [0, -0.42, -0.28], 0.075, 0.03, 10);
         ball(g, m.tunicDark, 0, -0.02, -0.21, 0.05);
       }
@@ -245,17 +297,28 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
         frame.position.set(0, 0.055, -0.015);
         frame.rotation.x = -0.32;
         g.add(frame);
-        const cap = mesh(new SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.6), m.tunic, frame);
+        const cap = mesh(
+          new SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI * 0.6),
+          m.cap,
+          frame,
+        );
         cap.scale.set(0.27, 0.27, 0.275);
         // The dome's rim: 0.6π of a unit sphere ends at y = cos(0.6π), radius sin(0.6π).
-        const rim = mesh(new TorusGeometry(0.2568, 0.022, 8, 40), m.tunicDark, frame, 0, Math.cos(Math.PI * 0.6) * 0.27, 0);
+        const rim = mesh(
+          new TorusGeometry(0.2568, 0.022, 8, 40),
+          m.cap,
+          frame,
+          0,
+          Math.cos(Math.PI * 0.6) * 0.27,
+          0,
+        );
         rim.rotation.x = Math.PI / 2;
       }),
     );
     // Five hinged segments, each bending a little further toward the floor than the last.
     let parent: Group = head;
-    const lengths = [0.19, 0.18, 0.17, 0.16, 0.14];
-    const radii = [0.135, 0.11, 0.088, 0.066, 0.045, 0.03];
+    const lengths = [0.17, 0.15, 0.13, 0.11, 0.1];
+    const radii = [0.1, 0.082, 0.064, 0.048, 0.034, 0.02];
     for (let i = 0; i < lengths.length; i += 1) {
       const segment = new Group();
       if (i === 0) {
@@ -269,9 +332,22 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
       attach(
         segment,
         bake(`tail${i}`, (g) => {
-          mesh(new CylinderGeometry(radii[i + 1] as number, radii[i] as number, lengths[i] as number, 14), m.tunic, g, 0, -(lengths[i] as number) / 2, 0);
-          ball(g, m.tunic, 0, 0, 0, radii[i] as number);
-          if (i === lengths.length - 1) ball(g, m.white, 0, -(lengths[i] as number) - 0.02, 0, 0.05);
+          mesh(
+            new CylinderGeometry(
+              radii[i + 1] as number,
+              radii[i] as number,
+              lengths[i] as number,
+              14,
+            ),
+            m.cap,
+            g,
+            0,
+            -(lengths[i] as number) / 2,
+            0,
+          );
+          ball(g, m.cap, 0, 0, 0, radii[i] as number);
+          if (i === lengths.length - 1)
+            ball(g, m.white, 0, -(lengths[i] as number) - 0.02, 0, 0.05);
         }),
       );
       tail.push(segment);
@@ -289,8 +365,22 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
     outline.quadraticCurveTo(0.1, -0.3, 0, -0.36);
     outline.quadraticCurveTo(-0.1, -0.3, -0.22, -0.08);
     outline.closePath();
-    const extrude = (shape: Shape, depth: number, material: Material, z: number, bevel = 0.012): void => {
-      const geometry = new ExtrudeGeometry(shape, { bevelEnabled: true, bevelSegments: 2, bevelSize: bevel, bevelThickness: bevel * 0.8, curveSegments: 10, depth, steps: 1 });
+    const extrude = (
+      shape: Shape,
+      depth: number,
+      material: Material,
+      z: number,
+      bevel = 0.012,
+    ): void => {
+      const geometry = new ExtrudeGeometry(shape, {
+        bevelEnabled: true,
+        bevelSegments: 2,
+        bevelSize: bevel,
+        bevelThickness: bevel * 0.8,
+        curveSegments: 10,
+        depth,
+        steps: 1,
+      });
       const item = mesh(geometry, material, group, 0, 0, z);
       item.castShadow = true;
     };
@@ -309,9 +399,9 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
   const backShield = new Group();
   const backShieldMesh = shield();
   backShield.add(backShieldMesh);
-  backShield.position.set(0, 0.74, -0.2);
+  backShield.position.set(0, 0.72, -0.2);
   backShield.rotation.set(0, Math.PI, -0.08);
-  backShield.scale.setScalar(0.95);
+  backShield.scale.setScalar(1.3);
   const heldShield = shield();
   heldShield.position.set(0.02, -0.2, 0.16);
   heldShield.rotation.y = -0.15;
@@ -338,10 +428,20 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
       outline.lineTo(0, -blade - 0.11);
       outline.lineTo(-0.028, -blade);
       outline.closePath();
-      const geometry = new ExtrudeGeometry(outline, { bevelEnabled: true, bevelSegments: 1, bevelSize: 0.006, bevelThickness: 0.006, depth: 0.016, steps: 1 });
+      const geometry = new ExtrudeGeometry(outline, {
+        bevelEnabled: true,
+        bevelSegments: 1,
+        bevelSize: 0.006,
+        bevelThickness: 0.006,
+        depth: 0.016,
+        steps: 1,
+      });
       mesh(geometry, m.steel, target, 0, 0, -0.008);
     };
-    attach(sword, bake("sword", (g) => buildSword(g, 0.5)));
+    attach(
+      sword,
+      bake("sword", (g) => buildSword(g, 0.5)),
+    );
     // Hilt above the left shoulder, scabbard running down across the shield.
     sheath.position.set(0.05, 0.6, -0.27);
     sheath.rotation.set(0, 0, -0.62);
@@ -400,10 +500,18 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
       // Tumble about the belly, not the boots: displace the body so its centre stays put.
       const angle = q * Math.PI * 2;
       body.rotation.x = angle;
-      body.position.set(0, 0.62 * (1 - Math.cos(angle)) - Math.sin(q * Math.PI) * 0.16, -0.62 * Math.sin(angle));
+      body.position.set(
+        0,
+        0.62 * (1 - Math.cos(angle)) - Math.sin(q * Math.PI) * 0.16,
+        -0.62 * Math.sin(angle),
+      );
     } else {
       body.rotation.x = damp(body.rotation.x % (Math.PI * 2), lean, 18, dt);
-      body.position.set(0, moving ? Math.abs(Math.sin(p.walk)) * 0.035 : Math.sin(time * 2) * 0.008, 0);
+      body.position.set(
+        0,
+        moving ? Math.abs(Math.sin(p.walk)) * 0.035 : Math.sin(time * 2) * 0.008,
+        0,
+      );
     }
     // Stride.
     const swing = moving ? Math.sin(p.walk) * (0.62 + sprint * 0.25) : 0;
@@ -420,7 +528,12 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
     }
     head.rotation.y = Math.sin(time * 0.8) * 0.045;
     // Cap tail: it hangs, drags behind a turn, streams back when running, and never stops breathing.
-    const turn = MathUtils.clamp(-Math.atan2(Math.sin(p.angle - lastAngle), Math.cos(p.angle - lastAngle)) / Math.max(dt, 1e-3), -8, 8);
+    const turn = MathUtils.clamp(
+      -Math.atan2(Math.sin(p.angle - lastAngle), Math.cos(p.angle - lastAngle)) /
+        Math.max(dt, 1e-3),
+      -8,
+      8,
+    );
     lastAngle = p.angle;
     tailLag = damp(tailLag, turn * 0.05, 7, dt);
     tail.forEach((segment, i) => {
@@ -432,7 +545,10 @@ export function createCharacter(tools: IRenderTools, role: CharacterRole = "hero
   };
 
   const lookToward: ICharacter["lookToward"] = (heading, dt) => {
-    const relative = Math.atan2(Math.sin(heading - root.rotation.y), Math.cos(heading - root.rotation.y));
+    const relative = Math.atan2(
+      Math.sin(heading - root.rotation.y),
+      Math.cos(heading - root.rotation.y),
+    );
     head.rotation.y = damp(head.rotation.y, MathUtils.clamp(relative, -0.8, 0.8), 4, dt);
   };
 

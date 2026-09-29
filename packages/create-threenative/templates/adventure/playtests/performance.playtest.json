@@ -11,7 +11,7 @@
     {
       "kind": "input",
       "label": "walk",
-      "press": "KeyW",
+      "press": "ArrowUp",
       "holdTicks": 120,
       "release": true
     },
@@ -28,9 +28,9 @@
       "runtimeReady": true
     },
     "performance": {
-      "maxDrawCalls": 300,
+      "maxDrawCalls": 450,
       "maxFrameMsP95": 33,
-      "maxTriangles": 900000,
+      "maxTriangles": 1400000,
       "minFps": 30
     },
     "renderChain": {

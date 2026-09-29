@@ -24,7 +24,15 @@ function paintLand(): HTMLCanvasElement {
   for (let i = 0; i < 150; i += 1) {
     m.fillStyle = i % 2 ? "#485d3b" : "#536340";
     m.beginPath();
-    m.ellipse(10 + rand() * 280, 10 + rand() * 280, 4 + rand() * 12, 4 + rand() * 11, rand() * 6, 0, 6.28);
+    m.ellipse(
+      10 + rand() * 280,
+      10 + rand() * 280,
+      4 + rand() * 12,
+      4 + rand() * 11,
+      rand() * 6,
+      0,
+      6.28,
+    );
     m.fill();
   }
   m.fillStyle = "#578a84";
@@ -34,7 +42,10 @@ function paintLand(): HTMLCanvasElement {
   m.lineCap = "round";
   m.lineJoin = "round";
   for (const path of PATHS) {
-    for (const [width, colour] of [[6, "#aea77b"], [3, "#c4b48a"]] as const) {
+    for (const [width, colour] of [
+      [6, "#aea77b"],
+      [3, "#c4b48a"],
+    ] as const) {
       m.strokeStyle = colour;
       m.lineWidth = width;
       m.beginPath();
@@ -85,7 +96,8 @@ export function Minimap({ state }: { state: GameState }) {
       m.rotate(Math.PI / 4);
       m.shadowBlur = 8;
       m.shadowColor = "#d5e5b9";
-      m.fillStyle = stage === "meet" ? "#b4ba98" : `#${(mapMarks[i + 2] ?? 0).toString(16).padStart(6, "0")}`;
+      m.fillStyle =
+        stage === "meet" ? "#b4ba98" : `#${(mapMarks[i + 2] ?? 0).toString(16).padStart(6, "0")}`;
       m.fillRect(-3, -3, 6, 6);
       m.restore();
     }
@@ -117,9 +129,18 @@ export function Minimap({ state }: { state: GameState }) {
   }, [playerX, playerZ, playerAngle, mapMarks, stage]);
 
   return (
-    <section aria-label="Minimap" className="pointer-events-none absolute right-6 bottom-6 flex flex-col items-center">
+    <section
+      aria-label="Minimap"
+      className="pointer-events-none absolute right-6 bottom-6 flex flex-col items-center"
+    >
       <span className="tn-outline -mb-1 text-[10px] text-lume">N</span>
-      <canvas className="h-36 w-36 rounded-full ring-2 ring-line/70 shadow-[0_4px_14px_rgb(0_0_0/50%)]" height={SIZE} ref={ref} role="img" width={SIZE} />
+      <canvas
+        className="h-36 w-36 rounded-full ring-2 ring-line/70 shadow-[0_4px_14px_rgb(0_0_0/50%)]"
+        height={SIZE}
+        ref={ref}
+        role="img"
+        width={SIZE}
+      />
       <span className="tn-outline mt-1 text-[9px] tracking-[0.2em] text-dim">THE LOWLANDS</span>
     </section>
   );

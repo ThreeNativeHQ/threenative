@@ -17,7 +17,12 @@ export interface IPoint {
  * `yaw` is the orbit angle, so forward is always *away* from the camera. Length is capped at one,
  * so a diagonal is never faster than a straight line.
  */
-export function moveDirection(right: number, forward: number, yaw: number, out: IPoint = { x: 0, z: 0 }): IPoint {
+export function moveDirection(
+  right: number,
+  forward: number,
+  yaw: number,
+  out: IPoint = { x: 0, z: 0 },
+): IPoint {
   const length = Math.hypot(right, forward);
   const r = length > 1 ? right / length : right;
   const f = length > 1 ? forward / length : forward;

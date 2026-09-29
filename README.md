@@ -113,6 +113,7 @@ lifecycle.
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |
 | `action-rpg` | A three-room dungeon with melee, loot, equipment, and persistence |
+| `adventure` | A third-person woodland adventure: sword, shield, roll, lock-on, a keeper, three sigils and an altar |
 | `defense` | Tower placement, routes, waves, and income |
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |

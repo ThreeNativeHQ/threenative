@@ -4,13 +4,9 @@
 // anything the player can touch.
 export const palette = {
   /** The mist the far forest dissolves into, and the colour behind everything. */
-  mist: 0xcfd0a6,
+  mist: 0xcdd3b4,
   /** Warm, slightly green sunlight, low and ahead of the camera. */
-  sun: 0xffe3b0,
-  /** Lit grass and moss. */
-  grass: 0x6c8746,
-  /** Bark in shade. */
-  bark: 0x6a5a41,
+  sun: 0xffe2ae,
   /** Worn flagstone. */
   stone: 0xb9b39a,
   /** The hero's cap and tunic. */

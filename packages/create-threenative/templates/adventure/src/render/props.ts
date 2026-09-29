@@ -48,10 +48,17 @@ export interface IBriarlingView {
 }
 
 export interface IProps {
-  readonly altar: { readonly beam: Sprite; readonly group: Group; readonly material: MeshStandardMaterial };
+  readonly altar: {
+    readonly beam: Sprite;
+    readonly group: Group;
+    readonly material: MeshStandardMaterial;
+  };
   readonly briarlings: readonly IBriarlingView[];
   readonly chest: { readonly group: Group; readonly lid: Group };
-  readonly gems: { readonly mesh: InstancedMesh; readonly sync: (gems: readonly IGem[], time: number) => void };
+  readonly gems: {
+    readonly mesh: InstancedMesh;
+    readonly sync: (gems: readonly IGem[], time: number) => void;
+  };
   readonly keeper: ICharacter;
   readonly pots: readonly Group[];
   readonly root: Group;
@@ -69,7 +76,14 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
     owned.push(item);
     return item;
   };
-  const mesh = (geometry: BufferGeometry, material: Material, parent: Object3D, x = 0, y = 0, z = 0): Mesh => {
+  const mesh = (
+    geometry: BufferGeometry,
+    material: Material,
+    parent: Object3D,
+    x = 0,
+    y = 0,
+    z = 0,
+  ): Mesh => {
     const item = new Mesh(own(geometry), material);
     item.position.set(x, y, z);
     item.castShadow = true;
@@ -77,7 +91,16 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
     parent.add(item);
     return item;
   };
-  const ball = (parent: Object3D, material: Material, x: number, y: number, z: number, sx: number, sy = sx, sz = sx): Mesh => {
+  const ball = (
+    parent: Object3D,
+    material: Material,
+    x: number,
+    y: number,
+    z: number,
+    sx: number,
+    sy = sx,
+    sz = sx,
+  ): Mesh => {
     const item = mesh(new SphereGeometry(1, 12, 8), material, parent, x, y, z);
     item.scale.set(sx, sy, sz);
     return item;
@@ -97,7 +120,15 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
     mesh(new CylinderGeometry(0.45, 0.55, 0.22, 9), mats.stone, group, 0, 0.1, 0);
     const core = mesh(
       new OctahedronGeometry(0.26),
-      own(new MeshStandardMaterial({ color: site.color, emissive: site.color, emissiveIntensity: 1.1, metalness: 0.5, roughness: 0.2 })),
+      own(
+        new MeshStandardMaterial({
+          color: site.color,
+          emissive: site.color,
+          emissiveIntensity: 1.1,
+          metalness: 0.5,
+          roughness: 0.2,
+        }),
+      ),
       group,
       0,
       1.05,
@@ -118,8 +149,17 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
   mesh(new CylinderGeometry(1.3, 1.55, 0.24, 24), mats.darkStone, altarGroup, 0, 0.1, 0);
   mesh(new CylinderGeometry(0.82, 1, 0.38, 16), mats.stone, altarGroup, 0, 0.34, 0);
   mesh(new IcosahedronGeometry(0.5, 1), mats.moss, altarGroup, 0, 0.75, 0).scale.set(1, 0.45, 1);
-  const altarMaterial = own(new MeshStandardMaterial({ color: 0x88cbaa, emissive: 0x87d6b7, emissiveIntensity: 0.3, metalness: 0.4, roughness: 0.35 }));
-  mesh(new TorusGeometry(0.62, 0.034, 8, 64), altarMaterial, altarGroup, 0, 0.6, 0).rotation.x = Math.PI / 2;
+  const altarMaterial = own(
+    new MeshStandardMaterial({
+      color: 0x88cbaa,
+      emissive: 0x87d6b7,
+      emissiveIntensity: 0.3,
+      metalness: 0.4,
+      roughness: 0.35,
+    }),
+  );
+  mesh(new TorusGeometry(0.62, 0.034, 8, 64), altarMaterial, altarGroup, 0, 0.6, 0).rotation.x =
+    Math.PI / 2;
   const beam = glowSprite(0xc9ffe0, 0);
   beam.position.y = 1.7;
   beam.scale.set(5, 6, 1);
@@ -138,7 +178,8 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
   const chestGroup = at(new Group(), CHEST.x, CHEST.z);
   chestGroup.rotation.y = 0.4;
   mesh(new BoxGeometry(0.83, 0.47, 0.57), mats.wood, chestGroup, 0, 0.255, 0);
-  for (const x of [-0.3, 0.3]) mesh(new BoxGeometry(0.062, 0.48, 0.59), mats.brass, chestGroup, x, 0.26, 0);
+  for (const x of [-0.3, 0.3])
+    mesh(new BoxGeometry(0.062, 0.48, 0.59), mats.brass, chestGroup, x, 0.26, 0);
   const lid = new Group();
   lid.position.set(0, 0.48, -0.285);
   chestGroup.add(lid);
@@ -147,11 +188,19 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
 
   // --- pots --------------------------------------------------------------------------------------------------------------------------
   const terra = own(new MeshStandardMaterial({ color: 0x88734f, roughness: 0.94 }));
-  const potProfile = [[0.17, 0], [0.28, 0.12], [0.29, 0.3], [0.17, 0.48], [0.2, 0.5], [0.19, 0.54]].map(([x, y]) => new Vector2(x, y));
+  const potProfile = [
+    [0.17, 0],
+    [0.28, 0.12],
+    [0.29, 0.3],
+    [0.17, 0.48],
+    [0.2, 0.5],
+    [0.19, 0.54],
+  ].map(([x, y]) => new Vector2(x, y));
   const pots = POTS.map(([x, z]) => {
     const group = at(new Group(), x, z);
     mesh(new LatheGeometry(potProfile, 14), terra, group);
-    mesh(new TorusGeometry(0.18, 0.025, 6, 16), mats.pale, group, 0, 0.51, 0).rotation.x = Math.PI / 2;
+    mesh(new TorusGeometry(0.18, 0.025, 6, 16), mats.pale, group, 0, 0.51, 0).rotation.x =
+      Math.PI / 2;
     return group;
   });
 
@@ -159,21 +208,44 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
   const briarlings: IBriarlingView[] = ENEMIES.map(([x, z]) => {
     const group = at(new Group(), x, z);
     // The two surfaces that flash on a hit are this creature's own; the rest is baked once.
-    const trunk = mesh(new CylinderGeometry(0.32, 0.44, 0.67, 10), own(mats.bark.clone()), group, 0, 0.48, 0);
+    const trunk = mesh(
+      new CylinderGeometry(0.32, 0.44, 0.67, 10),
+      own(mats.bark.clone()),
+      group,
+      0,
+      0.48,
+      0,
+    );
     const crown = mesh(new SphereGeometry(1, 14, 8), own(mats.moss.clone()), group, 0, 0.89, 0);
     crown.scale.set(0.6, 0.28, 0.55);
     const parts = new Group();
-    const eye = own(new MeshStandardMaterial({ color: 0xffd992, emissive: 0xff9922, emissiveIntensity: 2 }));
+    const eye = own(
+      new MeshStandardMaterial({ color: 0xffd992, emissive: 0xff9922, emissiveIntensity: 2 }),
+    );
     for (const side of [-1, 1]) {
       ball(parts, mats.black, side * 0.15, 0.61, 0.315, 0.1, 0.13, 0.025);
       ball(parts, eye, side * 0.15, 0.64, 0.34, 0.045, 0.065, 0.024);
-      const arm = mesh(new CylinderGeometry(0.04, 0.067, 0.42, 7), mats.bark, parts, side * 0.47, 0.44, 0.08);
+      const arm = mesh(
+        new CylinderGeometry(0.04, 0.067, 0.42, 7),
+        mats.bark,
+        parts,
+        side * 0.47,
+        0.44,
+        0.08,
+      );
       arm.rotation.z = side * 0.9;
       ball(parts, mats.darkWood, side * 0.24, 0.16, 0.1, 0.15, 0.12, 0.2);
     }
     for (let i = 0; i < 5; i += 1) {
       const a = (i / 5) * Math.PI * 2;
-      const thorn = mesh(new ConeGeometry(0.08, 0.33, 6), mats.darkWood, parts, Math.cos(a) * 0.38 * 0.7, 1.0, Math.sin(a) * 0.38 * 0.7);
+      const thorn = mesh(
+        new ConeGeometry(0.08, 0.33, 6),
+        mats.darkWood,
+        parts,
+        Math.cos(a) * 0.38 * 0.7,
+        1.0,
+        Math.sin(a) * 0.38 * 0.7,
+      );
       thorn.rotation.set(Math.sin(a) * 0.45, 0, Math.cos(a) * 0.45);
     }
     for (const baked of tools.merge(parts, "briarling")) {
@@ -188,7 +260,9 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
   keeper.group.position.set(KEEPER.x, groundHeight(KEEPER.x, KEEPER.z), KEEPER.z);
   keeper.group.rotation.y = -0.7;
   root.add(keeper.group);
-  const speech = new Sprite(own(new SpriteNodeMaterial({ depthWrite: false, map: mats.bubble, transparent: true })));
+  const speech = new Sprite(
+    own(new SpriteNodeMaterial({ depthWrite: false, map: mats.bubble, transparent: true })),
+  );
   speech.position.set(KEEPER.x, groundHeight(KEEPER.x, KEEPER.z) + 2.05, KEEPER.z);
   speech.scale.set(0.5, 0.5, 1);
   root.add(speech);
@@ -196,7 +270,15 @@ export function createProps(tools: IRenderTools, mats: IForestMaterials): IProps
   // --- gems: one instanced mesh, refilled from the rules' list each frame ---------------------------------------------------------------------
   const gemMesh = new InstancedMesh(
     own(new OctahedronGeometry(0.125)),
-    own(new MeshStandardMaterial({ color: 0x88d6a6, emissive: 0x31775a, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.24 })),
+    own(
+      new MeshStandardMaterial({
+        color: 0x88d6a6,
+        emissive: 0x31775a,
+        emissiveIntensity: 0.9,
+        metalness: 0.4,
+        roughness: 0.24,
+      }),
+    ),
     GEM_CAPACITY,
   );
   gemMesh.castShadow = true;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { Adventure, type IInput, NO_INPUT } from "../templates/adventure/src/logic/adventure.js";
-import { ALTAR, CHEST, ENEMIES, KEEPER, POTS, SIGIL_SITES } from "../templates/adventure/src/logic/layout.js";
+import {
+  ALTAR,
+  CHEST,
+  ENEMIES,
+  KEEPER,
+  POTS,
+  SIGIL_SITES,
+} from "../templates/adventure/src/logic/layout.js";
 import { moveDirection, moveWithCollisions } from "../templates/adventure/src/logic/movement.js";
 import {
   SIGILS,
@@ -10,7 +17,14 @@ import {
   newGame,
   restoreSave,
 } from "../templates/adventure/src/logic/quest.js";
-import { BRIDGE, bridgeDeck, floorHeight, groundHeight, pathDistance, terrainHeight } from "../templates/adventure/src/logic/terrain.js";
+import {
+  BRIDGE,
+  bridgeDeck,
+  floorHeight,
+  groundHeight,
+  pathDistance,
+  terrainHeight,
+} from "../templates/adventure/src/logic/terrain.js";
 
 const DT = 1 / 60;
 const press = (partial: Partial<IInput>): IInput => ({ ...NO_INPUT, ...partial });
@@ -69,9 +83,19 @@ describe("adventure quest", () => {
     expect(restoreSave("not json")).toBeUndefined();
     expect(restoreSave(JSON.stringify({ version: 2, sigils: [] }))).toBeUndefined();
     expect(restoreSave(undefined)).toBeUndefined();
-    const forged = restoreSave(JSON.stringify({ gems: 9999, hp: 99, sigils: ["brook", "brook", "x"], stage: "complete", version: 1 }));
+    const forged = restoreSave(
+      JSON.stringify({
+        gems: 9999,
+        hp: 99,
+        sigils: ["brook", "brook", "x"],
+        stage: "complete",
+        version: 1,
+      }),
+    );
     expect(forged).toMatchObject({ gems: 999, hp: 6, sigils: ["brook"], stage: "seek" });
-    const done = restoreSave(JSON.stringify({ sigils: [...SIGILS], stage: "complete", version: 1 }));
+    const done = restoreSave(
+      JSON.stringify({ sigils: [...SIGILS], stage: "complete", version: 1 }),
+    );
     expect(done?.stage).toBe("complete");
   });
 });
@@ -123,7 +147,9 @@ describe("adventure rules", () => {
     tired.player.stamina = 10;
     tired.update(DT, press({ dodge: true }));
     expect(tired.player.roll).toBe(0);
-    expect(tired.events.some((e) => e.kind === "toast" && e.text === "Catch your breath.")).toBe(true);
+    expect(tired.events.some((e) => e.kind === "toast" && e.text === "Catch your breath.")).toBe(
+      true,
+    );
   });
 
   it("blocks a frontal hit for stamina and takes a rear one", () => {
@@ -244,7 +270,13 @@ describe("adventure rules", () => {
         );
         game.events.length = 0;
       }
-      return JSON.stringify({ e: game.enemies, g: game.gems, p: game.player, s: game.save, t: game.stats });
+      return JSON.stringify({
+        e: game.enemies,
+        g: game.gems,
+        p: game.player,
+        s: game.save,
+        t: game.stats,
+      });
     };
     expect(script()).toBe(script());
   });

@@ -522,6 +522,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
   // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
   rts: "0c69cab4420a7381d1faa864a025bbda94b3dd0c2cedffdf2dff6e25286957e2",
+  adventure: "e17575843cba8205798133137ae6320bb6d53810662c7083837fabcdee0b4d46",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

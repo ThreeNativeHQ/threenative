@@ -34,12 +34,28 @@ export interface IRock {
 
 const HERO_TREE: ITree = { h: 19, hero: true, r: 2.25, x: -9, z: -20 };
 const NAMED_TREES: readonly (readonly [number, number, number, number])[] = [
-  [-16, 11, 1.2, 20], [18, 8, 1.4, 23], [-7, -6, 1.05, 19], [17, -13, 1.0, 21], [-26, -5, 1.3, 22],
-  [-21, -19, 0.85, 19], [3, -35, 1.3, 23], [-29, 11, 0.85, 18], [27, 1, 1.05, 23], [-1, -12, 0.6, 18],
-  [23, -25, 1.1, 24], [-19, -32, 0.9, 21], [-28, -29, 1.0, 24],
+  [-16, 11, 1.2, 20],
+  [18, 8, 1.4, 23],
+  [-7, -6, 1.05, 19],
+  [17, -13, 1.0, 21],
+  [-26, -5, 1.3, 22],
+  [-21, -19, 0.85, 19],
+  [3, -35, 1.3, 23],
+  [-29, 11, 0.85, 18],
+  [27, 1, 1.05, 23],
+  [-1, -12, 0.6, 18],
+  [23, -25, 1.1, 24],
+  [-19, -32, 0.9, 21],
+  [-28, -29, 1.0, 24],
 ];
 const NAMED_ROCKS: readonly (readonly [number, number, number])[] = [
-  [3.6, 1.2, 1.45], [12.5, -3, 1.3], [-5, 6, 1.6], [-12, 7, 1.05], [15, 6, 1.1], [-23, 8, 1.7], [12, -18, 1.5],
+  [3.6, 1.2, 1.45],
+  [12.5, -3, 1.3],
+  [-5, 6, 1.6],
+  [-12, 7, 1.05],
+  [15, 6, 1.1],
+  [-23, 8, 1.7],
+  [12, -18, 1.5],
 ];
 
 export interface ILayout {
@@ -58,18 +74,51 @@ export const CHEST = { x: -14, z: -14 } as const;
 export const LAKE = { x: -20, z: 4, rx: 4.7, rz: 8 } as const;
 
 export const GEMS: readonly (readonly [number, number])[] = [
-  [0, 8], [-4, 5], [-7, 3], [-11, 1], [-16, 2], [10, 1], [14, 0], [18, -2], [19, -4], [8, -6], [8, -10],
-  [4, -15], [-10, -15], [-15, -17], [-21, -10], [1, -24],
+  [0, 8],
+  [-4, 5],
+  [-7, 3],
+  [-11, 1],
+  [-16, 2],
+  [10, 1],
+  [14, 0],
+  [18, -2],
+  [19, -4],
+  [8, -6],
+  [8, -10],
+  [4, -15],
+  [-10, -15],
+  [-15, -17],
+  [-21, -10],
+  [1, -24],
 ];
 export const POTS: readonly (readonly [number, number])[] = [
-  [-3, 10], [14, 2.5], [14.7, 2.8], [-6, -16], [-5.3, -16], [-22, -9], [14, -15],
+  [-3, 10],
+  [14, 2.5],
+  [14.7, 2.8],
+  [-6, -16],
+  [-5.3, -16],
+  [-22, -9],
+  [14, -15],
 ];
 export const ENEMIES: readonly (readonly [number, number])[] = [
-  [-14, 2], [-22, -11], [17, -3], [21, -11], [-14, -20], [-20, -24],
+  [-14, 2],
+  [-22, -11],
+  [17, -3],
+  [21, -11],
+  [-14, -20],
+  [-20, -24],
 ];
 export const LANTERNS: readonly (readonly [number, number, number])[] = [
-  [-4, 9, 2.35], [13.1, 3.5, 2.6], [4, -10.4, 2.55], [12.1, -11, 2.6], [-8, -4, 2.4],
-  [-23, -2, 2.3], [-13, -15, 2.45], [1, -25, 2.7], [20, -8, 2.8], [-5, -19, 2.4],
+  [-4, 9, 2.35],
+  [13.1, 3.5, 2.6],
+  [4, -10.4, 2.55],
+  [12.1, -11, 2.6],
+  [-8, -4, 2.4],
+  [-23, -2, 2.3],
+  [-13, -15, 2.45],
+  [1, -25, 2.7],
+  [20, -8, 2.8],
+  [-5, -19, 2.4],
 ];
 export const SIGIL_SITES = {
   briar: { color: 0xebc570, name: "Briar sigil", x: 19, z: -7 },
@@ -81,7 +130,10 @@ export const SIGIL_SITES = {
 export function createLayout(seed = 147_923): ILayout {
   const rand = mulberry32(seed);
   const range = (a: number, b: number): number => a + (b - a) * rand();
-  const trees: ITree[] = [HERO_TREE, ...NAMED_TREES.map(([x, z, r, h]) => ({ h, hero: false, r, x, z }))];
+  const trees: ITree[] = [
+    HERO_TREE,
+    ...NAMED_TREES.map(([x, z, r, h]) => ({ h, hero: false, r, x, z })),
+  ];
   for (let i = 0; i < 36; i += 1) {
     const a = (i / 36) * Math.PI * 2;
     const dist = range(34, 51);
@@ -106,7 +158,9 @@ export function createLayout(seed = 147_923): ILayout {
   for (const [x, z, r] of NAMED_ROCKS) rocks.push({ r, x, z });
   const obstacles: IObstacle[] = [
     ...trees.map((tree) => ({ r: tree.r * 0.77, x: tree.x, z: tree.z })),
-    ...rocks.filter((rock) => rock.r > 1.05).map((rock) => ({ r: rock.r * 0.7, x: rock.x, z: rock.z })),
+    ...rocks
+      .filter((rock) => rock.r > 1.05)
+      .map((rock) => ({ r: rock.r * 0.7, x: rock.x, z: rock.z })),
     { r: 0.39, x: KEEPER.x, z: KEEPER.z },
   ];
   return { farTrunks, obstacles, rocks, trees };

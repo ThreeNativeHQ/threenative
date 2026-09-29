@@ -15,7 +15,15 @@ export function smooth(a: number, b: number, x: number): number {
 export const BOUNDS = { xMax: 32, xMin: -32, zMax: 24, zMin: -34 } as const;
 
 /** The stair: 20 steps, 0.65 m deep and 0.225 m high, climbing north (−z) from z = 3. */
-export const STAIR = { depth: 0.65, rise: 0.225, steps: 20, x0: 4.7, x1: 11.3, z0: 3, z1: -10 } as const;
+export const STAIR = {
+  depth: 0.65,
+  rise: 0.225,
+  steps: 20,
+  x0: 4.7,
+  x1: 11.3,
+  z0: 3,
+  z1: -10,
+} as const;
 
 /** The log bridge across the brook: a cambered deck, 17 m long, 3.1 m wide. */
 export const BRIDGE = { halfWidth: 1.55, x0: -24, x1: -7, z: -5 } as const;
@@ -52,10 +60,41 @@ export function floorHeight(x: number, z: number, y = -100): number {
 
 /** Footpaths as polylines of [x, z]. They tint the ground, seed the flagstones and keep grass off. */
 export const PATHS: readonly (readonly (readonly [number, number])[])[] = [
-  [[0, 22], [0, 12], [0, 6], [4, 3], [8, 2], [8, -10], [5, -17], [3, -26]],
-  [[0, 7], [-6, 4], [-13, 1], [-18, 3], [-24, -3], [-23, -11], [-17, -15], [-9, -17], [3, -20]],
-  [[5, 3], [13, 1], [18, -4], [19, -9], [15, -14], [8, -15]],
-  [[-13, 1], [-10, -5], [-8, -10], [-9, -17]],
+  [
+    [0, 22],
+    [0, 12],
+    [0, 6],
+    [4, 3],
+    [8, 2],
+    [8, -10],
+    [5, -17],
+    [3, -26],
+  ],
+  [
+    [0, 7],
+    [-6, 4],
+    [-13, 1],
+    [-18, 3],
+    [-24, -3],
+    [-23, -11],
+    [-17, -15],
+    [-9, -17],
+    [3, -20],
+  ],
+  [
+    [5, 3],
+    [13, 1],
+    [18, -4],
+    [19, -9],
+    [15, -14],
+    [8, -15],
+  ],
+  [
+    [-13, 1],
+    [-10, -5],
+    [-8, -10],
+    [-9, -17],
+  ],
 ];
 
 /** Distance in metres to the nearest footpath. */

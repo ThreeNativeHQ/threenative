@@ -6,7 +6,7 @@ Scaffold a ThreeNative game:
 pnpm create threenative my-game
 ```
 
-The default template is `starter`. Choose `minimal`, `platformer`, `action-rpg`, `defense`,
+The default template is `starter`. Choose `minimal`, `platformer`, `action-rpg`, `adventure`, `defense`,
 `racing`, `sailing`, or `shooter` for a different starting point:
 
 ```sh

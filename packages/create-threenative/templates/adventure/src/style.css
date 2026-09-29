@@ -112,23 +112,65 @@ body {
 
 /* --- the HUD's own motion: keyed by a counter in the state, so a repeat still replays ------------- */
 @keyframes toast {
-  0% { opacity: 0; transform: translate(-50%, -6px); }
-  8% { opacity: 1; transform: translate(-50%, 0); }
-  85% { opacity: 1; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes hurt {
-  0% { opacity: 0.85; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes legend {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes banner {
-  0%, 70% { opacity: 1; }
-  100% { opacity: 0.35; }
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
 }
 
-.tn-toast { animation: toast 3.4s ease-out forwards; }
-.tn-hurt { animation: hurt 0.55s ease-out forwards; }
-.tn-banner { animation: banner 8s ease-out forwards; }
-.tn-outline { text-shadow: 0 1px 2px rgb(10 20 10 / 95%), 0 0 8px rgb(10 20 10 / 85%), 0 0 18px rgb(10 20 10 / 55%); }
+.tn-toast {
+  animation: toast 3.4s ease-out forwards;
+}
+.tn-hurt {
+  animation: hurt 0.55s ease-out forwards;
+}
+.tn-legend {
+  animation: legend 14s ease-out forwards;
+}
+
+.tn-banner {
+  animation: banner 8s ease-out forwards;
+}
+.tn-outline {
+  text-shadow: 0 1px 2px rgb(10 20 10 / 95%), 0 0 8px rgb(10 20 10 / 85%), 0 0 18px
+    rgb(10 20 10 / 55%);
+}

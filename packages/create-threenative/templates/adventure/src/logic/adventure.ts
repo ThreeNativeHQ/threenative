@@ -16,7 +16,13 @@ import {
   SIGIL_SITES,
   createLayout,
 } from "./layout.js";
-import { type IObstacle, type IPoint, moveDirection, moveWithCollisions, spendStamina } from "./movement.js";
+import {
+  type IObstacle,
+  type IPoint,
+  moveDirection,
+  moveWithCollisions,
+  spendStamina,
+} from "./movement.js";
 import {
   type ISave,
   MAX_HP,
@@ -96,7 +102,15 @@ export interface IInput {
 }
 
 export const NO_INPUT: Readonly<IInput> = {
-  attack: false, block: false, dodge: false, forward: 0, interact: false, lock: false, right: 0, sprint: false, yaw: 0,
+  attack: false,
+  block: false,
+  dodge: false,
+  forward: 0,
+  interact: false,
+  lock: false,
+  right: 0,
+  sprint: false,
+  yaw: 0,
 };
 
 export type IEvent =
@@ -136,11 +150,17 @@ function keeperLines(stage: ISave["stage"], found: number): readonly string[] {
       "You need not fight every creature. A well-timed roll will carry you through danger. That old chest near the elder tree might help, too.",
     ];
   if (stage === "altar")
-    return ["All three lights, at last. Follow the stone path north, beyond the great stair, to the ancient altar. The grove is waiting."];
-  return ["Listen. The birds have returned. A forest never forgets the ones who care for it. Stay as long as you like, little wanderer."];
+    return [
+      "All three lights, at last. Follow the stone path north, beyond the great stair, to the ancient altar. The grove is waiting.",
+    ];
+  return [
+    "Listen. The birds have returned. A forest never forgets the ones who care for it. Stay as long as you like, little wanderer.",
+  ];
 }
 
-const ALTAR_LOCKED = ["Three empty markings circle the stone. Something living sleeps beneath it. Bring the three woodland sigils here to awaken the grove."];
+const ALTAR_LOCKED = [
+  "Three empty markings circle the stone. Something living sleeps beneath it. Bring the three woodland sigils here to awaken the grove.",
+];
 
 export class Adventure {
   readonly layout: ILayout;
@@ -189,7 +209,20 @@ export class Adventure {
   #populate(): void {
     this.enemies.length = 0;
     ENEMIES.forEach(([x, z], id) => {
-      this.enemies.push({ attackHit: false, dead: false, hit: 0, hp: 3, homeX: x, homeZ: z, id, mode: "idle", timer: (id * 0.37) % 2, x, y: groundHeight(x, z), z });
+      this.enemies.push({
+        attackHit: false,
+        dead: false,
+        hit: 0,
+        hp: 3,
+        homeX: x,
+        homeZ: z,
+        id,
+        mode: "idle",
+        timer: (id * 0.37) % 2,
+        x,
+        y: groundHeight(x, z),
+        z,
+      });
     });
     this.pots.length = 0;
     POTS.forEach(([x, z], id) => this.pots.push({ broken: false, id, x, z }));
@@ -200,7 +233,13 @@ export class Adventure {
   }
 
   addGem(x: number, z: number, value: number): void {
-    this.gems.push({ baseY: groundHeight(x, z) + 0.6, phase: (this.gems.length * 2.399) % (Math.PI * 2), value, x, z });
+    this.gems.push({
+      baseY: groundHeight(x, z) + 0.6,
+      phase: (this.gems.length * 2.399) % (Math.PI * 2),
+      value,
+      x,
+      z,
+    });
   }
 
   toast(text: string, seconds = 3): void {
@@ -220,16 +259,33 @@ export class Adventure {
     for (const id of SIGILS) {
       if (this.save.sigils.includes(id)) continue;
       const site = SIGIL_SITES[id];
-      list.push({ id, kind: "sigil", label: `Take the ${site.name.toLowerCase()}`, x: site.x, z: site.z });
+      list.push({
+        id,
+        kind: "sigil",
+        label: `Take the ${site.name.toLowerCase()}`,
+        x: site.x,
+        z: site.z,
+      });
     }
-    list.push({ kind: "altar", label: this.save.stage === "altar" ? "Awaken the grove" : "Examine the altar", x: ALTAR.x, z: ALTAR.z });
-    if (!this.chestOpened) list.push({ kind: "chest", label: "Open the old chest", x: CHEST.x, z: CHEST.z });
+    list.push({
+      kind: "altar",
+      label: this.save.stage === "altar" ? "Awaken the grove" : "Examine the altar",
+      x: ALTAR.x,
+      z: ALTAR.z,
+    });
+    if (!this.chestOpened)
+      list.push({ kind: "chest", label: "Open the old chest", x: CHEST.x, z: CHEST.z });
     const reach = { altar: 2.5, chest: 2, npc: 2.5, sigil: 1.95 } as const;
     let best: IInteraction | undefined;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const item of list) {
       const d = Math.hypot(item.x - p.x, item.z - p.z);
-      if (d >= reach[item.kind] || Math.abs(groundHeight(item.x, item.z) - p.y) >= 1.5 || d >= bestDistance) continue;
+      if (
+        d >= reach[item.kind] ||
+        Math.abs(groundHeight(item.x, item.z) - p.y) >= 1.5 ||
+        d >= bestDistance
+      )
+        continue;
       best = item;
       bestDistance = d;
     }
@@ -356,7 +412,8 @@ export class Adventure {
       const y = groundHeight(target.x, target.z) + 1;
       this.events.push({ id: target.id, kind: "sigil", x: target.x, y, z: target.z });
       this.toast(`${SIGIL_SITES[target.id].name} found  ·  ${save.sigils.length} / 3`, 3.2);
-      if (save.stage === "altar") this.#later(3.3, () => this.toast("The altar is calling. Follow the northern path.", 4));
+      if (save.stage === "altar")
+        this.#later(3.3, () => this.toast("The altar is calling. Follow the northern path.", 4));
       return;
     }
     if (target.kind === "chest") {
@@ -364,18 +421,29 @@ export class Adventure {
       save.openedChests = ["oak"];
       save.gems = clamp(save.gems + 20, 0, 999);
       save.hp = MAX_HP;
-      this.events.push({ kind: "chest", x: target.x, y: groundHeight(target.x, target.z) + 0.6, z: target.z });
+      this.events.push({
+        kind: "chest",
+        x: target.x,
+        y: groundHeight(target.x, target.z) + 0.6,
+        z: target.z,
+      });
       this.toast("A woodland gift  ·  +20 gems  ·  Hearts restored", 4);
       return;
     }
     if (activateAltar(save)) {
       p.invuln = 10;
       save.hp = MAX_HP;
-      this.events.push({ kind: "altar", x: target.x, y: groundHeight(target.x, target.z) + 1.3, z: target.z });
+      this.events.push({
+        kind: "altar",
+        x: target.x,
+        y: groundHeight(target.x, target.z) + 1.3,
+        z: target.z,
+      });
       this.#later(1.2, () => {
         this.victory = true;
       });
-    } else if (save.stage === "complete") this.toast("The roots are alive with a quiet, familiar song.", 4);
+    } else if (save.stage === "complete")
+      this.toast("The roots are alive with a quiet, familiar song.", 4);
     else this.#say(ALTAR_LOCKED);
   }
 
@@ -404,7 +472,14 @@ export class Adventure {
     p.regenDelay = 0.5;
     this.events.push({ kind: "hurt", x: p.x, y: p.y + 1, z: p.z });
     if (enemy && d > 0) {
-      const moved = moveWithCollisions(p, (-dx / d) * 0.42, (-dz / d) * 0.42, this.#obstacles, 0.34, this.#scratch);
+      const moved = moveWithCollisions(
+        p,
+        (-dx / d) * 0.42,
+        (-dz / d) * 0.42,
+        this.#obstacles,
+        0.34,
+        this.#scratch,
+      );
       p.x = moved.x;
       p.z = moved.z;
     }
@@ -435,7 +510,14 @@ export class Adventure {
         e.mode = "hurt";
         e.timer = 0.4;
         this.events.push({ kind: "enemyHit", x: e.x, y: e.y + 0.65, z: e.z });
-        const moved = moveWithCollisions(e, (dx / (d || 1)) * 0.52, (dz / (d || 1)) * 0.52, this.#obstacles, 0.35, this.#scratch);
+        const moved = moveWithCollisions(
+          e,
+          (dx / (d || 1)) * 0.52,
+          (dz / (d || 1)) * 0.52,
+          this.#obstacles,
+          0.35,
+          this.#scratch,
+        );
         e.x = moved.x;
         e.z = moved.z;
         if (e.hp <= 0) {
@@ -456,7 +538,12 @@ export class Adventure {
         pot.broken = true;
         this.#hit.add(pot);
         this.addGem(pot.x, pot.z, 2);
-        this.events.push({ kind: "potBreak", x: pot.x, y: groundHeight(pot.x, pot.z) + 0.3, z: pot.z });
+        this.events.push({
+          kind: "potBreak",
+          x: pot.x,
+          y: groundHeight(pot.x, pot.z) + 0.3,
+          z: pot.z,
+        });
       }
     }
   }
@@ -509,7 +596,8 @@ export class Adventure {
       vx = p.rollX * (6.6 - 1.7 * q);
       vz = p.rollZ * (6.6 - 1.7 * q);
     }
-    if (mag > 0.05 && p.roll === 0 && this.lock === undefined) p.angle = turnToward(p.angle, Math.atan2(d.x, d.z), 1 - Math.exp(-dt * 13));
+    if (mag > 0.05 && p.roll === 0 && this.lock === undefined)
+      p.angle = turnToward(p.angle, Math.atan2(d.x, d.z), 1 - Math.exp(-dt * 13));
     const lock = this.lock;
     if (lock !== undefined && !lock.dead) {
       const dx = lock.x - p.x;
@@ -536,7 +624,8 @@ export class Adventure {
         p.vy = 0;
       }
     }
-    if (p.regenDelay <= 0 && !p.blocking && p.roll === 0) p.stamina = Math.min(100, p.stamina + dt * 24);
+    if (p.regenDelay <= 0 && !p.blocking && p.roll === 0)
+      p.stamina = Math.min(100, p.stamina + dt * 24);
     p.speed = Math.hypot(vx, vz);
     p.walk += dt * p.speed * 2.8;
     if (p.attack > 0) {
@@ -603,9 +692,23 @@ export class Adventure {
 
 function freshPlayer(): IPlayer {
   return {
-    angle: SPAWN.angle, attack: 0, attackCooldown: 0, blocking: false, dead: 0, invuln: 0, regenDelay: 0,
-    roll: 0, rollX: 0, rollZ: -1, speed: 0, stamina: 100, vy: 0, walk: 0, x: SPAWN.x,
-    y: groundHeight(SPAWN.x, SPAWN.z), z: SPAWN.z,
+    angle: SPAWN.angle,
+    attack: 0,
+    attackCooldown: 0,
+    blocking: false,
+    dead: 0,
+    invuln: 0,
+    regenDelay: 0,
+    roll: 0,
+    rollX: 0,
+    rollZ: -1,
+    speed: 0,
+    stamina: 100,
+    vy: 0,
+    walk: 0,
+    x: SPAWN.x,
+    y: groundHeight(SPAWN.x, SPAWN.z),
+    z: SPAWN.z,
   };
 }
 

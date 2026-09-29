@@ -14,7 +14,12 @@ export interface IBatch {
     scale?: readonly [number, number, number] | number;
   }) => number;
   /** Builds the one instanced mesh, or `undefined` when nothing was placed. */
-  readonly build: (options: { castShadow?: boolean; name?: string; parent?: Object3D; receiveShadow?: boolean }) => InstancedMesh | undefined;
+  readonly build: (options: {
+    castShadow?: boolean;
+    name?: string;
+    parent?: Object3D;
+    receiveShadow?: boolean;
+  }) => InstancedMesh | undefined;
 }
 
 export interface IRenderTools {

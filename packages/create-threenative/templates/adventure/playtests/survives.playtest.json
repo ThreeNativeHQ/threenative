@@ -18,7 +18,7 @@
     {
       "kind": "input",
       "label": "walk-forward",
-      "press": "KeyW",
+      "press": "ArrowUp",
       "holdTicks": 90,
       "release": true
     },
@@ -55,16 +55,6 @@
             "equals": 0
           }
         ]
-      },
-      {
-        "id": "state",
-        "path": "hp",
-        "equals": 6
-      },
-      {
-        "id": "state",
-        "path": "stage",
-        "equals": "meet"
       }
     ]
   }

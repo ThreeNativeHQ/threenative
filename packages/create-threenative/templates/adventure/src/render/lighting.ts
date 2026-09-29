@@ -24,7 +24,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  const key = new DirectionalLight(palette.sun, 4.6);
+  const key = new DirectionalLight(palette.sun, 6.2);
   key.position.copy(SUN_DIRECTION).multiplyScalar(SUN_DISTANCE);
   key.castShadow = true;
   const size = mobile ? 2048 : 4096;

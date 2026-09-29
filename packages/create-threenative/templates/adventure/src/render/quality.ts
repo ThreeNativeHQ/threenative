@@ -71,11 +71,12 @@ export function resolveQualityTier(
  * the frame is exposed up and the tone curve does the rolling-off.
  */
 const shared: IWorldEnvironmentOptions = {
+  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.75,
-  bloomStrength: 0.34,
+  bloomStrength: 0.5,
   bloomThreshold: 0.9,
-  exposure: 0.95,
+  exposure: 1.0,
   tonemapMode: "aces",
   vignetteAmount: 0.3,
 };
@@ -88,12 +89,14 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
-  godraysDensity: 0.7,
+  godraysDensity: 0.8,
+  // Godrays: unmeasured on its own here; the 48 raymarch steps are the knob, read `TN_FRAME_BUDGET`.
   godraysEnabled: true,
   godraysFloor: 0.06,
-  godraysIntensity: 4,
+  godraysIntensity: 7,
   godraysMaxDensity: 0.5,
   godraysSteps: 48,
+  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.5,
 };

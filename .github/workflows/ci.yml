@@ -723,6 +723,7 @@ jobs:
       matrix:
         include:
           - { template: action-rpg, shard: "1/1" }
+          - { template: adventure, shard: "1/1" }
           - { template: defense, shard: "1/1" }
           - { template: minimal, shard: "1/1" }
           - { template: platformer, shard: "1/3" }

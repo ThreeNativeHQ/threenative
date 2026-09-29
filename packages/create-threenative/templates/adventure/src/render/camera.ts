@@ -15,14 +15,20 @@ export interface IOrbit {
   yaw: number;
 }
 
-export const DEFAULT_ORBIT: Readonly<IOrbit> = { distance: 5.3, pitch: 0.19, yaw: 0.035 };
+export const DEFAULT_ORBIT: Readonly<IOrbit> = { distance: 5.2, pitch: 0.15, yaw: 0.035 };
 export const ORBIT_LIMITS = { distance: [2.6, 11], pitch: [0.05, 0.85] } as const;
 /** How far above the boots the camera looks, in metres: over the hero's head, so the horizon sits mid-frame and the canopy comes into view. */
 const FOCUS = 1.95;
 
 export interface ICameraRig {
   /** Moves the camera toward the shot for a hero at (x, y, z). `snap` jumps there. */
-  readonly follow: (hero: { x: number; y: number; z: number }, orbit: IOrbit, dt: number, time: number, snap?: boolean) => void;
+  readonly follow: (
+    hero: { x: number; y: number; z: number },
+    orbit: IOrbit,
+    dt: number,
+    time: number,
+    snap?: boolean,
+  ) => void;
   /** Kicks the camera; it decays on its own. */
   readonly shake: (amount: number) => void;
 }
@@ -46,7 +52,11 @@ export function createCameraRig(camera: PerspectiveCamera, trees: readonly ITree
       const y = focus.y + dir.y * d;
       const z = focus.z + dir.z * d;
       for (const tree of trees) {
-        if (Math.hypot(x - tree.x, z - tree.z) < tree.r * 0.95 + 0.25 && y < groundHeight(tree.x, tree.z) + tree.h) return Math.max(1.4, d - 0.3);
+        if (
+          Math.hypot(x - tree.x, z - tree.z) < tree.r * 0.95 + 0.25 &&
+          y < groundHeight(tree.x, tree.z) + tree.h
+        )
+          return Math.max(1.4, d - 0.3);
       }
     }
     return limit;
@@ -57,7 +67,11 @@ export function createCameraRig(camera: PerspectiveCamera, trees: readonly ITree
       focus.set(hero.x, hero.y + FOCUS, hero.z);
       smoothed.lerp(focus, snap ? 1 : 1 - Math.exp(-dt * 12));
       const cosPitch = Math.cos(orbit.pitch);
-      offset.set(Math.sin(orbit.yaw) * cosPitch, Math.sin(orbit.pitch), Math.cos(orbit.yaw) * cosPitch);
+      offset.set(
+        Math.sin(orbit.yaw) * cosPitch,
+        Math.sin(orbit.pitch),
+        Math.cos(orbit.yaw) * cosPitch,
+      );
       const reach = trunkDistance(offset, orbit.distance);
       desired.copy(focus).addScaledVector(offset, reach);
       // Keep every point along the boom above the ground.
