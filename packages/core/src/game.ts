@@ -1773,6 +1773,22 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // resolved frame id so a resolve still in flight is counted stale, not measured twice.
           const gpuSample = renderer.gpuFrameSample?.();
           frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
+          // The one summed render timestamp split by pass: main and shadow come from the pass
+          // recorder's per-uid query results, and everything else in that pool (post chain,
+          // reflections, HUD) is the remainder. Compute is its own pool.
+          const gpuSplit =
+            gpuSample === undefined || gpuSample.frame === undefined
+              ? undefined
+              : renderPassBudget?.gpuPassMs(gpuSample.frame);
+          if (gpuSplit !== undefined && gpuSample !== undefined) {
+            const computeMs = renderer.gpuComputeMs?.();
+            frameBudget?.addGpuBucketMs({
+              main: gpuSplit.main,
+              shadow: gpuSplit.shadow,
+              other: Math.max(0, gpuSample.ms - gpuSplit.main - gpuSplit.shadow),
+              ...(computeMs === undefined ? {} : { compute: computeMs }),
+            });
+          }
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;

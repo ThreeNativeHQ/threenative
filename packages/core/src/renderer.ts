@@ -197,6 +197,15 @@ export interface IRendererLike {
    * contract. `createRenderer` always provides it.
    */
   gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
+  /**
+   * GPU milliseconds of the last resolved compute frame, when the adapter reports one.
+   *
+   * The compute pool is a separate series from the render pool and `resolveGpuFrame` resolves it,
+   * so a GPU simulation's cost is measurable instead of being charged to whatever render frame
+   * happened to overlap. `undefined` for a WebGL2 fallback, an adapter without timestamps, or a
+   * frame that ran no compute.
+   */
+  gpuComputeMs?(): number | undefined;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -268,7 +277,11 @@ export interface IRendererOptions {
 type RendererInstance = {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
-  info?: { frame?: number; render?: { timestamp?: number } };
+  info?: {
+    frame?: number;
+    render?: { timestamp?: number };
+    compute?: { timestamp?: number };
+  };
   backend?: {
     trackTimestamp?: boolean;
     /** The backend's own attribute creation, which a compile does not do. */
@@ -466,6 +479,14 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    gpuComputeMs: () => {
+      const timestamp = raw.info?.compute?.timestamp;
+      // Three writes `0` before the first resolve and on a failed one, so a non-positive value is
+      // no reading rather than a frame that cost nothing.
+      return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
+        ? timestamp
+        : undefined;
+    },
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
       // reported absence rather than a frame-time error.

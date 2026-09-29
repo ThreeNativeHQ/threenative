@@ -185,6 +185,14 @@ export interface IFrameBudgetSummary {
   readonly max: number;
 }
 
+/** Where one resolved frame's GPU milliseconds went. Closed on purpose, like the phases. */
+export const FRAME_GPU_BUCKETS = ["main", "shadow", "other", "compute"] as const;
+
+export type FrameGpuBucket = (typeof FRAME_GPU_BUCKETS)[number];
+
+/** One frame's GPU milliseconds per bucket; a bucket the device did not resolve is absent. */
+export type IFrameGpuBucketSample = Partial<Record<FrameGpuBucket, number>>;
+
 /**
  * One render-pass kind's submissions across a window, so a change that trades triangles for CPU is
  * visible in the same report as the milliseconds it traded for.
@@ -295,6 +303,19 @@ export interface IFrameBudgetWindow {
   readonly gpuMs?: number;
   /** Age of the most recent resolved GPU timestamp in Three.js frame IDs; absent means unobservable. */
   readonly gpuAgeFrames?: number;
+  /**
+   * GPU milliseconds per resolved frame, split by where the device spent them: the main scene
+   * pass, every shadow pass, everything else in the render pool (post chain, reflections, HUD) and
+   * the compute pool. Each is the window's p50 over the frames that resolved it, one decimal.
+   *
+   * `gpu` is their sum's series; these say which pass owns it. Absent rather than zero when that
+   * bucket never resolved — an unmeasured pass and a free one are different facts — so
+   * `gpuMain + gpuShadow + gpuOther` reconciles with `gpuMs` only when all three are present.
+   */
+  readonly gpuMain?: number;
+  readonly gpuShadow?: number;
+  readonly gpuOther?: number;
+  readonly gpuCompute?: number;
   /**
    * The frame's boundary counts, when something counted them.
    *
@@ -450,6 +471,11 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** One decimal, for the per-bucket GPU line the harness prints as `<ms>` with a single place. */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 /**
  * Accumulates one frame at a time and reports windowed attribution.
  *
@@ -472,6 +498,8 @@ export class FrameBudget {
   #substeps: Ring;
   #phaseRings: Record<FrameBudgetPhase, Ring>;
   #gpu: Ring;
+  #gpuBucketRings: Record<FrameGpuBucket, Ring>;
+  #gpuBucketThisFrame: IFrameGpuBucketSample = {};
   #passDrawRings: Record<FramePassKind, Ring>;
   #passTriangleRings: Record<FramePassKind, Ring>;
   #passFrames: Record<FramePassKind, number> = { main: 0, nested: 0, reflection: 0, shadow: 0 };
@@ -528,6 +556,12 @@ export class FrameBudget {
     this.#frame = new Ring(capacity);
     this.#substeps = new Ring(capacity);
     this.#gpu = new Ring(capacity);
+    this.#gpuBucketRings = {
+      compute: new Ring(capacity),
+      main: new Ring(capacity),
+      other: new Ring(capacity),
+      shadow: new Ring(capacity),
+    };
     this.#hostCalls = new Ring(capacity);
     this.#gpuBytes = new Ring(capacity);
     this.#jsAllocBytes = new Ring(capacity);
@@ -571,6 +605,7 @@ export class FrameBudget {
     this.#substepCount = 0;
     this.#gpuThisFrame = undefined;
     this.#gpuStaleThisFrame = false;
+    this.#gpuBucketThisFrame = {};
     this.#hostGap = this.#lastFrameEnd === undefined ? 0 : Math.max(0, nowMs - this.#lastFrameEnd);
     this.#presentedDelta =
       this.#lastTimestamp === undefined ? 0 : Math.max(0, timestampMs - this.#lastTimestamp);
@@ -633,6 +668,27 @@ export class FrameBudget {
       this.#lastGpuFrame = frame;
     }
     this.#gpuThisFrame = ms;
+  }
+
+  /**
+   * Records where one resolved frame's GPU time went, from the per-pass timestamp split.
+   *
+   * Alongside `addGpuMs`, once per frame. A bucket the producer could not attribute is left out
+   * rather than passed as zero: an unmeasured pass and a free one are different facts, and the
+   * p50 of a bucket that was never measured is absent from the window. An unknown bucket name
+   * throws rather than being dropped, the same fail-closed rule as a phase.
+   */
+  addGpuBucketMs(sample: IFrameGpuBucketSample): void {
+    if (!this.#open) throw new Error("FrameBudget.addGpuBucketMs called outside a frame.");
+    for (const bucket of FRAME_GPU_BUCKETS) {
+      const ms = sample[bucket];
+      if (ms === undefined) continue;
+      if (!Number.isFinite(ms) || ms < 0)
+        throw new Error(
+          `Frame budget gpu ${bucket} must be a non-negative number, received ${String(ms)}.`,
+        );
+      this.#gpuBucketThisFrame[bucket] = ms;
+    }
   }
 
   /**
@@ -736,6 +792,11 @@ export class FrameBudget {
     this.#phaseRings.residual.push(residual);
     this.#phaseRings.ui.push(this.#uiMs);
     if (this.#gpuThisFrame !== undefined) this.#gpu.push(this.#gpuThisFrame);
+    for (const bucket of FRAME_GPU_BUCKETS) {
+      const ms = this.#gpuBucketThisFrame[bucket];
+      if (ms !== undefined) this.#gpuBucketRings[bucket].push(ms);
+    }
+    this.#gpuBucketThisFrame = {};
     if (this.#gpuStaleThisFrame) this.#gpuStaleInWindow += 1;
     for (const pass of this.#passesThisFrame) {
       this.#passDrawRings[pass.kind].push(pass.draws);
@@ -805,6 +866,14 @@ export class FrameBudget {
           };
     const gpuSummary = this.#gpu.summarize(this.#scratch);
     const gpu = gpuSummary.samples === 0 ? undefined : gpuSummary;
+    const gpuBucket = (bucket: FrameGpuBucket): number | undefined => {
+      const summary = this.#gpuBucketRings[bucket].summarize(this.#scratch);
+      return summary.samples === 0 ? undefined : round1(summary.p50);
+    };
+    const gpuMain = gpuBucket("main");
+    const gpuShadow = gpuBucket("shadow");
+    const gpuOther = gpuBucket("other");
+    const gpuCompute = gpuBucket("compute");
     const target = this.#readTarget === undefined ? undefined : (this.#readTarget() ?? undefined);
     const resolvedTarget = target === undefined ? undefined : requireTarget(target);
     return {
@@ -840,6 +909,12 @@ export class FrameBudget {
       ...(surface === undefined ? {} : { surface }),
       ...(counters === undefined ? {} : { counters }),
       window: this.#windowIndex + 1,
+      // Appended after every existing field so a parser that reads this line as JSON keeps the
+      // keys it already knew; the per-bucket p50s are the only additions.
+      ...(gpuMain === undefined ? {} : { gpuMain }),
+      ...(gpuShadow === undefined ? {} : { gpuShadow }),
+      ...(gpuOther === undefined ? {} : { gpuOther }),
+      ...(gpuCompute === undefined ? {} : { gpuCompute }),
     };
   }
 
@@ -897,6 +972,7 @@ export class FrameBudget {
     this.#frame.reset();
     this.#substeps.reset();
     this.#gpu.reset();
+    for (const bucket of FRAME_GPU_BUCKETS) this.#gpuBucketRings[bucket].reset();
     this.#hostCalls.reset();
     this.#gpuBytes.reset();
     this.#jsAllocBytes.reset();
