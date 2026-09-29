@@ -25,8 +25,16 @@ const LADDER_HEADLINE_HEIGHT := 1080
 const LADDER_BLOOM_INTENSITY := 0.5
 const LADDER_BLOOM_THRESHOLD := 0.9
 const LADDER_CHARACTER_SIDE := 10
-const LADDER_CHARACTER_SPACING := 2.4
-const LADDER_CHARACTER_Y := 4.5
+const LADDER_CHARACTER_SPACING := 2.5
+const LADDER_CHARACTER_Y := 0.0
+# How tall one of R3's characters stands, in metres, and how far a measured height may sit from it.
+# The Khronos Fox is authored in centimetres, so an unscaled import is a 79 m statue that fills the
+# camera; both engines scale their own import to this height and the parser reads the result back.
+const LADDER_FOX_HEIGHT := 0.5
+# Where `runGodotDesktop` puts the digest-pinned asset for the duration of the export, so Godot's
+# importer builds the rig instead of `GLTFDocument` rebuilding it (and corrupting the heap) at run
+# time. Read, never written, by this script.
+const FOX_RESOURCE := "res://fox.glb"
 # `LADDER_SAMPLE_STRIDE` in `examples/engine-load-test/src/ladder.ts`, where the read-back stats and
 # the guard that reads them are defined. A per-pixel walk of a 1920x1080 frame is seconds of engine
 # time; a 32k-pixel sample answers the same question.
@@ -69,6 +77,10 @@ var _ladder_post := false
 # is a failed run rather than an unmeasured one.
 var _probed := false
 var _render_check: Dictionary = {}
+# R3's characters, measured off this engine's own import: the world height one of them came out at
+# and the fraction of the viewport it covers. The parser gates both, so a fox that stayed 79 m tall
+# fails the run instead of turning the rung into a measurement of overdraw.
+var _fox_measurement: Dictionary = {}
 
 var _plan: Array = []
 var _plan_index: int = 0
@@ -300,8 +312,8 @@ func _point_light_position(index: int, frame_index: int, extent: float) -> Vecto
 	)
 
 
-# The port of `characterPlacement`: a 10x5 block above the lattice, inside the sun's frustum and
-# inside the camera's orbit, so the skinning is a submitted cost and not a culled one.
+# The port of `characterPlacement`: a 10x5 block on the ground among the cubes, inside the sun's
+# frustum and inside the camera's orbit, so the skinning is a submitted cost and not a culled one.
 func _character_position(index: int) -> Vector3:
 	return Vector3(
 		(float(index % LADDER_CHARACTER_SIDE) - (LADDER_CHARACTER_SIDE - 1) / 2.0)
@@ -309,6 +321,55 @@ func _character_position(index: int) -> Vector3:
 		LADDER_CHARACTER_Y,
 		(float(index / LADDER_CHARACTER_SIDE) - 2.0) * LADDER_CHARACTER_SPACING
 	)
+
+
+# The combined AABB of every mesh under `node`, in world space. A skinned rig's bones are not
+# meshes, so this is the fox's geometry and not its skeleton — the same box three's `Box3` reports.
+func _mesh_bounds(node: Node) -> AABB:
+	var bounds := AABB()
+	var found := false
+	var stack: Array[Node] = [node]
+	while not stack.is_empty():
+		var current: Node = stack.pop_back()
+		if current is MeshInstance3D and (current as MeshInstance3D).mesh != null:
+			var world := (current as MeshInstance3D).global_transform * (current as MeshInstance3D).get_aabb()
+			if not found:
+				bounds = world
+				found = true
+			else:
+				bounds = bounds.merge(world)
+		for child in current.get_children():
+			stack.append(child)
+	return bounds if found else AABB()
+
+
+# The factor that turns this engine's import of the fox into a `LADDER_FOX_HEIGHT` character, read
+# off the instance's own bind-pose bounds. Measured rather than assumed because the two engines
+# import the same bytes differently, and a hardcoded constant would hide exactly that.
+func _fox_scale(character: Node3D) -> float:
+	var bounds := _mesh_bounds(character)
+	if bounds.size.y <= 0.0:
+		print("TN_BENCH_FOX_EMPTY_BOUNDS")
+		get_tree().quit(1)
+		return 1.0
+	return LADDER_FOX_HEIGHT / bounds.size.y
+
+
+# The first character's world height and its share of the viewport, measured at the camera's live
+# pose at the frame the rung is read on. `unproject_position` is the same projection three's
+# `Vector3.project` performs, so the two arms' screen fractions are comparable numbers.
+func _measure_fox() -> void:
+	if _characters.is_empty():
+		return
+	var bounds := _mesh_bounds(_characters[0])
+	var size := get_viewport().get_visible_rect().size
+	var centre := bounds.get_center()
+	var top := _camera.unproject_position(Vector3(centre.x, bounds.end.y, centre.z))
+	var bottom := _camera.unproject_position(Vector3(centre.x, bounds.position.y, centre.z))
+	_fox_measurement = {
+		"heightM": bounds.size.y,
+		"screenFraction": absf(top.y - bottom.y) / size.y,
+	}
 
 
 func _clear_ladder() -> void:
@@ -319,11 +380,9 @@ func _clear_ladder() -> void:
 	for character in _characters:
 		remove_child(character)
 	_characters.clear()
-	# The rigs are detached, never freed. Godot 4.7 corrupts its heap deleting a batch of 50 packed
-	# glTF instances (glibc "corrupted size vs. prev_size", exit 134) — one batch survives, the
-	# second does not, and the process died with the report half printed. They cost a few MB each
-	# and the run exits seconds later, so a leak in a measurement is cheaper than a truncated
-	# report. The cubes and the WorldEnvironment are still freed.
+	# The rigs are detached, never freed: the run has already reported by the time this runs, and a
+	# teardown that frees 50 glTF rigs is a teardown that can take the report with it. They cost a
+	# few MB each and the process exits seconds later. The cubes and the WorldEnvironment are freed.
 	_character_players.clear()
 	_character_staggers = PackedFloat32Array()
 	if _ladder_post:
@@ -335,46 +394,47 @@ func _clear_ladder() -> void:
 	_sun.shadow_enabled = false
 
 
-# The Khronos Fox, read from the pinned file the runner named. A missing or unreadable file stops the
-# run here rather than at R3, where the first `ladder.skinnedMeshes` assertion would fail with a
-# message about counts instead of about the asset.
+# The Khronos Fox, loaded through Godot's own importer rather than through `GLTFDocument` at
+# runtime. The runner copies the digest-pinned file to `res://fox.glb` before the export, so the
+# importer — the same path any game loading a glTF takes — is what builds the rig.
+#
+# `GLTFDocument` was the first attempt and it is unusable here: reading this file at runtime
+# corrupted the heap in this Godot build, non-deterministically, in 4 of 5 runs ("corrupted size vs.
+# prev_size", SIGABRT) *after* the report had been printed — so the arm published nothing and the
+# run died with the answer in a stdout buffer abort() never flushes. Copying the asset into the
+# project and letting the importer handle it is 5 runs out of 5 clean, and it is the path a game
+# would take anyway. A missing asset stops the run here rather than at R3, where the first
+# `ladder.skinnedMeshes` assertion would fail with a message about counts instead of about the file.
 func _load_fox(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		print("TN_BENCH_FOX_MISSING:", path)
 		get_tree().quit(1)
 		return
-	_fox_bytes = FileAccess.get_file_as_bytes(path)
-	if _fox_bytes.is_empty():
+	if FileAccess.get_file_as_bytes(path).is_empty():
 		print("TN_BENCH_FOX_EMPTY:", path)
 		get_tree().quit(1)
 		return
-	var document := GLTFDocument.new()
-	var state := GLTFState.new()
-	if document.append_from_buffer(_fox_bytes, "", state, 0) != OK:
+	var resource := ResourceLoader.load(FOX_RESOURCE, "", ResourceLoader.CACHE_MODE_IGNORE)
+	_character_packed = resource as PackedScene
+	if _character_packed == null:
 		print("TN_BENCH_FOX_PARSE_FAILED")
 		get_tree().quit(1)
 		return
-	var root := document.generate_scene(state, 30.0, true, true)
-	if root == null or not root.has_node("AnimationPlayer"):
+	# Validated on a throwaway instance, not on the run's characters: the clip has to exist and the
+	# rig has to carry a skin, or R3 is 50 frozen meshes and a `skinnedMeshes` count that means
+	# nothing. `CACHE_MODE_IGNORE` above is what keeps this probe from becoming one of the 50.
+	var probe := _character_packed.instantiate() as Node3D
+	if probe == null or not probe.has_node("AnimationPlayer"):
 		print("TN_BENCH_FOX_CLIP_MISSING")
 		get_tree().quit(1)
 		return
-	var player := root.get_node("AnimationPlayer") as AnimationPlayer
+	var player := probe.get_node("AnimationPlayer") as AnimationPlayer
 	if not player.has_animation(LADDER_CLIP):
 		print("TN_BENCH_FOX_CLIP_MISSING")
 		get_tree().quit(1)
 		return
 	_character_clip_seconds = player.get_animation(LADDER_CLIP).length
-	# The template stays out of the tree: 50 instances are what the rung draws, and a 51st fox
-	# standing at the origin would be a scene neither engine has. It is packed rather than kept as a
-	# scene to `duplicate()`: a duplicated rig keeps its original `Skeleton3D`, so 50 foxes would
-	# share one skeleton and be skinned once instead of 50 times — a cheaper scene than the
-	# ThreeNative arm's `SkeletalMesh3D` builds, on the rung that exists to measure skinning.
-	_character_packed = PackedScene.new()
-	if _character_packed.pack(root) != OK:
-		print("TN_BENCH_FOX_PACK_FAILED")
-		get_tree().quit(1)
-		return
+	probe.free()
 
 
 # R1's sun, R2's local lights, R3's characters, R4's post chain and R5's resolution, each added only
@@ -406,10 +466,18 @@ func _apply_ladder(mode: String) -> void:
 			print("TN_BENCH_FOX_CLIP_MISSING")
 			get_tree().quit(1)
 			return
+		var fox_scale := 1.0
 		for index in LADDER_CHARACTERS:
 			var character := _character_packed.instantiate() as Node3D
 			character.position = _character_position(index)
 			add_child(character)
+			# One scale for the whole crowd, measured off the first instance before it is posed. The
+			# Khronos Fox is authored in centimetres and Godot imports those units literally, so an
+			# unscaled character is a 79 m statue; the same rule and the same number as
+			# `foxScale` in `ladder.ts` bring both engines to a 0.5 m fox.
+			if index == 0:
+				fox_scale = _fox_scale(character)
+			character.scale = Vector3.ONE * fox_scale
 			var player := _find_animation_player(character)
 			if player == null or not player.has_animation(LADDER_CLIP):
 				print("TN_BENCH_FOX_CLIP_MISSING")
@@ -589,6 +657,7 @@ func _begin_rung() -> void:
 		_apply_ladder(_mode)
 		_probed = false
 		_render_check = {}
+		_fox_measurement = {}
 	_last_usec = Time.get_ticks_usec()
 
 
@@ -667,6 +736,9 @@ func _process(_delta: float) -> void:
 					RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME
 				)
 			)
+			# The fox, at the live camera pose and on the same frame as the counters, so a rung
+			# reporting counts but not a character size is a failed rung rather than a fast one.
+			_measure_fox()
 
 	# The rung's own read-back, on the last warmup frame: after the shader work has settled and
 	# before the timed window opens, so the frame the read-back stalls the GPU for is not one this
@@ -699,6 +771,8 @@ func _finish_rung() -> void:
 	# arm also serves, and a missing one fails the ladder's own gate rather than passing it.
 	if _mode.begins_with("R"):
 		rung["ladder"] = _ladder_counts()
+		if not _fox_measurement.is_empty():
+			rung["foxMeasurement"] = _fox_measurement
 		if not _render_check.is_empty():
 			rung["renderCheck"] = _render_check
 	_rungs.append(rung)
