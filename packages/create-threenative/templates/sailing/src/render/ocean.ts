@@ -663,7 +663,11 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
     smoothstep(float(0.62), float(0.94), plan.length()),
   );
   // Plus a little standing white at the bow, where the stem pushes a bow wave ahead of it.
+  //
+  // Bounded ahead as well: `smoothstep` with its edges reversed clamps to 1 on the far side, so
+  // without the second ramp this was a strip of foam from the stem to the horizon.
   const bow = smoothstep(float(-1.4), float(-2.5), astern)
+    .mul(smoothstep(float(-5), float(-3.5), astern))
     .mul(smoothstep(float(1.3), float(0.2), across))
     .mul(wakeStrength)
     .mul(torn);

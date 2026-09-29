@@ -13,7 +13,6 @@ import { prepareVehicleConventions } from "../templates/racing/src/conventions.j
 import { createMaterials as createRacingMaterials } from "../templates/racing/src/render/materials.js";
 import { vehicle } from "../templates/racing/src/render/shapes.js";
 import { prepareShipConventions } from "../templates/sailing/src/conventions.js";
-import { createMaterials as createSailingMaterials } from "../templates/sailing/src/render/materials.js";
 import { createShipModel } from "../templates/sailing/src/render/props.js";
 import { preparePlayerConventions as prepareShooterConventions } from "../templates/shooter/src/conventions.js";
 import { createMaterials as createShooterMaterials } from "../templates/shooter/src/render/materials.js";
@@ -97,7 +96,10 @@ describe("generated template conventions", () => {
   });
 
   it("scales the sailing ship", () => {
-    const model = createShipModel(createSailingMaterials());
+    // `createShipModel` now wraps the loaded `ship.glb` rather than building geometry from
+    // materials; a boxed stand-in gives it a real bounding box to normalise without a fixture GLB.
+    const scene = new Mesh(new BoxGeometry(4, 2, 12), new MeshBasicMaterial());
+    const model = createShipModel({ scene });
 
     expectFactor(prepareShipConventions(model));
   });

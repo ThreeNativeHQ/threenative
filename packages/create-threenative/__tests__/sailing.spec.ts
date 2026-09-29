@@ -67,6 +67,8 @@ vi.mock("../templates/sailing/src/render/postprocessing.js", () => ({
 vi.mock("../templates/sailing/src/render/props.js", () => ({
   createBuoy: vi.fn(() => ({ position: { set: vi.fn() } })),
   createIsland: vi.fn(() => ({})),
+  // `Sailing.enter()` reads this synchronously; `Boot.load()` populates it in the real game.
+  getShipModel: vi.fn(() => ({ scene: {} })),
 }));
 vi.mock("../templates/sailing/src/render/sky.js", () => ({
   setupSky: vi.fn(),
@@ -87,11 +89,11 @@ const COURSE = [
  * status the frame reached. Every case builds its own: the ship mock is shared and hoisted, so a
  * case that inherited another's call log would pass on the previous case's frames.
  */
-function createScene(): {
+async function createScene(): Promise<{
   context: never;
   frame: (ctx: never, deltaTime: number) => void;
   state: typeof Sailing.initialState;
-} {
+}> {
   const state = { ...Sailing.initialState };
   const context = {
     add: <T>(object: T): T => object,
@@ -112,7 +114,8 @@ function createScene(): {
     viewport: { size: { aspect: 16 / 9, height: 720, width: 1280 } },
   } as never;
 
-  const frame = new Sailing().enter(context);
+  const sailing = new Sailing();
+  const frame = sailing.enter(context);
   if (typeof frame !== "function") throw new Error("Sailing.enter returned no scene frame.");
   return { context, frame, state };
 }
@@ -149,8 +152,8 @@ beforeEach(() => {
 });
 
 describe("sailing scene ocean clock", () => {
-  it("advances the ocean and the surface's own clock, then moves the hull", () => {
-    const { context, frame } = createScene();
+  it("advances the ocean and the surface's own clock, then moves the hull", async () => {
+    const { context, frame } = await createScene();
 
     frame(context, 0.25);
     frame(context, 0.5);
@@ -171,8 +174,8 @@ describe("sailing scene ocean clock", () => {
 });
 
 describe("sailing scene terminal states", () => {
-  it("keeps the hull moving after the course is won, and stops scoring", () => {
-    const { context, frame, state } = createScene();
+  it("keeps the hull moving after the course is won, and stops scoring", async () => {
+    const { context, frame, state } = await createScene();
 
     // One mark per frame, so four frames round the whole circuit.
     for (let index = 0; index < COURSE.length; index += 1) {
@@ -199,8 +202,8 @@ describe("sailing scene terminal states", () => {
     expect(state.buoysRounded).toBe(4);
   });
 
-  it("keeps the hull moving after the wind expires, and stops scoring", () => {
-    const { context, frame, state } = createScene();
+  it("keeps the hull moving after the wind expires, and stops scoring", async () => {
+    const { context, frame, state } = await createScene();
 
     // Never reaches a mark; the wind runs out at 120 s and the passage is lost where it sits.
     frame(context, 100);
