@@ -535,6 +535,10 @@ await captureFrame('next');
 ${finalCapture}`
     : `for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
 ${finalCapture}`;
+  // A conformance scene is not a game: nothing installs core's startup readiness, so the native
+  // screenshot gate waited out its full 30 s budget on every row (run 36448456340: 74 rows,
+  // 36-39 s each, all logging "startup gate never opened"). The scene has started once
+  // startScene resolves; say so, and the gate captures the next frame instead.
   const completion =
     target === "browser"
       ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
@@ -542,7 +546,8 @@ ${proofWait}
 ${browserCapture}
 `
       : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
-${proofWait}`;
+${proofWait}
+globalThis.__TN_STARTUP_READY__ = true;`;
   const error =
     target === "browser"
       ? `await fetch('/__tn_conformance__/error/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: globalThis.__TN_CONFORMANCE_ERROR__ }).catch(() => {});`
@@ -2606,6 +2611,7 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
+      const rowStarted = Date.now();
       const hardwareReferenceBlocker =
         !dryRun && ["android", "android-hardware", "desktop"].includes(target)
           ? missingHardwareReferenceBlocker(
@@ -2719,6 +2725,10 @@ async function main(argv = process.argv.slice(2)) {
           runIos(test, result);
         }
       }
+      // Per-row wall time on stderr (stdout carries the JSON summary): the only way to tell which
+      // rows a lane's minutes go to without re-running it.
+      if (!dryRun && result.status !== "blocked")
+        console.error(`[conformance] ${test.id} ${result.status} ${((Date.now() - rowStarted) / 1000).toFixed(1)}s`);
       report.summary[result.status] += 1;
       report.results.push(result);
     }
