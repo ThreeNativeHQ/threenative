@@ -119,6 +119,22 @@ export interface IVirtualShadowOptions {
    */
   readonly expensiveRefreshShare?: number;
   /**
+   * Raise a level's texel size gate while its own render is too expensive for the frame, default
+   * true.
+   *
+   * The same measurement adaptive refresh reads — the smoothed cost of the level's own last render,
+   * against the share of the frame it may take — drives a second, independent adaptation: a level
+   * whose render is over budget sizes its gate up in steps of 1.5 until it is affordable again, up
+   * to 8 times the configured gate, and halves it back toward 1 once the render is comfortably under
+   * half the budget. The gate only ever judges a caster by its size (see `minCasterTexels`), so this
+   * drops the tiniest props first and never a building, and a level that is cheap is never touched:
+   * it stays at scale 1 and submits exactly what it did before.
+   *
+   * `false` pins every level at scale 1, which is also what a harness that wants today's draw
+   * counts uses.
+   */
+  readonly adaptiveCasterGate?: boolean;
+  /**
    * How long a level waits after its own last render before an invalidation may re-render it, in
    * seconds. One value for every level, or one per level finest first, the last entry standing in
    * for the rest. Default `0.25 * extent / finestExtent` — 0.25 s, 1 s and 3.33 s for extents
@@ -254,6 +270,10 @@ export interface IVirtualShadowLevelStat {
   readonly draws: number;
   /** The same bill split by kind; the five parts sum to {@link draws}. */
   readonly drawsBy: IVirtualShadowDraws;
+  /** The adaptive caster gate's scale on this level, 1 when it is not shedding casters. */
+  readonly gateScale: number;
+  /** Casters the gate hid on the render this level took this frame; zero if it did not render. */
+  readonly gateHidden: number;
 }
 
 /** One level's caster draws, by the kind of mesh that submitted them. */
@@ -289,6 +309,23 @@ export const VIRTUAL_SHADOW_MARKER = "TN_VIRTUAL_SHADOW";
 export const VIRTUAL_SHADOW_REFRESH_MARKER = "TN_SHADOW_REFRESH";
 /** Seconds between two `TN_SHADOW_REFRESH` lines for the same level. */
 const REFRESH_MARKER_SECONDS = 1;
+/**
+ * One line per level whose adaptive caster gate changed, at most once a second: the level, the width
+ * of the window it re-renders, the smoothed cost of that render, the scale its gate bought, and how
+ * many casters that gate hid on the render the change was read from. A browser run can see which
+ * level is shedding its tiniest props and by how much.
+ */
+export const VIRTUAL_SHADOW_GATE_MARKER = "TN_SHADOW_GATE";
+/** Seconds between two `TN_SHADOW_GATE` lines for the same level. */
+const GATE_MARKER_SECONDS = 1;
+/** How much a level's texel gate steps up per over-budget render. */
+const GATE_SCALE_RISE = 1.5;
+/** The most a level's texel gate may scale up, so a big building is never in reach. */
+const GATE_SCALE_CAP = 8;
+/** How much the gate steps back toward 1 once the render is comfortably under budget. */
+const GATE_SCALE_DECAY = 0.5;
+/** Below this share of the affordable budget a level's gate decays; between, it holds. */
+const GATE_DECAY_SHARE = 0.5;
 /**
  * How much of a level's last two render costs the smoothed cost keeps, `(0, 1]`. Half and half, so a
  * first draw with a cold pipeline is not the level's price for the rest of the session.
@@ -439,6 +476,23 @@ interface ILevel {
   appliedStep: number;
   /** Engine clock of this level's last `TN_SHADOW_REFRESH` line, in seconds. */
   lastRefreshNote: number;
+  /**
+   * The adaptive caster gate's scale on this level: the factor `minCasterTexels` is multiplied by,
+   * 1 until a render comes in over budget. See `adaptiveCasterGate`.
+   */
+  gateScale: number;
+  /**
+   * Casters the adaptive gate hid on this level's last render, for the `TN_SHADOW_GATE` line. Not
+   * reset by a frame that did not render: the line reports the render the change was read from.
+   */
+  gateHidden: number;
+  /** Engine clock of this level's last `TN_SHADOW_GATE` line, in seconds. */
+  lastGateNote: number;
+  /**
+   * Engine clock of the render whose cost the gate has already been adapted to. `#adaptiveTrails`
+   * changes the scale at most once per render, never twice for the same measured cost.
+   */
+  gatedRender: number;
   /**
    * Where this level's *rendered* map sits, relative to the centre the fragment test measures
    * from. A level whose re-render was deferred still holds an older window, and its selection has
@@ -744,6 +798,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
     this.options = {
+      adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
       clipExtents: [...clipExtents],
       depthRange: options.depthRange ?? 400,
@@ -918,9 +973,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
     level: ILevel,
     centre: IVector3Like,
     index: number,
-    stat: { draws: number; drawsBy: IVirtualShadowDrawTally },
+    stat: { draws: number; drawsBy: IVirtualShadowDrawTally; gateHidden: number },
   ): void {
-    const gate = (this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize;
+    // The base texel gate, times the level's own adaptive scale: a level whose render is over
+    // budget raises the size a caster must be before it draws here, so it sheds its tiniest props
+    // first. The scale starts and usually stays at 1, so a cheap level's gate — and every count
+    // taken through it — is byte-identical to the configured one.
+    const gate =
+      ((this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize) * level.gateScale;
+    let gateHidden = 0;
     const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
     const wideLayer = 1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
     const smallLayer = 1 << VIRTUAL_SHADOW_SMALL_CASTER_LAYER;
@@ -1047,6 +1108,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (mesh.castShadow && instanceDiameter(mesh, _sphere.radius) < gate) {
         object.visible = false;
         this.#hidden.push(object);
+        gateHidden += 1;
         return;
       }
       // What this level would submit from each half, counted as it goes: a hidden caster submits
@@ -1103,6 +1165,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     by.small = chosenSmall ? nSmall : 0;
     by.layer0 = nLayer0;
     stat.draws = by.cluster + by.wide + by.small + by.chunkProxy + by.layer0;
+    stat.gateHidden = gateHidden;
+    level.gateHidden = gateHidden;
   }
 
   /**
@@ -1130,9 +1194,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
     // What a level's own render costs, measured around the draw and smoothed over the reading
     // before it. A mover map is a handful of tracked casters and is never scheduled against, so it
-    // is not measured, and with adaptive refresh off nothing is: the switch is the measurement's
-    // own off switch. What the reading buys is set on the next frame, by `#adaptiveTrails`.
-    if (mover || !this.options.adaptiveRefresh) {
+    // is not measured, and with both adaptive refresh and the adaptive caster gate off nothing is:
+    // the reading buys a wider trail and a raised gate, and is what those two switches gate. What
+    // the reading buys is set on the next frame, by `#adaptiveTrails`.
+    if (mover || !(this.options.adaptiveRefresh || this.options.adaptiveCasterGate)) {
       node.updateShadow(frame);
       return;
     }
@@ -1170,7 +1235,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * margin left (`guard: 1`, or a step already at it) is never widened at all.
    */
   #adaptiveTrails(frame: NodeFrame, now: number): void {
-    if (!this.options.adaptiveRefresh) return;
+    const trails = this.options.adaptiveRefresh;
+    const gates = this.options.adaptiveCasterGate;
+    if (!trails && !gates) return;
     // The period is the frame's own, so the share is read against the panel this is running on. A
     // frame that carries none — a harness, a held frame — falls back to the engine's own answer for
     // a display it has not measured.
@@ -1178,25 +1245,57 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const affordableMs =
       this.options.expensiveRefreshShare * (delta > 0 ? delta * 1000 : 1000 / DEFAULT_TARGET_FPS);
     this.#levels.forEach((level, index) => {
-      const base = at(this.options.refreshStep, index);
-      // What is left of that margin once the clipmap has rounded the step to a whole number of
-      // texels: it rounds up by at most half of one, and one of those is `extent / mapSize` of
-      // extent, so the trail it actually steps by is still inside the margin. A level with no such
-      // margin left is held at the step it was given and is not widened at all.
-      const margin = Math.max(
-        base,
-        1 - at(this.options.selectionGuard, index) - 1 / this.options.mapSize,
-      );
-      const step = Math.min(base * Math.max(1, level.costMs / affordableMs), margin);
-      if (step === level.appliedStep) return;
-      this.clipmap.setRefreshStep(index, step);
-      level.appliedStep = step;
-      if (step <= base || now - level.lastRefreshNote < REFRESH_MARKER_SECONDS) return;
-      level.lastRefreshNote = now;
-      console.info(
-        `${VIRTUAL_SHADOW_REFRESH_MARKER} level=${String(index)} width=${String(2 * level.extent)} ms=${level.costMs.toFixed(1)} trail=${step.toFixed(3)}`,
-      );
+      if (trails) {
+        const base = at(this.options.refreshStep, index);
+        // What is left of that margin once the clipmap has rounded the step to a whole number of
+        // texels: it rounds up by at most half of one, and one of those is `extent / mapSize` of
+        // extent, so the trail it actually steps by is still inside the margin. A level with no such
+        // margin left is held at the step it was given and is not widened at all.
+        const margin = Math.max(
+          base,
+          1 - at(this.options.selectionGuard, index) - 1 / this.options.mapSize,
+        );
+        const step = Math.min(base * Math.max(1, level.costMs / affordableMs), margin);
+        if (step !== level.appliedStep) {
+          this.clipmap.setRefreshStep(index, step);
+          level.appliedStep = step;
+          if (step > base && now - level.lastRefreshNote >= REFRESH_MARKER_SECONDS) {
+            level.lastRefreshNote = now;
+            console.info(
+              `${VIRTUAL_SHADOW_REFRESH_MARKER} level=${String(index)} width=${String(2 * level.extent)} ms=${level.costMs.toFixed(1)} trail=${step.toFixed(3)}`,
+            );
+          }
+        }
+      }
+      if (gates) this.#adaptGate(level, index, affordableMs, now);
     });
+  }
+
+  /**
+   * Step one level's adaptive caster gate from the cost of the render it just took, at most once per
+   * render. A level over the affordable share raises its gate by half until it is affordable or the
+   * cap is reached; one comfortably under half the share halves its gate back toward 1. Between the
+   * two it holds — that band is the hysteresis, so a level on the budget does not oscillate. A level
+   * that has not rendered has no reading and is never touched.
+   */
+  #adaptGate(level: ILevel, index: number, affordableMs: number, now: number): void {
+    if (level.lastRender === Number.NEGATIVE_INFINITY) return;
+    if (level.gatedRender === level.lastRender) return;
+    level.gatedRender = level.lastRender;
+    if (level.costMs <= 0) return;
+    let scale = level.gateScale;
+    if (level.costMs > affordableMs) {
+      scale = Math.min(GATE_SCALE_CAP, scale * GATE_SCALE_RISE);
+    } else if (level.costMs < affordableMs * GATE_DECAY_SHARE) {
+      scale = Math.max(1, scale * GATE_SCALE_DECAY);
+    }
+    if (scale === level.gateScale) return;
+    level.gateScale = scale;
+    if (now - level.lastGateNote < GATE_MARKER_SECONDS) return;
+    level.lastGateNote = now;
+    console.info(
+      `${VIRTUAL_SHADOW_GATE_MARKER} level=${String(index)} width=${String(2 * level.extent)} ms=${level.costMs.toFixed(1)} scale=${scale.toFixed(3)} hidden=${String(level.gateHidden)}`,
+    );
   }
 
   /**
@@ -1338,6 +1437,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       this.#levels.push({
         appliedStep: at(this.options.refreshStep, index),
         costMs: 0,
+        gatedRender: Number.NEGATIVE_INFINITY,
+        gateHidden: 0,
+        gateScale: 1,
+        lastGateNote: Number.NEGATIVE_INFINITY,
         depthFar: this.options.lightDistance + this.options.depthRange,
         depthNear: 1,
         dirty: false,
@@ -1646,6 +1749,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
           draws: 0,
           drawsBy: { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 },
           extent: level.extent,
+          gateHidden: 0,
+          gateScale: level.gateScale,
           invalidated: asked ? 1 : 0,
           moved: windowMoved ? 1 : 0,
           rendered: grant ? 1 : 0,

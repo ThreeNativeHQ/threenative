@@ -32,6 +32,7 @@ import {
 } from "../src/model-lod.js";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_GATE_MARKER,
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
   VIRTUAL_SHADOW_REFRESH_MARKER,
@@ -398,12 +399,24 @@ describe("VirtualShadowNode", () => {
     // meshes are in this world, so the granted level reports a bill of zero.
     const noDraws = { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 };
     expect(node.stats.perLevel).toEqual([
-      { deferred: 0, draws: 0, drawsBy: noDraws, extent: 8, invalidated: 0, moved: 1, rendered: 1 },
+      {
+        deferred: 0,
+        draws: 0,
+        drawsBy: noDraws,
+        extent: 8,
+        gateHidden: 0,
+        gateScale: 1,
+        invalidated: 0,
+        moved: 1,
+        rendered: 1,
+      },
       {
         deferred: 1,
         draws: 0,
         drawsBy: noDraws,
         extent: 32,
+        gateHidden: 0,
+        gateScale: 1,
         invalidated: 0,
         moved: 1,
         rendered: 0,
@@ -1557,5 +1570,167 @@ describe("VirtualShadowNode adaptive refresh", () => {
       /TN_VIRTUAL_SHADOW_INVALID/u,
     );
     expect(setupNode(light).options.expensiveRefreshShare).toBe(0.4);
+  });
+});
+
+/**
+ * Adaptive caster gate: a level whose own render is over the frame's affordable share raises the
+ * size a caster must be before it draws there, shedding its tiniest props until it is affordable
+ * again and halving back once it is. The gate is a size test only, so a building never trips it, and
+ * a level that is cheap is never touched. Same flyover as adaptive refresh, with a cast test in it.
+ */
+describe("VirtualShadowNode adaptive caster gate", () => {
+  const CASCADE = { clipExtents: [24, 96], mapSize: 64 };
+  const PERIOD = 1 / 60;
+  const SPEED = 20;
+  const FRAMES = 115;
+  /** Over the 0.4 share of a 16.7 ms frame by more than twice. */
+  const EXPENSIVE_MS = 15;
+
+  interface IGateWalk {
+    /** The gate scale each level held at the end of every frame, in order. */
+    readonly scales: number[][];
+    /** The casters each level's gate hid, as reported per frame; zero on a frame it did not render. */
+    readonly hidden: number[][];
+    /** Each level's reported draws per frame; zero on a frame it did not render. */
+    readonly draws: number[][];
+    /** The `TN_SHADOW_GATE` lines the walk printed. */
+    readonly notes: string[];
+    /** Whether the tiny caster was ever hidden mid-render, across the whole walk. */
+    readonly smallHidden: boolean;
+    /** Whether the big caster was ever hidden mid-render — it must never be. */
+    readonly bigHidden: boolean;
+  }
+
+  /**
+   * A 20 m/s flyover over a two-level cascade with two casters under it. The 0.8 m box is ~1.39 m
+   * across: over the fine level's 1.125 m base gate, so kept at scale 1, and under its 1.69 m gate at
+   * scale 1.5, so the first over-budget render sheds it. The 20 m box is ~34.6 m across — larger than
+   * the cap's 9 m gate — so it must never be in reach, whatever the scale. `charge` is the fake clock
+   * each level's own render costs; the fine level is the expensive one.
+   */
+  function gateWalk(
+    charge: (frame: number, level: number) => number,
+    options: object = {},
+  ): IGateWalk {
+    const { camera, light, scene } = world();
+    const small = new Mesh(new BoxGeometry(0.8, 0.8, 0.8), new MeshStandardMaterial());
+    small.position.set(0, 0.4, 0);
+    small.castShadow = true;
+    scene.add(small);
+    const big = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial());
+    big.position.set(0, 10, 0);
+    big.castShadow = true;
+    scene.add(big);
+    scene.updateMatrixWorld(true);
+
+    const node = setupNode(light, { ...CASCADE, ...options });
+    const levels = node.levelNodes.length;
+    const clock = { ms: 0 };
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let frame = 0;
+    let smallHidden = false;
+    let bigHidden = false;
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        if (index === 0) {
+          smallHidden ||= small.visible === false;
+          bigHidden ||= big.visible === false;
+        }
+        clock.ms += charge(frame, index);
+      };
+    });
+
+    const scales: number[][] = Array.from({ length: levels }, () => []);
+    const hidden: number[][] = Array.from({ length: levels }, () => []);
+    const draws: number[][] = Array.from({ length: levels }, () => []);
+    const time = { value: 0 };
+    try {
+      for (frame = 0; frame < FRAMES; frame += 1) {
+        time.value += PERIOD;
+        const walked = time.value * SPEED;
+        camera.position.set(walked, 5, walked);
+        node.updateBefore({
+          camera,
+          renderer: {},
+          time: time.value,
+          deltaTime: PERIOD,
+        } as unknown as NodeFrame);
+        node.stats.perLevel.forEach((stat, index) => {
+          scales[index]?.push(stat.gateScale);
+          hidden[index]?.push(stat.gateHidden);
+          if (stat.rendered === 1) draws[index]?.push(stat.draws);
+        });
+      }
+      return {
+        bigHidden,
+        draws,
+        hidden,
+        notes: info.mock.calls
+          .map((call) => String(call[0]))
+          .filter((line) => line.startsWith(VIRTUAL_SHADOW_GATE_MARKER)),
+        scales,
+        smallHidden,
+      };
+    } finally {
+      now.mockRestore();
+      info.mockRestore();
+      node.dispose();
+    }
+  }
+
+  it("should raise an expensive level's gate, shed its tiniest caster and never the building", () => {
+    const adapted = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0));
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    // The fine level rose past its base gate, and the tiny caster left its bill; the building never.
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.smallHidden).toBe(true);
+    expect(adapted.bigHidden).toBe(false);
+    // It starts at the full bill and drops to the building alone once the gate passes the tiny one.
+    expect(Math.max(...(adapted.draws[0] as number[]))).toBe(2);
+    expect(Math.min(...(adapted.draws[0] as number[]))).toBe(1);
+    // Today's counts, with the switch off: the tiny caster draws every time.
+    expect((pinned.draws[0] as number[]).every((count) => count === 2)).toBe(true);
+    expect(adapted.notes.length).toBeGreaterThan(0);
+    for (const line of adapted.notes) {
+      expect(line).toMatch(/^TN_SHADOW_GATE level=0 width=48 ms=\d+\.\d scale=[\d.]+ hidden=\d+$/u);
+    }
+  });
+
+  it("should leave a cheap level at scale 1 and count exactly as adaptiveCasterGate off", () => {
+    const adapted = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0));
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    // Level 1 is measured every frame and always under the share, so it is never adapted: scale 1,
+    // and its draws are today's with or without the switch.
+    expect((adapted.scales[1] as number[]).every((scale) => scale === 1)).toBe(true);
+    expect(adapted.draws[1]).toEqual(pinned.draws[1]);
+    expect((adapted.draws[1] as number[]).every((count) => count === 1)).toBe(true);
+    expect(adapted.notes.some((line) => / level=1 /u.test(line))).toBe(false);
+  });
+
+  it("should decay the gate back toward 1 once the render becomes affordable", () => {
+    // Expensive for the first 40 frames, then free: the smoothed cost halves each render, and the
+    // gate halves back toward 1 only once that cost is under half the share.
+    const adapted = gateWalk((frame, level) => (level === 0 && frame < 40 ? EXPENSIVE_MS : 0));
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.scales[0]?.at(-1)).toBe(1);
+  });
+
+  it("should reproduce today's counts exactly with adaptiveCasterGate off", () => {
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    expect(pinned.scales.every((level) => level.every((scale) => scale === 1))).toBe(true);
+    // Level 0's base gate keeps both casters and hides neither; level 1's 4.5 m base gate already
+    // hides the tiny one and keeps the building, exactly as before this gate existed.
+    expect((pinned.hidden[0] as number[]).every((count) => count === 0)).toBe(true);
+    expect((pinned.draws[0] as number[]).every((count) => count === 2)).toBe(true);
+    expect((pinned.draws[1] as number[]).every((count) => count === 1)).toBe(true);
+    expect(pinned.notes).toEqual([]);
   });
 });
