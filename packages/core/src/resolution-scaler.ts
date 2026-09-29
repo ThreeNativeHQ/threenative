@@ -108,7 +108,36 @@ export const RESOLUTION_SCALER = {
    */
   oscillationCycles: 2,
   oscillationWindows: 1 + 4 + 1,
+  /**
+   * The insensitivity guard. A downward step is a hypothesis — fewer pixels will buy a faster
+   * frame — and it is only paid when the measured GPU cost falls with the pixels. On a scene whose
+   * cost is geometry, shadow maps or host work, `gpuMs` stays flat and the controller walks the
+   * picture to the floor with the frame exactly as slow: a real browser arm held `GPU p50` of
+   * 4-11 ms at scale 0.23 against 6-20 ms at scale 1.
+   *
+   * After a downward step the scaler compares the GPU time that motivated the step against the GPU
+   * time at the new rung. A relative gain below `insensitiveGainFraction`, on a step that cut at
+   * least `insensitiveMinPixelDrop` of the pixels, means the cost is not pixel-bound: the step is
+   * refunded, the rung it came from becomes the floor, and no further pixels are spent until
+   * `insensitiveRiseFraction` of sustained rise shows the workload changed.
+   */
+  insensitiveGainFraction: 0.1,
+  insensitiveMinPixelDrop: 0.2,
+  /** A rise of the measured signal over this multiple is a changed workload, not the same one. */
+  insensitiveRiseFraction: 1.25,
+  /** Consecutive above-`insensitiveRiseFraction` windows needed to clear the memory. */
+  insensitiveResetWindows: 2,
+  /** A restored rung is held this many windows before any downward probe is reconsidered. */
+  insensitiveHoldWindows: 2,
+  /**
+   * Marker gap: one line per this many windows, so at most one per 5 s at a 120 fps target on the
+   * 300-frame report window and longer below it, never shorter.
+   */
+  insensitiveMarkerWindows: 2,
 } as const;
+
+/** Printed when a downward step is refunded because the frame did not respond to the pixels. */
+export const RESOLUTION_SCALE_INSENSITIVE_MARKER = "TN_RESOLUTION_SCALE_INSENSITIVE";
 
 /** Pixels retained per rung: 0.85 linear on each axis. */
 const RUNG_PIXEL_RATIO = 0.85 * 0.85;
@@ -177,6 +206,16 @@ export class ResolutionScaler {
   #probeFps: number | undefined = undefined;
   #probeBlind = false;
   #lastHealthyWindow = 0;
+  // Insensitivity memory. `#insensitiveProbe` is the outstanding hypothesis of a fresh-GPU
+  // downward step; `#insensitiveFloor` is the rung a refunded one proved worth holding (no
+  // downward step may cross it while it stands), `#insensitiveSignal` its measured GPU time, and
+  // `#insensitiveRise` the consecutive windows of sustained rise that clear both.
+  #insensitiveProbe: { fromIndex: number; toIndex: number; signal: number } | undefined = undefined;
+  #insensitiveFloor = -1;
+  #insensitiveSignal = 0;
+  #insensitiveRise = 0;
+  #insensitiveHold = 0;
+  #lastInsensitiveMarker = Number.NEGATIVE_INFINITY;
 
   constructor(options: IResolutionScalerOptions) {
     const { start, targetFps } = options;
@@ -256,6 +295,10 @@ export class ResolutionScaler {
     if (this.#stalled(window)) return undefined;
     const gpuMs = this.#freshGpuMs(window);
     this.#noteGpuObservation(window, gpuMs);
+    if (this.#insensitiveHold > 0) this.#insensitiveHold -= 1;
+    this.#trackInsensitiveRise(gpuMs);
+    const refunded = this.#settleInsensitiveProbe(gpuMs);
+    if (refunded !== undefined) return refunded;
     if (window.fps < this.targetFps && (gpuMs === undefined || gpuMs > this.budgetMs)) {
       // **Only the mean is under target: hold.** `fps` is `1000 / mean`, and on the one panel
       // arrangement every game actually ships into — `display.maxFps` equal to the refresh rate,
@@ -281,12 +324,25 @@ export class ResolutionScaler {
       // queries reports nothing either way, and neither this window's fps nor its presentation
       // tail can separate fixed host cost from pixel cost. So the fallback may only probe —
       // one rung down, refunded unless fewer pixels earn a better frame rate.
+      // The memory holds both kinds of probe: a workload already shown not to answer to pixels
+      // does not become pixel-bound just because this window lost its GPU timestamp.
+      if (this.#insensitiveHold > 0 || this.#insensitiveFloor >= 0) return undefined;
       if (gpuMs === undefined) return this.#probeUnknown(window);
       if (this.#index >= RESOLUTION_SCALER.rungs.length - 1) {
         this.#atFloor = true;
         return undefined;
       }
-      return this.#step(this.#rungsToDrop(1000 / gpuMs));
+      const fromIndex = this.#index;
+      const stepped = this.#step(this.#rungsToDrop(1000 / gpuMs));
+      // Record the hypothesis only for a fresh-GPU step: that is the signal that can separate
+      // pixel cost from host cost, and a step the oscillation guard has just pinned is not one
+      // the next window will be allowed to test.
+      if (this.#scaleSource === "auto") {
+        const pixelDrop = 1 - (this.scale / (RESOLUTION_SCALER.rungs[fromIndex] ?? 1)) ** 2;
+        if (pixelDrop >= RESOLUTION_SCALER.insensitiveMinPixelDrop)
+          this.#insensitiveProbe = { fromIndex, toIndex: this.#index, signal: gpuMs };
+      }
+      return stepped;
     }
     this.#atFloor = false;
     if (this.#scaleSource === "auto-pinned") return undefined;
@@ -320,6 +376,61 @@ export class ResolutionScaler {
       this.#probeFps = undefined;
       this.#probeBlind = false;
     }
+  }
+
+  /**
+   * Settles the outstanding insensitivity hypothesis against this window's fresh GPU time. Returns
+   * the restored scale when the step is refunded, `undefined` when it earned its pixels or there is
+   * nothing to settle. A window without fresh timing waits rather than guessing.
+   */
+  #settleInsensitiveProbe(gpuMs: number | undefined): number | undefined {
+    const probe = this.#insensitiveProbe;
+    if (probe === undefined || gpuMs === undefined) return undefined;
+    this.#insensitiveProbe = undefined;
+    const gain = (probe.signal - gpuMs) / probe.signal;
+    if (gain >= RESOLUTION_SCALER.insensitiveGainFraction) return undefined;
+    const restored = RESOLUTION_SCALER.rungs[probe.fromIndex] ?? 1;
+    this.#index = probe.fromIndex;
+    this.#insensitiveFloor = probe.fromIndex;
+    this.#insensitiveSignal = probe.signal;
+    this.#insensitiveHold = RESOLUTION_SCALER.insensitiveHoldWindows;
+    this.#cleanWindows = 0;
+    // The restore is itself a resize and must not feed the controller.
+    this.#cooldown = RESOLUTION_SCALER.cooldownWindows;
+    this.#emitInsensitive(RESOLUTION_SCALER.rungs[probe.toIndex] ?? 1, restored, gain);
+    return restored;
+  }
+
+  /**
+   * Clears the memory once the measured signal has risen past `insensitiveRiseFraction` for
+   * `insensitiveResetWindows` windows: a heavier workload may be pixel-bound where the old one was
+   * not, and the floor it set must not lock the picture soft for the rest of the session.
+   */
+  #trackInsensitiveRise(gpuMs: number | undefined): void {
+    if (this.#insensitiveFloor < 0 || gpuMs === undefined) return;
+    if (gpuMs <= this.#insensitiveSignal * RESOLUTION_SCALER.insensitiveRiseFraction) {
+      this.#insensitiveRise = 0;
+      return;
+    }
+    this.#insensitiveRise += 1;
+    if (this.#insensitiveRise < RESOLUTION_SCALER.insensitiveResetWindows) return;
+    this.#insensitiveFloor = -1;
+    this.#insensitiveSignal = 0;
+    this.#insensitiveRise = 0;
+    this.#insensitiveHold = 0;
+  }
+
+  /** One marker per refunded step, no more often than `insensitiveMarkerWindows`. */
+  #emitInsensitive(scale: number, restored: number, gain: number): void {
+    if (
+      this.#windowIndex - this.#lastInsensitiveMarker <
+      RESOLUTION_SCALER.insensitiveMarkerWindows
+    )
+      return;
+    this.#lastInsensitiveMarker = this.#windowIndex;
+    console.info(
+      `${RESOLUTION_SCALE_INSENSITIVE_MARKER} scale=${String(scale)} restored=${String(restored)} gainPct=${String(Math.round(gain * 100))}`,
+    );
   }
 
   /**
