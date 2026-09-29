@@ -423,13 +423,29 @@ function findBone(root: Object3D, pattern: RegExp): Object3D | undefined {
 }
 
 /**
+ * Give one mesh its own material instances, cloned off whatever it was assigned.
+ *
+ * `SkeletalMesh3D` clones the skeleton per soldier (three's own `SkeletonUtils.clone`), but its
+ * own doc comment says the quiet part: "geometries and materials … are reused by reference." All
+ * five soldiers' meshes point at the exact same `MeshStandardMaterial` objects the GLTF parsed
+ * once. Tinting it is harmless — every soldier wants the same colour — but `#setOpacity` is not:
+ * it writes `opacity` on that shared object to fade one corpse in or out, so for the ~0.35 s a
+ * kill is respawning, every *other* soldier's mesh reads that same falling-then-rising opacity
+ * and flickers transparent with him. That is the intermittent "enemy texture doesn't load" —
+ * a live soldier going half-invisible because a dead one two lanes over is fading. Cloning here,
+ * once per mesh at construction, is what makes a soldier's blend state his own.
+ */
+function ownMaterial(mesh: Mesh): void {
+  mesh.material = Array.isArray(mesh.material)
+    ? mesh.material.map((one) => one.clone())
+    : (mesh.material as MeshStandardMaterial).clone();
+}
+
+/**
  * Recolour one body material in place.
  *
- * The asset's own materials are per-soldier clones — `SkeletalMesh3D` clones the skeleton for
- * every man, and a clone carries its own materials — so painting them is what makes five
- * identically-white mannequins read as five soldiers rather than as one ghost. `color` is written
- * rather than `set`, and `needsUpdate` is left alone: the diffuse colour is a uniform the
- * pipeline already carries, so a soldier joining the squad costs no shader compile.
+ * `color` is written rather than `set`, and `needsUpdate` is left alone: the diffuse colour is a
+ * uniform the pipeline already carries, so a soldier joining the squad costs no shader compile.
  */
 function tintEnemyMaterial(material: MeshStandardMaterial | MeshStandardMaterial[]): void {
   for (const one of Array.isArray(material) ? material : [material]) {
@@ -490,6 +506,12 @@ export class Enemy {
   #strafeTimer = 0;
   #deadFor = 0;
   #fade = 1;
+  /**
+   * Sticky lowest body opacity this soldier has ever carried, so a scenario watching a
+   * *different* soldier's respawn cycle can prove this one never dipped — the regression
+   * `ownMaterial` fixes wrote every soldier's opacity to whichever one was fading.
+   */
+  #opacityFloor = 1;
   #bodyClearance: number | null = null;
   #footClearance: number | null = null;
   #deathObserved = false;
@@ -659,6 +681,8 @@ export class Enemy {
         this.#bodyMeshes.push(mesh);
         mesh.castShadow = false;
         mesh.receiveShadow = false;
+        // Own material instances before touching them: see `ownMaterial`.
+        ownMaterial(mesh);
         tintEnemyMaterial(mesh.material as MeshStandardMaterial | MeshStandardMaterial[]);
       }
     });
@@ -936,6 +960,7 @@ export class Enemy {
       });
     }
     this.#fade = alpha;
+    if (alpha < this.#opacityFloor) this.#opacityFloor = alpha;
   }
 
   /**
@@ -1877,6 +1902,15 @@ export class Enemy {
     position: number[];
     deadFor: number;
     armed: boolean;
+    /**
+     * This soldier's own body opacity — 1 unless he is mid-respawn-fade. Materials are cloned
+     * per soldier (see `ownMaterial`) precisely so this number is his alone: before that fix, one
+     * soldier's fade wrote every soldier's shared material and this field would have moved for
+     * all five at once.
+     */
+    materialOpacity: number;
+    /** Lowest `materialOpacity` this soldier has ever reported. See `#opacityFloor`. */
+    materialOpacityFloor: number;
     reaction: number;
     bodyClearance: number | null;
     footClearance: number | null;
@@ -1950,6 +1984,8 @@ export class Enemy {
       position: this.group.position.toArray(),
       deadFor: this.#deadFor,
       armed: this.#weapon !== undefined,
+      materialOpacity: this.#fade,
+      materialOpacityFloor: this.#opacityFloor,
       reaction: this.#reaction,
       bodyClearance: this.#bodyClearance,
       footClearance: this.#footClearance,
