@@ -12,19 +12,21 @@
 set -u
 tag=${1:-$(date +%F)}
 export DISPLAY=${DISPLAY:-:0} TN_BENCH_DISPLAY=${TN_BENCH_DISPLAY:-${DISPLAY:-:0}}
+# Every result JSON records the tree it was measured on, so a number can be traced to a commit.
+sha=$(git rev-parse HEAD)
 export GODOT_BIN=${GODOT_BIN:-$PWD/artifacts/engine-load-test/prd-449/godot-bin/Godot_v4.7.1-stable_linux.x86_64}
 run() {
   pnpm -s bench:engines --arm "$1-desktop" --ladder 1024,4096 --modes "$2" --frames 160 --warmup 40 \
-    --repeats 1 --skip-baseline --out "prd-449/pilots/scoreboard-$1-r$3-$tag" || exit 1
+    --repeats 1 --skip-baseline --source-sha "$sha" --out "prd-449/pilots/scoreboard-$1-r$3-$tag" || exit 1
 }
 # One engine's whole ladder: R1-R4 at 720p, then R5 at 1080p, as two runs so each window is the
 # resolution its rung draws at.
 ladder() {
   pnpm -s bench:engines --arm "$1-desktop" --ladder 4096 --modes R1,R2,R3,R4 --frames 160 --warmup 40 \
-    --repeats 1 --skip-baseline --out "prd-449/pilots/ladder-$1-r$2-$tag" || exit 1
+    --repeats 1 --skip-baseline --source-sha "$sha" --out "prd-449/pilots/ladder-$1-r$2-$tag" || exit 1
   pnpm -s bench:engines --arm "$1-desktop" --ladder 4096 --modes R5 --width 1920 --height 1080 \
     --frames 160 --warmup 40 --repeats 1 --skip-baseline \
-    --out "prd-449/pilots/ladder1080-$1-r$2-$tag" || exit 1
+    --source-sha "$sha" --out "prd-449/pilots/ladder1080-$1-r$2-$tag" || exit 1
 }
 run tn L2,L3,L4 1; run godot L1,L2,L4 1
 run godot L1,L2,L4 2; run tn L2,L3,L4 2

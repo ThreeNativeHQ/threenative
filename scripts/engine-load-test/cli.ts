@@ -295,7 +295,16 @@ async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IR
     return process.argv.includes("--production") ? runTnWebProduction(options) : runTnWeb(options);
   if (arm === "godot-web") return runGodotWeb(options);
   if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
-  if (arm === "godot-desktop") return parseRunReport(await runGodotDesktop(repoRoot, options));
+  if (arm === "godot-desktop") {
+    const report = await runGodotDesktop(repoRoot, options);
+    // Godot cannot know the tree it was measured against, so the runner stamps it the way the
+    // ThreeNative arm reports its own, and the two arms carry the same `identity.sourceSha`.
+    return parseRunReport(
+      options.sourceSha === undefined
+        ? report
+        : { ...(report as object), identity: { sourceSha: options.sourceSha } },
+    );
+  }
   if (arm === "tn-android" || arm === "godot-android") {
     return parseRunReport(
       await runAndroidArm(repoRoot, arm, {
