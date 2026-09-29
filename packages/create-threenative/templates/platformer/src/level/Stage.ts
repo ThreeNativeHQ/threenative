@@ -311,6 +311,7 @@ export function buildStage(rng: () => number): IStage {
   updaters.push((_dt, time) => swayFlag(flag.cloth, time));
 
   // --- the world behind the route ----------------------------------------
+  const tops: number[] = [];
   const backdrop = [
     [4, -16, -46, 26, 24, 14],
     [40, -14, -54, 30, 28, 16],
@@ -325,18 +326,23 @@ export function buildStage(rng: () => number): IStage {
     const face = cliff(w, h, d, rng);
     face.position.set(x, y, z);
     attach(face);
+    // `cliff` is centred on its origin and carries its grass cap 0.7 m above the box. Everything
+    // that stands on it, hangs from it or is measured against it goes from this height; anchoring
+    // to `y + h` left the trees, falls, castle and windmill 12 m above the rock they belong to.
+    const top = y + h / 2 + 0.7;
+    tops.push(top);
     // Half the cliffs carry water. These are 50 m behind the route: at that distance a fifth one
     // is a smear, and each is two dozen transparent draws that the near cliffs hide anyway.
     if (i % 2 === 0) {
       const fall = waterfall(3 + rng() * 3, h * 0.85);
       fall.group.userData.moving = true;
-      fall.group.position.set(x + (rng() - 0.5) * w * 0.5, y + h - 0.5, z + d / 2 + 0.2);
+      fall.group.position.set(x + (rng() - 0.5) * w * 0.5, top - 0.5, z + d / 2 + 0.2);
       attach(fall.group);
       updaters.push((dt) => fall.update(dt));
     }
     for (let i = 0; i < 4; i += 1) {
       const tree = rng() < 0.6 ? pineTree(1.6 + rng() * 1.2, rng) : roundTree(1.5 + rng(), rng);
-      tree.position.set(x + (rng() - 0.5) * w * 0.85, y + h + 0.5, z + (rng() - 0.5) * d * 0.5);
+      tree.position.set(x + (rng() - 0.5) * w * 0.85, top, z + (rng() - 0.5) * d * 0.5);
       attach(tree);
     }
   }
@@ -360,12 +366,12 @@ export function buildStage(rng: () => number): IStage {
     attach(distant);
   }
   const keep = castle(rng);
-  keep.position.set(26, 4, -78);
+  keep.position.set(22, tops[5] ?? 0, -72);
   keep.scale.setScalar(1.7);
   attach(keep);
   const mill = windmill();
   mill.group.userData.moving = true;
-  mill.group.position.set(74, 12, -66);
+  mill.group.position.set(74, tops[2] ?? 0, -48);
   mill.group.scale.setScalar(1.9);
   attach(mill.group);
   updaters.push((dt) => mill.spin(dt));

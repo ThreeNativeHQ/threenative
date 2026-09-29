@@ -447,7 +447,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
   minimal: "76174dca26046e8b6a4411945b89db4335403989314ccecd11654cb3bc0edeb8",
-  platformer: "28cc40890ea06de50b360aa14649a6cc840ae68ab3f0750492b3fe51ad450100",
+  platformer: "31b7ab4b14ffaf855348eaa637513672963cd537e48e77b0395b1bfe6d80ad4f",
   runner: "55be7adf90d62f35dcd06c091fd6dde4d571d1a1e2a69461b5ba22b4acd779a2",
   puzzle: "199a8b2641abfa3ca9ade5e1cf5c3b3d47426805f6707fdb4f33716b9f543596",
   racing: "d169407c7c98537fc079c312124f9acaae407081e0053d85f38877208b80210c",
