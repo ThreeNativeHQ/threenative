@@ -26,9 +26,9 @@
       {
         "entity": "enemy",
         "component": "modelHeight",
-        "gte": 1.73,
-        "lte": 1.83,
-        "allowTrivial": "held invariant of the loaded rig geometry, not driven by scenario input"
+        "gte": 1.44,
+        "lte": 1.56,
+        "allowTrivial": "the mannequin's `Head` joint is authored 1.545 m above the body origin and the figure stands 1.80 m; measured 1.485-1.515 across five soldiers through an Idle_Loop sway. The old 1.73-1.83 band was measured against the Mixamo rig the template no longer ships"
       },
       {
         "entity": "enemy",
