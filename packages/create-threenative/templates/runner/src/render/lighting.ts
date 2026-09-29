@@ -1,57 +1,53 @@
-import {
-  AmbientLight,
-  DirectionalLight,
-  HemisphereLight,
-  PCFSoftShadowMap,
-  type Scene,
-} from "three";
-import { palette } from "./palette.js";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
+// The rig is returned because `WorldEnvironment`'s godrays stage raymarches against a shadow map,
+// so `setupPost` needs the key light itself; a shadowless one is refused by name.
+import { DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
+import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-/**
- * Key, fill, rim, ambient — named, so each one can be changed on its own.
- *
- * A runner is lit from ahead. The key sits low and down-track so it rakes across the obstacles
- * and gives each one a long shadow reaching back toward the player: at speed that shadow arrives
- * before the block does, and it is the only warning the player gets in time to use.
- *
- * Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
- * the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
- * rendering a black pass.
- */
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight; fill: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  // The sky half is the *rail* grey, not the horizon orange. Taking the horizon colour flooded
-  // the road with it and the track stopped being cool at all.
-  scene.add(new HemisphereLight(palette.rail, palette.track, 1.2));
 
-  const key = new DirectionalLight(0xffcf9e, 3.4);
-  key.position.set(3, 9, -22);
+  // Warm white, matched by eye to the photographed midday sun against its own sky. Aimed low and
+  // down-track so it rakes across the obstacles and throws each one's shadow back toward the
+  // player: at speed the shadow arrives before the block does, which is the only warning in time.
+  const key = new DirectionalLight(0xfff1e0, 4.5);
+  key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 90;
-  key.shadow.camera.left = -14;
-  key.shadow.camera.right = 14;
-  key.shadow.camera.top = 14;
-  key.shadow.camera.bottom = -14;
-  key.shadow.normalBias = 0.03;
+  // One map fitted to what the chase camera can see from the runner: 4096² is well under a
+  // centimetre a texel, so every shadow has the same softness. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 140;
+  const extent = 28;
+  key.shadow.camera.left = -extent;
+  key.shadow.camera.right = extent;
+  key.shadow.camera.top = extent;
+  key.shadow.camera.bottom = -extent;
+  // Small biases: a large normal bias is what lifted the runner's shadow off its own skirt.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.005;
   scene.add(key);
 
-  // A fill from behind the camera, and it is the light the first two captures were missing. With
-  // only a key from down-track, everything the player looks at is backlit: the runner came back a
-  // dark silhouette against the obstacle it was about to hit, which is the one comparison the
-  // game asks the player to make.
-  const fill = new DirectionalLight(0xbfd4ff, 1.5);
-  fill.position.set(-2, 7, 16);
+  // The sky alone leaves every down-track face in its own shade, so the runner reads as a dark
+  // silhouette against the obstacle it is about to hit — the one comparison the game asks the
+  // player to make. A soft fill from ahead of the camera lifts those faces without flattening the
+  // sun's own shadows.
+  const fill = new DirectionalLight(0xdfe8ff, 0.9);
+  fill.position.set(0, 8, 20);
   scene.add(fill);
 
-  const rim = new DirectionalLight(palette.accent, 0.7);
-  rim.position.set(-8, 4, 6);
-  scene.add(rim);
-  scene.add(new AmbientLight(palette.skyHigh, 0.6));
-
-  return key;
+  return { key, fill };
 }

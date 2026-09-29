@@ -7,9 +7,11 @@ const LOOK_AHEAD = 22;
 const LOOK_HEIGHT = -0.2;
 
 export function setupCamera(camera: PerspectiveCamera): void {
-  camera.fov = 62;
+  // 60° vertical is Unreal's 90° horizontal at 16:9 — the framing a third-person game is judged
+  // by, and the arena look whose horizon it was authored against.
+  camera.fov = 60;
   camera.near = 0.1;
-  camera.far = 220;
+  camera.far = 20_000;
   camera.position.set(0, HEIGHT, BACK);
   camera.lookAt(0, LOOK_HEIGHT, -LOOK_AHEAD);
   camera.updateProjectionMatrix();
