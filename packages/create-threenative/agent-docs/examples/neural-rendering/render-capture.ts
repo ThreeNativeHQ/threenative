@@ -42,7 +42,9 @@ export function attachNeuralCapture(options: INeuralCaptureOptions) {
     const result = new StorageTexture(width, height);
     result.type = HalfFloatType;
     result.generateMipmaps = false;
-    result.mipmapsAutoUpdate = false;
+    // `mipmapsAutoUpdate` exists on three's StorageTexture at runtime and is absent from
+    // `@types/three`; core's atmosphere LUTs narrow it the same way.
+    (result as StorageTexture & { mipmapsAutoUpdate: boolean }).mipmapsAutoUpdate = false;
     result.flipY = false;
     result.colorSpace = LinearSRGBColorSpace;
     result.name = name;

@@ -62,12 +62,21 @@ background cannot set `proofPassed`. The runtime capture/provider path does **no
 back to the CPU. Do not enable `readFixtureProof()` in gameplay or neural performance measurements.
 This diagnostic covers transport, not real-model quality or complete display-color parity.
 
+The scene also carries the PRD's tonal fixture — a six-step gray ramp, the three saturated
+primaries and HDR values above 1 — which is what a captured frame needs to be readable at all.
+A flat cube on a flat background renders five distinct colours, and the runner's non-blank guard
+fails closed below eight, so a full-frame visual assertion cannot pass without it.
+
 Run the existing playtest tool independently on each target (apply the PRD's 60-second run cap):
 
 ```sh
-npx @threenative/playtest playtests/neural-rendering.playtest.json \
+# `--headed` and TN_PLAYTEST_HOST_DISPLAY are not optional on a machine with a real GPU. The
+# runner's default on Linux is a private Xvfb, and a headless launch serves WebGPU from
+# SwiftShader on either display; both give a blank frame and a swiftshader adapter no matter what
+# --browser-recipe webgpu asked for. Dropping TN_PLAYTEST_HOST_DISPLAY paints on your own screen.
+TN_PLAYTEST_HOST_DISPLAY=1 npx @threenative/playtest playtests/neural-rendering.playtest.json \
   --target browser --url http://127.0.0.1:5173 \
-  --server-command "pnpm dev" --browser-recipe webgpu
+  --server-command "pnpm dev" --browser-recipe webgpu --headed
 
 # Build this exact game's native bundle first with its existing build command.
 npx @threenative/playtest playtests/neural-rendering-native.playtest.json \
@@ -75,10 +84,16 @@ npx @threenative/playtest playtests/neural-rendering-native.playtest.json \
   --host-arg run --host-arg dist/game.js
 ```
 
-The native scenario deliberately omits the browser-only visual assertion. Both scenarios press
-C after the initial observation and require the runtime state to change to two GPU-verified
-captures. Archive the runner's report, actual adapter/host versions, screenshots and console
-markers. These commands are **supplied proof cases, not claims that they have passed**.
+The browser scenario waits on the state it asserts (`waitForResource` on `state.proofCount`),
+not on a fixed tick budget: the proof is driven by an asynchronous GPU readback, so a tick count
+is a flake with a clock in it. The native scenario deliberately omits the browser-only visual
+assertion. Both scenarios press C after the initial observation and require the runtime state to
+change to two GPU-verified captures. Archive the runner's report, actual adapter/host versions,
+screenshots and console markers.
+
+The copied modules typecheck in the generated game's own `pnpm typecheck`: the
+`@threenative/core/webgpu` declaration carries a `@webgpu/types` reference, and core depends on
+that package, so the GPU globals resolve without the game adding a declaration of its own.
 
 ## Attach to an existing game
 

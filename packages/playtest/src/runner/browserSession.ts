@@ -59,7 +59,14 @@ export function openRunnerPage(
 async function installBootFailure(page: Page, scenario: IPlaytestScenario): Promise<void> {
   if (scenario.bootFailure !== "renderer-no-adapter") return;
   await page.addInitScript(() => {
-    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    // `@webgpu/types` (see the core render seam) adds WebGPU overloads to `getContext`, and an
+    // overload set cannot be called through `.call` with this wrapper's own argument list.
+    // quality-allow: the cast restores the plain two-argument signature this wrapper forwards.
+    const originalGetContext = HTMLCanvasElement.prototype.getContext as unknown as (
+      this: HTMLCanvasElement,
+      contextId: string,
+      options?: unknown,
+    ) => unknown;
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       configurable: true,
       value(this: HTMLCanvasElement, contextId: string, options?: unknown) {

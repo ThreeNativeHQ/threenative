@@ -42,7 +42,9 @@ test("encodes half-grid features, the real graph, then HDR reconstruction on one
   const f = fixture();
   const provider = createOpenDLSSNRProvider(f.device as never, f.options as never);
   assert.equal(provider.kind, "neural");
-  assert.deepEqual(f.log, []);
+  // `assert.deepEqual` is an `asserts` signature: a bare `[]` narrows `log` to `never[]` for the
+  // rest of the test, and every `indexOf`/`includes` below it then rejects its own argument.
+  assert.deepEqual(f.log, [] as string[]);
   provider.encode(f.encoder as never, { original: f.texture(), enhanced: f.texture() } as never);
   assert.ok(f.log.indexOf("input_features") < f.log.indexOf("network"));
   assert.ok(f.log.indexOf("network") < f.log.indexOf("compose_hdr"));
@@ -92,7 +94,7 @@ test("validates actual frame textures before dispatch", () => {
   assert.throws(() => provider.encode(f.encoder as never, {
     original: { ...original, format: "rgba8unorm" }, enhanced: f.texture(),
   } as never), /TEXTURE/);
-  assert.deepEqual(f.log, []);
+  assert.deepEqual(f.log, [] as string[]);
 });
 
 test("fixture performs a real compute dispatch and is never labeled as neural enhancement", () => {

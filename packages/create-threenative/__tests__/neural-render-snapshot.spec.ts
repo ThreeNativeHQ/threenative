@@ -26,7 +26,7 @@ function fixture() {
 test("an ordinary disabled draw does not capture, allocate, or dispatch", () => {
   const f = fixture();
   f.driver.afterWorld(1, f.capture as never);
-  assert.deepEqual(f.log, []);
+  assert.deepEqual(f.log, [] as string[]);
   assert.equal(f.driver.state.status, "disabled");
 });
 

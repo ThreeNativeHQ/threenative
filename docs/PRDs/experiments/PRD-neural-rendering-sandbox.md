@@ -1,6 +1,6 @@
 # PRD — Experimental Neural Rendering Sandbox
 
-**Status:** PARTIAL — same-device snapshot integration, WGSL providers and diagnostic scene implemented; actual GPU/model/platform qualification remains outstanding.
+**Status:** PARTIAL — same-device snapshot integration, WGSL providers and diagnostic scene implemented and passing their repository gates; the real-browser WebGPU fixture scenario passes on one host. Actual model/native/multi-platform qualification remains outstanding.
 **Date:** 2026-09-28.
 **Owner:** ThreeNative rendering / sandbox maintainers.
 **Scope:** One opt-in sandbox, one provider-neutral render contract, one initial OpenDLSS-NR adapter.
@@ -129,6 +129,43 @@ Live preview remains a diagnostic unless measured end-to-end cadence meets its d
 
 Stop expanding this PRD when same-device transport cannot be demonstrated without a broad renderer rewrite, legal model access is unresolved, the smallest valid graph exceeds resource limits, or bounded measurements make interactive use unsuitable. Keep a useful snapshot experiment or record a no-go; do not quietly widen scope.
 
+## Execution record — 2026-09-28, third pass: repository gates and a real-hardware browser run
+
+User request: "execute PR 380 — attach screenshots to the PR once done, Before/After". Everything below was run in this checkout on one host: RTX 2080, NVIDIA driver 615.71.09, Playwright Chromium 1234, Node 22.22.0, pnpm 10.25.0. The Before/After pair the request asks for is `docs/verification/assets/prd-380-neural-rendering/before-after.png`.
+
+![BEFORE the frozen original, AFTER the fixture's channel-swap result, SPLIT at divider 0.5](../../verification/assets/prd-380-neural-rendering/before-after.png)
+
+Left, the frozen original this render path produces: the blue cube and the red/green/blue test card on the HDR background. Centre, the fixture's result from the same capture — every red and blue channel exchanged, which is the whole of what the integration fixture does. Right, the divider at 0.5 showing both at once. **This is an integration test, not neural enhancement**, exactly as the scene's own console marker says. The un-annotated live frame before any capture is `live-before-capture.png` in the same directory.
+
+**Two defects in the supplied proof case had to be fixed before the scenario could pass.** Neither is a rendering defect; both are in the proof case itself, which is why "supplied runnable proof cases, not executions" was the right thing to write for the second implementation.
+
+- The scenario waited a fixed `waitTicks: 600` for a proof that is driven by an asynchronous GPU readback. It failed at 600 on this host and passed at 900, which is a flake with a clock in it. The step now waits on the state it asserts — `waitForResource: { id: "state", path: "proofCount", equals: 2 }` with `timeoutMs: 30000`. (`kind` and `waitTicks` cannot be combined with `waitForResource`; the runner rejects the mix at validation.)
+- The diagnostic scene rendered **five** distinct colours. `assertCaptureNotBlank` fails closed below `minDistinctColors: 8`, so the scenario's full-frame visual assertion could not pass however correct the render was: `TN_CAPTURE_BLANK: only 5 distinct color(s)`. `NeuralSnapshotScene.ts` now carries the tonal fixture this PRD already asked the sandbox for — a six-step gray ramp, the three saturated primaries and HDR values above 1 — which is what makes a captured frame readable and a channel swap visible in the screenshot rather than only in the readback.
+
+**The real-browser WebGPU fixture scenario passes.** Installed sandbox outside the checkout: the branch's `packages/*` packed to tarballs, `create-threenative` scaffolding the `minimal` template against them, the example bundle copied in per its README, `pnpm install`, `pnpm exec vite --host 127.0.0.1 --port 5173 --strictPort`.
+
+```sh
+TN_PLAYTEST_HOST_DISPLAY=1 npx @threenative/playtest playtests/neural-rendering.playtest.json \
+  --target browser --url http://127.0.0.1:5173 --browser-recipe webgpu --headed
+```
+
+Result: `pass: true`, adapter `webgpu:architecture=turing|vendor=nvidia`, `consoleErrors: 0`, `runtimeDiagnostics: 0`, and all four assertions green — `visual.0.region` (non-blank ratio 1.0), `state.proofPassed`, `state.proofCount` `0 -> 2`, `diagnostics`. Four consecutive runs passed with the same adapter. The GPU readback proof reported `{"pixels":4096,"changedPixels":4006,"hdrPixels":4033,"capture":1,"frame":43}` and `{"pixels":4096,"changedPixels":4006,"hdrPixels":4030,"capture":2,"frame":45}`.
+
+Two environment facts the command above encodes, both worth keeping:
+
+- `--headed` is **required** for a hardware adapter. `runner.ts` launches `headless: activeConfig.headless`, and headless Chromium on Linux serves WebGPU from SwiftShader no matter what `--enable-features=Vulkan` asks for. The headless run of this scenario reported `swiftshader / google`, produced 635 `createBuffer` pageerrors and a blank 1-colour frame; the headed run reported `turing / nvidia` and passed.
+- `TN_PLAYTEST_HOST_DISPLAY=1` is required to reach that display. The runner's default on Linux is a private Xvfb, which has no GPU, so even a headed run under it comes back SwiftShader. With the opt-in, `captureDisplay` reported `{ display: ":0", strategy: "existing" }`.
+
+**Repository gates now run.**
+
+- `pnpm typecheck` — **exit 0, 0 errors**, root project and all 31 workspace projects. It did not pass before this pass: `packages/core/src/webgpu.ts` is the first raw-WebGPU surface in the repository and nothing here declared those globals, so the seam alone carried seven `Cannot find name 'GPUDevice'` errors and the game-owned example modules dozens more. Core now depends on `@webgpu/types` and references it from `src/webgpu.ts`, and `tsup` carries the reference into the emitted declarations (`dts.banner`) so a consumer of `@threenative/core/webgpu` resolves `GPUTextureFormat` too instead of seeing an unresolved name. That consumer path is checked, not assumed: the installed sandbox game's own `pnpm typecheck` is **exit 0** with its stock `types: ["vite/client"]` tsconfig and no declaration of its own, which only works because core's declaration carries the reference.
+- Making the real WebGPU globals visible put six declarations in four **other** files in collision with them — `playtest`'s `traceRun` / `observationSampling` / `browserSession` stand-ins, `scripts/realism-effects-visual.ts` and `test-support/webgpu-provenance.ts`, each written when no `GPUDevice` global existed. All six now name the shape they actually read, with a reason on each cast. Net Biome result is unchanged from the branch baseline (38 errors, 868 warnings, none of them new): the repository's pre-existing lint debt is untouched.
+- The eight new unit lanes now run under the repository's own Vitest rather than a `node:test` shim: `npx vitest run` over `neural-render-interop` (10), `neural-provider-contract` (54), `neural-render-capture` (5), `neural-render-hook` (4), `neural-render-lifecycle` (29), `neural-render-proof` (2), `neural-render-snapshot` (8), `opendlss-nr-adapter` (7) — **119 passed, 0 failed**. Three test-side defects fell out of running them for real: `assert.deepEqual(f.log, [])` narrows `log` to `never[]` through its `asserts` signature and broke every `indexOf`/`includes` after it, `world.updateBefore = originalUpdate` needed the `boolean | undefined` return the type asks for, and `StorageTexture.mipmapsAutoUpdate` exists at runtime but not in `@types/three` (core's atmosphere LUTs already narrow it the same way).
+- The new public seam was **absent from the capability manifest**, so `pnpm build`/`pnpm capabilities:check` refused the branch: "public exports without `@situation` tags: `@threenative/core:createWebGPUInterop`". `createWebGPUInterop` now carries `@situation`/`@constraint`/`@example` in the repository's vocabulary, and the generated manifest and capability reference carry the entry — 359 entries, `@threenative/core/webgpu` import path included. This is the one surface the manifest exists to make discoverable, and the first pass had shipped it invisible to `engine_search_capabilities`.
+- `packages/playtest/__tests__/e2e-runner.spec.ts` and `generated-shooter-input.spec.ts` fail on this host. Verified **pre-existing**: both fail identically with every change in this pass stashed, and both are real-browser runs.
+
+**Still not run, and still not claimed.** The Linux x64 native scenario (Phase 3, second box) — no native host or bundle was built here. Windows, macOS, Android, iOS and any non-NVIDIA adapter. Real model loading, inference and numerical parity — no weights. Performance measurement of any kind. The installed-consumer acceptance lane names `neural-render-installed.spec.ts`, which does not exist in this branch, so that box cannot pass yet.
+
 ## Integration record — 2026-09-28, second implementation
 
 User request: "The do it? Properly integrate it". The implementation now extends beyond the initial policy scaffolding. It adds an opt-in `@threenative/core/webgpu` package subpath and game-owned capture, compute, and composition source; see the [installation and ownership recipe](../../../packages/create-threenative/agent-docs/examples/neural-rendering/README.md). This is implemented source, **not a qualified browser/native neural renderer**.
@@ -168,24 +205,28 @@ The ownership tests exercise the new policy, not the upstream implementation. Th
 
 ## Implementation phases
 
-The contract, lifecycle, interop, adapter, snapshot, hook, capture and pixel-proof tests now exist, as do the two installed-scene scenario files. Installed-consumer proof remains a proposed deliverable. Keep each box open until its complete stated proof runs. Tests belong to the layer implemented; any admitted core seam also receives focused core tests and native conformance evidence.
+The contract, lifecycle, interop, adapter, snapshot, hook, capture and pixel-proof tests now exist, as do the two installed-scene scenario files. Every lane named above has now been run by the repository's own Vitest; see the third-pass execution record. Installed-consumer proof remains a proposed deliverable — its named lane does not exist yet. Tests belong to the layer implemented; any admitted core seam also receives focused core tests and native conformance evidence.
 
 ### Phase 1 — Safe provider boundary
 
 - [ ] The model/capability validator enforces the declared data, limit, and allocation contract. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-provider-contract.spec.ts`.
   Partial: data-only manifest, digest, device-limit, padded-dimension, and byte-cap policy implemented in the optional source bundle. The named Vitest lane, bounded transport/cancellation, origin enforcement, and real-provider accounting remain unverified or unimplemented.
-- [ ] The same-device bridge presents the deterministic fixture's current-frame output in the correct render/compute/composite order. proof: `pnpm exec vitest run packages/core/__tests__/neural-render-interop.spec.ts` and the browser GPU scenario in Phase 3.
+- [x] The same-device bridge presents the deterministic fixture's current-frame output in the correct render/compute/composite order. proof: `pnpm exec vitest run packages/core/__tests__/neural-render-interop.spec.ts` and the browser GPU scenario in Phase 3.
+  Both proofs green 2026-09-28: interop lane 10 passed / 0 failed under the repository's Vitest, and the browser scenario `pass: true` on `turing / nvidia` with `consoleErrors: 0`. Run details and the two proof-case fixes: see the third-pass execution record above.
 - [ ] Provider lifecycle preserves borrowed resources and rejects stale temporal/result generations. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-render-lifecycle.spec.ts`, including supplied-device/owned-model cleanup, resize during inference, device loss, and skipped-frame history.
   Partial: generation-aware frame gate and individually owned-resource retirement implemented and exercised with deterministic deferred fences. Source integration is now implemented, but real GPU retirement has not been qualified; the named Vitest lane has not run.
 
 ### Phase 2 — Provider adapter and sandbox
 
-- [ ] The pinned OpenDLSS-NR adapter satisfies the frame contract without steady-state CPU image readback. proof: `pnpm exec vitest run packages/create-threenative/__tests__/opendlss-nr-adapter.spec.ts`; real-model numerical qualification remains the separate dependency below.
-- [ ] The generated sandbox enforces its UI, bypass, color, scheduling, and budget behavior. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-render-snapshot.spec.ts packages/create-threenative/__tests__/neural-render-capture.spec.ts packages/create-threenative/__tests__/neural-render-hook.spec.ts packages/create-threenative/__tests__/neural-render-proof.spec.ts` and the portable scene scenario in Phase 3.
+- [x] The pinned OpenDLSS-NR adapter satisfies the frame contract without steady-state CPU image readback. proof: `pnpm exec vitest run packages/create-threenative/__tests__/opendlss-nr-adapter.spec.ts`; real-model numerical qualification remains the separate dependency below.
+  Green 2026-09-28: 7 passed / 0 failed under the repository's Vitest. This is the mocked lane; real-model numerical qualification is still a `## Blocked on` item, not a ticked box.
+- [x] The generated sandbox enforces its UI, bypass, color, scheduling, and budget behavior. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-render-snapshot.spec.ts packages/create-threenative/__tests__/neural-render-capture.spec.ts packages/create-threenative/__tests__/neural-render-hook.spec.ts packages/create-threenative/__tests__/neural-render-proof.spec.ts` and the portable scene scenario in Phase 3.
+  Green 2026-09-28: the four lanes 19 passed / 0 failed (snapshot 8, capture 5, hook 4, proof 2), and the portable scene scenario `pass: true` on hardware — including the keyboard view/divider controls (`1`/`2`/`3`, arrows), which is the UI this box covers. The complete loading/error UI the sandbox-experience section asks for is still unfinished and is tracked there, not here.
 
 ### Phase 3 — Installed cross-runtime proof
 
-- [ ] A clean installed sandbox passes its real-browser WebGPU fixture scenario. proof: from the generated game, `npx @threenative/playtest playtests/neural-rendering.playtest.json --target browser --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu`.
+- [x] A clean installed sandbox passes its real-browser WebGPU fixture scenario. proof: from the generated game, `npx @threenative/playtest playtests/neural-rendering.playtest.json --target browser --url http://127.0.0.1:5173 --server-command "pnpm dev" --browser-recipe webgpu`.
+  Green 2026-09-28 from a tarball-installed sandbox outside the checkout: `pass: true`, adapter `turing / nvidia`, 4/4 assertions, 0 console errors, 0 runtime diagnostics, four consecutive runs. The run needs `--headed` and `TN_PLAYTEST_HOST_DISPLAY=1` on this host — a headless launch and the default private Xvfb both serve SwiftShader, which fails the same scenario. Exact command, adapter identity and the two proof-case fixes: see the third-pass execution record above.
 - [ ] The same fixture scenario runs through the Linux x64 native host without browser-only globals in the provider path. proof: from the generated game, `npx @threenative/playtest playtests/neural-rendering-native.playtest.json --target desktop --executable "$TN_DESKTOP_EXECUTABLE" --host-arg run --host-arg dist/game.js`, after building that exact game's native bundle; record host and adapter identity.
 
 ## Acceptance criteria

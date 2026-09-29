@@ -157,7 +157,11 @@ export async function readCaptureProvenance(
       limits?: Record<string, number | undefined>;
       requestAdapterInfo?: () => Promise<Record<string, unknown>>;
     };
-    const gpu = (globalThis.navigator as Navigator & { gpu?: { requestAdapter(): Promise<Adapter | null> } }).gpu;
+    // The local shape is the one this observer reads: the legacy `requestAdapterInfo` and the
+    // string-indexed limits the modern `GPUAdapter`/`GPUSupportedLimits` global no longer declares.
+    // quality-allow: named deliberately - intersecting the DOM's `Navigator.gpu` would narrow the
+    // adapter back to the current API and hide what this observer is here to read.
+    const gpu = (globalThis.navigator as unknown as { gpu?: { requestAdapter(): Promise<Adapter | null> } }).gpu;
     const adapter = gpu === undefined ? null : await gpu.requestAdapter().catch(() => null);
     const infoCandidate = adapter?.info;
     const legacyInfo = await adapter?.requestAdapterInfo?.().catch(() => undefined);

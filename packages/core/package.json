@@ -84,6 +84,7 @@
     "test": "publint --strict"
   },
   "dependencies": {
+    "@webgpu/types": "^0.1.74",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
     "threenative-asset-mcp": "0.9.5",

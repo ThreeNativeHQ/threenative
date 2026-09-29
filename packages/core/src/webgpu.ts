@@ -1,3 +1,8 @@
+/// <reference types="@webgpu/types" />
+// The seam's public surface is raw WebGPU (`GPUDevice`, `GPUTexture`, ...), which no lib in the
+// repo declares: `@types/three` only fakes `GPUDevice` inside its own module. This reference is
+// the one place those globals are imported; nothing else in core touches them.
+
 import { REVISION, type Texture } from "three";
 
 /** The small, version-qualified raw-resource seam; it owns no device or appearance. */
@@ -41,6 +46,17 @@ interface IThreeWebGPURenderer {
  * Borrow the initialized renderer's device and textures for an opt-in external compute pass.
  * The r185 backend resource-map dependency stays here, never in generated game rendering code.
  * Recreate this seam after renderer-level device recovery; cross-device reuse fails closed.
+ *
+ * @situation borrow the running renderer's device to run an external compute pass beside the game's own draw
+ * @situation resolve a Three texture's GPUTexture as the renderer sees it, without reading the backend resource map
+ * @situation submit external GPU work on the renderer's own queue inside balanced error scopes
+ * @constraint WebGPU only, and Three r185 only: a WebGL2 renderer or another revision throws rather than returning nothing
+ * @constraint the device, its queue and every returned texture are borrowed; this seam never creates a second device and never destroys one
+ * @constraint a captured seam fails closed after renderer-level device loss, so recovery means creating a new one
+ * @example const bridge = createWebGPUInterop(ctx.renderer);
+ * const job = bridge.submit((encoder) => recordExternalCompute(encoder));
+ * await job.completed; // encode accepted and the queue drained
+ * await job.retired; // now the outputs may be destroyed; `completed` alone is not a fence
  */
 export function createWebGPUInterop(renderer: {
   readonly kind: string;

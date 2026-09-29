@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
 import { PerspectiveCamera, Scene } from "three";
-import { PassNode } from "three/webgpu";
+import { PassNode, type StorageTexture } from "three/webgpu";
 import { attachNeuralCapture } from "../agent-docs/examples/neural-rendering/render-capture.js";
 import { createFixtureProvider } from "../agent-docs/examples/neural-rendering/fixture-provider.js";
 
@@ -15,7 +15,7 @@ function fixture() {
   const done = deferred();
   const world = new PassNode(PassNode.COLOR, new Scene(), new PerspectiveCamera());
   world.renderTarget.setSize(32, 16);
-  const originalUpdate = () => { log.push("world"); };
+  const originalUpdate = () => { log.push("world"); return undefined; };
   world.updateBefore = originalUpdate;
   const device = {
     createShaderModule() { return {}; },
@@ -54,7 +54,7 @@ test("binds to the existing world pass and records capture -> fixture -> submit 
   const f = fixture();
   assert.equal(f.capture.stage.before, "probeVolume");
   assert.equal(f.capture.textures.original.generateMipmaps, false);
-  assert.equal(f.capture.textures.enhanced.mipmapsAutoUpdate, false);
+  assert.equal((f.capture.textures.enhanced as StorageTexture & { mipmapsAutoUpdate: boolean }).mipmapsAutoUpdate, false);
   assert.ok(f.capture.stage.build(f.world.getTextureNode()));
   f.capture.capture();
   f.world.updateBefore({} as never);

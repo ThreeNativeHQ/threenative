@@ -17,7 +17,13 @@ export default defineConfig({
   external: ["react", "react-reconciler", "react-reconciler/constants.js"],
   format: ["esm"],
   target: "es2022",
-  dts: true,
+  dts: {
+    // `src/webgpu.ts` is the only entry whose public surface is raw WebGPU, and no lib ships those
+    // globals. The reference has to survive into the emitted declaration or every consumer of the
+    // seam sees `Cannot find name 'GPUTextureFormat'`; `@webgpu/types` is a runtime dependency so
+    // the directive always resolves.
+    banner: '/// <reference types="@webgpu/types" />',
+  },
   sourcemap: false,
   clean: true,
   splitting: false,

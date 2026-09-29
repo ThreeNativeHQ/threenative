@@ -715,6 +715,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@webgpu/types':
+        specifier: ^0.1.74
+        version: 0.1.74
       three:
         specifier: 'catalog:'
         version: 0.185.1(patch_hash=987eb3547d4f28c03a4a8ef1b3900d4158c805821e61e23572fdb248995c4d91)
@@ -2240,6 +2243,9 @@ packages:
 
   '@wasm-audio-decoders/ogg-vorbis@0.1.20':
     resolution: {integrity: sha512-zaQPasU5usRjUDXtXOHYED5tfkR4QMXd+EH3Nrz1+4+M5pCsdD+s9YxJqb0oqnTyRu/KUujOmu5Z/m/NT47vwg==}
+
+  '@webgpu/types@0.1.74':
+    resolution: {integrity: sha512-lgiI4hbuLcI9unnm2cL/tvCaQU45dp0xcLWJh5uB/9MBGvIA4F8XIk7nSiBeg+K4xWGYwgZKn80LmERI5CxoTA==}
 
   '@zip.js/zip.js@2.8.34':
     resolution: {integrity: sha512-+6a3lyqq69rpseLbvDPiVIWsZ/HdTGAAD6afFtug6ECPDGttb2dHnPC6cJgdPofYkzL9OvXizegq+DQVfL2rnA==}
@@ -4272,6 +4278,8 @@ snapshots:
     dependencies:
       '@wasm-audio-decoders/common': 9.0.7
       codec-parser: 2.5.0
+
+  '@webgpu/types@0.1.74': {}
 
   '@zip.js/zip.js@2.8.34': {}
 

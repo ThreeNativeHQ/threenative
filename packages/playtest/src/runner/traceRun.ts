@@ -175,13 +175,21 @@ export function installGpuPipelineDiagnostics(): void {
     readonly stack: string;
   };
   const globals = globalThis as typeof globalThis & {
-    GPUDevice?: { prototype?: { createRenderPipelineAsync?: (descriptor: PipelineDescriptor) => Promise<unknown> } };
     __TN_TRACE_INVALID_GPU_PIPELINES__?: PipelineDiagnostic[];
     __TN_TRACE_GPU_PIPELINES_INSTALLED__?: boolean;
   };
   globals.__TN_TRACE_INVALID_GPU_PIPELINES__ = [];
   if (globals.__TN_TRACE_GPU_PIPELINES_INSTALLED__ === true) return;
-  const prototype = globals.GPUDevice?.prototype;
+  // Read the prototype structurally: the global is typed only where a WebGPU declaration set is
+  // installed (core's), not in this package. `createRenderPipelineAsync` carries the real
+  // `GPURenderPipelineDescriptor` shape, and this probe has to observe descriptors the typed method
+  // would reject, so it is read through the looser shape.
+  // quality-allow: the cast widens the descriptor this probe inspects; `create` still comes off the
+  // same prototype and is called with the same receiver and descriptor. `unknown` first because the
+  // real method's descriptor and this looser probe shape deliberately do not overlap.
+  const prototype = (globalThis as { GPUDevice?: { prototype?: unknown } }).GPUDevice?.prototype as
+    | { createRenderPipelineAsync?: (descriptor: PipelineDescriptor) => Promise<unknown> }
+    | undefined;
   const create = prototype?.createRenderPipelineAsync;
   if (prototype === undefined || create === undefined) return;
   globals.__TN_TRACE_GPU_PIPELINES_INSTALLED__ = true;

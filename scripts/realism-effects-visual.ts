@@ -159,11 +159,13 @@ async function readAdapterInfo(
   page: Awaited<ReturnType<Awaited<ReturnType<typeof chromium.launch>>["newPage"]>>,
 ): Promise<Record<string, string>> {
   const info = await page.evaluate(async () => {
-    const gpuNavigator = navigator as Navigator & {
+    const gpuNavigator = navigator as unknown as {
       gpu?: { requestAdapter(): Promise<{ info?: Record<string, unknown> } | null> };
     };
     const adapter = await gpuNavigator.gpu?.requestAdapter();
-    const raw = adapter?.info ?? {};
+    // A live `GPUAdapterInfo` carries the four fields as own properties but no index signature.
+    // quality-allow: read as an indexable record because the keys are looked up by name below.
+    const raw = (adapter?.info ?? {}) as unknown as Record<string, unknown>;
     return Object.fromEntries(
       ["architecture", "description", "device", "vendor"].flatMap((key) => {
         const value = raw[key];

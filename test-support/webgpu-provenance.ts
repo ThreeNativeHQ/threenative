@@ -97,11 +97,15 @@ export async function readWebGpuAdapterInfo(
       ]);
     }
 
-    const gpu = (
-      globalThis.navigator as Navigator & {
-        gpu?: { requestAdapter(): Promise<Adapter | null> };
-      }
-    ).gpu;
+    const gpu =
+      // Read through this observer's own `Adapter` shape: the four identity fields below are looked
+      // up by name, and a live `GPUAdapterInfo` declares no index signature.
+      // quality-allow: names the adapter observer's shape instead of intersecting the DOM's.
+      (
+        globalThis.navigator as unknown as {
+          gpu?: { requestAdapter(): Promise<Adapter | null> };
+        }
+      ).gpu;
     if (gpu === undefined) return undefined;
     const adapter = await gpu.requestAdapter().catch(() => null);
     const info = adapter?.info;

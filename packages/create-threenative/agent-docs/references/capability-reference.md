@@ -2803,6 +2803,26 @@ export function subscribeUiState<T>(bridge: IUiBridge): IUiStateMirror<T> { … 
 const mirror = subscribeUiState(bridge);
 ```
 
+## `@threenative/core/webgpu`
+
+### `createWebGPUInterop`
+
+`function` — Borrow the initialized renderer's device and textures for an opt-in external compute pass. The r185 backend resource-map dependency stays here, never in generated game rendering code. Recreate this seam after renderer-level device recovery; cross-device reuse fails closed.
+
+```ts
+export function createWebGPUInterop(renderer: { … }
+```
+
+- **Use when:** borrow the running renderer's device to run an external compute pass beside the game's own draw · resolve a Three texture's GPUTexture as the renderer sees it, without reading the backend resource map · submit external GPU work on the renderer's own queue inside balanced error scopes
+- **Constraints:** WebGPU only, and Three r185 only: a WebGL2 renderer or another revision throws rather than returning nothing · the device, its queue and every returned texture are borrowed; this seam never creates a second device and never destroys one · a captured seam fails closed after renderer-level device loss, so recovery means creating a new one
+
+```ts
+const bridge = createWebGPUInterop(ctx.renderer);
+const job = bridge.submit((encoder) => recordExternalCompute(encoder));
+await job.completed; // encode accepted and the queue drained
+await job.retired; // now the outputs may be destroyed; `completed` alone is not a fence
+```
+
 ## `@threenative/core/world`
 
 ### `cellPlacements`
