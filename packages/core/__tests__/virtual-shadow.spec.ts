@@ -1596,6 +1596,8 @@ describe("VirtualShadowNode adaptive caster gate", () => {
     readonly draws: number[][];
     /** The `TN_SHADOW_GATE` lines the walk printed. */
     readonly notes: string[];
+    /** The `TN_SHADOW_REFRESH` lines the walk printed. */
+    readonly refreshNotes: string[];
     /** Whether the tiny caster was ever hidden mid-render, across the whole walk. */
     readonly smallHidden: boolean;
     /** Whether the big caster was ever hidden mid-render — it must never be. */
@@ -1612,6 +1614,7 @@ describe("VirtualShadowNode adaptive caster gate", () => {
   function gateWalk(
     charge: (frame: number, level: number) => number,
     options: object = {},
+    delta = PERIOD,
   ): IGateWalk {
     const { camera, light, scene } = world();
     const small = new Mesh(new BoxGeometry(0.8, 0.8, 0.8), new MeshStandardMaterial());
@@ -1655,7 +1658,7 @@ describe("VirtualShadowNode adaptive caster gate", () => {
           camera,
           renderer: {},
           time: time.value,
-          deltaTime: PERIOD,
+          deltaTime: delta,
         } as unknown as NodeFrame);
         node.stats.perLevel.forEach((stat, index) => {
           scales[index]?.push(stat.gateScale);
@@ -1663,13 +1666,13 @@ describe("VirtualShadowNode adaptive caster gate", () => {
           if (stat.rendered === 1) draws[index]?.push(stat.draws);
         });
       }
+      const lines = info.mock.calls.map((call) => String(call[0]));
       return {
         bigHidden,
         draws,
         hidden,
-        notes: info.mock.calls
-          .map((call) => String(call[0]))
-          .filter((line) => line.startsWith(VIRTUAL_SHADOW_GATE_MARKER)),
+        notes: lines.filter((line) => line.startsWith(VIRTUAL_SHADOW_GATE_MARKER)),
+        refreshNotes: lines.filter((line) => line.startsWith(VIRTUAL_SHADOW_REFRESH_MARKER)),
         scales,
         smallHidden,
       };
@@ -1732,5 +1735,40 @@ describe("VirtualShadowNode adaptive caster gate", () => {
     expect((pinned.draws[0] as number[]).every((count) => count === 2)).toBe(true);
     expect((pinned.draws[1] as number[]).every((count) => count === 1)).toBe(true);
     expect(pinned.notes).toEqual([]);
+  });
+
+  it("should judge the budget against the 60 fps frame, not the frame the level inflated", () => {
+    // The frame reads 50 ms because the level's own 9 ms render is in it. Read against that delta
+    // the budget is 20 ms and 9 ms passes, so nothing widened — the bug. Capped at the 60 fps frame
+    // the budget is 6.7 ms, 9 ms is over it, and the gate rises until the tiny caster leaves the
+    // bill. A 120 Hz frame is stricter still; this is the same level under a long frame.
+    const adapted = gateWalk((_frame, level) => (level === 0 ? 9 : 0), {}, 0.05);
+    const pinned = gateWalk(
+      (_frame, level) => (level === 0 ? 9 : 0),
+      { adaptiveCasterGate: false },
+      0.05,
+    );
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.smallHidden).toBe(true);
+    expect(Math.min(...(adapted.draws[0] as number[]))).toBe(1);
+    expect(pinned.scales[0]?.every((scale) => scale === 1)).toBe(true);
+  });
+
+  it("should ignore a level's first cold renders and never adapt from warm-up", () => {
+    // The first two renders of a level compile its shaders and read 60 ms however cheap it is; the
+    // rest cost 2 ms. Seeding the cost with a cold render would raise the gate and widen the trail
+    // for a level that is not expensive at all. Both read the same cost, so the gate standing at 1
+    // across the walk and no refresh line is the whole claim.
+    const perLevel = new Map<number, number>();
+    const cold = (_frame: number, level: number): number => {
+      const seen = (perLevel.get(level) ?? 0) + 1;
+      perLevel.set(level, seen);
+      return level === 0 && seen <= 2 ? 60 : 2;
+    };
+    const adapted = gateWalk(cold);
+    expect(adapted.scales[0]?.every((scale) => scale === 1)).toBe(true);
+    expect(adapted.notes).toEqual([]);
+    expect(adapted.refreshNotes).toEqual([]);
+    expect(adapted.smallHidden).toBe(false);
   });
 });

@@ -110,9 +110,13 @@ export interface IVirtualShadowOptions {
    * Fraction of the display period a level's smoothed render cost may take before its refresh trail
    * widens, `(0, 1]`, default 0.4.
    *
-   * The period is the frame's own `deltaTime`, so this is a share of the frame the level is in rather
-   * than a constant: on a 120 Hz panel the same render is twice the share it is at 60. Below the
-   * share nothing changes at all, and above it the trail widens in proportion to the overshoot,
+   * The period is the frame's own `deltaTime`, capped at the 60 fps frame (16.7 ms). The cap is what
+   * keeps the budget honest: the frame that renders an expensive level is itself long because of that
+   * render, so reading the share against its own inflated delta would count the cost twice and let
+   * the very level that needs adapting pass its own test. At 60 Hz the cap is the frame itself; on a
+   * 120 Hz panel the same render is twice the share it is at 60; below 60 the cap holds the budget
+   * at the 60 fps frame rather than growing with the stall. Below the share nothing changes at all,
+   * and above it the trail widens in proportion to the overshoot,
    * because that is the ratio between what the level costs and what a frame can afford to spend on
    * it — a level four times over the share refreshs about four times less often, until the cap
    * below it runs out.
@@ -332,6 +336,13 @@ const GATE_DECAY_SHARE = 0.5;
  */
 const COST_SMOOTHING = 0.5;
 /**
+ * A level's first measured renders are thrown away before its cost is trusted. The first draw of a
+ * map compiles its shaders and uploads its textures, so it reads tens of milliseconds however cheap
+ * the level is; seeding the smoothed cost with that warm-up would widen the trail or raise the gate
+ * for a level that is not actually expensive. Two renders is enough for the pipeline to be warm.
+ */
+const COST_WARMUP_RENDERS = 2;
+/**
  * The object layer tracked casters are enabled on, so each level's mover camera sees only them.
  * Keep it free of other uses; the main camera never needs it (tracked objects keep layer 0).
  */
@@ -468,6 +479,12 @@ interface ILevel {
    * whole scene draw — and what it buys is a wider refresh trail; see `adaptiveRefresh`.
    */
   costMs: number;
+  /**
+   * How many of this level's renders have been measured, warm-up included. The first
+   * {@link COST_WARMUP_RENDERS} are compile and upload, not the level's price, so `costMs` stays 0
+   * until the counter passes them and nothing adapts before it.
+   */
+  costReadings: number;
   /**
    * The trail this level is actually being stepped with, which is its configured `refreshStep`
    * until a measurement widens it. Held so a level that got cheap again is put back rather than
@@ -1206,8 +1223,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       node.updateShadow(frame);
     } finally {
       const measured = performance.now() - started;
-      level.costMs =
-        level.costMs <= 0 ? measured : level.costMs + (measured - level.costMs) * COST_SMOOTHING;
+      level.costReadings += 1;
+      // A level's first renders carry shader compilation and texture upload, not the level's
+      // ongoing price; trusting them would widen a cheap level's trail or raise its gate before the
+      // pipeline is warm. The cost stays 0 until the counter passes them, so nothing adapts yet.
+      if (level.costReadings > COST_WARMUP_RENDERS) {
+        level.costMs =
+          level.costMs <= 0 ? measured : level.costMs + (measured - level.costMs) * COST_SMOOTHING;
+      }
     }
   }
 
@@ -1238,12 +1261,18 @@ export class VirtualShadowNode extends ShadowBaseNode {
     const trails = this.options.adaptiveRefresh;
     const gates = this.options.adaptiveCasterGate;
     if (!trails && !gates) return;
-    // The period is the frame's own, so the share is read against the panel this is running on. A
-    // frame that carries none — a harness, a held frame — falls back to the engine's own answer for
-    // a display it has not measured.
+    // The period is the frame's own, so the share is read against the panel this is running on —
+    // but never longer than the 60 fps frame. The frame that renders a costly level is long because
+    // of that very render, so its own delta would inflate the budget by the cost being judged and
+    // the level would pass its own test; capping at 16.7 ms keeps a 120 Hz frame stricter and stops
+    // a stall from widening the budget with it. A frame that carries no clock — a harness, a held
+    // frame — is just the cap.
     const delta = (frame as { deltaTime?: number }).deltaTime ?? 0;
-    const affordableMs =
-      this.options.expensiveRefreshShare * (delta > 0 ? delta * 1000 : 1000 / DEFAULT_TARGET_FPS);
+    const periodMs = Math.min(
+      delta > 0 ? delta * 1000 : Number.POSITIVE_INFINITY,
+      1000 / DEFAULT_TARGET_FPS,
+    );
+    const affordableMs = this.options.expensiveRefreshShare * periodMs;
     this.#levels.forEach((level, index) => {
       if (trails) {
         const base = at(this.options.refreshStep, index);
@@ -1437,6 +1466,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       this.#levels.push({
         appliedStep: at(this.options.refreshStep, index),
         costMs: 0,
+        costReadings: 0,
         gatedRender: Number.NEGATIVE_INFINITY,
         gateHidden: 0,
         gateScale: 1,
