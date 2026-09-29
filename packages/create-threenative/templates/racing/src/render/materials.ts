@@ -1,13 +1,12 @@
-// Generated for you: the car's livery and the circuit's surfaces. ThreeNative does not read this
+// Generated for you. The car's livery and the circuit's surfaces. ThreeNative does not read this
 // file, and nothing in `shapes.ts` names a colour — it only names these slots. Re-livery the car,
 // or repaint the circuit, entirely from here.
 //
-// The circuit is the engine's **test-arena look**: a metre grid on two greys, so a surface reads as
-// a measured plane and the eye has something to judge speed against, and one saturated colour for
-// what you can interact with. The road is the exception and deliberately so: tarmac is the one
-// surface a racing game cannot make a grid, because a grid is a *test* pattern and tarmac is a
-// surface with a grain and a seam. `gridTexture` and `worldGridUVs` are copied from `minimal`, so
-// one grid tile is one metre on every face of every prop on both kits.
+// The look is a real circuit's: dark grey asphalt with a fine grain and a darker rubber band down
+// the racing line, white edge lines, red and white kerbing, green grass with a slow variation, and
+// one saturated colour for the things a driver is meant to react to. The asphalt and the grass are
+// built from bytes rather than shipped as files, so they cost nothing to load and run the same in
+// the browser and in the native host.
 import {
   type BufferGeometry,
   DataTexture,
@@ -21,33 +20,33 @@ import {
 } from "three";
 import { palette, toon } from "./palette.js";
 
-/** The grid line, a shade under both grid bases. Derived here so `palette.ts` stays six roles. */
-const GRID_LINE = 0x3a3a3c;
+/** Deterministic per-texel noise, so two captures of the same build look the same. */
+function noise(x: number, y: number, seed: number): number {
+  let state = (x * 73856093) ^ (y * 19349663) ^ (seed * 83492791);
+  state = (state ^ (state >>> 13)) >>> 0;
+  state = (state * 1274126177) >>> 0;
+  return ((state ^ (state >>> 16)) >>> 0) / 4294967295;
+}
 
-/**
- * One metre of grid: a heavy line on the metre, faint lines every 25 cm, a faint per-texel grain so
- * large areas do not band. Built from bytes rather than a canvas so it runs the same in the browser
- * and in the native host.
- */
-function gridTexture(base: number, line: number, size = 256): DataTexture {
+/** Smoothstep, so the rubber band has a soft edge instead of a stripe painted across the road. */
+function falloff(value: number, edge: number): number {
+  const t = Math.min(Math.max((Math.abs(value) - edge) / 0.28, 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+function rgbaTexture(
+  size: number,
+  shade: (x: number, y: number) => [number, number, number],
+): DataTexture {
   const data = new Uint8Array(size * size * 4);
-  const minorEvery = size / 4;
-  let seed = 7;
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const major = x < 3 || y < 3;
-      const minor = x % minorEvery < 1 || y % minorEvery < 1;
-      const weight = major ? 0.92 : minor ? 0.22 : 0;
-      seed = (seed * 16807) % 2147483647;
-      const grain = 1 + (seed / 2147483647 - 0.5) * 0.04;
-      const index = (y * size + x) * 4;
-      for (let channel = 0; channel < 3; channel += 1) {
-        const shift = 16 - channel * 8;
-        const from = ((base >> shift) & 0xff) * grain;
-        const to = (line >> shift) & 0xff;
-        data[index + channel] = Math.min(255, Math.round(from * (1 - weight) + to * weight));
-      }
-      data[index + 3] = 255;
+      const [r, g, b] = shade(x / size, y / size);
+      const at = (y * size + x) * 4;
+      data[at] = r;
+      data[at + 1] = g;
+      data[at + 2] = b;
+      data[at + 3] = 255;
     }
   }
   const texture = new DataTexture(data, size, size);
@@ -61,23 +60,45 @@ function gridTexture(base: number, line: number, size = 256): DataTexture {
   return texture;
 }
 
-const _normal = new Vector3();
-
 /**
- * A faint cast-concrete grain as a tangent-space normal map: two octaves of smoothed value noise,
- * tiling every metre like the grid. It is what stops a large flat face reading as an untextured
- * blockout under a low sun — the light breaks up across it instead of sliding off in one tone.
- * Bytes, not a file, so it costs nothing to ship and runs on every target.
+ * Asphalt: mid-dark grey, a fine per-texel grain, and a darker band down the middle where every
+ * car lays rubber. The band is the thing that makes a road read as a **racing** surface rather
+ * than a grey plane — it also tells the player where the line is without a single word of UI.
  */
+const asphalt = rgbaTexture(256, (u, v) => {
+  const grain = (noise(Math.floor(u * 256), Math.floor(v * 256), 11) - 0.5) * 26;
+  const rubber = 1 - 0.34 * falloff(u - 0.5, 0.16);
+  const shoulder = 1 + 0.1 * falloff(u - 0.5, 0.42);
+  const patch = 1 + 0.05 * Math.sin(u * 9.1 + v * 3.7);
+  const base = 74 * rubber * shoulder * patch + grain;
+  return [base, base * 1.01, base * 1.05];
+});
+
+/** The run-off: the same asphalt, laid down lighter and dustier, and coarser. */
+const apron = rgbaTexture(128, (u, v) => {
+  const grain = (noise(Math.floor(u * 128), Math.floor(v * 128), 29) - 0.5) * 34;
+  const base = 116 + grain;
+  return [base, base * 0.99, base * 0.96];
+});
+
+/** Grass: two greens mottled over a slow noise, so a hillside is not one flat colour. */
+const turf = rgbaTexture(128, (u, v) => {
+  const coarse = noise(Math.floor(u * 9), Math.floor(v * 9), 5);
+  const fine = (noise(Math.floor(u * 128), Math.floor(v * 128), 7) - 0.5) * 20;
+  const base = 0.7 + coarse * 0.5;
+  return [52 * base + fine, 92 * base + fine * 1.4, 46 * base + fine];
+});
+
+/** Red and white, one stripe per 1.2 m of kerb. Two texels wide, so it tiles in both axes. */
+const kerbStripe = rgbaTexture(2, (u) => (u < 0.5 ? [216, 58, 48] : [242, 240, 230]));
+
+/** A faint cast-concrete grain as a tangent-space normal map, tiling every metre. */
 function grainNormalTexture(size = 128): DataTexture {
   const cells = [8, 32];
   const lattice = cells.map((count) => {
     const values = new Float32Array(count * count);
-    let seed = count * 7919;
-    for (let index = 0; index < values.length; index += 1) {
-      seed = (seed * 16807) % 2147483647;
-      values[index] = seed / 2147483647;
-    }
+    for (let index = 0; index < values.length; index += 1)
+      values[index] = noise(index, count, count);
     return { count, values };
   });
   const height = (x: number, y: number): number => {
@@ -100,16 +121,17 @@ function grainNormalTexture(size = 128): DataTexture {
     return total;
   };
   const data = new Uint8Array(size * size * 4);
+  const normal = new Vector3();
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const dx = height(x + 1, y) - height(x - 1, y);
       const dy = height(x, y + 1) - height(x, y - 1);
-      _normal.set(-dx * 4, -dy * 4, 1).normalize();
-      const index = (y * size + x) * 4;
-      data[index] = Math.round((_normal.x * 0.5 + 0.5) * 255);
-      data[index + 1] = Math.round((_normal.y * 0.5 + 0.5) * 255);
-      data[index + 2] = Math.round((_normal.z * 0.5 + 0.5) * 255);
-      data[index + 3] = 255;
+      normal.set(-dx * 4, -dy * 4, 1).normalize();
+      const at = (y * size + x) * 4;
+      data[at] = Math.round((normal.x * 0.5 + 0.5) * 255);
+      data[at + 1] = Math.round((normal.y * 0.5 + 0.5) * 255);
+      data[at + 2] = Math.round((normal.z * 0.5 + 0.5) * 255);
+      data[at + 3] = 255;
     }
   }
   const texture = new DataTexture(data, size, size);
@@ -124,22 +146,22 @@ function grainNormalTexture(size = 128): DataTexture {
 const grain = grainNormalTexture();
 
 /**
- * Rewrites a geometry's UVs as world metres, projected along each face's dominant axis, so one grid
- * tile is one metre on every face of every prop regardless of its size. Call it after the geometry
- * is translated into place (merged geometry included), before it is given to a mesh.
+ * Rewrites a geometry's UVs as world metres, projected along each face's dominant axis.
+ * Call it after the geometry is translated into place (merged geometry included).
  */
 export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
   const position = geometry.getAttribute("position");
   const normal = geometry.getAttribute("normal");
   const uv = new Float32Array(position.count * 2);
+  const axis = new Vector3();
   for (let index = 0; index < position.count; index += 1) {
-    _normal.fromBufferAttribute(normal, index);
+    axis.fromBufferAttribute(normal, index);
     const x = position.getX(index);
     const y = position.getY(index);
     const z = position.getZ(index);
-    const ax = Math.abs(_normal.x);
-    const ay = Math.abs(_normal.y);
-    const az = Math.abs(_normal.z);
+    const ax = Math.abs(axis.x);
+    const ay = Math.abs(axis.y);
+    const az = Math.abs(axis.z);
     const [u, v] = ay >= ax && ay >= az ? [x, z] : ax >= az ? [z, y] : [x, y];
     uv[index * 2] = u;
     uv[index * 2 + 1] = v;
@@ -148,46 +170,63 @@ export function worldGridUVs<T extends BufferGeometry>(geometry: T): T {
   return geometry;
 }
 
-/**
- * Tarmac: mid grey with a blue cast, `palette.structure` a shade darker than the grid structures so
- * the road separates from the run-off without a line. Anything darker and the car's own shadow
- * disappears into it.
- */
-export const roadMaterial = new MeshStandardMaterial({
-  color: 0x565b63,
-  normalMap: grain,
-  normalScale: new Vector2(0.12, 0.12),
-  roughness: 0.82,
-  metalness: 0.04,
-});
-
 export function createMaterials() {
   return {
-    /** Boost chevrons and the finish banner. */
+    /** Boost chevrons and the start lights' housing. */
     boost: toon(palette.accent, 0.4),
-    /** The kerb's painted stripe. Real kerbing is 5-8 cm proud of the tarmac, and `KERB_HEIGHT` in
-     * `Track.ts` collides at exactly that, so the wheels ride over it instead of stopping dead. */
-    curb: toon(0xf2f0e6, 0.5),
+    /** Painted white: the edge lines, the pit-lane line, the grandstand seats. */
+    line: new MeshStandardMaterial({ color: 0xf1efe6, roughness: 0.7, metalness: 0 }),
     /** The kerb's red stripe. */
     kerbAlt: toon(0xd8453c, 0.5),
-    /** Light grid: the run-off apron the driver can see the speed against. */
-    field: new MeshStandardMaterial({
-      map: gridTexture(palette.floor, GRID_LINE),
+    /** The kerb's white stripe, and the one place the tarmac is allowed to be bright. */
+    curb: toon(0xf2f0e6, 0.5),
+    /** Red and white, striped by its own texture, so the whole circuit's kerbing is one draw. */
+    kerb: new MeshStandardMaterial({
+      map: kerbStripe,
       normalMap: grain,
-      normalScale: new Vector2(0.18, 0.18),
-      roughness: 0.9,
+      normalScale: new Vector2(0.1, 0.1),
+      roughness: 0.62,
+      metalness: 0.02,
+    }),
+    /** The infield and everything beyond the run-off. */
+    grass: new MeshStandardMaterial({
+      map: turf,
+      normalMap: grain,
+      normalScale: new Vector2(0.35, 0.35),
+      roughness: 0.95,
       metalness: 0,
     }),
-    /** Dark grid: grandstands, hoardings, tyre walls, the treeline. */
+    /** The paved run-off past the white line, and the pit lane. */
+    runoff: new MeshStandardMaterial({
+      map: apron,
+      normalMap: grain,
+      normalScale: new Vector2(0.16, 0.16),
+      roughness: 0.88,
+      metalness: 0.03,
+    }),
+    /** Grandstands, hoardings, gantries, garages, marshal posts. */
     structure: new MeshStandardMaterial({
-      map: gridTexture(palette.structure, GRID_LINE),
+      map: apron,
       normalMap: grain,
       normalScale: new Vector2(0.18, 0.18),
-      roughness: 0.7,
-      metalness: 0,
+      color: 0x9aa0a6,
+      roughness: 0.72,
+      metalness: 0.05,
     }),
-    road: roadMaterial,
-    shadow: new MeshStandardMaterial({ color: palette.structure, roughness: 1 }),
+    /** Armco and the pit wall: galvanised steel, so they catch the sun and read as metal. */
+    armco: new MeshStandardMaterial({
+      color: 0xb4bcc4,
+      metalness: 0.72,
+      roughness: 0.42,
+    }),
+    road: new MeshStandardMaterial({
+      map: asphalt,
+      normalMap: grain,
+      normalScale: new Vector2(0.14, 0.14),
+      roughness: 0.86,
+      metalness: 0.04,
+    }),
+    shadow: new MeshStandardMaterial({ color: 0x4a4f55, roughness: 1 }),
     tire: new MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.94 }),
 
     /** The car. `body` is the one a game is most likely to change. */
@@ -226,9 +265,9 @@ export function createMaterials() {
     }),
 
     /** Trackside furniture that is instanced, so it takes a flat value rather than a mapped grid. */
-    crowd: toon(palette.structure, 0.9),
+    crowd: toon(0x6f7681, 0.9),
     trunk: toon(0x5b4a3c, 0.9),
-    canopy: toon(0x466b4a, 0.92),
+    canopy: toon(0x3f6a45, 0.92),
     /** The hills past the treeline. */
     distant: toon(0x6d7a80, 0.98),
     hoardingBoard: toon(palette.accent, 0.6),

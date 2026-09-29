@@ -383,10 +383,10 @@ describe("generated template ordinary-frame runtime cost", () => {
         routeProgress: number;
       }> = [];
       const projectionTarget = {
-        distanceFromStart: 0,
-        lateralDistance: 0,
+        curvature: 0,
+        distance: 0,
+        lateral: 0,
         point: new Vector3(),
-        segment: 0,
         tangent: new Vector3(),
       };
       const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };

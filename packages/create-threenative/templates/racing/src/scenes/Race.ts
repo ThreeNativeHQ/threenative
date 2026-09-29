@@ -8,29 +8,40 @@ import {
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
-import { type CarCtx, FEEL, RIDE } from "../entities/CarBody.js";
+import { type CarCtx, FEEL } from "../entities/CarBody.js";
 import { RacingCar } from "../entities/RacingCar.js";
 import { Rival } from "../entities/Rival.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { cameraBank, chaseCamera, setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { createMaterials } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
-import { flag } from "../render/shapes.js";
-import { setupSky } from "../render/sky.js";
+import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, type RaceStatus, resolveRaceStatus } from "../state.js";
 import { Lap } from "../track/Lap.js";
 import { type IRankedRacer, type IRankedRacerScratch, rankRacers } from "../track/Ranking.js";
-import { GRID, TOTAL_LAPS, buildTrack, intersectRay, roadRayProbe } from "../track/Track.js";
+import {
+  TOTAL_LAPS,
+  buildTrack,
+  gridHeading,
+  gridPosition,
+  intersectRay,
+  roadRayProbe,
+} from "../track/Track.js";
 import { TrackSector } from "../track/TrackSector.js";
+import { CIRCUIT, GRID_DISTANCE } from "../track/circuit.js";
 
 export type GameCtx = CarCtx;
 
 /** The player starts on the second grid slot, one ride height above the tarmac. */
-const SPAWN = new Vector3(GRID.player.x, RIDE, GRID.player.z);
-const TIME_LIMIT = 90;
+const SPAWN = gridPosition("player", new Vector3());
+SPAWN.y = CIRCUIT.at(GRID_DISTANCE.player, CIRCUIT.createSample()).point.y + 0.22;
+/**
+ * The race is three laps of 55-60 s, so a time limit under four minutes is a limit nobody reaches
+ * and one that only fires on a car that has already been rescued four times.
+ */
+const TIME_LIMIT = 260;
 
 function playerRanking(ranked: readonly IRankedRacer[]): IRankedRacer | undefined {
   for (let index = 0; index < ranked.length; index += 1) {
@@ -48,6 +59,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
     paused: false,
     uiReady: false,
+    autopilot: false,
     boostActive: false,
     boostPeakSpeed: 0,
     boostUses: 0,
@@ -73,16 +85,26 @@ export class Race extends Scene<GameState, IPhysicsContext> {
 
   #sky: Texture | undefined;
 
-  /** The sky photograph, loaded before the scene is entered so the first frame is already lit. */
-  override async load(ctx: GameCtx): Promise<void> {
-    this.#sky = await ctx.assets.texture("sky.jpg");
+  /**
+   * The sky photograph, fetched but **not awaited**.
+   *
+   * `await`ing it here held the scene's first frame for the length of a texture decode, and the
+   * playtest bridge describes the scene before the runtime enters it: `survives` failed
+   * `TN_PLAYTEST_CAPABILITY_MISSING` on `runtime.components` because there was no `player` entity
+   * yet to describe. The scene now enters on the fallback colour and the photograph is swapped in
+   * the moment it decodes, which is also what a player sees — a sky that arrives rather than a
+   * black screen that waits.
+   */
+  override load(ctx: GameCtx): void {
+    void ctx.assets.texture("sky.jpg").then((texture) => {
+      this.#sky = texture;
+      const scene = ctx.scene;
+      if (scene !== undefined) setupSky(scene, texture);
+    });
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    if (this.#sky === undefined)
-      throw new Error("Race.enter ran before load() loaded the sky photograph.");
-    const sky = this.#sky;
-    setupSky(ctx.scene, sky);
+    if (this.#sky === undefined) setupSky(ctx.scene, undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
@@ -103,21 +125,14 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
     const track = buildTrack(ctx);
-    const car = new RacingCar(ctx, SPAWN);
-    // The rival's grid slot, projected onto the route it drives: its own slot, four metres up the
-    // road, facing the same way. It used to be placed one whole lap ahead and then copied onto the
-    // player's position, so the two cars were the same point in space and the player drove through
-    // a rival that had no body.
-    const rivalSlot = new Vector3(GRID.rival.x, RIDE, GRID.rival.z);
-    const rival = new Rival(ctx, track.route, track.route.project(rivalSlot).distanceFromStart);
+    const car = new RacingCar(ctx, SPAWN, gridHeading("player"));
+    // The rival's own grid slot, projected onto the circuit it drives: on pole, four metres up the
+    // road and 4.4 m to the other side, facing the same way. It used to be placed a whole lap
+    // ahead and then copied onto the player's position, so the two cars were the same point in
+    // space and the player drove through a rival that had no body.
+    const rival = new Rival(ctx, GRID_DISTANCE.rival);
     ctx.entities.add("player", car);
     ctx.entities.add("rival", rival);
-    const flagMaterial = createMaterials().boost;
-    for (const point of [new Vector3(14, 0, -18), new Vector3(-14, 0, 18)]) {
-      const marker = flag(flagMaterial);
-      marker.position.copy(point);
-      ctx.add(marker);
-    }
 
     // `travelDirection` is the car's **measured** velocity, not the heading it was asked for: a
     // car that is sliding through a corner is travelling somewhere other than where it points, and
@@ -128,25 +143,21 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       TOTAL_LAPS,
       (completed) => emitPlaytestEvent({ entity: "player", lap: completed, name: "lap-completed" }),
     );
-    const playerRankingInput = {
-      id: "player",
-      lap: lap.completed,
-      position: car.body.position,
-    };
+    const playerRankingInput = { id: "player", lap: lap.completed, position: car.body.position };
     const rivalRankingInput = { id: "rival", lap: rival.lap, position: rival.mesh.position };
     const rankingInputs = [playerRankingInput, rivalRankingInput];
     const rankingBuffer: IRankedRacerScratch[] = [];
     const rankRace = () => {
       playerRankingInput.lap = lap.completed;
       rivalRankingInput.lap = rival.lap;
-      return rankRacers(track.route, rankingInputs, undefined, rankingBuffer);
+      return rankRacers(CIRCUIT, rankingInputs, undefined, rankingBuffer);
     };
     const initialRanked = rankRace();
     const initialPlayer = playerRanking(initialRanked);
     if (initialPlayer === undefined) throw new Error("Race ranking lost the player at spawn.");
     const fallbackProbe = roadRayProbe(track.roadMeshes);
     const sector = new TrackSector({
-      route: track.route,
+      route: CIRCUIT,
       intersectRay: intersectRay(ctx.physics, fallbackProbe),
     });
     track.boostArea.on("bodyEntered", (body) => {
@@ -161,7 +172,6 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     let rescues = 0;
     let rescueHeadingError = -1;
     let rescuePositionError = -1;
-    const boostSettled = false;
     let sameDistanceRanking = initialRanked[0]?.id === "rival" ? "lap-ahead" : "lap-behind";
     let place = initialPlayer.place;
     let positionLabel = `P${place}`;
@@ -198,9 +208,15 @@ export class Race extends Scene<GameState, IPhysicsContext> {
     // The suspension and the camera both read the **solved** chassis, so they run in the
     // afterPhysics phase rather than in the scene frame: a wheel's spin angle and a car's velocity
     // are last step's numbers until the step after this one.
+    //
+    // The sun's shadow camera follows the car. It used to be a fixed 30 m box around the origin,
+    // which on an 830 m circuit put every shadow on the grass and left the car's own shadow — the
+    // speed cue a driver actually reads — somewhere else entirely.
     afterPhysics(ctx, (dt) => {
       car.body.settleVisuals();
       rival.car.settleVisuals();
+      lighting.key.target.position.copy(car.body.position);
+      lighting.key.position.copy(car.body.position).addScaledVector(SUN_DIRECTION, 90);
       const solved = car.body.body.linearVelocity;
       chaseCamera(camera, car.body.position, car.travelDirection, dt, solved);
       camera.rotateZ(cameraBank(car.lateralLoad, FEEL.lateral));
@@ -230,6 +246,7 @@ export class Race extends Scene<GameState, IPhysicsContext> {
       lastOnRoad[0] = sector.lastOnRoadPosition.x;
       lastOnRoad[1] = sector.lastOnRoadPosition.y;
       lastOnRoad[2] = sector.lastOnRoadPosition.z;
+      statePatch.autopilot = car.autopilotEngaged;
       statePatch.boostActive = car.boosting;
       statePatch.boostPeakSpeed = boostPeakSpeed;
       statePatch.boostUses = car.boost.uses;

@@ -7,6 +7,7 @@
 // and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
 // equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
+  Color,
   EquirectangularReflectionMapping,
   FogExp2,
   SRGBColorSpace,
@@ -26,16 +27,29 @@ const SKY_RANGE = 2.5;
 /** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-export function setupSky(scene: Scene, sky: Texture): void {
-  sky.mapping = EquirectangularReflectionMapping;
-  sky.colorSpace = SRGBColorSpace;
-  scene.background = sky;
-  scene.backgroundIntensity = SKY_RANGE;
-  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
-  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
-  scene.environment = sky;
-  scene.environmentIntensity = SKY_RANGE;
+/**
+ * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
+ *
+ * The second argument is optional because `Race.load()` does not wait for the JPEG: the scene has
+ * to enter on the first frame or the playtest bridge describes nothing. Passing `undefined` here is
+ * the fallback the scene starts in, and calling it again with the texture is the swap.
+ */
+export function setupSky(scene: Scene, sky?: Texture): void {
+  if (sky === undefined) {
+    scene.background = new Color(palette.skyHigh);
+    scene.environment = null;
+    scene.environmentIntensity = 0;
+  } else {
+    sky.mapping = EquirectangularReflectionMapping;
+    sky.colorSpace = SRGBColorSpace;
+    scene.background = sky;
+    scene.backgroundIntensity = SKY_RANGE;
+    // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+    // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+    // misses, and a sky to reflect, sharper as roughness drops.
+    scene.environment = sky;
+    scene.environmentIntensity = SKY_RANGE;
+  }
   // Nothing inside the circuit (2.4% at 40 m), and the ground gone into the horizon by a kilometre
   // — so the treeline meets the sky instead of ending at a line.
   scene.fog = new FogExp2(palette.horizon, 0.0024);

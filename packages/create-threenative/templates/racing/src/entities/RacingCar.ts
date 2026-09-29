@@ -1,27 +1,43 @@
-import { MathUtils, type Vector3 } from "three";
+import type { Vector3 } from "three";
 import { Boost } from "../kart/boost.js";
 import { createMaterials } from "../render/materials.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import { CarBody, type CarCtx, FEEL } from "./CarBody.js";
+import { LineDriver } from "./LineDriver.js";
 
 /**
- * The player's car: input in, a `VehicleBody3D` out.
+ * The demo driver's pace, in m/s, and the side of the road it keeps.
  *
- * The old car was a kinematic fake — `#speed` and `#heading` as numbers, velocity rewritten every
+ * Just under the rival's, on purpose: the demo driver is here to show the circuit and to let a
+ * playtest ask a car to follow it, not to win the race. A demo driver that beat the rival would
+ * make "finishing behind the rival is a DNF" untestable from the grid, and that rule is one of the
+ * things this template has to prove.
+ */
+export const AUTOPILOT_PACE = 15.5;
+const AUTOPILOT_OFFSET = -1.5;
+
+/**
+ * The player's car: input in, a `VehicleBody3D` out — or the same closed-loop driver the rival
+ * uses, when the autopilot is engaged.
+ *
+ * The old car was a kinematic fake: `#speed` and `#heading` as numbers, velocity rewritten every
  * frame, the chassis pinned level. Everything that made a car feel like a car lived in those two
  * numbers, so the same corner at the same speed always produced the same line. Here the input only
- * ever writes three values: `engineForce`, `brake` and `steering`. Grip, weight transfer, understeer
- * and the way a kerb lifts a wheel are the backend's, not this file's.
+ * ever writes three values: `engineForce`, `brake` and `steering`. Grip, weight transfer,
+ * understeer and the way a kerb lifts a wheel are the backend's, not this file's.
  */
 export class RacingCar {
   readonly car: CarBody;
   readonly boost = new Boost();
+  /** The demo driver. Present whether or not it is engaged, so engaging is not an allocation. */
+  readonly autopilot = new LineDriver({ offset: AUTOPILOT_OFFSET, pace: AUTOPILOT_PACE });
+  #autopilotOn = false;
   #speedAfterBoost = 0;
   #topSpeed = 0;
   #boostWasActive = false;
 
-  constructor(ctx: CarCtx, spawn: Vector3) {
-    this.car = new CarBody(ctx, { materials: createMaterials(), spawn, yaw: 0 });
+  constructor(ctx: CarCtx, spawn: Vector3, yaw = 0) {
+    this.car = new CarBody(ctx, { materials: createMaterials(), spawn, yaw });
     this.car.measure(1 / 60);
   }
 
@@ -29,7 +45,6 @@ export class RacingCar {
     return this.car;
   }
 
-  /** The chassis root the physics writes its solved transform onto. */
   get mesh(): CarBody["mesh"] {
     return this.car.mesh;
   }
@@ -63,6 +78,11 @@ export class RacingCar {
     return this.boost.active;
   }
 
+  /** Whether the closed-loop driver has the wheel. Published, so a scenario can prove it drove. */
+  get autopilotEngaged(): boolean {
+    return this.#autopilotOn;
+  }
+
   /** The speed measured on the frame a boost ran out, which is what the boost playtest reads. */
   speedAfterBoost(): number {
     return this.#speedAfterBoost;
@@ -84,6 +104,26 @@ export class RacingCar {
       move.y += touch.move.y;
       move.clampLength(0, 1);
     }
+    if (ctx.input.justPressed("autopilot")) this.#autopilotOn = !this.#autopilotOn;
+    // Touching the wheel takes it back, the way a driving game's demo lap does. A scenario that
+    // wants to hand the car over presses a key; a player who grabs the stick gets their car.
+    if (this.#autopilotOn && move.lengthSq() > 0.02) this.#autopilotOn = false;
+    if (this.#autopilotOn) {
+      this.autopilot.update(this.car, dt);
+    } else {
+      this.drive(move);
+      this.car.measure(dt);
+    }
+    if (this.boost.active) {
+      this.#boostWasActive = true;
+    } else if (this.#boostWasActive) {
+      this.#boostWasActive = false;
+      this.#speedAfterBoost = this.speed;
+    }
+    this.#topSpeed = Math.max(this.#topSpeed, this.speed);
+  }
+
+  private drive(move: { x: number; y: number }): void {
     const body = this.car.body;
     const speed = body.speed;
     // The sign: `move.x` is +1 to the right, and a positive Rapier steering angle turns toward the
@@ -106,14 +146,6 @@ export class RacingCar {
         move.y * FEEL.engineForce * Math.max(0, 1 - Math.abs(speed) / FEEL.reverseTopSpeed);
       body.brake = 0;
     }
-    this.car.measure(dt);
-    if (this.boost.active) {
-      this.#boostWasActive = true;
-    } else if (this.#boostWasActive) {
-      this.#boostWasActive = false;
-      this.#speedAfterBoost = this.speed;
-    }
-    this.#topSpeed = Math.max(this.#topSpeed, this.speed);
   }
 
   /** Places the car back on the road facing `heading`, which is what a rescue does. */
@@ -129,6 +161,7 @@ export class RacingCar {
 
   debug(): Record<string, unknown> {
     return {
+      autopilot: this.#autopilotOn,
       boostActive: this.boost.active,
       boostUses: this.boost.uses,
       lateralLoad: Math.round(this.lateralLoad * 100) / 100,

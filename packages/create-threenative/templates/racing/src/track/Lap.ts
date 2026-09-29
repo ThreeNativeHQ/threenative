@@ -30,6 +30,18 @@ export class Lap {
    * on the near side of its plane, so one pass counts once.
    */
   #armed: boolean[] = [];
+  /**
+   * Whether the car has been seen on the **far** side of each gate's plane since it was last armed.
+   *
+   * This is the second half of the arming rule and it is what makes one pass count once. The
+   * `Area3D` sensor reports a crossing as soon as the car's collider touches the gate's box, which
+   * on a gate 1.6 m thick is most of a metre *before* the plane. So the sensor counts the crossing
+   * first, and the sweep a moment later sees the plane change sign while the car is still on the
+   * near side — and a naive "re-arm whenever the car is on the near side" rule re-arms it in that
+   * window, and the sweep's own crossing then reads as a second pass over the line. Measured: every
+   * gate raised a `shortcutReject` for a car driving a clean lap.
+   */
+  #seenFarSide: boolean[] = [];
   #targetDirection = new Vector3();
   #gateDirection = new Vector3();
   #before = new Vector3();
@@ -54,6 +66,7 @@ export class Lap {
       const expected = gate.forward.clone().setY(0).normalize();
       this.#gateNormals.push(expected);
       this.#armed.push(true);
+      this.#seenFarSide.push(false);
       this.#unsubscribe.push(
         gate.area.on("bodyEntered", (body) => {
           if (body !== this.#target.body || this.completed >= this.totalLaps) return;
@@ -104,10 +117,23 @@ export class Lap {
       if (normal === undefined) throw new Error("Lap gate normal is missing.");
       const before = this.#before.copy(previous).sub(gate.at).dot(normal);
       const after = this.#after.copy(current).sub(gate.at).dot(normal);
-      // Back on the near side: whatever counted this gate has been counted, and the next pass over
-      // is a real crossing again.
-      if (after < 0) {
+      // Only where the line is actually drawn. The plane is infinite and a lap is a closed loop,
+      // so some gates' planes cut other parts of the circuit: sector 2's plane is `x = 117`, and
+      // the main straight runs along `x` from 25 to 195. Without this the main straight raises a
+      // reverse rejection for a gate 300 m up the road.
+      const across = this.#after
+        .copy(previous)
+        .add(current)
+        .multiplyScalar(0.5)
+        .sub(gate.at)
+        .dot(gate.across);
+      if (Math.abs(across) > gate.halfWidth) continue;
+      if (after >= 0) this.#seenFarSide[index] = true;
+      // Back on the near side **having been on the far side**: whatever counted this gate has been
+      // counted, and the next pass over is a real crossing again.
+      if (after < 0 && this.#seenFarSide[index] === true) {
         this.#armed[index] = true;
+        this.#seenFarSide[index] = false;
       }
       if ((before < 0 && after >= 0) || (before >= 0 && after < 0)) this.cross(index);
     }
@@ -119,6 +145,7 @@ export class Lap {
 
   debug(): Record<string, unknown> {
     return {
+      armed: this.#armed.slice(),
       completed: this.completed,
       expectedGate: this.expectedGate,
       reverseRejects: this.reverseRejects,

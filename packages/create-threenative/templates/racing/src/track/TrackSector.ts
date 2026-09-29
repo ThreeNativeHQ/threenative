@@ -1,5 +1,5 @@
-import type { IPathFollow3DProjection, PathFollow3D } from "@threenative/core";
 import { Vector3 } from "three";
+import { CIRCUIT, type CircuitLine } from "./circuit.js";
 import { type IRescueTarget, rescueToLastValid } from "./rescue.js";
 
 export interface IRayHit {
@@ -16,7 +16,7 @@ export type IntersectRay = (
 export type ITrackSectorTarget = IRescueTarget;
 
 export interface ITrackSectorOptions {
-  readonly route: PathFollow3D;
+  readonly route: CircuitLine;
   readonly intersectRay: IntersectRay;
   readonly rescueDelay?: number;
   readonly rayHeight?: number;
@@ -29,12 +29,13 @@ export interface ITrackSectorOptions {
 export class TrackSector {
   readonly lastOnRoadPosition = new Vector3();
   readonly lastOnRoadHeading = new Vector3(1, 0, 0);
+  /** How far around the lap the last on-road sample was, in metres. */
   currentSector = 0;
   #offRoadTime = 0;
   #stalledTime = 0;
   #hasOnRoadSample = false;
   #hasMoved = false;
-  readonly #route: PathFollow3D;
+  readonly #route: CircuitLine;
   readonly #intersectRay: IntersectRay;
   readonly #rescueDelay: number;
   readonly #rayHeight: number;
@@ -42,16 +43,16 @@ export class TrackSector {
   readonly #stallSpeed: number;
   readonly #origin = new Vector3();
   readonly #direction = new Vector3(0, -1, 0);
-  readonly #projection: IPathFollow3DProjection = {
-    distanceFromStart: 0,
-    lateralDistance: 0,
+  readonly #projection = {
+    curvature: 0,
+    distance: 0,
+    lateral: 0,
     point: new Vector3(),
-    segment: 0,
     tangent: new Vector3(0, 0, 1),
   };
 
   constructor(options: ITrackSectorOptions) {
-    this.#route = options.route;
+    this.#route = options.route ?? CIRCUIT;
     this.#intersectRay = options.intersectRay;
     this.#rescueDelay = options.rescueDelay ?? 0.65;
     this.#rayHeight = options.rayHeight ?? 3;
@@ -81,7 +82,7 @@ export class TrackSector {
     if (onRoad) {
       this.lastOnRoadPosition.copy(position);
       this.lastOnRoadHeading.copy(heading).setY(0).normalize();
-      this.currentSector = this.#route.project(position, this.#projection).segment;
+      this.currentSector = this.#route.project(position, this.#projection).distance;
       this.#hasOnRoadSample = true;
       this.#offRoadTime = 0;
       return true;
