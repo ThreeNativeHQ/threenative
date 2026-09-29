@@ -454,7 +454,12 @@ function addOpening(
     // A stone sill projects further than anything else on the wall: it is the
     // horizontal that catches the key light and separates storey from storey.
     const depth = RELIEF + 0.08;
-    put(wall, extra.stone, [w + JAMB * 2 + 0.34, 0.12, depth], [cx, sillY - 0.06, depth / 2 - 0.01]);
+    put(
+      wall,
+      extra.stone,
+      [w + JAMB * 2 + 0.34, 0.12, depth],
+      [cx, sillY - 0.06, depth / 2 - 0.01],
+    );
     put(wall, trim, [w + JAMB * 2 + 0.2, 0.08, 0.07], [cx, sillY - 0.16, 0.035]);
   }
 }
@@ -481,11 +486,12 @@ function addLeaves(
     // shadow line under its head reads as joinery, and costs the same two boxes.
     for (const share of [0.26, 0.73]) {
       put(wall, material, [leafW - 0.2, h * 0.29, 0.014], [lx, sillY + h * share, faceZ + 0.005]);
-      put(wall, extra.reveal, [leafW - 0.2, 0.022, 0.016], [
-        lx,
-        sillY + h * share + h * 0.145,
-        faceZ + 0.004,
-      ]);
+      put(
+        wall,
+        extra.reveal,
+        [leafW - 0.2, 0.022, 0.016],
+        [lx, sillY + h * share + h * 0.145, faceZ + 0.004],
+      );
     }
     put(wall, material, [leafW, 0.09, DOOR.d + 0.02], [lx, sillY + h * 0.49, front]);
     // Handle on the meeting stile.
@@ -575,16 +581,24 @@ function addWindow(wall: Wall, cx: number, sillY: number, seed: number): void {
       for (const side of [-1, 1]) {
         if (hanging && side > 0 && hash(seed + 3) > 0.5) continue; // one gone entirely
         const roll = hanging && side < 0 ? side * 0.17 : 0;
-        put(wall, materials.shutter, [leafW, h * 0.98, 0.05], [cx + side * foldX, sillY + h / 2, 0.105], {
-          hit: true,
-          roll,
-        });
+        put(
+          wall,
+          materials.shutter,
+          [leafW, h * 0.98, 0.05],
+          [cx + side * foldX, sillY + h / 2, 0.105],
+          {
+            hit: true,
+            roll,
+          },
+        );
         for (const share of [0.32, 0.68]) {
-          put(wall, extra.reveal, [leafW - 0.08, 0.022, 0.012], [
-            cx + side * foldX,
-            sillY + h * share,
-            0.136,
-          ], { roll });
+          put(
+            wall,
+            extra.reveal,
+            [leafW - 0.08, 0.022, 0.012],
+            [cx + side * foldX, sillY + h * share, 0.136],
+            { roll },
+          );
         }
       }
       break;
@@ -592,7 +606,9 @@ function addWindow(wall: Wall, cx: number, sillY: number, seed: number): void {
     case "shuttersShut":
       for (const side of [-1, 1]) {
         const lx = cx + side * (leafW / 2 + 0.015);
-        put(wall, materials.shutter, [leafW, h * 0.98, 0.05], [lx, sillY + h / 2, 0.105], { hit: true });
+        put(wall, materials.shutter, [leafW, h * 0.98, 0.05], [lx, sillY + h / 2, 0.105], {
+          hit: true,
+        });
         for (const share of [0.28, 0.52, 0.76]) {
           put(wall, extra.reveal, [leafW - 0.07, 0.022, 0.012], [lx, sillY + h * share, 0.136]);
         }
@@ -612,7 +628,12 @@ function addWindow(wall: Wall, cx: number, sillY: number, seed: number): void {
       // Deliberately unglazed, the way half the openings in the references are:
       // a broken-out frame around a dark room, with the sash gone.
       for (const side of [-1, 1]) {
-        put(wall, materials.shutter, [0.06, h, 0.05], [cx + side * (w / 2 - 0.03), sillY + h / 2, 0.085]);
+        put(
+          wall,
+          materials.shutter,
+          [0.06, h, 0.05],
+          [cx + side * (w / 2 - 0.03), sillY + h / 2, 0.085],
+        );
       }
       put(wall, materials.shutter, [w, 0.055, 0.05], [cx, sillY + h - 0.03, 0.085]);
       put(wall, extra.stone, [w, 0.05, 0.06], [cx, sillY + 0.02, 0.09]);
@@ -852,11 +873,17 @@ export function addArchGateway(facade: Facade, options: ArchGateway): void {
   if (alongX) {
     facade.colliders.push({ min: [x0, 0, z0], max: [cx - radius, height, z1] });
     facade.colliders.push({ min: [cx + radius, 0, z0], max: [x1, height, z1] });
-    facade.colliders.push({ min: [cx - radius, options.openHeight, z0], max: [cx + radius, height, z1] });
+    facade.colliders.push({
+      min: [cx - radius, options.openHeight, z0],
+      max: [cx + radius, height, z1],
+    });
   } else {
     facade.colliders.push({ min: [x0, 0, z0], max: [x1, height, cz - radius] });
     facade.colliders.push({ min: [x0, 0, cz + radius], max: [x1, height, z1] });
-    facade.colliders.push({ min: [x0, options.openHeight, cz - radius], max: [x1, height, cz + radius] });
+    facade.colliders.push({
+      min: [x0, options.openHeight, cz - radius],
+      max: [x1, height, cz + radius],
+    });
   }
 
   // Dress both faces: archivolt, keystone, coping course, a lamp on one pier
@@ -954,11 +981,13 @@ export function addDoorsAndShutters(
       // Flat steel canopy on two braces, as over the garages in the reference.
       put(wall, facade.materials.steelPost, [rollerW + 0.8, 0.07, 0.8], [rx, rollerH + 0.55, 0.42]);
       for (const side of [-1, 1]) {
-        put(wall, facade.extra.iron, [0.05, 0.5, 0.05], [
-          rx + side * (rollerW / 2 + 0.22),
-          rollerH + 0.3,
-          0.6,
-        ], { roll: side * 0.6 });
+        put(
+          wall,
+          facade.extra.iron,
+          [0.05, 0.5, 0.05],
+          [rx + side * (rollerW / 2 + 0.22), rollerH + 0.3, 0.6],
+          { roll: side * 0.6 },
+        );
       }
     }
     taken.push({ x: rx, w: rollerW + 0.6 });
@@ -978,7 +1007,8 @@ export function addDoorsAndShutters(
   // capping batten, or the batten would run straight across the opening.
   const lights = span >= 11 ? 3 : span >= 6.5 ? 1 : 0;
   for (let light = 0; light < lights; light += 1) {
-    const gx = -half + margin + usable * ((light + 0.35 + hash(seed + 19 + light * 7) * 0.3) / lights);
+    const gx =
+      -half + margin + usable * ((light + 0.35 + hash(seed + 19 + light * 7) * 0.3) / lights);
     if (!clear(gx, WINDOW.w + JAMB * 2)) continue;
     addWindow(wall, gx, 1.6, seed + 200 + light * 23);
     taken.push({ x: gx, w: WINDOW.w + JAMB * 2 });
@@ -1063,17 +1093,25 @@ function addAwning(wall: Wall, cx: number, seed: number): void {
     // Bands overlap slightly so no gap opens along the fall, and alternate
     // bands sit 3 mm apart in depth so the overlapping side faces are never
     // coplanar — from directly under an awning they dither if they are.
-    put(wall, material, [bandW + 0.02, 0.05, slope], [
-      cx - width / 2 + bandW * (band + 0.5),
-      midY,
-      midZ + (band % 2) * 0.003,
-    ], { pitch });
+    put(
+      wall,
+      material,
+      [bandW + 0.02, 0.05, slope],
+      [cx - width / 2 + bandW * (band + 0.5), midY, midZ + (band % 2) * 0.003],
+      { pitch },
+    );
   }
   // Iron struts under the canvas, back to the wall.
   for (const side of [-1, 1]) {
-    put(wall, extra.iron, [0.05, 0.05, slope], [cx + side * (width / 2 - 0.08), midY - 0.06, midZ], {
-      pitch,
-    });
+    put(
+      wall,
+      extra.iron,
+      [0.05, 0.05, slope],
+      [cx + side * (width / 2 - 0.08), midY - 0.06, midZ],
+      {
+        pitch,
+      },
+    );
   }
   // Front bar and the valance hanging from it, scalloped by alternating drop.
   put(wall, extra.timber, [width + 0.12, 0.08, 0.08], [cx, top - drop, reach + 0.06]);
@@ -1081,11 +1119,16 @@ function addAwning(wall: Wall, cx: number, seed: number): void {
   for (let index = 0; index < scallops; index += 1) {
     const material = striped && index % 2 === 1 ? materials.awningStripe : materials.awningCanvas;
     const depth = index % 2 === 0 ? 0.26 : 0.18;
-    put(wall, material, [width / scallops - 0.015, depth, 0.035], [
-      cx - width / 2 + (width * (index + 0.5)) / scallops,
-      top - drop - depth / 2 - 0.04,
-      reach + 0.06,
-    ]);
+    put(
+      wall,
+      material,
+      [width / scallops - 0.015, depth, 0.035],
+      [
+        cx - width / 2 + (width * (index + 0.5)) / scallops,
+        top - drop - depth / 2 - 0.04,
+        reach + 0.06,
+      ],
+    );
   }
 }
 
@@ -1105,11 +1148,12 @@ function addBalcony(wall: Wall, cx: number, y: number): void {
   put(wall, extra.stone, [width, 0.12, reach], [cx, y, reach / 2], { soft: 0.03 });
   put(wall, materials.plasterTrim, [width + 0.14, 0.06, reach + 0.07], [cx, y + 0.08, reach / 2]);
   for (const side of [-1, 1]) {
-    put(wall, materials.plasterTrim, [0.17, 0.32, 0.44], [
-      cx + side * (width / 2 - 0.18),
-      y - 0.22,
-      0.22,
-    ]);
+    put(
+      wall,
+      materials.plasterTrim,
+      [0.17, 0.32, 0.44],
+      [cx + side * (width / 2 - 0.18), y - 0.22, 0.22],
+    );
   }
 
   const bars = 11;
@@ -1297,11 +1341,11 @@ export function addRoofLife(facade: Facade, spec: FacadeSpec, index: number): vo
           [0.78, 0.95],
           [0.9, 0.62],
         ] as const) {
-          box(
-            materials.steelMast,
-            across ? [arm, 0.04, 0.04] : [0.04, 0.04, arm],
-            [px, by + height * share, pz],
-          );
+          box(materials.steelMast, across ? [arm, 0.04, 0.04] : [0.04, 0.04, arm], [
+            px,
+            by + height * share,
+            pz,
+          ]);
         }
         break;
       }
@@ -1312,11 +1356,13 @@ export function addRoofLife(facade: Facade, spec: FacadeSpec, index: number): vo
       case "vents":
         cyl(materials.steelPost, 0.09, 0.7, [px, by + 0.35, pz], 6);
         cyl(materials.tankDark, 0.13, 0.08, [px, by + 0.72, pz], 6);
-        cyl(materials.steelPost, 0.09, 0.5, [
-          px + 0.38 * (hash(index + slot) > 0.5 ? 1 : -1),
-          by + 0.25,
-          pz + 0.32,
-        ], 6);
+        cyl(
+          materials.steelPost,
+          0.09,
+          0.5,
+          [px + 0.38 * (hash(index + slot) > 0.5 ? 1 : -1), by + 0.25, pz + 0.32],
+          6,
+        );
         break;
       case "skylight":
         box(materials.steelPost, [0.98, 0.14, 0.74], [px, by + 0.07, pz]);

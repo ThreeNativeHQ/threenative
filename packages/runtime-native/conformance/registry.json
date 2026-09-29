@@ -1418,7 +1418,7 @@
   "generatedPlaytestProofs": [
     {
       "id": "generated-shooter-input-control",
-      "title": "generated shooter relative look, right-button aim, left-button fire",
+      "title": "generated shooter relative look, right-button aim, left-button fire, aimed shot on the crosshair",
       "category": "input",
       "status": "implemented",
       "scenario": "../create-threenative/templates/shooter/playtests/input-control.playtest.json",

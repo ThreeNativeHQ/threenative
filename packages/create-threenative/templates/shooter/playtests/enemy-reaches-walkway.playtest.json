@@ -12,11 +12,7 @@
     "entities": [
       {
         "entity": "player",
-        "position": [
-          6,
-          0.89,
-          -19
-        ]
+        "position": [6, 0.89, -19]
       }
     ]
   },

@@ -1,4 +1,3 @@
-import type { ImpactSurface } from "../surfaces.js";
 import {
   AdditiveBlending,
   Color,
@@ -16,6 +15,7 @@ import {
   UnsignedByteType,
   Vector3,
 } from "three";
+import type { ImpactSurface } from "../surfaces.js";
 
 /**
  * A white disc that falls off to nothing at the rim: the smoke and dust sprite.
@@ -34,8 +34,7 @@ export function softCircleTexture(size = 64, hardness = 0.05): Texture {
       const dx = (x - centre) / centre;
       const dy = (y - centre) / centre;
       const distance = Math.sqrt(dx * dx + dy * dy);
-      const falloff =
-        distance >= 1 ? 0 : Math.min(1, (1 - distance) / (1 - hardness)) ** 1.6;
+      const falloff = distance >= 1 ? 0 : Math.min(1, (1 - distance) / (1 - hardness)) ** 1.6;
       const index = (y * size + x) * 4;
       data[index] = 255;
       data[index + 1] = 255;
@@ -141,20 +140,25 @@ function streakTexture(size = 64): Texture {
 }
 
 /** How one surface answers a bullet. Counts are per burst; pools hold several. */
-const SURFACE_STYLES: Readonly<Record<ImpactSurface, {
-  flashColour: number;
-  flashScale: number;
-  chipColour: number;
-  chipCount: number;
-  chipSpeed: number;
-  chipSize: number;
-  dustColour: number;
-  dustCount: number;
-  dustSize: number;
-  sparkColour: number;
-  sparkCount: number;
-  sparkSpeed: number;
-}>> = {
+const SURFACE_STYLES: Readonly<
+  Record<
+    ImpactSurface,
+    {
+      flashColour: number;
+      flashScale: number;
+      chipColour: number;
+      chipCount: number;
+      chipSpeed: number;
+      chipSize: number;
+      dustColour: number;
+      dustCount: number;
+      dustSize: number;
+      sparkColour: number;
+      sparkCount: number;
+      sparkSpeed: number;
+    }
+  >
+> = {
   // Steel rings and sheds fast bright sparks that die mid-air.
   steel: {
     flashColour: 0xfff3d0,
@@ -253,7 +257,8 @@ export class ImpactBursts {
   readonly #sparks: BurstSlot[] = [];
   readonly #chips: BurstSlot[] = [];
   readonly #dust: BurstSlot[] = [];
-  readonly #flashes: { age: number; baseScale: number; life: number; mesh: Mesh; roll: number }[] = [];
+  readonly #flashes: { age: number; baseScale: number; life: number; mesh: Mesh; roll: number }[] =
+    [];
   /** Dead slots stop being submitted once their pipeline exists. See `settle`. */
   #settled = false;
   #sparkCursor = 0;
@@ -367,9 +372,7 @@ export class ImpactBursts {
     this.#sparkCursor += 1;
     if (slot === undefined) return;
     this.#hemisphere(normal, 0.85, scratchDir);
-    slot.velocity
-      .copy(scratchDir)
-      .multiplyScalar(style.sparkSpeed * (0.45 + this.#rng() * 0.85));
+    slot.velocity.copy(scratchDir).multiplyScalar(style.sparkSpeed * (0.45 + this.#rng() * 0.85));
     slot.mesh.position.copy(at).addScaledVector(normal, 0.012);
     slot.age = 0;
     slot.life = 0.2 + this.#rng() * 0.2;
@@ -387,9 +390,7 @@ export class ImpactBursts {
     this.#chipCursor += 1;
     if (slot === undefined) return;
     this.#hemisphere(normal, 1.15, scratchDir);
-    slot.velocity
-      .copy(scratchDir)
-      .multiplyScalar(style.chipSpeed * (0.4 + this.#rng() * 0.9));
+    slot.velocity.copy(scratchDir).multiplyScalar(style.chipSpeed * (0.4 + this.#rng() * 0.9));
     slot.mesh.position.copy(at).addScaledVector(normal, 0.01);
     slot.mesh.scale.setScalar(style.chipSize * (0.6 + this.#rng() * 0.8));
     slot.mesh.rotation.set(this.#rng() * Math.PI, this.#rng() * Math.PI, this.#rng() * Math.PI);

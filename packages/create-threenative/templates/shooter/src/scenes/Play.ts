@@ -1,44 +1,43 @@
-import { onAfterPhysics } from "../postPhysics.js";
-import { TouchControls } from "../entities/TouchControls.js";
-import { TracerPool3D, type ITracerSpawnOptions, type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import {
+  type ICtx,
+  type ITracerSpawnOptions,
+  Scene,
+  type SceneFrame,
+  TracerPool3D,
+} from "@threenative/core";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import type {
-  AnimationClip,
-  Group,
-  Object3D,
-  PerspectiveCamera,
-  Quaternion,
-  Texture,
-} from "three";
+import type { AnimationClip, Group, Object3D, PerspectiveCamera, Quaternion, Texture } from "three";
 import {
   AdditiveBlending,
   CylinderGeometry,
   MathUtils,
-  Mesh as MeshClass,
   MeshBasicMaterial,
+  Mesh as MeshClass,
   PlaneGeometry,
   PointLight as PointLightClass,
   Vector3,
 } from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { BreakableField } from "../entities/Breakables.js";
 import { Enemy } from "../entities/Enemy.js";
 import { FpsPlayer } from "../entities/FpsPlayer.js";
 import { MAGAZINE, RESERVE, Rifle } from "../entities/Rifle.js";
 import { Target } from "../entities/Target.js";
-import { BreakableField } from "../entities/Breakables.js";
-import { bulletHoleTexture, DecalField } from "../render/decals.js";
-import { BoxOccluders } from "../render/occlusion.js";
+import { TouchControls } from "../entities/TouchControls.js";
+import { onAfterPhysics } from "../postPhysics.js";
+import { DecalField, bulletHoleTexture } from "../render/decals.js";
 import { ImpactBursts, MuzzleFlash, MuzzleFlashPool, softCircleTexture } from "../render/gunfx.js";
-import { createLoadingScreen } from "../render/loading.js";
 import { setupLighting } from "../render/lighting.js";
-import { setupPost } from "../render/postprocessing.js";
+import { createLoadingScreen } from "../render/loading.js";
+import { BoxOccluders } from "../render/occlusion.js";
 import { PooledBillboards } from "../render/pooled-billboards.js";
+import { setupPost } from "../render/postprocessing.js";
 import { scale } from "../render/scale.js";
-import { buildTown, TOWN_HALF, type Town } from "../render/town.js";
-import { resolveSurface } from "../surfaces.js";
-import { createTownMaterials } from "../render/townMaterials.js";
 import { setupSky } from "../render/sky.js";
-import { TARGET_GOAL, type GameState } from "../state.js";
+import { TOWN_HALF, type Town, buildTown } from "../render/town.js";
+import { createTownMaterials } from "../render/townMaterials.js";
+import { type GameState, TARGET_GOAL } from "../state.js";
+import { resolveSurface } from "../surfaces.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -108,7 +107,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // resolves, so a slow cold load shows movement instead of a black canvas.
     let loaded = 0;
     let total = 0;
-    const track = <T,>(job: Promise<T>): Promise<T> => {
+    const track = <T>(job: Promise<T>): Promise<T> => {
       total += 1;
       return job.then((value) => {
         loaded += 1;
@@ -145,7 +144,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     const camera = ctx.camera as PerspectiveCamera;
     setupSky(ctx.scene, assets.sky);
-    const { key } = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    const { key } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+    );
     setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: key });
     ctx.add(camera);
 
@@ -689,9 +691,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       };
       ctx.scene.traverse((object) => {
         const mesh = object as {
-          isMesh?: boolean; geometry?: { uuid?: string }; material?: unknown;
-          castShadow?: boolean; receiveShadow?: boolean; visible?: boolean; layers?: { mask: number };
-          renderOrder?: number; name?: string; parent?: unknown;
+          isMesh?: boolean;
+          geometry?: { uuid?: string };
+          material?: unknown;
+          castShadow?: boolean;
+          receiveShadow?: boolean;
+          visible?: boolean;
+          layers?: { mask: number };
+          renderOrder?: number;
+          name?: string;
+          parent?: unknown;
         };
         if (mesh.isMesh !== true || mesh.geometry === undefined) return;
         if ((mesh as unknown as { visible?: boolean }).visible !== true) return;
@@ -718,7 +727,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       console.info(
         `TN_DRAW_DIAG:${JSON.stringify({
           groups: groups.size,
-          belowFloorMeshes: [...groups.values()].filter((g) => g.count < 4).reduce((n, g) => n + g.count, 0),
+          belowFloorMeshes: [...groups.values()]
+            .filter((g) => g.count < 4)
+            .reduce((n, g) => n + g.count, 0),
           byMeshName: Object.fromEntries(ranked),
         })}`,
       );
@@ -808,7 +819,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frameCtx.state.set({
         aiming: player.aiming,
         ammo: rifle.ammo,
-        blips: enemies.map((soldier) => ({
+        blips: enemies.map((soldier, index) => ({
+          id: index,
           alive: soldier.alive,
           x: soldier.group.position.x,
           z: soldier.group.position.z,

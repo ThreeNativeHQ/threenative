@@ -3,16 +3,16 @@ import type { ComponentType, ReactNode } from "react";
 export type CrosshairPart = "root" | "vertical" | "horizontal";
 
 export interface ICrosshairPrimitiveProps {
-	readonly children?: ReactNode;
-	readonly hidden: boolean;
-	readonly hitFlash: number;
-	readonly part: CrosshairPart;
+  readonly children?: ReactNode;
+  readonly hidden: boolean;
+  readonly hitFlash: number;
+  readonly part: CrosshairPart;
 }
 
 export interface ICrosshairProps {
-	readonly aiming: boolean;
-	readonly hitFlash: number;
-	readonly Primitive: ComponentType<ICrosshairPrimitiveProps>;
+  readonly aiming: boolean;
+  readonly hitFlash: number;
+  readonly Primitive: ComponentType<ICrosshairPrimitiveProps>;
 }
 
 /**
@@ -23,10 +23,10 @@ export interface ICrosshairProps {
  * native host and CanvasLayer styles are not CSS.
  */
 export function Crosshair({ aiming, hitFlash, Primitive }: ICrosshairProps) {
-	return (
-		<Primitive hidden={aiming} hitFlash={hitFlash} part="root">
-			<Primitive hidden={aiming} hitFlash={hitFlash} part="vertical" />
-			<Primitive hidden={aiming} hitFlash={hitFlash} part="horizontal" />
-		</Primitive>
-	);
+  return (
+    <Primitive hidden={aiming} hitFlash={hitFlash} part="root">
+      <Primitive hidden={aiming} hitFlash={hitFlash} part="vertical" />
+      <Primitive hidden={aiming} hitFlash={hitFlash} part="horizontal" />
+    </Primitive>
+  );
 }

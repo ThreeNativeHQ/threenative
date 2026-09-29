@@ -1,10 +1,14 @@
-import { AnimationPlayer, normaliseToMetres, softCircleDataTexture, type ICtx } from "@threenative/core";
-import { PooledBillboards } from "../render/pooled-billboards.js";
+import {
+  AnimationPlayer,
+  type ICtx,
+  normaliseToMetres,
+  softCircleDataTexture,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   AdditiveBlending,
-  Box3,
   type AnimationClip,
+  Box3,
   ConeGeometry,
   Group,
   MathUtils,
@@ -18,6 +22,7 @@ import {
   type Scene as ThreeScene,
   Vector3,
 } from "three";
+import { PooledBillboards } from "../render/pooled-billboards.js";
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
 
@@ -83,7 +88,7 @@ export class Rifle {
   constructor(
     camera: PerspectiveCamera,
     viewmodel: Object3D,
-    clips: readonly AnimationClip[] = [],
+    clips: readonly AnimationClip[],
     scene: ThreeScene,
   ) {
     this.#camera = camera;
@@ -184,18 +189,18 @@ export class Rifle {
     this.#barrelTipLocal.copy(this.#geometryTipLocal);
     // The asset's forward +z transformed through the fit's half-turn is the visible -z barrel
     // axis. Object3D's +z convention makes this less error-prone than a hand-typed direction.
-    this.#barrelAxisLocal
-      .set(0, 0, 1)
-      .applyQuaternion(fit.quaternion)
-      .normalize();
+    this.#barrelAxisLocal.set(0, 0, 1).applyQuaternion(fit.quaternion).normalize();
     const size = fitBounds.getSize(new Vector3());
     this.#viewmodelLength = Math.max(size.x, size.y, size.z);
     let namedOptic: Object3D | undefined;
     viewmodel.traverse((object) => {
-      if (namedOptic === undefined && /sight|optic|rail|dot/i.test(object.name)) namedOptic = object;
+      if (namedOptic === undefined && /sight|optic|rail|dot/i.test(object.name))
+        namedOptic = object;
     });
     if (namedOptic !== undefined) {
-      this.#opticLocal.copy(fit.worldToLocal(namedOptic.getWorldPosition(new Vector3()))).applyMatrix4(fit.matrix);
+      this.#opticLocal
+        .copy(fit.worldToLocal(namedOptic.getWorldPosition(new Vector3())))
+        .applyMatrix4(fit.matrix);
       return;
     }
 
@@ -230,9 +235,9 @@ export class Rifle {
     } else {
       this.#opticLocal
         .set(
-        (fitBounds.min.x + fitBounds.max.x) / 2,
-        fitBounds.max.y - overall.y * 0.16,
-        fitBounds.max.z - overall.z * 0.42,
+          (fitBounds.min.x + fitBounds.max.x) / 2,
+          fitBounds.max.y - overall.y * 0.16,
+          fitBounds.max.z - overall.z * 0.42,
         )
         .applyMatrix4(fit.matrix);
     }
@@ -394,7 +399,8 @@ export class Rifle {
     const target = this.#aimOrigin.clone().addScaledVector(this.#aimDirection, ZERO_DISTANCE);
     const current = this.barrelRay();
     const desired = target.sub(current.origin).normalize();
-    const parentQuaternion = this.group.parent?.getWorldQuaternion(new Quaternion()) ?? new Quaternion();
+    const parentQuaternion =
+      this.group.parent?.getWorldQuaternion(new Quaternion()) ?? new Quaternion();
     const desiredParent = desired.applyQuaternion(parentQuaternion.clone().invert());
     const currentParent = this.#barrelAxisLocal.clone().applyQuaternion(this.group.quaternion);
     const correction = new Quaternion().setFromUnitVectors(currentParent, desiredParent);

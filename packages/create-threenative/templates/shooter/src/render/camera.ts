@@ -73,7 +73,12 @@ export function configureFirstPerson(camera: PerspectiveCamera): void {
 
 /** The smoothed field of view for this frame, hip or aimed. */
 export function firstPersonFov(current: number, aiming: boolean, dt: number): number {
-  return MathUtils.damp(current, aiming ? FIRST_PERSON.aimFov : FIRST_PERSON.hipFov, FIRST_PERSON.fovRate, dt);
+  return MathUtils.damp(
+    current,
+    aiming ? FIRST_PERSON.aimFov : FIRST_PERSON.hipFov,
+    FIRST_PERSON.fovRate,
+    dt,
+  );
 }
 
 /** Where a shot leaves from: the camera basis, never the body transform. */

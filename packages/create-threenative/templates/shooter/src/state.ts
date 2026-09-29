@@ -1,4 +1,5 @@
-export type Blip = { x: number; z: number; alive: boolean };
+/** One soldier's dot on the minimap; `id` is that soldier's slot, so React can keep the node. */
+export type Blip = { id: number; x: number; z: number; alive: boolean };
 
 export type GameState = {
   aiming: boolean;

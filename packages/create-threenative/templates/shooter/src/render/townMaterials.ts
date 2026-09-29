@@ -29,12 +29,7 @@
 //     what `town.ts` does per solid. Calling it on a shared unit box would give
 //     every solid in the town the same tile, so those meshes now carry their
 //     own geometry.
-import {
-  BoxGeometry,
-  DoubleSide,
-  type BufferGeometry,
-  MeshStandardMaterial,
-} from "three";
+import { BoxGeometry, type BufferGeometry, DoubleSide, MeshStandardMaterial } from "three";
 import { floorMaterial, propMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 import { palette } from "./palette.js";
 
@@ -82,7 +77,11 @@ export type TownMaterials = {
  * a bitmap. The grid stays one metre because the UVs come from
  * `worldGridUVs`, not from the map's repeat.
  */
-function tinted(source: MeshStandardMaterial, colour: number, roughness: number): MeshStandardMaterial {
+function tinted(
+  source: MeshStandardMaterial,
+  colour: number,
+  roughness: number,
+): MeshStandardMaterial {
   const material = source.clone();
   material.color.setHex(colour);
   material.roughness = roughness;

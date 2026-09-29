@@ -537,7 +537,9 @@ describe("starter playtest proof", () => {
   it("should drive the generated shooter through one committed fire-control scenario", async () => {
     const scenario = JSON.parse(
       await readFile(
-        path.resolve("packages/create-threenative/templates/shooter/playtests/debug-fire.playtest.json"),
+        path.resolve(
+          "packages/create-threenative/templates/shooter/playtests/debug-fire.playtest.json",
+        ),
         "utf8",
       ),
     ) as {

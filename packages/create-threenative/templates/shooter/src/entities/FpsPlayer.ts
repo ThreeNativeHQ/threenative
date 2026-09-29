@@ -1,7 +1,19 @@
 import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import { BoxGeometry, MathUtils, Mesh, MeshBasicMaterial, type PerspectiveCamera, Vector3 } from "three";
-import { applyFirstPerson, configureFirstPerson, FIRST_PERSON, firstPersonFov } from "../render/camera.js";
+import {
+  BoxGeometry,
+  MathUtils,
+  Mesh,
+  MeshBasicMaterial,
+  type PerspectiveCamera,
+  Vector3,
+} from "three";
+import {
+  FIRST_PERSON,
+  applyFirstPerson,
+  configureFirstPerson,
+  firstPersonFov,
+} from "../render/camera.js";
 import { scale } from "../render/scale.js";
 import type { GameState } from "../state.js";
 import type { TouchFrame } from "./TouchControls.js";

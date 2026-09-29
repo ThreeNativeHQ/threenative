@@ -176,9 +176,9 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
         JSON.stringify(
           (observations?.resourceSeries ?? []).map(({ label, snapshots }) => [
             label,
-            snapshots.state.yawDegrees,
+            snapshots.state.playerYaw,
             snapshots.state.aiming,
-            snapshots.state.shotsFired,
+            snapshots.state.shots,
           ]),
         ),
       );
@@ -198,16 +198,11 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     const results = new Map((report.assertionResults ?? []).map(({ id, pass }) => [id, pass]));
     for (const id of [
       "resource.state.aiming.atSteps",
-      "resource.state.yawDegrees.atSteps",
-      "resource.state.shotsFired.atSteps",
-      "resource.state.aimedShots.atSteps",
-      "resource.state.demoTargetAlive",
-      "resource.state.demoDamage",
-      "signal.aim-engaged",
-      "signal.fired",
-      "signal.hit",
-      "signal.defeated",
-      "signal.aim-released",
+      "resource.state.playerYaw.atSteps",
+      "resource.state.shots.atSteps",
+      "resource.state.ammo.atSteps",
+      "component.rifle.barrelAxisErrorDeg.atSteps",
+      "component.rifle.opticScreen.x.atSteps",
     ]) {
       expect(results.get(id), `${id} must be evaluated`).toBeDefined();
       expect(results.get(id), `${id} must pass`).toBe(true);
@@ -218,10 +213,9 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     console.info(
       "raw observations:",
       JSON.stringify({
-        demoDamage: after?.resources?.state?.demoDamage,
-        demoTargetAlive: after?.resources?.state?.demoTargetAlive,
-        shotsFired: after?.resources?.state?.shotsFired,
-        yawDegrees: after?.resources?.state?.yawDegrees,
+        ammo: after?.resources?.state?.ammo,
+        shots: after?.resources?.state?.shots,
+        playerYaw: after?.resources?.state?.playerYaw,
       }),
     );
   }, 600_000);
@@ -236,7 +230,7 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       }>;
     };
     // The named mutation: strip every way this scenario can engage the sights — the right button
-    // on `aim-down` and the `KeyQ` hold on `aim-key` — so aim can never engage while the trigger
+    // on `aim-down` and the `KeyF` hold on `aim-key` — so aim can never engage while the trigger
     // still fires. Everything else stays byte-identical.
     //
     // Both have to go. The scenario aims twice on purpose: once with the mouse, to prove the
@@ -280,12 +274,18 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
     );
     // The red must name the input state itself, not a transport or parse failure.
     expect(failed.has("resource.state.aiming.atSteps")).toBe(true);
-    expect(failed.has("resource.state.aimedShots.atSteps")).toBe(true);
+    expect(failed.has("component.rifle.opticScreen.x.atSteps")).toBe(true);
   }, 600_000);
 
   test("scenario keeps a no-input control ahead of every input step", async () => {
     const scenario = JSON.parse(await readFile(SCENARIO_PATH, "utf8")) as {
-      assert?: { resources?: Array<{ atSteps?: Array<{ equals: unknown; label: string }> }> };
+      assert?: {
+        components?: Array<{
+          atSteps?: Array<{ equals: unknown; label: string }>;
+          component: string;
+        }>;
+        resources?: Array<{ atSteps?: Array<{ equals: unknown; label: string }> }>;
+      };
       steps: Array<{ kind?: string; label?: string }>;
     };
     expect(scenario.steps[0]).toMatchObject({ kind: "wait", label: "no-input-control" });
@@ -295,5 +295,11 @@ describe.skipIf(needsDisplay)("generated shooter input proof", () => {
       row.atSteps?.some(({ label }) => label === "aim-settle"),
     );
     expect(aiming?.atSteps).toContainEqual({ label: "aim-settle", equals: 1 });
+    // And the shot is the crosshair's: the barrel converges onto the camera axis, which a
+    // weapon firing down its own muzzle cannot satisfy.
+    const barrel = scenario.assert?.components?.find(
+      ({ component }) => component === "barrelAxisErrorDeg",
+    );
+    expect(barrel?.atSteps?.some(({ label }) => label === "fire-settle")).toBe(true);
   });
 });

@@ -41,6 +41,7 @@ import {
   Euler,
   Float32BufferAttribute,
   Group,
+  type Material,
   MathUtils,
   Matrix4,
   Mesh,
@@ -49,7 +50,6 @@ import {
   Quaternion,
   TorusGeometry,
   Vector3,
-  type Material,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { worldGridUVs } from "./materials.js";
@@ -86,14 +86,7 @@ export type BoatPlacement = {
 const ONE = new Vector3(1, 1, 1);
 
 /** A transform for a part, authored in the prop's own local frame. */
-function place(
-  x: number,
-  y: number,
-  z: number,
-  rx = 0,
-  ry = 0,
-  rz = 0,
-): Matrix4 {
+function place(x: number, y: number, z: number, rx = 0, ry = 0, rz = 0): Matrix4 {
   return new Matrix4().compose(
     new Vector3(x, y, z),
     new Quaternion().setFromEuler(new Euler(rx, ry, rz)),
@@ -471,20 +464,18 @@ const tableAt = (table: readonly number[], index: number): number => table[index
 
 /** Plan-form half-beam at station `u` ∈ [−1, 1]; +1 is the bow. */
 function halfBeamAt(u: number): number {
-  if (u >= 0) return BOAT.halfBeam * Math.pow(Math.max(0, 1 - u * u * u), 0.55);
-  return BOAT.halfBeam * (1 - 0.3 * Math.pow(Math.min(1, -u), 2.6));
+  if (u >= 0) return BOAT.halfBeam * Math.max(0, 1 - u * u * u) ** 0.55;
+  return BOAT.halfBeam * (1 - 0.3 * Math.min(1, -u) ** 2.6);
 }
 
 /** Sheer line: higher at bow and stern than amidships. */
 function sheerAt(u: number): number {
-  return (
-    BOAT.sheer + 0.24 * Math.pow(Math.max(0, u), 2.4) + 0.14 * Math.pow(Math.max(0, -u), 2.6)
-  );
+  return BOAT.sheer + 0.24 * Math.max(0, u) ** 2.4 + 0.14 * Math.max(0, -u) ** 2.6;
 }
 
 /** Keel line, with rocker lifting both ends clear of the water. */
 function keelAt(u: number): number {
-  return BOAT.keel + 0.34 * Math.pow(Math.abs(u), 2.8);
+  return BOAT.keel + 0.34 * Math.abs(u) ** 2.8;
 }
 
 const courseY = (u: number, k: number): number =>
@@ -672,11 +663,7 @@ function boatDressing(batch: PartBatch, m: VehicleMaterials, timber: Material): 
   }
 
   // A coil of mooring line forward and two fish crates aft.
-  batch.add(
-    m.rope,
-    new TorusGeometry(0.15, 0.042, 5, 14),
-    place(1.35, -0.03, 0.12, Math.PI / 2),
-  );
+  batch.add(m.rope, new TorusGeometry(0.15, 0.042, 5, 14), place(1.35, -0.03, 0.12, Math.PI / 2));
   const crate = roundedBox(0.44, 0.28, 0.3, 0.03);
   batch.add(timber, crate, place(-1.28, 0.02, 0.24, 0, 0.18, 0));
   batch.add(timber, crate, place(-1.36, 0.02, -0.22, 0, -0.1, 0));
@@ -720,11 +707,7 @@ function driftOnTheSwell(boat: Group, baseY: number, phase: number): void {
  * Place a moored fishing boat. No collider: it floats past the playable deck,
  * and a bullet or a footstep must never meet it.
  */
-export function addFishingBoat(
-  group: Group,
-  materials: TownMaterials,
-  at: BoatPlacement,
-): Group {
+export function addFishingBoat(group: Group, materials: TownMaterials, at: BoatPlacement): Group {
   const m = vehicleMaterials(materials);
   const boat = new Group();
   boat.name = "fishing-boat";
@@ -746,10 +729,7 @@ export function addFishingBoat(
       .add(new Vector3(at.x, at.waterY, at.z));
     const target = new Vector3(post[0], post[1], post[2]);
     const span = target.clone().sub(stem);
-    const rope = new Mesh(
-      new CylinderGeometry(0.022, 0.022, span.length(), 5),
-      m.rope,
-    );
+    const rope = new Mesh(new CylinderGeometry(0.022, 0.022, span.length(), 5), m.rope);
     rope.name = "boat-painter";
     rope.position.copy(stem).add(span.clone().multiplyScalar(0.5));
     rope.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), span.clone().normalize());

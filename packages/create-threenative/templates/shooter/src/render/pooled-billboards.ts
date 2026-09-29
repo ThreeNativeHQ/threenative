@@ -1,7 +1,7 @@
 import {
   type BufferGeometry,
   Mesh,
-  MeshBasicMaterial,
+  type MeshBasicMaterial,
   type Object3D,
   PlaneGeometry,
   Vector3,
@@ -70,7 +70,15 @@ export class PooledBillboards {
       mesh.visible = true;
       (mesh.material as MeshBasicMaterial).opacity = 0;
       parent.add(mesh);
-      return { drift: new Vector3(), life: 0, life0: 1, mesh, opacity0: 0, scaleFrom: 1, scaleTo: 1 };
+      return {
+        drift: new Vector3(),
+        life: 0,
+        life0: 1,
+        mesh,
+        opacity0: 0,
+        scaleFrom: 1,
+        scaleTo: 1,
+      };
     });
   }
 
@@ -90,14 +98,7 @@ export class PooledBillboards {
   }
 
   /** Birth one card on the next recycled slot. */
-  spawn({
-    at,
-    life,
-    drift,
-    scaleFrom,
-    scaleTo,
-    opacity,
-  }: IBillboardSpawn): void {
+  spawn({ at, life, drift, scaleFrom, scaleTo, opacity }: IBillboardSpawn): void {
     const slot = this.#slots[this.#cursor % this.#slots.length];
     this.#cursor += 1;
     if (slot === undefined || life <= 0) return;
@@ -126,7 +127,9 @@ export class PooledBillboards {
       }
       const age = 1 - slot.life / slot.life0;
       slot.mesh.position.addScaledVector(slot.drift, dt);
-      slot.mesh.scale.copy(scratchScale.setScalar(slot.scaleFrom + (slot.scaleTo - slot.scaleFrom) * age));
+      slot.mesh.scale.copy(
+        scratchScale.setScalar(slot.scaleFrom + (slot.scaleTo - slot.scaleFrom) * age),
+      );
       material.opacity = slot.opacity0 * (slot.life / slot.life0);
       slot.mesh.lookAt(eye);
     }

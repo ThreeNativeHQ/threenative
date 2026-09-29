@@ -8,21 +8,69 @@
   "subject": "player",
   "steps": [
     { "kind": "wait", "label": "no-input-control", "waitTicks": 5, "release": true },
-    { "kind": "input", "label": "wake-pointer", "pointerPosition": { "x": 0.5, "y": 0.5 }, "holdTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "label": "wake-pointer",
+      "pointerPosition": { "x": 0.5, "y": 0.5 },
+      "holdTicks": 2,
+      "release": true
+    },
     { "kind": "wait", "label": "wake-settle", "waitTicks": 4, "release": true },
-    { "kind": "input", "label": "reset-heading", "press": "Enter", "holdTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "label": "reset-heading",
+      "press": "Enter",
+      "holdTicks": 2,
+      "release": true
+    },
     { "kind": "wait", "label": "reset-settle", "waitTicks": 30, "release": true },
-    { "kind": "input", "label": "aim-down", "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 2 }, "holdTicks": 2, "release": false },
+    {
+      "kind": "input",
+      "label": "aim-down",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 2 },
+      "holdTicks": 2,
+      "release": false
+    },
     { "kind": "wait", "label": "aim-settle", "waitTicks": 6, "release": true },
-    { "kind": "input", "label": "look-right", "pointerPosition": { "x": 0.75, "y": 0.5 }, "holdTicks": 2, "release": false },
-    { "kind": "wait", "label": "look-right-settle", "waitTicks": 8, "release": true, "screenshot": "input-look-right" },
-    { "kind": "input", "label": "look-back", "pointerPosition": { "x": 0.5, "y": 0.5 }, "holdTicks": 2, "release": false },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": { "x": 0.75, "y": 0.5 },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "look-right-settle",
+      "waitTicks": 8,
+      "release": true,
+      "screenshot": "input-look-right"
+    },
+    {
+      "kind": "input",
+      "label": "look-back",
+      "pointerPosition": { "x": 0.5, "y": 0.5 },
+      "holdTicks": 2,
+      "release": false
+    },
     { "kind": "wait", "label": "look-back-settle", "waitTicks": 8, "release": true },
-    { "kind": "input", "label": "release-buttons", "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 }, "holdTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "label": "release-buttons",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 },
+      "holdTicks": 2,
+      "release": true
+    },
     { "kind": "wait", "label": "release-settle", "waitTicks": 8, "release": true },
     { "kind": "input", "label": "aim-key", "press": "KeyF", "holdTicks": 2, "release": false },
     { "kind": "wait", "label": "aim-key-settle", "waitTicks": 6, "release": false },
-    { "kind": "input", "label": "fire-while-aiming", "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 1 }, "holdTicks": 2, "release": true },
+    {
+      "kind": "input",
+      "label": "fire-while-aiming",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 1 },
+      "holdTicks": 2,
+      "release": true
+    },
     { "kind": "wait", "label": "fire-settle", "waitTicks": 8, "release": true }
   ],
   "assert": {

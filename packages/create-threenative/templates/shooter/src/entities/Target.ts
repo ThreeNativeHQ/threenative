@@ -1,10 +1,10 @@
 import type { ICtx } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import { Group, Mesh, type Material, type Vector3Like } from "three";
+import { Group, type Material, Mesh, type Vector3Like } from "three";
 import { scale } from "../render/scale.js";
 import { unitBox, unitPlane } from "../render/shapes.js";
-import { tagSurface } from "../surfaces.js";
 import type { GameState } from "../state.js";
+import { tagSurface } from "../surfaces.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -88,7 +88,11 @@ export class Target {
         this.group.add(post);
       }
       const brace = new Mesh(unitBox(), materials.steel);
-      brace.scale.set(width + scale.ankleHeight * 3, scale.ankleHeight * 2.5, scale.ankleHeight * 2.5);
+      brace.scale.set(
+        width + scale.ankleHeight * 3,
+        scale.ankleHeight * 2.5,
+        scale.ankleHeight * 2.5,
+      );
       brace.name = "target-brace";
       brace.position.set(0, -height / 2 - 0.03, 0);
       brace.castShadow = true;
@@ -133,8 +137,12 @@ export class Target {
 
       if (mountSurfaceY === 0) {
         const foot = new Mesh(unitBox(), materials.steel);
-          foot.scale.set(width + scale.ankleHeight * 18, scale.ankleHeight * 4, scale.ankleHeight * 18);
-          foot.name = "target-mount-foot";
+        foot.scale.set(
+          width + scale.ankleHeight * 18,
+          scale.ankleHeight * 4,
+          scale.ankleHeight * 18,
+        );
+        foot.name = "target-mount-foot";
         foot.position.set(0, scale.ankleHeight * 2 - spec.position.y, -scale.ankleHeight * 1.5);
         foot.receiveShadow = true;
         this.group.add(foot);
@@ -144,15 +152,19 @@ export class Target {
         const railY =
           scale.walkwaySurface - scale.walkway.thickness / 2 + scale.handrailHeight + 0.05;
         const railBracket = new Mesh(unitBox(), materials.steel);
-          railBracket.scale.set(width + scale.ankleHeight * 7, scale.ankleHeight * 3, 0.22);
-          railBracket.name = "target-rail-bracket";
+        railBracket.scale.set(width + scale.ankleHeight * 7, scale.ankleHeight * 3, 0.22);
+        railBracket.name = "target-rail-bracket";
         railBracket.position.set(0, railY - spec.position.y, -0.1);
         railBracket.castShadow = true;
         this.group.add(railBracket);
       }
 
       const mount = new Mesh(unitBox(), materials.steel);
-      mount.scale.set(width + scale.ankleHeight * 6, scale.ankleHeight * 2.5, scale.ankleHeight * 4);
+      mount.scale.set(
+        width + scale.ankleHeight * 6,
+        scale.ankleHeight * 2.5,
+        scale.ankleHeight * 4,
+      );
       mount.name = "target-mount";
       mount.position.set(0, -scale.ankleHeight * 1.25, -scale.ankleHeight * 2);
       mount.castShadow = true;

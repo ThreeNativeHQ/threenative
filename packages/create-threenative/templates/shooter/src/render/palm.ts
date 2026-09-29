@@ -83,7 +83,13 @@ type FrondSpec = {
   readonly tip: readonly [number, number, number];
 };
 
-function tint(values: number[], from: readonly [number, number, number], to: readonly [number, number, number], t: number, gain: number): void {
+function tint(
+  values: number[],
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+  t: number,
+  gain: number,
+): void {
   values.push(
     (from[0] + (to[0] - from[0]) * t) * gain,
     (from[1] + (to[1] - from[1]) * t) * gain,
@@ -118,7 +124,7 @@ function frondGeometry(spec: FrondSpec, rng: () => number): BufferGeometry {
     const along = (i + 0.5) / segments;
     // The droop accelerates: a frond is stiff where it leaves the crown and
     // limp at the tip, so the pitch is eased rather than lerped.
-    const pitch = rise + (droop - rise) * Math.pow(along, 1.65);
+    const pitch = rise + (droop - rise) * along ** 1.65;
     walker.x += Math.cos(pitch) * step;
     walker.y += Math.sin(pitch) * step;
     walker.z += curl * along * step;
@@ -194,7 +200,7 @@ function trunkGeometry(spine: CatmullRomCurve3): BufferGeometry {
   const scarPhase = (t: number, column: number): number =>
     (t * BARK_STEPS + (column % 2) * 0.5) % 1;
   const radiusAt = (t: number, column: number): number => {
-    const taper = TRUNK_BASE_RADIUS + (TRUNK_TOP_RADIUS - TRUNK_BASE_RADIUS) * Math.pow(t, 0.7);
+    const taper = TRUNK_BASE_RADIUS + (TRUNK_TOP_RADIUS - TRUNK_BASE_RADIUS) * t ** 0.7;
     const flare = 1 + 0.5 * Math.exp(-t * 15);
     return taper * flare * (1 + 0.12 * (1 - scarPhase(t, column)));
   };
@@ -314,11 +320,7 @@ function buildPalm(seed: number): PalmParts {
       // frond is a feather, and leaflet count is what separates the two.
       segments: LEAFLETS_PER_SIDE,
       shade: [0.58 * depth * jitter, 0.66 * depth * jitter, 0.44 * depth * jitter],
-      tip: [
-        1.22 * bleach * jitter * 1.06,
-        1.16 * bleach * jitter,
-        0.78 * bleach * jitter * 0.88,
-      ],
+      tip: [1.22 * bleach * jitter * 1.06, 1.16 * bleach * jitter, 0.78 * bleach * jitter * 0.88],
     };
     live.push(placed(frondGeometry(spec, rng), azimuth, crown));
   }

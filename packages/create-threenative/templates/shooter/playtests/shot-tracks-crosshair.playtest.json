@@ -12,11 +12,7 @@
     "entities": [
       {
         "entity": "player",
-        "position": [
-          6,
-          0.89,
-          0
-        ]
+        "position": [6, 0.89, 0]
       }
     ]
   },
@@ -30,10 +26,7 @@
     {
       "kind": "input",
       "label": "damage-shake-shot",
-      "press": [
-        "KeyF",
-        "Space"
-      ],
+      "press": ["KeyF", "Space"],
       "holdTicks": 3,
       "release": true
     },

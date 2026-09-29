@@ -113,7 +113,11 @@ export function emitText(
       const originX = x + column * GLYPH_ADVANCE * pixel;
       const originY = y + line * GLYPH_LEADING * pixel;
       for (let index = 0; index < pixels.length; index += 2) {
-        plot(originX + (pixels[index] ?? 0) * pixel, originY + (pixels[index + 1] ?? 0) * pixel, pixel);
+        plot(
+          originX + (pixels[index] ?? 0) * pixel,
+          originY + (pixels[index + 1] ?? 0) * pixel,
+          pixel,
+        );
       }
     }
     column += 1;

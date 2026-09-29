@@ -27,33 +27,28 @@ import {
   RingGeometry,
   Vector3,
 } from "three";
-import { type TargetSpec } from "../entities/Target.js";
-import {
-  addArchGateway,
-  addDoorsAndShutters,
-  addRoofLife,
-  BAYVIEW_ARCHES,
-  createFacade,
-  FACE_INDEX,
-  FACE_NORMAL,
-  finishFacade,
-  visibleFaces,
-  type Face,
-} from "./facade.js";
-import { addPalms, type PalmPlacement } from "./palm.js";
-import { unitCylinder } from "./shapes.js";
-import { gridSolid } from "./townMaterials.js";
-import { worldGridUVs } from "./materials.js";
+import type { TargetSpec } from "../entities/Target.js";
 // Impact surfaces are stamped here at construction so audio, VFX and any later
 // consumer read one tag off the mesh instead of re-deriving name tables.
 import { tagSurfaces } from "../surfaces.js";
-import type { TownMaterials } from "./townMaterials.js";
 import {
-  addFishingBoat,
-  addVan,
-  type BoatPlacement,
-  type VanPlacement,
-} from "./vehicles.js";
+  BAYVIEW_ARCHES,
+  FACE_INDEX,
+  FACE_NORMAL,
+  type Face,
+  addArchGateway,
+  addDoorsAndShutters,
+  addRoofLife,
+  createFacade,
+  finishFacade,
+  visibleFaces,
+} from "./facade.js";
+import { worldGridUVs } from "./materials.js";
+import { type PalmPlacement, addPalms } from "./palm.js";
+import { unitCylinder } from "./shapes.js";
+import { gridSolid } from "./townMaterials.js";
+import type { TownMaterials } from "./townMaterials.js";
+import { type BoatPlacement, type VanPlacement, addFishingBoat, addVan } from "./vehicles.js";
 
 import {
   A_SITE_MARK,
@@ -93,8 +88,6 @@ export type TownCollider = {
 
 export type TownSpawn = { x: number; z: number; yaw: number };
 export type TownRoute = readonly Vector3[];
-
-
 
 export type Town = {
   readonly group: Group;
@@ -401,9 +394,7 @@ function addCylinderProp(
     ? frustumCylinder(radiusTop, radiusBottom, height, segments)
     : unitCylinder(segments);
   const mesh = new Mesh(
-    worldGridUVs(
-      frustum ? source : source.clone().scale(radiusTop, height, radiusTop),
-    ),
+    worldGridUVs(frustum ? source : source.clone().scale(radiusTop, height, radiusTop)),
     material,
   );
   if (name !== undefined) mesh.name = name;
@@ -500,10 +491,7 @@ function addStairs(
       height,
       uz !== 0 ? depth : width,
     ];
-    const mesh = new Mesh(
-      gridSolid(size, [centreX, baseY + height / 2, centreZ]),
-      material,
-    );
+    const mesh = new Mesh(gridSolid(size, [centreX, baseY + height / 2, centreZ]), material);
     mesh.name = "stair-step";
     mesh.castShadow = false;
     mesh.receiveShadow = true;
@@ -533,15 +521,11 @@ function addRail(
   const posts = Math.max(2, Math.round(length / 3) + 1);
   for (let index = 0; index < posts; index += 1) {
     const t = index / (posts - 1);
-    addCylinderProp(
-      group,
-      material,
-      0.035,
-      0.035,
-      0.95,
-      5,
-      [ax + (bx - ax) * t, baseY + 0.475, az + (bz - az) * t],
-    );
+    addCylinderProp(group, material, 0.035, 0.035, 0.95, 5, [
+      ax + (bx - ax) * t,
+      baseY + 0.475,
+      az + (bz - az) * t,
+    ]);
   }
   addProp(
     group,
@@ -565,14 +549,7 @@ const SITE_MARKS: readonly {
 
 /** Rooftop power lines: thin dark catenary spans between neighbouring roofs,
  * purely visual — they never block a bullet or a sight line. */
-const WIRES: readonly (readonly [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-])[] = [
+const WIRES: readonly (readonly [number, number, number, number, number, number])[] = [
   // Across the CT yard: north band's tall setback storey to the north-east corner.
   [-10, 9.4, -26, 20, 7.4, -36],
   // Across mid: back-plat row's setback roof to the mid-west wall.
@@ -615,9 +592,6 @@ function addWire(
  * three. The numbers are the deck's walking surface extents on the ground
  * plane; heights live with the meshes below.
  */
-
-
-
 
 export function buildTown(materials: TownMaterials): Town {
   const group = new Group();
@@ -663,14 +637,43 @@ export function buildTown(materials: TownMaterials): Town {
   water.rotation.x = -Math.PI / 2;
   water.position.set(WATER_X + 108, -1.1, -10);
   group.add(water);
-  const shallows = new Mesh(gridSolid([5.5, 0.04, 260], [WATER_X + 2.75, -0.96, -10]), materials.shallow);
+  const shallows = new Mesh(
+    gridSolid([5.5, 0.04, 260], [WATER_X + 2.75, -0.96, -10]),
+    materials.shallow,
+  );
   group.add(shallows);
 
   // Quay wall along the east edge, with the dock gap z −10…−2 left open.
-  addSolid(group, colliders, hittable, materials.quay, [1.4, 1.1, 32], [WATER_X - 0.7, 0.55, -26], "quay-n");
-  addSolid(group, colliders, hittable, materials.quay, [1.4, 1.1, 44], [WATER_X - 0.7, 0.55, 20], "quay-s");
+  addSolid(
+    group,
+    colliders,
+    hittable,
+    materials.quay,
+    [1.4, 1.1, 32],
+    [WATER_X - 0.7, 0.55, -26],
+    "quay-n",
+  );
+  addSolid(
+    group,
+    colliders,
+    hittable,
+    materials.quay,
+    [1.4, 1.1, 44],
+    [WATER_X - 0.7, 0.55, 20],
+    "quay-s",
+  );
   for (const z of [-20, -14, 6, 16, 26]) {
-    addCylinderProp(group, materials.steelPost, 0.13, 0.16, 0.55, 8, [WATER_X - 0.7, 1.38, z], "bollard", true);
+    addCylinderProp(
+      group,
+      materials.steelPost,
+      0.13,
+      0.16,
+      0.55,
+      8,
+      [WATER_X - 0.7, 1.38, z],
+      "bollard",
+      true,
+    );
   }
 
   // Dock pier: plank deck on posts, running east into the water at the
@@ -691,10 +694,7 @@ export function buildTown(materials: TownMaterials): Town {
   });
   for (let index = 0; index < 4; index += 1) {
     for (const side of [-1, 1]) {
-      const post = new Mesh(
-        worldGridUVs(frustumCylinder(0.18, 0.22, 2.4, 6)),
-        materials.deckWood,
-      );
+      const post = new Mesh(worldGridUVs(frustumCylinder(0.18, 0.22, 2.4, 6)), materials.deckWood);
       post.name = "pier-post";
       post.position.set(PIER.x0 + 2.5 + index * 5, -1.08, PIER.z + side * 1.9);
       post.castShadow = true;
@@ -712,15 +712,11 @@ export function buildTown(materials: TownMaterials): Town {
     railBeam.name = "pier-rail";
     group.add(railBeam);
     for (let index = 0; index < 5; index += 1) {
-      addCylinderProp(
-        group,
-        materials.steelMast,
-        0.04,
-        0.04,
-        0.95,
-        5,
-        [PIER.x0 + 1.5 + index * 4.25, 0.72, PIER.z + side * 2.05],
-      );
+      addCylinderProp(group, materials.steelMast, 0.04, 0.04, 0.95, 5, [
+        PIER.x0 + 1.5 + index * 4.25,
+        0.72,
+        PIER.z + side * 2.05,
+      ]);
     }
   }
 
@@ -787,11 +783,7 @@ export function buildTown(materials: TownMaterials): Town {
     colliders,
     hittable,
     materials.deckWood,
-    [
-      HEAVEN_DECK.maxX - HEAVEN_DECK.minX,
-      DECK_THICKNESS,
-      HEAVEN_DECK.maxZ - HEAVEN_DECK.minZ,
-    ],
+    [HEAVEN_DECK.maxX - HEAVEN_DECK.minX, DECK_THICKNESS, HEAVEN_DECK.maxZ - HEAVEN_DECK.minZ],
     [
       (HEAVEN_DECK.minX + HEAVEN_DECK.maxX) / 2,
       4.8 - DECK_THICKNESS / 2,
@@ -805,11 +797,7 @@ export function buildTown(materials: TownMaterials): Town {
   // Catwalk bridge on posts from the back plat's south-east corner to B site.
   const catwalkDeck = new Mesh(
     gridSolid(
-      [
-        CATWALK_DECK.maxX - CATWALK_DECK.minX,
-        0.22,
-        CATWALK_DECK.maxZ - CATWALK_DECK.minZ,
-      ],
+      [CATWALK_DECK.maxX - CATWALK_DECK.minX, 0.22, CATWALK_DECK.maxZ - CATWALK_DECK.minZ],
       [
         (CATWALK_DECK.minX + CATWALK_DECK.maxX) / 2,
         2.29,
@@ -871,7 +859,6 @@ export function buildTown(materials: TownMaterials): Town {
 
   // Rooftop power lines between neighbouring roofs; visual dressing only.
   for (const wire of WIRES) addWire(group, materials, wire);
-
 
   // Crates and barrels: clusters against walls and on the sites.
   CRATES.forEach(([x, z, tiers], crateIndex) => {

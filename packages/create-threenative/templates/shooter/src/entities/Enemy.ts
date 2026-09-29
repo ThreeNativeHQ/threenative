@@ -1,7 +1,7 @@
 import {
   AnimationPlayer,
-  attachToBone,
   type ICtx,
+  attachToBone,
   measureThreePose,
   normaliseToMetres,
 } from "@threenative/core";
@@ -21,8 +21,8 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import type { TownCollider } from "../render/town.js";
 import { scale } from "../render/scale.js";
+import type { TownCollider } from "../render/town.js";
 import type { GameState } from "../state.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
@@ -252,8 +252,7 @@ const LOS_INTERVAL_SECONDS = 0;
  */
 const GOAL_REPLAN_SECONDS = 0.15;
 /** Spreads the squad's raycasts across frames, so five soldiers never all test on the same one. */
-let losStagger = 0;
-
+const losStagger = 0;
 
 /** Blocked-cell bitmaps per collider set, so the squad pays for the nav grid once. */
 const NAV_GRIDS = new WeakMap<object, Map<string, Uint8Array>>();
@@ -830,9 +829,7 @@ export class Enemy {
    * rather than a model with a `Grip_Bone` in it.
    */
   #equip(model: Object3D): void {
-    const hand =
-      model.getObjectByName("hand_r") ??
-      findBone(model, /right.*hand|hand.*r$|hand_r/i);
+    const hand = model.getObjectByName("hand_r") ?? findBone(model, /right.*hand|hand.*r$|hand_r/i);
     this.#rightHand = hand;
     this.#leftHand =
       model.getObjectByName("hand_l") ?? findBone(model, /left.*hand|hand.*l$|hand_l/i);
@@ -868,10 +865,9 @@ export class Enemy {
     ctx.scene.attach(holder);
     this.#weaponDetached = true;
     this.#weaponSettled = false;
-    this.#weaponVelocity.set(0.45, 1.4, -0.25).applyAxisAngle(
-      new Vector3(0, 1, 0),
-      this.group.rotation.y,
-    );
+    this.#weaponVelocity
+      .set(0.45, 1.4, -0.25)
+      .applyAxisAngle(new Vector3(0, 1, 0), this.group.rotation.y);
   }
 
   #updateDetachedWeapon(dt: number, deckY: number): void {
@@ -1027,7 +1023,6 @@ export class Enemy {
     if (truth !== undefined) this.#envelopeBias = truth - this.#lowestSkinY();
   }
 
-
   /**
    * Lowest posed point of the body, in world Y. O(bones) with no allocation, against the
    * O(vertices × 4 matrix multiplies) of a precise `Box3`. Assumes world matrices are
@@ -1057,7 +1052,6 @@ export class Enemy {
     body.teleport(proxy.position);
   }
 
-
   /**
    * Fade a soldier in or out without changing his pipeline.
    *
@@ -1078,7 +1072,10 @@ export class Enemy {
    * mid-fight — and a corpse fading on the ground is not what anyone is looking at.
    */
   #setOpacity(alpha: number): void {
-    const objects = [...this.#bodyMeshes, ...(this.#weaponModel === undefined ? [] : [this.#weaponModel])];
+    const objects = [
+      ...this.#bodyMeshes,
+      ...(this.#weaponModel === undefined ? [] : [this.#weaponModel]),
+    ];
     for (const object of objects) {
       object.traverse((child) => {
         const mesh = child as Mesh;
@@ -1099,7 +1096,10 @@ export class Enemy {
    * frame is part of the loading screen, rather than on the frame someone dies.
    */
   #fixBlendState(): void {
-    const objects = [...this.#bodyMeshes, ...(this.#weaponModel === undefined ? [] : [this.#weaponModel])];
+    const objects = [
+      ...this.#bodyMeshes,
+      ...(this.#weaponModel === undefined ? [] : [this.#weaponModel]),
+    ];
     for (const object of objects) {
       object.traverse((child) => {
         const mesh = child as Mesh;
@@ -1164,8 +1164,12 @@ export class Enemy {
     }
 
     // Snapshot every posed bone: this walks the clip, and the caller measured the bind pose.
-    const restored: { bone: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 }[] =
-      [];
+    const restored: {
+      bone: Object3D;
+      position: Vector3;
+      quaternion: Quaternion;
+      scale: Vector3;
+    }[] = [];
     this.group.traverse((object) => {
       restored.push({
         bone: object,
@@ -1247,10 +1251,7 @@ export class Enemy {
     // How fast the feet believe the body is going, over how fast it is. 1 is no slip.
     if (this.#groundSpeed >= LOCOMOTION_RATE_FLOOR) {
       this.#strideErrorRatio = (clipSpeed * rate) / this.#groundSpeed;
-      this.#strideErrorPeak = Math.max(
-        this.#strideErrorPeak,
-        Math.abs(this.#strideErrorRatio - 1),
-      );
+      this.#strideErrorPeak = Math.max(this.#strideErrorPeak, Math.abs(this.#strideErrorRatio - 1));
     } else {
       this.#strideErrorRatio = 1;
     }
@@ -1412,12 +1413,7 @@ export class Enemy {
     const x = this.group.position.x;
     const z = this.group.position.z;
     for (const deck of this.#decks) {
-      if (
-        x > deck.minX &&
-        x < deck.maxX &&
-        z > deck.minZ &&
-        z < deck.maxZ
-      ) {
+      if (x > deck.minX && x < deck.maxX && z > deck.minZ && z < deck.maxZ) {
         return true;
       }
     }
@@ -1507,13 +1503,7 @@ export class Enemy {
             if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
             const x = gx + dx;
             const z = gz + dz;
-            if (
-              x >= 0 &&
-              z >= 0 &&
-              x < width &&
-              z < width &&
-              !cellBlocked(x, z)
-            ) {
+            if (x >= 0 && z >= 0 && x < width && z < width && !cellBlocked(x, z)) {
               replacement = [x, z];
               break;
             }
@@ -1531,8 +1521,14 @@ export class Enemy {
     const gScore = new Map<number, number>([[start, 0]]);
     const fScore = new Map<number, number>([[start, Math.hypot(gx - sx, gz - sz)]]);
     const neighbours: readonly (readonly [number, number, number])[] = [
-      [-1, 0, 1], [1, 0, 1], [0, -1, 1], [0, 1, 1],
-      [-1, -1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [1, 1, Math.SQRT2],
+      [-1, 0, 1],
+      [1, 0, 1],
+      [0, -1, 1],
+      [0, 1, 1],
+      [-1, -1, Math.SQRT2],
+      [1, -1, Math.SQRT2],
+      [-1, 1, Math.SQRT2],
+      [1, 1, Math.SQRT2],
     ];
 
     while (open.size > 0) {
@@ -1555,11 +1551,8 @@ export class Enemy {
         if (nx < 0 || nz < 0 || nx >= width || nz >= width) continue;
         if (cellBlocked(nx, nz)) continue;
         // Do not squeeze diagonally between two touching solids.
-        if (
-          dx !== 0 &&
-          dz !== 0 &&
-          (cellBlocked(cx + dx, cz) || cellBlocked(cx, cz + dz))
-        ) continue;
+        if (dx !== 0 && dz !== 0 && (cellBlocked(cx + dx, cz) || cellBlocked(cx, cz + dz)))
+          continue;
         const next = key(nx, nz);
         const tentative = (gScore.get(current) ?? Number.POSITIVE_INFINITY) + cost;
         if (tentative >= (gScore.get(next) ?? Number.POSITIVE_INFINITY)) continue;
@@ -1585,9 +1578,12 @@ export class Enemy {
 
     const smooth: Vector3[] = [];
     let anchor = new Vector3(this.group.position.x, 0, this.group.position.z);
-    for (let index = 0; index < raw.length;) {
+    for (let index = 0; index < raw.length; ) {
       let furthest = index;
-      while (furthest + 1 < raw.length && this.#segmentClear(anchor, raw[furthest + 1] as Vector3)) {
+      while (
+        furthest + 1 < raw.length &&
+        this.#segmentClear(anchor, raw[furthest + 1] as Vector3)
+      ) {
         furthest += 1;
       }
       const waypoint = (raw[furthest] as Vector3).clone();
@@ -1749,8 +1745,7 @@ export class Enemy {
       this.#pathIndex >= this.#path.length - 1
         ? MathUtils.clamp(distance / ARRIVE_DISTANCE, ARRIVE_FLOOR, 1)
         : 1;
-    const wanted =
-      Math.min(speed * this.#gait, this.#clipPaceCap(crouched)) * cornering * arriving;
+    const wanted = Math.min(speed * this.#gait, this.#clipPaceCap(crouched)) * cornering * arriving;
     const gained = MathUtils.clamp(wanted - this.#pace, -WALK_DECEL * dt, WALK_ACCEL * dt);
     this.#pace += gained;
     this.#paceRate = dt > 0 ? gained / dt : 0;
@@ -1770,7 +1765,6 @@ export class Enemy {
     if (faceTravel) this.group.rotation.y = this.#facing.step(heading, dt);
     return true;
   }
-
 
   /**
    * Can he see the player right now?
@@ -1821,7 +1815,7 @@ export class Enemy {
     if (this.health <= 0) {
       this.health = 0;
       this.phase = "dead";
-    this.#decelExempt = true;
+      this.#decelExempt = true;
       this.voice?.death(this.group.position);
       this.#deadFor = 0;
       this.#deathObserved = true;
@@ -2109,14 +2103,12 @@ export class Enemy {
     this.#standUp = Math.max(0, this.#standUp - dt);
     this.#suppressed = Math.max(0, this.#suppressed - dt);
     this.#locomotionHold = Math.max(0, this.#locomotionHold - dt);
-    {
-      this.#animation?.update(dt);
-      // Straight after the mixer writes the pose and before anything reads the bones: the
-      // carriage is a delta on top of the clip, and the clip is rewritten every frame.
-      this.#applyCarriage(dt);
-      this.#countClipFrame();
-      this.#updateFootsteps(hooks);
-    }
+    this.#animation?.update(dt);
+    // Straight after the mixer writes the pose and before anything reads the bones: the
+    // carriage is a delta on top of the clip, and the clip is rewritten every frame.
+    this.#applyCarriage(dt);
+    this.#countClipFrame();
+    this.#updateFootsteps(hooks);
     this.#groundToDeck(deckY, dt);
     this.#syncCollisionBody();
     if (this.#fade < 1) {
@@ -2227,7 +2219,10 @@ export class Enemy {
       if (horizontal.lengthSq() < 1e-6) horizontal.set(0, 0, 1);
       horizontal.setLength(Math.sqrt(Math.max(0, length * length - desiredY * desiredY)));
       const desired = horizontal.setY(desiredY);
-      const worldDelta = new Quaternion().setFromUnitVectors(current.normalize(), desired.normalize());
+      const worldDelta = new Quaternion().setFromUnitVectors(
+        current.normalize(),
+        desired.normalize(),
+      );
       const parentWorld = upLeg.parent.getWorldQuaternion(new Quaternion());
       const localDelta = parentWorld.clone().invert().multiply(worldDelta).multiply(parentWorld);
       const target = localDelta.multiply(upLeg.quaternion.clone());
@@ -2300,11 +2295,8 @@ export class Enemy {
     // moving, he keeps the rifle as far round as the feet can carry without moonwalking, which
     // is a flanker who never takes his weapon off you rather than one who turns his back.
     const carry = moved
-      ? this.#heading.value + MathUtils.clamp(
-          angleDelta(this.#heading.value, aim),
-          -AIM_LEAD_MAX,
-          AIM_LEAD_MAX,
-        )
+      ? this.#heading.value +
+        MathUtils.clamp(angleDelta(this.#heading.value, aim), -AIM_LEAD_MAX, AIM_LEAD_MAX)
       : aim;
     this.group.rotation.y = this.#facing.step(carry, dt, 1.25);
     // The firing clip owns the pose for as long as the burst lasts; locomotion resumes after.
@@ -2417,8 +2409,7 @@ export class Enemy {
       this.#weapon === undefined || this.#weaponModel === undefined
         ? null
         : measureThreePose(this.#weapon, { bounds: false });
-    const rifleForward =
-      weaponPose === null ? null : new Vector3().fromArray(weaponPose.axes.z);
+    const rifleForward = weaponPose === null ? null : new Vector3().fromArray(weaponPose.axes.z);
     const enemyForward = new Vector3(0, 0, 1)
       .applyQuaternion(this.group.getWorldQuaternion(this.group.quaternion.clone()))
       .normalize();
@@ -2426,8 +2417,8 @@ export class Enemy {
     // a soldier holding his rifle anywhere else is a bug, and there is no bone to compare with.
     const gripPosition = this.#weapon?.getWorldPosition(new Vector3()) ?? null;
     const rightHandPosition = this.#rightHand?.getWorldPosition(new Vector3()) ?? null;
-    const magazinePosition = this.#weaponModel?.getObjectByName("magazine")
-      ?.getWorldPosition(new Vector3()) ?? null;
+    const magazinePosition =
+      this.#weaponModel?.getObjectByName("magazine")?.getWorldPosition(new Vector3()) ?? null;
     const leftHandPosition = this.#leftHand?.getWorldPosition(new Vector3()) ?? null;
     const rifleStart = this.#weapon?.localToWorld(new Vector3(0, 0, this.#rifleLocalMinZ)) ?? null;
     const rifleEnd = this.#weapon?.localToWorld(new Vector3(0, 0, this.#rifleLocalMaxZ)) ?? null;
@@ -2481,9 +2472,7 @@ export class Enemy {
       // Metres the corpse has climbed above the spot it was standing on when it died.
       // Negative means it settled, which is the only direction a body goes.
       deathRiseM:
-        this.#deathGroundCeiling === null
-          ? 0
-          : this.group.position.y - this.#deathGroundCeiling,
+        this.#deathGroundCeiling === null ? 0 : this.group.position.y - this.#deathGroundCeiling,
       deathClip: this.#deathClip,
       deathClipFrames: this.#deathClipFrames,
       clips: [...this.#clips].sort(),
@@ -2502,7 +2491,11 @@ export class Enemy {
       clipMarkerDownDot:
         magazinePosition === null || gripPosition === null
           ? null
-          : magazinePosition.clone().sub(gripPosition).normalize().dot(new Vector3(0, -1, 0)),
+          : magazinePosition
+              .clone()
+              .sub(gripPosition)
+              .normalize()
+              .dot(new Vector3(0, -1, 0)),
       rifleLength: weaponPose === null ? null : this.#renderedRifleLength,
       rightHandToGrip:
         rightHandPosition === null || gripPosition === null

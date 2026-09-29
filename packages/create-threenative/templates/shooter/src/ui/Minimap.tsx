@@ -70,7 +70,13 @@ export function Minimap({
 
   return (
     <div className="hud-minimap pointer-events-none absolute left-4 top-4 h-[180px] w-[180px] rounded-full bg-black/55 shadow-[0_2px_12px_rgba(0,0,0,0.45)] ring-1 ring-[#ffa63d]/40">
-      <svg viewBox="-50 -50 100 100" className="absolute inset-0 h-full w-full">
+      <svg
+        viewBox="-50 -50 100 100"
+        className="absolute inset-0 h-full w-full"
+        role="img"
+        aria-label={`Town map: the player, their view cone, and ${blips.filter((b) => b.alive).length} soldiers still standing`}
+      >
+        <title>Bayview town map</title>
         <defs>
           <clipPath id="bayview-map-disc">
             <circle cx="0" cy="0" r="49" />
@@ -78,7 +84,14 @@ export function Minimap({
         </defs>
         <g clipPath="url(#bayview-map-disc)">
           {/* Sea east of the deck edge, and the dock pier reaching into it. */}
-          <rect x={schematic.sea.edgeX} y={-50} width={8} height={100} fill="#5b93b8" opacity={0.35} />
+          <rect
+            x={schematic.sea.edgeX}
+            y={-50}
+            width={8}
+            height={100}
+            fill="#5b93b8"
+            opacity={0.35}
+          />
           <line
             x1={schematic.pier.ax}
             y1={schematic.pier.az}
@@ -119,13 +132,13 @@ export function Minimap({
             fill="#ffc861"
             fillOpacity={0.16}
           />
-          {blips.map((blip, index) => {
+          {blips.map((blip) => {
             if (!blip.alive) return null;
             const distance = Math.hypot(blip.x, blip.z);
             const clamp = distance > DOT_CLAMP ? DOT_CLAMP / distance : 1;
             return (
               <circle
-                key={index}
+                key={blip.id}
                 cx={(blip.x * clamp).toFixed(1)}
                 cy={(blip.z * clamp).toFixed(1)}
                 r={2}
@@ -133,7 +146,14 @@ export function Minimap({
               />
             );
           })}
-          <circle cx={playerX} cy={playerZ} r={2.4} fill="#ffd166" stroke="#3a2a08" strokeWidth={0.8} />
+          <circle
+            cx={playerX}
+            cy={playerZ}
+            r={2.4}
+            fill="#ffd166"
+            stroke="#3a2a08"
+            strokeWidth={0.8}
+          />
         </g>
       </svg>
       <div className="absolute left-1/2 top-[7px] -translate-x-1/2 text-[9px] font-bold tracking-[0.2em] text-white/55">
