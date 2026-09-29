@@ -162,9 +162,11 @@ export interface IGamePluginRuntime {
   /**
    * Hold start-scene entry until `gate` settles.
    *
-   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
-   * gate after applying pre-entry setup, then await the returned promise before describing
-   * entity-derived capabilities. The frame loop remains held throughout.
+   * The returned promise settles after the scene that owns the world has entered: the start scene
+   * unless it navigated out of its own `enter()`, in which case it is the scene it navigated to,
+   * loaded and entered. A runner can therefore release the gate after applying pre-entry setup,
+   * then await the returned promise before describing entity-derived capabilities — the entities
+   * they read are the ones the world actually has. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
   readonly observations: IGameRuntimeObservations;
@@ -706,6 +708,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
+  /**
+   * The scene a `goto()` is loading right now, or undefined when none is.
+   *
+   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
+   * reader that needs the world's entities has to wait for this rather than for the scene it
+   * navigated from. The playtest handshake reads exactly that.
+   */
+  #pendingSceneEnter: Promise<void> | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -856,10 +866,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#scene = scene;
     this.#sceneName = name;
     const loaded = scene.load(ctx);
-    if (loaded === undefined) {
-      return this.#enterTransitionScene(scene, ctx);
-    }
-    return Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const transition =
+      loaded === undefined
+        ? this.#enterTransitionScene(scene, ctx)
+        : Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const settled = (): void => {
+      if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
+    };
+    // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
+    // its transition away, and the gate below still has to learn that no world arrived.
+    void transition.then(settled, settled);
+    this.#pendingSceneEnter = transition;
+    return transition;
   }
 
   #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean {
@@ -1923,7 +1941,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     try {
       this.#enterScene(scene, ctx);
       timeline.enteredMs ??= now();
-      for (const startGate of startGates) startGate.resolveEntered();
+      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
+      // run a world that is still in `load()`, and the entity registry is empty until it enters.
+      // Releasing the gate there described a game that had not been built yet, so every
+      // entity-derived capability was read off nothing. The gate follows the scene that entered.
+      const worldEntered = this.#pendingSceneEnter;
+      const entered = (): void => {
+        for (const startGate of startGates) startGate.resolveEntered();
+      };
+      if (worldEntered === undefined) entered();
+      else
+        void worldEntered.then(entered, (error: unknown) => {
+          for (const startGate of startGates) startGate.rejectEntered(error);
+        });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
