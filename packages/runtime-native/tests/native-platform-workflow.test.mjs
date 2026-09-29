@@ -202,8 +202,16 @@ test('Android V8 interruption leaves time to cache and resume Ninja state', () =
   expect(androidV8Action.indexOf('Save resumable V8 source state')).toBeGreaterThan(
     androidV8Action.indexOf('Build the pinned Android V8 payload'),
   );
-  expect(androidV8Action).toContain('if: always()');
-  expect(androidV8Action).toContain('third_party/.v8-source');
+  // Assert the guard, not its quoting: the condition is a folded scalar now, and pinning the exact
+  // `if: always()` spelling measured the YAML style rather than the resumable-save behaviour.
+  const saveStep = androidV8Action.slice(
+    androidV8Action.indexOf('Save resumable V8 source state'),
+  );
+  expect(saveStep).toContain('always()');
+  expect(saveStep).toContain("steps.build.outcome == 'failure'");
+  // A superseded pull request is not an interrupted build; its cancel must not save 3 GB.
+  expect(saveStep).toContain("github.event_name != 'pull_request'");
+  expect(saveStep).toContain('third_party/.v8-source');
 
   const root = makeTempDirSync('tn-v8-resume-action-');
   const runtime = join(root, 'runtime');
