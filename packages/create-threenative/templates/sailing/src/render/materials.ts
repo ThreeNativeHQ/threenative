@@ -15,13 +15,20 @@ export interface ISailingMaterials {
    */
   readonly sail: MeshStandardNodeMaterial;
   readonly island: MeshStandardMaterial;
+  /** Wet rock at the water's edge, where the swell has been working on the headland. */
+  readonly rock: MeshStandardMaterial;
   readonly horizon: MeshBasicMaterial;
   /** Masts, yards, bowsprit, palm trunks. */
   readonly spar: MeshStandardMaterial;
   /** Standing rigging: thinner and darker than the spars, or it reads as more mast. */
   readonly cordage: MeshStandardMaterial;
-  /** Rails, wale strakes, pennant — the ship's one saturated accent. */
+  /** Rails, wale strakes, cap rail — the ship's one saturated accent. */
   readonly trim: MeshStandardMaterial;
+  /**
+   * The masthead flag. Canvas, dyed red and given the same translucency as the sails, because a
+   * small backlit shape in a deep oxblood reads as a hole cut in the sky.
+   */
+  readonly pennant: MeshStandardMaterial;
   readonly sand: MeshStandardMaterial;
   readonly foliage: MeshStandardMaterial;
 }
@@ -56,11 +63,26 @@ export function createMaterials(): ISailingMaterials {
       side: DoubleSide,
     }),
     island: new MeshStandardMaterial({ color: 0x4c6b45, roughness: 0.96, metalness: 0 }),
+    // Darker and smoother than the scrub, because it is wet. The island's whole silhouette used to
+    // be one green dome; the half of a headland the sea touches is rock, and saying so is what makes
+    // the rest of it read as land.
+    rock: new MeshStandardMaterial({ color: 0x5d5750, roughness: 0.72, metalness: 0.02 }),
     horizon: new MeshBasicMaterial({ color: palette.skyLow }),
     spar: new MeshStandardMaterial({ color: 0x8a6238, roughness: 0.72, metalness: 0 }),
     cordage: new MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.94, metalness: 0 }),
     trim: new MeshStandardMaterial({ color: 0xa33f2c, roughness: 0.6, metalness: 0.05 }),
-    sand: new MeshStandardMaterial({ color: 0xe4d3a6, roughness: 0.98, metalness: 0 }),
+    // Two stops brighter than the rails, and translucent like the sails: the flag is a backlit
+    // shape against the sky, and canvas that does not let light through is a card.
+    pennant: new MeshStandardMaterial({
+      color: 0xd4573a,
+      emissive: 0x59241a,
+      metalness: 0,
+      roughness: 0.9,
+      side: DoubleSide,
+    }),
+    // Wet-darkened at the top: a beach is the brightest thing on an island, and at full value it
+    // outshone the ship and pulled the eye off the subject.
+    sand: new MeshStandardMaterial({ color: 0xc4b184, roughness: 0.98, metalness: 0 }),
     foliage: new MeshStandardMaterial({ color: 0x3f7a48, roughness: 0.94, metalness: 0 }),
   };
 }

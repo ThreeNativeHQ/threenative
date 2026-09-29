@@ -113,6 +113,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     for (const mark of COURSE) {
       const buoy = createBuoy(materials);
       buoy.position.set(mark.x, 0, mark.z);
+      marks.push(buoy);
       markReflected(ctx.add(buoy));
     }
 

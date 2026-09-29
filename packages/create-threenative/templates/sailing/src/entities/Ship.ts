@@ -49,7 +49,7 @@ const WAY_RATE = 0.9;
 /** The hull's draught at the template's 4.6 m convention, in world metres. */
 const DESIGN_DRAUGHT = 0.62;
 /** How far the model rides above its own origin, so the sea meets it lower down the topsides. */
-const FREEBOARD_TRIM = 0.16;
+const FREEBOARD_TRIM = 0.5;
 /**
  * How hard a full wind presses on a sail, as a local-space acceleration.
  *
@@ -120,6 +120,13 @@ export class Ship {
     // castle showing. Lifting the model inside the visual moves the waterline down the hull
     // without moving the hull off the water — `floatGap` is measured on `visual`, and this does
     // not touch it.
+    //
+    // It is 0.5 rather than the 0.16 it was, and it is here for the *look* rather than for the
+    // physics: a caravel is flush-decked and shallow, and a hull that draws a third of its freeboard
+    // has 40 cm of bottom which is in front of the sea — not behind it — whenever the water astern
+    // is half a metre low, which on a 13 m swell is most of the time. The draught left is small
+    // enough to be period-correct and small enough that the boat reads as *in* the water, which is
+    // the whole of what the chase camera can see of it.
     model.position.y = FREEBOARD_TRIM;
 
     // The canvas. `belliedSail` baked the belly into the vertices, so the sails looked exactly as

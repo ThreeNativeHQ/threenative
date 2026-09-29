@@ -11,11 +11,11 @@ export const palette = {
   /** One stop brighter: the loading screen's track, and the pale top of the cloud bank. */
   skyHigh: 0xc3d2e4,
   /** Deep water in the troughs. */
-  floor: 0x0a2c3e,
+  floor: 0x06202f,
   /** The sun's own colour: the key light, and the glint it leaves on the water. */
   player: 0xffe6b8,
   /** Crest water: green-lit shallow, not cyan. The one saturated role. */
-  accent: 0x1d5f74,
+  accent: 0x134a5e,
   /** What the sun is behind — the touch controls' plate, and the hull's shadowed timber. */
   shadow: 0x143243,
 } as const;

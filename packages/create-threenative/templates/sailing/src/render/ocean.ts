@@ -52,6 +52,7 @@ import {
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { palette } from "./palette.js";
+import { SUN_DIRECTION } from "./sky.js";
 
 /**
  * The sea state. Every number is this game's.
@@ -61,15 +62,28 @@ import { palette } from "./palette.js";
  * vertically, which is what sharpens a crest into something a hull can be thrown by.
  */
 export const SEA = {
-  // Sea state, and the number that decides whether this reads as a passage or as a survival
-  // storm. At 0.0082 the field measured 3.2 m from trough to crest — two thirds of the ship's
-  // whole length, and five times its draught — so the caravel spent the run being thrown about by
-  // seas that would have ended the voyage. A working swell for a 4.6 m hull is nearer 1.5 m, and
-  // wave height goes as the square root of spectrum scale, so a quarter of the energy halves it.
-  amplitude: 0.0034,
+  // Sea state, and the two numbers that decide whether this reads as a passage or as a puddle.
+  //
+  // The frame this replaces was a mirror, and the spectrum is why. `windSpeed` sets where the
+  // Phillips spectrum's energy sits, through the largest wave `U²/g`: at 10.5 that is an eleven-metre
+  // scale, the energy-weighted mean wavelength came out at **42 m**, and a two-metre wave 42 m long
+  // is a 5% slope — a mirror with a texture on it. Nothing downstream can rescue that, because the
+  // normals really are almost flat. At 6 the mean wavelength is 13 m and the same height is a 15%
+  // slope, which is a sea with a shape.
+  //
+  // `amplitude` is the spectrum's scale, and height goes as its square root, so it was raised 15x
+  // to put the crest-to-trough back where it was. Calibrated against the field the CPU actually
+  // reads back, over a 70 m patch: 0.026 measured **3.15 m** trough to crest, which threw the ship
+  // bodily out of the water — the line of sight to its own keel cleared the sea half a metre astern
+  // and the whole hull, rudder and all, hung above the surface in almost every frame. 0.0038
+  // measures about 1.3 m, against 0.7 m of freeboard: the caravel is thrown, its rail is awash on
+  // the biggest crests, and its keel is under the water.
+  amplitude: 0.0046,
   // Largest patch first, and the bands do not overlap. One cascade is a toy — the join between
   // bands is where a spectral ocean visibly fails, so there is nothing to look at until there are
-  // two.
+  // two. A third was measured and carries 0.01 m of the total: the 1/k⁴ term has already spent the
+  // short waves by the time a 9 m patch's band begins, so it buys nothing and costs two more reads
+  // in the vertex stage.
   cascades: [{ patchSize: 190 }, { patchSize: 37 }],
   choppiness: 1.2,
   directionality: 2.6,
@@ -90,9 +104,13 @@ export const SEA = {
   readbackResolution: 64,
   resolution: 128,
   seed: 20_260_906,
-  smallWaveCutoff: 0.32,
+  // The length below which the spectrum is damped out, in metres. 0.32 was a 2 m wavelength, which
+  // is where the geometric ripple normals already take over, so the sea was throwing away its whole
+  // last octave and reading as glass. 0.12 keeps it to about 1.2 m: short enough to carry a
+  // glitter path, long enough that the surface is not aliased into sparkle as the camera moves.
+  smallWaveCutoff: 0.12,
   windDirection: 0.55,
-  windSpeed: 10.5,
+  windSpeed: 6,
 } satisfies ISpectralOceanOptions;
 
 /**
@@ -122,10 +140,16 @@ export const SWELL = {
  * The lag being corrected for is a few frames in a real session and an order of magnitude worse
  * inside a playtest, where the fixed step runs far faster than wall-clock and a copy in flight
  * covers a hundred ticks. Correcting the first is what a floating thing needs; chasing the second
- * would sample twenty metres upwind, where a spectral field has already decorrelated and the
- * "prediction" is just a different wave.
+ * would sample far upwind, where a spectral field has already decorrelated and the "prediction" is
+ * just a different wave.
+ *
+ * It is also short because the lead is measured in wavelengths, not in seconds. This sea state's
+ * dominant wavelength is 13 m, so a quarter of a second is 1.75 m upwind — an eighth of a wave, and
+ * the height comes back half a metre from the truth, which floats the drawn hull on water that is
+ * not being drawn. An eighth of a second is 0.9 m, or a fifteenth of a wave: worth correcting, and
+ * small enough not to invent a wave.
  */
-const MAX_LEAD_SECONDS = 0.25;
+const MAX_LEAD_SECONDS = 0.12;
 
 /**
  * The sea's height at a world point, corrected for the age of the copy it came from.
@@ -186,20 +210,34 @@ export const SURFACE = {
  */
 const NORMAL_STEP = 0.7;
 
-/** Crest foam. Near-white, and not a seventh palette role: the sea's look is owned here. */
-const FOAM = 0xe9f4f6;
+/** Crest foam, whitecap and hull wash. Near-white, and not a seventh palette role: the sea's look is owned here. */
+const FOAM = 0xd6e6ea;
+
+/**
+ * Light coming **through** a wave, which is what makes a crest read as water and not as a ridge.
+ *
+ * A backlit crest is lit from behind by the sun under the water, and that light is green. It only
+ * shows where the face is turned away from the sun and high enough to be near the surface, so it
+ * is a product of the face's own slope and its height — which is why it costs two nodes and no
+ * texture.
+ */
+const SUBSURFACE = 0x1f6a4c;
 
 /**
  * How much of the mirror the sea shows.
  *
- * The mirrored pass draws the world *and* the sky behind it, so its texture already holds the
- * photograph reflected about the water — which is why there is no second sky lookup here to blend
- * against it. Two would count the same cloud twice, and at a grazing angle that is most of a low
- * chase camera's frame: the middle distance came back a milky sheet with the horizon burned to
- * white. Below one because a render target is written linear, where the screen is tone-mapped, so
- * what arrives is the raw 2.5-range photograph and the water would mirror it at full stops.
+ * The mirrored pass draws the world *and the sky behind it*, so what arrives in this texture is a
+ * photograph of the clouds. That is the whole defect the owner is looking at: a planar mirror of a
+ * partly-cloudy sky reflects every cumulus crisply across six kilometres of water, and a sea that
+ * does that is a lake. The sky is therefore **not in the mirror** — see `sky.ts`, where the dome
+ * lives on layer 0 and the mirror draws layer 1 only — so what is left in here is the hull, the
+ * marks and the headland: the silhouettes a player reads in the water, and the one thing a
+ * prefiltered environment cannot do for a sea.
+ *
+ * Below one because a render target is written linear, where the screen is tone-mapped, so what
+ * arrives is the raw 2.5-range photograph and the water would mirror it at full stops.
  */
-const MIRROR_GAIN = 0.85;
+const MIRROR_GAIN = 0.55;
 
 /**
  * The layer the water's mirror draws. An object on it is **also** on layer 0, so the main camera
@@ -315,6 +353,17 @@ export interface IWaterSurface {
  * bottom third. Narrower and shorter is the lie worth telling.
  */
 const WAKE = { length: 26, spread: 0.21, waist: 0.5 } as const;
+
+/**
+ * The wash the hull stands in, as half of the hull's length and beam in metres.
+ *
+ * A ship that leaves the surface exactly as it found it is a model on a backdrop. This is the ring
+ * of broken water at its own waterline: the ellipse is the hull's plan, `wash` is the band just
+ * outside it, and it is strongest under way because it is `wakeStrength` — a ship lying to with no
+ * way on stops pushing water aside, which is the point. The numbers are the hull's own, from
+ * `HULL_STATIONS` in `props.ts` after the 4.6 m normalisation.
+ */
+const HULL_WASH = { halfBeam: 0.62, halfLength: 2.35 } as const;
 
 /**
  * The ripples, as a 256² normal map made of periodic value noise — no file, no fetch, no bytes.
@@ -471,19 +520,25 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // hand-rolled `pow()` blob: a lit material gets the scene's key light and its specular response
   // for free, and gets them consistent with the hull floating on it.
   const material = new MeshStandardNodeMaterial({
-    metalness: 0.02,
+    metalness: 0,
     // The sun's own highlight is the one term this material does **not** need help with, and it is
     // the term that ruins the frame when it is too sharp. A GGX lobe at 0.16 peaks thousands of
     // times brighter than its own average, and a low chase camera sees most of the sea at a
     // grazing angle — so the peak lands across a third of the water at once and ACES turns the
-    // whole middle distance into a white sheet. 0.3 spreads the same energy over several times
-    // the area: the glitter path is still a glitter path, and the sea around it is still sea.
-    roughness: 0.36,
+    // whole middle distance into a white sheet. The sea is rough instead (see `roughnessNode`),
+    // which spreads the same energy over several times the area: the glitter path is still a
+    // glitter path, and the sea around it is still sea.
+    roughness: 0.13,
   });
-  // The mirror is added below instead, and the environment's own specular is turned off so the
-  // photograph is counted once: `reflectedSky` reads the same image, in the reflected direction,
-  // which is what an environment map does for free everywhere else in the scene.
-  material.envMapIntensity = 0;
+  // **On**, and this is the fix for the mirror the owner is looking at. `scene.environment` is the
+  // sky photograph, three prefilters it, and a standard material's image-based specular then reads
+  // that prefiltered sky *at this fragment's own roughness* — a rough, blurred sky reflection,
+  // Fresnel-weighted by the same Schlick curve the rest of the scene's materials use. Looked
+  // straight down into, water reflects about 2%; looked along, it reflects nearly all of it. A
+  // hand-written `pow(1 - N·V, 5)` on a planar mirror photograph cannot do either of those things
+  // and is why every sea past a hundred metres was one even sheet of cloud.
+  material.envMapIntensity = 0.32;
+
 
   const worldX = positionLocal.x.add(seaOrigin.x);
   const worldZ = positionLocal.z.add(seaOrigin.y);
@@ -514,29 +569,43 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
     return transformNormalToView(vec3(slope.x.negate(), 1, slope.y.negate()).normalize());
   })();
 
-  // Colour by height: deep in the troughs, lit water on the shoulders, foam on the crests. The
-  // band is narrower than the wave amplitude on purpose, so the tops read as foam-lit rather than
-  // as a gentle gradient.
-  // These four numbers are in metres of wave height, so they move with `SEA.amplitude` and are
-  // wrong the moment it changes.
-  // Deliberately high on the range, not centred on it. The readback carries this spectrum from
-  // about -1.4 m to +1.4 m, so a band centred on zero is above its own threshold across half the
-  // sea and the water comes back one even mid teal from bow to horizon — flat, and pale, because
-  // `accent` is the *crest* colour. Put the band where the crests are and the sea is deep water
-  // everywhere except its tops, which is the only way a height ramp reads as a swell.
-  const shade = smoothstep(float(-0.4), float(1.8), positionWorld.y);
+  // Colour by height: deep blue-green in the troughs, lit water on the shoulders, foam on the
+  // crests.
+  //
+  // These numbers are in metres of wave height, so they move with `SEA.amplitude` and are wrong the
+  // moment it changes. The sea state above measures 1.99 m crest to trough, so the surface runs
+  // about -0.65 m to +0.65 m and the band has to sit inside that: a band centred on zero is above its
+  // own threshold across half the sea and the water comes back one even mid teal from bow to
+  // horizon. Put the band where the crests are and the sea is deep water everywhere except its
+  // tops, which is the only way a height ramp reads as a swell.
+  const shade = smoothstep(float(-0.5), float(0.4), positionWorld.y);
   const water = mix(color(palette.floor), color(palette.accent), shade);
+  // The light coming through a wave from behind, which is green and is the difference between a
+  // crest and a ridge. It needs a face turned away from the sun and a height near the surface, so
+  // it is the product of the two, and it is added rather than mixed so a deep trough stays deep.
+  const through = saturate(normalWorld.dot(vec3(SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z).negate()))
+    .mul(shade)
+    .mul(0.26);
   // Foam on the tops, not on the faces. The band has to sit near the **highest** water the field
   // reaches, not near its mean: a threshold clearing across whole wave faces at once reads as snow
-  // rather than as sea.
-  // Foam only above the height this sea state ever reaches.
+  // rather than as sea. A field this size is a normal distribution about its mean with a standard
+  // deviation near 0.25 m, and at 0.46 m and 0.74 m that is the top one to three per cent of the
+  // surface — which is what whitecaps are, and it is the top of the distribution that breaks, not
+  // the mean. The band that came back first was at 0.55 m on a field twice this size, which is barely
+  // one deviation: a third of the sea came back white and the frame read as pack ice.
   //
-  // A 1.5 m working swell does not break, so nothing in it is white. Threshold it below the
-  // spectrum's own maximum and the broad cascade's shoulders — a 200 m wavelength, so a smooth
-  // region hundreds of metres across — clear the band together, and the middle distance comes back
-  // as one white sheet with a wave-shaped edge, which is worse than no foam at all: it reads as
-  // fog lying on the water. Raise `SEA.amplitude` into a gale and this band starts earning itself.
-  const crest = smoothstep(float(1.6), float(2.2), positionWorld.y);
+  // A height band alone gives foam a *contour line*, because a smooth wave crossing a smooth
+  // threshold is a smooth curve: the crests came back as glossy white ribbons laid along the sea,
+  // which read as plastic rather than as water. One more octave of the ripple map tears the edge,
+  // and it is the same texture the normals already read, so it costs one fetch.
+  const torn = Fn(() => {
+    const grain = texture(
+      ripples,
+      vec2(positionWorld.x, positionWorld.z).mul(0.26).add(seaTime.mul(0.02)),
+    ).a;
+    return float(0.45).add(saturate(grain.mul(2.6)).mul(0.55));
+  })();
+  const crest = smoothstep(float(0.46), float(0.74), positionWorld.y).mul(torn);
 
   // The wake, computed rather than drawn.
   //
@@ -566,21 +635,40 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // Never quite to full foam. At 1.0 the arms are the brightest thing in the frame and read as two
   // searchlights laid on the sea rather than as broken water.
   const wake = max(churn, arms).mul(reach).mul(begins).mul(wakeStrength).mul(0.78);
-  material.colorNode = mix(mix(water, color(FOAM), crest), color(FOAM), wake);
+  // The wash at the hull's own waterline: an ellipse in the ship's plan, and a band just outside
+  // it. Cheaper than the wake and it is the half the player is closest to — without it the hull
+  // meets the sea on a clean line, and a clean line is the tell that nothing here is water.
+  const plan = vec2(
+    astern.div(HULL_WASH.halfLength),
+    across.div(HULL_WASH.halfBeam),
+  );
+  //
+  // It is **not** gated on way on, and that is a deliberate lie of about thirty per cent: a hull
+  // lying to in a one-metre swell is still working water against its own topsides, and more to the
+  // point, a speedless ring is the only thing that seals the waterline when the sea in front of the
+  // lens happens to be in a trough. It is torn by the same grain as the whitecaps and it never
+  // painted a white horseshoe around a ship standing still, which the eye reads as a decal.
+  const wash = smoothstep(float(1.22), float(0.98), plan.length()).mul(
+    smoothstep(float(0.82), float(0.98), plan.length()),
+  );
+  // Plus a little standing white at the bow, where the stem pushes a bow wave ahead of it.
+  const bow = smoothstep(float(-1.4), float(-2.5), astern)
+    .mul(smoothstep(float(1.3), float(0.2), across))
+    .mul(wakeStrength);
+  const broken = max(max(wake, bow), wash.mul(torn).mul(float(0.6).add(wakeStrength.mul(0.4))));
+  material.colorNode = mix(
+    water.add(color(SUBSURFACE).mul(through)),
+    color(FOAM),
+    max(crest, broken),
+  );
 
-  // What the sea shows of the world above and around it.
+  // The one thing the prefiltered environment cannot do: the hull, the marks and the headland, in
+  // the water, sharp.
   //
-  // Fresnel is the term that decides whether a surface reads as water at all: looked straight down
-  // into, water is nearly transparent and shows its own depth; looked along, it is a mirror of
-  // whatever stands over it. Without it the sea is one flat teal from the bow to the horizon
-  // whatever the waves underneath it are doing, because a diffuse albedo that ignores the view
-  // direction cannot be sea.
-  //
-  // One source, and it is the whole answer: the half-res mirrored pass draws the sky, the headland,
-  // the marks and the hull into one texture, and a water surface reflects all of them with the
-  // same Fresnel weight. Sampling the photograph a second time in the reflected direction — which
-  // is what a scene without a planar mirror has to do — would count the same cloud bank twice over,
-  // and at the grazing angles a chase camera spends most of its frame in, twice is a white sheet.
+  // Fresnel is the term that decides how much. The sky's own reflection is already handled above by
+  // the material's image-based specular, which applies the same Schlick curve on its own; this
+  // applies the same one to the mirror, so the two agree at the horizon and the silhouettes fade
+  // out as the eye comes down onto the water.
   material.emissiveNode = Fn(() => {
     // The interpolated vertex normal, which is the swell, plus this fragment's own ripple. Adding
     // the ripple here rather than in the vertex stage is what makes it affordable: the swell's
@@ -600,13 +688,22 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
     const reflected = mirror.reflectionAt(normal.xz.mul(0.02)).mul(MIRROR_GAIN);
     // Rough water does not mirror at grazing angles the way a flat facet does: the microfacets that
     // survive are not aligned with the view, so reflectance falls off with roughness.
-    const rough = max(crest, wake);
+    const rough = max(crest, broken);
     return reflected.mul(fresnel).mul(oneMinus(max(subpixel, rough).mul(0.75)));
   })();
-  // Roughness is spent, not lost: the slope a distant pixel can no longer resolve reappears here,
-  // which is what stops every sea beyond a hundred and thirty metres from becoming a mirror. Foam
-  // is not a mirror either, and roughening the crests is what stops them reading as chrome.
-  material.roughnessNode = max(float(0.36).add(subpixel.mul(0.22)), max(crest, wake).mul(0.9));
+  // Roughness is spent, not lost: the slope a distant pixel can no longer resolve reappears here.
+  //
+  // This is now the term that decides the whole look, because it is what the prefiltered sky is
+  // sampled at. A sea at 0.13 returns a sharp horizon and a broken cloud; at 0.5 it returns a broad
+  // luminous sheet, which is a mirror again. **Sharp is the word that matters here**: a rough
+  // surface *averages* the sky over a wide cone, so every facet returns nearly the same pale value
+  // and the wave shape disappears into a field of ice — which is exactly what the first two frames
+  // looked like. A sharp one returns a different piece of sky per facet and the shape comes back.
+  // Near the ship the ripple normals carry the detail, and past the point where a pixel can no
+  // longer resolve a metre of wave the roughness takes over and the middle distance turns into the
+  // soft band a real sea shows. Broken water is not a mirror either, and roughening it is what
+  // stops the foam reading as chrome.
+  material.roughnessNode = max(float(0.13).add(subpixel.mul(0.3)), max(crest, broken).mul(0.9));
 
   const mesh = new Mesh(geometry, material);
   mesh.receiveShadow = true;

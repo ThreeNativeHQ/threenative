@@ -6,11 +6,15 @@
 // `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any equirectangular sky
 // and re-aim `SUN_DIRECTION` at its sun.
 import {
+  BackSide,
   EquirectangularReflectionMapping,
   Euler,
   FogExp2,
+  Mesh,
+  MeshBasicMaterial,
   SRGBColorSpace,
   type Scene,
+  SphereGeometry,
   type Texture,
   Vector3,
 } from "three";
@@ -35,6 +39,12 @@ const SKY_RANGE = 2.5;
  * at this one, which is a decision this game makes about its own scene.
  */
 const FILL_RANGE = 0.9;
+
+/**
+ * How far out the dome stands, in metres. Inside `camera.far` (8 km) and far enough that the sea's
+ * own disc — which reaches 6 km — never pokes through it.
+ */
+const SKY_RADIUS = 7_000;
 
 /** Unit vector toward the photographed sun, read off the file: 47.9° up. */
 const SUN_IN_PHOTO = new Vector3(0.555, 0.742, 0.38);
@@ -70,12 +80,38 @@ export function setupSky(scene: Scene): void {
   if (sky === undefined) throw new Error("setupSky must run after loadSky.");
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
-  scene.background = sky;
+  // The photograph is a **dome**, not `scene.background`, and that is the single change that fixes
+  // the sea.
+  //
+  // `scene.background` is drawn by every camera the renderer has, including the half-res mirrored
+  // pass the water samples. So every cumulus in the photograph was reflected crisply across six
+  // kilometres of sea, which is the whole of the owner's complaint: a partly-cloudy sky in a
+  // planar mirror is a lake. A dome is an ordinary object on an ordinary layer, so putting it on
+  // layer 0 alone keeps it out of that pass, and what the mirror then holds is the hull, the marks
+  // and the headland — the silhouettes a player reads in the water, which no prefiltered
+  // environment can supply. The sky's own reflection is the material's image-based specular, read
+  // from `scene.environment` at the water's own roughness: rough, blurred and Fresnel-weighted.
+  const dome = new Mesh(
+    new SphereGeometry(SKY_RADIUS, 32, 20),
+    new MeshBasicMaterial({ fog: false, map: sky, side: BackSide }),
+  );
+  // The same 2.5 the photograph used to be drawn at as `scene.backgroundIntensity`, carried as a
+  // colour multiplier because that is how a basic material expresses a range above one.
+  (dome.material as MeshBasicMaterial).color.setScalar(SKY_RANGE);
+  // Placed the way `scene.backgroundRotation` placed the photograph, about world up.
+  dome.rotation.y = SKY_YAW;
+  dome.name = "sky-dome";
+  // Inside the camera's far plane, which is 8 km — a dome further out than that is a cut edge with
+  // the void showing above it, which is the same defect as a sea that ends inside the haze.
+  dome.frustumCulled = false;
+  scene.add(dome);
+  scene.background = null;
   scene.backgroundIntensity = SKY_RANGE;
   scene.backgroundRotation = new Euler(0, SKY_YAW, 0);
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   // It is what makes a standard material read as a material: sky-blue fill on every face the sun
-  // misses, and a sky to reflect, sharper as roughness drops.
+  // misses, a sky to reflect — sharper as roughness drops — and, for the sea, the rough blurred
+  // reflection the dome cannot provide.
   scene.environment = sky;
   scene.environmentIntensity = FILL_RANGE;
   scene.environmentRotation = new Euler(0, SKY_YAW, 0);

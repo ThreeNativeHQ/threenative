@@ -354,23 +354,23 @@ function sailCloth(
  */
 export const SHIP_SAILS = [
   // Fore course, bent to the fore yard.
-  { belly: 0.24, height: 1.12, pitch: 0, taper: 1, width: 1.3, x: 0, y: 3.42, yaw: 0, z: -1.49 },
+  { belly: 0.3, height: 1.62, pitch: 0, taper: 1, width: 2.1, x: 0, y: 3.42, yaw: 0, z: -1.49 },
   // Main course, bent to the main yard. The deepest cut of the three, because it is the sail the
   // chase camera looks at most and the one whose belly has to read as canvas under load.
-  { belly: 0.3, height: 1.42, pitch: 0, taper: 1, width: 1.62, x: 0, y: 4.22, yaw: 0, z: 0.16 },
+  { belly: 0.42, height: 2.05, pitch: 0, taper: 1, width: 2.7, x: 0, y: 4.42, yaw: 0, z: 0.16 },
   // The mizzen lateen: fore-and-aft, so it is turned side-on and raked with its yard. Its wind
   // therefore pushes it to leeward rather than aft, which falls out of the rotation for free —
   // `SoftBody3D` takes wind in the cloth's own local space.
   {
-    belly: 0.2,
-    height: 1.6,
+    belly: 0.3,
+    height: 2.15,
     pitch: 0.85,
-    taper: 0.22,
-    width: 1.0,
-    x: 0.1,
-    y: 3.9,
+    taper: 0.24,
+    width: 1.55,
+    x: 0.08,
+    y: 3.62,
     yaw: Math.PI / 2,
-    z: 1.28,
+    z: 1.95,
   },
 ] as const;
 
@@ -533,6 +533,24 @@ function mast(
       shroud.rotation.x = -Math.atan2(aft, drop);
       rigid.add(shroud);
     }
+    // Ratlines: the rungs between the fore and aft shroud of each side.
+    //
+    // They are what a mast looks like from a hundred metres, and they are the one piece of rigging
+    // whose absence is louder than its presence. Four per side, every two cylinders merged into
+    // the cordage mesh the shrouds are already in, so the whole ladder costs no draw call.
+    const beam = halfBeamAt(options.z) * 0.86;
+    const railY = railAt(options.z);
+    const drop = head - railY;
+    for (let rung = 1; rung <= 4; rung += 1) {
+      const t = rung / 5.4;
+      const rise = head - drop * t;
+      // The shrouds splay fore and aft, so the rung runs across the pair at the same height.
+      const reach = Math.abs(beam) * (1 - t);
+      const rafter = piece(new CylinderGeometry(0.007, 0.007, reach * 2, 4), materials.cordage, false);
+      rafter.rotation.z = Math.PI / 2;
+      rafter.position.set(side * (Math.abs(beam) - reach), rise, options.z);
+      rigid.add(rafter);
+    }
   }
   return group;
 }
@@ -542,20 +560,22 @@ function mast(
  *
  * A lofted hull is one smooth surface of revolution, and at the chase camera's distance the only
  * thing that tells the eye it is looking at *timber* rather than at a brown solid is a line
- * following the sheer. Four seams, in the darkest cordage the model owns, cost four boxes per side
+ * following the sheer. Six seams, in the darkest cordage the model owns, cost six boxes per side
  * and no draw calls at all — `RigidAssembly` bakes them into the cordage mesh this model already
  * has. They are seams and not planks on purpose: at eight metres a strake is two pixels, and a
  * plank wide enough to see would be a ledge the ship does not have.
  */
 function planking(materials: ISailingMaterials, rigid: RigidAssembly): void {
-  for (const [index, drop] of [0.2, 0.32, 0.44, 0.56].entries()) {
+  for (const [index, drop] of [0.18, 0.32, 0.46].entries()) {
     for (let step = 0; step < 24; step += 1) {
       const z = MathUtils.lerp(-2.9, 3.1, step / 23);
       // The seam follows the tumblehome, so it draws in as the rail does instead of running out
       // past the hull and hanging in the air over the water.
-      const beam = halfBeamAt(z) * (0.99 - index * 0.012);
+      const beam = halfBeamAt(z) * (0.99 - index * 0.008);
       for (const side of [-1, 1]) {
-        const seam = piece(new BoxGeometry(0.02, 0.022, 0.3), materials.cordage, false);
+        // Longer than the gap between them, so the strakes overlap into a line. At 0.3 long on a
+        // 0.26 step they read as a row of dark dashes — a weave, not timber.
+        const seam = piece(new BoxGeometry(0.012, 0.014, 0.36), materials.cordage, false);
         seam.position.set(side * beam, railAt(z) - drop, z);
         rigid.add(seam);
       }
@@ -585,7 +605,11 @@ function hullAndDeck(materials: ISailingMaterials, rigid: RigidAssembly): void {
       const rail = piece(new BoxGeometry(0.07, 0.12, 0.3), materials.trim);
       rail.position.set(side * beam * 0.9, railAt(z) + 0.05, z);
       rigid.add(rail);
-      const wale = piece(new BoxGeometry(0.055, 0.08, 0.3), materials.trim);
+      // The wale is dark timber, not accent. It is a strake a hand's width deep running the whole
+      // length of the hull on both sides, and painting it the accent red put so much red on the
+      // ship that the frame read as a red crate with a deck on it. A caravel's sheer line is a dark
+      // band under a bright cap rail, and that contrast is what makes the hull read as a hull.
+      const wale = piece(new BoxGeometry(0.055, 0.08, 0.3), materials.cordage);
       wale.position.set(side * beam * 1.0, railAt(z) - 0.34, z);
       rigid.add(wale);
     }
@@ -622,7 +646,7 @@ function quarterdeck(materials: ISailingMaterials, rigid: RigidAssembly): void {
     const count = along ? 7 : 5;
     for (let index = 0; index < count; index += 1) {
       const t = index / (count - 1);
-      const baluster = piece(new BoxGeometry(0.06, 0.3, 0.06), materials.trim);
+      const baluster = piece(new BoxGeometry(0.06, 0.3, 0.06), materials.hull);
       baluster.position.set(
         along ? x : MathUtils.lerp(-0.56, 0.56, t),
         1.94,
@@ -634,7 +658,7 @@ function quarterdeck(materials: ISailingMaterials, rigid: RigidAssembly): void {
 
   // Quarter windows in the transom, and a wale across it.
   for (const x of [-0.34, 0, 0.34]) {
-    const window = piece(new BoxGeometry(0.24, 0.28, 0.06), materials.trim);
+    const window = piece(new BoxGeometry(0.24, 0.28, 0.06), materials.cordage);
     window.position.set(x, 1.36, 3.28);
     rigid.add(window);
   }
@@ -715,14 +739,19 @@ function stemAndStern(materials: ISailingMaterials, rigid: RigidAssembly, ship: 
   // it read as a loose plank floating alongside the ship rather than as a rudder hung on it.
   const rudderPivot = new Group();
   rudderPivot.name = "rudder";
-  rudderPivot.position.set(0, 1.1, 3.24);
+  rudderPivot.position.set(0, 1.2, 3.24);
   // Long enough to reach from the wale to a little below the keel, and no longer: at 1.85 it hung
   // a clear third of its length under the hull and read from astern as a loose board being towed.
-  const blade = piece(new BoxGeometry(0.09, 1.5, 0.3), materials.hull);
-  blade.position.set(0, -0.66, 0.06);
+  // Its lower edge stops a centimetre or two **above** the design waterline. That is the whole of
+  // "the keel and rudder hang visibly below it": a blade whose foot is 18 cm under, on a boat whose
+  // own 55 cm of freeboard stands 10 m from the lens, hangs in front of the sea behind it whenever
+  // the water astern is a little low — and it read as a loose board being towed. A rudder that stops
+  // at the waterline loses nothing and cannot be seen below it.
+  const blade = piece(new BoxGeometry(0.09, 1.3, 0.3), materials.hull);
+  blade.position.set(0, -0.52, 0.06);
   rudderPivot.add(blade);
   const pintle = piece(new CylinderGeometry(0.055, 0.055, 0.62, 6), materials.trim);
-  pintle.position.set(0, -0.2, -0.04);
+  pintle.position.set(0, -0.12, -0.04);
   rudderPivot.add(pintle);
   ship.add(rudderPivot);
   const tiller = piece(new CylinderGeometry(0.025, 0.025, 0.7, 5), materials.spar);
@@ -730,6 +759,20 @@ function stemAndStern(materials: ISailingMaterials, rigid: RigidAssembly, ship: 
   tiller.position.set(0, 2.0, 2.72);
   rigid.add(tiller);
 }
+
+/**
+ * The rig: two square-rigged masts and the mizzen, as a caravel carries them.
+ *
+ * The proportions are the whole read. The masts stood at 3.2 and 4.3 model units against a hull 6.4
+ * long — a mast half a hull-length high, which is a punt with poles on it. A caravel's mainmast
+ * stands about its own hull-length, and that height is what puts the courses out where the lens can
+ * see canvas rather than spars. `yardAt` is the fraction of the mast the yard is bent to, which is
+ * what sets how much of the mast is bare pole above the canvas.
+ */
+const RIG = [
+  { height: 4.7, yardAt: 0.6, yardWidth: 2.35, z: -1.55 },
+  { height: 6.1, yardAt: 0.62, yardWidth: 2.95, z: 0.1 },
+] as const;
 
 export function createShipModel(materials: ISailingMaterials): Group {
   const ship = new Group();
@@ -739,26 +782,66 @@ export function createShipModel(materials: ISailingMaterials): Group {
   stemAndStern(materials, rigid, ship);
 
   // The rig: two square courses of falling size and a raked lateen on the mizzen.
-  ship.add(mast(materials, rigid, { height: 3.2, yardWidth: 1.7, yardY: 3.5, z: -1.55 }));
-  ship.add(mast(materials, rigid, { height: 4.3, yardWidth: 2.1, yardY: 4.33, z: 0.1 }));
+  for (const mastSpec of RIG) {
+    ship.add(
+      mast(materials, rigid, {
+        height: mastSpec.height,
+        yardWidth: mastSpec.yardWidth,
+        yardY: railAt(mastSpec.z) - 0.1 + mastSpec.height * mastSpec.yardAt,
+        z: mastSpec.z,
+      }),
+    );
+  }
 
-  // Crow's nest on the main.
-  const nest = piece(new CylinderGeometry(0.26, 0.2, 0.24, 9), materials.deck);
-  nest.position.set(0, 4.51, 0.1);
+  // Crow's nest on the main, two thirds up it.
+  const mainFoot = railAt(RIG[1].z) - 0.1;
+  const mainTop = mainFoot + RIG[1].height;
+  const nest = piece(new CylinderGeometry(0.3, 0.23, 0.3, 9), materials.deck);
+  nest.position.set(0, mainFoot + RIG[1].height * 0.68, RIG[1].z);
   rigid.add(nest);
+  // A fighting top under it, so the nest sits on something.
+  const top = piece(new CylinderGeometry(0.34, 0.34, 0.05, 9), materials.spar);
+  top.position.set(0, mainFoot + RIG[1].height * 0.68 - 0.17, RIG[1].z);
+  rigid.add(top);
 
   // Mizzen: a lateen yard raked steeply, with a triangular sail hung from it.
-  const mizzen = piece(new CylinderGeometry(0.03, 0.045, 2.4, 6), materials.spar);
-  mizzen.position.set(0, 2.45, 1.9);
+  const mizzen = piece(new CylinderGeometry(0.03, 0.045, 3.1, 6), materials.spar);
+  mizzen.position.set(0, 2.9, 1.9);
   rigid.add(mizzen);
-  const lateenYard = piece(new CylinderGeometry(0.025, 0.025, 3.1, 5), materials.spar);
+  const lateenYard = piece(new CylinderGeometry(0.025, 0.025, 3.4, 5), materials.spar);
   lateenYard.rotation.x = 0.85;
-  lateenYard.position.set(0, 3.05, 1.9);
+  lateenYard.position.set(0, 3.4, 1.9);
   rigid.add(lateenYard);
+  // The mizzen's own shrouds, so the third mast is held up like the other two rather than standing
+  // on the deck like a broom.
+  for (const side of [-1, 1]) {
+    for (const aft of [-0.8, 0.8]) {
+      const anchorZ = 1.9 + aft;
+      const beam = halfBeamAt(anchorZ) * 0.84;
+      const drop = 4.1 - railAt(anchorZ);
+      const shroud = piece(
+        new CylinderGeometry(0.008, 0.008, Math.hypot(drop, aft), 4),
+        materials.cordage,
+        false,
+      );
+      shroud.position.set((side * beam) / 2, (4.1 + railAt(anchorZ)) / 2, (1.9 + anchorZ) / 2);
+      shroud.rotation.z = Math.atan2(side * beam, drop);
+      shroud.rotation.x = -Math.atan2(aft, drop);
+      rigid.add(shroud);
+    }
+  }
+
   // Pennant at the main truck: the one part of the silhouette that is meant to be seen moving, and
   // a swallowtail rather than a rectangle, because a rectangle is the shape of a card on a stick.
-  const pennant = piece(swallowtail(1.25, 0.26, 0.06), materials.trim, false);
-  pennant.position.set(0.64, 4.95, 0.1);
+  //
+  // It used to be 1.25 m long and hung 64 cm out from the truck, in the darkest red the model owns,
+  // against a bright sky — and at the chase camera's distance that combination photographs as a
+  // dark quadrilateral floating near the horizon with nothing visibly holding it up. It is the
+  // *thing the owner pointed at*. Half the length, its hoist against the masthead itself, and the
+  // pale canvas red rather than the rails' oxblood, so it reads as a flag on a mast rather than as
+  // a slab in the sky.
+  const pennant = piece(swallowtail(0.9, 0.3, 0.1), materials.pennant, false);
+  pennant.position.set(0.04, mainTop - 0.12, RIG[1].z);
   pennant.name = "pennant";
   ship.add(pennant);
 
@@ -801,61 +884,97 @@ export function createBuoy(materials: ISailingMaterials): Group {
 }
 
 /**
- * A headland: a beach shelf, a rock mass and a stand of palms.
+ * A headland: a beach that meets the water in a ring, a rock mass and a stand of palms.
  *
  * The island this replaces sat at y = -0.88 with a height of 1.5, so its crown was thirteen
  * centimetres *below* the waterline and the frame contained no land at all. The sea needs
  * something with a horizon behind it or there is no sense of a passage being sailed.
+ *
+ * The beach is the other half of that sentence. It used to be a 9.5 m sand **disc** lying flat with
+ * its top face 40 cm proud of the water — a pale pancake floating beside the island, which is the
+ * thing the owner pointed at. What a beach is, and what the frame needs, is a slope: a skirt that
+ * starts as a dune under the palms and runs out under the surface, so the line where sand meets
+ * water is a *ring* the swell runs over. The radius below is jittered per segment so the ring is a
+ * shoreline and not a compass circle.
  */
 export function createIsland(materials: ISailingMaterials): Group {
   const island = new Group();
   const rigid = new RigidAssembly();
-  const beach = new Mesh(new CylinderGeometry(9.5, 11.5, 1.6, 22), materials.sand);
-  beach.position.y = -0.4;
-  beach.scale.z = 0.72;
-  beach.receiveShadow = true;
-  rigid.add(beach);
-
-  const headland = new Mesh(new SphereGeometry(4.6, 14, 9), materials.island);
-  headland.position.set(-1.4, 0.1, -1.2);
-  headland.scale.set(1, 0.62, 0.78);
-  headland.castShadow = true;
-  headland.receiveShadow = true;
-  rigid.add(headland);
-  const knoll = new Mesh(new SphereGeometry(2.7, 12, 8), materials.island);
-  knoll.position.set(3.4, 0.1, 1.1);
-  knoll.scale.set(1, 0.5, 0.85);
-  knoll.castShadow = true;
-  rigid.add(knoll);
-
-  // A stand of palms, placed by a seeded jitter so two captures frame the same headland.
-  let seed = 41;
+  // A cone frustum from a 3.4 m dune at 0.6 m above the water out to a 8.6 m shelf 2.2 m below it,
+  // so the waterline sits about 5 m out and everything past that is under the sea. The first cut was
+  // twice this and read as a sandbank two boat-lengths across rather than as a beach.
+  const beach = new Mesh(new CylinderGeometry(3.4, 8.6, 2.8, 30, 1, true), materials.sand);
+  const shore = beach.geometry.getAttribute("position") as BufferAttribute;
+  // Jitter the rim only: the top ring is under the palms and the bottom ring is underwater, so the
+  // ring that shows is the one that moves. A seeded walk, so two captures frame the same island.
+  let seed = 7;
   const jitter = (): number => {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   };
-  for (let index = 0; index < 7; index += 1) {
-    const angle = (index / 7) * Math.PI * 2 + jitter();
-    const radius = 3 + jitter() * 3.5;
+  for (let index = 0; index < shore.count; index += 1) {
+    const y = shore.getY(index);
+    if (y > 0.9) continue;
+    const stretch = 1 + (jitter() - 0.5) * 0.34;
+    shore.setX(index, shore.getX(index) * stretch);
+    shore.setZ(index, shore.getZ(index) * stretch);
+  }
+  shore.needsUpdate = true;
+  beach.geometry.computeVertexNormals();
+  // The dune's own cap, so the top is sand rather than a hole.
+  const dune = new Mesh(new CylinderGeometry(3.4, 3.9, 0.9, 30), materials.sand);
+  beach.position.y = -0.2;
+  beach.scale.z = 0.78;
+  beach.receiveShadow = true;
+  rigid.add(beach);
+  dune.position.y = 1.25;
+  dune.scale.z = 0.78;
+  dune.receiveShadow = true;
+  rigid.add(dune);
+
+  const headland = new Mesh(new SphereGeometry(3.7, 14, 9), materials.island);
+  headland.position.set(-1.2, 1.1, -1.1);
+  headland.scale.set(1, 0.72, 0.8);
+  headland.castShadow = true;
+  headland.receiveShadow = true;
+  rigid.add(headland);
+  const knoll = new Mesh(new SphereGeometry(2.2, 12, 8), materials.island);
+  knoll.position.set(2.6, 0.95, 1.1);
+  knoll.scale.set(1, 0.58, 0.85);
+  knoll.castShadow = true;
+  rigid.add(knoll);
+  // A darker rock at the water's edge on one side, which is the half of an island the swell has
+  // been working on and the reason its silhouette is not a dome.
+  const stack = new Mesh(new SphereGeometry(1.3, 9, 7), materials.rock);
+  stack.position.set(-4.2, 0.1, 2.2);
+  stack.scale.set(1, 1.35, 0.9);
+  stack.castShadow = true;
+  rigid.add(stack);
+
+  // A stand of palms, placed by a seeded jitter so two captures frame the same headland.
+  seed = 41;
+  for (let index = 0; index < 9; index += 1) {
+    const angle = (index / 9) * Math.PI * 2 + jitter();
+    const radius = 0.9 + jitter() * 2.0;
     const height = 1.9 + jitter() * 1.1;
-    const trunk = new Mesh(new CylinderGeometry(0.09, 0.15, height, 5), materials.spar);
-    trunk.position.set(Math.cos(angle) * radius, 0.9 + height / 2, Math.sin(angle) * radius * 0.7);
+    const trunk = new Mesh(new CylinderGeometry(0.1, 0.17, height, 5), materials.spar);
+    trunk.position.set(Math.cos(angle) * radius, 1.55 + height / 2, Math.sin(angle) * radius * 0.7);
     trunk.rotation.z = (jitter() - 0.5) * 0.24;
     trunk.castShadow = true;
     rigid.add(trunk);
     for (let frond = 0; frond < 5; frond += 1) {
-      const blade = new Mesh(new ConeGeometry(0.24, 1.5, 4), materials.foliage);
+      const blade = new Mesh(new ConeGeometry(0.22, 1.4, 4), materials.foliage);
       blade.position.copy(trunk.position);
-      blade.position.y += height / 2 + 0.1;
+      blade.position.y += height / 2 + 0.12;
       blade.rotation.z = Math.PI / 2 - 0.5;
       blade.rotation.y = (frond / 5) * Math.PI * 2;
-      blade.translateY(0.6);
+      blade.translateY(0.56);
       blade.castShadow = true;
       rigid.add(blade);
     }
   }
 
   rigid.attachTo(island);
-  island.position.set(-13, 0, -17);
+  island.position.set(-15, 0, -19);
   return island;
 }
