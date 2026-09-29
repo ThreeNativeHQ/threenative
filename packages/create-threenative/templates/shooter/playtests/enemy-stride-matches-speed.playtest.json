@@ -1,0 +1,198 @@
+{
+  "name": "enemy-stride-matches-speed",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn-settle",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-00",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-01",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-02",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-03",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-04",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-05",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-06",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-07",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-08",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-09",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-10",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-11",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-12",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-13",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-14",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-15",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-16",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-17",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-18",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-19",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-20",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-21",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-22",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "patrol-23",
+      "waitTicks": 12,
+      "release": true
+    }
+  ],
+  "assert": {
+    "animation": [
+      {
+        "entity": "enemy",
+        "maxFootSlide": 0.15,
+        "strideSynced": true,
+        "allowTrivial": "foot slip rests at zero before the soldier walks, which is the honest baseline for a metric that only grows; an un-synced clip fails on strideSynced before the ratio is read"
+      },
+      {
+        "entity": "enemy-2",
+        "maxFootSlide": 0.15,
+        "allowTrivial": "foot slip rests at zero before the soldier walks, which is the honest baseline for a metric that only grows"
+      }
+    ],
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "clipGroundSpeed",
+        "gte": 1,
+        "allowTrivial": "the measured stride rests at zero until a locomotion clip is chosen, so the resting value is honest"
+      }
+    ],
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "changed": true
+      }
+    ]
+  }
+}

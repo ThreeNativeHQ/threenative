@@ -1,653 +1,178 @@
-// Generated for you. All arena silhouettes and gameplay visuals start here.
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// Rounded, cached primitives — the single highest-leverage thing in this
+// folder. A sharp BoxGeometry reads as Minecraft; the same box with a 0.14
+// corner radius reads as a toy, and that soft corner-wrap is most of what
+// separates a stack of boxes from something that looks designed.
+//
+// Nothing here is textured, on purpose. Surface variety comes from alternating
+// palette entries across a run of meshes, never from a bitmap: `CanvasTexture`
+// samples BLACK under `WebGPURenderer`, which is a trap worth knowing about
+// before you spend an afternoon painting one.
 import {
   BoxGeometry,
-  BufferAttribute,
-  BufferGeometry,
-  ClampToEdgeWrapping,
+  type BufferGeometry,
+  ConeGeometry,
   CylinderGeometry,
-  DataTexture,
-  DoubleSide,
-  Group,
   type Material,
+  MathUtils,
   Mesh,
-  MeshBasicMaterial,
-  NearestFilter,
   PlaneGeometry,
-  RGBAFormat,
   SphereGeometry,
-  UnsignedByteType,
+  TorusKnotGeometry,
+  Vector3,
 } from "three";
-
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { ReturnTypeOfMaterials } from "./types.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
 const roundedCache = new Map<string, BufferGeometry>();
 
-export type ShooterMaterials = ReturnTypeOfMaterials;
+// Canonical primitives: ONE geometry object per shape, sized per mesh through
+// `mesh.scale`. A plain `new BoxGeometry(w, h, d)` per mesh is pixel-identical
+// to a shared unit box scaled by (w, h, d) — positions are linear in the
+// dimensions and the axis-aligned normals survive a diagonal scale — but the
+// per-mesh version gives every mesh its own geometry identity, and identity is
+// what instancing keys on. A town that builds 200 solids this way draws 200
+// times where it could draw once; these exist so that never happens again.
+let unitBoxGeometry: BufferGeometry | undefined;
+export function unitBox(): BufferGeometry {
+  unitBoxGeometry ??= new BoxGeometry(1, 1, 1);
+  return unitBoxGeometry;
+}
 
-export const PICKUP_SPRITE_FRAMES = [
-  { x: 0, y: 0, width: 8, height: 8, duration: 0.07 },
-  { x: 8, y: 0, width: 12, height: 10, duration: 0.11 },
-  { x: 20, y: 2, width: 12, height: 8, duration: 0.15 },
-] as const;
+let unitPlaneGeometry: BufferGeometry | undefined;
+export function unitPlane(): BufferGeometry {
+  unitPlaneGeometry ??= new PlaneGeometry(1, 1);
+  return unitPlaneGeometry;
+}
 
-const PICKUP_ATLAS_WIDTH = 32;
-const PICKUP_ATLAS_HEIGHT = 16;
+const unitCylinderCache = new Map<number, BufferGeometry>();
+/** A radius-1, height-1 cylinder scaled by (r, h, r); segments are part of the shape. */
+export function unitCylinder(segments: number): BufferGeometry {
+  let geometry = unitCylinderCache.get(segments);
+  if (geometry === undefined) {
+    geometry = new CylinderGeometry(1, 1, 1, segments);
+    unitCylinderCache.set(segments, geometry);
+  }
+  return geometry;
+}
 
-function setPixel(
-  data: Uint8Array,
+/**
+ * A box with rounded edges: every vertex of a segmented box pushed outward
+ * from the clamped "inner" box by `radius`, then welded so normals interpolate
+ * smoothly across the seams instead of faceting at them.
+ */
+export function roundedBox(
   width: number,
   height: number,
-  x: number,
-  y: number,
-  colour: readonly [number, number, number, number],
-): void {
-  if (x < 0 || y < 0 || x >= width || y >= height) return;
-  const row = height - 1 - y;
-  const index = (row * width + x) * 4;
-  data[index] = colour[0];
-  data[index + 1] = colour[1];
-  data[index + 2] = colour[2];
-  data[index + 3] = colour[3];
-}
-
-function createPickupAtlas(): DataTexture {
-  const data = new Uint8Array(PICKUP_ATLAS_WIDTH * PICKUP_ATLAS_HEIGHT * 4);
-  for (let y = 0; y < PICKUP_ATLAS_HEIGHT; y += 1) {
-    for (let x = 0; x < PICKUP_ATLAS_WIDTH; x += 1) {
-      const frame = PICKUP_SPRITE_FRAMES.find(
-        ({ x: left, y: top, width, height }) =>
-          x >= left && x < left + width && y >= top && y < top + height,
-      );
-      if (frame === undefined) continue;
-      const localX = x - frame.x - (frame.width - 1) / 2;
-      const localY = y - frame.y - (frame.height - 1) / 2;
-      const radius = Math.min(frame.width, frame.height) * 0.42;
-      if (Math.hypot(localX, localY) > radius) continue;
-      const colour: readonly [number, number, number, number] = [
-        100 + Math.round((frame.width / 12) * 100),
-        225,
-        255,
-        255,
-      ];
-      setPixel(data, PICKUP_ATLAS_WIDTH, PICKUP_ATLAS_HEIGHT, x, y, colour);
-    }
-  }
-  const texture = new DataTexture(
-    data,
-    PICKUP_ATLAS_WIDTH,
-    PICKUP_ATLAS_HEIGHT,
-    RGBAFormat,
-    UnsignedByteType,
-  );
-  texture.magFilter = NearestFilter;
-  texture.minFilter = NearestFilter;
-  texture.wrapS = ClampToEdgeWrapping;
-  texture.wrapT = ClampToEdgeWrapping;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-const NAMEPLATE_GLYPHS: Readonly<Record<string, readonly string[]>> = {
-  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
-  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
-  G: ["01110", "10001", "10000", "10111", "10001", "10001", "01110"],
-  R: ["11110", "10001", "10001", "11110", "10100", "10010", "10001"],
-  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
-};
-
-const NAMEPLATE_WIDTH = 48;
-const NAMEPLATE_HEIGHT = 12;
-const NAMEPLATE_BACKGROUND: readonly [number, number, number, number] = [7, 18, 27, 240];
-const NAMEPLATE_INK: readonly [number, number, number, number] = [138, 239, 255, 255];
-const NAMEPLATE_BORDER: readonly [number, number, number, number] = [53, 128, 154, 255];
-
-function fillNameplate(data: Uint8Array): void {
-  for (let y = 0; y < NAMEPLATE_HEIGHT; y += 1) {
-    for (let x = 0; x < NAMEPLATE_WIDTH; x += 1)
-      setPixel(data, NAMEPLATE_WIDTH, NAMEPLATE_HEIGHT, x, y, NAMEPLATE_BACKGROUND);
-  }
-}
-
-function drawNameplateBorder(data: Uint8Array): void {
-  for (let x = 0; x < NAMEPLATE_WIDTH; x += 1) {
-    setPixel(data, NAMEPLATE_WIDTH, NAMEPLATE_HEIGHT, x, 0, NAMEPLATE_BORDER);
-    setPixel(data, NAMEPLATE_WIDTH, NAMEPLATE_HEIGHT, x, NAMEPLATE_HEIGHT - 1, NAMEPLATE_BORDER);
-  }
-  for (let y = 0; y < NAMEPLATE_HEIGHT; y += 1) {
-    setPixel(data, NAMEPLATE_WIDTH, NAMEPLATE_HEIGHT, 0, y, NAMEPLATE_BORDER);
-    setPixel(data, NAMEPLATE_WIDTH, NAMEPLATE_HEIGHT, NAMEPLATE_WIDTH - 1, y, NAMEPLATE_BORDER);
-  }
-}
-
-function drawNameplateText(data: Uint8Array): void {
-  for (const [index, character] of [..."TARGET"].entries()) {
-    const glyph = NAMEPLATE_GLYPHS[character];
-    if (glyph === undefined) continue;
-    for (const [row, line] of glyph.entries()) {
-      for (const [column, lit] of [...line].entries()) {
-        if (lit === "1")
-          setPixel(
-            data,
-            NAMEPLATE_WIDTH,
-            NAMEPLATE_HEIGHT,
-            6 + index * 7 + column,
-            2 + row,
-            NAMEPLATE_INK,
-          );
-      }
-    }
-  }
-}
-
-function createNameplateTexture(): DataTexture {
-  const data = new Uint8Array(NAMEPLATE_WIDTH * NAMEPLATE_HEIGHT * 4);
-  fillNameplate(data);
-  drawNameplateBorder(data);
-  drawNameplateText(data);
-  const texture = new DataTexture(
-    data,
-    NAMEPLATE_WIDTH,
-    NAMEPLATE_HEIGHT,
-    RGBAFormat,
-    UnsignedByteType,
-  );
-  texture.magFilter = NearestFilter;
-  texture.minFilter = NearestFilter;
-  texture.wrapS = ClampToEdgeWrapping;
-  texture.wrapT = ClampToEdgeWrapping;
-  texture.needsUpdate = true;
-  return texture;
-}
-
-function createTargetNameplate(): Group {
-  const group = new Group();
-  group.name = "target-nameplate";
-  const mesh = new Mesh(
-    new PlaneGeometry(1.05, 0.26),
-    new MeshBasicMaterial({
-      depthWrite: false,
-      map: createNameplateTexture(),
-      side: DoubleSide,
-      transparent: true,
-    }),
-  );
-  mesh.name = "target-nameplate-surface";
-  group.add(mesh);
-  return group;
-}
-
-function compactBox(width: number, height: number, depth: number): BufferGeometry {
-  const halfX = width / 2;
-  const halfY = height / 2;
-  const halfZ = depth / 2;
-  const positions = new Float32Array([
-    -halfX,
-    -halfY,
-    -halfZ,
-    halfX,
-    -halfY,
-    -halfZ,
-    halfX,
-    halfY,
-    -halfZ,
-    -halfX,
-    halfY,
-    -halfZ,
-    -halfX,
-    -halfY,
-    halfZ,
-    halfX,
-    -halfY,
-    halfZ,
-    halfX,
-    halfY,
-    halfZ,
-    -halfX,
-    halfY,
-    halfZ,
-  ]);
-  const normals = new Float32Array(positions.length);
-  for (let index = 0; index < positions.length; index += 3) {
-    const x = positions[index] ?? 0;
-    const y = positions[index + 1] ?? 0;
-    const z = positions[index + 2] ?? 0;
-    const length = Math.hypot(x, y, z) || 1;
-    normals[index] = x / length;
-    normals[index + 1] = y / length;
-    normals[index + 2] = z / length;
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(normals, 3));
-  geometry.setIndex([
-    0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 1, 5, 6, 1, 6, 2, 2, 6, 7, 2, 7, 3, 4, 0,
-    3, 4, 3, 7,
-  ]);
-  return geometry;
-}
-
-/**
- * A box with **face** normals, cached by size.
- *
- * `compactBox` above shares eight vertices between all six faces and derives each normal by
- * normalising the vertex position. That is fine for something roughly cubic, and wrong for
- * anything long and thin: for the arena's 22 x 4.2 x 0.4 back wall every normal comes out pointing
- * along +/-X, so the inner face is shaded as though it faced sideways and an overhead key misses
- * it completely. The wall rendered as a black band straight across the middle of the frame at
- * exactly the height the targets stand — and no palette or light change could lift it, because the
- * surface was not facing the light.
- *
- * A `BoxGeometry` has twenty-four vertices and the **same twelve triangles**, so this costs
- * nothing against the triangle budget. `compactBox` stays for the flat trim strips and decals,
- * where the geometry really is a thin quad and the shading does not matter.
- */
-function roundedBox(width: number, height: number, depth: number): BufferGeometry {
-  const key = `${width},${height},${depth}`;
+  depth: number,
+  radius = 0.14,
+  segments = 3,
+): BufferGeometry {
+  const key = `${width},${height},${depth},${radius},${segments}`;
   const cached = roundedCache.get(key);
   if (cached !== undefined) return cached;
-  const geometry = new BoxGeometry(width, height, depth);
-  roundedCache.set(key, geometry);
-  return geometry;
-}
 
-/**
- * Bake a group of rigid meshes down to one mesh per material.
- *
- * The arena's floor panels, its skirting and each drone are all static relative to their parent,
- * and authored one mesh at a time they cost one draw each. With five hostiles on the field that
- * put `production-performance` at five hundred draws. Merging keeps every material separate and
- * separately editable and costs no triangles at all.
- */
-function bakeByMaterial(parts: readonly Mesh[], root: Group): void {
-  const byMaterial = new Map<Material, Mesh[]>();
-  for (const mesh of parts) {
-    const bucket = byMaterial.get(mesh.material as Material);
-    if (bucket === undefined) byMaterial.set(mesh.material as Material, [mesh]);
-    else bucket.push(mesh);
-  }
-  for (const [material, meshes] of byMaterial) {
-    const geometry = mergeGeometries(
-      meshes.map((mesh) => {
-        mesh.updateMatrix();
-        const placed = mesh.geometry.clone().applyMatrix4(mesh.matrix);
-        const cloned = placed.index === null ? placed : placed.toNonIndexed();
-        for (const name of Object.keys(cloned.attributes)) {
-          if (name !== "position") cloned.deleteAttribute(name);
-        }
-        return cloned;
-      }),
-      false,
+  const limit = Math.min(radius, width / 2 - 1e-3, height / 2 - 1e-3, depth / 2 - 1e-3);
+  const geometry = new BoxGeometry(width, height, depth, segments, segments, segments);
+  // No UVs and no normals: both are rebuilt after welding, and a geometry with
+  // stale UVs is a geometry someone will eventually try to texture.
+  geometry.deleteAttribute("uv");
+  geometry.deleteAttribute("normal");
+
+  const position = geometry.attributes.position;
+  if (position === undefined) throw new Error("Rounded box lost its position attribute.");
+  const inner = new Vector3(width / 2 - limit, height / 2 - limit, depth / 2 - limit);
+  const vertex = new Vector3();
+  const clamped = new Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    vertex.fromBufferAttribute(position, index);
+    clamped.set(
+      MathUtils.clamp(vertex.x, -inner.x, inner.x),
+      MathUtils.clamp(vertex.y, -inner.y, inner.y),
+      MathUtils.clamp(vertex.z, -inner.z, inner.z),
     );
-    if (geometry === null) throw new Error("mergeGeometries returned null baking a visual.");
-    geometry.computeVertexNormals();
-    const merged = new Mesh(geometry, material);
-    merged.castShadow = meshes[0]?.castShadow ?? true;
-    merged.receiveShadow = true;
-    root.add(merged);
+    vertex.sub(clamped);
+    const length = vertex.length();
+    if (length > 1e-6) vertex.multiplyScalar(limit / length);
+    position.setXYZ(index, vertex.x + clamped.x, vertex.y + clamped.y, vertex.z + clamped.z);
   }
+
+  const welded = mergeVertices(geometry, 1e-4);
+  welded.computeVertexNormals();
+  roundedCache.set(key, welded);
+  return welded;
 }
 
-function shadowed(mesh: Mesh, cast = true): Mesh {
-  mesh.castShadow = cast;
-  mesh.receiveShadow = true;
+export interface IShapeOptions {
+  readonly castShadow?: boolean;
+  readonly radius?: number;
+  readonly receiveShadow?: boolean;
+  readonly segments?: number;
+}
+
+function shadowed(mesh: Mesh, options: IShapeOptions): Mesh {
+  mesh.castShadow = options.castShadow ?? true;
+  mesh.receiveShadow = options.receiveShadow ?? true;
   return mesh;
 }
 
-function block(width: number, height: number, depth: number, material: Material): Mesh {
-  return shadowed(new Mesh(roundedBox(width, height, depth), material));
+/** The workhorse: a rounded box that casts and receives shadows. */
+export function block(
+  width: number,
+  height: number,
+  depth: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = roundedBox(width, height, depth, options.radius ?? 0.14, options.segments ?? 3);
+  return shadowed(new Mesh(geometry, material), options);
 }
 
-export function createArena(materials: ShooterMaterials) {
-  const group = new Group();
-  group.name = "arena";
-  // Everything static and non-interactive: floor panels, skirting, boundary lines, cover lips.
-  // Baked into one mesh per material at the end of this function.
-  const decoration: Mesh[] = [];
-  const floor = block(22, 0.4, 24, materials.arena);
-  floor.name = "arena-floor";
-  floor.position.set(0, -0.2, -1);
-  group.add(floor);
-  // Four walls, not three. In first person the player turns around, and an arena open at the back
-  // shows the void the third-person camera never pointed at.
-  const walls = [
-    { depth: 24, position: [-11, 1.9, -1] as const, width: 0.4 },
-    { depth: 24, position: [11, 1.9, -1] as const, width: 0.4 },
-    { depth: 0.4, position: [0, 1.9, -13] as const, width: 22 },
-    { depth: 0.4, position: [0, 1.9, 11] as const, width: 22 },
-  ].map(({ depth, position, width }, index) => {
-    const wall = block(width, 4.2, depth, materials.shadow);
-    wall.name = `arena-wall-${index}`;
-    wall.position.set(position[0], position[1], position[2]);
-    group.add(wall);
-    // A lit skirting strip where the wall meets the deck. Without one the join is the darkest
-    // value in the arena and reads as a black band cut across the middle of the frame, which is
-    // exactly where the targets stand.
-    const skirting = new Mesh(
-      compactBox(width < 1 ? width + 0.12 : width, 0.14, depth < 1 ? depth + 0.12 : depth),
-      materials.trim,
-    );
-    skirting.position.set(position[0], 0.12, position[2]);
-    skirting.castShadow = false;
-    decoration.push(skirting);
-    return wall;
-  });
-  // Cover. An arena with a flat floor is a shooting gallery: these are what turns "walk forward
-  // and hold fire" into peeking, and they are what the crouch is for.
-  const cover = [
-    { height: 1.15, position: [-4.6, 0, -3.2] as const, size: [2.4, 1.2] as const },
-    { height: 1.15, position: [4.6, 0, -3.2] as const, size: [2.4, 1.2] as const },
-    { height: 0.95, position: [0, 0, -7.4] as const, size: [3.6, 1.1] as const },
-    { height: 2.6, position: [-7.4, 0, -8.6] as const, size: [1.5, 1.5] as const },
-    { height: 2.6, position: [7.4, 0, -8.6] as const, size: [1.5, 1.5] as const },
-    { height: 0.9, position: [-2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
-    { height: 0.9, position: [2.4, 0, 2.4] as const, size: [1.4, 1.4] as const },
-  ].map(({ height, position, size }, index) => {
-    const crate = block(size[0], height, size[1], materials.cover);
-    crate.name = `arena-wall-cover-${index}`;
-    crate.position.set(position[0], height / 2, position[2]);
-    group.add(crate);
-    // A lit lip along the top edge, so cover reads as cover at a glance in a dim arena.
-    const lip = new Mesh(compactBox(size[0] + 0.06, 0.05, size[1] + 0.06), materials.edge);
-    lip.position.set(position[0], height + 0.02, position[2]);
-    lip.castShadow = false;
-    lip.receiveShadow = false;
-    decoration.push(lip);
-    return crate;
-  });
-  // Floor panels, then a boundary line. A full accent grid every three metres across the whole
-  // floor is what shipped, and it photographed as a debug overlay switched on by mistake: bright
-  // yellow rules over everything, drawing the eye away from the targets standing on them.
-  for (let x = -8; x <= 8; x += 5.4) {
-    for (let z = -11; z <= 9; z += 5) {
-      const panel = new Mesh(compactBox(4.9, 0.02, 4.5), materials.floorPanel);
-      panel.position.set(x, 0.011, z);
-      panel.castShadow = false;
-      panel.receiveShadow = true;
-      decoration.push(panel);
-    }
-  }
-  for (const [width, depth, z] of [
-    [21.4, 0.06, -12.6],
-    [21.4, 0.06, 10.6],
-  ] as const) {
-    const line = new Mesh(compactBox(width, 0.014, depth), materials.trim);
-    line.position.set(0, 0.02, z);
-    line.castShadow = false;
-    decoration.push(line);
-  }
-  for (const side of [-1, 1]) {
-    const line = new Mesh(compactBox(0.06, 0.014, 23.2), materials.trim);
-    line.position.set(side * 10.6, 0.02, -1);
-    line.castShadow = false;
-    decoration.push(line);
-  }
-  bakeByMaterial(decoration, group);
-  return { cover, floor, group, walls };
+export function ball(radius: number, material: Material, options: IShapeOptions = {}): Mesh {
+  const segments = options.segments ?? 16;
+  const geometry = new SphereGeometry(radius, segments, Math.max(6, Math.round(segments / 2)));
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+export function tube(
+  radiusTop: number,
+  radiusBottom: number,
+  height: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = new CylinderGeometry(radiusTop, radiusBottom, height, options.segments ?? 16);
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+export function spike(
+  radius: number,
+  height: number,
+  material: Material,
+  options: IShapeOptions = {},
+): Mesh {
+  const geometry = new ConeGeometry(radius, height, options.segments ?? 14);
+  return shadowed(new Mesh(geometry, material), options);
+}
+
+/** A smooth prop for the starter scene. */
+export function sculpture(material: Material): Mesh {
+  // 128 × 24 is 6,144 triangles. The old 500 × 100 mesh pushed 100k triangles
+  // through the colour, shadow and bloom passes for no visible gain.
+  const geometry = new TorusKnotGeometry(1.35, 0.38, 128, 24);
+  return shadowed(new Mesh(geometry, material), {});
 }
 
 /**
- * The carbine and the hands that hold it, authored pointing -z.
- *
- * Deliberately built from primitives rather than loaded from a `.glb`: a kit that ships a
- * 12 MB weapon model teaches an agent to reach for one, and this reads as a weapon at a
- * fraction of the download. Swap it for a real model by loading a `.glb` in `Scene.load()` and
- * handing it to `preparePlayerConventions` instead — `normaliseToMetres` sizes either one.
- *
- * It is authored at roughly 0.55 m so `normaliseToMetres` has real work to do: the size that
- * ships is the one in `render/scale.ts`, never the one that happened to be convenient here.
+ * Deterministic PRNG. Never Math.random: the world has to be byte-identical on
+ * every reload or a screenshot diff means nothing and you cannot tell a bug
+ * from a reroll.
  */
-export function createViewmodelVisual(materials: ShooterMaterials): Group {
-  const group = new Group();
-  group.name = "viewmodel";
-
-  const rifle = new Group();
-  rifle.name = "held-rifle";
-
-  const part = (
-    geometry: BufferGeometry,
-    material: Material,
-    x: number,
-    y: number,
-    z: number,
-  ): Mesh => {
-    const mesh = new Mesh(geometry, material);
-    mesh.position.set(x, y, z);
-    // The viewmodel is drawn over the arena and never casts into it: a weapon held at the eye
-    // throws a shadow the size of the room.
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.frustumCulled = false;
-    rifle.add(mesh);
-    return mesh;
+export function makeRandom(seed = 1337): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
   };
-
-  part(compactBox(0.062, 0.072, 0.24), materials.gunmetal, 0, 0, -0.02);
-  part(compactBox(0.05, 0.052, 0.15), materials.polymer, 0, -0.002, -0.2);
-  part(
-    new CylinderGeometry(0.011, 0.011, 0.2, 6).rotateX(Math.PI / 2),
-    materials.gunmetal,
-    0,
-    0.012,
-    -0.31,
-  );
-  part(
-    new CylinderGeometry(0.021, 0.019, 0.07, 6).rotateX(Math.PI / 2),
-    materials.gunmetal,
-    0,
-    0.012,
-    -0.43,
-  );
-  // Magazine and pistol grip, both raked back the way a real one sits in the hand.
-  const magazine = part(compactBox(0.04, 0.13, 0.062), materials.polymer, 0, -0.09, -0.04);
-  magazine.rotation.x = -0.16;
-  const grip = part(compactBox(0.038, 0.1, 0.05), materials.polymer, 0, -0.075, 0.07);
-  grip.rotation.x = 0.3;
-  part(compactBox(0.055, 0.062, 0.13), materials.polymer, 0, -0.006, 0.13);
-  // The optic. `preparePlayerConventions` does not look for it by name, but a rigged replacement
-  // usually ships one called this, and the aiming pose is authored against its position.
-  const optic = part(compactBox(0.036, 0.038, 0.07), materials.gunmetal, 0, 0.057, -0.01);
-  optic.name = "optic";
-  part(compactBox(0.008, 0.008, 0.008), materials.sight, 0, 0.058, -0.045);
-  part(compactBox(0.044, 0.012, 0.09), materials.gunmetal, 0, 0.04, -0.02);
-
-  group.add(rifle);
-
-  // Two gloved forearms. They live outside `held-rifle` so `normaliseToMetres` measures the
-  // weapon and not the person carrying it.
-  const arms = new Group();
-  arms.name = "viewmodel-arms";
-  const forearm = (x: number, y: number, z: number, pitch: number, yaw: number): void => {
-    const mesh = new Mesh(compactBox(0.048, 0.046, 0.3), materials.glove);
-    mesh.position.set(x, y, z);
-    mesh.rotation.set(pitch, yaw, 0);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    mesh.frustumCulled = false;
-    arms.add(mesh);
-  };
-  forearm(0.075, -0.15, 0.02, 0.5, -0.26);
-  forearm(-0.055, -0.12, -0.2, 0.36, 0.32);
-  group.add(arms);
-  return group;
-}
-
-/**
- * What the player sees when they look down: hips, thighs, shins, boots.
- *
- * Nothing above the waist, because a chest at eye height fills the frame and clips through the
- * near plane. `GroundSnap` measures this group, so the boots are what meets the floor.
- */
-export function createLegsVisual(materials: ShooterMaterials): Group {
-  const group = new Group();
-  group.name = "player-legs";
-  const leg = (side: number): void => {
-    const thigh = block(0.19, 0.44, 0.21, materials.player);
-    thigh.position.set(side * 0.13, -0.24, 0);
-    group.add(thigh);
-    const shin = block(0.15, 0.4, 0.17, materials.shadow);
-    shin.position.set(side * 0.13, -0.64, 0.01);
-    group.add(shin);
-    const boot = block(0.17, 0.11, 0.3, materials.trim);
-    boot.position.set(side * 0.13, -0.855, -0.04);
-    group.add(boot);
-  };
-  leg(-1);
-  leg(1);
-  const hips = block(0.42, 0.2, 0.24, materials.player);
-  hips.position.y = -0.02;
-  group.add(hips);
-  return group;
-}
-
-/**
- * The hostile: a hovering combat drone.
- *
- * What shipped here was a 1.2 x 1.8 box in hostile pink with two thin bars crossed over it, and
- * the first frame read exactly like that — a sheet of pink card with a plus drawn on it, in
- * triplicate. A drone made of nine boxes is barely more geometry (this template's `compactBox` is
- * twelve triangles) and it has a front, a top and a silhouette, which is what tells the player
- * which way a thing is facing and whether they have hit it.
- *
- * The collision box in `Target.ts` is unchanged at 1.2 x 1.8 x 1: this fills that volume rather
- * than redefining it.
- */
-export function createTargetVisual(materials: ShooterMaterials): Group {
-  const group = new Group();
-  group.name = "target-visual";
-  // Keep a non-zero parent rotation in the stock scene so the nameplate demonstrates world-space
-  // billboarding instead of accidentally passing only in the unparented case.
-  group.rotation.y = 0.22;
-  const parts: Mesh[] = [];
-
-  // Core: a chest that tapers to a narrower waist, so the thing has a top and a bottom.
-  const chest = block(0.94, 0.72, 0.62, materials.hostile);
-  chest.position.y = 1.24;
-  parts.push(chest);
-  const waist = block(0.6, 0.44, 0.46, materials.shadow);
-  waist.position.y = 0.78;
-  parts.push(waist);
-  const skirt = block(0.78, 0.26, 0.56, materials.hostile);
-  skirt.position.y = 0.5;
-  parts.push(skirt);
-
-  // Head and the single lit eye: the read that says which way it is looking.
-  const head = block(0.4, 0.3, 0.34, materials.shadow);
-  head.position.y = 1.72;
-  parts.push(head);
-  const eye = new Mesh(compactBox(0.26, 0.09, 0.06), materials.sight);
-  eye.position.set(0, 1.74, -0.2);
-  eye.castShadow = false;
-  parts.push(eye);
-
-  // Shoulder pods, canted outward. Most of the silhouette at range comes from these.
-  for (const side of [-1, 1]) {
-    const pod = block(0.28, 0.34, 0.46, materials.shadow);
-    pod.position.set(side * 0.62, 1.32, 0);
-    pod.rotation.z = side * -0.22;
-    parts.push(pod);
-    const muzzle = new Mesh(compactBox(0.1, 0.1, 0.34), materials.trim);
-    muzzle.position.set(side * 0.66, 1.28, -0.34);
-    muzzle.castShadow = false;
-    parts.push(muzzle);
-    // Trailing legs. A hovering thing with nothing below it reads as a floating box.
-    const leg = block(0.1, 0.5, 0.12, materials.shadow);
-    leg.position.set(side * 0.24, 0.2, 0.06);
-    leg.rotation.x = -0.24;
-    parts.push(leg);
-  }
-
-  // A lit band around the chest, so a hit registers against something bright.
-  const band = new Mesh(compactBox(0.98, 0.07, 0.66), materials.trim);
-  band.position.y = 1.44;
-  band.castShadow = false;
-  parts.push(band);
-
-  bakeByMaterial(parts, group);
-  const nameplate = createTargetNameplate();
-  nameplate.position.y = 2.2;
-  group.add(nameplate);
-  return group;
-}
-
-/**
- * The friendly: a hovering escort drone.
- *
- * `Play.ts` places this at y = 1 — it is a *drone*, and it hovers. Authored as an upright figure
- * it read as a teal fencepost standing in mid-air right down the player's sightline, which is the
- * worst possible shape for the one object in the arena they must not shoot. Wider than it is tall,
- * with a lit ring, it reads as friendly kit at a glance.
- *
- * It stays narrow across the beam: it has to stand in the player's line of fire for the
- * friendly-layer proof to mean anything, and at 0.9 m across that put a cyan wall two metres in
- * front of the eye.
- */
-export function createFriendlyVisual(materials: ShooterMaterials): Group {
-  const group = new Group();
-  const parts: Mesh[] = [];
-  const hull = block(0.42, 0.24, 0.36, materials.player);
-  parts.push(hull);
-  const belly = block(0.26, 0.16, 0.22, materials.shadow);
-  belly.position.y = -0.18;
-  parts.push(belly);
-  const visor = new Mesh(compactBox(0.3, 0.08, 0.05), materials.trim);
-  visor.position.set(0, 0.02, -0.2);
-  visor.castShadow = false;
-  parts.push(visor);
-  // Four rotor arms and a lit ring, so it reads as a drone and not as a floating brick.
-  for (const [x, z] of [
-    [-1, -1],
-    [1, -1],
-    [-1, 1],
-    [1, 1],
-  ] as const) {
-    const arm = block(0.2, 0.05, 0.2, materials.shadow);
-    arm.position.set(x * 0.26, 0.06, z * 0.24);
-    parts.push(arm);
-    const rotor = new Mesh(compactBox(0.3, 0.02, 0.3), materials.player);
-    rotor.position.set(x * 0.34, 0.12, z * 0.3);
-    rotor.castShadow = false;
-    parts.push(rotor);
-  }
-  const ring = new Mesh(compactBox(0.56, 0.03, 0.5), materials.trim);
-  ring.position.y = -0.12;
-  ring.castShadow = false;
-  parts.push(ring);
-  const beacon = new Mesh(new CylinderGeometry(0.02, 0.02, 0.22, 5), materials.trim);
-  beacon.position.y = 0.22;
-  parts.push(beacon);
-  bakeByMaterial(parts, group);
-  return group;
-}
-
-export function createWallVisual(materials: ShooterMaterials): Mesh {
-  return block(0.65, 2.8, 2.8, materials.shadow);
-}
-
-export function createPickupVisual(materials: ShooterMaterials): Group {
-  const group = new Group();
-  const base = block(0.65, 0.12, 0.65, materials.trim);
-  base.position.y = 0.06;
-  group.add(base);
-  const orb = new Mesh(new SphereGeometry(0.25, 4, 3), materials.player);
-  orb.position.y = 0.45;
-  orb.castShadow = true;
-  group.add(orb);
-  const animated = new Mesh(
-    new PlaneGeometry(0.9, 0.9),
-    new MeshBasicMaterial({
-      depthWrite: false,
-      map: createPickupAtlas(),
-      side: DoubleSide,
-      transparent: true,
-    }),
-  );
-  animated.name = "pickup-animation";
-  animated.position.y = 0.7;
-  group.add(animated);
-  return group;
-}
-
-export function createProjectileVisual(materials: ShooterMaterials): Mesh {
-  return shadowed(new Mesh(new SphereGeometry(0.12, 4, 3), materials.trim), false);
 }

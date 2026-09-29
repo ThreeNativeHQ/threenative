@@ -1,0 +1,24 @@
+{
+  "name": "debug-restart",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "shot-1", "press": "Space", "holdTicks": 3, "release": true },
+    { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true },
+    { "kind": "input", "label": "retry", "press": "Enter", "holdTicks": 4, "release": true },
+    { "kind": "wait", "label": "rebuild", "waitTicks": 90, "release": true },
+    { "kind": "input", "label": "shot-after", "press": "Space", "holdTicks": 3, "release": true },
+    { "kind": "wait", "label": "settle-2", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "runtimeReady": true },
+    "resources": [
+      { "id": "state", "path": "shots", "equals": 1 },
+      { "id": "state", "path": "targetsHit", "equals": 1 },
+      { "id": "state", "path": "score", "equals": 400 }
+    ]
+  }
+}

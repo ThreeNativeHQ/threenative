@@ -80,7 +80,7 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
   assert.equal(scenario.steps[0]?.label, "no-input-control");
   assert.deepEqual(labeled.get("aim-down")?.pointerPosition, { buttons: 2, x: 0.5, y: 0.5 });
-  assert.deepEqual(labeled.get("look-right")?.pointerPosition, { x: 0.75, y: 0.5 });
+  assert.deepEqual(labeled.get("look-right")?.pointerPosition, { buttons: 2, x: 0.75, y: 0.5 });
   assert.deepEqual(labeled.get("release-buttons")?.pointerPosition, {
     buttons: 0,
     x: 0.5,
@@ -92,8 +92,8 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   // fires down the sights. Measured on the browser lane, that chorded press never reaches the
   // page at all: `pointer.buttons` stayed at 2 for the whole step and the game recorded no shot.
   // A scenario that presses two mouse buttons at once therefore proves nothing about either, so
-  // the aim is held on `KeyQ` and the left button is pressed on its own.
-  assert.deepEqual(labeled.get("aim-key")?.press, "KeyQ");
+  // the aim is held on `KeyF` and the left button is pressed on its own.
+  assert.deepEqual(labeled.get("aim-key")?.press, "KeyF");
   assert.deepEqual(labeled.get("fire-while-aiming")?.pointerPosition, {
     buttons: 1,
     x: 0.5,
@@ -105,6 +105,14 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
     order.indexOf("release-buttons") < order.indexOf("fire-while-aiming"),
     "the aim button must be released before the trigger is pressed",
   );
+  // And the shot the harness just caused is the one the crosshair made, which is the part a
+  // relative look axis cannot prove on its own.
+  const ammo = (scenario.assert?.resources ?? []).find(({ path }) => path === "ammo");
+  assert.deepEqual(ammo?.atSteps, [{ label: "fire-settle", equals: 29 }]);
+  const divergence = (scenario.assert?.components ?? []).find(
+    ({ component }) => component === "aimDivergenceDeg",
+  );
+  assert.ok(divergence !== undefined, "the scenario must score the shot against the camera axis");
   return { entry, scenario, scenarioPath };
 }
 
@@ -295,12 +303,12 @@ test("should preserve button order on the native target", async () => {
     deliveries.filter(({ kind }) => kind === "key"),
     [
       // device.ts derives the DOM key from the scenario code: Enter arrives as "Enter" and
-      // KeyQ — the aim held while the trigger is pressed — arrives as "q".
+      // KeyF — the aim held while the trigger is pressed — arrives as "f".
       { kind: "key", key: "Enter", type: "keydown" },
       { kind: "key", key: "Enter", type: "keyup" },
       // No `q` release: the aim is held from its own step to the end of the scenario, which is
       // the whole point — the shot has to be taken while it is down.
-      { kind: "key", key: "q", type: "keydown" },
+      { kind: "key", key: "f", type: "keydown" },
     ],
   );
 

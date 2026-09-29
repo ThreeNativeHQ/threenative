@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import game from "./game.js";
 import { App } from "./ui/App.js";
 import "./style.css";
-import "./render/ui.css";
 
 import.meta.hot?.accept();
 acceptHotUpdate(game, import.meta.hot);

@@ -527,71 +527,43 @@ describe("starter playtest proof", () => {
     }
   });
 
-  it("should drive the generated shooter through one committed input-control scenario", async () => {
+  it("should drive the generated shooter through one committed fire-control scenario", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
-          "packages/create-threenative/templates/shooter/playtests/input-control.playtest.json",
+          "packages/create-threenative/templates/shooter/playtests/debug-fire.playtest.json",
         ),
         "utf8",
       ),
     ) as {
       assert?: {
-        resources?: Array<{
-          atSteps?: Array<{ equals: unknown; label: string }>;
-          id: string;
-          path: string;
-        }>;
-        signals?: Array<{ atStep?: string; name: string }>;
+        movement?: { entity: string; minDistance: number };
+        resources?: Array<{ id: string; path: string }>;
       };
       name: string;
-      parity?: { targets: string[] };
       schemaVersion: number;
-      steps: Array<{
-        kind?: string;
-        label?: string;
-        pointerPosition?: { buttons?: number; x: number; y: number };
-        press?: string;
-        waitTicks?: number;
-      }>;
+      steps: Array<{ kind?: string; label?: string; press?: string }>;
       target: string;
     };
 
-    expect(scenario.name).toBe("input-control");
+    expect(scenario.name).toBe("debug-fire");
     expect(scenario.schemaVersion).toBe(1);
-    // One scenario, two targets: the desktop run executes this same file, no fork.
-    expect(scenario.parity?.targets).toEqual(["web", "desktop"]);
-    // The control comes first, so a pass from initial state is impossible.
-    expect(scenario.steps[0]).toMatchObject({ kind: "wait", label: "no-input-control" });
+    expect(scenario.target).toBe("web");
+
+    // Three trigger pulls around a reload and a walk: the cadence, the magazine and the fact
+    // that a shot is a raycast from the crosshair rather than a muzzle. None of it can pass
+    // from the opening state, so the scenario is not satisfied by doing nothing.
+    const presses = (scenario.assert?.resources ?? []).map(({ path }) => path);
+    for (const path of ["shots", "targetsHit", "score"]) {
+      expect(presses).toContain(path);
+    }
+    expect(scenario.assert?.movement).toMatchObject({ entity: "player" });
+    expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
 
     const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
-    expect(labeled.get("aim-down")?.pointerPosition).toMatchObject({ buttons: 2, x: 0.5 });
-    expect(labeled.get("look-right")?.pointerPosition).not.toHaveProperty("buttons");
-    // The trigger is pressed alone, after the aim button is released and the aim is held on a
-    // key instead. A chorded press — left while right is down — never reaches the page through
-    // the harness, so a scenario built on one proves nothing about either button.
-    expect(labeled.get("aim-key")?.press).toBe("KeyQ");
-    expect(labeled.get("fire-while-aiming")?.pointerPosition).toMatchObject({
-      buttons: 1,
-      x: 0.5,
-    });
-    expect(labeled.get("release-buttons")?.pointerPosition).toMatchObject({ buttons: 0 });
-
-    const resources = scenario.assert?.resources ?? [];
-    const yaw = resources.find(({ path }) => path === "yawDegrees");
-    // Half of the ninety-two degrees that same pointer travel used to produce: the right button is
-    // held through the look, and aiming down the sights halves the sensitivity.
-    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 46 });
-    const shots = resources.find(({ path }) => path === "shotsFired");
-    expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
-    // The heading is zeroed through the template's own restart binding before the measured
-    // looks, so the rotation proof starts from a known baseline on every target. Restart is
-    // Enter, not R: a first-person kit owes R to the reload every shooter binds there.
-    expect(labeled.get("reset-heading")).toMatchObject({ press: "Enter" });
-    const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
-    for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
-      expect(signalNames).toContain(name);
-    }
+    expect(labeled.get("shot-1")).toMatchObject({ kind: "input", press: "Space" });
+    expect(labeled.get("reload")).toMatchObject({ kind: "input", press: "KeyR" });
+    expect(labeled.get("advance")).toMatchObject({ kind: "input", press: "KeyW" });
   });
 
   it("should bind mouse look, right-button aim, and left-button fire in the shooter template", async () => {
@@ -600,7 +572,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const player = await readFile(
-      path.resolve("packages/create-threenative/templates/shooter/src/entities/Player.ts"),
+      path.resolve("packages/create-threenative/templates/shooter/src/entities/FpsPlayer.ts"),
       "utf8",
     );
     const scene = await readFile(
@@ -608,18 +580,21 @@ describe("starter playtest proof", () => {
       "utf8",
     );
 
-    expect(game).toContain('aim: { keys: ["KeyQ"], mouseButtons: [2] }');
-    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF", "Space"], mouseButtons: [0] }');
+    // Aim is F and the right button; Space and the left button fire. The bindings the game
+    // documents in its own AGENTS.md, asserted here so the docs cannot drift from the map.
+    expect(game).toContain('aim: { keys: ["KeyF"], mouseButtons: [2] }');
+    expect(game).toContain('fire: { keys: ["Space"], mouseButtons: [0] }');
     expect(game).toContain("look: { pointerRelative: true }");
-    expect(game).toContain('reload: { buttons: [3], keys: ["KeyR"] }');
+    expect(game).toContain('reload: { keys: ["KeyR"] }');
     // The player consumes the look axis through the real input map, on the same path a native
     // build takes; nothing in this kit reads `movementX` or the DOM.
     expect(player).toContain('ctx.input.vector("look")');
     expect(player).toContain('ctx.input.pressed("aim")');
-    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the weapon's
-    // cyclic cooldown.
+    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the
+    // weapon's cyclic cooldown.
     expect(scene).toContain('frameCtx.input.pressed("fire")');
-    expect(scene).toContain("fireHitscan(player.aiming)");
-    expect(scene).toContain('emitPlaytestEvent({ entity: "player", name: "fired", aimed:');
+    // A shot starts at the crosshair, from the camera the player is looking through.
+    expect(scene).toContain("const aimRay = player.aimRay();");
+    expect(scene).toContain("fire(frameCtx, aimRay)");
   });
 });

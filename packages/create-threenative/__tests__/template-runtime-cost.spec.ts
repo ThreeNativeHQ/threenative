@@ -271,8 +271,6 @@ describe("generated template ordinary-frame runtime cost", () => {
     const racing = await import("../templates/racing/src/track/Ranking.js");
     const racingLap = await import("../templates/racing/src/track/Lap.js");
     const racingSector = await import("../templates/racing/src/track/TrackSector.js");
-    const shooter = await import("../templates/shooter/src/weapons/Projectile.js");
-    const shooterMaterials = await import("../templates/shooter/src/render/materials.js");
     const actionRpg = await import("../templates/action-rpg/src/entities/Enemy.js");
     const defense = await import("../templates/defense/src/attackers/Attacker.js");
     const core = await import("../../core/src/index.js");
@@ -283,7 +281,6 @@ describe("generated template ordinary-frame runtime cost", () => {
       "platformer Fox": platformer.Fox,
       "racing rankRacers": racing.rankRacers,
       "racing TrackSector": racingSector.TrackSector,
-      "shooter Projectile": shooter.Projectile,
       "action-RPG Enemy": actionRpg.Enemy,
       "defense Attacker": defense.Attacker,
       "core PathFollow3D": core.PathFollow3D,
@@ -430,25 +427,6 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(tiedRanked[0]?.id, "racing deterministic tie order").toBe("alpha");
       expect(tiedRanked[1]?.id, "racing deterministic tie order").toBe("zulu");
 
-      const projectile = new shooter.Projectile(
-        ctx as never,
-        shooterMaterials.createMaterials(),
-        new Vector3(0, 0.85, 0),
-        new Vector3(1, 0, 0),
-        1,
-        () => undefined,
-      );
-      const queryPhysics = {
-        ...physics.physics,
-        directSpaceState: { intersectRay: () => undefined },
-      };
-      const queryCtx = { ...ctx, physics: queryPhysics } as never;
-      expect(
-        measureVectorAllocations(() => projectile.update(queryCtx, DT)),
-        "shooter Projectile.update vector allocation sentinel",
-      ).toEqual({ clones: 0, constructors: 0 });
-      projectile.dispose();
-
       const enemy = new actionRpg.Enemy(
         ctx as never,
         templatedRig(COMBAT_CLIPS),
@@ -494,7 +472,6 @@ describe("generated template ordinary-frame runtime cost", () => {
     const starter = await import("../templates/starter/src/scenes/Play.js");
     const platformer = await import("../templates/platformer/src/scenes/Play.js");
     const racing = await import("../templates/racing/src/scenes/Race.js");
-    const shooter = await import("../templates/shooter/src/scenes/Play.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
     const defense = await import("../templates/defense/src/scenes/Defense.js");
     // The mocked specifier, not the original module: templates resolve solarPosition
@@ -506,7 +483,6 @@ describe("generated template ordinary-frame runtime cost", () => {
       "starter Play": starter.Play,
       "platformer Play": platformer.Play,
       "racing Race": racing.Race,
-      "shooter Play": shooter.Play,
       "action-RPG Play": actionRpg.Play,
       "defense Defense": defense.Defense,
     })) {
@@ -589,32 +565,9 @@ describe("generated template ordinary-frame runtime cost", () => {
       platformerPhysics.dispose();
     }
 
-    const shooterPhysics = await physicsFixture();
-    try {
-      const context = sceneContext(shooterPhysics.physics, shooter.Play.initialState, {
-        look: new Vector2(1, 0),
-      });
-      const frame = new shooter.Play().enter(context as never);
-      const filterSpy = vi.spyOn(Array.prototype, "filter");
-      const reduceSpy = vi.spyOn(Array.prototype, "reduce");
-      let patchHighWater = 0;
-      runSceneFrames(frame, context, () => {
-        patchHighWater = context.patchIdentities.size;
-        filterSpy.mockClear();
-        reduceSpy.mockClear();
-      });
-      const filterCalls = filterSpy.mock.calls.length;
-      const reduceCalls = reduceSpy.mock.calls.length;
-      filterSpy.mockRestore();
-      reduceSpy.mockRestore();
-      expect(filterCalls, "shooter live-target filter allocation sentinel").toBe(0);
-      expect(reduceCalls, "shooter live-target reduce allocation sentinel").toBe(0);
-      expect(context.patchIdentities.size, "shooter state-patch high-water sentinel").toBe(
-        patchHighWater,
-      );
-    } finally {
-      shooterPhysics.dispose();
-    }
+    // The shooter ships no scene-owned collection hot path any more: its town's solids are
+    // merged per material at construction and its frame is a firefight, not a per-frame scan.
+    // `enemy-stops-without-snapping` and `performance` are what prove its steady frame.
 
     const actionRpgPhysics = await physicsFixture();
     try {
