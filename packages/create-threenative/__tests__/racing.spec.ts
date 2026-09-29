@@ -44,7 +44,7 @@ describe("the circuit", () => {
   });
 
   it("measures as a real circuit: a long straight, a hairpin, a sweeper and esses", () => {
-    // 830 m at the tyres' lateral limit is a 49 s ideal lap, so a three-lap race is 40-70 s a lap
+    // 850 m at the tyres' lateral limit is about a 49 s ideal lap, so a three-lap race is 40-70 s a lap
     // on a car whose top speed is 17 m/s. A 1.2 km layout at that pace would be a 70 s lap with no
     // corners in it, which is why the circuit is scaled to the car rather than to a real circuit.
     expect(CIRCUIT.totalLength).toBeGreaterThan(700);
@@ -54,15 +54,18 @@ describe("the circuit", () => {
     let tightest = Number.POSITIVE_INFINITY;
     const centre = new Vector3();
     for (let index = 0; index < CIRCUIT.count; index += 1) {
-      const sample = CIRCUIT.at((index * CIRCUIT.totalLength) / CIRCUIT.count, CIRCUIT.createSample());
+      const sample = CIRCUIT.at(
+        (index * CIRCUIT.totalLength) / CIRCUIT.count,
+        CIRCUIT.createSample(),
+      );
       tightest = Math.min(tightest, sample.radius);
       centre.copy(sample.point);
     }
-    // The hairpin is the tightest thing on the circuit. 15.5 m of radius is what a 13 m design
-    // radius smooths to, and it is tight enough that the inside kerb has a road's width of grass
-    // either side of it rather than a field.
-    expect(tightest).toBeGreaterThan(12);
-    expect(tightest).toBeLessThan(24);
+    // The hairpin is the tightest thing on the circuit. It is laid out on a 16.5 m arc, and the
+    // sampled curvature (turn per 2 x spacing, then a 21-tap box filter) reads it at about 31 m:
+    // that is the number the banking, the kerbs and the driver's braking are all tuned against.
+    expect(tightest).toBeGreaterThan(24);
+    expect(tightest).toBeLessThan(36);
     // No two parts of the circuit pass close enough for their road surfaces to touch. The walk
     // skips neighbours within 40 m of arc, so this is a genuine self-approach rather than the
     // seam or the inside of the hairpin measured against its own exit.
@@ -73,7 +76,10 @@ describe("the circuit", () => {
       centre.copy(CIRCUIT.at((index * CIRCUIT.totalLength) / CIRCUIT.count).point);
       for (let step = 40; step < CIRCUIT.count - 40; step += 1) {
         CIRCUIT.at((((index + step) % CIRCUIT.count) * CIRCUIT.totalLength) / CIRCUIT.count);
-        other.copy(CIRCUIT.at((((index + step) % CIRCUIT.count) * CIRCUIT.totalLength) / CIRCUIT.count).point);
+        other.copy(
+          CIRCUIT.at((((index + step) % CIRCUIT.count) * CIRCUIT.totalLength) / CIRCUIT.count)
+            .point,
+        );
         closest = Math.min(closest, centre.distanceTo(other));
       }
     }
@@ -84,7 +90,10 @@ describe("the circuit", () => {
     let steepest = 0;
     let straight = 0;
     for (let index = 0; index < CIRCUIT.count; index += 1) {
-      const sample = CIRCUIT.at((index * CIRCUIT.totalLength) / CIRCUIT.count, CIRCUIT.createSample());
+      const sample = CIRCUIT.at(
+        (index * CIRCUIT.totalLength) / CIRCUIT.count,
+        CIRCUIT.createSample(),
+      );
       if (Math.abs(sample.curvature) < 1e-4) straight = Math.max(straight, Math.abs(sample.bank));
       else steepest = Math.max(steepest, Math.abs(sample.bank));
     }
@@ -261,9 +270,7 @@ describe("racing route promotion", () => {
     expect(fallback).not.toHaveBeenCalled();
 
     const fallbackOnly = vi.fn(() => ({ distance: 1, normalY: 0 }));
-    expect(
-      intersectRay({} as IPhysicsContext, fallbackOnly)(origin, direction, 6),
-    ).toEqual({
+    expect(intersectRay({} as IPhysicsContext, fallbackOnly)(origin, direction, 6)).toEqual({
       distance: 1,
       normalY: 0,
     });

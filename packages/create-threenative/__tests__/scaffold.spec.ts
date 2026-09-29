@@ -447,7 +447,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "e3037d56533682b2ce5fbfd9ddb81e9cbb7190620456e4eb718f135117556f67",
   runner: "8a4a82361dbd1a1ed9b758efb6b2c2448f25153c0c31a451fea9b2c1b7cf3492",
   puzzle: "d2d99fd8fcd7c44f30cc07f120ac84410bd8186234036e2ff8bfc78a29b06f43",
-  racing: "6fad8368699543c0d596ee22db20009b19dffabac0b006fe93c5c6fef1cf7831",
+  racing: "7118a53d85815cab2e3e9f1ae2ddd299da3dd9ec525ea4851da9873bc2c2c0fa",
   shooter: "874112c17fb3c32d4198413b5ad26f0e76b869b594a59bb9201f3f0dc8a9e701",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
