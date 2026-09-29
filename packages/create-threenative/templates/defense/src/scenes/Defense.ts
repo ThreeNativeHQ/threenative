@@ -1,6 +1,6 @@
 import { type ICtx, Scene, type SceneFrame, isMobile } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import { type Object3D, type PerspectiveCamera, Vector3 } from "three";
+import { type Object3D, type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { Attacker } from "../attackers/Attacker.js";
 import { ROUTE_TEST_SLOT, RouteBoard, SAFE_BUILD_SLOTS } from "../board/Route.js";
 import { Economy, TOWER_COST } from "../economy.js";
@@ -24,12 +24,26 @@ const EMPTY_POSITION = new Vector3();
 export class Defense extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState = INITIAL_STATE;
 
+  #sky: Texture | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    this.#sky = await ctx.assets.texture("sky.jpg");
+  }
+
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
-    setupSky(ctx.scene);
-    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    if (this.#sky === undefined) throw new Error("Defense.enter ran before load() loaded sky.jpg.");
+    setupSky(ctx.scene, this.#sky);
+    const { key } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: key,
+      mobile: isMobile(),
+    });
     setupCamera(ctx.camera as PerspectiveCamera);
     const loading = createLoadingScreen(ctx);
     ctx.add(ctx.camera);

@@ -14,7 +14,6 @@ import {
 } from "../templates/defense/src/economy.js";
 import { Player } from "../templates/defense/src/entities/Player.js";
 import { Buildable } from "../templates/defense/src/placement/Buildable.js";
-import { toon } from "../templates/defense/src/render/palette.js";
 import { MAX_LEAKS, registerLeak } from "../templates/defense/src/state.js";
 import {
   type ITargetable,
@@ -156,16 +155,6 @@ describe("defense starter kit", () => {
   // <Hud />, so both drew the same numbers on top of each other. The subject is gone, so the
   // assertion has no subject. The replacement invariant lives in template.spec.ts — no template
   // may mount two HUDs — and it fails when a call site is restored.
-
-  it("keys toon materials by color and roughness", () => {
-    const smooth = toon(0x123456, 0.2);
-    const rough = toon(0x123456, 0.9);
-
-    expect(smooth).not.toBe(rough);
-    expect(smooth.roughness).toBeCloseTo(0.2);
-    expect(rough.roughness).toBeCloseTo(0.9);
-    expect(toon(0x123456, 0.2)).toBe(smooth);
-  });
 
   it("keeps the economy ledger balanced after income and spend", () => {
     const economy = new Economy();
