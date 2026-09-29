@@ -52,7 +52,6 @@ import {
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
 import {
-  type ISceneWarning,
   describeSceneShape,
   describeSceneWarning,
   formatSceneWarning,
@@ -1355,9 +1354,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // A plan and a measurement that disagree is the finding; one number pretending to be both
     // is how an optimizer reports a win it did not deliver.
     let lastWorldDrawCalls: number | undefined;
-    // The last verdict, so `doctor` and the dev chip read the same one the log printed rather than
-    // recomputing it from a different window.
-    let lastSceneWarning: ISceneWarning | undefined;
     // Completion on the last frame must not make an otherwise compiling window look clean.
     let compilingInWindow = false;
     let lastCompileCount = renderer.compileCount;
@@ -1414,8 +1410,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 describeSceneShape(reported, this.#cameraCull?.report),
                 this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS,
               );
-              lastSceneWarning = warning;
               if (warning !== undefined) console.warn(formatSceneWarning(warning));
+              // The same sentence goes to the UI on a dev launch, so a human watching the window
+              // and an agent reading the log are told the same thing at the same time. No frame
+              // rate rides it: the loop's own rAF rate reads throttled under a compositor or a
+              // virtual display, so a number drawn from it lies in exactly the sessions where
+              // somebody is trying to measure.
+              if (
+                devMetricsEnabled &&
+                warning !== undefined &&
+                this.#uiBridge?.hasPeer() === true
+              ) {
+                const verdict = describeSceneWarning(warning);
+                if (verdict !== postedVerdict) {
+                  postedVerdict = verdict;
+                  this.#uiBridge.post({ type: UI_DEV_METRICS_MESSAGE, sceneWarning: verdict });
+                }
+              }
               if (scaler === undefined) return;
               // **Not while the world is still arriving.** The scaler judges the game by closed
               // frame-budget windows, and the windows that close during a launch are not the game:
@@ -1488,33 +1499,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
-    // Dev metrics are decided once per launch, and counted here rather than timed: a chip that
-    // changed every frame would be unreadable, and a timer would be a second clock.
+    // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
+    // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
+    // say nothing new.
     const devMetricsEnabled = isDevLaunch();
-    let devMetricsFrames = 0;
+    let postedVerdict: string | undefined;
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
-        // A dev launch also reports the rate it is running at, for the UI's own frame-rate chip.
-        // Four times a second is a readable number and no measurable cost; the loop's own smoothed
-        // rate is the measurement, not a second one taken here.
-        if (devMetricsEnabled && this.#uiBridge?.hasPeer() === true) {
-          devMetricsFrames += 1;
-          if (devMetricsFrames >= 15) {
-            devMetricsFrames = 0;
-            // The scene verdict rides the same message as the frame rate, so a human watching the
-            // window and an agent reading the log are told the same thing at the same time.
-            this.#uiBridge.post({
-              type: UI_DEV_METRICS_MESSAGE,
-              fps: gameLoop.fps,
-              ...(lastSceneWarning === undefined
-                ? {}
-                : { sceneWarning: describeSceneWarning(lastSceneWarning) }),
-            });
-          }
-        }
         observeCompilation();
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
