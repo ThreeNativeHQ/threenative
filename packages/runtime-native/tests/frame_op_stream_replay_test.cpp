@@ -948,6 +948,58 @@ void runPlanLifecycleContract() {
 
 }  // namespace
 
+// An array layer uploaded the way three uploads one: the whole array plus `layout.offset`. The
+// recorder keeps only the layer the copy reads and replays it at offset 0, so layer k has to hold
+// layer k's bytes on the GPU and its neighbour must stay untouched.
+void runArrayLayerUploadContract() {
+    mystral::RuntimeConfig config;
+    config.width = 1;
+    config.height = 1;
+    config.noSdl = true;
+    const auto runtime = mystral::Runtime::create(config);
+    if (!runtime || !runtime->getWebGPUBindingsState()) {
+        expect(false, "layer upload runtime created");
+        return;
+    }
+    auto* state = static_cast<mystral::webgpu::BindingsState*>(runtime->getWebGPUBindingsState());
+    auto* engine = state->engine;
+    expect(engine->evalScript(
+        R"JS((async () => {
+          const adapter = await navigator.gpu.requestAdapter();
+          const device = await adapter.requestDevice();
+          const texture = device.createTexture({
+            size: [1, 1, 4], format: "rgba8unorm",
+            usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
+          });
+          const readback = device.createBuffer({size: 512, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+          requestAnimationFrame(() => {
+            const layers = new Uint8Array(16);
+            for (let layer = 0; layer < 4; layer += 1) layers.fill(layer + 1, layer * 4, layer * 4 + 4);
+            device.queue.writeTexture({texture, origin: {x: 0, y: 0, z: 2}}, layers,
+              {offset: 8, bytesPerRow: 4, rowsPerImage: 1}, {width: 1, height: 1, depthOrArrayLayers: 1});
+            const encoder = device.createCommandEncoder();
+            encoder.copyTextureToBuffer({texture, origin: {x: 0, y: 0, z: 2}}, {buffer: readback, bytesPerRow: 256}, [1, 1, 1]);
+            encoder.copyTextureToBuffer({texture, origin: {x: 0, y: 0, z: 1}}, {buffer: readback, offset: 256, bytesPerRow: 256}, [1, 1, 1]);
+            device.queue.submit([encoder.finish()]);
+            globalThis.__tnLayerRecorded = true;
+          });
+          await new Promise((resolve) => { const wait = () => globalThis.__tnLayerRecorded ? resolve() : setTimeout(wait, 1); wait(); });
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          await readback.mapAsync(GPUMapMode.READ);
+          const bytes = new Uint8Array(readback.getMappedRange());
+          globalThis.__tnLayerReadback = JSON.stringify([Array.from(bytes.slice(0, 4)), Array.from(bytes.slice(256, 260))]);
+          readback.unmap();
+          globalThis.__tnLayerDone = true;
+        })().catch((error) => { globalThis.__tnLayerReadback = String(error); globalThis.__tnLayerDone = true; }))JS",
+        "tn-array-layer-upload.js"),
+        "array layer upload script evaluated");
+    awaitFlag(runtime.get(), engine, "__tnLayerDone");
+    mystral::js::JSValueGuard readback(*engine, engine->getGlobalProperty("__tnLayerReadback"));
+    const std::string observed = engine->isUndefined(readback.get()) ? "" : engine->toString(readback.get());
+    expect(observed == "[[3,3,3,3],[0,0,0,0]]",
+           "offset writeTexture lands layer 2's bytes in layer 2 and leaves layer 1 alone: " + observed);
+}
+
 int main(int argc, char** argv) {
     const bool disableStreamControl =
         argc > 1 && std::string(argv[1]) == "disabled-stream-control";
@@ -971,6 +1023,7 @@ int main(int argc, char** argv) {
         expect(withoutPlans.second == withPlans.second,
                "a patched clear colour renders the pixels the v2 stream renders");
         runPlanLifecycleContract();
+        runArrayLayerUploadContract();
     }
     if (failures != 0) {
         if (disableStreamControl) {
