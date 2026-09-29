@@ -318,8 +318,12 @@ func _clear_ladder() -> void:
 	_point_lights.clear()
 	for character in _characters:
 		remove_child(character)
-		character.queue_free()
 	_characters.clear()
+	# The rigs are detached, never freed. Godot 4.7 corrupts its heap deleting a batch of 50 packed
+	# glTF instances (glibc "corrupted size vs. prev_size", exit 134) — one batch survives, the
+	# second does not, and the process died with the report half printed. They cost a few MB each
+	# and the run exits seconds later, so a leak in a measurement is cheaper than a truncated
+	# report. The cubes and the WorldEnvironment are still freed.
 	_character_players.clear()
 	_character_staggers = PackedFloat32Array()
 	if _ladder_post:
@@ -482,6 +486,13 @@ func _census(node: Node) -> Vector2i:
 	return counts
 
 
+# The read-back is a real GPU→CPU copy on this renderer, and `TN_BENCH_NO_PROBE=1` is the switch
+# that A/B'd it against an empty rung. It is a diagnostic switch, not a way to publish a run: a
+# ladder rung with no read-back fails the parser's gate.
+func _probe_enabled() -> bool:
+	return OS.get_environment("TN_BENCH_NO_PROBE") != "1"
+
+
 # What the rung actually drew, in the shape `frameStats` computes in
 # `examples/engine-load-test/src/ladder.ts` and `blankFrameReason` in `scripts/capture-guard.ts`
 # decides on. Awaiting `frame_post_draw` is what makes it the frame just submitted rather than the
@@ -489,7 +500,11 @@ func _census(node: Node) -> Vector2i:
 # frame there is no previous one, so a rung would report an empty image over a scene that drew.
 func _probe_frame() -> void:
 	await RenderingServer.frame_post_draw
-	var image := get_viewport().get_texture().get_image()
+	# Duplicated, and walked a frame later: walking the viewport's own image inside the post-draw
+	# signal, while the render server still owns the buffer behind it, corrupted the heap on the
+	# way out (glibc "corrupted size vs. prev_size") and cost the run its report. The copy is the
+	# pixels; the walk is arithmetic over a buffer nothing else writes to.
+	var image: Image = get_viewport().get_texture().get_image().duplicate()
 	var width := image.get_width()
 	var height := image.get_height()
 	var colors := {}
@@ -656,7 +671,7 @@ func _process(_delta: float) -> void:
 	# The rung's own read-back, on the last warmup frame: after the shader work has settled and
 	# before the timed window opens, so the frame the read-back stalls the GPU for is not one this
 	# rung is measured on. A ladder rung with no read-back when it finishes is a failed run.
-	if _mode.begins_with("R") and not _probed and _frame_index == _warmup:
+	if _probe_enabled() and _mode.begins_with("R") and not _probed and _frame_index == _warmup:
 		_probed = true
 		_probe_frame()
 
@@ -668,22 +683,25 @@ func _process(_delta: float) -> void:
 
 
 func _finish_rung() -> void:
-	var ladder_counts := _ladder_counts() if _mode.begins_with("R") else {}
-	_rungs.append(
-		{
-			"drawCalls": _draw_calls,
-			"frameMs": Array(_samples),
-			"cpuMs": Array(_cpu_samples),
-			"ladder": ladder_counts,
-			"mode": _mode,
-			"objectCount": _object_count,
-			"positionHash": _position_hash(_placements),
-			"renderCheck": _render_check,
-			"repeat": _repeat,
-			"triangles": _triangles,
-			"visibleObjects": _visible_objects,
-		}
-	)
+	var rung := {
+		"drawCalls": _draw_calls,
+		"frameMs": Array(_samples),
+		"cpuMs": Array(_cpu_samples),
+		"mode": _mode,
+		"objectCount": _object_count,
+		"positionHash": _position_hash(_placements),
+		"repeat": _repeat,
+		"triangles": _triangles,
+		"visibleObjects": _visible_objects,
+	}
+	# Only on a realistic-scene rung, and only once the read-back has arrived. The parser refuses a
+	# ladder block on an L rung, so an empty one written onto L1 would fail the cube scoreboard this
+	# arm also serves, and a missing one fails the ladder's own gate rather than passing it.
+	if _mode.begins_with("R"):
+		rung["ladder"] = _ladder_counts()
+		if not _render_check.is_empty():
+			rung["renderCheck"] = _render_check
+	_rungs.append(rung)
 	_plan_index += 1
 	if _plan_index >= _plan.size():
 		_emit_report()
@@ -704,6 +722,10 @@ func _arm_name() -> String:
 func _emit_report() -> void:
 	_finished = true
 	_clear_rung()
+	# Let the `queue_free()`s above actually run before the tree quits. Quitting with nodes still
+	# queued leaves the renderer's pages alive, and the process then died in its own teardown with
+	# stdout half-flushed — a report that arrived truncated rather than a crash anyone could read.
+	await get_tree().process_frame
 	var version: Dictionary = Engine.get_version_info()
 	var report := {
 		"arm": _arm_name(),
