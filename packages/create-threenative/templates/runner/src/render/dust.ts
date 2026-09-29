@@ -90,6 +90,9 @@ export function createDustTrail(): IDustOptions {
     toneMapped: false,
     transparent: true,
   });
+  // Fragments below this alpha are discarded, so the quad's transparent corners write nothing to
+  // the scene pass's depth and normal buffers — AO would otherwise darken the whole square.
+  material.alphaTest = 0.15;
   const life = varying(phase());
   material.scaleNode = vec2(0.42).mul(mix(0.5, 1.5, life));
   const birth = new Array(3)

@@ -448,7 +448,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // only the starter tree moves.
   minimal: "76174dca26046e8b6a4411945b89db4335403989314ccecd11654cb3bc0edeb8",
   platformer: "2426aa361ae07a7ae7c02df391c2ede058153a09b8c9898ab9bce91a0ef05576",
-  runner: "30b9598cb403610a4570915d7092e13001b509f5e2e9b26cfb3c30837318dea9",
+  runner: "653dae7d66ad37765ed6c8c0550dac7627720ba233b7254850b54b6b089af811",
   puzzle: "199a8b2641abfa3ca9ade5e1cf5c3b3d47426805f6707fdb4f33716b9f543596",
   racing: "d169407c7c98537fc079c312124f9acaae407081e0053d85f38877208b80210c",
   shooter: "f07b787697fb94fe282b90f4ad56a3b3bb2bfce6c105711e66e3e770444d1dfc",
