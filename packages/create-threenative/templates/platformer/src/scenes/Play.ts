@@ -31,7 +31,7 @@ import { flat } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { burst, coinArc } from "../render/pickups.js";
 import { setupPost } from "../render/postprocessing.js";
-import { cloudLobes, setupSky } from "../render/sky.js";
+import { cloudLobes, setupSky, skyFloor } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 
@@ -128,6 +128,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     collapseStage(stage.group);
     if (this.#sky === undefined) throw new Error("Play.enter ran before load() loaded sky.jpg.");
     setupSky(ctx.scene, this.#sky);
+    ctx.scene.add(skyFloor());
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

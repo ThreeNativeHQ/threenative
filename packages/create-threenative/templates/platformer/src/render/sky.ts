@@ -6,10 +6,16 @@
 // and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
 // equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
+  BackSide,
+  Color,
   EquirectangularReflectionMapping,
+  Float32BufferAttribute,
   FogExp2,
+  Mesh,
+  MeshBasicMaterial,
   SRGBColorSpace,
   type Scene,
+  SphereGeometry,
   type Texture,
   Vector3,
 } from "three";
@@ -38,6 +44,59 @@ export function setupSky(scene: Scene, sky: Texture): void {
   // The route runs to x=97 with the backdrop cliffs another 60 m behind them, so this is thin on
   // purpose: at this density it is under 2% inside the playfield and only reads past the castle.
   scene.fog = new FogExp2(palette.horizon, 0.003);
+}
+
+/**
+ * Inside the camera's far plane by a bounding box's diagonal: the playtest's `cameraClearsScene`
+ * measures a mesh by its box, and a box of half-width R reaches 1.73 R.
+ */
+const FLOOR_RADIUS = 480;
+
+/** Radians the floor climbs above the horizon before it has faded out. */
+const RISE = 0.35;
+
+/**
+ * What the world floats in. A photographed sky ends in a flat grey ground disc, and the route has no
+ * ground: everything under the horizon was a white void the fog could not hide. This is the lower
+ * hemisphere, from the fog colour at the horizon to a deeper sky blue straight down, so distant
+ * rock fades into it exactly as it fades into the fog. It climbs 20 degrees past the horizon and
+ * fades out there, so the photograph melts into the haze instead of meeting it at a hard line.
+ * It is not fogged and never writes depth.
+ */
+export function skyFloor(): Mesh {
+  const geometry = new SphereGeometry(
+    FLOOR_RADIUS,
+    32,
+    16,
+    0,
+    Math.PI * 2,
+    Math.PI / 2 - RISE,
+    Math.PI / 2 + RISE,
+  );
+  const horizon = new Color(palette.horizon);
+  const deep = new Color(palette.skyHigh).lerp(horizon, 0.45);
+  const position = geometry.getAttribute("position");
+  const colors: number[] = [];
+  for (let i = 0; i < position.count; i += 1) {
+    const elevation = position.getY(i) / FLOOR_RADIUS;
+    const c = horizon.clone().lerp(deep, Math.min(1, Math.max(0, -elevation) / 0.6));
+    colors.push(c.r, c.g, c.b, elevation <= 0 ? 1 : Math.max(0, 1 - elevation / Math.sin(RISE)));
+  }
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 4));
+  const floor = new Mesh(
+    geometry,
+    new MeshBasicMaterial({
+      depthWrite: false,
+      fog: false,
+      side: BackSide,
+      transparent: true,
+      vertexColors: true,
+    }),
+  );
+  floor.name = "sky-floor";
+  floor.renderOrder = -1;
+  floor.frustumCulled = false;
+  return floor;
 }
 
 /**
