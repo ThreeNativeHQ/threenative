@@ -1,5 +1,25 @@
 import type { Texture } from "three";
+import {
+  FIXTURE_CONTRAST,
+  FIXTURE_LUMA,
+  FIXTURE_PIVOT,
+  FIXTURE_SATURATION,
+} from "./fixture-provider.js";
 import type { INeuralGPUBridge } from "./gpu-contract.js";
+
+/**
+ * Re-derive one graded channel on the CPU, exactly as `fixture_grade` does on the GPU. Kept here
+ * rather than in the shader's file so a reader comparing the two sees the same four constants
+ * twice; `fixture-provider.ts` exports them so the two cannot drift.
+ */
+function gradeChannel(value: number, luma: number): number {
+  const saturated = luma + (value - luma) * FIXTURE_SATURATION;
+  return Math.max(0, (saturated - FIXTURE_PIVOT) * FIXTURE_CONTRAST + FIXTURE_PIVOT);
+}
+
+function channelLuma(red: number, green: number, blue: number): number {
+  return red * FIXTURE_LUMA[0] + green * FIXTURE_LUMA[1] + blue * FIXTURE_LUMA[2];
+}
 
 function half(bits: number): number {
   const sign = bits & 0x8000 ? -1 : 1;
@@ -30,15 +50,32 @@ export function verifyFixturePixels(
   let changedPixels = 0;
   let hdrPixels = 0;
   for (let p = 0; p < original.length; p += 4) {
-    if (
-      enhanced[p] !== original[p + 2] ||
-      enhanced[p + 1] !== original[p + 1] ||
-      enhanced[p + 2] !== original[p] ||
-      enhanced[p + 3] !== original[p + 3]
-    ) {
-      throw new Error("NEURAL_PROOF_CHANNEL: compute output is not the expected RGBA transform");
+    const red = half(original[p] ?? 0);
+    const green = half(original[p + 1] ?? 0);
+    const blue = half(original[p + 2] ?? 0);
+    const luma = channelLuma(red, green, blue);
+    for (const [channel, value] of [
+      [0, red],
+      [1, green],
+      [2, blue],
+    ] as const) {
+      const actual = half(enhanced[p + channel] ?? 0);
+      const expected = gradeChannel(value, luma);
+      // The GPU computes in f32 and lands in f16, so the re-derivation is compared with the one
+      // rounding step it cannot reproduce. A dropped pass, a stale capture or a foreign device
+      // misses by far more than this.
+      const tolerance = Math.max(0.004, Math.abs(expected) * 0.006);
+      if (!Number.isFinite(actual) || Math.abs(actual - expected) > tolerance) {
+        throw new Error(
+          `NEURAL_PROOF_GRADE: compute output is not the fixture grade at pixel ${p / 4} channel ${channel}` +
+            ` (expected ${expected.toFixed(4)}, read ${actual.toFixed(4)})`,
+        );
+      }
+      if (Math.abs(gradeChannel(value, luma) - value) > 0.02) changedPixels += 1;
     }
-    if (original[p] !== original[p + 2]) changedPixels += 1;
+    if (enhanced[p + 3] !== original[p + 3]) {
+      throw new Error("NEURAL_PROOF_ALPHA: compute output did not preserve alpha");
+    }
     if (
       Math.max(half(original[p] ?? 0), half(original[p + 1] ?? 0), half(original[p + 2] ?? 0)) > 1
     )

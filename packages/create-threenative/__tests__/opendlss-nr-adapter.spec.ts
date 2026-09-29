@@ -197,7 +197,7 @@ test("fixture performs a real compute dispatch and is never labeled as neural en
   const provider = createFixtureProvider(f.device as never, 256, 256);
   assert.equal(provider.kind, "fixture");
   provider.encode(f.encoder as never, { original: f.texture(), enhanced: f.texture() } as never);
-  assert.ok(f.log.includes("fixture_channel_swap"));
+  assert.ok(f.log.includes("fixture_grade"));
   assert.equal(f.log.includes("network"), false);
   provider.dispose();
   assert.equal(f.destroyed(), 0);

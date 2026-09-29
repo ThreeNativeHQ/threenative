@@ -52,12 +52,17 @@ Use the generated game's existing browser or desktop entry/build commands. The s
 DOM, canvas extraction, browser-only crypto, dynamic imports, physics, external assets or weights.
 **C** requests a two-capture GPU diagnostic. **1 / 2 / 3** choose original / split / transformed;
 **left / right arrows** move the divider. The console and playtest state identify this as
-**channel-swap integration test, NOT neural enhancement**. The final display stays frozen;
+**deterministic grade integration test, NOT neural enhancement**. The final display stays frozen;
 recapture with C rather than mistaking the old image for live output.
 
 The diagnostic first captures an HDR background, then changes it and captures again. Its small,
-diagnostic-only GPU readbacks verify the expected current source, nonzero HDR signal, exact
-R/B transformation and preserved alpha. A queued job, unchanged output, all-zero buffer or stale
+diagnostic-only GPU readbacks verify the expected current source, nonzero HDR signal, the fixture
+grade re-derived exactly on the CPU, and preserved alpha. The grade is a saturation lift around
+luma plus a contrast curve pivoted on mid grey — deterministic and per-pixel, so the CPU can
+re-derive it to within one rounding step, and a dropped pass, a stale capture or a foreign device
+still fails loudly. A channel swap was the first choice and was replaced: it is unmissably wrong
+when wrong, but it recolours every pixel, so the Before/After pair read as a bug rather than as a
+pipeline that works. A queued job, unchanged output, all-zero buffer or stale
 background cannot set `proofPassed`. The runtime capture/provider path does **not** read images
 back to the CPU. Do not enable `readFixtureProof()` in gameplay or neural performance measurements.
 This diagnostic covers transport, not real-model quality or complete display-color parity.

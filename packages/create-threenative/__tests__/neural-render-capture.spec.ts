@@ -118,7 +118,7 @@ test("binds to the existing world pass and records capture -> fixture -> submit 
     "world",
     "resolve world",
     "capture_linear_hdr",
-    "fixture_channel_swap",
+    "fixture_grade",
     "submit",
   ]);
   f.done.resolve();
