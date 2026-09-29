@@ -33,9 +33,10 @@
       "screenshot": "standing"
     },
     {
-      "kind": "wait",
+      "kind": "input",
       "label": "walked",
-      "waitTicks": 260,
+      "press": "KeyW",
+      "holdTicks": 200,
       "release": true,
       "screenshot": "running"
     }
@@ -64,6 +65,14 @@
         "component": "footClearance",
         "lte": 0.03,
         "allowTrivial": "grounded soldier contact is a standing invariant of the patrol loop"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "playerZ",
+        "gte": 0.2,
+        "lte": 1.2
       }
     ]
   }

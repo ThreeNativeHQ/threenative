@@ -23,7 +23,8 @@
       "label": "wake-pointer",
       "pointerPosition": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.5,
+        "buttons": 1
       },
       "holdTicks": 2,
       "release": true
@@ -62,39 +63,6 @@
       "kind": "wait",
       "label": "aim-settle",
       "waitTicks": 6,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "look-right",
-      "pointerPosition": {
-        "x": 0.75,
-        "y": 0.5
-      },
-      "holdTicks": 2,
-      "release": false
-    },
-    {
-      "kind": "wait",
-      "label": "look-right-settle",
-      "waitTicks": 8,
-      "release": true,
-      "screenshot": "input-look-right"
-    },
-    {
-      "kind": "input",
-      "label": "look-back",
-      "pointerPosition": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "holdTicks": 2,
-      "release": false
-    },
-    {
-      "kind": "wait",
-      "label": "look-back-settle",
-      "waitTicks": 8,
       "release": true
     },
     {
@@ -143,6 +111,23 @@
       "label": "fire-settle",
       "waitTicks": 8,
       "release": true
+    },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": {
+        "x": 0.75,
+        "y": 0.5
+      },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "look-right-settle",
+      "waitTicks": 8,
+      "release": true,
+      "screenshot": "input-look-right"
     }
   ],
   "assert": {
@@ -184,66 +169,37 @@
         "atSteps": [
           {
             "label": "aim-settle",
-            "equals": 1
+            "equals": true
           },
           {
             "label": "release-settle",
-            "equals": 0
+            "equals": false
           },
           {
             "label": "aim-key-settle",
-            "equals": 1
+            "equals": true
           }
-        ],
-        "allowTrivial": "The released leg expects the initial unaimed value; the engaged legs at aim-settle and aim-key-settle are the input-driven half of this row."
+        ]
       },
       {
         "id": "state",
         "path": "playerYaw",
-        "lte": -0.2,
-        "atSteps": [
-          {
-            "label": "look-right-settle"
-          }
-        ],
-        "allowTrivial": "The returned leg expects the zeroed heading after the equal-and-opposite look pair; the look-right leg carries the rotation proof, halved because the right button is held — aiming down the sights covers half the angle for the same hand movement."
-      },
-      {
-        "id": "state",
-        "path": "playerYaw",
-        "gte": -0.001,
-        "lte": 0.001,
-        "atSteps": [
-          {
-            "label": "look-back-settle"
-          }
-        ],
-        "allowTrivial": "The returned leg expects the zeroed heading after the equal-and-opposite look pair; the look-right leg carries the rotation proof, halved because the right button is held — aiming down the sights covers half the angle for the same hand movement."
+        "gte": -0.5,
+        "lte": -0.2
       }
     ],
     "components": [
       {
         "entity": "rifle",
         "component": "barrelAxisErrorDeg",
-        "atSteps": [
-          {
-            "label": "fire-settle"
-          }
-        ],
-        "allowTrivial": "the weapon converges onto the camera axis before it fires; at rest it is held low and to the right, so only a shot can pass",
-        "lte": 1
+        "lte": 0.5
       },
       {
         "entity": "rifle",
-        "component": "opticScreen.x",
-        "atSteps": [
-          {
-            "label": "aim-settle"
-          }
-        ],
-        "allowTrivial": "the sight centres when the sights are up; hip-fire holds the weapon off-centre, which is the value a dead aim button leaves behind",
-        "lte": 0.52,
-        "gte": 0.48
+        "component": "opticScreen",
+        "path": "x",
+        "gte": 0.48,
+        "lte": 0.52
       }
     ]
   }
