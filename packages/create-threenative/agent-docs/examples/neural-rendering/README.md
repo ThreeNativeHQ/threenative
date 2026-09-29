@@ -62,10 +62,21 @@ background cannot set `proofPassed`. The runtime capture/provider path does **no
 back to the CPU. Do not enable `readFixtureProof()` in gameplay or neural performance measurements.
 This diagnostic covers transport, not real-model quality or complete display-color parity.
 
-The scene also carries the PRD's tonal fixture — a six-step gray ramp, the three saturated
-primaries and HDR values above 1 — which is what a captured frame needs to be readable at all.
-A flat cube on a flat background renders five distinct colours, and the runner's non-blank guard
-fails closed below eight, so a full-frame visual assertion cannot pass without it.
+The scene is a small lit scene rather than a test pattern: a ground plane and five props in
+ordinary `MeshStandardMaterial` — matte and metal, near and far — under a key light, a rim light
+and ambient fill, with one rotating rigid object the eye can follow. It also carries the PRD's
+tonal fixture: a six-step gray ramp, the three saturated primaries, and HDR values above 1. Both
+matter. The lit props are what makes the Before/After pair read as a frame a game would produce,
+and the HDR card is what makes it readable at all — the runner's non-blank guard fails closed
+below eight distinct colours, so a full-frame visual assertion cannot pass without it.
+
+The scene owns its own render chain, and that is a contract requirement rather than a preference.
+`attachNeuralCapture` captures the world pass texture directly, so its stage must receive that same
+texture as the chain's input. A chain that composes anything first — an exposure multiply, a game's
+own aerial perspective — would display one image while the neural stage captured another, and the
+stage refuses that arrangement instead of producing a silently mismatched pair. To attach to a
+game whose chain already composes something, either insert the stage ahead of that composition or
+drop it; see "Attach to an existing game" below.
 
 Run the existing playtest tool independently on each target (apply the PRD's 60-second run cap):
 
