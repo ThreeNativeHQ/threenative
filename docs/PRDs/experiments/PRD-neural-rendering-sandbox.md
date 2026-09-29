@@ -1,11 +1,11 @@
 # PRD — Experimental Neural Rendering Sandbox
 
-**Status:** NOT STARTED — specification only; implementation 0%.  
-**Date:** 2026-09-28.  
-**Owner:** ThreeNative rendering / sandbox maintainers.  
-**Scope:** One opt-in sandbox, one provider-neutral render contract, one initial OpenDLSS-NR adapter.  
-**Targets:** Browser WebGPU and Linux x64 native WebGPU, qualified independently.  
-**Integration base inspected:** `develop` at `9ca18502207f107a83ca4acf6d44f7d30386aeee`.  
+**Status:** PARTIAL — Phase 1 safety-policy source and tests added; GPU integration and all phase proofs remain unqualified.
+**Date:** 2026-09-28.
+**Owner:** ThreeNative rendering / sandbox maintainers.
+**Scope:** One opt-in sandbox, one provider-neutral render contract, one initial OpenDLSS-NR adapter.
+**Targets:** Browser WebGPU and Linux x64 native WebGPU, qualified independently.
+**Integration base inspected:** `develop` at `9ca18502207f107a83ca4acf6d44f7d30386aeee`.
 **Filing:** Descriptive experimental PRD; no global numeric identifier reserved. Keep one draft PR for this PRD and its implementation.
 
 ## Outcome
@@ -129,15 +129,33 @@ Live preview remains a diagnostic unless measured end-to-end cadence meets its d
 
 Stop expanding this PRD when same-device transport cannot be demonstrated without a broad renderer rewrite, legal model access is unresolved, the smallest valid graph exceeds resource limits, or bounded measurements make interactive use unsuitable. Keep a useful snapshot experiment or record a no-go; do not quietly widen scope.
 
+## Implementation record — 2026-09-28
+
+The first code slice is optional editable source under `packages/create-threenative/agent-docs/examples/neural-rendering/`: `model-contract.ts`, `frame-gate.ts`, and `resource-scope.ts`, with usage and limitations in that directory's README. The existing package `files` list includes `agent-docs`; ordinary templates, their imports, core exports, dependencies, and renderer behavior are unchanged. This location avoids adding unfinished experiment code to every default scaffold. Packaging and installed-consumer proof are still pending.
+
+Inspected the pinned capability manifest (blob `b443715af21f93af4a3a0deae59f29a4efbd7ef2`): no neural entry; existing `RenderChain` remains the composition reuse point. The engine MCP tools were not available here, so this was a direct manifest inspection, not a claimed `engine_search_capabilities` / `engine_capability_detail` execution. No new composer, public provider registry, private backend access, or transform-history system was added.
+
+Local verification on the isolated partial source snapshot:
+
+- Test-first runs observed 21 contract failures and 27 lifecycle failures before implementation. Final run: **83 tests passed, 0 failed, exit 0** under Node 22.16.0's real test runner. Only the `test` registration import was changed from `vitest` to `node:test` in an untracked temporary copy; production code and assertions were unchanged. This is **not a Vitest or repository-suite pass**.
+- TypeScript 5.8.3 checked the three source modules with `--strict --noUncheckedIndexedAccess --exactOptionalPropertyTypes --lib ES2022`, exit 0. Tests also passed that local compiler using installed Node type definitions and a registration-only Vitest declaration. This is narrower than the repository's TypeScript 5.9 gate and proves no native-host execution.
+- Direct checkout failed because `github.com` could not resolve. Registry access also failed; `pnpm`, Vitest, and Biome were unavailable. Full repository typecheck/lint/test/build, Biome formatting, publication/scaffold checks, browser/native playtests, and real-model inference were **not run**. All eight acceptance/phase boxes remain open; no GPU frame-order, neural quality, or platform-performance claim is made.
+
+The exact repository progress calculator (`scripts/prd-progress.ts`, verified blob `7732f607c05aa74c86b952bec7784fd1467e288c`) was executed with Node type stripping against the original and updated PRD: **0/7 phase boxes, 0/1 acceptance, `prd:0%`** in both. The label remains unchanged because no complete stated proof has run.
+
+The ownership tests exercise the new policy, not the upstream implementation. The OpenDLSS-NR `Network.destroy()` hazard remains an adapter integration requirement; never register that convenience destructor as an individually owned allocation. A fulfilled, renderer-authoritative retirement fence is required before cleanup or releasing an in-flight ticket; an inference rejection alone is insufficient.
+
 ## Implementation phases
 
-All test and scenario names below are **proposed deliverables**, not existing passing tests. Keep all boxes open until the stated proof runs. Tests belong to the layer implemented; any admitted core seam also receives focused core tests and native conformance evidence.
+The contract and lifecycle test files now exist; the other test and scenario names below remain **proposed deliverables**. Keep each box open until its complete stated proof runs. Tests belong to the layer implemented; any admitted core seam also receives focused core tests and native conformance evidence.
 
 ### Phase 1 — Safe provider boundary
 
 - [ ] The model/capability validator enforces the declared data, limit, and allocation contract. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-provider-contract.spec.ts`.
+  Partial: data-only manifest, digest, device-limit, padded-dimension, and byte-cap policy implemented in the optional source bundle. The named Vitest lane, bounded transport/cancellation, origin enforcement, and real-provider accounting remain unverified or unimplemented.
 - [ ] The same-device bridge presents the deterministic fixture's current-frame output in the correct render/compute/composite order. proof: `pnpm exec vitest run packages/core/__tests__/neural-render-interop.spec.ts` and the browser GPU scenario in Phase 3.
 - [ ] Provider lifecycle preserves borrowed resources and rejects stale temporal/result generations. proof: `pnpm exec vitest run packages/create-threenative/__tests__/neural-render-lifecycle.spec.ts`, including supplied-device/owned-model cleanup, resize during inference, device loss, and skipped-frame history.
+  Partial: generation-aware frame gate and individually owned-resource retirement implemented and exercised with deterministic deferred fences. No actual provider/device integration or real GPU retirement has been qualified; the named Vitest lane has not run.
 
 ### Phase 2 — Provider adapter and sandbox
 
@@ -166,6 +184,8 @@ These dependencies are not checkboxes or evidence of completion. If all doable w
 ## Decisions and verification at filing
 
 2026-09-28: the user requested a PRD and draft PR following the experimental neural-rendering proposal. Scope this filing to documentation; no product code, model acquisition, paid calls, or implementation is authorized by this filing alone.
+
+2026-09-28 follow-up: the user explicitly requested implementation ("Start working on it"). Begin with the optional safety-policy slice documented above; retain the same draft PR and all outstanding requirements.
 
 Design decision: respect game-owned appearance, reuse RenderChain and velocity, and make GPU ownership/frame ordering an explicit first gate. Native Vulkan/NVIDIA SDK work and the separate view-projection authoring workflow are not bundled into this experiment.
 
