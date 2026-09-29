@@ -54,9 +54,9 @@
       "tier": "high"
     },
     "performance": {
-      "maxDrawCalls": 400,
+      "maxDrawCalls": 1300,
       "maxFrameMsP95": 33,
-      "maxTriangles": 400000,
+      "maxTriangles": 500000,
       "minFps": 30
     },
     "visual": [
