@@ -36,7 +36,7 @@ import {
   renderPerformanceCheck,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
-import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
+import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -50,11 +50,13 @@ const execFileAsync = promisify(execFile);
 interface ILadderOptions {
   axes: IWorkloadAxes;
   frames: number;
+  height: number;
   ladder: string;
   modes: string;
   repeats: number;
   sourceSha?: string;
   warmup: number;
+  width: number;
 }
 
 function flag(name: string): string | undefined {
@@ -76,12 +78,30 @@ function ladderOptions(): ILadderOptions {
       visibleFraction: flag("visible-fraction"),
     }),
     frames: Number(flag("frames") ?? 600),
+    // The host surface both desktop arms are given, and both arms' reported `display`. PRD-464's
+    // ladder is run at 1920x1080 so R5 can draw at it; the cube rows keep the old 1280x720.
+    height: positiveInteger(flag("height"), 720),
     ladder: flag("ladder") ?? "256,1024,4096,16384",
     modes: flag("modes") ?? "L1,L2",
     repeats: Number(flag("repeats") ?? 3),
     sourceSha: flag("source-sha"),
     warmup: Number(flag("warmup") ?? 120),
+    width: positiveInteger(flag("width"), 1280),
   };
+}
+
+/** A window dimension is not a benchmark axis that can be zero or negative: a bad flag has to
+ *  fail here rather than reach a window manager. */
+function positiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1)
+    throw new BenchError(
+      "TN_BENCH_BAD_FLAG",
+      `--width/--height must be positive integers, got '${value}'`,
+      1,
+    );
+  return parsed;
 }
 
 function query(options: ILadderOptions): string {
@@ -103,13 +123,6 @@ function query(options: ILadderOptions): string {
   return params.toString();
 }
 
-function timeoutFor(options: ILadderOptions): number {
-  const cells =
-    options.ladder.split(",").length * options.modes.split(",").length * options.repeats;
-  // Budget half a second per frame at the top rung; the arm reports long before this fires.
-  return Math.max(600_000, cells * options.frames * 500);
-}
-
 async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
   const server = startProcess(
     "pnpm",
@@ -129,7 +142,7 @@ async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/`, 120_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/?${query(options)}`,
     });
     return parseRunReport(raw);
@@ -145,7 +158,7 @@ async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> 
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
     });
     return assertBrowserPlacements(parseRunReport(raw));
@@ -198,7 +211,7 @@ async function runPlainThreeWebProduction(options: ILadderOptions): Promise<IRun
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/plain.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[plain-three-webgpu] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/plain.html?${query(options)}`,
     });
     return assertPlainThreePilot(parseRunReport(raw));
@@ -214,7 +227,7 @@ async function runGodotWeb(options: ILadderOptions): Promise<IRunReport> {
     await waitForUrl(`http://127.0.0.1:${GODOT_PORT}/index.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[godot-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${GODOT_PORT}/index.html?${query(options)}`,
     });
     return parseRunReport(raw);
@@ -282,14 +295,23 @@ async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IR
     return process.argv.includes("--production") ? runTnWebProduction(options) : runTnWeb(options);
   if (arm === "godot-web") return runGodotWeb(options);
   if (arm === "tn-desktop") return parseRunReport(await runTnDesktop(repoRoot, options));
-  if (arm === "godot-desktop") return parseRunReport(await runGodotDesktop(repoRoot, options));
+  if (arm === "godot-desktop") {
+    const report = await runGodotDesktop(repoRoot, options);
+    // Godot cannot know the tree it was measured against, so the runner stamps it the way the
+    // ThreeNative arm reports its own, and the two arms carry the same `identity.sourceSha`.
+    return parseRunReport(
+      options.sourceSha === undefined
+        ? report
+        : { ...(report as object), identity: { sourceSha: options.sourceSha } },
+    );
+  }
   if (arm === "tn-android" || arm === "godot-android") {
     return parseRunReport(
       await runAndroidArm(repoRoot, arm, {
         ...options,
         allowEmulator: process.argv.includes("--allow-emulator"),
         allowLowBattery: process.argv.includes("--allow-low-battery"),
-        timeoutMs: timeoutFor(options),
+        timeoutMs: desktopTimeoutMs(options),
       }),
     );
   }
@@ -484,7 +506,7 @@ async function runProductComparison(): Promise<void> {
 
 function printUsage(): void {
   process.stdout.write(
-    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
+    "usage: pnpm bench:engines --arm <tn-web|plain-three-webgpu|godot-web|tn-desktop|godot-desktop|tn-android|godot-android> [--production] [--required-baseline --lane id] [--lanes path] [--out name] [--skip-baseline] [--allow-emulator] [--source-sha sha --frames N --warmup N --repeats N --ladder a,b --modes L1,L2,R1..R5 --width N --height N] [--geometry shared|unique --material shared|unique --hierarchy-depth N --visible-fraction 0..1 --mutation-rate 0..1 --shadow-caster-share 0..1 --passes N]\n       pnpm bench:engines --compare [--left tn-web --right godot-web] [--doc path.md]\n       pnpm bench:engines --check-report path.json [--required-baseline --lanes path]\n       pnpm bench:engines --regression --input report.json [--lanes path --lane id] [--policy policy.json] [--out summary.json]\n       pnpm bench:engines --regression-collection --target <web|desktop|android|ios> [--device id] [--prebuilt-artifact path] [--out path]\n",
   );
 }
 
