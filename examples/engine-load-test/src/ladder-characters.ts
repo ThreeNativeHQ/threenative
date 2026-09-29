@@ -56,7 +56,7 @@ export async function createFoxCrowd(): Promise<ICharacterCrowd> {
   const probe = players[0] as SkeletalMesh3D;
   // Bind-pose box, the definition `game.ts` reads back and Godot's `get_aabb()` reports; a posed one
   // would scale the fox by the pose it happened to be in when the clip started.
-  const raw = new Box3().setFromObject(probe.root, false);
+  const raw = new Box3().setFromObject(probe.root, false); // engine-override: the cross-engine Fox check needs the bind-pose mesh box Godot's get_aabb() reports; normaliseToMetres measures a crown bone
   if (raw.isEmpty()) throw new Error("TN_BENCH_FOX_EMPTY_BOUNDS");
   return {
     scale: foxScale(raw.max.y - raw.min.y),

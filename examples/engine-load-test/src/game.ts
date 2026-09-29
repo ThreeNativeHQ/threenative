@@ -527,7 +527,7 @@ export async function createLoadTestHarness(
     if (first === undefined) return undefined;
     // Bind-pose geometry box, not the skinned one: Godot's `get_aabb()` is the bind-pose box, and a
     // posed box reads a running fox ~10% shorter than it stands, which the engines would disagree on.
-    const bounds = new Box3().setFromObject(first, false);
+    const bounds = new Box3().setFromObject(first, false); // engine-override: the cross-engine Fox check needs the bind-pose mesh box Godot's get_aabb() reports; normaliseToMetres measures a crown bone
     if (bounds.isEmpty()) return { heightM: 0, screenFraction: 0 };
     // The box's top and bottom at its own centre x, projected through the live camera. NDC y spans
     // -1..1, so half the difference is the fraction of the viewport height the fox covers.
