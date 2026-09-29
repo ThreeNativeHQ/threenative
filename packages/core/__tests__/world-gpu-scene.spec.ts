@@ -14,6 +14,7 @@ import {
   PerspectiveCamera,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { lodBias, setLodBias } from "../src/model-lod.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import {
@@ -2331,5 +2332,175 @@ describe("WorldGpuScene GPU-selected main-pass tally", () => {
     scene.dispatch(renderer, camera);
     expect(requests.count).toBe(2);
     scene.dispose();
+  });
+});
+
+/**
+ * The adaptive LOD bias: the main pass over its share of the frame raises the one multiplier both
+ * selection paths scale camera distance by, and decays it once the pass is comfortable again.
+ */
+describe("WorldCells adaptive LOD bias", () => {
+  afterEach(() => {
+    setLodBias(1);
+  });
+
+  function lodRenderer(main: () => number | undefined): IRendererLike {
+    return {
+      compute: (): void => {},
+      gpuMainMs: main,
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+  }
+
+  async function loadWorldAt(
+    clock: () => number,
+    options: Record<string, unknown> = {},
+  ): Promise<WorldCells> {
+    stubManifestFetch();
+    return WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      admissionNow: clock,
+      budgets,
+      follow: { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } },
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+      ...options,
+    } as Parameters<typeof WorldCells.load>[0]);
+  }
+
+  it("raises the bias in bounded steps while the main pass is over its share, and coarsens both paths", async () => {
+    let clock = 0;
+    const world = await loadWorldAt(() => clock);
+    const renderer = lodRenderer(() => 20);
+    const camera = playerCamera();
+    let previous = lodBias();
+    let largestStep = 1;
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+      const current = lodBias();
+      if (current !== previous) largestStep = Math.max(largestStep, current / previous);
+      previous = current;
+    }
+    expect(lodBias()).toBeCloseTo(2.5, 6);
+    expect(largestStep).toBeLessThanOrEqual(1.08 + 1e-9);
+
+    // Both paths cross the same switch: a placement 10 m out is at level 1 under the raised bias and
+    // level 0 under an authored one, through the shared multiplier `cullAndSelect` reads.
+    const { planes } = cameraAt(0, 0);
+    const regions: IRegion[] = [0, 1].map((index) => ({
+      argsIndex: index,
+      capacity: 4,
+      indexCount: 0,
+      local: LOCAL,
+      start: index * 4,
+    }));
+    const select = (): Uint32Array =>
+      cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: 1,
+        placements: [placement(0, 0, 10, 0)],
+        regionCount: 2,
+        regions,
+        slots: [
+          {
+            cull: undefined,
+            distances: [0, 15],
+            levels: [
+              { firstKey: 0, parts: 1 },
+              { firstKey: 1, parts: 1 },
+            ],
+          },
+        ],
+      }).counts;
+    expect(select()[1]).toBe(1);
+    setLodBias(1);
+    expect(select()[0]).toBe(1);
+    world.dispose();
+  });
+
+  it("decays back toward 1 once the main pass is comfortably under budget", async () => {
+    let clock = 0;
+    let gpuMain: number | undefined = 20;
+    const world = await loadWorldAt(() => clock);
+    const renderer = lodRenderer(() => gpuMain);
+    const camera = playerCamera();
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+    }
+    expect(lodBias()).toBeCloseTo(2.5, 6);
+    gpuMain = 0;
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+    }
+    expect(lodBias()).toBe(1);
+    world.dispose();
+  });
+
+  it("pins the bias at 1 when disabled, unmeasured, or still warming up", async () => {
+    // Disabled: an over-budget reading changes nothing, byte-identical to the authored selection.
+    let clock = 0;
+    const off = await loadWorldAt(() => clock, { adaptiveLod: false });
+    const hot = lodRenderer(() => 100);
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      off.update(hot, playerCamera());
+    }
+    expect(lodBias()).toBe(1);
+    off.dispose();
+
+    // Enabled but no sample: absent means no adaptation, never a rise on nothing.
+    setLodBias(1);
+    clock = 0;
+    const blind = await loadWorldAt(() => clock);
+    const silent = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      blind.update(silent, playerCamera());
+    }
+    expect(lodBias()).toBe(1);
+    blind.dispose();
+
+    // The first two seconds are the world's own: over budget from the first frame, still 1.
+    clock = 0;
+    const warm = await loadWorldAt(() => clock);
+    for (let frame = 0; frame < 100; frame += 1) {
+      clock += 16;
+      warm.update(hot, playerCamera());
+    }
+    expect(lodBias()).toBe(1);
+    warm.dispose();
+  });
+
+  it("holds the bias on a window with no fresh GPU sample", async () => {
+    let clock = 0;
+    let gpuMain: number | undefined = 20;
+    const world = await loadWorldAt(() => clock);
+    const renderer = lodRenderer(() => gpuMain);
+    const camera = playerCamera();
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+    }
+    const held = lodBias();
+    expect(held).toBeCloseTo(2.5, 6);
+    gpuMain = undefined;
+    for (let frame = 0; frame < 800; frame += 1) {
+      clock += 16;
+      world.update(renderer, camera);
+    }
+    expect(lodBias()).toBe(held);
+    world.dispose();
   });
 });

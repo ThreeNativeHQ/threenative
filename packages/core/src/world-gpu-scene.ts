@@ -19,6 +19,7 @@ import {
   StorageBufferAttribute,
   StorageInstancedBufferAttribute,
 } from "three/webgpu";
+import { biasedLodDistance } from "./model-lod.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -297,9 +298,12 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
     if (visible === false) continue;
     const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
     if (slot.cull !== undefined && distance > slot.cull) continue;
+    // Cull above is the authored distance; the level below is the biased one, the same multiplier
+    // the kernel's uniform carries, so the reference and the dispatch cross a switch together.
+    const lodDistance = biasedLodDistance(distance);
     let level = 0;
     for (let index2 = 1; index2 < slot.distances.length; index2 += 1)
-      if (distance > (slot.distances[index2] as number)) level = index2;
+      if (lodDistance > (slot.distances[index2] as number)) level = index2;
     const gate = slot.levels[level];
     if (gate === undefined) continue;
     for (let part = 0; part < gate.parts; part += 1) {
@@ -1330,6 +1334,15 @@ export class WorldGpuScene {
   }
 
   /**
+   * Sets the adaptive LOD bias the kernel scales camera distance by, `>= 1`. The shared CPU
+   * `setLodBias` holds the same number; `WorldCells` writes both. A non-finite or below-1 value is
+   * no reading and resets to 1, matching the CPU clamp.
+   */
+  setLodBias(bias: number): void {
+    this.#lodBias.value = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+  }
+
+  /**
    * One frame of the main pass: zero every key's instance count, then cull and LOD-select every
    * resident placement into the shared drawn buffer. Nothing else is written.
    */
@@ -1703,6 +1716,11 @@ export class WorldGpuScene {
   readonly #planeVectors = Array.from({ length: 6 }, () => new Vector4());
   #eye = uniform(new Vector3());
   #counts = uniform(new Vector4());
+  /**
+   * The adaptive LOD bias the kernel scales camera distance by before the gate compare. Set from
+   * `WorldCells`' control loop through {@link setLodBias}; 1 is exactly as authored.
+   */
+  #lodBias = uniform(1);
   #planeUniforms = this.#planeVectors.map((plane) => uniform(plane));
 
   #ensure(): IGpuSceneBuffers | undefined {
@@ -1869,6 +1887,7 @@ export class WorldGpuScene {
     const levels = nodes(storage(buffers.levels, "vec4", buffers.levels.count));
     const counts = nodes(this.#counts);
     const eye = nodes(this.#eye);
+    const bias = nodes(this.#lodBias);
     const planes = this.#planeUniforms.map((plane) => nodes(plane));
     const clear = Fn(() => {
       If(instanceIndex.greaterThanEqual(counts.w), () => Return());
@@ -1889,13 +1908,16 @@ export class WorldGpuScene {
       const gate = gates.element(slot);
       const distance = length(vec3(centre.x.sub(eye.x), 0.0, centre.z.sub(eye.z)));
       If(gate.w.greaterThan(0.5).and(distance.greaterThan(gate.z)), () => Return());
+      // Cull above is the authored distance; the level below is the same distance scaled by the
+      // adaptive bias, mirroring `cullAndSelect` and the CPU `model-lod` path.
+      const lodDistance = nodes(distance).mul(bias as never);
       // The level, by the same ascending test the CPU runs: the last gate the placement is past.
       // The loop is bounded by `gate.y` rather than unrolled, because a baked chain can carry more
       // levels than any fixed count, and a level the loop stopped short of is a placement drawn at
       // the wrong shape by however many levels it missed.
       const level = int(0).toVar();
       Loop({ start: int(1), end: gate.y, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
-        If(distance.greaterThan(levels.element(gate.x.add(i as never)).x), () => {
+        If(lodDistance.greaterThan(levels.element(gate.x.add(i as never)).x), () => {
           level.assign(i as never);
         });
       });

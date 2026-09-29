@@ -206,6 +206,22 @@ export interface IRendererLike {
    * frame that ran no compute.
    */
   gpuComputeMs?(): number | undefined;
+  /**
+   * The main render pass's GPU milliseconds, smoothed over fresh resolved samples, or `undefined`
+   * while no reading is fresh.
+   *
+   * `gpuFrameMs` is the whole render pool, main plus every shadow, reflection, post and HUD pass;
+   * the adaptive LOD control loop needs the main-pass share alone. `game.ts` splits the resolved
+   * frame through the pass recorder and feeds the sample here with {@link noteGpuMainMs}. A
+   * repeated frame id is a resolve still in flight and not a new reading, and with no fresh sample
+   * for too long the value reads absent, so a caller never adapts on a stale number.
+   */
+  gpuMainMs?(): number | undefined;
+  /**
+   * Records one resolved frame's main-pass GPU milliseconds into {@link gpuMainMs}. Called once a
+   * frame by `game.ts`; `ms` is `undefined` when the frame attributed no main-pass reading.
+   */
+  noteGpuMainMs?(ms: number | undefined, frame?: number): void;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -461,6 +477,33 @@ function wrapRenderer(
       else Reflect.deleteProperty(raw, "autoClear");
     }
   };
+  // The main pass's own GPU series, fed a frame at a time by `game.ts` because only the pass
+  // recorder can attribute the render pool to its main call. Half/half smoothing, and a short
+  // freshness window: the adaptive LOD loop reads this every half second and must not act on a
+  // resolve that stopped landing.
+  const mainSmoothing = 0.5;
+  const mainStaleLimit = 8;
+  let gpuMainEma: number | undefined;
+  let gpuMainStaleFrames = 0;
+  let gpuMainLastFrame: number | undefined;
+  const noteGpuMainMs = (ms: number | undefined, frame?: number): void => {
+    const stale = (): void => {
+      gpuMainStaleFrames += 1;
+      if (gpuMainStaleFrames >= mainStaleLimit) gpuMainEma = undefined;
+    };
+    if (ms === undefined || !Number.isFinite(ms) || ms < 0) {
+      stale();
+      return;
+    }
+    // A repeated frame id is the previous resolve still in flight, not a new reading.
+    if (frame !== undefined && frame === gpuMainLastFrame) {
+      stale();
+      return;
+    }
+    if (frame !== undefined) gpuMainLastFrame = frame;
+    gpuMainStaleFrames = 0;
+    gpuMainEma = gpuMainEma === undefined ? ms : gpuMainEma + (ms - gpuMainEma) * mainSmoothing;
+  };
   const wrapped: IRendererLike = {
     get compileCount() {
       return compileCount;
@@ -479,6 +522,8 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    gpuMainMs: () => gpuMainEma,
+    noteGpuMainMs,
     gpuComputeMs: () => {
       const timestamp = raw.info?.compute?.timestamp;
       // Three writes `0` before the first resolve and on a failed one, so a non-positive value is

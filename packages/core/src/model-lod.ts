@@ -90,6 +90,38 @@ export function projectedLodError(
   return worldError * lodPixelScale(camera, viewportHeight, depth);
 }
 
+/**
+ * The adaptive LOD bias both selection paths share: one multiplier on the camera distance, `>= 1`.
+ *
+ * `WorldCells`' control loop owns it (see its `adaptiveLod` option) and rewrites it once it has a
+ * fresh main-pass GPU reading; `setLodBias` is the only writer. The CPU selection here reads it
+ * through {@link biasedLodDistance}, and the GPU scene mirrors it as a uniform, so a placement at
+ * one distance crosses the same switch wherever the level is decided. `1` is exactly as authored.
+ */
+let lodBiasValue = 1;
+
+/** The multiplier every LOD selection path scales camera distance by. */
+export function lodBias(): number {
+  return lodBiasValue;
+}
+
+/**
+ * Sets the adaptive LOD bias, clamped to `>= 1`. A bias below 1 would refine past what the chain
+ * authored, so it is refused rather than applied; a non-finite value is no reading and resets to 1.
+ */
+export function setLodBias(bias: number): void {
+  lodBiasValue = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+}
+
+/**
+ * The camera distance an LOD switch is compared against: the measured distance times
+ * {@link lodBias}. Scaling up crosses every authored switch earlier and never later, so a bias can
+ * only coarsen selection, never refine it below the level the chain would show unaided.
+ */
+export function biasedLodDistance(distance: number): number {
+  return distance * lodBiasValue;
+}
+
 const nearest = new Vector3();
 
 /**
@@ -342,7 +374,12 @@ class ModelLod {
       world.radius,
       (camera as ILodCameraLike).near ?? 0,
     );
-    const view: ILodView = { camera, degenerate, depth, viewportHeight };
+    const view: ILodView = {
+      camera,
+      degenerate,
+      depth: biasedLodDistance(depth),
+      viewportHeight,
+    };
     const index = selectLodLevel(
       this.#chain.errors,
       this.#current,
@@ -375,7 +412,12 @@ class ModelLod {
     );
     const errors = [...this.#chain.errors, rung.error];
     const joinedIndex = this.#chain.errors.length;
-    const view: ILodView = { camera, degenerate, depth, viewportHeight };
+    const view: ILodView = {
+      camera,
+      degenerate,
+      depth: biasedLodDistance(depth),
+      viewportHeight,
+    };
     const index = selectLodLevel(
       errors,
       this.#current,

@@ -1811,6 +1811,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               ...(computeMs === undefined ? {} : { compute: computeMs }),
             });
           }
+          // The main pass's own GPU series, for the adaptive LOD control loop: the frame budget's
+          // `gpuMain` bucket is the record, and this is the same number smoothed on the renderer so
+          // a world holding only the renderer can read it. Fed every frame, fresh or not.
+          renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;

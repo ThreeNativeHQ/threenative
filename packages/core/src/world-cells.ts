@@ -22,7 +22,7 @@ import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
-import { type ILodChain, lodChainOf } from "./model-lod.js";
+import { type ILodChain, lodChainOf, setLodBias } from "./model-lod.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
 import {
@@ -36,6 +36,7 @@ import {
 import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
+import { DEFAULT_TARGET_FPS } from "./target-fps.js";
 import { within, yieldToHost } from "./warmup.js";
 import {
   DRAW_ARGS_BYTES,
@@ -499,6 +500,31 @@ export interface IWorldCellsLoadOptions {
    * shadow node's texel gate skips a bundled mesh for the same reason.
    */
   readonly bundles?: boolean;
+  /**
+   * Raise the LOD distance bias when the main pass is over its share of the frame's GPU budget, and
+   * decay it back toward 1 when it is comfortably under, default true.
+   *
+   * The main pass is triangle-bound: a flyover's near and mid tree levels are millions of triangles
+   * and the GPU time tracks that count. When `renderer.gpuMainMs()` — the smoothed main-pass GPU
+   * time — exceeds `mainGpuShare` of a 60 fps frame, every LOD switch is crossed earlier by
+   * multiplying the camera distance both selection paths compare by one shared multiplier, coarsening
+   * the same placements the GPU is already struggling to draw. It rises in bounded steps, never in a
+   * jump, so no level pops. `false` pins the bias at 1 for the whole run, which is byte-identical to
+   * the selection before this feature existed: `?tnAdaptiveLod=0`, `TN_ADAPTIVE_LOD=0` or
+   * `__tnAdaptiveLod = 0` also turns it off.
+   */
+  readonly adaptiveLod?: boolean;
+  /**
+   * The fraction of a frame's GPU time the main pass may take before the adaptive LOD bias rises,
+   * `(0, 1]`, default 0.5.
+   *
+   * The budget is `mainGpuShare x min(deltaTime, 1/60 s)`: the frame cap keeps the budget honest the
+   * same way the shadow refresh gate does, because the frame that draws an expensive main pass is
+   * itself long and reading its own inflated delta would let the cost it judges pass its own test.
+   * `?tnMainGpuShare=0.1`, `TN_MAIN_GPU_SHARE=0.1` or `__tnMainGpuShare = 0.1` forces adaptation on a
+   * GPU that would otherwise never exceed the share.
+   */
+  readonly mainGpuShare?: number;
 }
 
 /**
@@ -2530,6 +2556,65 @@ function autoLodPixelError(autoLod: IWorldCellsLoadOptions["autoLod"]): number {
   return maxPixelError;
 }
 
+/** The adaptive LOD bias floor. A bias is only ever allowed to coarsen selection, never refine it. */
+const LOD_BIAS_MIN = 1;
+/** The adaptive LOD bias ceiling, so a runaway maps to a coarser but still bounded world. */
+const LOD_BIAS_MAX = 2.5;
+/** How much the bias rises per over-budget step. */
+const LOD_BIAS_RISE = 1.08;
+/** How much the bias decays per comfortably-under-budget step. */
+const LOD_BIAS_DECAY = 0.95;
+/** Seconds between rise or decay steps; a change is never larger than one step. */
+const LOD_BIAS_STEP_SECONDS = 0.5;
+/** Seconds of run ignored before the bias adapts, so compiles and the first frames are not judged. */
+const LOD_BIAS_WARMUP_SECONDS = 2;
+/** Below this share of the affordable budget the bias decays; between it and the budget it holds. */
+const LOD_BIAS_DECAY_SHARE = 0.6;
+/** Default fraction of a 60 fps frame the main pass may take before the bias rises. */
+const DEFAULT_MAIN_GPU_SHARE = 0.5;
+/** Seconds between two `TN_LOD_BIAS` lines. */
+const LOD_BIAS_MARKER_SECONDS = 1;
+/** The line the adaptive loop prints when it moves the bias. */
+export const LOD_BIAS_MARKER = "TN_LOD_BIAS";
+
+/**
+ * One launch override, read once: the environment, then the query string, then the global a test
+ * sets. The same three ways a debug flag is asked, but the answer is kept as text so a number can
+ * be parsed by the caller rather than rounded here.
+ */
+function launchValue(parameter: string, flag: string, globalName: string): string | undefined {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const env = host.process?.env?.[flag];
+  if (typeof env === "string" && env !== "") return env;
+  const query = globalThis.location?.search;
+  if (typeof query === "string") {
+    const value = new URLSearchParams(query).get(parameter);
+    if (value !== null) return value;
+  }
+  const global = host[globalName];
+  if (typeof global === "number") return String(global);
+  return typeof global === "string" ? global : undefined;
+}
+
+/** Whether the adaptive LOD bias runs: on unless a launch pins it off. */
+function adaptiveLodRequested(): boolean {
+  const raw = launchValue("tnAdaptiveLod", "TN_ADAPTIVE_LOD", "__tnAdaptiveLod");
+  return raw === undefined ? true : raw !== "0" && raw !== "false";
+}
+
+/** The main-pass GPU share: the option, then the launch override, then 0.5. */
+function mainGpuShare(option: number | undefined): number {
+  const raw = launchValue("tnMainGpuShare", "TN_MAIN_GPU_SHARE", "__tnMainGpuShare");
+  const launched = raw === undefined ? undefined : Number(raw);
+  const share = option ?? launched ?? DEFAULT_MAIN_GPU_SHARE;
+  if (!Number.isFinite(share) || share <= 0 || share > 1)
+    throw new Error("WorldCells mainGpuShare must be a number in (0, 1].");
+  return share;
+}
+
 /** What a baked chain gives a batched draw: the extra levels, where they take over, what they cost. */
 interface IChainLevels {
   /** Index-aligned with `distances`; index 0 is the parts the asset already had. */
@@ -3096,6 +3181,20 @@ export class WorldCells extends Group implements IComputeDriven {
   #bundleRecords = 0;
   /** `bundles` as the load asked for it, before the query string and the environment. */
   readonly #bundlesWanted: boolean;
+  /** `adaptiveLod` resolved against the launch override; see the option. */
+  readonly #adaptiveLod: boolean;
+  /** The main pass's allowed GPU share of a frame; see the option. */
+  readonly #mainGpuShare: number;
+  /** The distance multiplier both selection paths are using right now. */
+  #lodBias = LOD_BIAS_MIN;
+  /** The clock the warm-up and the step cadence are measured from. */
+  readonly #lodBiasStartedAt: number;
+  /** The last time a rise or decay step ran. */
+  #lodBiasStepAt: number;
+  /** The previous update's clock, so the affordable budget uses a frame delta. */
+  #lodBiasFrameAt: number;
+  /** The last time the `TN_LOD_BIAS` line printed. */
+  #lodBiasToldAt: number;
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
 
@@ -3154,6 +3253,14 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
     this.#bundlesWanted = init.bundles ?? bundlesRequested();
+    this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
+    this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
+    // The warm-up and the step cadence are the world's own clock, so loading does not count as a
+    // second of adaptation and a test can drive the loop with an injected `admissionNow`.
+    this.#lodBiasStartedAt = this.#now();
+    this.#lodBiasStepAt = this.#lodBiasStartedAt;
+    this.#lodBiasFrameAt = this.#lodBiasStartedAt;
+    this.#lodBiasToldAt = this.#lodBiasStartedAt - LOD_BIAS_MARKER_SECONDS * 1000;
     this.#gpuValidate = init.gpuSceneValidate;
     this.#gpuTally = init.gpuSceneTally === true;
     this.#castShadowLevels =
@@ -3335,6 +3442,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
     if (camera !== undefined) this.#camera = camera;
+    // The adaptive LOD bias, before the dispatch below reads the gates it scales.
+    this.#adaptLodBias(renderer);
     // The first frame that hands over a renderer is the only one that can answer whether this
     // backend can run the GPU scene, and it prints its answer once: `enable` reports, then returns
     // early for the rest of the world's life.
@@ -3881,6 +3990,59 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   process(renderer?: IRendererLike, camera?: Camera): void {
     this.update(renderer, camera);
+  }
+
+  /**
+   * The adaptive LOD bias control loop. Reads the main pass's smoothed GPU time from the renderer
+   * and, once per `LOD_BIAS_STEP_SECONDS`, raises the shared bias while that pass is over its share
+   * of the frame and decays it back toward 1 while it is comfortably under; between the two it
+   * holds, which is the band that keeps a level sitting on the budget from oscillating. The first
+   * `LOD_BIAS_WARMUP_SECONDS` are ignored, so shader compiles and the first resident frames are not
+   * judged, and a window with no fresh sample is a hold, never a rise on a stale number.
+   */
+  #adaptLodBias(renderer: IRendererLike | undefined): void {
+    if (this.#adaptiveLod === false) {
+      // Byte-identical to the pre-bias selection: the multiplier is pinned at 1 every frame.
+      this.#applyLodBias(LOD_BIAS_MIN);
+      return;
+    }
+    const now = this.#now();
+    // The frame delta the affordable budget is built from, capped at the 60 fps frame: the frame
+    // that draws an expensive main pass is itself long, so reading its own delta would let the cost
+    // it judges pass its own test. A held or clock-less update is just the cap.
+    const frameMs = Math.min(Math.max(0, now - this.#lodBiasFrameAt), 1000 / DEFAULT_TARGET_FPS);
+    this.#lodBiasFrameAt = now;
+    if (now - this.#lodBiasStartedAt < LOD_BIAS_WARMUP_SECONDS * 1000) return;
+    if (now - this.#lodBiasStepAt < LOD_BIAS_STEP_SECONDS * 1000) return;
+    const gpuMs = (renderer ?? this.#renderer)?.gpuMainMs?.();
+    if (gpuMs === undefined) return;
+    this.#lodBiasStepAt = now;
+    const affordableMs = this.#mainGpuShare * frameMs;
+    if (!(affordableMs > 0)) return;
+    const bias =
+      gpuMs > affordableMs
+        ? Math.min(LOD_BIAS_MAX, this.#lodBias * LOD_BIAS_RISE)
+        : gpuMs < LOD_BIAS_DECAY_SHARE * affordableMs
+          ? Math.max(LOD_BIAS_MIN, this.#lodBias * LOD_BIAS_DECAY)
+          : this.#lodBias;
+    if (bias === this.#lodBias) return;
+    this.#applyLodBias(bias);
+    if (now - this.#lodBiasToldAt >= LOD_BIAS_MARKER_SECONDS * 1000) {
+      this.#lodBiasToldAt = now;
+      const triangles = this.gpuSceneTally()?.triangles;
+      console.info(
+        `${LOD_BIAS_MARKER} bias=${bias.toFixed(3)} gpuMs=${gpuMs.toFixed(2)} ` +
+          `budgetMs=${affordableMs.toFixed(2)} ` +
+          `tris=${triangles === undefined ? "n/a" : String(triangles)}`,
+      );
+    }
+  }
+
+  /** Writes the bias to both selection paths: the shared CPU multiplier and the GPU uniform. */
+  #applyLodBias(bias: number): void {
+    this.#lodBias = bias;
+    setLodBias(bias);
+    this.#gpuScene.setLodBias(bias);
   }
 
   /**
