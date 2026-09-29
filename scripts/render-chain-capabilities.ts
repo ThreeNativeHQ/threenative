@@ -105,18 +105,19 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "Appearance belongs here, in generated game source. Nothing in packages/ decides how the scene looks.",
     ],
   }),
-  // Not a render stage: the engine's scene-draw optimizer, which a game can decline. It lives
-  // here because it is framework render-path behaviour with no package export for an agent to
-  // search — the same reason the stages above are hand-entered. A game that measured the
-  // projection as a loss (paid reconcile without a frame-time win) opts out with `false`.
+  // Not a render stage: the engine's scene-draw optimizer, which a game can decline, and whose
+  // per-frame material proof a game can bound or unbind. It lives here because it is framework
+  // render-path behaviour with no package export for an agent to search — the same reason the
+  // stages above are hand-entered. A game that measured the projection as a loss (paid reconcile
+  // without a frame-time win) opts out with `false`.
   {
     symbol: "renderer.projection",
     package: "@threenative/core",
     importPath: "src/game.ts",
     kind: "function",
-    signature: "renderer.projection?: boolean",
+    signature: "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
     summary:
-      "The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it.",
+      "The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it, or `projection: { materialChecks: 'everyFrame' }` to keep it and pay for a per-material check on every frame.",
     situations: [
       "a crowd of animated characters draws slowly",
       "many SkinnedMesh copies of one rig, each its own draw call",
@@ -125,15 +126,25 @@ export const RENDER_CHAIN_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] 
       "draw count fell but frame time did not",
       "a multi-second freeze when the mirror first engages",
       "opt out of an engine render optimizer",
+      "thousands of props each with their own material, one colour apart",
+      "a material edit takes a few frames to show up",
+      "check every batched material every frame anyway",
     ],
     example: "renderer: { projection: false } // in threenative.config.ts",
     constraints: [
       "Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it.",
       "An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame.",
       "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.",
+      "`materialChecks: 'spread'` is the default: a bounded slice of the batched materials is proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs 512 checks rather than 4,096. A base-colour edit is never delayed — that write is O(1) per member.",
+      "The price of `spread` is staleness on every other material edit: a material that gains a roughness, a map or a define still leaves its group and is drawn exactly, up to `materialCheckStaleFrames` frames later. TN_RENDER_PROJECTION reports that bound; `materialChecks: 'everyFrame'` sets it to 0 and restores the per-member, per-frame check.",
+      "Any other `materialChecks` value throws at startup rather than falling back to a default.",
     ],
-    overrides: [],
+    overrides: [
+      "renderer.projection: false declines the whole mirror and costs nothing to decline",
+      "renderer: { projection: { materialChecks: 'everyFrame' } } proves every batched material every frame instead of the default bounded slice",
+    ],
     supersedes: [],
+    aliases: [],
   },
   // Also not a render stage: the projected-size cull, which is engine render-path behaviour with no
   // package export of its own. It lives here for the same reason the projection above does — an

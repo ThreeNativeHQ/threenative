@@ -26,6 +26,12 @@ const RELEASE_DATE = /\d{4}-\d{2}-\d{2}/u;
 /** Hyphens included so an export subpath like `./web-brand` is a name a changelog can carry. */
 const IDENTIFIER = /[A-Za-z_$][\w$-]*/gu;
 /**
+ * A dotted member path, as the surface records a config member: `renderer.projection`. `IDENTIFIER`
+ * splits at the dot, so without this a nested member — a symbol the surface can report as changed —
+ * could be named by no changelog entry at all, and its first change would be unannounceable.
+ */
+const MEMBER_PATH = /[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+/gu;
+/**
  * Whole package names, which `IDENTIFIER` splits at the scope separator. Greedy, so
  * `@threenative/gone-extra` is collected whole and never answers for `@threenative/gone`; the two
  * unscoped families are listed because three published packages carry no scope.
@@ -171,6 +177,7 @@ export function announcedBreakingSymbols(changelog: string): ReadonlySet<string>
     bullet = [];
     if (!inScope || (!breaking && !/\bBreaking\b/u.test(text))) return;
     for (const match of text.matchAll(IDENTIFIER)) names.add(match[0]);
+    for (const match of text.matchAll(MEMBER_PATH)) names.add(match[0]);
     for (const match of text.matchAll(PACKAGE_NAME)) names.add(match[0]);
   };
   for (const line of changelog.split("\n")) {

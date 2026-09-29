@@ -205,7 +205,7 @@
         "@threenative/core#zenithTransmittance": "export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }",
         "src/game.ts#renderer.matrixWorld": "renderer.matrixWorld?: \"visible\" | \"all\"",
         "src/game.ts#renderer.minimumProjectedPixels": "renderer.minimumProjectedPixels?: number | false",
-        "src/game.ts#renderer.projection": "renderer.projection?: boolean"
+        "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }"
       }
     },
     "@threenative/physics": {
