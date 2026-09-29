@@ -883,13 +883,18 @@ describe("CI pipeline structure", () => {
     // Measured on run 33675488456: ~6 min re-installing SDK/emulator packages and ~5 min on the
     // Gradle build plus the Rust cross-compile, in a 35 min job. `third_party` was already cached
     // and restored in about 4 s; these three simply had no cache step at all.
+    // Run 36357493470 (2026-09-28) reversed the SDK half: sdkmanager installed platform, NDK,
+    // emulator and system image in ~40 s, while the multi-GB save took 240 s every run and
+    // evicted the Gradle and Cargo entries from the shared 10 GiB budget, so none of them hit.
     const source = await readFile(
       path.join(repo, ".github/workflows/native-platforms.yml"),
       "utf8",
     );
     const android = requiredJob(source, "android-emulator-parity");
+    expect(android, "the SDK cache costs more to save than to reinstall").not.toContain(
+      "system-images/android-35",
+    );
     for (const [what, needle] of [
-      ["the Android SDK packages", "system-images/android-35"],
       ["the Gradle caches", "~/.gradle/caches"],
       ["the Rust cross-compile output", ".runtime/physics-target"],
     ] as const) {

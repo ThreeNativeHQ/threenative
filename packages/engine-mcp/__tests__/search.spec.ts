@@ -331,6 +331,26 @@ describe("threenative-engine-mcp", () => {
     );
   });
 
+  it("marks the deprecated `world` constructor option in detail, not the node class", () => {
+    for (const symbol of ["RigidBody3D", "Area3D", "CharacterBody3D", "Joint3D"]) {
+      const note =
+        capabilityDetail(symbol, workspaceManifest, "@threenative/physics").deprecated?.join(" ") ??
+        "";
+
+      // One option is deprecated, and the note has to name it: an agent told only "deprecated"
+      // would stop using a node class that is current, supported and recommended.
+      expect(note, symbol).toContain("`world`");
+      expect(note, symbol).toContain("`physics`");
+      expect(note, symbol).toMatch(/constructor option/iu);
+      expect(note, symbol).toMatch(/not deprecated/iu);
+    }
+
+    // A sibling entry that never deprecated an option must not inherit a blanket marker.
+    expect(
+      capabilityDetail("CollisionShape3D", workspaceManifest, "@threenative/physics").deprecated,
+    ).toBeUndefined();
+  });
+
   it("ranks NavigationAgent3D for the exact patrol and line-of-sight task", () => {
     const results = searchResults(
       "enemy walks around a patrol path and chases the player when it sees them",

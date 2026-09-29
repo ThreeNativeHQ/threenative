@@ -4,8 +4,16 @@
 import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
 import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
-import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
-import { type RenderMode, isProjectedRung, parseAxesRecord, percentile } from "./workload.js";
+import { createLoadTestHarness } from "./game.js";
+import { createFoxCrowd } from "./ladder-characters.js";
+import { ladderRank } from "./ladder.js";
+import {
+  type RenderMode,
+  isProjectedRung,
+  isRealisticRung,
+  parseAxesRecord,
+  percentile,
+} from "./workload.js";
 
 declare global {
   var canvas: HTMLCanvasElement | undefined;
@@ -17,11 +25,14 @@ declare const __TN_BENCH_CONFIG__: Readonly<{
   animate: boolean;
   axes: Record<string, string | undefined>;
   frames: number;
+  height: number;
   refreshHz: number;
   ladder: number[];
   modes: RenderMode[];
   repeats: number;
+  sourceSha?: string;
   warmup: number;
+  width: number;
 }>;
 
 const config = __TN_BENCH_CONFIG__;
@@ -45,6 +56,14 @@ async function main(): Promise<void> {
   }
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
+  // The characters are decoded before the harness exists, and only when a ladder rung asked for
+  // them, so R3's first measured frame is a skinning frame rather than a decode frame.
+  // Only R3 and above draw the crowd, so R1 and R2 do not pay to build 50 rigs they never attach.
+  const characters = config.modes.some(
+    (mode) => isRealisticRung(mode) && ladderRank(mode) >= ladderRank("R3"),
+  )
+    ? await createFoxCrowd()
+    : undefined;
   // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
   // control can drive the same harness without the framework in its graph. This arm has one, and
   // L3 is a native cell. The other two passes a shipped `defineGame` installs around the draw go
@@ -58,6 +77,7 @@ async function main(): Promise<void> {
     axes,
     (scene, options) => new SceneRenderProjection(scene, options),
     { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
+    characters,
   );
   const rungs: unknown[] = [];
 
@@ -83,9 +103,9 @@ async function main(): Promise<void> {
             await nextFrame();
           }
           // L4 measures what the shipped default costs on a scene nothing may batch, so the
-          // projection declining is that row's answer and `drawCalls` is what records it. Only
-          // L3's two guards stay strict; see the web entry for why.
-          if (mode === "L3") {
+          // projection declining is that row's answer and `drawCalls` is what records it. The
+          // realistic-scene rungs are L3's authoring, so they keep L3's two guards.
+          if (mode === "L3" || isRealisticRung(mode)) {
             // `projected` is the projection's applied state. The pass this replaced said `applied`;
             // both mean the same thing here, that the optimizer took the scene rather than handing
             // the frame back, and a rung that measured an un-optimized scene must still refuse to
@@ -108,6 +128,9 @@ async function main(): Promise<void> {
         // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
         // rafTimestampMs without inferring it from wall time.
         const rafTimestampMs: number[] = [];
+        let ladder: unknown;
+        let foxMeasurement: unknown;
+        let renderCheck: unknown;
         let drawCalls = 0;
         let triangles = 0;
         let visibleObjects = 0;
@@ -121,7 +144,14 @@ async function main(): Promise<void> {
             drawCalls = stats.drawCalls;
             triangles = stats.triangles;
             visibleObjects = stats.visibleObjects;
+            // The rung's asserted scene cost, read at the same frame as the counters.
+            ladder = harness.ladderCounts();
+            foxMeasurement = harness.foxMeasurement();
           }
+          // PRD-464: the rung's own read-back, on the last warmup frame so the GPU stall the
+          // read-back causes never lands inside a measured frame. See the web entry.
+          if (frameIndex === config.warmup - 1 && isRealisticRung(mode))
+            renderCheck = await harness.probeFrame();
           const rafTimestamp = await nextFrame();
           const now = performance.now();
           const interval = now - previous;
@@ -137,6 +167,9 @@ async function main(): Promise<void> {
           collapseMs,
           drawCalls,
           frameMs,
+          ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
+          ...(ladder === undefined ? {} : { ladder }),
+          ...(renderCheck === undefined ? {} : { renderCheck }),
           stepMs,
           mode,
           objectCount,
@@ -170,19 +203,26 @@ async function main(): Promise<void> {
     // cosmetic — the scorer refuses to compare two arms whose displays disagree.
     device: { battery: null, label: onAndroid ? "android-native" : "desktop-native-linux" },
     display: {
-      height: VIEWPORT_HEIGHT,
+      // The host surface this run was given, not the drawing buffer a rung drew into: R1-R4 render
+      // at 1280x720 inside the 1920x1080 window the ladder is run with, and the per-rung
+      // `ladder.resolution` is the field that says so.
+      height: config.height,
       refreshHz: __TN_BENCH_CONFIG__.refreshHz,
       // Read back from the surface, never assumed: the host reports `fifo`, `immediate` or
       // `mailbox`, and only `fifo` pins frames to the display. Reporting `true` unconditionally is
       // how an uncapped run still described itself as display-bound.
       vsync: presentMode === "fifo",
-      width: VIEWPORT_WIDTH,
+      width: config.width,
     },
     driver: {
       adapter: harness.adapterLabel,
       renderer: "three/webgpu WebGPURenderer (native host)",
     },
     engine: { name: "threenative", version: "workspace" },
+    // Only the one field the host can know: the module graph and adapter identity the web arm
+    // derives need an HTTP server this target has none of, and a partial identity is read as
+    // "not an accepted baseline" rather than as a claim.
+    ...(config.sourceSha === undefined ? {} : { identity: { sourceSha: config.sourceSha } }),
     rungs,
   };
   // Android's logcat truncates a line at ~1 KB, which silently cut every report this arm emitted

@@ -566,12 +566,14 @@ function engineCell(
   engine: "godot" | "tn",
   mode: TRenderMode,
   objectCount: number,
+  /** Defaults to the cube scoreboard's run files; PRD-464's ladder names its own. */
+  bases: string[] = scoreboardFiles(data, engine),
 ): IEngineCell | undefined {
   const p50s: number[] = [];
   const p95s: number[] = [];
   let attempt: IAttempt | undefined;
   let drawCalls: number | undefined;
-  for (const base of scoreboardFiles(data, engine)) {
+  for (const base of bases) {
     const found = scoreboardRun(data, base);
     const pilot = found?.pilot;
     if (!pilot) continue;
@@ -628,9 +630,7 @@ function pill(engine: TEngine | "tie"): string {
  *  a tie is visibly a tie rather than a missing verdict. The ratio is the slower median over the
  *  faster one. When the worst-case frame (p95) went the other way, a second small line names that
  *  instead of letting the median speak for it. */
-function verdictCell(row: IScoreboardRow): string {
-  const godotCell = row.godot;
-  const tnCell = row.tn;
+function verdictCell(godotCell: IEngineCell | undefined, tnCell: IEngineCell | undefined): string {
   if (!godotCell || !tnCell) return `<td>${PENDING_CELL}</td>`;
   const engine = winner(godotCell, tnCell);
   const ratio =
@@ -787,12 +787,122 @@ function renderEngineComparison(data: IMonitorData): string {
   const caveat =
     "Repeated protocol: 3 alternating runs per engine, 40 warmup frames then 120 measured frames per run, 1280x720 uncapped on a physical display. Both engines share one machine, so each cell reports its own run-to-run spread and a win is only called when the gap is wider than that spread.";
   const body = (row: IScoreboardRow): string =>
-    `<tr><td>${commas(row.objectCount)} cubes</td><td>${cell(row.godot)}</td><td>${cell(row.tn)}</td>${verdictCell(row)}<td>${e(draws(row.godot, row.tn))}</td><td>${rawJson(data, "godot")}<p class="small">${rawJson(data, "tn")}</p></td></tr>`;
+    `<tr><td>${commas(row.objectCount)} cubes</td><td>${cell(row.godot)}</td><td>${cell(row.tn)}</td>${verdictCell(row.godot, row.tn)}<td>${e(draws(row.godot, row.tn))}</td><td>${rawJson(data, "godot")}<p class="small">${rawJson(data, "tn")}</p></td></tr>`;
   const table = SCOREBOARD_ROWS.map((row) => {
     const pair = rows.filter((item) => item.label === row.label);
     return `<tr><td colspan="6"><strong>${e(row.label)}</strong>${row.note ? `<p class="small">${e(row.note)}</p>` : ""}</td></tr>${pair.map(body).join("")}`;
   }).join("");
   return `<section class="panel" aria-label="ThreeNative against Godot scoreboard"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · ${SCOREBOARD_RUNS.length} runs per engine</span></div>${scoreboardBanner(rows)}<p class="note">${e(caveat)}</p><div class="table-wrap" tabindex="0" role="region" aria-label="ThreeNative against Godot scoreboard; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Median of each engine's run medians in milliseconds with its run-to-run spread and run count, who won the row and by how much, plus draw calls from the first run.</caption><thead><tr><th scope="col">Scene</th><th scope="col">Godot</th><th scope="col">ThreeNative</th><th scope="col">Winner</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Run files</th></tr></thead><tbody>${table}</tbody></table></div>${scoreboardBars(rows)}${whereTnLoses(rows)}<p class="chart-note">Median of the run medians per row, one axis. Godot teal, ThreeNative green.</p><details class="methodology"><summary>Methodology and caveats</summary><p class="note">3 alternating runs per engine, 40 warmup + 120 measured frames each, 1280x720 uncapped, physical display. Both engines ran on the same machine, so every cell reports its own run-to-run spread and a win is only called when the gap between the two medians beats the wider of the two spreads, with at least 2 runs on each side. Anything inside that is a tie.</p><p class="note">Unqualified observations, not engine rankings. L1 has a known output/draw mismatch; L2 uses different visible-count semantics. Full fixture conformance is unverified. Modes are distinct requested workloads, so each row is read as itself: TN L3 against Godot L1 on the headline row, L2 against L2 with instancing asked of both, and L4 against L4 where a unique material per cube stops either engine merging draws.</p><p class="note">Warmup frames are not recorded in these JSON files, so the retained samples per run file are all this page claims. The Godot suite's <code>time</code> field and its CPU/GPU split are its own definitions.</p><p class="note">Adapters as recorded: Godot ${e(rows.map((row) => row.godot).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)} · TN ${e(rows.map((row) => row.tn).find((value) => value?.attempt?.pilot)?.attempt?.pilot?.driver.adapter ?? MISSING)}.</p>${renderGodotUpstream(data)}</details></section>${renderFixesPanel(data)}`;
+}
+
+/**
+ * PRD-464's realistic-scene ladder: the same 4,096-cube scene with a sun, then local lights, then
+ * fifty skinned characters, then tonemapping and bloom, then the whole thing at 1920x1080. Each rung
+ * is one mode, and a run that did not record the rung's own counts and a non-blank read-back frame
+ * never became a report at all, so every cell here is behind a proved scene.
+ */
+const LADDER_ROWS = [
+  {
+    label: "R1 Sun",
+    note: "One directional sun casting shadows, 2048 map on both engines.",
+    rung: "R1",
+  },
+  { label: "R2 Lights", note: "Eight point lights on a fixed orbit, no shadows.", rung: "R2" },
+  {
+    label: "R3 Characters",
+    note: "Fifty Khronos Fox glTFs, each playing Run at a staggered offset.",
+    rung: "R3",
+  },
+  { label: "R4 Post", note: "ACES tonemapping and bloom, matched to the same band.", rung: "R4" },
+  {
+    label: "R5 Full scene at 1920x1080",
+    note: "R4 at 1080p: the closest thing here to a real game frame.",
+    rung: "R5",
+  },
+] as const;
+
+const LADDER_OBJECT_COUNT = 4096;
+
+/**
+ * The run files one rung reads from. R1-R4 are drawn in a 1280x720 window and R5 in a 1920x1080 one,
+ * so the headline lives in its own file family rather than in a window that would scale it.
+ */
+function ladderFiles(
+  data: IMonitorData,
+  engine: "godot" | "tn",
+  rung: (typeof LADDER_ROWS)[number]["rung"],
+): string[] {
+  const family = rung === "R5" ? "ladder1080" : "ladder";
+  return SCOREBOARD_RUNS.map((run) => `${family}-${engine}-r${run}-${scoreboardTag(data)}`);
+}
+
+function ladderCell(
+  data: IMonitorData,
+  engine: "godot" | "tn",
+  rung: (typeof LADDER_ROWS)[number]["rung"],
+): IEngineCell | undefined {
+  return engineCell(data, engine, rung, LADDER_OBJECT_COUNT, ladderFiles(data, engine, rung));
+}
+
+/** A cell's frames per second, read off the same median p50 every other cell reports. */
+function fps(cell: IEngineCell | undefined): string {
+  return cell === undefined || cell.medP50 <= 0 ? PENDING_CELL : (1000 / cell.medP50).toFixed(1);
+}
+
+/**
+ * The line the page opens on: what a full 1080p frame of the same scene costs each engine, in the
+ * unit a player would feel. The verdict is the scoreboard's own — a win only when the gap between
+ * the two medians beats the wider of their run-to-run spreads, with at least two runs each.
+ */
+function ladderHeadline(data: IMonitorData): string {
+  const tn = ladderCell(data, "tn", "R5");
+  const godot = ladderCell(data, "godot", "R5");
+  const engine = winner(godot, tn);
+  if (!tn || !godot)
+    return `<p class="verdict-line">Full scene at 1080p: ThreeNative ${escapeHtml(fps(tn))} fps vs Godot ${escapeHtml(fps(godot))} fps</p>`;
+  const ratio = Math.max(tn.medP50, godot.medP50) / Math.min(tn.medP50, godot.medP50);
+  const sentence =
+    engine === "tie"
+      ? "tie — within run-to-run noise"
+      : `${engine} — ${ratio.toFixed(1)}x faster on a typical frame`;
+  return `<p class="verdict-line">Full scene at 1080p: ThreeNative ${escapeHtml(fps(tn))} fps vs Godot ${escapeHtml(fps(godot))} fps</p><p>${pill(engine)} <span class="small">${escapeHtml(sentence)}</span></p>`;
+}
+
+/** The ladder beneath the headline: what each rung added, and who it cost. */
+function renderRealisticLadder(data: IMonitorData): string {
+  const e = escapeHtml;
+  const rows = LADDER_ROWS.map((row) => ({
+    ...row,
+    godot: ladderCell(data, "godot", row.rung),
+    tn: ladderCell(data, "tn", row.rung),
+  }));
+  const head = rows.find((row) => row.tn?.attempt?.pilot)?.tn?.attempt?.pilot;
+  const body = rows
+    .map(
+      (row) =>
+        `<tr><td><strong>${e(row.label)}</strong><p class="small">${e(row.note)}</p></td><td>${cell(row.godot)}</td><td>${cell(row.tn)}</td><td>${verdictCell(row.godot, row.tn)}</td><td>${e(draws(row.godot, row.tn))}</td><td>${ladderFiles(
+          data,
+          "godot",
+          row.rung,
+        )
+          .map((base) => {
+            const attempt = scoreboardRun(data, base);
+            return attempt
+              ? attemptLink(data, attempt, path.basename(attempt.source))
+              : e(`${base}.json`);
+          })
+          .join(" · ")}<p class="small">${ladderFiles(data, "tn", row.rung)
+          .map((base) => {
+            const attempt = scoreboardRun(data, base);
+            return attempt
+              ? attemptLink(data, attempt, path.basename(attempt.source))
+              : e(`${base}.json`);
+          })
+          .join(" · ")}</p></td></tr>`,
+    )
+    .join("");
+  const title = `Realistic scene ladder — ${commas(LADDER_OBJECT_COUNT)} cubes, ${head ? e(gpuName(head.driver.adapter)) : "GPU not recorded"}`;
+  return `<section class="panel" aria-label="Realistic scene ladder"><div class="section-head"><h2>${title}</h2><span class="badge">Exploratory · ${SCOREBOARD_RUNS.length} runs per engine · one cost added per rung</span></div><div class="verdict-banner">${ladderHeadline(data)}<p class="small">Frames per second are 1000 divided by the median p50 of the retained runs, and the verdict uses the same rule as the cube scoreboard below: a win is only called when the gap between the two medians beats the wider of the two run-to-run spreads, with at least 2 runs on each side.</p></div><div class="table-wrap" tabindex="0" role="region" aria-label="Realistic scene ladder; scroll horizontally for all columns"><table class="compare-table"><caption class="small">Each rung is the one above it plus one cost, identically in both engines. A run that did not record the rung's shadow casters, light count, skinned-mesh count, post passes, resolution and a non-blank read-back frame failed instead of publishing a number.</caption><thead><tr><th scope="col">Rung</th><th scope="col">Godot</th><th scope="col">ThreeNative</th><th scope="col">Winner</th><th scope="col">Draw calls · Godot vs TN</th><th scope="col">Run files</th></tr></thead><tbody>${body}</tbody></table></div><p class="note">3 alternating runs per engine, 40 warmup + 120 measured frames each, uncapped on the physical display, R1-R4 at 1280x720 and R5 at 1920x1080 — each rung drawn at its window's own resolution, so neither engine presents a buffer it then has to scale. Both engines ran on the same machine, so every cell reports its own run-to-run spread. L3's projection is on in every rung: the cubes are the shipped-default path, not a hand-instanced one.</p><p class="note">Unqualified observations, not engine rankings. The characters are one low-poly rig at 50 instances, and appearance is matched to a band rather than to the pixel — the ladder measures cost, not looks.</p></section>`;
 }
 
 /** The one change measured against itself rather than against the other engine: the retained
@@ -998,7 +1108,8 @@ export function renderProgressHtml(data: IMonitorData): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Performance iterations · PRD-449</title><style>${STYLE}</style></head><body><main>
 <div class="topline"><div class="eyebrow">ThreeNative / Performance lab</div><div class="live">Offline snapshot · refreshes every 15s</div></div>
-<header><div class="section-head"><h1>Performance, over time.</h1><button type="button" onclick="location.reload()">Reload ↻</button></div><p class="subtitle">ThreeNative against Godot on the same physical display first, then the latest measured hardware run, then every qualified iteration with the evidence to call it. Completed-work mean, per-frame samples, and the decisions behind them.</p></header>
+<header><div class="section-head"><h1>Performance, over time.</h1><button type="button" onclick="location.reload()">Reload ↻</button></div><p class="subtitle">A full 1080p frame of a real scene first, then the cube-by-cube ladder it is built from, then the latest measured hardware run, then every qualified iteration with the evidence to call it. Completed-work mean, per-frame samples, and the decisions behind them.</p></header>
+${renderRealisticLadder(data)}
 ${renderEngineComparison(data)}
 ${renderPilotTrace(data)}
 <section class="panel" aria-label="Qualified iterations"><div class="section-head"><h2>Qualified iterations</h2><span class="badge">${qualified.filter((item) => item.comparable).length} qualified</span></div><p class="note">Only explicit iterations whose baseline, incumbent and candidate runs are retained, checksummed and comparable count here. A pilot alone is not an iteration.</p>

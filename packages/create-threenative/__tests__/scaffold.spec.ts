@@ -433,8 +433,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-28 for PRD-470: the action RPG is cut from the prototype test scene and
   // built on `mannequin-combat.glb`. One rig, six instances, a real doorway between the rooms, and
   // a `Play` scene the game starts in, so only this tree moves.
-  "action-rpg": "df31d7b8063155484303e5cc8151e70b3d259411eb5b6c12fc8cb61cb6eac457",
-  defense: "0a3e97f66d5e043d7c0f4310852cb5c655a206417c1b09f835486672d8809f23",
+  "action-rpg": "1eee879799687d8b675693846d3ef405588ec67d07b044523f27ba21738e3f9b",
+  defense: "e00c00376798af696a9c17b4f13cc21f5aac3b95e3a7d3068afbdfd2f07cc4b0",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -446,16 +446,16 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  minimal: "ba6e045a12666636587f1338a10c61a966b8261eff315387883a919c378052c9",
-  platformer: "f057c1384a45ff9ed2799a0d54c5439533ed02628de545a57e18d09f975efd70",
-  runner: "178cd5b70c70e415cf120ee4d63b63fae459c75ee44c99ff8e888c393e0ea9ef",
-  puzzle: "baeecb5a1df06608051117d3b222a63b08b213b413b1875d0ea9950953b9f82d",
-  racing: "eccc53ef4dcb042b6b7bdc39aca1d6943ead0704a1783221c9fd9e0b9ea1627d",
-  shooter: "08eaaef805b948c641804cba928ba9f4cfc6cae75f892ca15b393a467d4ee551",
+  minimal: "76174dca26046e8b6a4411945b89db4335403989314ccecd11654cb3bc0edeb8",
+  platformer: "28cc40890ea06de50b360aa14649a6cc840ae68ab3f0750492b3fe51ad450100",
+  runner: "55be7adf90d62f35dcd06c091fd6dde4d571d1a1e2a69461b5ba22b4acd779a2",
+  puzzle: "199a8b2641abfa3ca9ade5e1cf5c3b3d47426805f6707fdb4f33716b9f543596",
+  racing: "d169407c7c98537fc079c312124f9acaae407081e0053d85f38877208b80210c",
+  shooter: "1271deffa7fb8ed9984c0d7312503f9cb130496323510facd8b12f2d7bede43f",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
-  starter: "67f619e53090b0de415141c2e061cb89f5f559518c0d2892e71a49517730b42f",
+  starter: "d555ee34f4c37e60673591f5a2c0c5b61a5ca40dff0be0ea58d896cf4898bc8f",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -483,7 +483,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
   // Recomputed 2026-09-27 after merging the PRD-400 three.js velocity patch with develop's
   // PRD-112/365 scaffold changes; the value comes from the committed merged scaffold tree.
-  sailing: "e60aa47a3c084b81bd5a43b359ab28212f761d14bcb38262183054c64c1778df",
+  sailing: "f6408ee8da57a1f86cc2f9cda59b4fa8c27069088737353483c98f833679ae54",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -521,7 +521,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
   // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
   // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
-  rts: "7dfc069beb0b012232e05676f4e8c2c9f127e1555d3c6e6ee902580a82ab7058",
+  rts: "76029ad6c88835f19e636d034fc10ad1d062e0a8cdc40b44c8221169b075fb98",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

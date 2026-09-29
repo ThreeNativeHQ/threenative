@@ -76,6 +76,19 @@ export type ProjectionExactReason =
   | "nonUniformScale"
   | "unsupportedGeometry";
 
+/**
+ * How often a uniform-batch member's material is proved still matching its group's shared draw.
+ *
+ * - `"spread"` — the default. A bounded slice of the members a frame, resuming where the last frame
+ *   stopped, so a frame proves `materialChecksPerFrame` materials rather than all of them. A
+ *   non-colour edit is still caught and the member still leaves the group; it is caught up to
+ *   `materialCheckStaleFrames` frames later, which the report states. A colour edit is never
+ *   involved: the per-instance colour write is O(1) per member and always exact.
+ * - `"everyFrame"` — every material, every frame, for a game that would rather pay the per-frame
+ *   cost than accept the bound. This is the check as it shipped before the sweep existed.
+ */
+export type ProjectionMaterialChecks = "spread" | "everyFrame";
+
 export interface IRenderProjectionReport {
   readonly schemaVersion: 1;
   /** True while the renderer is being handed the mirror rather than the authored scene. */
@@ -110,6 +123,20 @@ export interface IRenderProjectionReport {
    * divergence between them is a finding, not a rounding error.
    */
   readonly drawsPlanned: number;
+  /**
+   * The colour lane's per-frame material proof: which mode, what it costs a frame, and the worst
+   * staleness it accepts.
+   *
+   * `materialChecks` is the mode in force, `materialChecksPerFrame` the ceiling on checks a frame
+   * (`0` in `everyFrame`, which is not bounded because it is not spread), and
+   * `materialCheckStaleFrames` the frames a non-colour material edit can sit unproved for — `0`
+   * under `everyFrame`, so the number is never read as a bound that does not exist.
+   * `materialChecksOverridden` says the author chose a mode other than the default.
+   */
+  readonly materialChecks: ProjectionMaterialChecks;
+  readonly materialChecksPerFrame: number;
+  readonly materialCheckStaleFrames: number;
+  readonly materialChecksOverridden: boolean;
   readonly timings: {
     readonly compileMs: number;
     readonly reconcileMs: number;
@@ -125,13 +152,20 @@ export interface IRenderProjectionOptions {
    */
   readonly minMeshes?: number;
   /**
-   * Whether the projection may run at all. Defaults true, the shipping behaviour; `false` is the
-   * game's named opt-out. An opted-out projection builds no mirror and runs no eligibility scan —
-   * the authored scene is handed to the renderer every frame — so declining costs nothing rather
-   * than being re-judged each frame. The verdict is reported as `disabled`, not as one of the
-   * measured declines.
+   * The game's `renderer.projection` value, verbatim: `false` declines the projection, and an
+   * object names the material check on top of accepting it. `undefined` and `true` are the shipping
+   * behaviour, the projection runs.
+   *
+   * `materialChecks` defaults to `"spread"` — a bounded slice of the batched materials proved per
+   * frame, with the staleness it accepts reported — and `"everyFrame"` restores the per-member,
+   * per-frame proof exactly as it shipped. Any other value throws at construction rather than being
+   * coerced to a default, because a silently ignored mode is a measurement nobody can trust.
+   *
+   * A declined projection builds no mirror and runs no eligibility scan — the authored scene is
+   * handed to the renderer every frame — so declining costs nothing rather than being re-judged
+   * each frame. The verdict is reported as `disabled`, not as one of the measured declines.
    */
-  readonly enabled?: boolean;
+  readonly projection?: boolean | { readonly materialChecks?: ProjectionMaterialChecks };
   /** Allocates per-sub-draw previous matrices for the material-batching lane. */
   readonly velocity?: boolean | (() => boolean);
   /**
@@ -158,6 +192,7 @@ export class SceneRenderProjection {
   readonly #source: Scene;
   readonly #minMeshes: number;
   readonly #enabled: boolean;
+  readonly #materialChecks: ProjectionMaterialChecks;
   readonly #onReport: ((report: IRenderProjectionReport) => void) | undefined;
   /** Absent when the game opted out: an opted-out projection never builds one. */
   readonly #mirror: ProjectionMirror | undefined;
@@ -193,11 +228,16 @@ export class SceneRenderProjection {
       throw new Error("SceneRenderProjection.minMeshes must be a positive integer.");
     this.#source = source;
     this.#minMeshes = minMeshes;
-    this.#enabled = options.enabled ?? true;
+    this.#enabled = options.projection !== false;
+    this.#materialChecks = resolveMaterialChecks(
+      typeof options.projection === "object" ? options.projection.materialChecks : undefined,
+    );
     this.#velocity = options.velocity ?? false;
     this.#velocityActive = resolveVelocityEnabled(this.#velocity);
     this.#matrixWorld = options.matrixWorld;
-    this.#mirror = this.#enabled ? new ProjectionMirror(this.#velocityActive) : undefined;
+    this.#mirror = this.#enabled
+      ? new ProjectionMirror(this.#velocityActive, this.#materialChecks)
+      : undefined;
     this.#onReport = options.onReport;
   }
 
@@ -434,6 +474,12 @@ export class SceneRenderProjection {
           projectedObjects: r.projectedObjects,
           exactObjects: r.exactObjects,
           exact: r.exact,
+          // The colour lane's per-frame material proof, named with the bound it accepts: a spread
+          // check is a trade, and a trade nobody can read off the line is an invisible one.
+          materialChecks: r.materialChecks,
+          materialChecksPerFrame: r.materialChecksPerFrame,
+          materialCheckStaleFrames: r.materialCheckStaleFrames,
+          ...(r.materialChecksOverridden ? { materialChecksOverridden: true } : {}),
         })}`,
       );
       return;
@@ -471,6 +517,12 @@ export class SceneRenderProjection {
       // A declined frame renders the authored scene, so its plan is one draw per authored
       // renderable — the number the projection is trying to beat, not zero.
       drawsPlanned: this.#deoptimized ? this.#sourceRenderables : batches + exactObjects,
+      // Stated whether or not anything projected: the mode is a frame's cost, and a scene that
+      // declined still has no uniform members to spread the check over.
+      materialChecks: this.#materialChecks,
+      materialChecksPerFrame: this.#mirror?.materialChecksPerFrame ?? 0,
+      materialCheckStaleFrames: this.#mirror?.materialCheckStaleFrames ?? 0,
+      materialChecksOverridden: this.#materialChecks !== "spread",
       exact,
       timings: {
         compileMs: this.#mirror?.compileMs ?? 0,
@@ -536,4 +588,19 @@ function resolveVelocityEnabled(value: boolean | (() => boolean)): boolean {
       `SceneRenderProjection.velocity must resolve to a boolean, received ${String(enabled)}.`,
     );
   return enabled;
+}
+
+/**
+ * Fail closed on a mode that is not one of the two: a game that wrote `"everyframe"` or
+ * `"sometimes"` gets a named throw at construction rather than a default nobody asked for.
+ */
+function resolveMaterialChecks(
+  value: ProjectionMaterialChecks | undefined,
+): ProjectionMaterialChecks {
+  if (value === undefined) return "spread";
+  if (value !== "spread" && value !== "everyFrame")
+    throw new Error(
+      `SceneRenderProjection.materialChecks must be "spread" or "everyFrame", received ${JSON.stringify(value)}.`,
+    );
+  return value;
 }

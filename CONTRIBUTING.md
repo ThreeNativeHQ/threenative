@@ -63,6 +63,44 @@ checkout. Do not retarget another person's PR or rewrite their worktree.
 the error count. If a package's types look stale against a change you did not make, rebuild it —
 templates and examples typecheck against `dist/`.
 
+## Versioning and deprecation
+
+The **public surface** is every exported symbol, type, and export subpath of a published package
+(`@threenative/core`, `@threenative/physics`, `@threenative/ui`, `@threenative/assets`,
+`@threenative/playtest`, `@threenative/runtime-native`, `@threenative/raw-unreal`,
+`@threenative/ueformat`, `create-threenative`, `threenative-engine-mcp`,
+`threenative-blender-mcp`) — the API your game and its agents import. Everything else is internal
+and may change in any release.
+
+**Before 1.0** (`0.x.y`): `patch` is fixes only, `minor` may break. A break is always announced.
+`pnpm api:surface:check` compares the live surface against the committed
+`scripts/api-surface.json` and fails when a published package, an export subpath, an exported class
+or function, or its signature disappears without a `Breaking` entry in the unreleased section of
+`CHANGELOG.md` naming it. Type-only and other exports are public too; the snapshot does not yet
+enumerate them, so the 1.0 acceptance gate remains open. "Minor may break" means *minor breaks in
+the changelog*, never *minor breaks silently*.
+
+**At and after 1.0**: semver exactly as written — `patch` fixes, `minor` adds, `major` breaks. A
+`major` is the only version that may remove or re-sign a public symbol. The current surface check
+requires a note for a break; release-version enforcement remains open in PRD-446.
+
+**Every announced break carries a migration note** under `### Breaking`: the old name, the new
+name, and the edit that upgrades a game. An agent follows that note verbatim, so a bullet that
+does not say what to change is not a migration note.
+
+**A deprecation window is one minor.** A deprecated symbol keeps working, signature intact, for one
+more minor release; after that it may be removed and is announced like any other break. Marking
+something deprecated is a two-part change in one commit:
+
+1. a `@deprecated` JSDoc tag naming the replacement, plus a `console.warn` that fires **once** per
+   process, not per call;
+2. the capability-manifest entry (`packages/create-threenative/capabilities.json`) marked
+   deprecated, so `engine_capability_detail` tells an agent the replacement before it writes the
+   call.
+
+Neither the one-time warning nor the manifest marker ships yet (PRD-446); until they do, the
+changelog is the only deprecation signal a reader gets.
+
 ## Tests are not optional
 
 Add a unit test in `<package>/__tests__/*.spec.ts` for every change, in the same commit. A change
