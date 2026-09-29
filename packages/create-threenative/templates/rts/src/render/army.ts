@@ -10,6 +10,7 @@
 // objects for the whole battlefield, and the count is what `maxDrawCalls` in the performance
 // scenario is really measuring.
 import {
+  type BufferAttribute,
   type Camera,
   Color,
   DynamicDrawUsage,
@@ -210,7 +211,7 @@ export function createArmy(models: IUnitModels): IArmy {
         for (const part of entry.parts) {
           part.count = entry.list.length;
           if (part.count === 0) continue;
-          part.instanceMatrix.needsUpdate = true;
+          upload(part.instanceMatrix, part.count);
           // The instance-aware bound, or the batch is culled by its own geometry's origin-sized
           // sphere and half the battlefield silently disappears.
           part.computeBoundingSphere();
@@ -232,7 +233,7 @@ export function createArmy(models: IUnitModels): IArmy {
           count += 1;
         }
         ring.count = count;
-        ring.instanceMatrix.needsUpdate = true;
+        upload(ring.instanceMatrix, count);
       }
 
       barCount = 0;
@@ -260,8 +261,8 @@ export function createArmy(models: IUnitModels): IArmy {
           pushBar(entity, width, entity.queue[0]?.progress ?? 0, y - 0.9, _queue);
       }
       bars.count = barCount;
-      bars.instanceMatrix.needsUpdate = true;
-      if (bars.instanceColor !== null) bars.instanceColor.needsUpdate = true;
+      upload(bars.instanceMatrix, barCount);
+      if (bars.instanceColor !== null) upload(bars.instanceColor, barCount);
 
       let live = 0;
       for (const slot of markers) {
@@ -275,7 +276,7 @@ export function createArmy(models: IUnitModels): IArmy {
         live += 1;
       }
       markerRings.count = live;
-      markerRings.instanceMatrix.needsUpdate = true;
+      upload(markerRings.instanceMatrix, live);
     },
     dispose: () => {
       // The model geometries belong to `models`, which frees them; the materials are shared by
@@ -292,6 +293,19 @@ export function createArmy(models: IUnitModels): IArmy {
       (markerRings.material as MeshBasicMaterial).dispose();
     },
   };
+}
+
+/**
+ * Send the GPU only the slots a batch is using. Every mesh here is sized for the supply cap, so a
+ * whole-buffer upload is 8 KB per mesh per frame for the two or three copies actually on the
+ * field; across the ~45 meshes that is tens of megabytes a second of writes the driver stalls on.
+ * Three does not clear the ranges after a WebGPU upload, so they are reset here every time.
+ */
+function upload(attribute: BufferAttribute, live: number): void {
+  if (live === 0) return;
+  attribute.clearUpdateRanges();
+  attribute.addUpdateRange(0, live * attribute.itemSize);
+  attribute.needsUpdate = true;
 }
 
 /** Standing bob, per-unit phased by id so a column of workers does not rise as one board. */

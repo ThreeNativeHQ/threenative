@@ -1760,6 +1760,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
+            if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
             worldRendered = true;
           }
           if (this.#renderMetricsEnabled) {
