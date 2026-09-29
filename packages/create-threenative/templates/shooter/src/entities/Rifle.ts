@@ -41,8 +41,22 @@ const CYCLIC_SECONDS = 0.1;
  * Hip and aimed rest poses, in camera space. The shipped viewmodel is authored
  * at life scale pointing +z with its origin at the shoulder, so the only fixed
  * correction is a half turn; everything else is pose.
+ *
+ * The old values (`x: 0.3, y: -0.36, z: -0.15`) drew a gun with no visible firing hand — the
+ * "AK grip not working" report. The model's own local box (measured off the real asset in
+ * `#measureBarrel`) reaches from z -0.18 to +0.70 around its shoulder pivot, almost a metre of
+ * its own depth; the 180-degree fit turn puts that *rear* end — the stock, the grip, the trigger
+ * hand — closest to the eye, at camera depth `HIP.z - fitBounds.min.z`, which the old `z: -0.15`
+ * left at 0.033 m: a frustum a couple of centimetres wide at `hipFov` 70. The hand rendered fine;
+ * it simply drew past every edge of the canvas at that depth, whichever offset put it there.
+ * `z: -0.42` gives the rear end enough depth (~0.237 m) for a frustum wide enough to hold it, and
+ * `#clampHip` below still measures the real asset and pulls `x`/`y` in further if a narrower fov,
+ * a bigger hand-spread, or a taller aspect ever closes that room again — reported once, honestly,
+ * when it has to.
  */
-const HIP = { x: 0.3, y: -0.36, z: -0.15, pitch: -0.03, yaw: 0.12, roll: 0.04 };
+const HIP = { x: 0.1, y: -0.2, z: -0.42, pitch: -0.03, yaw: 0.12, roll: 0.04 };
+/** Keep the model's measured span inside this fraction of the visible frustum, not all of it. */
+const HIP_VISIBILITY_MARGIN = 0.92;
 const AIM_Z = -0.16;
 const ZERO_DISTANCE = 25;
 const MAX_CONVERGENCE_DEGREES = 8;
@@ -84,6 +98,11 @@ export class Rifle {
   #aimDirection = new Vector3(0, 0, -1);
   #hasAimRay = false;
   #viewmodelLength = 0;
+  /** The assembled viewmodel's own local bounds, measured off its real geometry. */
+  #fitBounds = new Box3();
+  /** `HIP.x`/`HIP.y`, clamped so the measured model still fits on screen at `HIP.z`. See `#clampHip`. */
+  #hipX = HIP.x;
+  #hipY = HIP.y;
 
   constructor(
     camera: PerspectiveCamera,
@@ -114,6 +133,9 @@ export class Rifle {
     fit.add(viewmodel);
     this.group.add(fit);
     this.#measureBarrel(fit, viewmodel);
+    const clampedHip = this.#clampHip(camera);
+    this.#hipX = clampedHip.x;
+    this.#hipY = clampedHip.y;
     this.#clips = new Set(clips.map((clip) => clip.name));
     if (clips.length > 0) {
       this.#animation = new AnimationPlayer({ clips, root: fit });
@@ -180,6 +202,10 @@ export class Rifle {
         }
       }
     }
+    // How far the assembled model actually reaches from its own pivot, in every direction.
+    // `#clampHip` uses this measured span rather than a guess, so a different hand-and-gun asset
+    // — wider, narrower, re-authored — gets the correction it actually needs, not this one's.
+    this.#fitBounds.copy(fitBounds);
     const tipInFit = new Vector3(
       (fitBounds.min.x + fitBounds.max.x) / 2,
       (fitBounds.min.y + fitBounds.max.y) / 2,
@@ -241,6 +267,38 @@ export class Rifle {
         )
         .applyMatrix4(fit.matrix);
     }
+  }
+
+  /**
+   * `HIP.x`/`HIP.y`, pulled toward centre if the measured model would otherwise draw past the
+   * edge of this camera's own frustum — the fix for a firing hand that renders correctly but
+   * off-screen. The binding depth is not `HIP.z` itself: the 180-degree fit turn puts the
+   * model's *rearmost* local point (`fitBounds.min.z` — the stock end, behind the shoulder
+   * pivot) closest to the eye, so that shallower depth is what the frustum has to be measured
+   * at. Reported once, honestly, rather than silently: an authored pose that never needed
+   * clamping stays exactly as written.
+   */
+  #clampHip(camera: PerspectiveCamera): { x: number; y: number } {
+    const rearDepth = Math.max(1e-3, this.#fitBounds.min.z - HIP.z);
+    const halfVerticalFov = MathUtils.degToRad(camera.fov) / 2;
+    const halfHorizontalFov = Math.atan(Math.tan(halfVerticalFov) * camera.aspect);
+    const visibleHalfWidth = Math.tan(halfHorizontalFov) * rearDepth * HIP_VISIBILITY_MARGIN;
+    const visibleHalfHeight = Math.tan(halfVerticalFov) * rearDepth * HIP_VISIBILITY_MARGIN;
+    const fitHalfWidth = Math.max(Math.abs(this.#fitBounds.min.x), Math.abs(this.#fitBounds.max.x));
+    const maxHipX = Math.max(0, visibleHalfWidth - fitHalfWidth);
+    const maxHipY = visibleHalfHeight - this.#fitBounds.max.y;
+    const minHipY = -visibleHalfHeight - this.#fitBounds.min.y;
+    const hipX = Math.min(HIP.x, maxHipX);
+    const hipY = MathUtils.clamp(HIP.y, minHipY, maxHipY);
+    if (hipX !== HIP.x || hipY !== HIP.y) {
+      console.info(
+        `TN_VIEWMODEL_HIP_CLAMPED: at the model's measured rear extent (depth ${rearDepth.toFixed(3)} m ` +
+          `from the eye), HIP (${HIP.x}, ${HIP.y}) would draw past this camera's visible frustum ` +
+          `(±${visibleHalfWidth.toFixed(3)} x, ${(-visibleHalfHeight).toFixed(3)}..${visibleHalfHeight.toFixed(3)} y); ` +
+          `clamped to (${hipX.toFixed(3)}, ${hipY.toFixed(3)}) so the firing hand stays on screen.`,
+      );
+    }
+    return { x: hipX, y: hipY };
   }
 
   get ready(): boolean {
@@ -385,8 +443,8 @@ export class Rifle {
     const bobY = Math.abs(Math.cos(this.#sway)) * 0.01 * (0.25 + moving) * hipMotion;
     const kick = this.#kick * this.#kick;
     this.group.position.set(
-      HIP.x + (-this.#opticLocal.x - HIP.x) * t + bob,
-      HIP.y + (-this.#opticLocal.y - HIP.y) * t + bobY - this.#lowered * 0.34,
+      this.#hipX + (-this.#opticLocal.x - this.#hipX) * t + bob,
+      this.#hipY + (-this.#opticLocal.y - this.#hipY) * t + bobY - this.#lowered * 0.34,
       HIP.z + (AIM_Z - HIP.z) * t + kick * 0.045,
     );
     this.group.rotation.set(
