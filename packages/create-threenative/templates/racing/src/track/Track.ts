@@ -198,6 +198,12 @@ function fixedTrimesh(
   });
 }
 
+/** The ground is drawn this far below the height the road is laid to. A 5 m grid cannot follow a
+ *  banked cross-section exactly, and where it errs high the grass shows through the tarmac in
+ *  patches; sinking it 30 cm turns that into a road bed standing proud of the field. It is drawn,
+ *  never collided, so nothing but the picture depends on it. */
+const TERRAIN_SINK = 0.3;
+
 function buildTerrain(ctx: TrackCtx, materials: ReturnType<typeof createMaterials>): void {
   // The ground is a grid over the circuit's bounding box and a long way past it, its height read
   // from the same {@link groundHeight} the road is draped on. That is why nothing here can be
@@ -230,12 +236,12 @@ function buildTerrain(ctx: TrackCtx, materials: ReturnType<typeof createMaterial
       const z = minRow + row * step;
       const at = row * width + column;
       positions[at * 3] = x;
-      positions[at * 3 + 1] = terrainHeight(x, z);
+      positions[at * 3 + 1] = terrainHeight(x, z) - TERRAIN_SINK;
       positions[at * 3 + 2] = z;
       uvs[at * 2] = x / 9;
       uvs[at * 2 + 1] = z / 9;
       if (row + 1 < rows && column + 1 < width) {
-        indices.push(at, at + 1, at + width, at + 1, at + width + 1, at + width);
+        indices.push(at, at + width, at + 1, at + 1, at + width, at + width + 1);
       }
     }
   }
@@ -296,21 +302,26 @@ function buildRoad(
   road.receiveShadow = false;
   ctx.add(road);
 
-  // The paved run-off past the white line: a different surface, drivable, and lighter.
-  const runoff = new Mesh(
-    quadStrip(
-      looped(
-        all.map((station) => {
-          const half = drivableHalf(station);
-          return [onTrack(station, -half, 0.002), onTrack(station, half, 0.002)];
-        }),
+  // The paved run-off past the white line: a different surface, drivable, and lighter. One strip
+  // per side and **not under the tarmac**: run underneath it, it sat 2 mm below the road and
+  // z-fought it into light and dark bands across the whole width at any distance.
+  for (const side of [1, -1] as const) {
+    const runoff = new Mesh(
+      quadStrip(
+        looped(
+          all.map((station) => {
+            const edge = onTrack(station, side * HALF, 0.002);
+            const far = onTrack(station, side * drivableHalf(station), 0.002);
+            return side > 0 ? [edge, far] : [far, edge];
+          }),
+        ),
+        (row, column) => [column * RUNOFF, (all[row]?.distance ?? 0) / 8],
       ),
-      (row, column) => [column * HALF * 2, (all[row]?.distance ?? 0) / 8],
-    ),
-    materials.runoff,
-  );
-  runoff.receiveShadow = true;
-  ctx.add(runoff);
+      materials.runoff,
+    );
+    runoff.receiveShadow = true;
+    ctx.add(runoff);
+  }
 
   // White edge lines, laid on the tarmac and a centimetre above it.
   // One strip per side: interleaving the two edges into one strip joins them with a quad across
