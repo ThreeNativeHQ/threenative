@@ -5,8 +5,6 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import { palette } from "./palette.js";
 
 export interface ISailingMaterials {
-  readonly deck: MeshStandardMaterial;
-  readonly hull: MeshStandardMaterial;
   readonly buoy: MeshStandardMaterial;
   /**
    * Canvas. A **node** material, because `SoftBody3D` drives cloth by replacing a material's
@@ -18,11 +16,9 @@ export interface ISailingMaterials {
   /** Wet rock at the water's edge, where the swell has been working on the headland. */
   readonly rock: MeshStandardMaterial;
   readonly horizon: MeshBasicMaterial;
-  /** Masts, yards, bowsprit, palm trunks. */
+  /** The buoy's pole and the island's palm trunks. */
   readonly spar: MeshStandardMaterial;
-  /** Standing rigging: thinner and darker than the spars, or it reads as more mast. */
-  readonly cordage: MeshStandardMaterial;
-  /** Rails, wale strakes, cap rail — the ship's one saturated accent. */
+  /** The buoy's band and flag — the ship's own hull, deck and rigging now come from `ship.glb`. */
   readonly trim: MeshStandardMaterial;
   /**
    * The masthead flag. Canvas, dyed red and given the same translucency as the sails, because a
@@ -35,10 +31,6 @@ export interface ISailingMaterials {
 
 export function createMaterials(): ISailingMaterials {
   return {
-    // Holystoned deck: pale, and clearly not the hull. One timber colour for both made the ship
-    // read as a single carved lump.
-    deck: new MeshStandardMaterial({ color: 0xd9b98a, roughness: 0.68, metalness: 0 }),
-    hull: new MeshStandardMaterial({ color: 0x8a5a3a, roughness: 0.72, metalness: 0.03 }),
     // Not `palette.accent`. The accent is the crest-water colour, so a buoy painted with it was
     // literally the same teal as the sea it floated in and vanished at any range worth steering
     // by. A navigation mark is safety orange for exactly this reason.
@@ -69,7 +61,6 @@ export function createMaterials(): ISailingMaterials {
     rock: new MeshStandardMaterial({ color: 0x5d5750, roughness: 0.72, metalness: 0.02 }),
     horizon: new MeshBasicMaterial({ color: palette.skyLow }),
     spar: new MeshStandardMaterial({ color: 0x8a6238, roughness: 0.72, metalness: 0 }),
-    cordage: new MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.94, metalness: 0 }),
     trim: new MeshStandardMaterial({ color: 0xa33f2c, roughness: 0.6, metalness: 0.05 }),
     // Two stops brighter than the rails, and translucent like the sails: the flag is a backlit
     // shape against the sky, and canvas that does not let light through is a card.

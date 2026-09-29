@@ -7,12 +7,17 @@ import {
   RigidBody3D,
 } from "@threenative/physics";
 import { Euler, Group, MathUtils, type Object3D, Quaternion, Vector3 } from "three";
-import { prepareShipConventions } from "../conventions.js";
+import { measureHull, prepareShipConventions } from "../conventions.js";
 import { createMaterials } from "../render/materials.js";
 import { surfaceHeight } from "../render/ocean.js";
 import { SHIP_SAILS, createSails, createShipModel } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
+
+/** What `Sailing.load()` hands the entity: `ship.glb`'s loaded scene. */
+export interface IShipModel {
+  readonly scene: Object3D;
+}
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -46,10 +51,13 @@ const MAX_SPEED = 4.6;
 const TURN_RATE = 0.78;
 /** How quickly the hull picks up and loses way, as an exponential rate. Ships are heavy. */
 const WAY_RATE = 0.9;
-/** The hull's draught at the template's 4.6 m convention, in world metres. */
-const DESIGN_DRAUGHT = 0.62;
-/** How far the model rides above its own origin, so the sea meets it lower down the topsides. */
-const FREEBOARD_TRIM = 0.5;
+/**
+ * How far the model rides above its own origin, so the sea meets it lower down the topsides.
+ *
+ * `ship.glb`'s own origin is Poly Haven's design waterline, so this starts at 0 rather than the
+ * caravel's hand-tuned 0.5 — override it here if the real hull needs trimming for the look.
+ */
+const FREEBOARD_TRIM = 0;
 /**
  * How hard a full wind presses on a sail, as a local-space acceleration.
  *
@@ -57,10 +65,6 @@ const FREEBOARD_TRIM = 0.5;
  * following wind fills a square course from.
  */
 const SAIL_PRESS = 12;
-
-/** Half the hull's length and half its beam: where the swell is probed for pitch and roll. */
-const HALF_LENGTH = 1.7;
-const HALF_BEAM = 0.95;
 
 export class Ship {
   /** The physics body's transform. Heave comes from here; attitude does not. */
@@ -101,32 +105,32 @@ export class Ship {
   #seaHeight = 0;
   #staleFrames = -1;
   readonly #ocean: SpectralOcean;
+  /** Half the hull's length and beam, measured off `ship.glb` rather than assumed. */
+  readonly #halfLength: number;
+  readonly #halfBeam: number;
+  /** The hull's draught, measured the same way. */
+  readonly #draft: number;
 
-  constructor(ctx: GameCtx, ocean: SpectralOcean) {
+  constructor(ctx: GameCtx, ocean: SpectralOcean, shipModel: IShipModel) {
     this.#ocean = ocean;
     this.mesh.position.set(0, 0.24, 7);
     this.visual.position.set(0, 0.24, 7);
     this.mesh.castShadow = true;
-    const model = createShipModel(createMaterials());
+    const model = createShipModel(shipModel);
     this.#model = model;
-    // Named in `props.ts`, found here. The rest of the hull is merged into one mesh per material
-    // and cannot move; this is the piece that has to, because a helm with no visible rudder is
-    // the difference between steering a ship and dragging a model around.
+    // `ship.glb` has no articulated rudder — its hull is one static mesh — so this is `undefined`
+    // and the helm's rudder-angle feedback below is silently skipped rather than crashing.
     this.#rudder = model.getObjectByName("rudder");
     this.#normaliseFactor = prepareShipConventions(model);
-    // The design waterline is not the model's origin: the lofted hull is built about y = 0 with
-    // its keel at -0.73 and its rail at +0.80, so floating the origin on the sea put the water
-    // halfway up the topsides and the caravel photographed swamped to its wales with only the
-    // castle showing. Lifting the model inside the visual moves the waterline down the hull
-    // without moving the hull off the water — `floatGap` is measured on `visual`, and this does
-    // not touch it.
-    //
-    // It is 0.5 rather than the 0.16 it was, and it is here for the *look* rather than for the
-    // physics: a caravel is flush-decked and shallow, and a hull that draws a third of its freeboard
-    // has 40 cm of bottom which is in front of the sea — not behind it — whenever the water astern
-    // is half a metre low, which on a 13 m swell is most of the time. The draught left is small
-    // enough to be period-correct and small enough that the boat reads as *in* the water, which is
-    // the whole of what the chase camera can see of it.
+    const hull = measureHull(model);
+    this.#halfLength = hull.halfLength;
+    this.#halfBeam = hull.halfBeam;
+    // Floored: `immersion` divides by this, and a mismeasured hull (the named node missing, say)
+    // must not turn into a division by zero.
+    this.#draft = Math.max(0.1, hull.draft);
+    // `ship.glb`'s own origin is Poly Haven's design waterline, unlike the caravel this replaces
+    // (built about y = 0 with its keel at -0.73), so no lift is needed by default —
+    // `FREEBOARD_TRIM` is the look-only override if the real hull needs trimming.
     model.position.y = FREEBOARD_TRIM;
 
     // The canvas. `belliedSail` baked the belly into the vertices, so the sails looked exactly as
@@ -193,7 +197,10 @@ export class Ship {
       mass: 420,
       object: this.mesh,
       physics: ctx.physics,
-      shape: CollisionShape3D.box(1.4, 0.7, 2.4),
+      // Half-extents, from the measured hull rather than the caravel's hand-tuned box: the real
+      // ship is narrower for its length (beam 0.97 m against 1.9 m), and a box sized for the old
+      // hull would give the wrong moment of inertia for this one.
+      shape: CollisionShape3D.box(this.#halfBeam, 0.6, this.#halfLength),
     });
     this.buoyancy = new Buoyancy3D({
       body: this.body,
@@ -201,16 +208,16 @@ export class Ship {
       drag: 12,
       field: oceanSurface(ocean, () => this.#step),
       gravity: 9.81,
-      // All four points sit **below** the body's centre, at the hull's bottom corners. Two of them
-      // used to sit at +0.32 — above it — which puts buoyancy over the centre of mass at the stern
-      // and gives the ship a standing moment it can only resolve by rolling onto its side. It did:
-      // the template's own first frame showed the hull lying flat on the water with the sail
-      // floating beside it, and that was read as "the boat is a plank" rather than as a capsize.
+      // All four points sit **below** the body's centre, at the hull's bottom corners, scaled from
+      // the caravel's tuned positions by the measured beam and length so they stay inside the real
+      // hull's footprint instead of poking out past its sides. `volume` stays the caravel's own
+      // figure: it is a buoyancy-feel tuning constant, not a literal displacement, and the mass and
+      // drag above were tuned against it.
       hullPoints: [
-        { position: [-0.45, -0.3, -0.75], volume: 0.275 },
-        { position: [0.45, -0.3, -0.75], volume: 0.275 },
-        { position: [-0.45, -0.3, 0.75], volume: 0.275 },
-        { position: [0.45, -0.3, 0.75], volume: 0.275 },
+        { position: [-this.#halfBeam * 0.47, -0.3, -this.#halfLength * 0.44], volume: 0.275 },
+        { position: [this.#halfBeam * 0.47, -0.3, -this.#halfLength * 0.44], volume: 0.275 },
+        { position: [-this.#halfBeam * 0.47, -0.3, this.#halfLength * 0.44], volume: 0.275 },
+        { position: [this.#halfBeam * 0.47, -0.3, this.#halfLength * 0.44], volume: 0.275 },
       ],
       pointSpacing: 0.64,
       volume: 1.1,
@@ -375,10 +382,19 @@ export class Ship {
     // the compass.
     const forward = this.forward;
     const starboard = this.starboard;
-    const aheadHeight = heightAt(x + forward.x * HALF_LENGTH, z + forward.z * HALF_LENGTH);
-    const asternHeight = heightAt(x - forward.x * HALF_LENGTH, z - forward.z * HALF_LENGTH);
-    const starboardHeight = heightAt(x + starboard.x * HALF_BEAM, z + starboard.z * HALF_BEAM);
-    const portHeight = heightAt(x - starboard.x * HALF_BEAM, z - starboard.z * HALF_BEAM);
+    const aheadHeight = heightAt(
+      x + forward.x * this.#halfLength,
+      z + forward.z * this.#halfLength,
+    );
+    const asternHeight = heightAt(
+      x - forward.x * this.#halfLength,
+      z - forward.z * this.#halfLength,
+    );
+    const starboardHeight = heightAt(
+      x + starboard.x * this.#halfBeam,
+      z + starboard.z * this.#halfBeam,
+    );
+    const portHeight = heightAt(x - starboard.x * this.#halfBeam, z - starboard.z * this.#halfBeam);
     const hereHeight = heightAt(x, z);
     this.#seaHeight = hereHeight;
     this.#staleFrames = this.#ocean.sampleHeight(x, z)?.staleFrames ?? -1;
@@ -394,7 +410,7 @@ export class Ship {
     // than the hull, and at the old limit a bad pair of probes threw a 4.6 m caravel onto its
     // bilge every few seconds, which reads as a ship in danger rather than as a boat in a swell.
     const pitch = MathUtils.clamp(
-      Math.atan2(aheadHeight - asternHeight, HALF_LENGTH * 2),
+      Math.atan2(aheadHeight - asternHeight, this.#halfLength * 2),
       -0.14,
       0.14,
     );
@@ -404,12 +420,12 @@ export class Ship {
     // nothing to do with what the player can see.
     this.#immersion = Math.min(
       1,
-      Math.max(0, 0.5 + (aheadHeight - this.visual.position.y) / DESIGN_DRAUGHT),
+      Math.max(0, 0.5 + (aheadHeight - this.visual.position.y) / this.#draft),
     );
     // Seven degrees for the same reason, and a caravel's working ballast is amidships: she stands
     // up to a sea rather than lying over into it.
     const roll =
-      MathUtils.clamp(Math.atan2(starboardHeight - portHeight, HALF_BEAM * 2), -0.12, 0.12) +
+      MathUtils.clamp(Math.atan2(starboardHeight - portHeight, this.#halfBeam * 2), -0.12, 0.12) +
       this.#heel;
     const blend = Math.min(1, Math.max(0, deltaTime) * 3.2);
     this.visual.position.x = this.mesh.position.x;

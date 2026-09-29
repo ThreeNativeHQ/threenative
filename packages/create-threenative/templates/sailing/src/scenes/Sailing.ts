@@ -21,7 +21,7 @@ import {
   surfaceHeight,
 } from "../render/ocean.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createBuoy, createIsland } from "../render/props.js";
+import { createBuoy, createIsland, getShipModel } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -79,7 +79,13 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
 
   #sea: ReturnType<typeof createWaterMesh> | undefined;
 
+  // No `load()` here: `ship.glb` is fetched in `Boot.load()`, alongside the sky, so this scene's
+  // `enter()` stays synchronous — a playtest runner reads the registry the instant it returns, and
+  // `Boot.enter()` calls `goto("sailing")` without awaiting it, so an async load *here* would still
+  // leave the registry empty at that moment. `ship.glb` is Poly Haven's `dutch_ship_medium` (CC0;
+  // James Ray Cock, Rico Cilliers, Nicolò Zubbini); see `props.ts`.
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const shipModel = getShipModel();
     setupSky(ctx.scene);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
@@ -117,8 +123,9 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
       markReflected(ctx.add(buoy));
     }
 
-    const ship = new Ship(ctx, ocean);
-    markReflected(ship.visual);
+    const ship = new Ship(ctx, ocean, shipModel);
+    // The ship is deliberately not in the sea's mirror: it is a second draw of the hull *and its
+    // keel*, which the mirror sees from below as a black blot smeared under the stern.
     ctx.entities.add("player", ship);
     let elapsed = 0;
     let buoysRounded = 0;
