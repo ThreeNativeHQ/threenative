@@ -308,6 +308,92 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
 }
 
 /**
+ * One asset's gates as its owner holds them **right now**: the same numbers `asset.distances`,
+ * `asset.levels` and `cullDistance(definition.maxDistance)` are, read at the moment the check runs.
+ *
+ * Deliberately not an {@link IAssetSlot}. A slot is what this class wrote into its own table, and a
+ * table written before the owner's model widened its chain is the exact thing the check exists to
+ * catch — feeding it back in as the reference is the check agreeing with itself.
+ */
+export interface ILiveAsset {
+  /** The asset id a main key is named `asset:level:part` with, which is the owner's own convention. */
+  readonly id: string;
+  /** Level switch distances, ascending, `0` first — `asset.distances`, never a copy of the table. */
+  readonly distances: readonly number[];
+  /** `maxDistance` less its eighth, or `undefined`. */
+  readonly cull: number | undefined;
+  /** Index-aligned with `distances`; each level's parts, each part's own offset inside the model. */
+  readonly locals: readonly (readonly Float32Array[])[];
+}
+
+/**
+ * Every placement's own answer, from the owner's live gates, as the instances each main key must be
+ * holding: the same six-plane sphere test, the same `cull`, the same ascending `distance > gate`
+ * level test and the same `placement * part offset` composition {@link cullAndSelect} runs — over
+ * gates this file did not write.
+ *
+ * This is the one reference in the module that is not a mirror of the kernel's inputs. `cullAndSelect`
+ * reads the gate table out of the same class the kernel's buffer is written from, so a table holding
+ * the wrong distances makes both agree; here the caller passes the owner's own `distances`, so a
+ * table that was written before the chain widened, or before the last `maxDistance`, answers
+ * differently from the picture the CPU path draws.
+ */
+export function liveKeyInstances(
+  placements: readonly IGpuPlacement[],
+  asset: (slot: number) => ILiveAsset | undefined,
+  camera: {
+    readonly planes: Float32Array;
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+  },
+): Map<string, Float32Array> {
+  const words = new Map<string, number[]>();
+  for (const placement of placements) {
+    if (placement.slot < 0) continue;
+    const held = asset(placement.slot);
+    if (held === undefined) continue;
+    const at = placement.centre;
+    const radius = at[3] as number;
+    let visible = true;
+    for (let plane = 0; plane < 6; plane += 1) {
+      const offset = plane * 4;
+      const signed =
+        (camera.planes[offset] as number) * (at[0] as number) +
+        (camera.planes[offset + 1] as number) * (at[1] as number) +
+        (camera.planes[offset + 2] as number) * (at[2] as number) +
+        (camera.planes[offset + 3] as number);
+      if (signed < -radius) {
+        visible = false;
+        break;
+      }
+    }
+    if (visible === false) continue;
+    const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
+    if (held.cull !== undefined && distance > held.cull) continue;
+    let level = 0;
+    for (let index = 1; index < held.distances.length; index += 1)
+      if (distance > (held.distances[index] as number)) level = index;
+    const locals = held.locals[level];
+    if (locals === undefined) continue;
+    for (const [part, local] of locals.entries()) {
+      const key = `${held.id}:${String(level)}:${String(part)}`;
+      let run = words.get(key);
+      if (run === undefined) {
+        run = [];
+        words.set(key, run);
+      }
+      compose(placement.matrix, local, LIVE_MATRIX, 0);
+      for (const word of LIVE_MATRIX) run.push(word);
+    }
+  }
+  return new Map([...words].map(([key, run]) => [key, Float32Array.from(run)]));
+}
+
+/** The one matrix `liveKeyInstances` composes into, reused per placement as the kernel's own is. */
+const LIVE_MATRIX = new Float32Array(LOCAL_WORDS);
+
+/**
  * Whether two gate tables are the same one, so a level key minted after the table was written
  * rewrites it and a swap that arrives with nothing new does not. A level the world has not minted a
  * key for carries `parts: 0`, which is what the kernel's own loop then draws for it: nothing.
@@ -403,7 +489,8 @@ function sorted(matrices: Float32Array, start: number, count: number): Float32Ar
 }
 
 /**
- * One dressed main mesh's draw, as the CPU path's own records say it, and nothing from this file.
+ * One dressed main mesh's draw, as the owner's own live state says it, and nothing from this file's
+ * tables.
  *
  * This is the check that cannot be wrong in the same way the kernel is. {@link cullAndSelect}
  * addresses a level's parts as `levels[gate.x + level].y + part`, and the gate table holds the
@@ -411,38 +498,40 @@ function sorted(matrices: Float32Array, start: number, count: number): Float32Ar
  * wrong is reproduced on both sides of the comparison and reads as agreement: a real WebGPU walk
  * printed `ok` over a forest it was drawing with another tree's geometry. The three numbers here
  * come from the other side of the seam — the mesh's own `geometry.indirect` record, the mesh's own
- * name, and the per-key instance records the CPU path composes in `world-cells` — so the one
- * question they can answer is the one that matters: does the record this mesh draws from hold
- * instances that are its key's, at its part's level, and nothing else.
+ * name, and the instances the owner's own gates and the camera's own planes select for that name —
+ * so the one question they can answer is the one that matters: does the record this mesh draws from
+ * hold exactly the instances that mesh's key is owed.
  */
 export interface IMeshDraw {
   /** The dressed mesh's own name, which is the main key: `asset:level:part`. */
   readonly name: string;
   /** `geometry.indirectOffset / DRAW_ARGS_BYTES` — the record the draw reads, not one the tables name. */
   readonly record: number;
-  /** Every instance the CPU path's own records hold for that key, `mat4` after `mat4`. */
+  /**
+   * Every instance the owner's live gates and the camera's planes select for this key, `mat4` after
+   * `mat4`: the whole answer, and never the per-cell records this path's own refilter left behind.
+   */
   readonly instances: Float32Array;
 }
 
 /** What the independent per-mesh check found, in the shape the report folds in. */
 export interface IMeshDrawComparison {
-  /** Meshes whose own record was read back and held against the CPU path's records. */
+  /** Meshes whose own record was read back and held against the live-state instances. */
   readonly compared: number;
   readonly mismatched: number;
   readonly mismatches: readonly string[];
 }
 
 /**
- * Every dressed main mesh's own record, against the instances the CPU path's own records hold for
- * that mesh's key, as a set rather than a sequence — the kernel appends through an atomic, so a
- * device's order is not the CPU's.
+ * Every dressed main mesh's own record, against the instances its own key is owed, as a set rather
+ * than a sequence — the kernel appends through an atomic, so a device's order is not the CPU's.
  *
- * The relation is containment and not equality, and the reason is the one coarse thing the GPU
- * scene does not do: the dispatch culls each placement's own bounding sphere against the camera's
- * six planes, while the CPU path's records are what its own per-cell filter kept, so a run is
- * legitimately shorter than the records it draws from and never longer. What must never happen is a
- * run holding an instance its key never owned — a placement of another asset, at another level,
- * through another part's offset — and that is a membership question, so this is one.
+ * Equality, and not containment, because the reference is now the whole answer: the owner's gates
+ * and the camera's planes over the scene's own placements, which is everything the dispatch reads.
+ * Containment was the right relation when the other side was the CPU path's per-cell records, which
+ * are the records a refilter left and go stale the moment the GPU scene bypasses it — a reference
+ * that can be a superset cannot name a level selected at the wrong distance, and a far tree drawn
+ * at its near level is what that looks like in the picture.
  */
 export function compareMeshDraws(
   gpu: Uint32Array,
@@ -457,11 +546,12 @@ export function compareMeshDraws(
     const landed = word(gpu, record + 1);
     const first = word(gpu, record + 4);
     if (
-      holdsAll(
+      sameMatrices(
         drawn,
         first,
         landed,
         draw.instances,
+        0,
         draw.instances.length / LOCAL_WORDS,
         MATRIX_TOLERANCE,
       )
@@ -475,52 +565,11 @@ export function compareMeshDraws(
     mismatches.push(
       `mesh=${draw.name} record=${String(draw.record)} ` +
         `region=${owner?.name ?? "none"} count gpu=${String(landed)} ` +
-        `cpu=${String(draw.instances.length / LOCAL_WORDS)} ` +
-        `firstMatrix gpu=${xyz(drawn, first)} cpu=${xyz(draw.instances, 0)}`,
+        `live=${String(draw.instances.length / LOCAL_WORDS)} ` +
+        `firstMatrix gpu=${xyz(drawn, first)} live=${xyz(draw.instances, 0)}`,
     );
   }
   return { compared: draws.length, mismatched, mismatches };
-}
-
-/**
- * Whether every one of `gpuCount` matrices starting at `gpuStart` is one of the `cpuCount` matrices
- * at the front of `cpu`, within `tolerance`.
- *
- * Both runs are ordered by translation, which is what orders a placement, and the walk is a merge:
- * one pass, no per-instance scan of the other side, because a residency cell's records run to
- * thousands and there are two hundred dressed meshes.
- */
-function holdsAll(
-  gpu: Float32Array,
-  gpuStart: number,
-  gpuCount: number,
-  cpu: Float32Array,
-  cpuCount: number,
-  tolerance: number,
-): boolean {
-  const one = sorted(gpu, gpuStart, gpuCount);
-  const other = sorted(cpu, 0, cpuCount);
-  let at = 0;
-  for (const matrix of one) {
-    while (at < other.length && behind(other[at] as Float32Array, matrix, tolerance)) at += 1;
-    const against = other[at];
-    if (against === undefined) return false;
-    if (
-      Math.abs((against[12] as number) - (matrix[12] as number)) > tolerance ||
-      Math.abs((against[13] as number) - (matrix[13] as number)) > tolerance ||
-      Math.abs((against[14] as number) - (matrix[14] as number)) > tolerance
-    )
-      return false;
-  }
-  return true;
-}
-
-/** Whether one translation-sorted matrix sits before `matrix` by more than `tolerance` allows. */
-function behind(one: Float32Array, matrix: Float32Array, tolerance: number): boolean {
-  const x = (one[12] as number) - (matrix[12] as number);
-  if (Math.abs(x) > tolerance) return x < 0;
-  const z = (one[14] as number) - (matrix[14] as number);
-  return Math.abs(z) > tolerance && z < 0;
 }
 
 /** What one landed readback concluded, in the three words a log line can carry. */
@@ -1133,6 +1182,17 @@ export class WorldGpuScene {
   /** The gates a slot index names, which is what the kernel and the reference both read. */
   gates(): readonly IAssetSlot[] {
     return this.#order.map((asset) => this.#slotsByAsset.get(asset) as IAssetSlot);
+  }
+
+  /**
+   * The asset id a slot index names, which is how the owner looks its own live gates up.
+   *
+   * The identity and nothing else: no distance, no cull, no level — the check that must not read
+   * this class's tables gets its numbers from the owner and comes here only for the name of the
+   * asset a placement belongs to, which the placement itself does not carry.
+   */
+  slotAsset(slot: number): string | undefined {
+    return this.#order[slot];
   }
 
   /** The regions the keys own, in key order, which is what the kernel's `keys` buffer holds. */

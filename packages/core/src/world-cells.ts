@@ -39,10 +39,12 @@ import { within, yieldToHost } from "./warmup.js";
 import {
   DRAW_ARGS_BYTES,
   type IAssetSlot,
+  type ILiveAsset,
   type IMeshDraw,
   WorldGpuScene,
   gpuSceneRequested,
   gpuSceneValidationRequested,
+  liveKeyInstances,
 } from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 import {
@@ -698,6 +700,8 @@ const _cullFrustum = new Frustum();
 const _cullProjScreen = new Matrix4();
 /** The corner one visibility cell's volume is widened by, for one placement at a time. */
 const _cullPoint = new Vector3();
+/** The eye the live-state reference measures every placement's XZ distance from. */
+const _gpuEye = new Vector3();
 
 /** Records a square's blocks hold, which is its share of the batch. */
 function sizeOf(square: { blocks: Array<[number, number, number, string]> }): number {
@@ -2833,6 +2837,8 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #renderer: IRendererLike | undefined;
   #camera: Camera | undefined;
+  /** The six planes of `#camera`'s frustum, as the live-state reference reads them; reused per check. */
+  readonly #gpuPlanes = new Float32Array(24);
   /**
    * Side of a world-grid square, and how many cells fit in one. One `SharedBatch` per
    * `asset:level:part` per square, so the mesh's bounds are that square's records and every camera
@@ -4838,18 +4844,49 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * Every dressed main mesh's own draw, and what this class's own records say it should be holding.
+   * Every dressed main mesh's own draw, and what this class's **live** state says it must be holding.
    *
-   * The scene's own validation mirrors its own kernel, so a key, a record and a mesh that do not
-   * correspond are one both sides reproduce and a check that reports `ok` over a forest drawn with
-   * another tree's geometry. These are the three numbers that are not the scene's: the mesh's own
-   * name, the record its own geometry points at (`indirectOffset`, which a dress wrote), and the
-   * instances this path composed for that key — level chosen by {@link levelAt} over the gates
-   * {@link assetLevels} built, culled by this path's own cull distance, and multiplied by the part's
-   * own offset in `#addPlacements`. The dressed mesh no longer holds those instances (its buffer is
-   * the scene's shared one), which is why they are read back out of the per-cell batches.
+   * The scene's own validation mirrors its own kernel, so a key, a record, a gate table and a mesh
+   * that do not correspond are one both sides reproduce and a check that reports `ok` over a forest
+   * drawn with another tree's geometry. These are the three numbers that are not the scene's: the
+   * mesh's own name, the record its own geometry points at (`indirectOffset`, which a dress wrote),
+   * and the instances the owner's own state selects for that name — `asset.distances` as
+   * {@link levelAt} reads it right now, `cullDistance(definition.maxDistance)`, the camera's own six
+   * planes over the scene's own placements, and each part's own offset composed in exactly as the
+   * dispatch composes it.
+   *
+   * Not the per-cell records this path's own refilter left behind: the GPU scene bypasses that
+   * refilter, so the moment it does, the records a mesh is checked against are a snapshot of a
+   * level selection that no longer applies. A far placement is then compared against a set that
+   * counted it at its near level, and the check reads `ok` over the picture it cannot see.
    */
   #gpuDraws(): readonly IMeshDraw[] {
+    const camera = this.#camera;
+    if (camera === undefined) return [];
+    const lives = this.#liveGates();
+    if (lives.size === 0) return [];
+    // The dispatch's own camera, its own planes: this is asked for inside the dispatch that is
+    // running, so the eye and the six planes are the ones the kernel is reading now.
+    const planes = this.#gpuPlanes;
+    _cullFrustum.setFromProjectionMatrix(
+      _cullProjScreen.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
+    );
+    for (const [index, plane] of _cullFrustum.planes.entries()) {
+      const at = index * 4;
+      planes[at] = plane.normal.x;
+      planes[at + 1] = plane.normal.y;
+      planes[at + 2] = plane.normal.z;
+      planes[at + 3] = plane.constant;
+    }
+    _gpuEye.setFromMatrixPosition(camera.matrixWorld);
+    const expected = liveKeyInstances(
+      this.#gpuScene.placements,
+      (slot) => {
+        const id = this.#gpuScene.slotAsset(slot);
+        return id === undefined ? undefined : lives.get(id);
+      },
+      { planes, x: _gpuEye.x, y: _gpuEye.y, z: _gpuEye.z },
+    );
     const draws: IMeshDraw[] = [];
     for (const shared of this.#shared.values()) {
       if (shared.role !== "main" || shared.gpu === undefined) continue;
@@ -4859,7 +4896,7 @@ export class WorldCells extends Group implements IComputeDriven {
       const offset = geometry.indirectOffset;
       if (geometry.indirect === undefined || typeof offset !== "number") continue;
       draws.push({
-        instances: this.#cpuRecords(shared.mesh.name),
+        instances: expected.get(shared.mesh.name) ?? new Float32Array(0),
         name: shared.mesh.name,
         record: offset / DRAW_ARGS_BYTES,
       });
@@ -4868,19 +4905,28 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
-   * The CPU path's own instance records for one main key: every resident cell's share of it, in the
-   * order the cells hold them. The key is named, not decomposed, so the cells are matched by the same
-   * string a key is minted under — a check that re-derived the name would be naming its own answer.
+   * Every adopted asset's own gates as they stand right now, keyed by id.
+   *
+   * The part offsets are copied out of each part's `Matrix4` once per check, because the composition
+   * reads them as `Float32Array`s and a part's matrix is what the dispatch already composed with.
    */
-  #cpuRecords(key: string): Float32Array {
-    let count = 0;
-    for (const cell of this.#resident.values())
-      for (const entry of cell.batches) if (this.#keyOf(entry) === key) count += entry.batch.count;
-    const out = new Float32Array(count * 16);
-    let at = 0;
-    for (const cell of this.#resident.values())
-      for (const entry of cell.batches)
-        if (this.#keyOf(entry) === key) at += entry.batch.writeMatrices(out, at) * 16;
+  #liveGates(): Map<string, ILiveAsset> {
+    const out = new Map<string, ILiveAsset>();
+    for (const asset of this.#assets.values()) {
+      if (asset.levels.length === 0) continue;
+      const locals: Float32Array[][] = [];
+      for (const parts of asset.levels) {
+        const level: Float32Array[] = [];
+        for (const part of parts) level.push(Float32Array.from(part.local.elements));
+        locals.push(level);
+      }
+      out.set(asset.id, {
+        cull: cullDistance(asset.definition.maxDistance),
+        distances: asset.distances,
+        id: asset.id,
+        locals,
+      });
+    }
     return out;
   }
 
