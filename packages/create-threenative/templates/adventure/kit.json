@@ -1,0 +1,7 @@
+{
+  "name": "adventure",
+  "title": "Adventure",
+  "blurb": "A third-person woodland adventure: sword, shield, roll, lock-on, a keeper, three sigils and an altar, its rules headless in src/logic/.",
+  "genre": "adventure",
+  "kit": true
+}

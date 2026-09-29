@@ -1,5 +1,5 @@
 {
-  "name": "battlefield-performance",
+  "name": "forest-performance",
   "target": "web",
   "schemaVersion": 1,
   "viewport": {
@@ -9,17 +9,17 @@
   "warmupFrames": 60,
   "steps": [
     {
-      "holdTicks": 60,
       "kind": "input",
-      "label": "pan",
-      "press": "ArrowRight",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 120,
       "release": true
     },
     {
       "kind": "wait",
       "label": "settle",
-      "release": true,
-      "waitTicks": 600
+      "waitTicks": 600,
+      "release": true
     }
   ],
   "assert": {
@@ -28,9 +28,9 @@
       "runtimeReady": true
     },
     "performance": {
-      "maxDrawCalls": 200,
+      "maxDrawCalls": 300,
       "maxFrameMsP95": 33,
-      "maxTriangles": 400000,
+      "maxTriangles": 900000,
       "minFps": 30
     },
     "renderChain": {

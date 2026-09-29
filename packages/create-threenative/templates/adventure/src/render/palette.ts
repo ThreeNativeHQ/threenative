@@ -1,17 +1,20 @@
 // Generated for you. Keep these roles coherent when you change the look.
-// A lit grid over rock: one light ground, one dark ground for the slopes a tank cannot climb, and
-// the three faction colours the simulation already owns (`STARTS` in src/sim/terrain.ts).
+// A misty forest read from the reference: warm desaturated greens, a pale sage mist that swallows
+// the far trees, sun-lit stone, and exactly one saturated colour — the fairy's white-gold — for
+// anything the player can touch.
 export const palette = {
-  /** Buildable ground: the light grid. */
-  ground: 0x6f6a55,
-  /** Cliffs, ramps and the map edge: the same grid, far darker. */
-  cliff: 0x35322b,
-  /** The grid line both grounds share, and every route ring's outline. */
-  gridLine: 0x24231f,
-  /** Ground nobody has ever seen. */
-  unseen: 0x0b1a20,
-  /** The sky photograph's own horizon, measured from its HDR: distance fades into this. */
-  horizon: 0xacb1c1,
-  /** The one saturated colour: what the player can touch. */
-  accent: 0xffffff,
+  /** The mist the far forest dissolves into, and the colour behind everything. */
+  mist: 0xcfd0a6,
+  /** Warm, slightly green sunlight, low and ahead of the camera. */
+  sun: 0xffe3b0,
+  /** Lit grass and moss. */
+  grass: 0x6c8746,
+  /** Bark in shade. */
+  bark: 0x6a5a41,
+  /** Worn flagstone. */
+  stone: 0xb9b39a,
+  /** The hero's cap and tunic. */
+  tunic: 0x3f7a35,
+  /** The one saturated colour: what the player can pick up, talk to or open. */
+  accent: 0xfff0b8,
 } as const;

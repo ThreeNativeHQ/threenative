@@ -17,14 +17,16 @@
  * Tailwind's defaults. Nothing in @threenative/* reads this.
  */
 @theme {
-  --color-ink: #17384a;
-  --color-panel: #24566a;
-  --color-line: #55929a;
-  --color-lume: #c2f2d6;
-  --color-warn: #ffdda1;
-  --color-text: #eff6dc;
-  --color-dim: #b1d2c7;
+  --color-ink: #1c2a1d;
+  --color-panel: #24361f;
+  --color-line: #c9bd8b;
+  --color-lume: #f3edc6;
+  --color-warn: #e8a35c;
+  --color-text: #f6f1d6;
+  --color-dim: #c3c8a5;
+  --color-heart: #d8493a;
 
+  --font-serif: Georgia, "Times New Roman", serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -39,7 +41,7 @@ body,
 
 body {
   color: var(--color-text);
-  font-family: var(--font-mono);
+  font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -107,3 +109,26 @@ body {
   overflow-wrap: anywhere;
   word-break: break-all;
 }
+
+/* --- the HUD's own motion: keyed by a counter in the state, so a repeat still replays ------------- */
+@keyframes toast {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  8% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes hurt {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+@keyframes banner {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+.tn-toast { animation: toast 3.4s ease-out forwards; }
+.tn-hurt { animation: hurt 0.55s ease-out forwards; }
+.tn-banner { animation: banner 8s ease-out forwards; }
+.tn-outline { text-shadow: 0 1px 2px rgb(10 20 10 / 95%), 0 0 8px rgb(10 20 10 / 85%), 0 0 18px rgb(10 20 10 / 55%); }

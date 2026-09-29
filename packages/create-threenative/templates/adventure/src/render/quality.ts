@@ -15,15 +15,9 @@
 // `unmeasured` rather than guessing, and your scene is not that scene: read `TN_FRAME_BUDGET`
 // back after you change a tier.
 //
-// One cost that is **not** a stage here and outweighs most of them: the prefiltered reflection
-// probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
-// in `sky.ts`, not in this file.
-//
-// **This template runs no SSGI at any tier, and that is a measurement rather than a taste.** Its
-// sky, sun colour and depth haze are a volumetric `Atmosphere`, which already owns most of the
-// frame. With the gather on, `playtests/play.playtest.json` measured **34.2 ms p95 against the
-// 33 ms ceiling**; without it the same scenario passes. Turn it on when you replace the
-// atmosphere with a flat sky, and read the p95 back out of `TN_FRAME_BUDGET`.
+// This kit runs no SSGI at any tier: the mist and shafts already own the frame's mood, and the gather
+// would add a second, noisier bounce on top of a fill the sky already provides. Turn it on and read
+// the p95 out of `TN_FRAME_BUDGET` before you keep it.
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -69,41 +63,43 @@ export function resolveQualityTier(
 }
 
 /**
- * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
- * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
- * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
- * see `screenSpaceAA` in `worldEnvironment.ts`.
+ * The look every tier shares: a soft bloom on what is genuinely brighter than white — the sun through
+ * the trunks, the fairy, the sigils — a gentle vignette, and the tone curve. Antialiasing is on in
+ * every tier that installs a chain; see `screenSpaceAA` in `worldEnvironment.ts`.
  *
- * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
- * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
- * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
+ * `exposure` is what makes the mist read as mist: the reference is bright and low in contrast, so
+ * the frame is exposed up and the tone curve does the rolling-off.
  */
 const shared: IWorldEnvironmentOptions = {
-  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
-  bloomRadius: 0.6,
-  bloomStrength: 0.22,
-  bloomThreshold: 1,
-  exposure: 0.62,
+  bloomRadius: 0.75,
+  bloomStrength: 0.34,
+  bloomThreshold: 0.9,
+  exposure: 0.95,
   tonemapMode: "aces",
-  vignetteAmount: 0.22,
+  vignetteAmount: 0.3,
 };
 
 /**
- * What a desktop gets: contact occlusion on top — the dark line where a foot meets the floor and a
- * wall meets the ground, most of what separates "objects in a world" from "objects pasted on a
- * background". Gathered at full resolution and denoised: at half, the upsample left a grain around
- * every foot.
+ * What a desktop gets: contact occlusion under every root and boot, and the god-rays — raymarched
+ * against the sun's shadow map, so the canopy's own holes cut the shafts. The band is the one the
+ * engine measured for a lit interior; the outdoor mist wants it lower because the fog already
+ * carries the haze.
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
-  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
+  godraysDensity: 0.7,
+  godraysEnabled: true,
+  godraysFloor: 0.06,
+  godraysIntensity: 4,
+  godraysMaxDensity: 0.5,
+  godraysSteps: 48,
   gtaoEnabled: true,
-  gtaoRadius: 0.35,
+  gtaoRadius: 0.5,
 };
 
-/** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
+/** The rung in between: the same, at half the occlusion directions and half the shaft steps. */
+const medium: IWorldEnvironmentOptions = { ...high, godraysSteps: 24, gtaoSamples: 8 };
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
 const low: IWorldEnvironmentOptions = shared;

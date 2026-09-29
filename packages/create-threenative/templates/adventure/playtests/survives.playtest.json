@@ -6,8 +6,8 @@
     "width": 1280,
     "height": 720
   },
-  "warmupFrames": 20,
-  "subject": "camera.main",
+  "warmupFrames": 30,
+  "subject": "player",
   "steps": [
     {
       "kind": "wait",
@@ -17,15 +17,15 @@
     },
     {
       "kind": "input",
-      "label": "pan",
-      "press": "ArrowUp",
-      "holdTicks": 60,
+      "label": "walk-forward",
+      "press": "KeyW",
+      "holdTicks": 90,
       "release": true
     },
     {
       "kind": "wait",
-      "label": "after-pan",
-      "waitTicks": 30,
+      "label": "after-walk",
+      "waitTicks": 20,
       "release": true
     }
   ],
@@ -37,21 +37,34 @@
       "runtimeReady": true
     },
     "movement": {
-      "entity": "camera.main",
-      "minDistance": 0.5
+      "entity": "player",
+      "minDistance": 2
     },
     "resources": [
       {
         "id": "state",
-        "path": "simTime",
-        "gte": 30,
-        "allowTrivial": "The clock only advances while the simulation is running, so a positive value after the settle proves the rules stepped; zero would be a frozen scene."
+        "path": "gems",
+        "gte": 1
       },
       {
         "id": "state",
-        "path": "gathered",
-        "gte": 1,
-        "allowTrivial": "The ten Surveyors the world seeds are already mining, so any banked ore proves the harvest cycle ran rather than a counter being painted."
+        "path": "gems",
+        "atSteps": [
+          {
+            "label": "settle",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hp",
+        "equals": 6
+      },
+      {
+        "id": "state",
+        "path": "stage",
+        "equals": "meet"
       }
     ]
   }
