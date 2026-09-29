@@ -67,6 +67,10 @@
       "types": "./dist/net.d.ts",
       "import": "./dist/net.js"
     },
+    "./webgpu": {
+      "types": "./dist/webgpu.d.ts",
+      "import": "./dist/webgpu.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

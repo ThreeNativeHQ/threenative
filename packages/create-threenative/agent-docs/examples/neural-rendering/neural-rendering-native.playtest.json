@@ -1,0 +1,46 @@
+{
+  "name": "neural-rendering-fixture",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 512,
+    "height": 512
+  },
+  "warmupFrames": 30,
+  "steps": [
+    {
+      "kind": "input",
+      "label": "request snapshot proof",
+      "press": "KeyC",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "two GPU-verified snapshots",
+      "waitTicks": 600,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "proofPassed",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "proofCount",
+        "equals": 2,
+        "changed": true
+      }
+    ]
+  }
+}
