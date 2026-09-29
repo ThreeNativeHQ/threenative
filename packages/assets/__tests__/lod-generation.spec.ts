@@ -677,13 +677,20 @@ describe("automatic discrete LOD generation", () => {
       tight.primitives[0]?.levels[0]?.error ?? 0,
     );
 
-    // A saving rule nothing can satisfy leaves the primitive with no accepted level.
+    // A saving rule the error ladder cannot satisfy still leaves the primitive its one terminal
+    // coarse level: the terminal is exempt from the saving gate by design (PRD-473), so it does not
+    // strand a far instance at LOD0 just because no error-target level paid enough.
     const unsatisfiable = await cook(await mediumGlb(), {
       lod: { generation: { maxLevels: 4, errorTargets: [0.06], minSaving: 0.99 } },
       virtual: "none",
     });
-    expect(unsatisfiable.generated).toBe(0);
-    expect(unsatisfiable.reasons).toContain("insufficient-reduction");
+    expect(unsatisfiable.generated).toBe(1);
+    expect(unsatisfiable.reasons).not.toContain("insufficient-reduction");
+    expect(unsatisfiable.primitives[0]?.levels).toHaveLength(1);
+    const terminal = unsatisfiable.primitives[0]?.levels[0];
+    expect(terminal?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+      Math.max(1_500, Math.ceil(0.05 * (unsatisfiable.primitives[0]?.trianglesBefore ?? 0))),
+    );
   }, 240_000);
 
   it("does not generate when the policy is off", async () => {
@@ -998,6 +1005,87 @@ describe("discrete LOD artifact rules", () => {
 });
 
 describe("terminal coarse level (PRD-473)", () => {
+  /**
+   * A realistic tree-soup fixture: `cards` separate open quads (two triangles each), every triangle
+   * carrying its own three vertices and a duplicated UV seam on the shared edge. This is how a
+   * machinefall trunk exports — no shared vertices, so LockBorder refuses every error collapse and
+   * the simplifier sees no component to spend — and it is opaque, so the needle-card reducer
+   * declines it too. Before this fix it shipped no chain at all and every runtime level drew LOD0.
+   */
+  async function seamCardSoupGlb(cards: number): Promise<Buffer> {
+    const document = new Document();
+    const buffer = document.createBuffer();
+    const scene = document.createScene();
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    let seed = 987_654_321;
+    const random = (): number => {
+      seed = (seed * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
+      return seed / 0x7f_ff_ff_ff;
+    };
+    for (let card = 0; card < cards; card += 1) {
+      const cx = (random() * 2 - 1) * 20;
+      const cy = (random() * 2 - 1) * 20;
+      const cz = (random() * 2 - 1) * 20;
+      const half = 0.05;
+      // Two triangles as a quad, with the diagonal corners duplicated: triangle soup, and the
+      // shared edge appears twice with different UVs (the seam the simplifier must ignore here).
+      const corners = [
+        [cx - half, cy - half, cz, 0, 0],
+        [cx + half, cy - half, cz, 1, 0],
+        [cx + half, cy + half, cz, 1, 1],
+        [cx - half, cy - half, cz, 0, 0],
+        [cx + half, cy + half, cz, 1, 1],
+        [cx - half, cy + half, cz, 0, 1],
+      ];
+      for (const corner of corners) {
+        positions.push(corner[0] as number, corner[1] as number, corner[2] as number);
+        uvs.push(corner[3] as number, corner[4] as number);
+      }
+      const base = card * 6;
+      indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
+    }
+    const primitive = document
+      .createPrimitive()
+      .setAttribute("POSITION", accessor(document, buffer, "VEC3", Float32Array.from(positions)))
+      .setAttribute("TEXCOORD_0", accessor(document, buffer, "VEC2", Float32Array.from(uvs)))
+      .setIndices(accessor(document, buffer, "SCALAR", Uint32Array.from(indices)))
+      .setMaterial(document.createMaterial("trunk").setAlphaMode("OPAQUE"));
+    scene.addChild(
+      document.createNode("trunk").setMesh(document.createMesh("trunk").addPrimitive(primitive)),
+    );
+    return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+  }
+
+  it("gives an opaque card soup a terminal level the error ladder and card reducer both decline", async () => {
+    // 8,000 quads = 16,000 triangles, matching the real machinefall trees. The error ladder keeps
+    // nothing (LockBorder on an all-border soup) and the card reducer refuses OPAQUE, so only the
+    // welded terminal pass can bring the last level to the target.
+    const input = await seamCardSoupGlb(8_000);
+    const summary = await cook(input, { lod: GENERATE, virtual: "none" });
+    expect(summary.generated).toBe(1);
+    const entry = summary.primitives[0];
+    if (entry === undefined) throw new Error("no primitive");
+    expect(entry.trianglesBefore).toBe(16_000);
+    expect(entry.strategy).toBe("discrete");
+    const target = Math.max(
+      LOD_TERMINAL_MIN_TRIANGLES,
+      Math.ceil(LOD_TERMINAL_KEEP_RATIO * 16_000),
+    );
+    const terminal = entry.levels.at(-1);
+    expect(entry.levels.length).toBeGreaterThanOrEqual(1);
+    expect(terminal?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(target);
+    expect(terminal?.triangles ?? 0).toBeGreaterThan(0);
+    // The terminal's error is still recorded, so the runtime can place its switch from it.
+    expect(terminal?.error ?? 0).toBeGreaterThan(0);
+    expect(terminal?.absoluteError ?? 0).toBeGreaterThan(0);
+
+    // The welded terminal is deterministic: the same bytes bake the same chain.
+    const again = await cook(input, { lod: GENERATE, virtual: "none" });
+    expect(again.primitives[0]?.levels).toEqual(entry.levels);
+  }, 240_000);
+
   it("ends an open mesh's chain at max(1500, 5%) and leaves the error levels alone", async () => {
     // 16 patches x 24 segments: 18,432 triangles, and LockBorder can only reach the 1,536-triangle
     // boundary ring. The target of 1,500 is below that, so this is exactly the chain that used to
@@ -1055,7 +1143,7 @@ describe("terminal coarse level (PRD-473)", () => {
     // The chain layout did not change, so a file cooked before this feature still reads. The cache
     // identity moved instead, which is what makes a re-cook pick the terminal level up.
     expect(LOD_SCHEMA_VERSION).toBe(1);
-    expect(LOD_GENERATOR_VERSION).toBe(2);
+    expect(LOD_GENERATOR_VERSION).toBe(3);
     const document = await readWithLod(await oldChainGlb());
     const primitive = document
       .getRoot()

@@ -5,6 +5,7 @@ import { Document, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
 import { describe, expect, it } from "vitest";
+import { convertFoliageCutout } from "../src/foliage.js";
 import type { ICardLevelSummary } from "../src/lod/cards.js";
 import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
 import {
@@ -348,4 +349,46 @@ describe("foliage cutout conversion and LOD (PRD-458 AC-4)", () => {
         ?.getAlphaMode(),
     ).toBe("BLEND");
   }, 300_000);
+
+  it("converts a VEC4 vertex colour that is opaque, refuses a real per-vertex fade", () => {
+    // Asset packs export vertex colours as RGBA with alpha 255; a cutoff reproduces alpha 1 exactly,
+    // so only an alpha that actually falls below 1 is a fade the cutoff cannot preserve (PRD-458 §4).
+    expect(convertFoliageCutout(vertexAlphaDocument(1)).converted).toEqual(["needles"]);
+    const faded = convertFoliageCutout(vertexAlphaDocument(0.5));
+    expect(faded.converted).toEqual([]);
+    expect(faded.kept).toEqual([{ name: "needles", reason: "vertex-colour-alpha" }]);
+  });
 });
+
+/** A BLEND needle primitive whose VEC4 `COLOR_0` alpha is `alpha` on every vertex. */
+function vertexAlphaDocument(alpha: number): Document {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const material = document
+    .createMaterial("needles")
+    .setAlphaMode("BLEND")
+    .setBaseColorTexture(document.createTexture("base"));
+  const count = 3;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 4);
+  for (let vertex = 0; vertex < count; vertex += 1) colors[vertex * 4 + 3] = alpha;
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document.createAccessor().setType("VEC3").setArray(positions).setBuffer(buffer),
+    )
+    .setAttribute(
+      "COLOR_0",
+      document.createAccessor().setType("VEC4").setArray(colors).setBuffer(buffer),
+    )
+    .setMaterial(material);
+  document
+    .createScene()
+    .addChild(
+      document
+        .createNode("needles")
+        .setMesh(document.createMesh("needles").addPrimitive(primitive)),
+    );
+  return document;
+}

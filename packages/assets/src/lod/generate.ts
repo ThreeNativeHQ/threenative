@@ -126,7 +126,7 @@ export const LOD_GENERATOR = "threenative-discrete-lod";
  * Bumped when the *generated levels* change, so a stale cook cache cannot serve the old chain. The
  * artifact schema stays put: a chain with or without the terminal level reads the same.
  */
-export const LOD_GENERATOR_VERSION = 2;
+export const LOD_GENERATOR_VERSION = 3;
 /** Bumped with the output layout so a stale cache entry cannot hide a schema change. */
 export const LOD_ARTIFACT_SCHEMA_VERSION = 1;
 /** The pinned simplifier this artifact's error metric was produced with. */
@@ -681,36 +681,16 @@ async function generateChain(
   const keptSet = new Set(kept);
   const chain = candidates.filter((candidate) => keptSet.has(candidate));
 
-  // One terminal level past the cap, cut by triangle count and not by the saving gate: the far
-  // instance needs *some* coarse step to reach, and an error ladder that stalls at 87% of LOD0 never
-  // gives it one. It drops the border lock — a level this far out owes no stitch fidelity — while
-  // keeping the attribute weights, so the material does not smear. `Prune` lets whole isolated
-  // components go; the target count is the binding constraint and the measured error is recorded
-  // exactly as the error-target levels' is, so the runtime's distance switch reads it the same way.
   const previous = chain[chain.length - 1] as (typeof chain)[number];
-  const terminalTriangles = terminalLevelTriangles(lod0Triangles);
-  if (terminalTriangles < previous.triangles) {
-    const [simplified, error] = MeshoptSimplifier.simplifyWithAttributes(
-      indices,
-      positions,
-      3,
-      attributes.data,
-      attributes.stride,
-      attributes.weights,
-      null,
-      terminalTriangles * 3,
-      TERMINAL_TARGET_ERROR,
-      ["Prune"],
-    );
-    const triangles = Math.floor(simplified.length / 3);
-    if (triangles > 0 && triangles < previous.triangles) {
-      chain.push({
-        error: Math.max(error, previous.error),
-        indices: Uint32Array.from(simplified),
-        triangles,
-      });
-    }
-  }
+  const terminal = terminalLevel(
+    positions,
+    indices,
+    attributes,
+    terminalLevelTriangles(lod0Triangles),
+    previous.triangles,
+    previous.error,
+  );
+  if (terminal !== null) chain.push(terminal);
   return {
     absoluteErrors: chain.map((level) => level.error * scale),
     baselineTriangles: lod0Triangles,
@@ -718,6 +698,191 @@ async function generateChain(
     errorScale: scale,
     errors: chain.map((level) => level.error),
     indices: chain.map((level) => level.indices),
+    lod0Triangles,
+  };
+}
+
+/**
+ * A position-welded copy of a primitive: compact vertices, plus a map back to LOD0's numbering.
+ */
+interface IWeldedMesh {
+  readonly attributes: Float32Array;
+  readonly indices: Uint32Array;
+  /** Compacted vertex index to the original LOD0 vertex it was welded from. */
+  readonly origin: Uint32Array;
+  readonly positions: Float32Array;
+}
+
+/**
+ * Weld coincident positions into one compact vertex, the form the simplifier can actually reduce.
+ *
+ * An exported card set is often triangle soup: every triangle's corners are its own vertices and
+ * the buffer is not even compact, so the simplifier sees no shared edge and collapses nothing —
+ * `Prune` then removes the whole mesh rather than reduce it. Compacting by position gives it the
+ * topology the artist drew (the quad, the shared stem); {@link IWeldedMesh.origin} maps the
+ * simplified indices back to LOD0's own numbering, so the level stays an index-only view.
+ */
+function weldMesh(
+  positions: Float32Array,
+  indices: Uint32Array,
+  attributes: IAttributePack,
+): IWeldedMesh {
+  const vertexCount = Math.floor(positions.length / 3);
+  const seen = new Map<string, number>();
+  const remap = new Uint32Array(vertexCount);
+  const origin: number[] = [];
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const key = `${positions[vertex * 3]},${positions[vertex * 3 + 1]},${positions[vertex * 3 + 2]}`;
+    const compact = seen.get(key);
+    if (compact === undefined) {
+      seen.set(key, origin.length);
+      remap[vertex] = origin.length;
+      origin.push(vertex);
+    } else remap[vertex] = compact;
+  }
+  const compactPositions = new Float32Array(origin.length * 3);
+  const compactAttributes = new Float32Array(origin.length * attributes.stride);
+  for (let compact = 0; compact < origin.length; compact += 1) {
+    const source = origin[compact] as number;
+    for (let axis = 0; axis < 3; axis += 1)
+      compactPositions[compact * 3 + axis] = positions[source * 3 + axis] as number;
+    for (let slot = 0; slot < attributes.stride; slot += 1)
+      compactAttributes[compact * attributes.stride + slot] = attributes.data[
+        source * attributes.stride + slot
+      ] as number;
+  }
+  const compactIndices = new Uint32Array(indices.length);
+  for (let index = 0; index < indices.length; index += 1)
+    compactIndices[index] = remap[indices[index] as number] as number;
+  return {
+    attributes: compactAttributes,
+    indices: compactIndices,
+    origin: Uint32Array.from(origin),
+    positions: compactPositions,
+  };
+}
+
+/**
+ * One terminal level past the error ladder, cut by triangle count rather than error and exempt from
+ * the saving gate: the far instance needs *some* coarse step to reach, and a ladder that stalls at
+ * 87% of LOD0 never gives it one. It drops the border lock — a level this far out owes no stitch
+ * fidelity — while the target count binds and the measured error is recorded exactly as the
+ * error-target levels' is, so the runtime's distance switch reads it the same way.
+ *
+ * Two passes: `Prune` with the attribute weights when the mesh has real topology, then a position
+ * weld with unweighted attributes for the triangle soup an exporter leaves behind.
+ */
+function terminalLevel(
+  positions: Float32Array,
+  indices: Uint32Array,
+  attributes: IAttributePack,
+  terminalTriangles: number,
+  previousTriangles: number,
+  previousError: number,
+): { error: number; indices: Uint32Array; triangles: number } | null {
+  if (terminalTriangles >= previousTriangles) return null;
+  const target = terminalTriangles * 3;
+  // `Prune` spends whole isolated components and keeps the attribute weights, so a mesh with real
+  // topology reduces without smearing.
+  if (attributes.stride > 0) {
+    const [pruned, pruneError] = MeshoptSimplifier.simplifyWithAttributes(
+      indices,
+      positions,
+      3,
+      attributes.data,
+      attributes.stride,
+      attributes.weights,
+      null,
+      target,
+      TERMINAL_TARGET_ERROR,
+      ["Prune"],
+    );
+    const triangles = Math.floor(pruned.length / 3);
+    // Accept only a prune that actually reached the target: a reduction that stalls above it is
+    // exactly the stall the terminal exists to break, and the weld below is the fallback for it.
+    if (triangles > 0 && triangles <= terminalTriangles && triangles < previousTriangles)
+      return {
+        error: Math.max(pruneError, previousError),
+        indices: Uint32Array.from(pruned),
+        triangles,
+      };
+  }
+  // A triangle soup has no component to spend that is not the whole mesh, so it falls back to a
+  // position weld with the attributes unweighted for this far level only — the seam can no longer
+  // block a collapse it cannot be seen through. The simplified indices map back to LOD0's own.
+  const welded = weldMesh(positions, indices, attributes);
+  let compacted: Uint32Array;
+  let weldedError: number;
+  if (attributes.stride === 0) {
+    [compacted, weldedError] = MeshoptSimplifier.simplify(
+      welded.indices,
+      welded.positions,
+      3,
+      target,
+      TERMINAL_TARGET_ERROR,
+      [],
+    );
+  } else {
+    [compacted, weldedError] = MeshoptSimplifier.simplifyWithAttributes(
+      welded.indices,
+      welded.positions,
+      3,
+      welded.attributes,
+      attributes.stride,
+      new Array<number>(attributes.stride).fill(0),
+      null,
+      target,
+      TERMINAL_TARGET_ERROR,
+      [],
+    );
+  }
+  const triangles = Math.floor(compacted.length / 3);
+  if (triangles <= 0 || triangles >= previousTriangles) return null;
+  const mapped = new Uint32Array(compacted.length);
+  for (let index = 0; index < compacted.length; index += 1)
+    mapped[index] = welded.origin[compacted[index] as number] as number;
+  return {
+    error: Math.max(weldedError, previousError),
+    indices: mapped,
+    triangles,
+  };
+}
+
+/**
+ * The terminal level alone, for a primitive whose error ladder kept nothing.
+ *
+ * `LockBorder` on an all-border shape — every foliage card, a trunk of separate quads — refuses
+ * every error-target collapse, so `generateChain` returns `null` and the primitive was left at LOD0
+ * in every runtime level. The terminal pass is the one that exists for exactly this shape: it drops
+ * the border lock, so a tree's bark and trunk get a coarse step too, not only its needle cards.
+ */
+function generateTerminalChain(primitive: Primitive): IGeneratedChain | null {
+  const position = primitive.getAttribute("POSITION");
+  if (position === null) return null;
+  const positions = positionsOf(primitive);
+  if (positions === null) return null;
+  const vertexCount = position.getCount();
+  const indices = sourceIndices(primitive, vertexCount);
+  const lod0Triangles = Math.floor(indices.length / 3);
+  if (lod0Triangles <= 0) return null;
+  const scale = MeshoptSimplifier.getScale(positions, 3);
+  const attributes = packAttributes(primitive, vertexCount);
+  const terminal = terminalLevel(
+    positions,
+    indices,
+    attributes,
+    terminalLevelTriangles(lod0Triangles),
+    lod0Triangles,
+    0,
+  );
+  if (terminal === null) return null;
+  return {
+    absoluteErrors: [terminal.error * scale],
+    baselineTriangles: lod0Triangles,
+    counts: [terminal.triangles],
+    errorScale: scale,
+    errors: [terminal.error],
+    indices: [terminal.indices],
     lod0Triangles,
   };
 }
@@ -1229,8 +1394,16 @@ export async function generateDiscreteLod(
           ? generateCardsChain(primitive, policy.generation.maxLevels, policy.generation.minSaving)
           : null;
       chain ??= thinned;
+      // A shape the error ladder declines and the card reducer cannot spend — the bark and trunk
+      // beside a tree's cards — still gets its terminal coarse step. Otherwise it sits at LOD0 in
+      // every runtime level and dominates the asset's far triangle count (PRD-473).
+      let strategy: "cards" | "discrete" = thinned === null ? "discrete" : "cards";
       if (chain === null) {
-        // Neither reducer could reach the configured saving: a normal skip, not a failure, and named
+        chain = generateTerminalChain(primitive);
+        strategy = "discrete";
+      }
+      if (chain === null) {
+        // No reducer could reach the configured saving: a normal skip, not a failure, and named
         // distinctly from the cheap pre-filter's `too-small`.
         reasons.add("insufficient-reduction");
         skipped.push({
@@ -1244,7 +1417,7 @@ export async function generateDiscreteLod(
       extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
       const property = attachDiscreteLod(document, extension, primitive, {
         ...chain,
-        strategy: thinned === null ? "discrete" : "cards",
+        strategy,
       });
       byteOverhead += discreteLodBytes(property);
       levels = Math.max(levels, chain.counts.length);
@@ -1259,7 +1432,7 @@ export async function generateDiscreteLod(
         mesh: mesh.getName(),
         primitive: primitiveIndex,
         ...(chain.cardLevels === undefined ? {} : { cardLevels: chain.cardLevels }),
-        strategy: thinned === null ? "discrete" : "cards",
+        strategy,
         trianglesBefore: before,
       });
     }

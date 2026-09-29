@@ -50,10 +50,23 @@ function cutoutSkipReason(
     const name = extension.extensionName.toLowerCase();
     if (VOLUME_EXTENSIONS.some((needle) => name.includes(needle))) return "volume-or-transmission";
   }
-  // A VEC4 COLOR_0 is a per-vertex alpha fade the cutoff cannot reproduce; VEC3 is a tint.
-  if (primitives.some((primitive) => primitive.getAttribute("COLOR_0")?.getElementSize() === 4))
-    return "vertex-colour-alpha";
+  // A VEC4 COLOR_0 is only a per-vertex alpha fade when its alpha actually varies below 1. Asset
+  // packs export every vertex colour as RGBA with alpha 255, and a cutoff reproduces alpha 1
+  // exactly, so a constant alpha is not a reason to refuse — measuring the data is (PRD-458 §4).
+  if (primitives.some(vertexAlphaVaries)) return "vertex-colour-alpha";
   return null;
+}
+
+/** True when a `COLOR_0`'s alpha channel is a real per-vertex fade, not a constant opaque 1. */
+function vertexAlphaVaries(primitive: Primitive): boolean {
+  const color = primitive.getAttribute("COLOR_0");
+  if (color === null || color.getElementSize() !== 4) return false;
+  const element: number[] = [0, 0, 0, 0];
+  for (let vertex = 0; vertex < color.getCount(); vertex += 1) {
+    color.getElement(vertex, element);
+    if ((element[3] as number) < 1) return true;
+  }
+  return false;
 }
 
 function usesMaterial(primitives: readonly Primitive[], material: Material): Primitive[] {
