@@ -151,6 +151,77 @@ Steps (each: files, the number that proves it, the smallest test):
    JS even though one record per key remains; never plan per-level `BundleGroup`s (see the
    feasibility section above).
 
+## Terrain tile draw reduction
+
+**Fact (measured).** In the machinefall streamed map the main pass submits ~225 draws, ~110 unnamed
+non-instanced terrain-tile meshes: `buildLevel` (`world-tiles.ts:401`) makes one
+`new Mesh(geometry, surface)` per tile per LOD level (`:490`), parented into a `LOD` at the tile
+origin (`:2178`); `streamRadius 8` = 289 resident tiles × `lodFactors [1,2,4]` (one visible level
+each) plus stitch bridges. Each ~30 µs of three's per-object JS (~3 ms/frame), never merged — the
+CPU-bound mobile/native bill.
+
+**(1) Per-tile difference: geometry only.** A level geometry is `position`/`normal`/`index`
+(`:492-495`) — heights baked, no uv, no per-tile attribute or uniform; all tiles share the
+game-owned `MeshSurface` (`:15`), the splat `MeshStandardNodeMaterial` reading `positionWorld` and
+shared textures (`world-terrain-splat.ts:337-348`); the LOD adds a translation. So a merge cannot
+change the look if the same vertices land at the same world positions, and adjacent same-LOD tiles
+sample the same field on the same grid (`fieldHeightGrid` `:372`, `edgeSamplesFor` `:332`) — their
+shared edges already coincide.
+
+**(2) Chosen: merge same-LOD settled tiles into super-tiles.** Group by
+`${lod}:${floor(tileX/K)},${floor(tileZ/K)}` (K≈4), one merged `Mesh` per block, rebuilt only when
+membership or LOD changes.
+- Reject **GPU indirect (c)**: `setIndirect` moves only the instance *count* into a GPU buffer, so
+  record + mesh + submission stay one per key (`world-gpu-scene.ts`); a tile = one geometry = one
+  instance per key. It removes cull/repack, not draws.
+- Reject **instanced + height texture (b)**: the shared flat grid needs the surface to sample a
+  per-tile height texture and rebuild normals in-shader — the engine owning the game's `surface`
+  (rule 3).
+- Reject **three `BatchedMesh`**: the LOD morph writes per-tile vertices on the CPU
+  (`updateLodTransitionGeometry` `:1194`, writes `:1233`, `:1252`) and `BatchedMesh` copies geometry
+  into one buffer with no per-instance vertex write; `deleteGeometry` compacts. More churn than a
+  merge.
+- **Change (all `world-tiles.ts`):** new `mergeLevelGeometry` (beside `buildLevel` `:401`)
+  concatenates each tile level's `position`/`normal`/`index` at the tile origin, keeps
+  block-perimeter skirts, names the mesh; `#markBlockDirty` from `#admitCandidate` `:2239`,
+  `#evict` `:2707`, `#disposeTile` `:2718`, `#setLodLevel` `:2339`; `#rebuildDirtyBlocks` on the
+  `IAdmissionBudget` pattern (`:39`), one per frame, at the end of `follow`; `#setLodVisibility`
+  `:2379` and the morph skip a tile while `lodTransition !== undefined`. `#stitch`/
+  `stitchGeometryData` (`:869`) unchanged — a bridge reads `level.edgeSamples` and the field, not the
+  meshes.
+
+**(3) Culling, transitions/stitch, shadows.** Blocks get their own bounds
+(`computeBoundingBox`/`Sphere`, `:492-495`) and `frustumCulled = true`; culling becomes per block, so
+a same-LOD segment behind the camera is drawn — hence K small. A morphing tile stays individual for
+its three frames, so `updateLodTransitionGeometry`/`restoreLevelSurface` are untouched and the block
+re-merges after; membership changes only on stream/LOD events. Bridges stay per-pair. Tiles are
+receive-only (`mesh.receiveShadow`, `:2185`, bridge `:2529`; no `castShadow` in the file), so
+merging touches no caster and the merged mesh sets the same flag.
+
+**(4) Ordered steps, each with its number.**
+0. No production change: add a `terrainTiles` stat (`tiles`/`blending`/`blocks`/`draws`) beside
+   `lodTransitions` (`:1853`), printed `TN_TERRAIN_TILES`, and run the playtest `scene-nodes`
+   main-pass census on machinefall `?scene=map-walk`. proof: `draws≈110`, equal to the unnamed
+   `Mesh`es the main pass submits. test: assert the stat equals that mesh set.
+1. Merge behind `mergeTiles:false`. proof: the census falls ≥4× (~110 → ≤25), the same-pose
+   screenshot is the pre-merge picture, `TN_TERRAIN_VALIDATE` `maxSeamGap`/`maxLodPop` unchanged.
+   test: `world-tiles.spec.ts` — a settled 3×3 same-LOD island is one draw whose positions equal the
+   tiles' concatenation.
+2. Budget block rebuilds (one per frame), exclude blending tiles. proof: no `TN_FRAME_SPANS` stall
+   while walking, `blendingTiles`/`lodTransitions` unchanged. test: existing LOD-transition cases
+   plus one blending case.
+3. Default on, `mergeTiles:false` escape. proof: the census ≤25 with no game option.
+Cut if: a seam appears → merge interior edges only, or one block per LOD tier; rebuild stalls show
+in `TN_FRAME_SPANS` → enlarge K or revert to default-off; the picture differs → fix the origin
+offset, do not ship.
+
+**(5) Risks.** *Seams*: same-LOD edges only — never merge across LOD; gate on `maxSeamGap`
+before/after. *Popping*: a block rebuild changes the visible set; blend-end re-merge is the only
+trigger. *Streaming churn*: each admission/eviction dirties one O(block) rebuild — budget one per
+frame, watch `TN_FRAME_SPANS`. *Memory*: a block duplicates settled level vertices; free the
+per-tile level geometry once merged (keep `edgeSamples`+field for stitching) or charge it to
+`residentByteBudget` — never hold both.
+
 ## Cook: a terminal coarse level on every chain (shipped ahead of GPU scene)
 
 The problem table's "distant trees keep 37–58% of LOD0 triangles" is a *generation* stall, not a
