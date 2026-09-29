@@ -1,5 +1,5 @@
 import { GroundSnap, normaliseToMetres } from "@threenative/core";
-import type { Group } from "three";
+import type { Object3D } from "three";
 
 export interface IRunnerConventions {
   readonly applyGrounding: (surfaceY: number, dt: number) => void;
@@ -13,8 +13,9 @@ export interface IRunnerConventions {
  * `GroundSnap` takes the surface height as an argument, so a jump is a *surface that moved*
  * rather than an exception to grounding. That is what keeps the landing exact at any frame rate.
  */
-export function prepareRunnerConventions(model: Group): IRunnerConventions {
-  const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.6 });
+export function prepareRunnerConventions(model: Object3D): IRunnerConventions {
+  // Measured to the mannequin's `Head` joint, the base of the skull: 1.545 m there is a 1.8 m figure.
+  const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.545 });
   const groundSnap = new GroundSnap(model);
   return {
     applyGrounding: (surfaceY, dt) => groundSnap.apply(model, surfaceY, dt),

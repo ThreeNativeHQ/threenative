@@ -5,22 +5,9 @@
 // The track is the arena's own plate: a light metre-grid top on a dark-grid body that reaches down.
 // Two meshes, so the running surface reads as floor and the sides read as structure, and world-
 // metre UVs (`worldGridUVs`) keep one grid tile one metre on every face however a chunk is resized.
-import {
-  CapsuleGeometry,
-  CylinderGeometry,
-  Group,
-  Mesh,
-  type MeshStandardMaterial,
-  PlaneGeometry,
-} from "three";
+import { Group, Mesh, type MeshStandardMaterial, PlaneGeometry } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import {
-  floorMaterial,
-  propMaterial,
-  runnerMaterial,
-  structureMaterial,
-  worldGridUVs,
-} from "./materials.js";
+import { floorMaterial, propMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 
 export const LANE_WIDTH = 2.4;
 export const TRACK_WIDTH = LANE_WIDTH * 3;
@@ -100,18 +87,4 @@ export function obstacleShape(): {
     ),
     material: propMaterial,
   };
-}
-
-/** The runner: a capsule on a dark-grid skirt, so its lane and its height both read from behind. */
-export function runner(): Group {
-  const group = new Group();
-  const body = solid(new Mesh(new CapsuleGeometry(0.34, 0.7, 6, 12), runnerMaterial));
-  body.position.y = 0.72;
-  const skirt = solid(new Mesh(new CylinderGeometry(0.5, 0.62, 0.16, 14), structureMaterial));
-  skirt.position.y = 0.1;
-  // The fin is `structure`, not the accent: the accent belongs to hazards and to nothing else.
-  const fin = solid(new Mesh(new RoundedBoxGeometry(0.1, 0.42, 0.5, 2, BEVEL), structureMaterial));
-  fin.position.set(0, 1.05, -0.18);
-  group.add(body, skirt, fin);
-  return group;
 }

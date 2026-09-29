@@ -9,7 +9,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
-import { Runner } from "../entities/Runner.js";
+import { type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
 import { createDustTrail } from "../render/dust.js";
@@ -31,14 +31,19 @@ const ACCELERATION = 0.25;
 export class Run extends Scene<GameState, RunnerPhysics> {
   static override readonly initialState = INITIAL_STATE;
 
+  #model: IRunnerModel | undefined;
   #sky: Texture | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
-    this.#sky = await ctx.assets.texture("sky.jpg");
+    [this.#model, this.#sky] = await Promise.all([
+      ctx.assets.model<IRunnerModel>("mannequin.glb"),
+      ctx.assets.texture("sky.jpg"),
+    ]);
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, RunnerPhysics> {
-    if (this.#sky === undefined) throw new Error("Run.enter ran before load() loaded sky.jpg.");
+    if (this.#model === undefined || this.#sky === undefined)
+      throw new Error("Run.enter ran before load() loaded mannequin.glb and sky.jpg.");
     setupSky(ctx.scene, this.#sky);
     const { key } = setupLighting(
       ctx.scene,
@@ -66,7 +71,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       random: () => ctx.random(),
     };
     const track = new Track(chunkContext);
-    const runner = new Runner(ctx);
+    const runner = new Runner(ctx, this.#model);
     ctx.entities.add("player", runner);
 
     const dust = ctx.add(new GPUParticles3D(createDustTrail()));

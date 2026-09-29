@@ -165,10 +165,3 @@ export const propMaterial = new MeshStandardMaterial({
   roughness: 0.45,
   metalness: 0,
 });
-
-/** The runner: a light neutral figure, deliberately not the accent — that belongs to hazards. */
-export const runnerMaterial = new MeshStandardMaterial({
-  color: 0xdedae8,
-  roughness: 0.32,
-  metalness: 0.35,
-});
