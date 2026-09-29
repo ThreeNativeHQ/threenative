@@ -23,7 +23,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync, mkdtempSync, renameSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { basename, join, dirname, relative, resolve } from 'node:path';
+import { join, dirname, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
@@ -871,6 +871,14 @@ async function ensureGradleWrapper() {
   }
 }
 
+/**
+ * The tar to run. On Windows the PATH `tar` is often Git's GNU tar, which reads `D:\\...` as a remote
+ * host and mangles `C:\\...` in `-C`; the bundled bsdtar in System32 takes native paths as they are.
+ */
+export function tarBinary(platform = process.platform, env = process.env) {
+  return platform === 'win32' ? win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+}
+
 export async function extractArchive(archivePath, destDir) {
   console.log(`Extracting: ${archivePath} -> ${destDir}`);
 
@@ -881,17 +889,9 @@ export async function extractArchive(archivePath, destDir) {
   if (archivePath.endsWith('.zip') || archivePath.endsWith('.aar')) {
     execSync(`unzip -o "${archivePath}" -d "${destDir}"`, { stdio: 'inherit' });
   } else if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    // GNU tar reads `host:path` as a remote archive, and a Windows drive path (`D:\...`) has that
-    // shape: run tar beside the archive and hand it the bare file name.
-    execFileSync('tar', ['-xzf', basename(archivePath), '-C', resolve(destDir)], {
-      cwd: dirname(archivePath),
-      stdio: 'inherit',
-    });
+    execFileSync(tarBinary(), ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });
   } else if (archivePath.endsWith('.tar.xz')) {
-    execFileSync('tar', ['-xJf', basename(archivePath), '-C', resolve(destDir)], {
-      cwd: dirname(archivePath),
-      stdio: 'inherit',
-    });
+    execFileSync(tarBinary(), ['-xJf', archivePath, '-C', destDir], { stdio: 'inherit' });
   } else if (archivePath.endsWith('.7z')) {
     // 7z format - requires p7zip (brew install p7zip on macOS)
     try {

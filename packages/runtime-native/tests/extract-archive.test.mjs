@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
-// GNU tar reads `host:path` in its archive argument as a remote archive when the colon comes before
-// the first slash, and a Windows drive path (`D:\a\...`) is exactly that shape: the OpenRigLogic
-// source archive failed on the Windows runner with "Cannot connect to D: resolve failed". A Linux
-// absolute path never has that shape, so pin the invocation instead of the host's tar.
+// On the Windows runner the PATH `tar` was Git's GNU tar: it read `D:\a\...` as a remote host
+// ("Cannot connect to D: resolve failed") and mangled `C:\Users\...` in -C. Windows ships bsdtar in
+// System32, which takes native paths as they are.
 const calls = vi.hoisted(() => []);
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal();
@@ -17,18 +16,24 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
-const { extractArchive } = await import("../scripts/download-deps.mjs");
+const { extractArchive, tarBinary } = await import("../scripts/download-deps.mjs");
+
+describe("tarBinary", () => {
+  it("uses the System32 bsdtar on Windows and PATH tar elsewhere", () => {
+    expect(tarBinary("win32", { SystemRoot: "C:\\Windows" })).toBe("C:\\Windows\\System32\\tar.exe");
+    expect(tarBinary("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
+    expect(tarBinary("linux", {})).toBe("tar");
+    expect(tarBinary("darwin", {})).toBe("tar");
+  });
+});
 
 describe("extractArchive", () => {
-  it("never hands tar a drive-letter archive path", async () => {
+  it("hands tar the native archive and destination paths unchanged, without a shell", async () => {
     const destination = await makeTempDir("tn-extract-archive-");
-    await extractArchive("D:/a/deps/openriglogic.tar.gz", destination);
-
-    const tar = calls.find((call) => call.file === "tar");
-    expect(tar).toBeDefined();
-    const archiveArgument = tar.args[tar.args.indexOf("-xzf") + 1];
-    expect(archiveArgument).toBe("openriglogic.tar.gz");
-    expect(archiveArgument.includes(":")).toBe(false);
-    expect(tar.options.cwd).toBe("D:/a/deps");
+    const archive = "D:\\a\\deps\\openriglogic.tar.gz";
+    await extractArchive(archive, destination);
+    const tar = calls.at(-1);
+    expect(tar.file).toBe(tarBinary());
+    expect(tar.args).toEqual(["-xzf", archive, "-C", destination]);
   });
 });
