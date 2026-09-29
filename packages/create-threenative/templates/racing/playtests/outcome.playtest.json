@@ -19,7 +19,7 @@
     {
       "kind": "wait",
       "label": "three-laps",
-      "waitTicks": 10000,
+      "waitTicks": 10600,
       "release": true
     },
     {

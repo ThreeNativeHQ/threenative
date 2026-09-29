@@ -12,66 +12,54 @@ import { CatmullRomCurve3, Vector3 } from "three";
  *
  * ## The layout
  *
- * One lap, 830 m, read anticlockwise in the x/z plane (`+x` east, `+z` south):
+ * One lap, about 850 m, a teardrop with a real circuit's grammar: a long front straight, a fast
+ * right-hand sweeper (R 77 m) that tightens (R 55 m) into a left kink, a short straight, a 180-degree
+ * hairpin (R 16 m) at the far end, a run back with a four-corner esses section (R 55 m, alternating),
+ * and a wide last corner (R 45 m, 139 degrees) that feeds the front straight. The tarmac climbs and
+ * falls with {@link groundHeight}, so the straight runs downhill and the hairpin sits in a hollow.
  *
- * | s | what it is |
- * | --- | --- |
- * | 0-130 m | the main straight, where the grid, the gantry and the pit lane stand |
- * | 130-215 m | T1, a fast right sweeper onto the east side |
- * | 215-290 m | the run down the east straight to the hairpin |
- * | 290-400 m | the hairpin: 180 degrees, the tightest radius on the circuit |
- * | 400-450 m | the left that puts the car on the return leg |
- * | 450-520 m | the return leg, 70 m of it |
- * | 520-590 m | the esses, two opposite kinks either side of the centreline |
- * | 590-660 m | the west-side corner onto the back straight |
- * | 660-780 m | the back straight and the run to the last corner |
- * | 780-863 m | the last corner, which is what feeds the main straight |
- *
- * The layout was **measured, not eyeballed** (`.runtime/racing/cc.mts` walks the same points):
- * 863 m round, the tightest radius 14.6 m at the hairpin, the closest two parts of the circuit
- * ever come 25 m of centreline with 43 m of arc between them, and an ideal lap at the tyres'
- * lateral limit of 51 s. That is why the lap lands in the 40-70 s band on a car whose top speed is
- * 17 m/s, and why the circuit is 863 m and not the 1.2-2 km of a real Grand Prix track: at this
- * car's pace a 1.2 km lap is 70 s of nothing but straights.
+ * Every corner is an arc of a chosen radius and the two straights were solved so the loop closes;
+ * the layout is kept because it was **measured**: no two parts of the circuit come within 45 m of
+ * each other across more than 130 m of road, and the tightest radius is the hairpin.
  */
 
-/** The control points, in metres, in driving order. Closed: the last point joins the first. */
+/** The control points, in metres, in driving order. Closed: the last point joins the first.
+ *  Laid out from arcs and straights (each turn's radius and angle chosen, then the two straights
+ *  solved so the loop closes), so every corner is a real arc and none is a chord of the world grid. */
 const CONTROL: readonly (readonly [number, number])[] = [
-  // A: the main straight, heading +x at z = -140.
-  [25, -141],
-  [70, -141],
-  [115, -140],
-  [160, -140],
-  [195, -140],
-  // T1: a fast right sweeper onto the east straight.
-  [216, -131],
-  [225, -110],
-  // The east straight, heading +z.
-  [225, -30],
-  [225, -10],
-  // The hairpin, 180 degrees on a 13 m radius.
-  [221, 13],
-  [212, 17],
-  [203, 13],
-  [199, 4],
-  // 90 left onto the return leg.
-  [193, -21],
-  [164, -31],
-  // The return leg, heading -x.
-  [130, -31],
-  [95, -31],
-  [58, -31],
-  // The esses.
-  [26, -34],
-  [-4, -26],
-  [-30, -31],
-  // 90 right onto the west straight, heading -z.
-  [-71, -40],
-  [-80, -61],
-  // 90 right onto the main straight, radius about 25.
-  [-80, -115],
-  [-73, -133],
-  [-55, -140],
+  [-120.0, 100.0],
+  [-77.1, 100.0],
+  [-34.3, 100.0],
+  [8.6, 100.0],
+  [47.3, 110.4],
+  [75.6, 138.8],
+  [85.9, 177.6],
+  [85.7, 214.1],
+  [94.0, 253.3],
+  [117.8, 285.5],
+  [130.0, 296.3],
+  [134.7, 303.4],
+  [135.2, 311.9],
+  [131.5, 319.5],
+  [124.3, 324.3],
+  [115.8, 324.8],
+  [108.2, 321.0],
+  [82.0, 298.0],
+  [55.8, 274.9],
+  [41.6, 265.8],
+  [25.3, 261.5],
+  [9.0, 257.1],
+  [-5.3, 248.0],
+  [-27.5, 236.1],
+  [-52.6, 235.4],
+  [-77.8, 234.6],
+  [-99.9, 222.7],
+  [-124.8, 200.8],
+  [-149.8, 178.8],
+  [-162.1, 161.1],
+  [-164.7, 139.7],
+  [-157.1, 119.5],
+  [-140.9, 105.2],
 ];
 
 /** Metres between samples of the centreline. Everything sampled coarser than this reads a corner
@@ -79,7 +67,7 @@ const CONTROL: readonly (readonly [number, number])[] = [
 const SPACING = 1.1;
 
 /** Half-width, in samples, of the curvature box filter. See the constructor for why. */
-const SMOOTH_RADIUS = 4;
+const SMOOTH_RADIUS = 10;
 
 /** Tarmac width. 9 m is two cars wide and leaves room for a run-off on each side. */
 export const TRACK_WIDTH = 9;

@@ -69,8 +69,12 @@ const asphalt = rgbaTexture(256, (u, v) => {
   const grain = (noise(Math.floor(u * 256), Math.floor(v * 256), 11) - 0.5) * 26;
   const rubber = 1 - 0.34 * falloff(u - 0.5, 0.16);
   const shoulder = 1 + 0.1 * falloff(u - 0.5, 0.42);
-  const patch = 1 + 0.05 * Math.sin(u * 9.1 + v * 3.7);
-  const base = 74 * rubber * shoulder * patch + grain;
+  // No term here may depend on `v` except through `grain`: the road tiles this image every 8 m of
+  // travel, and a v-dependent brightness curve (there used to be one, `sin(u*9.1+v*3.7)`) does not
+  // return to its own start at v=1, so every tile boundary was a visible seam — a hard band across
+  // the whole road width, every 8 m, the length of the circuit. `grain` is safe: it is per-texel
+  // hashed noise with no trend across the tile, so its wrap seam is invisible in the noise floor.
+  const base = 74 * rubber * shoulder + grain;
   return [base, base * 1.01, base * 1.05];
 });
 
@@ -91,6 +95,12 @@ const turf = rgbaTexture(128, (u, v) => {
 
 /** Red and white, one stripe per 1.2 m of kerb. Two texels wide, so it tiles in both axes. */
 const kerbStripe = rgbaTexture(2, (u) => (u < 0.5 ? [216, 58, 48] : [242, 240, 230]));
+
+/** Black and white, a 4x2 checker. The one transverse mark the road is meant to carry. */
+const checker = rgbaTexture(8, (u, v) => {
+  const on = (Math.floor(u * 4) + Math.floor(v * 2)) % 2 === 0;
+  return on ? [235, 233, 224] : [18, 18, 20];
+});
 
 /** A faint cast-concrete grain as a tangent-space normal map, tiling every metre. */
 function grainNormalTexture(size = 128): DataTexture {
@@ -180,6 +190,8 @@ export function createMaterials() {
     kerbAlt: toon(0xd8453c, 0.5),
     /** The kerb's white stripe, and the one place the tarmac is allowed to be bright. */
     curb: toon(0xf2f0e6, 0.5),
+    /** The finish line and the grid-slot marks: the one transverse pattern the road carries. */
+    checker: new MeshStandardMaterial({ map: checker, roughness: 0.75, metalness: 0 }),
     /** Red and white, striped by its own texture, so the whole circuit's kerbing is one draw. */
     kerb: new MeshStandardMaterial({
       map: kerbStripe,
@@ -220,9 +232,7 @@ export function createMaterials() {
       roughness: 0.42,
     }),
     road: new MeshStandardMaterial({
-      map: asphalt,
-      normalMap: grain,
-      normalScale: new Vector2(0.14, 0.14),
+      color: 0x4a4a4a,
       roughness: 0.86,
       metalness: 0.04,
     }),

@@ -26,7 +26,7 @@
       "kind": "input",
       "label": "reverse-through-finish",
       "press": "ArrowDown",
-      "holdTicks": 110,
+      "holdTicks": 180,
       "release": true
     },
     {

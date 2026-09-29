@@ -103,6 +103,16 @@ const WARMUP_FRAMES = 30;
 const MEASURED_FRAMES = 600;
 const DT = 1 / 60;
 
+/**
+ * Every other template's car here is kinematic, so the zero-gravity default below costs it
+ * nothing. Racing's is a real `VehicleBody3D`: its suspension is a spring pre-loaded against the
+ * car's own weight, and with no gravity to load it, the strut fully extends and launches the
+ * chassis — wheels losing contact one at a time — within a few frames of spawning. `-24` matches
+ * `src/game.ts`'s own plugin gravity, the value the suspension's `SAG` and `stiffness` are tuned
+ * against.
+ */
+const RACING_GRAVITY = { x: 0, y: -24, z: 0 };
+
 interface IPhysicsFixture {
   readonly physics: IPhysicsContext;
   dispose(): void;
@@ -129,9 +139,11 @@ function measureVector2Allocations(step: () => void): number {
   return probeState.vector2Allocations;
 }
 
-async function physicsFixture(): Promise<IPhysicsFixture> {
+async function physicsFixture(
+  gravity: { readonly x: number; readonly y: number; readonly z: number } = { x: 0, y: 0, z: 0 },
+): Promise<IPhysicsFixture> {
   const owner = { add: () => undefined } as never;
-  const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+  const plugin = rapier({ gravity });
   await plugin.setup?.(owner);
   const physics = (owner as { physics?: IPhysicsFixture["physics"] }).physics;
   if (physics === undefined) throw new Error("Allocation fixture did not install physics.");
@@ -663,7 +675,7 @@ describe("generated template ordinary-frame runtime cost", () => {
 
   it("executes the racing scene player scan for 600 measured frames", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
       // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
@@ -707,7 +719,7 @@ describe("generated template ordinary-frame runtime cost", () => {
   it("publishes a JSON-safe component snapshot for the racing scene, as `survives` requires", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
     const { snapshotEntities } = await import("../../core/src/entity-snapshot.js");
-    const racingPhysics = await physicsFixture();
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
       const race = new Race();
@@ -755,7 +767,7 @@ describe("generated template ordinary-frame runtime cost", () => {
   });
   it("executes the racing scene player scan without an iterator", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
       // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to

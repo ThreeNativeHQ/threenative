@@ -11,7 +11,7 @@ import {
 } from "three";
 import { Boost } from "../kart/boost.js";
 import { createMaterials } from "../render/materials.js";
-import { grandstand, hoardingGeometry, treeGeometry, tyreStackGeometry } from "../render/shapes.js";
+import { grandstand, treeGeometry, tyreStackGeometry } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 import { Checkline, type ChecklineId } from "./Checkline.js";
 import type { IRayHit, IntersectRay } from "./TrackSector.js";
@@ -293,7 +293,7 @@ function buildRoad(
     ),
     materials.road,
   );
-  road.receiveShadow = true;
+  road.receiveShadow = false;
   ctx.add(road);
 
   // The paved run-off past the white line: a different surface, drivable, and lighter.
@@ -313,22 +313,26 @@ function buildRoad(
   ctx.add(runoff);
 
   // White edge lines, laid on the tarmac and a centimetre above it.
-  const lineRows: Vector3[][] = [];
-  for (const station of all) {
-    lineRows.push([
-      onTrack(station, -HALF, ROAD_LIFT + 0.012),
-      onTrack(station, -HALF + 0.4, ROAD_LIFT + 0.012),
-    ]);
-    lineRows.push([
-      onTrack(station, HALF - 0.4, ROAD_LIFT + 0.012),
-      onTrack(station, HALF, ROAD_LIFT + 0.012),
-    ]);
+  // One strip per side: interleaving the two edges into one strip joins them with a quad across
+  // the whole road, which draws as a white transverse bar at every station.
+  for (const [from, to] of [
+    [-HALF, -HALF + 0.4],
+    [HALF - 0.4, HALF],
+  ] as const) {
+    const edge = new Mesh(
+      quadStrip(
+        looped(
+          all.map((station) => [
+            onTrack(station, from, ROAD_LIFT + 0.012),
+            onTrack(station, to, ROAD_LIFT + 0.012),
+          ]),
+        ),
+        (row, column) => [column, row * 1.1],
+      ),
+      materials.line,
+    );
+    ctx.add(edge);
   }
-  const lines = new Mesh(
-    quadStrip(looped(lineRows), (row, column) => [column, row * 1.1]),
-    materials.line,
-  );
-  ctx.add(lines);
   return all;
 }
 
@@ -581,6 +585,21 @@ function dressCircuit(
     return Math.atan2(sample.tangent.z, sample.tangent.x);
   };
 
+  // **The finish line**: the one transverse mark the road is allowed to carry. It is a `quadStrip`,
+  // like every other surface here, so it sits on the banked tarmac rather than a flat plane through it.
+  const finishRows = [
+    stationAt(lineDistance(LINE_AT.finish) - 3),
+    stationAt(lineDistance(LINE_AT.finish)),
+  ].map((station) => [
+    onTrack(station, -HALF, ROAD_LIFT + 0.014),
+    onTrack(station, HALF, ROAD_LIFT + 0.014),
+  ]);
+  const finishLine = new Mesh(
+    quadStrip(finishRows, (row, column) => [column * 4, row * 2]),
+    materials.checker,
+  );
+  ctx.add(finishLine);
+
   // **Start lights**: two rows of five on the finish gantry. This is the one piece of furniture a
   // first frame cannot be without, because it is what says *this is a start line*.
   const lights = new InstancedBatch({
@@ -665,23 +684,6 @@ function dressCircuit(
   ctx.add(pitWall);
   fixedTrimesh(ctx, pitWall, LAYER.barrier, "pit-wall");
 
-  // **Garages** behind the pit wall: the paddock's back wall, and what the first frame sees down
-  // the straight.
-  const garages = new InstancedBatch({
-    geometry: new BoxGeometry(12, 7, 10),
-    material: materials.structure,
-  });
-  for (let index = 0; index < 6; index += 1) {
-    const origin = at(0.012 + index * 0.023, HALF + 13.5);
-    garages.place({
-      position: [origin.x, origin.y + 3.5, origin.z],
-      rotation: [0, heading(0.012), 0],
-      scale: [1, 1, 1],
-    });
-  }
-  const garageMesh = garages.build({ castShadow: true, name: "garages" });
-  if (garageMesh !== undefined) ctx.add(garageMesh);
-
   // **Marshal posts** on the outside of the corners, where a flag marshal would stand.
   const posts = new InstancedBatch({
     geometry: new BoxGeometry(2.8, 2.6, 1.9),
@@ -716,35 +718,14 @@ function dressCircuit(
   const tyreMesh = tyres.build({ castShadow: true, name: "tyre-walls" });
   if (tyreMesh !== undefined) ctx.add(tyreMesh);
 
-  // **Hoardings** along the straights, turned to face the road rather than down the racing line.
-  const board = hoardingGeometry(6);
-  const frames = new InstancedBatch({ geometry: board.frame, material: materials.structure });
-  const boardsA = new InstancedBatch({ geometry: board.board, material: materials.hoardingBoard });
-  const boardsB = new InstancedBatch({ geometry: board.board, material: materials.kerbAlt });
-  for (let index = 0; index < 24; index += 1) {
-    const fraction = 0.01 + index * 0.038;
-    const sample = CIRCUIT.at(lineDistance(fraction), CIRCUIT.createSample());
-    for (const side of [1, -1] as const) {
-      const turn =
-        Math.atan2(sample.tangent.z, sample.tangent.x) + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
-      const origin = at(fraction, side * (HALF + RUNOFF + 0.5));
-      const placement = {
-        position: [origin.x, origin.y, origin.z] as [number, number, number],
-        rotation: [0, turn, 0] as [number, number, number],
-        scale: [1, 1, 1] as [number, number, number],
-      };
-      frames.place(placement);
-      (index % 2 === 0 ? boardsA : boardsB).place(placement);
-    }
+  let midX = 0;
+  let midZ = 0;
+  for (const station of all) {
+    midX += station.sample.point.x;
+    midZ += station.sample.point.z;
   }
-  for (const [batch, name] of [
-    [frames, "hoarding-frames"],
-    [boardsA, "hoarding-boards-a"],
-    [boardsB, "hoarding-boards-b"],
-  ] as const) {
-    const mesh = batch.build({ name });
-    if (mesh !== undefined) ctx.add(mesh);
-  }
+  midX /= all.length;
+  midZ /= all.length;
 
   // **Trees** beyond the circuit, on a seeded jitter so two captures frame the same world. The
   // distance test is why a conifer never stands in the run-off.
@@ -758,9 +739,9 @@ function dressCircuit(
   };
   for (let index = 0; index < 190; index += 1) {
     const angle = (index / 190) * Math.PI * 2 + jitter() * 0.09;
-    const reach = 200 + jitter() * 150;
-    const x = 72 + Math.cos(angle) * reach;
-    const z = -68 + Math.sin(angle) * reach;
+    const reach = 230 + jitter() * 150;
+    const x = midX + Math.cos(angle) * reach;
+    const z = midZ + Math.sin(angle) * reach;
     let near = Number.POSITIVE_INFINITY;
     for (const station of all) {
       const gap = (station.sample.point.x - x) ** 2 + (station.sample.point.z - z) ** 2;
@@ -784,16 +765,39 @@ function dressCircuit(
     if (mesh !== undefined) ctx.add(mesh);
   }
 
-  // **Distant hills**, so the horizon has a shape instead of a line.
-  for (const [x, z, radius] of [
-    [-60, -430, 130],
-    [320, -400, 160],
-    [440, 140, 120],
-    [-350, 80, 140],
+  // **Distant hills**, so the horizon has a shape instead of a line. Placed relative to the
+  // circuit's own centre and at least 380 m out: a fixed world coordinate here reads as a nearby
+  // wall the moment the circuit's layout or orientation changes, because the two stop agreeing on
+  // where "far away" is. Several boxes per hill, jittered in height and offset, so the skyline is
+  // a ridge rather than one flat-faced slab.
+  let hillSeed = 4021;
+  const hillJitter = (): number => {
+    hillSeed = (hillSeed * 1103515245 + 12345) & 0x7fffffff;
+    return hillSeed / 0x7fffffff;
+  };
+  // Small and far, and buried to three quarters of their own height: a box this close to the
+  // camera's forward view reads as a wall, not a hill, the moment it is tall enough to fill more
+  // than a sliver of the horizon. A real hill's silhouette is a low ridge, not a slab.
+  for (const [angle, radius, reach] of [
+    [0.15, 55, 620],
+    [1.9, 70, 660],
+    [3.4, 50, 640],
+    [5.0, 60, 700],
   ] as const) {
-    const hill = new Mesh(new BoxGeometry(radius * 2, radius, radius * 2), materials.distant);
-    hill.position.set(x, terrainHeight(x, z) - radius * 0.42, z);
-    ctx.add(hill);
+    const cx = midX + Math.cos(angle) * reach;
+    const cz = midZ + Math.sin(angle) * reach;
+    for (let lump = 0; lump < 4; lump += 1) {
+      const lumpRadius = radius * (0.6 + hillJitter() * 0.5);
+      const x = cx + (hillJitter() - 0.5) * radius * 2.2;
+      const z = cz + (hillJitter() - 0.5) * radius * 2.2;
+      const hill = new Mesh(
+        new BoxGeometry(lumpRadius * 2, lumpRadius, lumpRadius * 2),
+        materials.distant,
+      );
+      hill.rotation.y = hillJitter() * Math.PI;
+      hill.position.set(x, terrainHeight(x, z) - lumpRadius * 0.78, z);
+      ctx.add(hill);
+    }
   }
 }
 

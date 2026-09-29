@@ -19,10 +19,7 @@
     {
       "kind": "input",
       "label": "boost",
-      "press": [
-        "ArrowUp",
-        "Space"
-      ],
+      "press": ["ArrowUp", "Space"],
       "holdTicks": 8,
       "release": false
     },

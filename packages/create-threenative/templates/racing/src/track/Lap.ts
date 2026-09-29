@@ -40,6 +40,9 @@ export class Lap {
   #before = new Vector3();
   #after = new Vector3();
   #mid = new Vector3();
+  /** True once gate 0 (the finish line) has been crossed at least once — so that crossing does not
+   *  itself count as completing a lap. */
+  #armed = false;
 
   constructor(
     target: ILapTarget,
@@ -82,11 +85,18 @@ export class Lap {
       this.shortcutRejects += 1;
       return false;
     }
-    this.expectedGate += 1;
-    if (this.expectedGate < this.#gates.length) return true;
-    this.expectedGate = 0;
-    this.completed += 1;
-    this.#onLap(this.completed);
+    // A lap completes when the car is back at the start/finish line, not when the last *ordered*
+    // gate is crossed: those coincide only when the finish line is also the last gate. Counting at
+    // the last gate instead — the old behaviour here — overstates `routeProgress`
+    // (`Ranking.routeProgress` multiplies this count by the lap length and adds the car's own
+    // projected position) by every metre between that gate and the literal line, which is what let
+    // a car outrank a rival that had genuinely gone further round the circuit.
+    if (index === 0 && this.#armed) {
+      this.completed += 1;
+      this.#onLap(this.completed);
+    }
+    this.#armed = true;
+    this.expectedGate = (this.expectedGate + 1) % this.#gates.length;
     return true;
   }
 
