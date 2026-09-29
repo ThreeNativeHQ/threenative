@@ -599,12 +599,17 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // threshold is a smooth curve: the crests came back as glossy white ribbons laid along the sea,
   // which read as plastic rather than as water. One more octave of the ripple map tears the edge,
   // and it is the same texture the normals already read, so it costs one fetch.
+  //
+  // **Remapped so it reaches zero.** It used to run 0.45 to 1.0, which is a tint and not a tear:
+  // multiplied into the wake it left every fragment of foam at least 45% opaque, and a hard white
+  // U came down the frame from under the stern of a ship making no way at all. Foam is patches —
+  // there is water between them, and the mask has to say so or it is a decal.
   const torn = Fn(() => {
     const grain = texture(
       ripples,
       vec2(positionWorld.x, positionWorld.z).mul(0.26).add(seaTime.mul(0.02)),
     ).a;
-    return float(0.45).add(saturate(grain.mul(2.6)).mul(0.55));
+    return smoothstep(float(0.4), float(0.74), grain);
   })();
   const crest = smoothstep(float(0.46), float(0.74), positionWorld.y).mul(torn);
 
@@ -635,25 +640,34 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   const begins = smoothstep(float(-1.4), float(1.6), astern);
   // Never quite to full foam. At 1.0 the arms are the brightest thing in the frame and read as two
   // searchlights laid on the sea rather than as broken water.
-  const wake = max(churn, arms).mul(reach).mul(begins).mul(wakeStrength).mul(0.78);
+  //
+  // Torn by the same grain as the whitecaps, and this is the term that has to have it. `arms` is
+  // the only straight line in a scene made entirely of swell, so an untiled one is read as a line
+  // somebody drew: the frame came back with a hard white U running from under the stern to the
+  // bottom edge, off a hull making no way at all.
+  const wake = max(churn, arms).mul(reach).mul(begins).mul(wakeStrength).mul(torn).mul(0.78);
   // The wash at the hull's own waterline: an ellipse in the ship's plan, and a band just outside
   // it. Cheaper than the wake and it is the half the player is closest to — without it the hull
   // meets the sea on a clean line, and a clean line is the tell that nothing here is water.
   const plan = vec2(astern.div(HULL_WASH.halfLength), across.div(HULL_WASH.halfBeam));
   //
-  // It is **not** gated on way on, and that is a deliberate lie of about thirty per cent: a hull
-  // lying to in a one-metre swell is still working water against its own topsides, and more to the
-  // point, a speedless ring is the only thing that seals the waterline when the sea in front of the
-  // lens happens to be in a trough. It is torn by the same grain as the whitecaps and it never
-  // painted a white horseshoe around a ship standing still, which the eye reads as a decal.
-  const wash = smoothstep(float(1.22), float(0.98), plan.length()).mul(
-    smoothstep(float(0.82), float(0.98), plan.length()),
+  // **Gated on way on**, which it was not, and that was the other half of the U. A hull lying to
+  // is not working water against its own topsides — it is sitting in it — and the lie this told
+  // was a bright unbroken annulus around a stationary ship, which the eye reads as a decal rather
+  // than as a wake no matter how well it is torn. Under way it is a ring of broken water at the
+  // waterline; at rest there is nothing, and the hull sits in a swell like anything else.
+  //
+  // The band is a quarter as wide as the ellipse's own radius and the edges are soft, because a
+  // narrow hard ring at this distance photographs as a drawn circle however broken its fill is.
+  const wash = smoothstep(float(1.34), float(0.94), plan.length()).mul(
+    smoothstep(float(0.62), float(0.94), plan.length()),
   );
   // Plus a little standing white at the bow, where the stem pushes a bow wave ahead of it.
   const bow = smoothstep(float(-1.4), float(-2.5), astern)
     .mul(smoothstep(float(1.3), float(0.2), across))
-    .mul(wakeStrength);
-  const broken = max(max(wake, bow), wash.mul(torn).mul(float(0.6).add(wakeStrength.mul(0.4))));
+    .mul(wakeStrength)
+    .mul(torn);
+  const broken = max(max(wake, bow), wash.mul(torn).mul(wakeStrength));
   material.colorNode = mix(
     water.add(color(SUBSURFACE).mul(through)),
     color(FOAM),
