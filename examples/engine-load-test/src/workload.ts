@@ -2,6 +2,8 @@
 // is a line-for-line GDScript port of this file; the two are held together by `positionHash`,
 // which the scorer's equivalence gate compares before it will publish any comparison.
 
+import { REALISTIC_RUNGS, type RealisticRung } from "./ladder.js";
+
 export const LCG_SEED = 1337;
 export const CUBE_SPACING = 2.5;
 export const LADDER = [256, 1024, 4096, 16384] as const;
@@ -19,7 +21,10 @@ export const KNEE_THRESHOLD_MS = 20;
 // the lattice into instanced draws. It is the fair "what does a per-draw cost?" row (PRD-449 R3).
 // L1, L3 and L4 all author one mesh per cube; L2's single InstancedMesh is the only batched rung,
 // and L3 and L4 are the only rungs the projection runs over.
-export const RENDER_MODES = ["L1", "L2", "L3", "L4"] as const;
+// R1-R5 are PRD-464's realistic-scene ladder: L3's authoring with the sun, the local lights, the
+// characters, the post chain and the 1080p resolution added on top of the same cube scene. They are
+// authored rungs and projected rungs, and the L ladder above them is untouched.
+export const RENDER_MODES = ["L1", "L2", "L3", "L4", ...REALISTIC_RUNGS] as const;
 export type RenderMode = (typeof RENDER_MODES)[number];
 
 export function isAuthoredRung(mode: RenderMode): boolean {
@@ -27,7 +32,11 @@ export function isAuthoredRung(mode: RenderMode): boolean {
 }
 
 export function isProjectedRung(mode: RenderMode): boolean {
-  return mode === "L3" || mode === "L4";
+  return mode === "L3" || mode === "L4" || isRealisticRung(mode);
+}
+
+export function isRealisticRung(mode: RenderMode): mode is RealisticRung {
+  return (REALISTIC_RUNGS as readonly string[]).includes(mode);
 }
 
 // PRD-400 Phase 1's tuning matrix. Every axis has a default that reproduces the PRD-117 workload

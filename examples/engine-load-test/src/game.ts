@@ -1,7 +1,11 @@
+import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { pass } from "three/tsl";
 // The portable half of the PRD-117 ThreeNative arm: it builds the scene, steps it from a frame
 // index, and renders. It touches no browser global other than the canvas handed to it, so the
 // device arms of Phase 4 can drive the same file.
 import {
+  ACESFilmicToneMapping,
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   DirectionalLight,
@@ -11,12 +15,17 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  NoToneMapping,
   Object3D,
   type OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
+  PointLight,
+  RenderPipeline,
+  RenderTarget,
   Scene,
   Vector2,
+  Vector3,
   WebGPURenderer,
 } from "three/webgpu";
 // Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
@@ -29,6 +38,27 @@ import type {
   IRenderProjectionReport,
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
+import {
+  type IFoxMeasurement,
+  type IFrameStats,
+  type ILadderCounts,
+  LADDER_BLOOM_RADIUS,
+  LADDER_BLOOM_STRENGTH,
+  LADDER_BLOOM_THRESHOLD,
+  LADDER_HEADLINE_HEIGHT,
+  LADDER_HEADLINE_WIDTH,
+  LADDER_HEIGHT,
+  LADDER_POINT_LIGHTS,
+  LADDER_SHADOW_MAP_SIZE,
+  LADDER_TONEMAPPING,
+  LADDER_WIDTH,
+  type RealisticRung,
+  characterPlacement,
+  frameStats,
+  pointLightPosition,
+  resolutionOf,
+  rungAtLeast,
+} from "./ladder.js";
 import {
   DEFAULT_AXES,
   type ICubePlacement,
@@ -45,6 +75,7 @@ import {
   isAuthoredRung,
   isMutated,
   isProjectedRung,
+  isRealisticRung,
   latticeExtent,
   positionHash,
   uniqueMaterialColor,
@@ -76,6 +107,28 @@ export interface ILoadTestRung {
   objectCount: number;
 }
 
+/**
+ * PRD-464's R3 characters. The arm that owns the framework builds them with the engine's own
+ * `SkeletalMesh3D` and hands them in, for the same reason it hands in the projection: this module
+ * may only import the framework's types, or the control arm would inherit it. An arm with no
+ * factory asking for R3 fails closed at `setRung` rather than quietly measuring R1.
+ */
+export interface ICharacterCrowd {
+  /**
+   * The one factor every character's root is scaled by, measured off the imported bind pose. The
+   * Khronos Fox is authored in centimetres, so an unscaled import is a 79 m statue; both engines
+   * apply this so R3 measures skinning rather than a camera full of overdraw.
+   */
+  readonly scale: number;
+  /** How many skinned meshes the crowd actually built, which is what the rung asserts. */
+  readonly skinnedMeshes: number;
+  dispose(): void;
+  /** The roots to attach, one per character. */
+  objects(): Object3D[];
+  /** Poses every character at a pure function of the frame index. */
+  step(frameIndex: number): void;
+}
+
 export interface ILoadTestFrameStats {
   drawCalls: number;
   triangles: number;
@@ -91,7 +144,21 @@ export interface ILoadTestHarness {
   collapseMs: number;
   collapseStatus(): string;
   dispose(): void;
+  /** The rung's asserted counts, or undefined outside the realistic-scene ladder. */
+  ladderCounts(): ILadderCounts | undefined;
+  /**
+   * PRD-464: what one of R3's characters measures in the world and on screen, or undefined on a rung
+   * with no characters. The parser gates on it, so a ladder whose foxes are not the specified size
+   * fails instead of comparing two differently-sized scenes.
+   */
+  foxMeasurement(): IFoxMeasurement | undefined;
   positionHash: string;
+  /**
+   * PRD-464: render the rung's current frame into a readable target and report what the pixels say.
+   * It draws the same scene the timed loop draws, once, after warmup — the read-back is a GPU stall
+   * and must never land inside a measured window.
+   */
+  probeFrame(): Promise<IFrameStats>;
   render(): Promise<void>;
   renderer: WebGPURenderer;
   setRung(rung: ILoadTestRung): void;
@@ -136,6 +203,9 @@ function configureShadowCamera(light: DirectionalLight, objectCount: number): vo
   shadowCamera.near = 0.1;
   shadowCamera.far = extent * 4 + 200;
   shadowCamera.updateProjectionMatrix();
+  // One map, the same size on both engines: a shadow map that differs between the arms would
+  // make R1 a comparison of two resolutions rather than of two renderers.
+  light.shadow.mapSize.set(LADDER_SHADOW_MAP_SIZE, LADDER_SHADOW_MAP_SIZE);
 }
 
 interface IAuthoredCubes {
@@ -288,6 +358,7 @@ export async function createLoadTestHarness(
   axes: IWorkloadAxes = DEFAULT_AXES,
   createCollapse?: CollapseFactory,
   enginePasses?: ILoadTestEnginePasses,
+  characters?: ICharacterCrowd,
 ): Promise<ILoadTestHarness> {
   const renderer = new WebGPURenderer({ antialias: false, canvas });
   renderer.setPixelRatio(1);
@@ -321,7 +392,154 @@ export async function createLoadTestHarness(
   const dummy = new Object3D();
   const instanceMatrix = new Matrix4();
   const drawingBufferSize = new Vector2();
+  const projectedScratch = new Vector3();
   let state: IRungState | undefined;
+
+  // PRD-464's ladder bits. They sit on the harness rather than in a rung's teardown list because
+  // each one is a *setting* of something the scene already owns — the sun, the renderer's post
+  // chain, the drawing buffer — so the next rung has to put every one of them back as it found it.
+  let ladder: RealisticRung | undefined;
+  // R4's chain, in the shape every generated `src/render/` template ships: a `RenderPipeline` whose
+  // output node is the scene pass plus a bloom of it. It is null in every other rung, which is how
+  // `renderFrame` knows to draw straight to the target instead of through the chain.
+  let postPipeline: RenderPipeline | undefined;
+  let postScenePass: ReturnType<typeof pass> | undefined;
+  let ladderPost = false;
+  const pointLights: PointLight[] = [];
+  let characterRoots: Object3D[] = [];
+
+  const clearLadder = (): void => {
+    for (const point of pointLights) point.removeFromParent();
+    pointLights.length = 0;
+    for (const root of characterRoots) root.removeFromParent();
+    characterRoots = [];
+    postPipeline?.dispose();
+    postPipeline = undefined;
+    postScenePass = undefined;
+    renderer.toneMapping = NoToneMapping;
+    ladder = undefined;
+    ladderPost = false;
+    renderer.shadowMap.enabled = axes.shadowCasterShare > 0;
+    light.castShadow = axes.shadowCasterShare > 0;
+    ground.receiveShadow = axes.shadowCasterShare > 0;
+    if (renderer.domElement.width !== VIEWPORT_WIDTH) {
+      renderer.setSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, false);
+      camera.aspect = VIEWPORT_WIDTH / VIEWPORT_HEIGHT;
+      camera.updateProjectionMatrix();
+    }
+  };
+
+  /** R1's sun, R2's local lights, R3's characters, R4's post chain and R5's resolution, each one
+   *  added only when the rung above it is the one being built. */
+  const buildLadder = (rung: RealisticRung, objectCount: number, parent: Object3D): void => {
+    const rank = rung === "R1" ? 0 : Number(rung.slice(1)) - 1;
+    ladder = rung;
+    renderer.shadowMap.enabled = true;
+    light.castShadow = true;
+    ground.receiveShadow = true;
+    configureShadowCamera(light, objectCount);
+    if (rungAtLeast(rank, "R2")) {
+      for (let index = 0; index < LADDER_POINT_LIGHTS; index += 1) {
+        const point = new PointLight(0xffffff, 1.2, 0, 2);
+        point.position.set(0, 6, 0);
+        parent.add(point);
+        pointLights.push(point);
+      }
+    }
+    if (rungAtLeast(rank, "R3")) {
+      if (characters === undefined) throw new Error("TN_BENCH_NO_CHARACTER_FACTORY");
+      const roots = characters.objects();
+      if (characters.skinnedMeshes !== roots.length)
+        throw new Error(`TN_BENCH_CHARACTER_COUNT:${characters.skinnedMeshes}/${roots.length}`);
+      for (let index = 0; index < roots.length; index += 1) {
+        const root = roots[index] as Object3D;
+        const placement = characterPlacement(index);
+        root.position.set(placement.x, placement.y, placement.z);
+        // Uniform, and before the placement is read back: the glTF is authored in centimetres, so an
+        // unscaled character is a 79 m statue. `ladder-characters.ts` measured the factor off the
+        // imported bind pose and the parser reads the resulting height back off the scene.
+        root.scale.setScalar(characters.scale);
+        root.traverse((object) => {
+          object.castShadow = true;
+          object.frustumCulled = false;
+        });
+        parent.add(root);
+        characterRoots.push(root);
+      }
+    }
+    if (rungAtLeast(rank, "R4")) {
+      // `LADDER_TONEMAPPING` in `ladder.ts` is the name of this pair, read by the Godot arm's
+      // `_apply_post` so neither engine picks its own operator.
+      renderer.toneMapping = ACESFilmicToneMapping;
+      const size = resolutionOf(rung);
+      const scenePass = pass(scene, camera);
+      postScenePass = scenePass;
+      const colour = scenePass.getTextureNode();
+      postPipeline = new RenderPipeline(renderer);
+      postPipeline.outputNode = colour.add(
+        bloom(colour, LADDER_BLOOM_STRENGTH, LADDER_BLOOM_RADIUS, LADDER_BLOOM_THRESHOLD),
+      );
+      ladderPost = true;
+      renderer.setSize(size.width, size.height, false);
+      camera.aspect = size.width / size.height;
+      camera.updateProjectionMatrix();
+      return;
+    }
+    if (rung === "R5") {
+      // R5 is R4 at 1080p, so it never reaches here; a new rung below R4 that changed resolution
+      // would, and a silent 720p row published as R5 is exactly the lie this guard refuses.
+      throw new Error(`TN_BENCH_LADDER_RUNG_UNBUILT:${rung}`);
+    }
+  };
+
+  /** The scene cost the rung claims it added, read off the built scene rather than off the spec. */
+  const readLadderCounts = (): ILadderCounts | undefined => {
+    if (ladder === undefined || state === undefined) return undefined;
+    const size = renderer.getDrawingBufferSize(drawingBufferSize);
+    let shadowCasters = 0;
+    let skinnedMeshes = 0;
+    scene.traverse((object) => {
+      // `castShadow` is an `Object3D` field in three, so a fox's 24 joint nodes would each count
+      // as a caster. A caster is a mesh that casts: the same definition the Godot census uses on
+      // `MeshInstance3D`, and the only one both arms can agree on.
+      if ((object as Mesh).isMesh === true && object.castShadow === true) shadowCasters += 1;
+      if ((object as unknown as { isSkinnedMesh?: boolean }).isSkinnedMesh === true)
+        skinnedMeshes += 1;
+    });
+    return {
+      pointLights: pointLights.length,
+      postPasses: ladderPost ? 1 : 0,
+      resolution: `${size.x}x${size.y}`,
+      shadowCasters,
+      skinnedMeshes,
+      tonemapping: renderer.toneMapping === ACESFilmicToneMapping ? 1 : 0,
+    };
+  };
+
+  /**
+   * What the first character of R3 measures: its world bounding-box height, and that box's height on
+   * screen. Both are read off the built scene at the camera's live pose, so a camera that stopped
+   * looking at the crowd shows up as a zero rather than as a plausible number. The first character
+   * stands at the middle of the block's x row, so it is on screen from every orbit angle.
+   */
+  const readFoxMeasurement = (): IFoxMeasurement | undefined => {
+    const first = characterRoots[0];
+    if (first === undefined) return undefined;
+    // Bind-pose geometry box, not the skinned one: Godot's `get_aabb()` is the bind-pose box, and a
+    // posed box reads a running fox ~10% shorter than it stands, which the engines would disagree on.
+    const bounds = new Box3().setFromObject(first, false); // engine-override: the cross-engine Fox check needs the bind-pose mesh box Godot's get_aabb() reports; normaliseToMetres measures a crown bone
+    if (bounds.isEmpty()) return { heightM: 0, screenFraction: 0 };
+    // The box's top and bottom at its own centre x, projected through the live camera. NDC y spans
+    // -1..1, so half the difference is the fraction of the viewport height the fox covers.
+    const centreX = (bounds.min.x + bounds.max.x) / 2;
+    const centreZ = (bounds.min.z + bounds.max.z) / 2;
+    const ndcTop = projectedScratch.set(centreX, bounds.max.y, centreZ).project(camera).y;
+    const ndcBottom = projectedScratch.set(centreX, bounds.min.y, centreZ).project(camera).y;
+    return {
+      heightM: bounds.max.y - bounds.min.y,
+      screenFraction: Math.abs(ndcTop - ndcBottom) / 2,
+    };
+  };
 
   // The shipped default's per-frame passes, and only for the rung that installed the projection.
   // L1 and L2 hand the authored scene straight to three with no engine walk behind it, and that is
@@ -340,6 +558,7 @@ export async function createLoadTestHarness(
     // rung's geometry; leaving them alive across a rung change would draw the previous rung's
     // objects on top of the next one's.
     state.collapse?.dispose();
+    clearLadder();
     for (const cube of state.cubes) cube.removeFromParent();
     if (state.instanced !== undefined) {
       state.instanced.removeFromParent();
@@ -366,7 +585,9 @@ export async function createLoadTestHarness(
     const geometries: BufferGeometry[] = [];
     const materials: Material[] = [];
     let instanced: InstancedMesh | undefined;
-    const shadowCasterCount = Math.ceil(rung.objectCount * axes.shadowCasterShare);
+    const shadowCasterCount = isRealisticRung(rung.mode)
+      ? rung.objectCount
+      : Math.ceil(rung.objectCount * axes.shadowCasterShare);
     if (isAuthoredRung(rung.mode)) {
       const authored = buildAuthoredCubes(
         placements,
@@ -391,7 +612,8 @@ export async function createLoadTestHarness(
       // subset, so a mutation rate of 0 leaves the batch static and never re-uploads it.
       initInstanceMatrices(instanced, placements, axes, dummy, instanceMatrix);
     }
-    if (axes.shadowCasterShare > 0) {
+    if (isRealisticRung(rung.mode)) buildLadder(rung.mode, rung.objectCount, parent);
+    else if (axes.shadowCasterShare > 0) {
       configureShadowCamera(light, rung.objectCount);
     }
     state = {
@@ -451,6 +673,16 @@ export async function createLoadTestHarness(
     const pose = cameraPose(frameIndex, state.rung.objectCount);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.lookAt(pose.targetX, pose.targetY, pose.targetZ);
+    // R2's lights and R3's characters move before the cube transforms, and both are a pure
+    // function of the frame index so the two engines frame the same scene at frame 317.
+    if (ladder !== undefined) {
+      const extent = latticeExtent(state.rung.objectCount);
+      for (let index = 0; index < pointLights.length; index += 1) {
+        const at = pointLightPosition(index, frameIndex, extent);
+        (pointLights[index] as PointLight).position.set(at.x, at.y, at.z);
+      }
+      characters?.step(frameIndex);
+    }
     // The mutation-rate axis decides which objects are dirty this frame; at the default 1 every
     // transform moves, which is the honest worst case a game with moving actors pays.
     if (isAuthoredRung(state.rung.mode)) {
@@ -486,6 +718,45 @@ export async function createLoadTestHarness(
     stepMs = performance.now() - startedAt;
   };
 
+  /** One frame of the rung, into whatever target the renderer currently holds. */
+  const renderFrame = async (): Promise<void> => {
+    // `info.reset()` is only automatic inside three's own animation loop; this harness drives
+    // its own rAF, so the per-frame counters are ours to clear.
+    renderer.info.reset();
+    // The projection's own render input when L3 has one, the authored scene otherwise. Same
+    // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
+    // pass-count axis re-renders the same input; the default is one pass.
+    const root = state?.collapse?.root ?? scene;
+    // The shipped default's frame around that draw, in its order: the projected-size cull writes
+    // `object.visible` and leaves it alone until the draw is submitted, the engine's walk
+    // refreshes the world matrices three is no longer asked to walk, and both are undone
+    // afterwards so the authored scene is exactly as the game left it. Without these L3 measured
+    // a projection on top of three's default frame, which is not the pipeline a ThreeNative game
+    // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
+    const passes = shippedDefaultPasses();
+    if (passes !== undefined) {
+      passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
+      root.matrixWorldAutoUpdate = false;
+      passes.matrixWorld.apply(root);
+    }
+    // The post chain draws through the pipeline rather than through the renderer, and the pipeline
+    // is the one that renders the scene pass, so the two paths never both run for one frame.
+    for (let pass = 0; pass < axes.passCount; pass += 1) {
+      if (postPipeline === undefined) await renderer.render(root, camera);
+      else {
+        // The pass was built on the authored scene; every other rung draws the projection's root, so
+        // aim the pass at the same input or R4 measures an unbatched scene the other rungs never draw.
+        if (postScenePass !== undefined) postScenePass.scene = root;
+        postPipeline.render();
+      }
+    }
+    if (passes !== undefined) passes.cameraCull.restore();
+    // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
+    // chain allocates per-object velocity, which this arm has none of — a shipped game with no
+    // post chain resolves the same way, so L3 pays the same commit a shipped game does.
+    state?.collapse?.commit();
+  };
+
   return {
     adapterLabel,
     get placementBytes() {
@@ -507,6 +778,7 @@ export async function createLoadTestHarness(
     },
     dispose: () => {
       clearRung();
+      characters?.dispose();
       enginePasses?.cameraCull.dispose();
       enginePasses?.matrixWorld.dispose();
       renderer.dispose();
@@ -514,35 +786,33 @@ export async function createLoadTestHarness(
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },
-    render: async () => {
-      // `info.reset()` is only automatic inside three's own animation loop; this harness drives
-      // its own rAF, so the per-frame counters are ours to clear.
-      renderer.info.reset();
-      // The projection's own render input when L3 has one, the authored scene otherwise. Same
-      // resolution `defineGame` performs, so this rung draws what a shipped game draws. The
-      // pass-count axis re-renders the same input; the default is one pass.
-      const root = state?.collapse?.root ?? scene;
-      // The shipped default's frame around that draw, in its order: the projected-size cull writes
-      // `object.visible` and leaves it alone until the draw is submitted, the engine's walk
-      // refreshes the world matrices three is no longer asked to walk, and both are undone
-      // afterwards so the authored scene is exactly as the game left it. Without these L3 measured
-      // a projection on top of three's default frame, which is not the pipeline a ThreeNative game
-      // draws with. A rung without a projection keeps the plain frame: it is the independent cell.
-      const passes = shippedDefaultPasses();
-      if (passes !== undefined) {
-        passes.cameraCull.apply(root, camera, renderer.getDrawingBufferSize(drawingBufferSize).y);
-        root.matrixWorldAutoUpdate = false;
-        passes.matrixWorld.apply(root);
+    foxMeasurement: readFoxMeasurement,
+    render: renderFrame,
+    /**
+     * The read-back `examples/engine-load-test/src/skinned-crowd.ts` already uses for its own
+     * capture: draw the rung's current frame into a render target, then read it. The same
+     * `render()` the timed loop calls draws it, so the pixels are the rung's pixels and not a
+     * re-authored scene — a probe that rendered something else would pass a ladder rung that
+     * measured a blank screen.
+     */
+    probeFrame: async () => {
+      if (state === undefined) throw new Error("TN_BENCH_NO_RUNG");
+      const size = renderer.getDrawingBufferSize(drawingBufferSize);
+      const target = new RenderTarget(size.x, size.y);
+      try {
+        renderer.setRenderTarget(target);
+        await renderFrame();
+        renderer.setRenderTarget(null);
+        const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, size.x, size.y);
+        return frameStats(pixels as ArrayLike<number>, size.x, size.y);
+      } finally {
+        renderer.setRenderTarget(null);
+        target.dispose();
       }
-      for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
-      if (passes !== undefined) passes.cameraCull.restore();
-      // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
-      // chain allocates per-object velocity, which this arm has none of — a shipped game with no
-      // post chain resolves the same way, so L3 pays the same commit a shipped game does.
-      state?.collapse?.commit();
     },
     beginCollapse,
     collapseStatus,
+    ladderCounts: readLadderCounts,
     renderer,
     setRung,
     collapseMovingParts,

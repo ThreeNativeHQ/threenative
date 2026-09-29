@@ -14,6 +14,7 @@ import { SceneRenderProjection } from "../../../packages/core/src/renderProjecti
 import { installRendererStageHooks } from "../../../scripts/render-profile/renderer-stage-hooks.js";
 import { type ILadderArm, type ILadderKnobs, LADDER_KNOBS, runLadderArm } from "./driver.js";
 import type { ILoadTestHarness } from "./game.js";
+import { createFoxCrowd } from "./ladder-characters.js";
 import { percentile } from "./workload.js";
 
 interface ICullingArmReport {
@@ -179,6 +180,9 @@ const TN_WEB_ARM: ILadderArm = {
   arm: "tn-web",
   buildNotes: BUILD_DETAILS,
   createCollapse: (scene, options) => new SceneRenderProjection(scene, options),
+  // PRD-464's R3 characters, through the engine's loader and `SkeletalMesh3D`. Only requested when
+  // a ladder rung is in `modes`, so an L-only run never decodes the Fox.
+  createCharacters: createFoxCrowd,
   engineName: "threenative",
   engineVersion:
     new URLSearchParams(globalThis.location.search).get("engineVersion") ?? "workspace",
