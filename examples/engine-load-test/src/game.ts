@@ -20,6 +20,7 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
+  RenderPipeline,
   RenderTarget,
   Scene,
   Vector2,
@@ -381,13 +382,11 @@ export async function createLoadTestHarness(
   // PRD-464's ladder bits. They sit on the harness rather than in a rung's teardown list because
   // each one is a *setting* of something the scene already owns — the sun, the renderer's post
   // chain, the drawing buffer — so the next rung has to put every one of them back as it found it.
-  // `setOutputNode` is absent from `@types/three`, so the post stage is reached through the same
-  // structural view the generated `src/render/` templates use rather than through a cast per call.
-  const post = renderer as unknown as {
-    setOutputNode(node: unknown): void;
-    toneMapping: number;
-  };
   let ladder: RealisticRung | undefined;
+  // R4's chain, in the shape every generated `src/render/` template ships: a `RenderPipeline` whose
+  // output node is the scene pass plus a bloom of it. It is null in every other rung, which is how
+  // `renderFrame` knows to draw straight to the target instead of through the chain.
+  let postPipeline: RenderPipeline | undefined;
   let ladderPost = false;
   const pointLights: PointLight[] = [];
   let characterRoots: Object3D[] = [];
@@ -397,8 +396,9 @@ export async function createLoadTestHarness(
     pointLights.length = 0;
     for (const root of characterRoots) root.removeFromParent();
     characterRoots = [];
-    post.setOutputNode(null);
-    post.toneMapping = NoToneMapping;
+    postPipeline?.dispose();
+    postPipeline = undefined;
+    renderer.toneMapping = NoToneMapping;
     ladder = undefined;
     ladderPost = false;
     renderer.shadowMap.enabled = axes.shadowCasterShare > 0;
@@ -448,14 +448,13 @@ export async function createLoadTestHarness(
     if (rungAtLeast(rank, "R4")) {
       // `LADDER_TONEMAPPING` in `ladder.ts` is the name of this pair, read by the Godot arm's
       // `_apply_post` so neither engine picks its own operator.
-      post.toneMapping = ACESFilmicToneMapping;
+      renderer.toneMapping = ACESFilmicToneMapping;
       const size = resolutionOf(rung);
       const scenePass = pass(scene, camera);
       const colour = scenePass.getTextureNode();
-      post.setOutputNode(
-        colour.add(
-          bloom(colour, LADDER_BLOOM_STRENGTH, LADDER_BLOOM_RADIUS, LADDER_BLOOM_THRESHOLD),
-        ),
+      postPipeline = new RenderPipeline(renderer);
+      postPipeline.outputNode = colour.add(
+        bloom(colour, LADDER_BLOOM_STRENGTH, LADDER_BLOOM_RADIUS, LADDER_BLOOM_THRESHOLD),
       );
       ladderPost = true;
       renderer.setSize(size.width, size.height, false);
@@ -490,7 +489,7 @@ export async function createLoadTestHarness(
       resolution: `${size.x}x${size.y}`,
       shadowCasters,
       skinnedMeshes,
-      tonemapping: post.toneMapping === ACESFilmicToneMapping ? 1 : 0,
+      tonemapping: renderer.toneMapping === ACESFilmicToneMapping ? 1 : 0,
     };
   };
 
@@ -692,7 +691,12 @@ export async function createLoadTestHarness(
       root.matrixWorldAutoUpdate = false;
       passes.matrixWorld.apply(root);
     }
-    for (let pass = 0; pass < axes.passCount; pass += 1) await renderer.render(root, camera);
+    // The post chain draws through the pipeline rather than through the renderer, and the pipeline
+    // is the one that renders the scene pass, so the two paths never both run for one frame.
+    for (let pass = 0; pass < axes.passCount; pass += 1) {
+      if (postPipeline === undefined) await renderer.render(root, camera);
+      else postPipeline.render();
+    }
     if (passes !== undefined) passes.cameraCull.restore();
     // The velocity snapshot the colour and velocity passes consume. A no-op unless the render
     // chain allocates per-object velocity, which this arm has none of — a shipped game with no

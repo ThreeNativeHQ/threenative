@@ -109,7 +109,10 @@ export async function runCapturing(
  * ladder rung was asked for, so an L-only run never needs the asset to exist.
  */
 function resolveFoxAsset(repoRoot: string, modes: string): string | undefined {
-  if (!modes.split(",").some((mode) => /^R[3-5]$/u.test(mode.trim()))) return undefined;
+  // Any realistic rung resolves it: R1 and R2 build nothing, but the runner cannot know that the
+  // ladder's own factory will not be constructed for them, and a missing file must be reported
+  // here rather than as a rung that failed to draw characters.
+  if (!modes.split(",").some((mode) => /^R[1-5]$/u.test(mode.trim()))) return undefined;
   const file = path.resolve(repoRoot, process.env.TN_BENCH_FOX ?? FOX_RELATIVE_PATH);
   let bytes: Buffer;
   try {

@@ -1,55 +1,33 @@
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type Plugin, defineConfig } from "vite";
+import { defineConfig } from "vite";
+
+// The native arm is one import-free ESM file, the same contract `examples/native-smoke` asserts.
+// The ladder is compiled in rather than read from a query string: a native host has no URL.
+const native = process.env.TN_BENCH_TARGET === "native";
 
 /**
- * PRD-464 R3's character, inlined as base64 so one bundle carries it.
+ * PRD-464 R3's character, as a URL the arm fetches rather than as bytes inlined in the bundle.
  *
  * The Khronos Fox is pinned by `benchmark/engine-load-test/sources.lock.json` and kept in the
- * git-ignored artifact tree, so it is read at build time rather than vendored: the desktop arm
- * ships one import-free ESM file with no VFS to stage into, and the same bytes have to reach the
- * web arm. The hash is the lock's, recomputed here, and a wrong or missing file fails the build
- * instead of producing a bundle that would quietly benchmark a different fox.
+ * git-ignored artifact tree, so it is read at run time rather than vendored, and the runner
+ * (`scripts/engine-load-test/run-desktop.ts`) checks the digest against that lock before a build
+ * ever sees it. The two runtimes read the same file in their own way: the native host's `fetch` is a
+ * local file read, and the web arm's dev server serves the same absolute path under `/@fs/`. Inlining
+ * the bytes instead would need a base64 decoder the host does not have — it has no `atob`.
  */
-const FOX_SHA256 = "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7";
-const FOX_MODULE_ID = "virtual:fox-glb";
 // Spelled out rather than imported from `src/ladder.ts`: this config is loaded by esbuild, which
-// will not follow the source-tree module specifier. `FOX_SHA256`/`FOX_RELATIVE_PATH` there are the
-// same two values, and the runner resolves the path for the Godot arm from that copy.
+// will not follow the source-tree module specifier. `FOX_RELATIVE_PATH` there is the same value, and
+// the runner resolves the path for the Godot arm from that copy.
 const DEFAULT_FOX = resolve(
   import.meta.dirname,
   "../../artifacts/engine-load-test/prd-449/bevy/src/assets/models/animated/Fox.glb",
 );
 
-function foxGlb(): Plugin {
+function foxUrl(): string {
   const file = process.env.TN_BENCH_FOX ?? DEFAULT_FOX;
-  return {
-    enforce: "pre",
-    load(id) {
-      if (id !== FOX_MODULE_ID) return;
-      let bytes: Buffer;
-      try {
-        bytes = readFileSync(file);
-      } catch (error) {
-        throw new Error(
-          `TN_BENCH_FOX_MISSING: ${file} could not be read (${error instanceof Error ? error.message : String(error)}).`,
-        );
-      }
-      const digest = createHash("sha256").update(bytes).digest("hex");
-      if (digest !== FOX_SHA256)
-        throw new Error(`TN_BENCH_FOX_HASH: ${file} is ${digest}, not the pinned ${FOX_SHA256}.`);
-      return `export default ${JSON.stringify(bytes.toString("base64"))};\n`;
-    },
-    name: "tn-bench-fox-glb",
-    resolveId(id) {
-      return id === FOX_MODULE_ID ? FOX_MODULE_ID : undefined;
-    },
-  };
+  return native ? `file://${file}` : `/@fs${file}`;
 }
 
-// The native arm is one import-free ESM file, the same contract `examples/native-smoke` asserts.
-// The ladder is compiled in rather than read from a query string: a native host has no URL.
 function integers(name: string, fallback: number[]): number[] {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -82,8 +60,6 @@ function modes(): string[] {
   });
 }
 
-const native = process.env.TN_BENCH_TARGET === "native";
-
 // Shipped as raw strings: the runtime resolves them through `parseAxesRecord`, the same parser the
 // web entry uses, so an unset axis and a defaulted one cannot diverge between the runtimes.
 function axesEnvironment(): Record<string, string | undefined> {
@@ -99,9 +75,6 @@ function axesEnvironment(): Record<string, string | undefined> {
 }
 
 export default defineConfig({
-  // The plugin only reads the file when a graph actually imports it, so `plain.html` — which never
-  // does — costs nothing and the control arm is not made to carry a character it will not draw.
-  plugins: [foxGlb()],
   build: native
     ? {
         lib: {
@@ -130,15 +103,16 @@ export default defineConfig({
     // The native host has no `navigator`, so the target is stamped at build time. `--arm` on the
     // collector never sets it: the arm a report claims comes from the binary that ran.
     __TN_PLATFORM__: JSON.stringify(process.env.TN_BENCH_PLATFORM ?? "desktop"),
+    __TN_BENCH_FOX_URL__: JSON.stringify(foxUrl()),
     __TN_BENCH_CONFIG__: JSON.stringify({
       animate: process.env.TN_BENCH_ANIMATE !== "off",
       axes: axesEnvironment(),
       // Stated by the operator, because the host does not expose it. The Pixel 8 used for PRD-117
       // runs at 120 Hz; a desktop under xvfb is 60.
       refreshHz: integer("TN_BENCH_REFRESH_HZ", 60),
-      // The host surface the run was given, recorded on the report as `display`. R1-R4 render
-      // smaller than this inside it — R5 is R4 at 1920x1080 — and the per-rung `ladder.resolution`
-      // is what says which was actually drawn.
+      // The host surface the run was given, recorded on the report as `display`, and the
+      // resolution every rung draws at: the runner runs R1-R4 in a 1280x720 window and R5 in a
+      // 1920x1080 one, and `ladder.resolution` is read back off the drawing buffer to confirm it.
       width: integer("TN_BENCH_WIDTH", 1280),
       height: integer("TN_BENCH_HEIGHT", 720),
       frames: integer("TN_BENCH_FRAMES", 600),

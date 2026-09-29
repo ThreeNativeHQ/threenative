@@ -1,6 +1,3 @@
-// Inlined by the `tn-bench-fox-glb` plugin in `vite.config.ts` from the copy pinned in
-// `benchmark/engine-load-test/sources.lock.json`, hash-checked at build time.
-import foxGlb from "virtual:fox-glb";
 // PRD-464 R3's characters, built with the engine's own path: `createAssetLoader().model()` for the
 // bytes and `SkeletalMesh3D` — the `AnimationPlayer` subclass that clones a rig safely — for the
 // 50 instances. This module is imported by the ThreeNative arms only, never by `plain.ts`, so the
@@ -12,28 +9,27 @@ import { SkeletalMesh3D } from "../../../packages/core/src/skeletal-mesh.js";
 import type { ICharacterCrowd } from "./game.js";
 import { LADDER_CHARACTERS, LADDER_CLIP, characterStagger } from "./ladder.js";
 
-function decodeBase64(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
+// Stamped by `vite.config.ts` from the copy pinned in
+// `benchmark/engine-load-test/sources.lock.json`, whose digest the runner checks before the build.
+declare const __TN_BENCH_FOX_URL__: string;
 
 export async function createFoxCrowd(): Promise<ICharacterCrowd> {
-  // The engine's loader, with the source injected: one file, already in memory, and the same call a
+  // The engine's loader, with the source injected: one file, already reachable, and the same call a
   // game would make. A scene that decoded the model itself would be measuring a path no ThreeNative
-  // game takes.
-  const bytes = decodeBase64(foxGlb);
-  const source = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-  const gltf = await createAssetLoader({
-    model: () =>
-      new Promise((resolve, reject) => {
+  // game takes. The loader is handed the url rather than the bytes so the fetch stays inside it.
+  const loader = createAssetLoader({
+    model: async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TN_BENCH_FOX_HTTP:${url} answered ${response.status}.`);
+      const source = await response.arrayBuffer();
+      return new Promise<unknown>((resolve, reject) => {
         new GLTFLoader().parse(source, "", resolve, reject);
-      }),
-  }).model<{ animations: AnimationClip[]; scene: object }>("fox/Fox.glb");
+      });
+    },
+  });
+  const gltf = await loader.model<{ animations: AnimationClip[]; scene: object }>(
+    __TN_BENCH_FOX_URL__,
+  );
   const clip = gltf.animations.find((animation) => animation.name === LADDER_CLIP);
   if (clip === undefined) throw new Error("TN_BENCH_FOX_CLIP_MISSING");
   const clipSeconds = clip.duration;

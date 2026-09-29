@@ -60,7 +60,7 @@ var _point_lights: Array[OmniLight3D] = []
 var _characters: Array[Node3D] = []
 var _character_players: Array[AnimationPlayer] = []
 var _character_staggers: PackedFloat32Array = PackedFloat32Array()
-var _character_template: Node3D = null
+var _character_packed: PackedScene = null
 var _fox_bytes: PackedByteArray = PackedByteArray()
 var _character_clip_seconds: float = 1.0
 var _ladder_post := false
@@ -361,9 +361,16 @@ func _load_fox(path: String) -> void:
 		get_tree().quit(1)
 		return
 	_character_clip_seconds = player.get_animation(LADDER_CLIP).length
-	# The template stays out of the tree and alive: 50 instances are what the rung draws, and a 51st
-	# fox standing at the origin would be a scene neither engine has.
-	_character_template = root as Node3D
+	# The template stays out of the tree: 50 instances are what the rung draws, and a 51st fox
+	# standing at the origin would be a scene neither engine has. It is packed rather than kept as a
+	# scene to `duplicate()`: a duplicated rig keeps its original `Skeleton3D`, so 50 foxes would
+	# share one skeleton and be skinned once instead of 50 times — a cheaper scene than the
+	# ThreeNative arm's `SkeletalMesh3D` builds, on the rung that exists to measure skinning.
+	_character_packed = PackedScene.new()
+	if _character_packed.pack(root) != OK:
+		print("TN_BENCH_FOX_PACK_FAILED")
+		get_tree().quit(1)
+		return
 
 
 # R1's sun, R2's local lights, R3's characters, R4's post chain and R5's resolution, each added only
@@ -391,12 +398,12 @@ func _apply_ladder(mode: String) -> void:
 			add_child(point)
 			_point_lights.append(point)
 	if rank >= 2:
-		if _character_template == null:
+		if _character_packed == null:
 			print("TN_BENCH_FOX_CLIP_MISSING")
 			get_tree().quit(1)
 			return
 		for index in LADDER_CHARACTERS:
-			var character := _character_template.duplicate() as Node3D
+			var character := _character_packed.instantiate() as Node3D
 			character.position = _character_position(index)
 			add_child(character)
 			var player := _find_animation_player(character)
@@ -461,13 +468,14 @@ func _ladder_counts() -> Dictionary:
 
 # x = shadow casters, y = skinned meshes. A caster is a mesh that casts, which is the same
 # definition the ThreeNative census uses on `isMesh && castShadow`; a fox's 24 joint nodes are not
-# casters in either engine.
+# casters in either engine. Godot 4.7 carries the skin on `MeshInstance3D` itself — a glTF skin
+# arrives as an ordinary mesh instance with a `Skin`, not as the old `ImporterMeshInstance3D`.
 func _census(node: Node) -> Vector2i:
 	var counts := Vector2i.ZERO
-	if node is MeshInstance3D or node is ImporterMeshInstance3D:
+	if node is MeshInstance3D:
 		if node.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_ON:
 			counts.x += 1
-		if node is ImporterMeshInstance3D and (node as ImporterMeshInstance3D).skin != null:
+		if node.skin != null:
 			counts.y += 1
 	for child in node.get_children():
 		counts += _census(child)

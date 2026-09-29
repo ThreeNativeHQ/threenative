@@ -22,7 +22,7 @@ import {
   isBenchmarkWorkloadModule,
   sha256,
 } from "./identity.js";
-import type { IFrameStats, ILadderCounts } from "./ladder.js";
+import { type IFrameStats, type ILadderCounts, ladderRank } from "./ladder.js";
 import {
   FRAMES_PER_RUNG,
   type IWorkloadAxes,
@@ -309,7 +309,7 @@ export async function measureRung(
     // PRD-464: the ladder's own proof that the rung drew something. Taken on the last warmup frame,
     // outside the window — the read-back stalls the GPU, and a stalled frame inside the window would
     // be reported as this rung's cost.
-    if (frameIndex === knobs.warmup - 1 && ladder !== undefined)
+    if (frameIndex === knobs.warmup - 1 && isRealisticRung(rung.mode))
       renderCheck = await harness.probeFrame();
     await clock.nextFrame();
     const now = clock.now();
@@ -518,7 +518,10 @@ export async function runLadderArm(
   // Loaded once, before any rung is built, so the R3 character's first measured frame is a skinning
   // frame rather than a decode frame. An arm that was asked for a character rung and has no factory
   // is told here, once, instead of at the first `setRung` deep inside the loop.
-  const wantsCharacters = modes.some((mode) => isRealisticRung(mode));
+  // Only R3 and above draw the crowd, so R1 and R2 do not pay to build 50 rigs they never attach.
+  const wantsCharacters = modes.some(
+    (mode) => isRealisticRung(mode) && ladderRank(mode) >= ladderRank("R3"),
+  );
   if (wantsCharacters && arm.createCharacters === undefined)
     throw new Error("TN_BENCH_NO_CHARACTER_FACTORY");
   const characters =

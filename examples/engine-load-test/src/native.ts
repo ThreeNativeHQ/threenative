@@ -6,6 +6,7 @@ import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.
 import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
 import { createLoadTestHarness } from "./game.js";
 import { createFoxCrowd } from "./ladder-characters.js";
+import { ladderRank } from "./ladder.js";
 import {
   type RenderMode,
   isProjectedRung,
@@ -56,7 +57,10 @@ async function main(): Promise<void> {
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
   // The characters are decoded before the harness exists, and only when a ladder rung asked for
   // them, so R3's first measured frame is a skinning frame rather than a decode frame.
-  const characters = config.modes.some((mode) => isRealisticRung(mode))
+  // Only R3 and above draw the crowd, so R1 and R2 do not pay to build 50 rigs they never attach.
+  const characters = config.modes.some(
+    (mode) => isRealisticRung(mode) && ladderRank(mode) >= ladderRank("R3"),
+  )
     ? await createFoxCrowd()
     : undefined;
   // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
@@ -143,7 +147,7 @@ async function main(): Promise<void> {
           }
           // PRD-464: the rung's own read-back, on the last warmup frame so the GPU stall the
           // read-back causes never lands inside a measured frame. See the web entry.
-          if (frameIndex === config.warmup - 1 && ladder !== undefined)
+          if (frameIndex === config.warmup - 1 && isRealisticRung(mode))
             renderCheck = await harness.probeFrame();
           const rafTimestamp = await nextFrame();
           const now = performance.now();
