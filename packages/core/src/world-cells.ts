@@ -479,14 +479,16 @@ export interface IWorldCellsLoadOptions {
   readonly gpuSceneValidate?: boolean;
   /**
    * Record every GPU-dressed main batch mesh into one `BundleGroup` and replay the bundle instead of
-   * re-walking three's per-object path for each draw. `true` wherever the GPU scene is on, because a
-   * bundle is only worth replaying when the instance count is indirect and the cull happens on the
-   * dispatch; `bundles: false` or `?tnBundles=0` turns it off, and `stats().bundle` and the
-   * `TN_WORLD_BUNDLE` line say which way a run took.
+   * re-walking three's per-object path for each draw. Off by default: measured on machinefall's
+   * map-walk, bundles gave no CPU p50/p95 gain (the main thread is mostly idle and the frame is
+   * GPU/present bound), and `?tnBundles=0` stays the off path while `bundles: true` or
+   * `?tnBundles=1`/`TN_BUNDLES=1` turns it on. `stats().bundle` and the `TN_WORLD_BUNDLE` line say
+   * which way a run took.
    *
    * The render list inside a bundle is fixed when it is recorded, so a bundled mesh is never hidden:
    * the dispatch draws zero instances for a key the camera cannot see, and an indirect draw of zero
-   * instances costs the GPU nothing. Toggling `visible` would force a re-record instead.
+   * instances costs the GPU nothing. Toggling `visible` would force a re-record instead, and the
+   * shadow node's texel gate skips a bundled mesh for the same reason.
    */
   readonly bundles?: boolean;
 }
@@ -902,6 +904,9 @@ class SharedBatch {
     mesh.instanceMatrix.needsUpdate = true;
     // A pooled mesh arrives carrying the last user's scale; nothing lives here yet.
     mesh.casterInstanceScale = 0;
+    // Nor the last user's bundle membership: a mesh is only bundled while `WorldCells#bundleIn` says
+    // so, and the shadow node reads this marker to keep its texel gate off a bundled mesh.
+    mesh.userData.tnBundled = false;
     return mesh;
   }
 
@@ -4819,6 +4824,10 @@ export class WorldCells extends Group implements IComputeDriven {
     if (shared.mesh.parent !== group) group.add(shared.mesh);
     shared.bundled = true;
     shared.mesh.visible = true;
+    // Read by `VirtualShadowNode#probe`, which must not hide a bundled mesh: the render list a bundle
+    // recorded is fixed, and `visible = false` would take the mesh out of every record after the next
+    // re-record. See `bundled`.
+    shared.mesh.userData.tnBundled = true;
   }
 
   /**
@@ -4830,6 +4839,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #bundleOut(shared: SharedBatch): void {
     if (shared.bundled === false) return;
     shared.bundled = false;
+    shared.mesh.userData.tnBundled = false;
     if (shared.mesh.parent === this.#bundle) (this.#bundle as BundleGroup).remove(shared.mesh);
     if (this.#bundle !== undefined) this.#bumpBundle();
   }
@@ -4863,6 +4873,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * or it silently leaves the group it was recorded in.
    */
   #attach(shared: SharedBatch): void {
+    // A grow replaces the mesh object, so the marker `#bundleIn` set has to follow the batch's own
+    // flag onto it. See `bundled`.
+    shared.mesh.userData.tnBundled = shared.bundled;
     if (shared.bundled === true) (this.#bundle as BundleGroup).add(shared.mesh);
     else this.add(shared.mesh);
   }

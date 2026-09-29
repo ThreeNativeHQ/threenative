@@ -1122,7 +1122,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // instance scale it actually placed (`casterInstanceScale`), and the part's geometry radius
       // times that is the diameter a shadow map really has to resolve. A mesh without it — anything
       // but a world batch — is gated on its own sphere, exactly as before.
-      if (mesh.castShadow && instanceDiameter(mesh, _sphere.radius) < gate) {
+      // A bundled mesh is skipped by the gate: its render list is fixed when the bundle records it,
+      // and a `visible = false` here would take it out of every record after the next re-record
+      // while the replay still drew it this frame. See WorldCells `bundled`.
+      if (
+        mesh.castShadow &&
+        mesh.userData.tnBundled !== true &&
+        instanceDiameter(mesh, _sphere.radius) < gate
+      ) {
         object.visible = false;
         this.#hidden.push(object);
         gateHidden += 1;

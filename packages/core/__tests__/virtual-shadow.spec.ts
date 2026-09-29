@@ -1024,6 +1024,32 @@ describe("VirtualShadowNode derived depth and caster size gate", () => {
     node.dispose();
   });
 
+  it("should gate an unbundled small caster but never a bundled one (PRD-473)", () => {
+    const { camera, light, scene, small } = shadowWorld();
+    // A twin of the small caster, bundled: a bundle's render list is frozen when it records, so the
+    // gate has to leave a bundled mesh alone while it still drops the identical unbundled one.
+    const bundled = new Mesh(small.geometry, small.material as MeshStandardMaterial);
+    bundled.position.set(0, 2, 0);
+    bundled.castShadow = true;
+    bundled.userData.tnBundled = true;
+    scene.add(bundled);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    const seen: string[] = [];
+    stubLevelRenders(node);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        seen.push(`${String(index)}:${small.visible ? "s" : "-"}${bundled.visible ? "b" : "-"}`);
+      };
+    });
+    settle(node, camera);
+    // The same 6.9 m caster the test above drops from the 640 m level: unbundled it is hidden there,
+    // bundled it stays — and in every level the tower does.
+    expect(seen).toEqual(["0:sb", "1:sb", "2:-b"]);
+    expect(small.visible && bundled.visible).toBe(true);
+    node.dispose();
+  });
+
   it("should gate a world cluster on its part's radius, not the grid square it spans (PRD-458)", () => {
     const { camera, light, scene } = shadowWorld();
     const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });

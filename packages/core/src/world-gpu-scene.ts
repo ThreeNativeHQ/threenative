@@ -802,6 +802,28 @@ function askedOff(flag: string, parameter: string, globalName: string): boolean 
 }
 
 /**
+ * Did this launch ask for `flag` to be **on**? The mirror of {@link askedOff}, for the switches that
+ * are opt-in: the environment variable, the query string and the global a test sets, and only
+ * `1` and `true` count. An unset or empty variable is the same as no variable, so an old URL that
+ * never mentioned the switch stays off.
+ */
+function askedOn(flag: string, parameter: string, globalName: string): boolean {
+  const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
+    string,
+    unknown
+  >;
+  const fromEnv = host.process?.env?.[flag];
+  if (fromEnv === "1" || fromEnv === "true") return true;
+  const query = globalThis.location?.search;
+  if (
+    typeof query === "string" &&
+    new RegExp(`[?&]${parameter}=(?:1|true)(?:&|$)`, "u").test(query)
+  )
+    return true;
+  return host[globalName] === true || host[globalName] === 1 || host[globalName] === "1";
+}
+
+/**
  * Whether the GPU-driven main pass should run on this launch, on by default where the backend can.
  *
  * @situation debug a walk whose main pass culls and LOD-selects on the GPU
@@ -822,16 +844,17 @@ export function gpuSceneRequested(): boolean {
 export const BUNDLE_FLAG = "TN_BUNDLES";
 
 /**
- * Whether world draw bundles should be recorded and replayed, on wherever the GPU scene is on.
+ * Whether world draw bundles should be recorded and replayed. Opt-in, and off by default.
  *
  * @situation debug a walk whose main batches are replayed from a recorded bundle
- * @constraint same default as the GPU scene — a bundle draws nothing a dispatch did not already
- *   decide, so it needs the indirect draw to be worth replaying — and `?tnBundles=0` or
- *   `TN_BUNDLES=0` turn it off
+ * @constraint off unless a launch asks for it: a bundle draws nothing a dispatch did not already
+ *   decide, and the measured A/B on machinefall found no CPU p50/p95 gain (the main thread is
+ *   mostly idle and the frame is GPU/present bound), so `bundles: true`, `?tnBundles=1` or
+ *   `TN_BUNDLES=1` turns it on. See PRD-473 phase 2.
  * @example WorldCells.load({ ...options, bundles: bundlesRequested() });
  */
 export function bundlesRequested(): boolean {
-  return askedOff(BUNDLE_FLAG, "tnBundles", "__tnBundles") === false;
+  return askedOn(BUNDLE_FLAG, "tnBundles", "__tnBundles");
 }
 
 /** The validation flag. */

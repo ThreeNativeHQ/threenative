@@ -252,7 +252,7 @@ afterEach(() => {
 
 describe("the main pass's draw bundles", () => {
   it("parents every GPU-dressed main mesh under one group and never re-records a settled frame", async () => {
-    const { renderer, world: cells } = await world();
+    const { renderer, world: cells } = await world({ bundles: true });
     cells.update(renderer, playerCamera());
     await flushed(cells, renderer, playerCamera());
 
@@ -284,7 +284,7 @@ describe("the main pass's draw bundles", () => {
     // The follow point walks two cells east and back, which carries `rock`'s keys out of the ring and
     // into it while the ring itself stays full. Five crossings is what the counter is allowed to move
     // for; 200 frames at one record a frame is what it must not do.
-    const { follow, renderer, world: cells } = await world({ rockInWest: true });
+    const { follow, renderer, world: cells } = await world({ bundles: true, rockInWest: true });
     cells.update(renderer, playerCamera([0, 1]));
     await flushed(cells, renderer, playerCamera([0, 1]));
     const dressed = mainKeys(cells).length;

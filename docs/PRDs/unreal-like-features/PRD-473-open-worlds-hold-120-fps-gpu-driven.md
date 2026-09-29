@@ -80,6 +80,7 @@ Risks:
 2. Cached draw commands (AC-2).
    - [ ] Every GPU-dressed main batch mesh is parented under one `BundleGroup`, so a settled walk replays its draws instead of re-walking three's per-object path. proof: `pnpm exec vitest run packages/core/__tests__/world-bundles.spec.ts`.
    - [ ] `bundleGroup.needsUpdate` moves only on a structural change, and `stats().bundle` counts the records against the keys minted and retired. proof: the same spec's 200-frame streaming walk.
+   - **Bundles: measured no gain, default off, and why.** On machinefall's map-walk, with bundles on (the old default) the trees near the camera were not drawn while their shadows were: the adaptive texel gate in `VirtualShadowNode#probe` hides sub-texel casters with `visible = false` and `#restoreHidden` puts them back, and a bundle bakes each object's `visible` into the render list it records — a re-record taken while a tree was gate-hidden lost the tree for good. A/B on the same walk also measured no CPU p50/p95 gain, because the main thread is mostly idle and the frame is GPU/present bound. So `bundles` is now opt-in (`bundles: true`, `?tnBundles=1` or `TN_BUNDLES=1`), and the gate skips a bundled mesh so opting in cannot reproduce the conflict.
 3. Impostors (AC-3) and HLOD (AC-4), in parallel: they are independent.
 4. Measure and tune (AC-5).
 
