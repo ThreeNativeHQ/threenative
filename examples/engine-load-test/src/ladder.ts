@@ -37,6 +37,18 @@ export const LADDER_BLOOM_STRENGTH = 0.5;
 export const LADDER_BLOOM_RADIUS = 0.4;
 export const LADDER_BLOOM_THRESHOLD = 0.9;
 
+/**
+ * How tall one of R3's characters stands, in metres — a real fox. The Khronos Fox is authored in
+ * centimetres (its bind-pose bounding box is ~79 units tall), and an importer takes those units
+ * literally, so an unscaled character is a 79 m statue that fills the camera and turns the rung
+ * into a measurement of overdraw rather than of skinning. Both engines therefore scale the
+ * character by this rule instead of by an import setting neither of them can be asked to change.
+ */
+export const LADDER_FOX_HEIGHT = 0.5;
+/** How far a measured height may sit from `LADDER_FOX_HEIGHT`, and from the other engine's, before
+ *  the run is a failed run: a fox that is not a fox is not the scene the ladder is measuring. */
+export const LADDER_FOX_TOLERANCE = 0.05;
+
 export interface IPointPlacement {
   x: number;
   y: number;
@@ -62,22 +74,77 @@ export function pointLightPosition(
 }
 
 /**
- * The characters stand in a 10x5 block above the lattice: inside the sun's frustum (so they are
- * shadow casters as well as skinned meshes) and inside the camera's orbit, which is what makes the
- * skinning cost a submitted cost rather than a culled one.
+ * The characters stand in a 10x5 block on the ground among the cubes: inside the sun's frustum
+ * (so they are shadow casters as well as skinned meshes) and inside the camera's orbit, which is
+ * what makes the skinning cost a submitted cost rather than a culled one. The block's spacing is
+ * the cube spacing, so a fox stands in a gap between lattice cells rather than inside one, and the
+ * y is the ground plane a `LADDER_FOX_HEIGHT` character stands on.
  */
 export function characterPlacement(index: number): IPointPlacement {
   const side = 10;
   return {
-    x: ((index % side) - (side - 1) / 2) * 2.4,
-    y: 4.5,
-    z: (Math.floor(index / side) - 2) * 2.4,
+    x: ((index % side) - (side - 1) / 2) * 2.5,
+    y: 0,
+    z: (Math.floor(index / side) - 2) * 2.5,
   };
 }
 
 /** Clip time each character starts at, so 50 copies of one clip are 50 different poses. */
 export function characterStagger(index: number, clipSeconds: number): number {
   return (index / LADDER_CHARACTERS) * clipSeconds;
+}
+
+/**
+ * The factor that turns a character of `rawHeight` imported units into a `LADDER_FOX_HEIGHT`
+ * character. Both arms measure their own import's bind-pose bounding box and call this, so a
+ * difference in how each engine imported the same bytes shows up as a difference in what they then
+ * scale to rather than as two different-sized foxes in a comparison.
+ */
+export function foxScale(rawHeight: number): number {
+  if (!Number.isFinite(rawHeight) || rawHeight <= 0)
+    throw new Error(`TN_BENCH_FOX_RAW_HEIGHT:${String(rawHeight)}`);
+  return LADDER_FOX_HEIGHT / rawHeight;
+}
+
+/**
+ * What one arm measured about R3's characters, recorded on the rung so the two engines' foxes are
+ * compared as sizes and not only as counts. `heightM` is the character root's world bounding-box
+ * height at bind pose; `screenFraction` is that box's projected height as a fraction of the
+ * viewport height, which is the only part of this either engine's camera can make larger.
+ */
+export interface IFoxMeasurement {
+  readonly heightM: number;
+  readonly screenFraction: number;
+}
+
+/**
+ * Why a rung's recorded fox is not the fox the ladder specifies, or null when it is. Fails closed:
+ * a missing, non-finite, degenerate or out-of-tolerance measurement is a reason, never a pass.
+ */
+export function foxMeasurementReason(measurement: IFoxMeasurement | undefined): string | null {
+  if (measurement === undefined) return "no character measurement recorded";
+  const { heightM, screenFraction } = measurement;
+  if (!Number.isFinite(heightM) || !Number.isFinite(screenFraction))
+    return `non-finite measurement ${String(heightM)} m / ${String(screenFraction)}`;
+  if (heightM <= 0) return `character bounding box has no height (${heightM} m)`;
+  if (screenFraction <= 0) return `character covers none of the frame (${screenFraction})`;
+  const deviation = Math.abs(heightM - LADDER_FOX_HEIGHT) / LADDER_FOX_HEIGHT;
+  if (deviation > LADDER_FOX_TOLERANCE)
+    return `character is ${heightM.toFixed(4)} m tall, ${(deviation * 100).toFixed(1)}% off the ${LADDER_FOX_HEIGHT} m of a real fox`;
+  return null;
+}
+
+/** The cross-engine half of the same rule: two foxes of the same ladder must be the same fox. */
+export function foxParityReason(
+  left: IFoxMeasurement | undefined,
+  right: IFoxMeasurement | undefined,
+): string | null {
+  if (left === undefined || right === undefined)
+    return "one engine recorded no character measurement";
+  const difference = Math.abs(left.heightM - right.heightM) / LADDER_FOX_HEIGHT;
+  if (difference > LADDER_FOX_TOLERANCE)
+    return `the two engines drew foxes ${(difference * 100).toFixed(1)}% apart in height (${left.heightM.toFixed(4)} m vs ${right.heightM.toFixed(4)} m)`;
+  return null;
 }
 
 export interface ILadderCounts {

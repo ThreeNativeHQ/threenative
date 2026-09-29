@@ -128,6 +128,7 @@ async function main(): Promise<void> {
         // rafTimestampMs without inferring it from wall time.
         const rafTimestampMs: number[] = [];
         let ladder: unknown;
+        let foxMeasurement: unknown;
         let renderCheck: unknown;
         let drawCalls = 0;
         let triangles = 0;
@@ -144,6 +145,7 @@ async function main(): Promise<void> {
             visibleObjects = stats.visibleObjects;
             // The rung's asserted scene cost, read at the same frame as the counters.
             ladder = harness.ladderCounts();
+            foxMeasurement = harness.foxMeasurement();
           }
           // PRD-464: the rung's own read-back, on the last warmup frame so the GPU stall the
           // read-back causes never lands inside a measured frame. See the web entry.
@@ -164,6 +166,7 @@ async function main(): Promise<void> {
           collapseMs,
           drawCalls,
           frameMs,
+          ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
           ...(ladder === undefined ? {} : { ladder }),
           ...(renderCheck === undefined ? {} : { renderCheck }),
           stepMs,

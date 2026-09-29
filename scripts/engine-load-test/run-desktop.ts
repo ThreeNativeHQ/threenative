@@ -3,7 +3,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { FOX_RELATIVE_PATH, FOX_SHA256 } from "../../examples/engine-load-test/src/ladder.js";
 import type { IWorkloadAxes } from "../../examples/engine-load-test/src/workload.js";
@@ -31,12 +31,87 @@ function x11Environment(): NodeJS.ProcessEnv {
   return { ...rest, SDL_VIDEODRIVER: "x11" };
 }
 
-/** Exported for the regression test that pins "returns on the marker, not on process exit". */
+/**
+ * How long a killed group is given to die politely before it is sent the signal it cannot ignore.
+ * The Godot desktop binary tears down a Vulkan swapchain and its shadow atlas on the way out; the
+ * observation is that it did it on SIGTERM and never on SIGKILL, and a run that leaves a grey
+ * window and a spinning process behind is a worse failure than a slow teardown.
+ */
+export const KILL_GRACE_MS = 3_000;
+
+/**
+ * Every process group this module has started and not yet reaped. The desktop arms are spawned
+ * `detached`, which is what makes a group signal reach a host behind an `xvfb-run` wrapper — and
+ * also what makes them survive the parent: a scoreboard run interrupted, a Ctrl-C, or a thrown
+ * error all leave the child running, reparented to init, holding a window and a GPU context for as
+ * long as it likes. This set is what a process that is going down takes with it.
+ */
+const liveGroups = new Set<number>();
+let exitHookInstalled = false;
+
+function installExitHook(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  // `exit` for the ordinary path and the three signals for the ones that do not run exit handlers.
+  const take = (): void => killAllLiveGroups("SIGKILL");
+  process.once("exit", take);
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
+    process.once(signal, () => {
+      take();
+      process.exit(1);
+    });
+}
+
+/** SIGTERM the whole group, then SIGKILL whatever is left after `KILL_GRACE_MS`. */
+export function killProcessGroup(pid: number | undefined, graceMs = KILL_GRACE_MS): void {
+  if (pid === undefined) return;
+  const signalGroup = (signal: NodeJS.Signals): void => {
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      // Already gone, or never a group leader: the direct signal still reaches the child.
+      try {
+        process.kill(pid, signal);
+      } catch {
+        /* nothing left to signal */
+      }
+    }
+  };
+  signalGroup("SIGTERM");
+  setTimeout(() => {
+    liveGroups.delete(pid);
+    signalGroup("SIGKILL");
+  }, graceMs).unref();
+}
+
+function killAllLiveGroups(signal: NodeJS.Signals): void {
+  for (const pid of liveGroups) {
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        /* nothing left to signal */
+      }
+    }
+  }
+  liveGroups.clear();
+}
+
+/**
+ * Spawns a desktop arm, waits for its report marker and takes the whole process group down on
+ * every exit: the marker, an error, a timeout, or this process going away.
+ *
+ * Exported for the regression test that pins "returns on the marker, not on process exit" and the
+ * one that pins "a timed-out arm leaves nothing running".
+ */
 export async function runCapturing(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env?: NodeJS.ProcessEnv },
+  options: { cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number },
 ): Promise<unknown> {
+  installExitHook();
   const output: string[] = [];
   const code = await new Promise<number>((resolve, reject) => {
     // Its own process group: the desktop arms run behind `xvfb-run`, so signalling the child only
@@ -47,13 +122,8 @@ export async function runCapturing(
       env: options.env ?? process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const stop = (): void => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
-    };
+    if (child.pid !== undefined) liveGroups.add(child.pid);
+    const stop = (): void => killProcessGroup(child.pid);
     // The report is complete at the END marker, so that is what this waits for — not process exit.
     // The native desktop host currently spins instead of exiting once its script finishes (it
     // reaches `_exit` and never leaves userspace), and waiting on `close` turned a finished
@@ -63,22 +133,47 @@ export async function runCapturing(
     const finish = (value: number): void => {
       if (settled) return;
       settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      stop();
       resolve(value);
     };
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      // A spawn that failed, or a host that never reached its marker, must not leave a group
+      // behind either: the failure is the moment the orphan would otherwise be created.
+      stop();
+      reject(error);
+    };
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(
+            () =>
+              fail(
+                new Error(
+                  `TN_BENCH_DESKTOP_TIMEOUT: ${command} ran past ${options.timeoutMs} ms without a run report.`,
+                ),
+              ),
+            options.timeoutMs,
+          );
     const collect = (chunk: unknown): void => {
       output.push(String(chunk));
       if (!settled && output.join("").includes(END)) {
         // Let the host print whatever trails the marker, then take the process down.
-        setTimeout(() => {
-          stop();
-          finish(0);
-        }, 1_000);
+        setTimeout(() => finish(0), 1_000);
       }
     };
     child.stdout?.on("data", collect);
     child.stderr?.on("data", collect);
-    child.once("error", reject);
-    child.once("close", (value) => finish(value ?? 1));
+    child.once("error", (error) =>
+      fail(new Error(`TN_BENCH_DESKTOP_SPAWN:${command} (${error.message})`)),
+    );
+    child.once("close", (value) => {
+      if (child.pid !== undefined) liveGroups.delete(child.pid);
+      finish(value ?? 1);
+    });
   });
   const text = output.join("");
   const start = text.indexOf(BEGIN);
@@ -126,6 +221,19 @@ function resolveFoxAsset(repoRoot: string, modes: string): string | undefined {
   if (digest !== FOX_SHA256)
     throw new Error(`TN_BENCH_FOX_HASH: ${file} is ${digest}, not the pinned ${FOX_SHA256}.`);
   return file;
+}
+
+/**
+ * How long a desktop arm may take before it is killed. The same budget the browser and device lanes
+ * use, and the same one the desktop arms used to have none of: a rung that never reaches its
+ * marker used to leave its host running for as long as the host felt like it, which is how an
+ * interrupted scoreboard ends up with grey windows and a machine that is not idle for the next run.
+ */
+export function desktopTimeoutMs(options: IDesktopLadder): number {
+  const cells =
+    options.ladder.split(",").length * options.modes.split(",").length * options.repeats;
+  // Budget half a second per frame at the top rung; the arm reports long before this fires.
+  return Math.max(600_000, cells * options.frames * 500);
 }
 
 export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): Promise<unknown> {
@@ -184,6 +292,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
     return runCapturing(binary, hostArgs, {
       cwd: repoRoot,
       env: { ...x11Environment(), DISPLAY: display },
+      timeoutMs: desktopTimeoutMs(options),
     });
   }
   return runCapturing(
@@ -192,6 +301,7 @@ export async function runTnDesktop(repoRoot: string, options: IDesktopLadder): P
     {
       cwd: repoRoot,
       env: x11Environment(),
+      timeoutMs: desktopTimeoutMs(options),
     },
   );
 }
@@ -201,7 +311,37 @@ export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder)
   const exportDir = path.join(repoRoot, "artifacts/engine-load-test/godot-desktop");
   await mkdir(exportDir, { recursive: true });
   const binary = path.join(exportDir, "load_test.x86_64");
+  installExitHook();
+  const fox = resolveFoxAsset(repoRoot, options.modes);
+  // R3's characters have to reach Godot's *importer*, not this arm: reading the glTF at run time
+  // with `GLTFDocument` corrupts the heap in this Godot build and the arm dies with its report
+  // unflushed. So the pinned bytes are staged inside the project for the export and removed after,
+  // whatever happens — a throw here must not leave a third-party asset sitting in a tracked tree.
+  if (fox !== undefined) await copyFile(fox, path.join(repoRoot, FOX_PROJECT_ASSET));
+  try {
+    return await exportAndRunGodot(repoRoot, godot, binary, options, fox);
+  } finally {
+    if (fox !== undefined) {
+      const staged = path.join(repoRoot, FOX_PROJECT_ASSET);
+      await rm(staged, { force: true });
+      await rm(`${staged}.import`, { force: true });
+    }
+  }
+}
+
+/** Where the pinned character is staged inside the Godot project, and read from as `res://`. */
+export const FOX_PROJECT_ASSET = "benchmark/godot-load-test/fox.glb";
+
+async function exportAndRunGodot(
+  repoRoot: string,
+  godot: string,
+  binary: string,
+  options: IDesktopLadder,
+  fox: string | undefined,
+): Promise<unknown> {
   await new Promise<void>((resolve, reject) => {
+    // Grouped and bounded for the same reason the arms are: an export that never returns is a Godot
+    // process holding the run rather than a run that failed cleanly.
     const child = spawn(
       godot,
       [
@@ -212,20 +352,34 @@ export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder)
         "Linux",
         binary,
       ],
-      { stdio: ["ignore", "inherit", "inherit"] },
+      { detached: true, stdio: ["ignore", "inherit", "inherit"] },
     );
-    child.once("error", (error) =>
-      reject(new Error(`TN_BENCH_GODOT_MISSING: could not run \`${godot}\` (${error.message})`)),
-    );
-    child.once("close", (code) =>
-      code === 0 ? resolve() : reject(new Error(`TN_BENCH_GODOT_EXPORT_FAILED: exit ${code}`)),
-    );
+    if (child.pid !== undefined) liveGroups.add(child.pid);
+    const timer = setTimeout(() => {
+      killProcessGroup(child.pid);
+      reject(new Error(`TN_BENCH_GODOT_EXPORT_TIMEOUT: ${godot} exported for over 10 minutes.`));
+    }, 600_000);
+    timer.unref();
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      killProcessGroup(child.pid);
+      reject(new Error(`TN_BENCH_GODOT_MISSING: could not run \`${godot}\` (${error.message})`));
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (child.pid !== undefined) liveGroups.delete(child.pid);
+      if (code !== 0) {
+        killProcessGroup(child.pid);
+        reject(new Error(`TN_BENCH_GODOT_EXPORT_FAILED: exit ${code}`));
+        return;
+      }
+      resolve();
+    });
   });
 
   // The window size is the surface both engines are given, so it travels on the same query the
   // rest of the ladder does. The 3D viewport inside it is a per-rung decision (PRD-464's R5 is the
   // rung that draws at 1920x1080), and the rung records that separately.
-  const fox = resolveFoxAsset(repoRoot, options.modes);
   const query = new URLSearchParams({
     frames: String(options.frames),
     height: String(options.height),
@@ -238,5 +392,6 @@ export async function runGodotDesktop(repoRoot: string, options: IDesktopLadder)
   }).toString();
   return runCapturing(binary, ["--rendering-driver", "vulkan", "--", `--query=${query}`], {
     cwd: repoRoot,
+    timeoutMs: desktopTimeoutMs(options),
   });
 }

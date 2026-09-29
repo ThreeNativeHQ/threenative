@@ -5,6 +5,7 @@ import { pass } from "three/tsl";
 // device arms of Phase 4 can drive the same file.
 import {
   ACESFilmicToneMapping,
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   DirectionalLight,
@@ -24,6 +25,7 @@ import {
   RenderTarget,
   Scene,
   Vector2,
+  Vector3,
   WebGPURenderer,
 } from "three/webgpu";
 // Type-only, and that is the point: `plain-three-webgpu` drives this same harness for the same
@@ -37,6 +39,7 @@ import type {
   SceneRenderProjection,
 } from "../../../packages/core/src/renderProjection.js";
 import {
+  type IFoxMeasurement,
   type IFrameStats,
   type ILadderCounts,
   LADDER_BLOOM_RADIUS,
@@ -111,6 +114,12 @@ export interface ILoadTestRung {
  * factory asking for R3 fails closed at `setRung` rather than quietly measuring R1.
  */
 export interface ICharacterCrowd {
+  /**
+   * The one factor every character's root is scaled by, measured off the imported bind pose. The
+   * Khronos Fox is authored in centimetres, so an unscaled import is a 79 m statue; both engines
+   * apply this so R3 measures skinning rather than a camera full of overdraw.
+   */
+  readonly scale: number;
   /** How many skinned meshes the crowd actually built, which is what the rung asserts. */
   readonly skinnedMeshes: number;
   dispose(): void;
@@ -137,6 +146,12 @@ export interface ILoadTestHarness {
   dispose(): void;
   /** The rung's asserted counts, or undefined outside the realistic-scene ladder. */
   ladderCounts(): ILadderCounts | undefined;
+  /**
+   * PRD-464: what one of R3's characters measures in the world and on screen, or undefined on a rung
+   * with no characters. The parser gates on it, so a ladder whose foxes are not the specified size
+   * fails instead of comparing two differently-sized scenes.
+   */
+  foxMeasurement(): IFoxMeasurement | undefined;
   positionHash: string;
   /**
    * PRD-464: render the rung's current frame into a readable target and report what the pixels say.
@@ -377,6 +392,7 @@ export async function createLoadTestHarness(
   const dummy = new Object3D();
   const instanceMatrix = new Matrix4();
   const drawingBufferSize = new Vector2();
+  const projectedScratch = new Vector3();
   let state: IRungState | undefined;
 
   // PRD-464's ladder bits. They sit on the harness rather than in a rung's teardown list because
@@ -437,6 +453,10 @@ export async function createLoadTestHarness(
         const root = roots[index] as Object3D;
         const placement = characterPlacement(index);
         root.position.set(placement.x, placement.y, placement.z);
+        // Uniform, and before the placement is read back: the glTF is authored in centimetres, so an
+        // unscaled character is a 79 m statue. `ladder-characters.ts` measured the factor off the
+        // imported bind pose and the parser reads the resulting height back off the scene.
+        root.scale.setScalar(characters.scale);
         root.traverse((object) => {
           object.castShadow = true;
           object.frustumCulled = false;
@@ -490,6 +510,29 @@ export async function createLoadTestHarness(
       shadowCasters,
       skinnedMeshes,
       tonemapping: renderer.toneMapping === ACESFilmicToneMapping ? 1 : 0,
+    };
+  };
+
+  /**
+   * What the first character of R3 measures: its world bounding-box height, and that box's height on
+   * screen. Both are read off the built scene at the camera's live pose, so a camera that stopped
+   * looking at the crowd shows up as a zero rather than as a plausible number. The first character
+   * stands at the middle of the block's x row, so it is on screen from every orbit angle.
+   */
+  const readFoxMeasurement = (): IFoxMeasurement | undefined => {
+    const first = characterRoots[0];
+    if (first === undefined) return undefined;
+    const bounds = new Box3().setFromObject(first, true);
+    if (bounds.isEmpty()) return { heightM: 0, screenFraction: 0 };
+    // The box's top and bottom at its own centre x, projected through the live camera. NDC y spans
+    // -1..1, so half the difference is the fraction of the viewport height the fox covers.
+    const centreX = (bounds.min.x + bounds.max.x) / 2;
+    const centreZ = (bounds.min.z + bounds.max.z) / 2;
+    const ndcTop = projectedScratch.set(centreX, bounds.max.y, centreZ).project(camera).y;
+    const ndcBottom = projectedScratch.set(centreX, bounds.min.y, centreZ).project(camera).y;
+    return {
+      heightM: bounds.max.y - bounds.min.y,
+      screenFraction: Math.abs(ndcTop - ndcBottom) / 2,
     };
   };
 
@@ -733,6 +776,7 @@ export async function createLoadTestHarness(
     get positionHash() {
       return positionHash(state?.placements ?? []);
     },
+    foxMeasurement: readFoxMeasurement,
     render: renderFrame,
     /**
      * The read-back `examples/engine-load-test/src/skinned-crowd.ts` already uses for its own

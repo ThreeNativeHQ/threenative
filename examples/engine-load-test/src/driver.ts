@@ -22,7 +22,12 @@ import {
   isBenchmarkWorkloadModule,
   sha256,
 } from "./identity.js";
-import { type IFrameStats, type ILadderCounts, ladderRank } from "./ladder.js";
+import {
+  type IFoxMeasurement,
+  type IFrameStats,
+  type ILadderCounts,
+  ladderRank,
+} from "./ladder.js";
 import {
   FRAMES_PER_RUNG,
   type IWorkloadAxes,
@@ -70,6 +75,8 @@ export interface IRungReport {
   frameMs: number[];
   /** Frames the timed window covered, which is `frames` past the untimed warmup. */
   measuredFrames: number;
+  /** PRD-464: how big R3's characters came out, so the two engines' foxes are compared as sizes. */
+  foxMeasurement?: IFoxMeasurement;
   /** PRD-464: the rung's asserted scene cost, read off the built scene at the mid-measurement frame. */
   ladder?: ILadderCounts;
   /** PRD-464: what the rung's own read-back frame said about itself, sampled on the last warmup frame. */
@@ -266,6 +273,7 @@ export async function measureRung(
   let triangles = 0;
   let visibleObjects = 0;
   let ladder: ILadderCounts | undefined;
+  let foxMeasurement: IFoxMeasurement | undefined;
   let renderCheck: IFrameStats | undefined;
   // The completed-work window's CPU half: every measured update+render span, summed. Kept as its own
   // diagnostic rather than folded into the primary metric — the wall window is what the PRD measures,
@@ -305,6 +313,7 @@ export async function measureRung(
       // Read at the same frame as the counters: the rung's asserted scene cost is a property of
       // the scene it is measuring, and a rung that lost it mid-window must not report a number.
       ladder = harness.ladderCounts();
+      foxMeasurement = harness.foxMeasurement();
     }
     // PRD-464: the ladder's own proof that the rung drew something. Taken on the last warmup frame,
     // outside the window — the read-back stalls the GPU, and a stalled frame inside the window would
@@ -341,6 +350,7 @@ export async function measureRung(
     drainPolicy: DRAIN_POLICY,
     frameMs,
     measuredFrames,
+    ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
     ...(ladder === undefined ? {} : { ladder }),
     ...(renderCheck === undefined ? {} : { renderCheck }),
     stageReport,

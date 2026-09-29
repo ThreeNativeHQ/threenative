@@ -36,7 +36,7 @@ import {
   renderPerformanceCheck,
 } from "./report.js";
 import { runAndroidArm } from "./run-android.js";
-import { runGodotDesktop, runTnDesktop } from "./run-desktop.js";
+import { desktopTimeoutMs, runGodotDesktop, runTnDesktop } from "./run-desktop.js";
 import { exportGodotWeb } from "./run-godot.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -123,13 +123,6 @@ function query(options: ILadderOptions): string {
   return params.toString();
 }
 
-function timeoutFor(options: ILadderOptions): number {
-  const cells =
-    options.ladder.split(",").length * options.modes.split(",").length * options.repeats;
-  // Budget half a second per frame at the top rung; the arm reports long before this fires.
-  return Math.max(600_000, cells * options.frames * 500);
-}
-
 async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
   const server = startProcess(
     "pnpm",
@@ -149,7 +142,7 @@ async function runTnWeb(options: ILadderOptions): Promise<IRunReport> {
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/`, 120_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/?${query(options)}`,
     });
     return parseRunReport(raw);
@@ -165,7 +158,7 @@ async function runTnWebProduction(options: ILadderOptions): Promise<IRunReport> 
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/index.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[tn-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/index.html?${query(options)}`,
     });
     return assertBrowserPlacements(parseRunReport(raw));
@@ -218,7 +211,7 @@ async function runPlainThreeWebProduction(options: ILadderOptions): Promise<IRun
     await waitForUrl(`http://127.0.0.1:${TN_PORT}/plain.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[plain-three-webgpu] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${TN_PORT}/plain.html?${query(options)}`,
     });
     return assertPlainThreePilot(parseRunReport(raw));
@@ -234,7 +227,7 @@ async function runGodotWeb(options: ILadderOptions): Promise<IRunReport> {
     await waitForUrl(`http://127.0.0.1:${GODOT_PORT}/index.html`, 60_000);
     const raw = await driveBenchmarkPage({
       onConsole: (text) => process.stderr.write(`[godot-web] ${text}\n`),
-      timeoutMs: timeoutFor(options),
+      timeoutMs: desktopTimeoutMs(options),
       url: `http://127.0.0.1:${GODOT_PORT}/index.html?${query(options)}`,
     });
     return parseRunReport(raw);
@@ -309,7 +302,7 @@ async function runRequestedArm(arm: string, options: ILadderOptions): Promise<IR
         ...options,
         allowEmulator: process.argv.includes("--allow-emulator"),
         allowLowBattery: process.argv.includes("--allow-low-battery"),
-        timeoutMs: timeoutFor(options),
+        timeoutMs: desktopTimeoutMs(options),
       }),
     );
   }

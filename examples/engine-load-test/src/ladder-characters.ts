@@ -2,12 +2,12 @@
 // bytes and `SkeletalMesh3D` — the `AnimationPlayer` subclass that clones a rig safely — for the
 // 50 instances. This module is imported by the ThreeNative arms only, never by `plain.ts`, so the
 // control arm's served graph still contains no framework code.
-import type { AnimationClip } from "three";
+import { type AnimationClip, Box3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createAssetLoader } from "../../../packages/core/src/assets.js";
 import { SkeletalMesh3D } from "../../../packages/core/src/skeletal-mesh.js";
 import type { ICharacterCrowd } from "./game.js";
-import { LADDER_CHARACTERS, LADDER_CLIP, characterStagger } from "./ladder.js";
+import { LADDER_CHARACTERS, LADDER_CLIP, characterStagger, foxScale } from "./ladder.js";
 
 // Stamped by `vite.config.ts` from the copy pinned in
 // `benchmark/engine-load-test/sources.lock.json`, whose digest the runner checks before the build.
@@ -48,7 +48,16 @@ export async function createFoxCrowd(): Promise<ICharacterCrowd> {
     players.push(character);
     staggers.push(characterStagger(index, clipSeconds));
   }
+  // One scale for the whole crowd, measured off the first instance before it is posed: the Khronos
+  // Fox is authored in centimetres, so a raw import is a 79 m statue rather than a fox, and the rung
+  // would be measuring a camera full of overdraw instead of skinning. Every instance gets the same
+  // factor, and the runner's gate reads the measured height back off the scene rather than trusting
+  // this arithmetic. `game.ts` applies it, because the placement is where the scale belongs.
+  const probe = players[0] as SkeletalMesh3D;
+  const raw = new Box3().setFromObject(probe.root, true);
+  if (raw.isEmpty()) throw new Error("TN_BENCH_FOX_EMPTY_BOUNDS");
   return {
+    scale: foxScale(raw.max.y - raw.min.y),
     skinnedMeshes: players.length,
     dispose: () => {
       for (const character of players) character.dispose();

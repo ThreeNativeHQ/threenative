@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import fs, { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
@@ -16,7 +17,14 @@ import {
   hashWorkloadModuleGraph,
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
-import { expectedLadderCounts } from "../../examples/engine-load-test/src/ladder.js";
+import {
+  LADDER_FOX_HEIGHT,
+  characterPlacement,
+  expectedLadderCounts,
+  foxMeasurementReason,
+  foxParityReason,
+  foxScale,
+} from "../../examples/engine-load-test/src/ladder.js";
 import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
@@ -55,7 +63,7 @@ import {
   summarize,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -2296,8 +2304,14 @@ describe("the realistic-scene ladder gate", () => {
     overrides: Record<string, unknown> = {},
   ): Record<string, unknown> {
     return {
-      drawCalls: 4097,
+      // L3's projection folds the 4,096 cubes into a handful of instanced draws; R3 adds one draw
+      // per skinned fox on top. Anything near 4,097 would fail the L2 batch rule in `compare`.
+      drawCalls: mode === "R1" || mode === "R2" ? 8 : 58,
       frameMs: series(12),
+      // R1 and R2 build no characters, so a measurement on them would be a shape error below.
+      ...(mode === "R1" || mode === "R2"
+        ? {}
+        : { foxMeasurement: { heightM: LADDER_FOX_HEIGHT, screenFraction: 0.041 } }),
       ladder: expectedLadderCounts(mode, OBJECT_COUNT),
       mode,
       objectCount: OBJECT_COUNT,
@@ -2315,7 +2329,10 @@ describe("the realistic-scene ladder gate", () => {
     };
   }
 
-  function ladderReport(rungOverrides: Record<string, unknown> = {}): Record<string, unknown> {
+  function ladderReport(
+    rungOverrides: Record<string, unknown> = {},
+    mode: "R1" | "R2" | "R3" | "R4" | "R5" = "R1",
+  ): Record<string, unknown> {
     return {
       arm: "tn-web",
       build: { notes: "", type: "release" },
@@ -2323,14 +2340,14 @@ describe("the realistic-scene ladder gate", () => {
       display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
       driver: { adapter: "test adapter", renderer: "test renderer" },
       engine: { name: "threenative", version: "workspace" },
-      rungs: [ladderRung("R1", rungOverrides)],
+      rungs: [ladderRung(mode, rungOverrides)],
     };
   }
 
   it("accepts a rung whose counts and read-back frame both say what the rung claims", () => {
     for (const mode of ["R1", "R2", "R3", "R4", "R5"] as const) {
       const parsed = parseRunReport(
-        ladderReport({ mode, ladder: expectedLadderCounts(mode, OBJECT_COUNT) }),
+        ladderReport({ mode, ladder: expectedLadderCounts(mode, OBJECT_COUNT) }, mode),
       );
       expect(parsed.rungs[0]?.ladder).toEqual(expectedLadderCounts(mode, OBJECT_COUNT));
       expect(parsed.rungs[0]?.renderCheck?.luminanceStdDev).toBe(0.081);
@@ -2354,6 +2371,96 @@ describe("the realistic-scene ladder gate", () => {
         ladderReport({ ladder: { ...expectedLadderCounts("R1", OBJECT_COUNT), pointLights: "8" } }),
       ),
     ).toThrow(/TN_BENCH_LADDER_COUNTS/u);
+  });
+
+  it("refuses a character rung whose fox is not a fox", () => {
+    // The bug this exists for: the Khronos Fox is authored in centimetres, so an unscaled import is
+    // a 79 m statue. Every count still matched, the frame was still non-blank, and the published
+    // number was a measurement of a camera full of overdraw rather than of skinning.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 79.03, screenFraction: 0.9 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*79/u);
+    // The tolerance is 5%, so 2% off passes and 6% off does not.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.53, screenFraction: 0.04 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE/u);
+    const passes = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.51, screenFraction: 0.04 } }, "R3"),
+    );
+    expect(passes.rungs[0]?.foxMeasurement?.heightM).toBe(0.51);
+    // A character rung that recorded no size is unmeasured, and a size with no height is nonsense.
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: undefined }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_FIELD/u,
+    );
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5 } }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE.*screenFraction/u,
+    );
+    // A character covering none of the frame was culled or off-camera: the skinning was never drawn.
+    expect(() =>
+      parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0 } }, "R3")),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*none of the frame/u);
+    // A size on a rung with no characters is a shape error: R1 and R2 build no fox.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0.04 } }, "R1"),
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+  });
+
+  it("refuses a comparison whose two engines drew different-sized foxes", () => {
+    // Neither per-arm gate can see this: 0.476 m and 0.524 m are each inside the 5% band around the
+    // target, and the 9.6% between them is only visible once both are in hand.
+    const left = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.476, screenFraction: 0.04 } }, "R3"),
+    );
+    const agree = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.48, screenFraction: 0.04 }, repeat: 1 }, "R3"),
+    );
+    expect(checkEquivalence(left, agree)).toEqual([]);
+    const apart = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.524, screenFraction: 0.04 } }, "R3"),
+    );
+    const failures = checkEquivalence(left, apart);
+    expect(failures.map((failure) => failure.field).join(" ")).toMatch(/foxMeasurement/u);
+    expect(() => compare(left, apart)).toThrow(/TN_BENCH_NOT_EQUIVALENT/u);
+  });
+
+  it("reads a 0.5 m character out of any import that reports its own height", () => {
+    // The factor is measured, not hardcoded, so an importer that changes its units changes the
+    // answer rather than quietly leaving a 79 m fox in a scene published as 0.5 m ones.
+    expect(foxScale(79.028_933)).toBeCloseTo(0.5 / 79.028_933, 12);
+    expect(() => foxScale(0)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(() => foxScale(Number.NaN)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(foxMeasurementReason({ heightM: 0.5, screenFraction: 0.04 })).toBeNull();
+    expect(foxMeasurementReason(undefined)).toMatch(/no character measurement/u);
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.51, screenFraction: 0.04 },
+      ),
+    ).toBeNull();
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.6, screenFraction: 0.04 },
+      ),
+    ).toMatch(/apart in height/u);
+  });
+
+  it("puts the characters on the ground, on the cube grid, identically in both engines", () => {
+    // The 10x5 block is spaced at `CUBE_SPACING` so a fox stands in a gap between lattice cells,
+    // and its y is the ground: the old 4.5 m placement put a centimetre-authored fox at head height.
+    for (const index of [0, 9, 10, 49]) {
+      expect(characterPlacement(index).y).toBe(0);
+    }
+    expect(characterPlacement(0).x).toBe(-11.25);
+    expect(characterPlacement(9).x).toBe(11.25);
+    expect(characterPlacement(0).z).toBe(-5);
+    expect(characterPlacement(49).z).toBe(5);
   });
 
   it("refuses a rung that drew nothing, and a rung that has no read-back at all", () => {
@@ -2629,6 +2736,35 @@ describe("engine load test desktop capture", () => {
       runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
     ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
+
+  it("should kill a host that never reaches its marker, and leave nothing running", async () => {
+    // The failure this exists for: a smoke run that never finished left `load_test.x86_64`
+    // reparented to init and burning 75% of a core for half an hour, which showed up as a grey
+    // window on the display and as load on every run after it. A timed-out arm must take its whole
+    // process group down: the fixture is a shell, a background sleeper and a foreground sleep, so
+    // signalling only the direct child would leave the sleeper behind — the orphan itself.
+    const pidFile = path.join(os.tmpdir(), `tn-bench-orphan-${process.pid}.pid`);
+    fs.rmSync(pidFile, { force: true });
+    const script = `sleep 300 & echo $! > ${pidFile}; sleep 300`;
+    await expect(
+      runCapturing("sh", ["-c", script], { cwd: process.cwd(), timeoutMs: 1_500 }),
+    ).rejects.toThrow(/TN_BENCH_DESKTOP_TIMEOUT/);
+    const pid = Number(fs.readFileSync(pidFile, "utf8").trim());
+    // Past the SIGTERM grace, so a process that ignored SIGTERM would already have been SIGKILLed.
+    await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 2_000));
+    expect(Number.isInteger(pid)).toBe(true);
+    // `kill -0` on a surviving, reparented process is the orphan. It throws ESRCH only when the
+    // process is gone, which is the observation this whole test exists to make.
+    expect(() => process.kill(pid, 0)).toThrow();
+    fs.rmSync(pidFile, { force: true });
+  }, 30_000);
+
+  it("should give a host a grace period to die before signalling it the hard way", () => {
+    // Godot tears down a Vulkan swapchain and a shadow atlas on the way out, and the observation is
+    // that it did it on SIGTERM and never on SIGKILL. A group stopped with SIGKILL alone skips that
+    // teardown, so the grace is the difference between a clean exit and a grey window.
+    expect(KILL_GRACE_MS).toBeGreaterThanOrEqual(1_000);
+  });
 });
 
 describe("the performance baseline gate", () => {
@@ -3160,6 +3296,7 @@ describe("the completed-work measurement boundary", () => {
       collapseMs: 0,
       collapseStatus: () => "pending",
       dispose: () => {},
+      foxMeasurement: () => undefined,
       ladderCounts: () => undefined,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",

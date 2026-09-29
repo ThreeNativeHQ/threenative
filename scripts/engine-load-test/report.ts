@@ -4,12 +4,16 @@
 
 import {
   FRAME_STAT_KEYS,
+  type IFoxMeasurement,
   type IFrameStats,
   type ILadderCounts,
   LADDER_COUNT_KEYS,
   type RealisticRung,
   expectedLadderCounts,
+  foxMeasurementReason,
+  foxParityReason,
   ladderCountDiff,
+  ladderRank,
 } from "../../examples/engine-load-test/src/ladder.js";
 import {
   DEFAULT_AXES,
@@ -84,6 +88,12 @@ export interface IRunReportRung {
   drainPolicy?: string;
   drawCalls: number;
   frameMs: number[];
+  /**
+   * PRD-464: how big R3's characters came out in this engine's own import — the world bounding-box
+   * height of one of them and the share of the viewport it covers. Gated by `foxMeasurementReason`
+   * below, so a run carrying one has already proved its foxes are the size the ladder specifies.
+   */
+  foxMeasurement?: IFoxMeasurement;
   /** Frames the timed window covered, which the driver also writes as `frameMs.length`. */
   measuredFrames?: number;
   /**
@@ -594,6 +604,7 @@ export function parseRunReport(value: unknown): IRunReport {
     // no counts, or counts that do not match the rung, is a failed run and not a row.
     const objectCount = requireNumber(rung, "objectCount", path);
     let ladder: ILadderCounts | undefined;
+    let foxMeasurement: IFoxMeasurement | undefined;
     let renderCheck: IFrameStats | undefined;
     if (isRealisticRung(mode as RenderMode)) {
       // Read exactly the keys the rung spec asserts and nothing else: `ladderCountDiff` compares
@@ -645,16 +656,41 @@ export function parseRunReport(value: unknown): IRunReport {
           `${path} mode ${mode} read back a blank or uniform frame: ${blank}`,
         );
       renderCheck = readBack;
-    } else if (rung.ladder !== undefined || rung.renderCheck !== undefined) {
+      // A rung with characters must also say how big they came out. The Khronos Fox is authored in
+      // centimetres, and an unscaled import is a 79 m statue: the counts still match, the frame is
+      // still non-blank, and the number published would be a measurement of overdraw. A rung above
+      // R3 that recorded no measurement, or recorded one outside `LADDER_FOX_TOLERANCE` of
+      // `LADDER_FOX_HEIGHT`, is a failed run.
+      if (ladderRank(mode as RealisticRung) >= ladderRank("R3")) {
+        const recordedFox = requireObject(rung.foxMeasurement, `${path}.foxMeasurement`);
+        foxMeasurement = {
+          heightM: requireNumber(recordedFox, "heightM", `${path}.foxMeasurement`),
+          screenFraction: requireNumber(recordedFox, "screenFraction", `${path}.foxMeasurement`),
+        };
+        const wrongFox = foxMeasurementReason(foxMeasurement);
+        if (wrongFox !== null)
+          throw new BenchError("TN_BENCH_FOX_SIZE", `${path} mode ${mode}: ${wrongFox}`);
+      } else if (rung.foxMeasurement !== undefined) {
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${path}.foxMeasurement is only meaningful on a rung with characters, not on ${mode}`,
+        );
+      }
+    } else if (
+      rung.ladder !== undefined ||
+      rung.renderCheck !== undefined ||
+      rung.foxMeasurement !== undefined
+    ) {
       throw new BenchError(
         "TN_BENCH_BAD_SHAPE",
-        `${path}.ladder and .renderCheck are only meaningful on a realistic-scene rung, not on ${mode}`,
+        `${path}.ladder, .renderCheck and .foxMeasurement are only meaningful on a realistic-scene rung, not on ${mode}`,
       );
     }
     return {
       ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
+      ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
       ...(ladder === undefined ? {} : { ladder }),
       ...(renderCheck === undefined ? {} : { renderCheck }),
       ...timingSeries,
@@ -1487,12 +1523,19 @@ function drawCallFailure(
         };
       }
     }
-    const ratio =
-      Math.max(left.drawCalls, right.drawCalls) /
-      Math.max(1, Math.min(left.drawCalls, right.drawCalls));
-    if (ratio > 1.25) {
+    return ratioFailure(left, right, mode, objectCount);
+  }
+  // L2's own claim is that the batch is small enough to be comparable. R1-R5 are L3's authoring —
+  // the projection folds the cubes and the rungs add real draws on top of it, R3 by one per skinned
+  // character — so the ceiling belongs to L2 alone, and the rungs get the same ratio guard L3 does.
+  if (mode === "L2") {
+    if (
+      left.drawCalls > 8 ||
+      right.drawCalls > 8 ||
+      Math.abs(left.drawCalls - right.drawCalls) > 4
+    ) {
       return {
-        field: "drawCalls",
+        field: "drawCalls (L2 must be a small, comparable batch)",
         left: String(left.drawCalls),
         right: String(right.drawCalls),
         rung: rungKey(mode, objectCount),
@@ -1500,9 +1543,22 @@ function drawCallFailure(
     }
     return undefined;
   }
-  if (left.drawCalls > 8 || right.drawCalls > 8 || Math.abs(left.drawCalls - right.drawCalls) > 4) {
+  return ratioFailure(left, right, mode, objectCount);
+}
+
+/** Two arms of the same batched rung drawing wildly different counts are not the same scene. */
+function ratioFailure(
+  left: IRungSummary,
+  right: IRungSummary,
+  mode: RenderMode,
+  objectCount: number,
+): IEquivalenceFailure | undefined {
+  const ratio =
+    Math.max(left.drawCalls, right.drawCalls) /
+    Math.max(1, Math.min(left.drawCalls, right.drawCalls));
+  if (ratio > 1.25) {
     return {
-      field: "drawCalls (L2 must be a small, comparable batch)",
+      field: "drawCalls",
       left: String(left.drawCalls),
       right: String(right.drawCalls),
       rung: rungKey(mode, objectCount),
@@ -1657,8 +1713,38 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
       if (delta > 0.05)
         push("triangles (>5% apart)", leftSummary.triangles, rightSummary.triangles, key);
     }
+
+    // PRD-464: on a rung with characters, the two engines must have drawn the same fox. Each arm
+    // already proved its own against `LADDER_FOX_HEIGHT`; this is the half neither can check alone,
+    // because a fox that is 0.5 m on one side and 0.52 m on the other passes both per-arm gates
+    // and is still two different scenes. Measured per rung, so a rung that lost the measurement
+    // names itself rather than failing the whole comparison anonymously.
+    if (isRealisticRung(leftSummary.mode) && ladderRank(leftSummary.mode) >= ladderRank("R3")) {
+      const foxFailure = foxFailureFor(key, leftRungs, rightRungs);
+      if (foxFailure !== undefined) failures.push(foxFailure);
+    }
   }
   return failures;
+}
+
+/** The one fox-parity failure a rung can carry, or undefined when both arms agree. */
+function foxFailureFor(
+  key: string,
+  leftRungs: readonly IRunReportRung[],
+  rightRungs: readonly IRunReportRung[],
+): IEquivalenceFailure | undefined {
+  const measure = (rungs: readonly IRunReportRung[]): IFoxMeasurement | undefined =>
+    rungs.find((rung) => rung.foxMeasurement !== undefined)?.foxMeasurement;
+  const leftFox = measure(leftRungs);
+  const rightFox = measure(rightRungs);
+  const reason = foxParityReason(leftFox, rightFox);
+  if (reason === null) return undefined;
+  return {
+    field: `foxMeasurement (${reason})`,
+    left: leftFox === undefined ? "absent" : `${leftFox.heightM.toFixed(4)} m`,
+    right: rightFox === undefined ? "absent" : `${rightFox.heightM.toFixed(4)} m`,
+    rung: key,
+  };
 }
 
 export function compare(left: IRunReport, right: IRunReport): IComparison {
