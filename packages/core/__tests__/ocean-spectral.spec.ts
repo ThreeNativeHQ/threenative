@@ -315,17 +315,23 @@ describe("SpectralOcean options", () => {
 interface IOceanRendererControl {
   readonly renderer: IRendererLike;
   readonly dispatched: unknown[];
+  /** How many `compute()` calls carried them: three submits one command buffer per call. */
+  readonly computeCalls: () => number;
   readonly readbackCalls: number;
   land(bytes: Float32Array): void;
 }
 
 function oceanRenderer(): IOceanRendererControl {
   const dispatched: unknown[] = [];
+  let computeCalls = 0;
   const pending: ((bytes: ArrayBuffer) => void)[] = [];
   const canvas = new EventTarget() as HTMLCanvasElement;
   const renderer = {
     compileAsync: async () => undefined,
-    compute: (node: unknown) => dispatched.push(node),
+    compute: (node: unknown) => {
+      computeCalls += 1;
+      dispatched.push(...(Array.isArray(node) ? node : [node]));
+    },
     dispose: () => undefined,
     domElement: canvas,
     info: {},
@@ -353,6 +359,7 @@ function oceanRenderer(): IOceanRendererControl {
   return {
     renderer,
     dispatched,
+    computeCalls: () => computeCalls,
     get readbackCalls() {
       return pending.length;
     },
@@ -375,6 +382,9 @@ describe("SpectralOcean lifetime", () => {
     // Two cascades, each: evolve + row reverse + 3 row stages + column reverse + 3 column stages
     // + unpack = 10 passes. Then one height pass shared across both.
     expect(control.dispatched).toHaveLength(2 * 10 + 1);
+    // ...in one `compute()`: three submits a command buffer per call, so a call per pass was 21
+    // submits a frame, and a submit is where the GPU process makes the renderer wait.
+    expect(control.computeCalls()).toBe(1);
     expect(ocean.steps).toBe(1);
     // Warmup covers every pass, so none of them compiles inside a frame the player is watching.
     expect(ocean.warmupNodes).toHaveLength(2 * 10 + 1);
