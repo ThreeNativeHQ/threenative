@@ -103,6 +103,11 @@ lifecycle.
 - **Built for agents.** A searchable capability manifest ships with the library and is exposed over
   MCP, so an authoring agent finds what already exists instead of rewriting it.
 
+> [!TIP]
+> **Picking the model that writes the scene.** [threejseval](https://threejseval.com/ranking) ranks
+> AI coding agents on Three.js work — one prompt, blind arena votes on the scenes they build, Elo
+> with cost and tokens beside each entry.
+
 ## Templates
 
 `pnpm create threenative my-game --template <name>`
