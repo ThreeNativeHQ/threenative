@@ -3,8 +3,6 @@ import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three
 import { describe, expect, it } from "vitest";
 import { preparePlayerConventions as prepareRpgConventions } from "../templates/action-rpg/src/conventions.js";
 import { createSword } from "../templates/action-rpg/src/render/props.js";
-import { prepareCommanderConventions } from "../templates/defense/src/conventions.js";
-import { commander } from "../templates/defense/src/render/shapes.js";
 import { preparePlayerConventions as prepareMinimalConventions } from "../templates/minimal/src/conventions.js";
 import { createFox } from "../templates/platformer/src/render/fox.js";
 import { prepareVehicleConventions } from "../templates/racing/src/conventions.js";
@@ -61,14 +59,6 @@ describe("generated template conventions", () => {
     const { scene } = templatedRig(["Idle_Loop"]);
 
     expect(prepareRpgConventions(scene).attachedBone).toBe("");
-  });
-
-  it("grounds and scales the defense commander", () => {
-    const model = commander();
-    const conventions = prepareCommanderConventions(model);
-
-    expectFactor(conventions.normaliseFactor);
-    expectGrounding(model, conventions);
   });
 
   it("measures disabled grounding while scaling the minimal player", () => {

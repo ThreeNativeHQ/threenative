@@ -1,0 +1,98 @@
+{
+  "name": "tower-defense-strike",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "approach",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-strike",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fire",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.36778,
+          "y": 0.36354
+        }
+      ],
+      "waitTicks": 2,
+      "release": false,
+      "screenshot": "strike"
+    },
+    {
+      "kind": "input",
+      "label": "lift",
+      "pointers": [],
+      "waitTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "strikeArmed",
+        "atSteps": [
+          {
+            "label": "arm-strike",
+            "equals": true
+          },
+          {
+            "label": "after",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "strikeCooldown",
+        "gte": 20,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 2,
+        "changed": true
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}

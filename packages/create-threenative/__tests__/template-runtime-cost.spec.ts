@@ -226,7 +226,7 @@ function sceneContext(
       justPressed: () => false,
       justReleased: () => false,
       pressed: () => false,
-      raw: { pointers: new Map() },
+      raw: { keys: new Set<string>(), pointer: { position: new Vector2() }, pointers: new Map() },
       vector: (name: string) => (name === "look" ? lookVector : inputVector),
     },
     physics,
@@ -284,7 +284,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     const racingLap = await import("../templates/racing/src/track/Lap.js");
     const racingSector = await import("../templates/racing/src/track/TrackSector.js");
     const actionRpg = await import("../templates/action-rpg/src/entities/Enemy.js");
-    const defense = await import("../templates/defense/src/attackers/Attacker.js");
+    const defense = await import("../templates/tower-defense/src/enemies/Enemy.js");
     const core = await import("../../core/src/index.js");
 
     for (const [name, value] of Object.entries({
@@ -294,7 +294,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       "racing rankRacers": racing.rankRacers,
       "racing TrackSector": racingSector.TrackSector,
       "action-RPG Enemy": actionRpg.Enemy,
-      "defense Attacker": defense.Attacker,
+      "tower-defense Enemy": defense.Enemy,
       "core PathFollow3D": core.PathFollow3D,
     })) {
       if (value === undefined) throw new Error(`Malformed ${name} fixture: export is missing.`);
@@ -461,19 +461,20 @@ describe("generated template ordinary-frame runtime cost", () => {
       ).toEqual({ clones: 0, constructors: 0 });
       enemy.dispose();
 
-      const attacker = new defense.Attacker({
-        id: "attacker.pool.0",
-        lateralOffset: 0.17,
+      const walker = new defense.Enemy({
+        id: "enemy.skitter.0",
+        kind: "skitter",
         onDefeated: () => undefined,
         onLeak: () => undefined,
-        pathPoints: [new Vector3(0, 0, 0), new Vector3(100, 0, 0), new Vector3(200, 0, 100)],
         physics: physics.physics as never,
+        points: [new Vector3(0, 0, 0), new Vector3(100, 0, 0), new Vector3(200, 0, 100)],
       });
+      walker.reset("enemy.skitter.0.w1", 58);
       expect(
-        measureVectorAllocations(() => attacker.update(DT)),
-        "defense Attacker.update vector allocation sentinel",
+        measureVectorAllocations(() => walker.update(DT)),
+        "tower-defense Enemy.update vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      attacker.dispose();
+      walker.dispose();
     } finally {
       physics.dispose();
     }
@@ -485,7 +486,7 @@ describe("generated template ordinary-frame runtime cost", () => {
     const platformer = await import("../templates/platformer/src/scenes/Play.js");
     const racing = await import("../templates/racing/src/scenes/Race.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
-    const defense = await import("../templates/defense/src/scenes/Defense.js");
+    const defense = await import("../templates/tower-defense/src/scenes/Battle.js");
     // The mocked specifier, not the original module: templates resolve solarPosition
     // through the mock factory's namespace copy, so the spy has to target that copy.
     const core = await import("@threenative/core");
@@ -496,7 +497,7 @@ describe("generated template ordinary-frame runtime cost", () => {
       "platformer Play": platformer.Play,
       "racing Race": racing.Race,
       "action-RPG Play": actionRpg.Play,
-      "defense Defense": defense.Defense,
+      "tower-defense Battle": defense.Battle,
     })) {
       if (value === undefined) throw new Error(`Malformed ${name} fixture: export is missing.`);
     }
@@ -611,8 +612,8 @@ describe("generated template ordinary-frame runtime cost", () => {
 
     const defensePhysics = await physicsFixture();
     try {
-      const context = sceneContext(defensePhysics.physics, defense.Defense.initialState);
-      const scene = new defense.Defense();
+      const context = sceneContext(defensePhysics.physics, defense.Battle.initialState);
+      const scene = new defense.Battle();
       await scene.load(context as never);
       const frame = scene.enter(context as never);
       const reduceSpy = vi.spyOn(Array.prototype, "reduce");
@@ -623,8 +624,8 @@ describe("generated template ordinary-frame runtime cost", () => {
       });
       const reduceCalls = reduceSpy.mock.calls.length;
       reduceSpy.mockRestore();
-      expect(reduceCalls, "defense tower spread/reduce allocation sentinel").toBe(0);
-      expect(context.patchIdentities.size, "defense state-patch high-water sentinel").toBe(
+      expect(reduceCalls, "tower-defense scene spread/reduce allocation sentinel").toBe(0);
+      expect(context.patchIdentities.size, "tower-defense state-patch high-water sentinel").toBe(
         patchHighWater,
       );
     } finally {

@@ -15,16 +15,16 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | Template | GroundSnap | normaliseToMetres | attachToBone | AnimationPlayer |
 | --- | --- | --- | --- | --- |
 | action-rpg | `src/conventions.ts:33` | `src/conventions.ts:28` | `src/conventions.ts:32` | N/A — the mannequin's clips play through `SkeletalMesh3D` (`src/entities/Fighter.ts`), which extends AnimationPlayer |
-| defense | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | minimal | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | platformer | N/A — the fox run places every body through its own physics character and keeps no generated conventions module | N/A — every model is authored in metres already and no generated conventions module rescales it | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
 | puzzle | N/A — the vault keeps its own sandbox look and places crates and the warden through physics, with no generated conventions module | N/A — every model is authored in metres already and no generated conventions module rescales it | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | rts | N/A — every unit is placed by the simulation at its own ground height, so there is no rendered body to keep on a floor | N/A — every model is procedural in metres already, so no authored asset needs normalising | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
-| runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
+| runner | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:9` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | shooter | N/A — the soldier's floor contact is measured against the town's own collider boxes, and a corpse is settled onto the deck it fell on | `src/entities/Enemy.ts:863` | `src/entities/Enemy.ts:869` | `src/entities/Rifle.ts:141` |
 | starter | `src/conventions.ts:15` | `src/conventions.ts:14` | N/A — the template has no held object or character hand | N/A — the native proof asset is static and has no AnimationClip |
+| tower-defense | N/A — every tower, walker and pad is placed by the simulation at ground level, so there is no rendered body to keep on a floor | N/A — every model is procedural in metres already, so no authored asset needs normalising | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 
 Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs
 the player sees when they look down rather than a third-person body, and `normaliseToMetres` and
