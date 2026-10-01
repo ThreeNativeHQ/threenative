@@ -6,6 +6,7 @@ import { HALF, onBridge, waterBlocked } from "./terrain.js";
 import {
   type BuildingType,
   type EntityType,
+  IDLE_ORDER,
   type IEntity,
   type IOrderResult,
   type IPoint,
@@ -43,6 +44,12 @@ export function availableBuilder(
   );
 }
 
+/**
+ * A perimeter candidate, reused so the ring below costs no objects. Nothing holds it: the loop
+ * tests each candidate and copies the accepted one's two numbers into the worker's own point.
+ */
+const _workCandidate: IPoint = { x: 0, z: 0 };
+
 export function constructionWorkPoint(
   game: Game,
   worker: IEntity,
@@ -51,20 +58,17 @@ export function constructionWorkPoint(
   radius: number,
 ): IPoint | null {
   const angle = Math.atan2(worker.z - z, worker.x - x);
-  const points = Array.from({ length: 24 }, (_, i) => {
+  // The same ring `approachInteraction` walks, in place: `Array.from(...).filter()` was 24 point
+  // objects and two arrays per builder per build start to test a ring this loop walks anyway.
+  for (let i = 0; i < 24; i++) {
     const a = angle + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
-    return {
-      x: x + Math.cos(a) * (radius + worker.r + 0.9),
-      z: z + Math.sin(a) * (radius + worker.r + 0.9),
-    };
-  }).filter((p) => !game.blocked(p.x, p.z, worker.r));
-  // Check connectivity before charging. A path ending on another nearby cell is
-  // not proof that this perimeter position is reachable.
-  for (const point of points) {
-    if (game.lineClear(worker, point, worker.r)) return point;
-    const route = game.pathfind(worker, point, worker.r);
+    _workCandidate.x = x + Math.cos(a) * (radius + worker.r + 0.9);
+    _workCandidate.z = z + Math.sin(a) * (radius + worker.r + 0.9);
+    if (game.blocked(_workCandidate.x, _workCandidate.z, worker.r)) continue;
+    if (game.lineClear(worker, _workCandidate, worker.r)) return _workCandidate;
+    const route = game.pathfind(worker, _workCandidate, worker.r);
     const end = route[route.length - 1];
-    if (end && dist(end, point) < 0.35) return point;
+    if (end && dist(end, _workCandidate) < 0.35) return _workCandidate;
   }
   return null;
 }
@@ -106,20 +110,22 @@ export function beginConstruction(
       message: "The Surveyor cannot reach this site. Clear a route or choose another location.",
     };
   }
-  const resume: Order = worker.order.kind === "gather" ? { ...worker.order } : { kind: "idle" };
+  const resume: Order = worker.order.kind === "gather" ? { ...worker.order } : IDLE_ORDER;
   pay(game, type, team);
   const site = game.spawn(type, team, siteX, siteZ, false);
   Object.assign(site, {
     builderId: worker.id,
-    workPoint: point,
+    // The site's own `workPoint`, not the ring's shared candidate: a site holds this until it is
+    // built or abandoned, and two sites started in the same step would otherwise share one point.
+    workPoint: { x: point.x, z: point.z },
     constructionStarted: false,
     resumeOrder: resume,
     createdAt: game.time,
     weldClock: 0,
   });
   worker.order = { kind: "construct", id: site.id };
-  worker.orders = [];
-  worker.path = [];
+  worker.orders.length = 0;
+  worker.path.length = 0;
   worker.pathGoal = null;
   worker.pathClock = 0;
   worker.targetId = null;
@@ -132,8 +138,8 @@ export function releaseBuilder(game: Game, site: IEntity, resume = true): void {
   site.builderId = null;
   if (!worker || worker.order.kind !== "construct" || worker.order.id !== site.id) return;
   worker.working = false;
-  worker.order = { kind: "idle" };
-  worker.path = [];
+  worker.order = IDLE_ORDER;
+  worker.path.length = 0;
   worker.pathClock = 0;
   if (resume && !worker.orders.length && site.resumeOrder.kind === "gather") {
     game.command([worker.id], "gather", { id: site.resumeOrder.id }, worker.team);
@@ -187,7 +193,7 @@ export function updateBuilder(game: Game, worker: IEntity, dt: number): void {
   if (worker.order.kind !== "construct") return;
   const site = game.get(worker.order.id);
   if (!site || site.built || site.builderId !== worker.id || site.team !== worker.team) {
-    worker.order = { kind: "idle" };
+    worker.order = IDLE_ORDER;
     worker.working = false;
     return;
   }

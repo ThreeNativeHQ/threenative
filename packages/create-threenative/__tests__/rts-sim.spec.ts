@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Game } from "../templates/rts/src/sim/game.js";
+import { clearMovement, travelEntity } from "../templates/rts/src/sim/movement.js";
 import { type EntityType, TYPES, dist } from "../templates/rts/src/sim/types.js";
 
 /** Three cores and one idle Surveyor: every other unit removed so a rule is readable in state. */
@@ -55,6 +56,75 @@ describe("rts navigation", () => {
     game.navRevision++;
 
     expect(game.pathfind({ x: -40, z: 0 }, { x: 70, z: 70 })).toEqual([]);
+  });
+
+  it("reads a reachable route from the unit outward, with every waypoint filled", () => {
+    const game = new Game({ ai: false, seed: 5 });
+    game.obstacles = [];
+    for (let z = -100; z <= 100; z += 4) {
+      if (z > 30 && z < 50) continue;
+      game.obstacles.push({ x: 0, z, r: 3, kind: "rock" });
+    }
+    game.navRevision++;
+    const from = { x: -40, z: 0 };
+    const to = { x: 40, z: 0 };
+
+    const route = game.pathfind(from, to);
+
+    // Two failures hide behind "the route went through the gap". A route whose parent chain is
+    // written goal-first still contains every cell of the right path, in the right place, and walks
+    // the unit the wrong way: the giveaway is a hop longer than one cell diagonal (2·√2 m here),
+    // between the first waypoint and the second. A route with a hole in it — the chain written to
+    // the wrong index — reads `undefined` where a point belongs.
+    const first = route[0];
+    const last = route[route.length - 1];
+    expect(first, "the route has a first waypoint").toBeDefined();
+    expect(last, "the route has a last waypoint").toBeDefined();
+    if (!first || !last) throw new Error("the route has no endpoints");
+    expect(route.every((p) => p !== undefined), "every waypoint is a point").toBe(true);
+    let widest = 0;
+    for (let i = 1; i < route.length; i++) {
+      widest = Math.max(widest, dist(route[i - 1] ?? from, route[i] ?? to));
+    }
+    expect(widest, "consecutive waypoints are one cell apart, so the route reads start-to-goal").toBeLessThanOrEqual(2 * Math.SQRT2 + 0.001);
+    expect(dist(first, from), "the route starts at the unit").toBeLessThan(dist(last, from));
+    expect(dist(last, to), "the route ends at the goal").toBeLessThan(0.5);
+  });
+});
+
+describe("rts path goal cache", () => {
+  it("keeps one goal across steps and plans again after the order moves or is cleared", () => {
+    const game = new Game({ ai: false, seed: 49 });
+    game.entities = game.entities.filter((e) => e.type === "core");
+    game.obstacles = [];
+    game.navRevision++;
+    const unit = game.spawn("tank", 0, -60, 0);
+
+    expect(travelEntity(game, unit, 40, 40, 0.05, 0.5)).toBe(false);
+    const goal = unit.pathGoal;
+    expect(goal, "a travelling unit keeps the goal its path was planned for").not.toBe(null);
+    // The goal is the entity's own record rather than the per-call scratch: aliased to the scratch
+    // it would follow every call, so every step would read as a new destination and replan.
+    expect(goal).not.toBe(unit.goalPoint);
+    const revision = unit.pathRevision;
+    const end = unit.pathEnd;
+    for (let i = 0; i < 20; i++) travelEntity(game, unit, 40, 40, 0.05, 0.5);
+    expect(unit.pathGoal, "the goal survives twenty steps toward the same place").toBe(goal);
+    expect(unit.pathRevision, "an unchanged goal does not replan").toBe(revision);
+    expect(unit.pathEnd, "the route's end is cached with it").toBe(end);
+
+    travelEntity(game, unit, -40, 40, 0.05, 0.5);
+    expect(unit.pathGoal, "a new order plans a new goal").toBe(goal);
+    expect(unit.pathGoal && `${unit.pathGoal.x},${unit.pathGoal.z}`, "the goal is the new one").toBe(
+      "-40,40",
+    );
+    expect(unit.pathRevision, "a new goal is a replan").toBe(game.navRevision);
+
+    clearMovement(unit);
+    expect(unit.pathGoal, "clearing the path drops the goal").toBe(null);
+    expect(unit.pathEnd).toBe(null);
+    travelEntity(game, unit, -40, 40, 0.05, 0.5);
+    expect(unit.pathGoal, "the next step plans again after a clear").not.toBe(null);
   });
 });
 

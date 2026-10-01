@@ -2,7 +2,17 @@
 
 import { canAfford, pay, supply } from "./economy.js";
 import type { Game } from "./game.js";
-import { type EntityType, type IEntity, type IOrderResult, TYPES, dist } from "./types.js";
+import {
+  type EntityType,
+  type IEntity,
+  type IOrderResult,
+  type ISupply,
+  TYPES,
+  dist,
+} from "./types.js";
+
+/** `train` reads its answer before anything else can ask, so one record serves every producer. */
+const _supply: ISupply = { used: 0, cap: 0 };
 
 export function train(game: Game, id: number, type: EntityType, team = 0): IOrderResult {
   const e = game.get(id);
@@ -13,7 +23,7 @@ export function train(game: Game, id: number, type: EntityType, team = 0): IOrde
   }
   if (e.queue.length >= 6) return { ok: false, message: "Production queue is full." };
   if (!canAfford(game, type, team)) return { ok: false, message: "Insufficient minerals or gas." };
-  const bank = supply(game, team);
+  const bank = supply(game, team, _supply);
   if (bank.used + (d.supply || 0) > bank.cap) {
     return { ok: false, message: "Supply blocked. Build a Supply Relay." };
   }

@@ -360,6 +360,14 @@ export type Order =
   | { kind: "follow"; id: number }
   | { kind: "repair"; id: number };
 
+/**
+ * Standing in for "an order that carries no target": a unit hands this back when it arrives, runs
+ * out of work, or loses what it was ordered to, and that happens on ordinary steps. One shared
+ * record for all of them, because only `gather` orders are ever written to in place (see
+ * `harvest`), and an `idle` order has nothing to write.
+ */
+export const IDLE_ORDER: Order = { kind: "idle" };
+
 export interface IQueueItem {
   id: number;
   type: EntityType;
@@ -433,6 +441,8 @@ export interface IEntity extends IPoint {
   order: Order;
   orders: Order[];
   queue: IQueueItem[];
+  /** A bunker's own weapon profile, filled in place: `engage` holds one while it asks again. */
+  profile?: IUnitDef;
   rally: IPoint | null;
   cooldown: number;
   carry: number;
@@ -443,9 +453,21 @@ export interface IEntity extends IPoint {
   pathGoal: IPoint | null;
   pathEnd: IPoint | null;
   pathAdjusted: boolean;
+  /** The entity's own destination scratch, so `travelEntity` mints no point per call. */
+  goalPoint: IPoint;
+  /** `pathGoal`'s storage and `pathEnd`'s, kept apart from `goalPoint` so a replan's copy sticks. */
+  pathGoalPoint: IPoint;
+  pathEndPoint: IPoint;
+  /**
+   * Every point `path` has ever held, kept after the path drops them. A route's length changes on
+   * every replan, so an array that only grows to fit allocates a waypoint each time it gets longer.
+   */
+  pathPool: IPoint[];
+  /** `interactionGoal`'s point, owned here because a retarget rewrites it in place. */
+  interactionPoint: IPoint;
   pathRevision: number;
   moving: boolean;
-  interactionGoal?: IInteractionGoal;
+  interactionGoal: IInteractionGoal;
   targetId: number | null;
   healTargetId: number | null;
   healFxClock: number;
@@ -509,17 +531,33 @@ export function seeded(seed = 17): () => number {
   };
 }
 
-/** Spreads `n` points in a grid centred on the order's click, so a group arrives without stacking. */
-export function formation(n: number, x: number, z: number, spacing = 1.9): IPoint[] {
+/**
+ * Spreads `n` points in a grid centred on the order's click, so a group arrives without stacking.
+ *
+ * `into` is the caller's retained point array, grown here to fit: a group order runs for every unit
+ * in the selection, and `out.push({...})` was one array plus one object per unit per order. Nothing
+ * keeps a formation point — `Game.command` reads each one's two numbers and copies them into the
+ * order — so one store per call site is enough, and the store outlives the order that filled it.
+ */
+export function formation(
+  n: number,
+  x: number,
+  z: number,
+  spacing = 1.9,
+  into: IPoint[] = [],
+): IPoint[] {
   const cols = Math.ceil(Math.sqrt(n));
   const rows = Math.ceil(n / cols);
-  const out: IPoint[] = [];
   for (let i = 0; i < n; i++) {
     const count = Math.min(cols, n - Math.floor(i / cols) * cols);
-    out.push({
-      x: x + ((i % cols) - (count - 1) / 2) * spacing,
-      z: z + (Math.floor(i / cols) - (rows - 1) / 2) * spacing,
-    });
+    let point = into[i];
+    if (point === undefined) {
+      point = { x: 0, z: 0 };
+      into[i] = point;
+    }
+    point.x = x + ((i % cols) - (count - 1) / 2) * spacing;
+    point.z = z + (Math.floor(i / cols) - (rows - 1) / 2) * spacing;
   }
-  return out;
+  into.length = n;
+  return into;
 }

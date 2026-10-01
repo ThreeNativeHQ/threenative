@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { OrthographicCamera, Scene, Texture, Vector2 } from "three";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { Game } from "../templates/rts/src/sim/game.js";
 
@@ -126,9 +127,27 @@ function countArrayAllocations<T>(step: () => T): { calls: number; where: string
 function simFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name);
-    return entry.isDirectory() ? simFiles(file) : /\.ts$/u.test(entry.name) ? [file] : [];
+    if (entry.isDirectory()) return simFiles(file);
+    return /\.ts$/u.test(entry.name) ? [file] : [];
   });
 }
+
+/**
+ * The source text of the line a counted literal sits on, cached. Classifying an allocation by what
+ * the line says rather than by its number means an edit that moves the line cannot silently
+ * reclassify it into the wrong bucket.
+ */
+function literalText(key: string): string {
+  const at = key.lastIndexOf(":");
+  const file = path.resolve(import.meta.dirname, "../templates/rts/src/sim", key.slice(0, at));
+  const line = Number(key.slice(at + 1));
+  const cached = literalText.cache.get(key);
+  if (cached !== undefined) return cached;
+  const text = readFileSync(file, "utf8").split("\n")[line - 1]?.trim() ?? "";
+  literalText.cache.set(key, text);
+  return text;
+}
+literalText.cache = new Map<string, string>();
 
 /**
  * The seeded start plus enough of an army to put the claimed sixty own units on the field.
@@ -148,6 +167,103 @@ function sixtyUnitMatch(seed = 471): Game {
       added += 1;
     }
   }
+  return game;
+}
+
+/**
+ * Counts every object and array *literal* the simulation evaluates, by source line.
+ *
+ * The spies above cannot see these: an object literal allocates without calling anything they
+ * wrap, which is how `travelEntity`'s `{x, z}` survived a spy that reported zero arrays. So the
+ * sources are compiled here through a TypeScript transformer that rewrites each literal into a call
+ * to a counter — the same approach an independent reviewer used to reproduce the 74 literals a
+ * step at `movement.ts:54` that this file used to call clean.
+ */
+function watchSimLiterals(): {
+  Game: typeof Game;
+  begin: () => void;
+  take: () => { calls: number; lines: Map<string, number> };
+} {
+  const directory = path.resolve(import.meta.dirname, "../templates/rts/src/sim");
+  const cache = new Map<string, { exports: Record<string, unknown> }>();
+  const counts = new Map<string, number>();
+  let watching = false;
+  const record = (file: string, line: number): void => {
+    if (!watching) return;
+    const key = `${path.basename(file)}:${line}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  };
+  const load = (file: string): Record<string, unknown> => {
+    const cached = cache.get(file);
+    if (cached) return cached.exports;
+    const module_ = { exports: {} as Record<string, unknown> };
+    cache.set(file, module_);
+    const source = readFileSync(file, "utf8");
+    const transformer: ts.TransformerFactory<ts.SourceFile> = (context) => (root) => {
+      const visit = (node: ts.Node): ts.Node => {
+        const next = ts.visitEachChild(node, visit, context);
+        if (!ts.isObjectLiteralExpression(next) && !ts.isArrayLiteralExpression(next)) return next;
+        const line = root.getLineAndCharacterOfPosition(next.getStart(root)).line + 1;
+        return ts.factory.createParenthesizedExpression(
+          ts.factory.createBinaryExpression(
+            ts.factory.createCallExpression(ts.factory.createIdentifier("__literal"), undefined, [
+              ts.factory.createStringLiteral(file),
+              ts.factory.createNumericLiteral(line),
+            ]),
+            ts.SyntaxKind.CommaToken,
+            next,
+          ),
+        );
+      };
+      return ts.visitNode(root, visit) as ts.SourceFile;
+    };
+    const { outputText } = ts.transpileModule(source, {
+      fileName: file,
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      transformers: { before: [transformer] },
+    });
+    const require_ = (specifier: string): unknown =>
+      load(path.join(path.dirname(file), specifier.replace(/\.js$/u, ".ts")));
+    new Function("require", "exports", "module", "__literal", outputText)(
+      require_,
+      module_.exports,
+      module_,
+      record,
+    );
+    return module_.exports;
+  };
+  for (const file of simFiles(directory)) load(file);
+  const exported = load(path.join(directory, "game.ts")) as { Game: typeof Game };
+  return {
+    Game: exported.Game,
+    begin: () => {
+      counts.clear();
+      watching = true;
+    },
+    take: () => {
+      watching = false;
+      // Every line, uncapped: the classification below reads all of them, and a truncated list
+      // would let a steady literal hide behind the eight loudest.
+      return { calls: [...counts.values()].reduce((a, b) => a + b, 0), lines: new Map(counts) };
+    },
+  };
+}
+
+/**
+ * The general case the box names: default settings, sixty own units in motion, no entity born in
+ * the window, and the window long enough for the 1.2 s commander clock to tick several times.
+ *
+ * `ai: false` and idle units are exactly the two shortcuts that made the earlier version of this
+ * file report zero on a path the kit never plays, so this fixture uses neither.
+ */
+function playingMatch(watcher: ReturnType<typeof watchSimLiterals>): Game {
+  const game = new watcher.Game({ seed: 471 });
+  for (let n = game.army().length; n < OWN_UNITS; n += 1) {
+    game.spawn("tank", 0, -62 + (n % 6) * 3, 38 - Math.floor(n / 6) * 3);
+  }
+  const ids: number[] = [];
+  for (const entity of game.own(0)) ids.push(entity.id);
+  game.command(ids, "attackMove", { x: -70, z: -60 }, 0);
   return game;
 }
 
@@ -183,6 +299,152 @@ describe("rts kit ordinary-frame runtime cost", () => {
     const arrays = countArrayAllocations(() => game.step());
 
     expect(arrays.calls, `rts sim array allocation sentinel: ${arrays.where.join("\n")}`).toBe(0);
+  });
+
+  /**
+   * The general case, measured where a builtin spy is blind: default settings, sixty own units
+   * walking, and a window long enough for the 1.2 s commander clock to tick eight times.
+   *
+   * Three numbers, all asserted, none of them a rounding of "excluded":
+   *
+   * * **steady literals** — everything except entity birth and a unit's waypoint store growing.
+   *   Must be zero on every step. This is the claim the box names.
+   * * **birth literals** — one entity record per entity that appears. Counted and asserted to be a
+   *   real, small number, because a fixture that spawns nothing proves nothing about spawning.
+   * * **growth literals** — a unit's `pathPool` doubling past its longest route so far. This is
+   *   amortised per-entity state growth, not per-frame work, but it lands on ordinary frames, so it
+   *   is reported with its own bound and a convergence check rather than excused.
+   *
+   * The obvious way to pass this is to call everything an event. The event steps are therefore
+   * counted and bounded too: the window must contain real events (it is a match, not a still life),
+   * most steps must still be ordinary, and a step is ordinary *only* if it minted nothing.
+   */
+  it("steps a playing sixty-unit match with the default AI on without evaluating a literal", () => {
+    const watcher = watchSimLiterals();
+    const game = playingMatch(watcher);
+    // The three seams an event step is detected through, wrapped rather than counted by hand: an
+    // event is exactly a birth, an order, a training or an emitted record.
+    let events = 0;
+    const command = game.command.bind(game);
+    const train = game.train.bind(game);
+    const emit = game.emit.bind(game);
+    game.command = (...args: Parameters<typeof command>) => {
+      events += 1;
+      return command(...args);
+    };
+    game.train = (...args: Parameters<typeof train>) => {
+      events += 1;
+      return train(...args);
+    };
+    game.emit = (...args: Parameters<typeof emit>) => {
+      events += 1;
+      return emit(...args);
+    };
+    for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) game.step();
+    const movingAtWarmup = game.army().filter((entity) => entity.moving).length;
+    const enemyStart = game
+      .army(1)
+      .map((entity) => `${entity.x},${entity.z}`)
+      .join("|");
+    const position = (entity: { x: number; z: number }): string => `${entity.x},${entity.z}`;
+    const before = new Map(game.own(0).map((entity) => [entity.id, position(entity)]));
+    let ordinary = 0;
+    let eventSteps = 0;
+    let steady = 0;
+    let growth = 0;
+    const growthSteps: number[] = [];
+    const steadyWhere = new Map<string, number>();
+
+    for (let frame = 0; frame < MEASURED_FRAMES; frame += 1) {
+      const minted = game.nextId;
+      events = 0;
+      watcher.begin();
+      game.step();
+      const step = watcher.take();
+      if (game.nextId !== minted) {
+        // A birth is cold initialisation: it mints the entity record and its state once. Counted,
+        // never counted as steady work.
+        continue;
+      }
+      // A waypoint store doubling is amortised per-entity growth, so it is counted on its own. It
+      // is recognised by the source line, not by a filename or a line number that an edit moves.
+      let growthHere = 0;
+      let otherHere = 0;
+      const whereHere = new Map<string, number>();
+      for (const [line, count] of step.lines) {
+        if (literalText(line).includes("pool.push")) growthHere += count;
+        else {
+          otherHere += count;
+          whereHere.set(line, (whereHere.get(line) ?? 0) + count);
+        }
+      }
+      growth += growthHere;
+      if (growthHere > 0) growthSteps.push(frame);
+      // What makes a step an event step is that it ordered, trained or emitted — not that it
+      // allocated. Classifying by allocation instead would let a leaking frame excuse itself as an
+      // event, which is the whole way this gate is cheatable.
+      if (events > 0) {
+        eventSteps += 1;
+        continue;
+      }
+      ordinary += 1;
+      steady += otherHere;
+      for (const [line, count] of whereHere)
+        steadyWhere.set(line, (steadyWhere.get(line) ?? 0) + count);
+    }
+    const where = [...steadyWhere.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([line, count]) => `${line} x${count}`);
+    const moved = game.own(0).filter((entity) => before.get(entity.id) !== position(entity)).length;
+
+    expect(game.ai, "the default AI must stay on for this case to mean anything").toBe(true);
+    expect(movingAtWarmup, "the fixture must be moving units, not idle ones").toBeGreaterThan(40);
+    expect(game.result, "a finished match would stop stepping and pass by doing nothing").toBe(
+      null,
+    );
+    // Most of the window must be ordinary, or "zero on ordinary steps" would be a narrow claim. The
+    // rest must still be real events, or the fixture would be a board that stopped playing.
+    expect(ordinary, "most steps must be ordinary, not excused as events").toBeGreaterThan(
+      MEASURED_FRAMES * 0.5,
+    );
+    expect(
+      eventSteps,
+      "the window must still contain events: it is a match, not a still life",
+    ).toBeGreaterThan(0);
+    expect(
+      game
+        .army(1)
+        .map((entity) => `${entity.x},${entity.z}`)
+        .join("|"),
+      "an enemy commander must have run: its army is on the move",
+    ).not.toBe(enemyStart);
+    expect(moved, "the units must have actually travelled").toBeGreaterThan(40);
+    expect(steady, `rts sim steady-state literal sentinel: ${where.join("\n")}`).toBe(0);
+    // Growth is bounded and converges. A unit pays it once per doubling of its longest route, so a
+    // 600-frame window must see it only a handful of times — and the second half of the window must
+    // see strictly fewer than the first, which is what "amortised, not per-frame" actually means.
+    // (An absolute zero here would be a claim about one seed's longest route, not about the code.)
+    expect(growthSteps.length, "waypoint-store growth must be rare").toBeLessThan(
+      MEASURED_FRAMES * 0.1,
+    );
+    expect(
+      growthSteps.filter((frame) => frame >= MEASURED_FRAMES / 2).length,
+      "waypoint-store growth must decay: the second half of a window sees fewer than the first",
+    ).toBeLessThanOrEqual(growthSteps.filter((frame) => frame < MEASURED_FRAMES / 2).length);
+    expect(
+      growth,
+      "waypoint-store growth must be a few allocations per unit, not per frame",
+    ).toBeLessThan(game.entities.length * 16);
+  });
+
+  it("counts a literal when one is evaluated, so the zero above is a measurement", () => {
+    const watcher = watchSimLiterals();
+    watcher.begin();
+    // Setting up the fixture allocates: the spawn records, the command's formation and the order
+    // objects. Without this control a broken observer would make the case above pass for free.
+    playingMatch(watcher);
+
+    expect(watcher.take().calls).toBeGreaterThan(0);
   });
 
   it("syncs sixty units of render state for 600 frames without a fresh vector", async () => {

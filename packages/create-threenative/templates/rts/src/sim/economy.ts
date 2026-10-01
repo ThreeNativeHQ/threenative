@@ -4,6 +4,7 @@ import type { Game } from "./game.js";
 import { approachInteraction } from "./movement.js";
 import {
   type EntityType,
+  IDLE_ORDER,
   type IEntity,
   type IResourceNode,
   type ISupply,
@@ -27,8 +28,14 @@ export function pay(game: Game, type: EntityType, team = 0): void {
   player.spent.gas += d.gas;
 }
 
-/** Supply already spent, including everything queued, against the cap the built structures grant. */
-export function supply(game: Game, team = 0): ISupply {
+/** Supply already spent, including everything queued, against the cap the built structures grant.
+ *
+ * `out` is the caller's record rather than a fresh one: every producing structure asks this while it
+ * trains and the HUD asks it every frame, and two numbers did not need an object each time. Each
+ * caller owns its own — a commander holds its answer across the calls that would overwrite a shared
+ * one.
+ */
+export function supply(game: Game, team: number, out: ISupply): ISupply {
   let used = 0;
   let cap = 0;
   // Over the live list, not `own()`: this is asked every step by every producing structure, and
@@ -42,7 +49,9 @@ export function supply(game: Game, team = 0): ISupply {
     if (e.built) cap += d.cap || 0;
     for (const q of e.queue) used += TYPES[q.type].supply || 0;
   }
-  return { used, cap: Math.min(120, cap) };
+  out.used = used;
+  out.cap = Math.min(120, cap);
+  return out;
 }
 
 /** The nearest live node of a kind, found in place: `filter().sort()[0]` was two arrays a call. */
@@ -112,24 +121,24 @@ export function harvest(game: Game, entity: IEntity, dt: number): void {
       order.id = next.id;
       order.phase = "out";
     } else {
-      entity.order = { kind: "idle" };
+      entity.order = IDLE_ORDER;
     }
     return;
   }
   if (node.kind === "gas" && order.phase !== "return" && !refineryNear(game, entity, node)) {
-    entity.order = { kind: "idle" };
+    entity.order = IDLE_ORDER;
     return;
   }
   if (order.phase === "return") {
     const base = nearestCore(game, entity);
     if (!base) {
-      entity.order = { kind: "idle" };
+      entity.order = IDLE_ORDER;
       return;
     }
     if (approachInteraction(game, entity, base, base.r + 1.7, dt)) {
       const player = game.players[entity.team];
       if (!player) {
-        entity.order = { kind: "idle" };
+        entity.order = IDLE_ORDER;
         return;
       }
       const kind = entity.carryKind ?? "ore";
@@ -138,7 +147,7 @@ export function harvest(game: Game, entity: IEntity, dt: number): void {
       if (entity.team === 0) game.gathered += entity.carry;
       entity.carry = 0;
       order.phase = "out";
-      entity.path = [];
+      entity.path.length = 0;
     }
     return;
   }
@@ -152,7 +161,7 @@ export function harvest(game: Game, entity: IEntity, dt: number): void {
       entity.carryKind = node.kind;
       entity.harvestTimer = 0;
       order.phase = "return";
-      entity.path = [];
+      entity.path.length = 0;
     }
   }
 }

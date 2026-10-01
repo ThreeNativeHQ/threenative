@@ -4,6 +4,7 @@ import { abandonConstruction, releaseBuilder } from "./construction.js";
 import type { Game } from "./game.js";
 import { clearMovement } from "./movement.js";
 import {
+  IDLE_ORDER,
   type IEntity,
   type IOrderResult,
   type IUnitDef,
@@ -39,12 +40,12 @@ export function updateGarrisonArrival(game: Game, unit: IEntity, dt: number): vo
   if (unit.order.kind !== "garrison") return;
   const bunker = game.get(unit.order.id);
   if (!bunker || !bunker.built || bunker.team !== unit.team || bunker.type !== "bunker") {
-    unit.order = { kind: "idle" };
+    unit.order = IDLE_ORDER;
     clearMovement(unit);
     return;
   }
   if (bunker.garrison.length >= (TYPES.bunker.capacity ?? 0)) {
-    unit.order = { kind: "idle" };
+    unit.order = IDLE_ORDER;
     return;
   }
   if (!game.travel(unit, bunker.x, bunker.z, dt, bunker.r + unit.r + 1.0)) return;
@@ -124,7 +125,13 @@ export function weaponProfile(game: Game, unit: IEntity): IUnitDef {
     const occupant = game.get(unit.garrison[i] ?? -1);
     if (occupant && occupant.garrisonId === unit.id) occupants += 1;
   }
-  return { ...d, damage: occupants * (TYPES.ranger.damage ?? 0) };
+  // The profile belongs to the bunker, not to the call: `engage` holds one while `canAttackTarget`
+  // asks again for the same unit, so a fresh spread per query would be a shared object racing
+  // itself. Copied once per bunker, then the damage is written in place.
+  if (!unit.profile) unit.profile = { ...d };
+  const profile = unit.profile;
+  profile.damage = occupants * (TYPES.ranger.damage ?? 0);
+  return profile;
 }
 
 /** Hoisted: `canAttackTarget` runs once per unit per candidate, and a literal mask is an array. */
@@ -188,14 +195,14 @@ export function engage(game: Game, unit: IEntity, dt: number, hold = false): boo
   }
   if (!target) {
     unit.targetId = null;
-    if (unit.order.kind === "attack") unit.order = { kind: "idle" };
+    if (unit.order.kind === "attack") unit.order = IDLE_ORDER;
     return false;
   }
   unit.targetId = target.id;
   const distance = dist(unit, target);
   if (distance <= range + target.r) {
     unit.angle = Math.atan2(target.x - unit.x, target.z - unit.z);
-    unit.path = [];
+    unit.path.length = 0;
     unit.moving = false;
     if (unit.cooldown <= 0) {
       unit.cooldown = d.rate ?? 0;
@@ -323,7 +330,7 @@ export function updateSupport(game: Game, unit: IEntity, dt: number, hold = fals
     if (dist(unit, ordered) > 4) game.travel(unit, ordered.x, ordered.z, dt, 3.5);
     return true;
   }
-  if (unit.order.kind === "heal" || unit.order.kind === "follow") unit.order = { kind: "idle" };
+  if (unit.order.kind === "heal" || unit.order.kind === "follow") unit.order = IDLE_ORDER;
   return false;
 }
 
@@ -337,7 +344,7 @@ export function updateRepair(game: Game, worker: IEntity, dt: number): void {
     target.team !== worker.team ||
     target.hp >= target.maxHp - 0.001
   ) {
-    worker.order = { kind: "idle" };
+    worker.order = IDLE_ORDER;
     return;
   }
   if (

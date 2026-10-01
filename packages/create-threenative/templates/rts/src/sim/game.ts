@@ -21,7 +21,13 @@ import {
   updateConstruction,
 } from "./construction.js";
 import { canAfford, harvest, pay, supply } from "./economy.js";
-import { clearMovement, separateEntities, spawnExit, travelEntity } from "./movement.js";
+import {
+  clearMovement,
+  newPathPool,
+  separateEntities,
+  spawnExit,
+  travelEntity,
+} from "./movement.js";
 import { findRoute } from "./nav.js";
 import { cancelTrain, train, updateProduction } from "./production.js";
 import {
@@ -40,6 +46,7 @@ import {
   type EntityType,
   type IBank,
   type ICommandTarget,
+  IDLE_ORDER,
   type IEntity,
   type IGameEvent,
   type IObstacle,
@@ -48,6 +55,7 @@ import {
   type IPoint,
   type IResourceNode,
   type IResult,
+  type ISupply,
   type Order,
   SIM_STEP,
   TYPES,
@@ -101,6 +109,24 @@ export interface IGameOptions {
   seed?: number;
   /** Injected worldgen stream. Defaults to the seeded mulberry32 the original world used. */
   random?: () => number;
+}
+
+/**
+ * The scratch one `command` call works in: the deduplicated selection, its mobile half, and the
+ * formation grid. Retained on the game and reused, because a group order runs for every unit in the
+ * selection and `[...new Set(ids)].map().filter()` plus a fresh `formation()` was five arrays and one
+ * object per unit per order.
+ *
+ * `command` re-enters itself — reassigning a builder abandons its site, which resumes the worker —
+ * so the scratch is taken by depth rather than shared outright: the nested call builds its own, and
+ * only a call with no nested call behind it hands the retained one back.
+ */
+interface IOrderScratch {
+  depth: number;
+  units: IEntity[];
+  mobile: IEntity[];
+  points: IPoint[];
+  seen: Set<number>;
 }
 
 export class Game {
@@ -277,7 +303,7 @@ export class Game {
       workPoint: { x, z },
       constructionStarted: false,
       createdAt: 0,
-      resumeOrder: { kind: "idle" },
+      resumeOrder: IDLE_ORDER,
       weldClock: 0,
       working: false,
       hp: built ? d.hp : d.hp * 0.2,
@@ -287,7 +313,7 @@ export class Game {
       built,
       progress: built ? 1 : 0,
       angle: team === 0 ? Math.PI : 0,
-      order: { kind: "idle" },
+      order: IDLE_ORDER,
       orders: [],
       queue: [],
       rally: null,
@@ -300,6 +326,12 @@ export class Game {
       pathGoal: null,
       pathEnd: null,
       pathAdjusted: false,
+      goalPoint: { x, z },
+      pathGoalPoint: { x, z },
+      pathEndPoint: { x, z },
+      pathPool: newPathPool(),
+      interactionPoint: { x, z },
+      interactionGoal: { point: null, range: 0, retryAt: 0, revision: -1, targetId: -1 },
       pathRevision: 0,
       moving: false,
       targetId: null,
@@ -317,8 +349,11 @@ export class Game {
     return e;
   }
 
+  /** The scene's own supply record: it reads the answer straight into the state patch it publishes. */
+  readonly publishedSupply: ISupply = { used: 0, cap: 0 };
+
   supply(team = 0) {
-    return supply(this, team);
+    return supply(this, team, this.publishedSupply);
   }
 
   canAfford(type: EntityType, team = 0): boolean {
@@ -360,12 +395,43 @@ export class Game {
   }
 
   /** The one entry point for a player order. Anything it does not accept returns `{ok: false}`. */
+  readonly orderScratch: IOrderScratch = {
+    depth: 0,
+    units: [],
+    mobile: [],
+    points: [],
+    seen: new Set(),
+  };
+
   command(
     ids: number[],
     kind: string,
     target: ICommandTarget = {},
     team = 0,
     append = false,
+  ): IOrderResult {
+    const scratch = this.orderScratch;
+    // A nested call (a reassigned builder abandoning its site resumes the worker) gets its own
+    // scratch, so the outer call's selection and formation grid are still intact underneath it.
+    const mine: IOrderScratch =
+      scratch.depth > 0
+        ? { depth: 0, units: [], mobile: [], points: [], seen: new Set() }
+        : scratch;
+    scratch.depth += 1;
+    try {
+      return this.#command(ids, kind, target, team, append, mine);
+    } finally {
+      scratch.depth -= 1;
+    }
+  }
+
+  #command(
+    ids: number[],
+    kind: string,
+    target: ICommandTarget,
+    team: number,
+    append: boolean,
+    scratch: IOrderScratch,
   ): IOrderResult {
     if (this.result || this.paused || !Array.isArray(ids) || !this.players[team])
       return { ok: false };
@@ -376,15 +442,29 @@ export class Game {
     ) {
       return { ok: false };
     }
-    const units = [...new Set(ids)]
-      .map((id) => this.get(id))
-      .filter((e): e is IEntity => !!e && e.team === team && !e.garrisonId);
-    const mobile = units.filter((e) => !e.building);
+    // The selection, deduplicated in first-seen order — the order `[...new Set(ids)]` gave, and the
+    // order every formation slot and every `units` index below depends on.
+    const seen = scratch.seen;
+    const units = scratch.units;
+    const mobile = scratch.mobile;
+    seen.clear();
+    units.length = 0;
+    mobile.length = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      if (id === undefined || seen.has(id)) continue;
+      seen.add(id);
+      const e = this.get(id);
+      if (!e || e.team !== team || e.garrisonId) continue;
+      units.push(e);
+      if (!e.building) mobile.push(e);
+    }
     const points = formation(
       mobile.length,
       clamp(target.x ?? 0, -HALF + 4, HALF - 4),
       clamp(target.z ?? 0, -HALF + 4, HALF - 4),
       mobile.some((e) => e.type === "tank") ? 2.7 : 2.05,
+      scratch.points,
     );
     let i = 0;
     let accepted = 0;
@@ -457,7 +537,7 @@ export class Game {
           continue;
         order = { kind: "attack", id: enemy.id };
       } else if (kind === "stop") {
-        order = { kind: "idle" };
+        order = IDLE_ORDER;
       } else if (kind === "hold") {
         order = { kind: "hold" };
       } else {
@@ -477,7 +557,7 @@ export class Game {
           abandonConstruction(this, this.get(unit.order.id), "Surveyor reassigned");
         }
         unit.order = order;
-        unit.orders = [];
+        unit.orders.length = 0;
         clearMovement(unit);
         unit.targetId = null;
         unit.harvestTimer = 0;
@@ -487,8 +567,19 @@ export class Game {
     return { ok: accepted > 0, count: accepted };
   }
 
+  /**
+   * Records one game event.
+   *
+   * The payload becomes the record rather than being copied into a second object: every call site
+   * passes a literal it never touches again, so `{type, time, ...data}` was two objects per event to
+   * hold one record. The record itself cannot be pooled — `events` retains up to 250 of them and
+   * `drainEvents` hands the array to the caller — but one record per emitted event is the floor, and
+   * this is now that floor instead of twice it.
+   */
   emit(type: string, data: Record<string, unknown> = {}): void {
-    this.events.push({ type, time: this.time, ...data });
+    data.type = type;
+    data.time = this.time;
+    this.events.push(data as IGameEvent);
     if (this.events.length > 250) this.events.shift();
   }
 
@@ -560,14 +651,14 @@ export class Game {
         continue;
       }
       if (e.order.kind === "move") {
-        if (this.travel(e, e.order.x, e.order.z, step, 0.45)) e.order = { kind: "idle" };
+        if (this.travel(e, e.order.x, e.order.z, step, 0.45)) e.order = IDLE_ORDER;
         continue;
       }
       const fought = d.heal
         ? updateSupport(this, e, step, e.order.kind === "hold")
         : this.fight(e, step, e.order.kind === "hold");
       if (!fought && e.order.kind === "attackMove") {
-        if (this.travel(e, e.order.x, e.order.z, step, 0.6)) e.order = { kind: "idle" };
+        if (this.travel(e, e.order.x, e.order.z, step, 0.6)) e.order = IDLE_ORDER;
       }
     }
     this.separate(step);

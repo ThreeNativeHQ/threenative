@@ -13,8 +13,23 @@ import {
   dist,
 } from "./types.js";
 
+/**
+ * A unit's own waypoint store, born empty and grown by `travelEntity` to the longest route that
+ * unit has actually walked. It used to be born at a measured 96 points per unit — the longest route
+ * over three seeded matches is 78 cells — which meant 96 point objects for every entity in the game
+ * whether it ever walked 2 cells or 78. Growth is what makes it honest: a unit that never routes
+ * pays nothing, one that routes 5 cells pays 5, and a map that wants a longer detour grows the
+ * store instead of minting a point on the step that walked it. The store is kept after the path
+ * drops its points, so this runs at most once per record-high route length per unit.
+ */
+export function newPathPool(): IPoint[] {
+  return [];
+}
+
 export function clearMovement(entity: IEntity): void {
-  entity.path = [];
+  // Length, not a fresh array: every order change and every retarget empties a path, and the
+  // array the entity already owns holds the points this one is dropping.
+  entity.path.length = 0;
   entity.pathClock = 0;
   entity.pathGoal = null;
   entity.pathEnd = null;
@@ -51,12 +66,16 @@ export function travelEntity(
     const near = z - entity.z;
     return Math.sqrt(left * left + near * near) <= stop + 0.2;
   }
-  let dest: IPoint = { x, z };
+  // The destination, in the entity's own point rather than a fresh one: this runs for every
+  // travelling unit every step, and sixty units a frame is sixty objects a frame for two numbers.
+  // It never outlives the call — `pathGoalPoint` and `pathEndPoint` are separate objects the replan
+  // copies it into, so a later call cannot move the goal a path was planned for.
+  const dest = entity.goalPoint;
+  dest.x = x;
+  dest.z = z;
   if (stop > 1) {
-    dest = {
-      x: x + ((entity.x - x) / distance) * stop * 0.98,
-      z: z + ((entity.z - z) / distance) * stop * 0.98,
-    };
+    dest.x = x + ((entity.x - x) / distance) * stop * 0.98;
+    dest.z = z + ((entity.z - z) / distance) * stop * 0.98;
   }
   const changed = !entity.pathGoal || dist(dest, entity.pathGoal) > 2.5;
   const revisionChanged = entity.pathRevision !== game.navRevision;
@@ -71,13 +90,54 @@ export function travelEntity(
     return true;
   }
   if (revisionChanged || changed || (!entity.path.length && entity.pathClock <= 0)) {
-    entity.pathGoal = dest;
     entity.pathRevision = game.navRevision;
-    entity.path = game.lineClear(entity, dest, entity.r)
-      ? [dest]
+    // The goal this path was planned for, kept as the entity's own copy of `dest`. It has to be a
+    // separate object: `dest` is rewritten by the very next call, and a goal that moved with it
+    // would report every step as a new destination and replan forever. `changed` above compares
+    // against this, so dropping the assignment also drops the cache it maintains.
+    const goal = entity.pathGoalPoint;
+    goal.x = dest.x;
+    goal.z = dest.z;
+    entity.pathGoal = goal;
+    // `findRoute` answers from a shared scratch, so the route is copied here into the array and the
+    // points the entity already owns — after this, nothing outside the entity holds it, which is
+    // what lets the next replan reuse both.
+    const route = game.lineClear(entity, dest, entity.r)
+      ? null
       : game.pathfind(entity, dest, entity.r);
-    const last = entity.path[entity.path.length - 1];
-    entity.pathEnd = last ? { ...last } : null;
+    // The waypoints come out of the unit's own `pathPool`, grown here to fit: a route one cell
+    // longer than any this unit has walked would otherwise mint a point, and a path is replanned
+    // whenever its length changes. Nothing outside the entity holds a pool point, so handing the
+    // same one back on the next replan cannot move a path another unit is walking.
+    const length = route === null ? 1 : route.length;
+    const pool = entity.pathPool;
+    // Doubling rather than growing by one: a route that lengthens a cell at a time would otherwise
+    // mint a point on the step that walked it, which is ordinary replanning, not an event. The
+    // store is kept after the path drops its points, so a unit pays this at most once per doubling
+    // of its longest route — a handful of allocations across a whole match, not one per detour.
+    if (length > pool.length) {
+      const target = Math.max(length, pool.length * 2);
+      for (let i = pool.length; i < target; i++) pool.push({ x: 0, z: 0 });
+    }
+    const waypoints = entity.path;
+    waypoints.length = length;
+    for (let i = 0; i < length; i++) {
+      const source = route === null ? dest : route[i];
+      const slot = pool[i];
+      if (source === undefined || slot === undefined) continue;
+      slot.x = source.x;
+      slot.z = source.z;
+      waypoints[i] = slot;
+    }
+    const last = waypoints[length - 1];
+    if (last) {
+      const end = entity.pathEndPoint;
+      end.x = last.x;
+      end.z = last.z;
+      entity.pathEnd = end;
+    } else {
+      entity.pathEnd = null;
+    }
     entity.pathAdjusted = !!entity.pathEnd && dist(dest, entity.pathEnd) > 0.4;
     entity.pathClock = entity.path.length ? 0.4 : 1.25;
   }
@@ -103,7 +163,7 @@ export function travelEntity(
   const nx = entity.x + (dx / dd) * move;
   const nz = entity.z + (dz / dd) * move;
   if (game.blocked(nx, nz, entity.r) && !game.blocked(entity.x, entity.z, entity.r)) {
-    entity.path = [];
+    entity.path.length = 0;
     entity.pathClock = 0.35;
     entity.moving = false;
     return false;
@@ -259,15 +319,19 @@ export function approachInteraction(
     const radius = range - 0.35;
     // The candidate ring, in place: `Array.from(...).filter()` was 25 objects and an array per
     // worker per step to walk a ring this loop walks anyway. An unreachable site still caches as
-    // no point, exactly as the filtered ring did.
-    let point: IPoint | null = null;
-    for (let i = 0; i < 24 && point === null; i++) {
+    // no point, exactly as the filtered ring did. The point itself is the unit's own, so a
+    // retarget rewrites it instead of minting one per worker per retarget.
+    const point = unit.interactionPoint;
+    let found = false;
+    for (let i = 0; i < 24 && !found; i++) {
       const a = angle + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
       _candidate.x = target.x + Math.cos(a) * radius;
       _candidate.z = target.z + Math.sin(a) * radius;
       if (game.blocked(_candidate.x, _candidate.z, unit.r)) continue;
       if (game.lineClear(unit, _candidate, unit.r)) {
-        point = { x: _candidate.x, z: _candidate.z };
+        point.x = _candidate.x;
+        point.z = _candidate.z;
+        found = true;
         break;
       }
       const route = game.pathfind(unit, _candidate, unit.r);
@@ -282,18 +346,20 @@ export function approachInteraction(
         previous = step;
       }
       if (end && dist(end, _candidate) < 0.35 && walked) {
-        point = { x: _candidate.x, z: _candidate.z };
+        point.x = _candidate.x;
+        point.z = _candidate.z;
+        found = true;
         break;
       }
     }
-    cached = {
-      point,
-      range,
-      retryAt: game.time + 1.5,
-      revision: game.navRevision,
-      targetId: target.id,
-    };
-    unit.interactionGoal = cached;
+    // The cache record is the unit's own, born with it and rewritten here: a retarget is an event,
+    // but the record outlives it, so a fresh one per retarget is garbage the moment the next lands.
+    cached = unit.interactionGoal;
+    cached.point = found ? point : null;
+    cached.range = range;
+    cached.retryAt = game.time + 1.5;
+    cached.revision = game.navRevision;
+    cached.targetId = target.id;
     clearMovement(unit);
   }
   if (!cached.point) {

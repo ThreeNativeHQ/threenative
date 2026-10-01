@@ -136,10 +136,16 @@ export function waterBlocked(
   pools: readonly IPool[] = POOLS,
   margin = 0,
 ): boolean {
-  return pools.some((p) => {
-    if (p.bridge && onBridge(x, z, margin * 0.3)) return false;
-    return ((x - p.x) / (p.rx + margin)) ** 2 + ((z - p.z) / (p.rz + margin)) ** 2 < 1;
-  });
+  // Counted over the pool list rather than `pools.some((p) => ...)`: `game.blocked` asks this for
+  // every separation query and every line sample, so the arrow was 200+ closures a step at sixty
+  // units. `some` short-circuits and so does this.
+  for (let i = 0; i < pools.length; i++) {
+    const p = pools[i];
+    if (p === undefined) continue;
+    if (p.bridge && onBridge(x, z, margin * 0.3)) continue;
+    if (((x - p.x) / (p.rx + margin)) ** 2 + ((z - p.z) / (p.rz + margin)) ** 2 < 1) return true;
+  }
+  return false;
 }
 
 export function terrainHeight(x: number, z: number, bridge = true): number {
