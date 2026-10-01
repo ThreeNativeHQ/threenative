@@ -88,6 +88,12 @@ import type {
 } from "./report.js";
 import { createPassPool, resolveConcurrency } from "./worker-pool.js";
 import type { PassSpec } from "./worker-protocol.js";
+import {
+  applyProxiesToWorld,
+  cookWorldProxies,
+  formatWorldHlod,
+  readWorldPackage,
+} from "./world/proxy.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
 
@@ -2402,6 +2408,76 @@ export async function compileAssets(
   if (options.processingOrder === "reversed") logicals.reverse();
 
   /**
+   * PRD-473 AC-4: cook each authored world cell's chunks into one HLOD proxy GLB.
+   *
+   * The proxy and the rewritten world JSON are *virtual* sources: they live only in this overlay,
+   * so the authored tree is never mutated and every chunk file is retained beside it. The proxy is
+   * an ordinary model input — it takes the model pass, the content-addressed output name and the
+   * cache — while the world JSON, classified `other`, publishes the rewritten bytes unchanged.
+   * `cell.proxy` is optional, so a world that declined every cell ships exactly as authored.
+   */
+  const overlay = new Map<string, Buffer>();
+  const logicalSet = new Set(logicals);
+  const isExcluded = (logical: string): boolean =>
+    layout.exclude.some((glob) => globMatch(glob, logical));
+  // Every read is gated on the collected input set: an overlay entry this run generated, or a
+  // logical the source walk actually included. A `../` chunk reference, an excluded chunk, or any
+  // path the walk never produced therefore fails closed instead of reading off disk.
+  const readSource = async (logical: string): Promise<Buffer> => {
+    const overlaid = overlay.get(logical);
+    if (overlaid !== undefined) return overlaid;
+    if (!logicalSet.has(logical)) {
+      throw new Error(
+        `TN_ASSETS_INPUT_UNREADABLE: '${logical}' was not collected under '${layout.sourceRoot}'.`,
+      );
+    }
+    return readInput(layout.sourceRoot, logical);
+  };
+  const worldJsonLogicals = logicals.filter(
+    (logical) => path.extname(logical).toLowerCase() === ".json",
+  );
+  for (const worldLogical of worldJsonLogicals) {
+    let bytes: Buffer;
+    try {
+      bytes = await readSource(worldLogical);
+    } catch {
+      continue;
+    }
+    const world = readWorldPackage(bytes);
+    if (world === undefined) continue;
+    const result = await cookWorldProxies({
+      included: (logical) => logicalSet.has(logical),
+      read: readSource,
+      world,
+      worldLogical,
+    });
+    // A proxy whose own logical is excluded by globs, or already an authored source, is not
+    // written; the cell is reported declined rather than silently skipped.
+    const declined = [...result.declined];
+    const accepted = result.proxies.filter((proxy) => {
+      if (isExcluded(proxy.logical)) {
+        declined.push({ reason: "excluded-proxy", x: proxy.x, z: proxy.z });
+        return false;
+      }
+      if (logicalSet.has(proxy.logical)) {
+        declined.push({ reason: "existing-output", x: proxy.x, z: proxy.z });
+        return false;
+      }
+      return true;
+    });
+    if (accepted.length === 0 && declined.length === 0) continue;
+    console.log(formatWorldHlod(worldLogical, { declined, proxies: accepted }));
+    // A world that gained no proxy ships byte-identical: declines are reported, not rewritten.
+    if (accepted.length === 0) continue;
+    overlay.set(worldLogical, applyProxiesToWorld(world, accepted));
+    for (const proxy of accepted) {
+      overlay.set(proxy.logical, proxy.buffer);
+      logicalSet.add(proxy.logical);
+      logicals.push(proxy.logical);
+    }
+  }
+
+  /**
    * Content-identical model sources cook once.
    *
    * A streamed world package shipped 374 model files for 101 distinct models — the same prop
@@ -2421,6 +2497,7 @@ export async function compileAssets(
   const canonicalOf = await groupModelSources(
     layout.sourceRoot,
     modelSources.filter((logical) => !perAssetLod.has(logical)),
+    readSource,
   );
 
   /**
@@ -2614,7 +2691,7 @@ export async function compileAssets(
 
   /** One cooked source, published as itself. */
   const cookOne = async (logical: string): Promise<ICookedModel> => {
-    const input = await readInput(layout.sourceRoot, logical);
+    const input = await readSource(logical);
     const digest = createHash("sha256")
       .update(input)
       .update(passConfigurations[classify(logical)], "utf8")
@@ -2790,8 +2867,14 @@ export async function compileAssets(
     }
     const cooked = await pending;
     dedupeSavedBytes += cooked.entry.bytes;
+    // A generated proxy exists only in the overlay, so its own bytes are the measurement; a real
+    // duplicate is measured from disk.
+    const overlaid = overlay.get(logical);
     const entry = withFreshLodRuntime(
-      { ...cooked.entry, bytesBefore: (await stat(path.join(layout.sourceRoot, logical))).size },
+      {
+        ...cooked.entry,
+        bytesBefore: overlaid?.length ?? (await stat(path.join(layout.sourceRoot, logical))).size,
+      },
       logical,
       layout.lod,
       layout.lodLegacy,

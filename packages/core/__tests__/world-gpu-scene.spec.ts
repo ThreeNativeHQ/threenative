@@ -13,11 +13,15 @@ import {
   type Object3D,
   PerspectiveCamera,
 } from "three";
+// @ts-expect-error Three's render-object module has no public declaration; this test exercises the
+// draw gate itself, which is what the submission contract is about.
+import RenderObject from "three/src/renderers/common/RenderObject.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { lodBias, setLodBias } from "../src/model-lod.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import {
+  DRAW_ARGS_BYTES,
   type IGpuPlacement,
   type IKernelInput,
   type ILiveAsset,
@@ -27,6 +31,7 @@ import {
   compareMeshDraws,
   cullAndSelect,
   gpuSceneUnsupported,
+  levelAtGates,
   liveKeyInstances,
   storageElementBytes,
   validationReport,
@@ -223,6 +228,14 @@ function plainModel(): Group {
   return group;
 }
 
+/** A tree of two parts — trunk and canopy — each with its own material, so the asset is multi-part. */
+function multiPartModel(): Group {
+  const group = new Group();
+  group.add(new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
+  group.add(new Mesh(new BoxGeometry(0.5, 0.5, 0.5), new MeshBasicMaterial()));
+  return group;
+}
+
 function fileResponse(buffer: Buffer): object {
   return {
     arrayBuffer: async () =>
@@ -276,6 +289,59 @@ function stubManifestFetch(authoredLods = false): void {
 }
 
 /**
+ * A one-asset package whose prop reaches ten metres along +Z of its placement point, with that one
+ * placement turned a quarter turn about +Y, over the committed terrain and extent.
+ *
+ * The production `WorldCells` build is what places the source record, so the sphere it hands the
+ * dispatch is the sphere the wiring actually computes. Answers the centre the rotation should carry:
+ * the authored centre `(0, 0, 10)` under the turn lands at `(10, 0, 0)`, and the radius is half the
+ * authored bounds' diagonal: a 0..20 span is a diagonal of 20, so `10`. It used to be halved a second
+ * time to `5`, a sphere inside the prop that culled the half reaching away from the placement point.
+ */
+function stubTurnedPropFetch(scale = 1): {
+  centre: { x: number; y: number; z: number };
+  radius: number;
+} {
+  const pkg: IWorldPackage = {
+    assets: { prop: { bounds: { max: [0, 0, 20], min: [0, 0, 0] }, glb: "prop.glb" } },
+    cellSize: CELL,
+    cells: [{ runs: [{ asset: "prop", count: 1, offset: 0 }], x: 0, z: 0 }],
+    extent: manifest.extent,
+    placements: "placements.bin",
+    terrain: manifest.terrain,
+    version: 1,
+  };
+  // One record: x, y, z, the quaternion (x, y, z, w) of a +Y quarter turn, and the placement scale.
+  const half = Math.SQRT1_2;
+  const records = new Float32Array([0, 0, 0, 0, half, 0, half, scale]);
+  const body = JSON.stringify(pkg);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: unknown): Promise<object> => {
+      const url = String(input);
+      if (url.endsWith("world.json"))
+        return {
+          arrayBuffer: async () => new TextEncoder().encode(body).buffer as ArrayBuffer,
+          headers: new Headers(),
+          json: async () => pkg,
+          ok: true,
+          status: 200,
+        };
+      if (url.endsWith("placements.bin")) return fileResponse(Buffer.from(records.buffer));
+      if (url.endsWith("heightmap.u16"))
+        return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
+      return {
+        arrayBuffer: async () => new ArrayBuffer(0),
+        headers: new Headers(),
+        ok: false,
+        status: 404,
+      };
+    }),
+  );
+  return { centre: { x: 10 * scale, y: 0, z: 0 }, radius: 10 * scale };
+}
+
+/**
  * A player camera in the middle of cell (0,1) at head height, looking west: the main-cull spec's
  * camera, so the visible visibility cells are the ones the coarse gate below is judged against.
  */
@@ -310,6 +376,40 @@ function mainMesh(world: WorldCells): InstancedMesh {
  */
 function mainKeys(world: WorldCells): InstancedMesh[] {
   return worldMeshes(world).filter((one) => one.name !== "" && !one.name.includes("@"));
+}
+
+/** Every main mesh of one level of one asset: `pine:0:0`, `pine:0:1`, … */
+function mainLevel(world: WorldCells, asset: string, level: number): InstancedMesh[] {
+  const prefix = `${asset}:${String(level)}:`;
+  return mainKeys(world).filter((one) => one.name.startsWith(prefix));
+}
+
+/**
+ * Whether three's own draw path admits this object, run on the real `RenderObject` the renderer
+ * uses: `getDrawParameters` is the exact gate that suppresses an indirect draw. A zero
+ * `InstancedMesh.count` makes it answer `null`, and the WebGPU backend returns before
+ * `drawIndexedIndirect` — so the GPU's args record is never read, whatever the dispatch selected.
+ * The fields below are the ones the renderer sets on a render object before drawing it.
+ */
+function threeAdmitsDraw(mesh: InstancedMesh): boolean {
+  const object = Object.create(RenderObject.prototype) as {
+    object: InstancedMesh;
+    material: unknown;
+    geometry: BufferGeometry;
+    group: null;
+    drawRange: { start: number; count: number };
+    drawParams: null;
+    _geometries: { getIndex: () => unknown };
+    getDrawParameters: () => unknown;
+  };
+  object.object = mesh;
+  object.material = mesh.material;
+  object.geometry = mesh.geometry;
+  object.group = null;
+  object.drawRange = mesh.geometry.drawRange;
+  object.drawParams = null;
+  object._geometries = { getIndex: () => mesh.geometry.index ?? null };
+  return object.getDrawParameters() !== null;
 }
 
 /**
@@ -547,6 +647,57 @@ describe("WorldCells GPU-driven main pass", () => {
     const regrown = scene.regionOf("a:0:0") as IRegion;
     expect(regrown.capacity).toBe(8);
     expect(regrown.start).toBe(6);
+    scene.dispose();
+  });
+
+  it("keeps a level's run and the drawn buffer stable across unchanged registrations", () => {
+    // The walk's own cadence: a re-dress asks for the keys it already has. Registering one is not a
+    // structural change, and laying the level out again appended the whole group to the drawn
+    // buffer's tail every call — so 200 unchanged registrations grew the buffer without bound until
+    // a real GPU refused the allocation.
+    const scene = wired([{ name: "pine", levels: [0, 40, 120] }], 2, 64);
+    const drawnBytes = (): number => (scene.footprint().drawn as { bytes: number }).bytes;
+    const bytesBefore = drawnBytes();
+    const starts = scene.regions.map((region) => region.start);
+    const capacities = scene.regions.map((region) => region.capacity);
+    const version = scene.version;
+    for (let round = 0; round < 200; round += 1)
+      for (let level = 0; level < 3; level += 1)
+        for (let part = 0; part < 2; part += 1)
+          scene.key(`pine:${String(level)}:${String(part)}`, new Float32Array(LOCAL), 64, {
+            group: `pine:${String(level)}`,
+            part,
+            parts: 2,
+          });
+    // The same buffer, size and offsets after 200 unchanged registrations: a no-op really is one.
+    expect(drawnBytes()).toBe(bytesBefore);
+    expect(scene.regions.map((region) => region.start)).toEqual(starts);
+    expect(scene.regions.map((region) => region.capacity)).toEqual(capacities);
+    expect(scene.version).toBe(version);
+    scene.dispose();
+  });
+
+  it("bounds the drawn buffer when a level is repeatedly regrown and re-streamed", () => {
+    // A walk outgrows a level's region, the ring streams, the level is regrown again: each structural
+    // change re-packs every run from zero, so the buffer is the sum of the runs that exist, not of
+    // every run ever abandoned. Without the re-pack each regrow left its old run behind and the
+    // buffer grew by both parts per call, without bound.
+    const scene = wired([{ name: "pine", levels: [0] }], 2, 4);
+    const drawnBytes = (): number => (scene.footprint().drawn as { bytes: number }).bytes;
+    let peak = drawnBytes();
+    for (let round = 1; round <= 64; round += 1) {
+      const capacity = 4 * round;
+      for (const part of [0, 1])
+        scene.key(`pine:0:${String(part)}`, LOCAL, capacity, { group: "pine:0", part, parts: 2 });
+      const bytes = drawnBytes();
+      peak = Math.max(peak, bytes);
+      // Two parts of the current capacity, so the compaction reclaimed every abandoned run. The
+      // doubling growth may round the allocation up to the next power of two, never past 2x.
+      expect(bytes).toBeGreaterThanOrEqual(2 * 64 * capacity);
+      expect(bytes).toBeLessThanOrEqual(4 * 64 * capacity);
+    }
+    // The peak is the last stale buffer, not a sum over 64 rounds of two 256-part relocations each.
+    expect(peak).toBeLessThanOrEqual(4 * 64 * 4 * 64);
     scene.dispose();
   });
 
@@ -928,6 +1079,71 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
+  it("keeps a key's region at its logical capacity across repeated move-out and return", async () => {
+    stubManifestFetch();
+    const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 2,
+      surface,
+      url: "/world/world.json",
+    });
+    const renderer = gpuRendererStub();
+    const camera = playerCamera();
+    const home = cellCentre(0, 1);
+    // A cell the committed package has none of, so the walk out retires every key the return rebinds.
+    // The ring is wide enough that a few returns admit more blocks for one key than the world first
+    // sized it for, which is the streaming churn a freed range has to serve.
+    const away = cellCentre(6, 1);
+    const oscillate = async (): Promise<void> => {
+      follow.position.x = away.x;
+      follow.position.z = away.z;
+      world.update(renderer, camera);
+      await flushed(world);
+      follow.position.x = home.x;
+      follow.position.z = home.z;
+      world.update(renderer, camera);
+      await flushed(world);
+    };
+    for (let index = 0; index < 12; index += 1) world.update(renderer, camera);
+    await flushed(world);
+    // The park/rebind cycle is exercised once before the measurement, so the key table and its
+    // regions have reached the size a returned walk settles at; what is asserted is that returning
+    // again never moves it.
+    await oscillate();
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    // The scene's one shared compaction buffer, which every dressed main mesh binds. It is not this
+    // key's, and a retired batch parked by its `count` resized the whole world against it.
+    const drawn = mainMesh(world).instanceMatrix;
+    const records = drawn.count;
+    for (let round = 0; round < 4; round += 1) {
+      await oscillate();
+      // The rebind is the object that draws, over the scene's same shared buffer: a parked/rebound
+      // batch must not resize or replace the world's compaction buffer, whose records are every
+      // other key's too.
+      const back = mainMesh(world);
+      expect(back.instanceMatrix).toBe(drawn);
+      expect(drawn.count).toBe(records);
+      expect(
+        (back.instanceMatrix as unknown as { isStorageInstancedBufferAttribute?: boolean })
+          .isStorageInstancedBufferAttribute,
+      ).toBe(true);
+      expect(back.frustumCulled).toBe(false);
+      expect((back.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+      // And it is still a live submission: a fresh node bound to the buffer, admitted by three's own
+      // draw gate at the region capacity rather than skipped at a zero count.
+      expect(back.count).toBeGreaterThan(0);
+      expect(threeAdmitsDraw(back)).toBe(true);
+    }
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
   it("hands a dressed main batch a fresh object, carrying everything the compiled one had", async () => {
     stubManifestFetch();
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
@@ -1021,11 +1237,12 @@ describe("WorldCells with the GPU-driven main pass", () => {
     world.dispose();
   });
 
-  it("replaces the mesh again when the scene regrows its own drawn buffer", async () => {
+  it("dresses every main batch onto the scene's live buffer and re-dresses none on a settled walk", async () => {
     const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
     // The fixture's authored lods rather than the stubbed single level: a level's key is minted when
-    // that level is first dressed, and minting one is what regrows the scene's shared drawn buffer —
-    // a new attribute object every dressed mesh's node has to bind.
+    // that level is first dressed. Minting every level mints every group before the first dress, so
+    // the drawn buffer reaches its final size once and a settled frame re-dresses nothing. The walk
+    // that used to re-lay each level out on every dress grew that buffer without bound.
     stubManifestFetch(true);
     const world = await WorldCells.load({
       admissionBudgetMs: Number.POSITIVE_INFINITY,
@@ -1065,13 +1282,14 @@ describe("WorldCells with the GPU-driven main pass", () => {
     }
     await flushed(world);
 
-    // Every key's mesh was replaced when the scene came up, and at least one was replaced again
-    // because the regrow gave the world a new drawn buffer: the same case as the first dress, a node
-    // bound to an attribute nothing writes any more, so the same road.
+    // Every key's CPU mesh was replaced once when the scene came up, onto the shared buffer; no key
+    // was replaced a second time, because a settled registration keeps its run and the buffer it
+    // points at. A regrow that does replace `drawn` is the same road as the first dress — a node
+    // bound to an attribute nothing writes any more — and `#dressGpu`'s fast path takes it.
     const counts = [...freed.values()];
     expect(counts.length).toBeGreaterThan(1);
     expect(counts.every((count) => count > 0)).toBe(true);
-    expect(counts.some((count) => count > 1)).toBe(true);
+    expect(counts.every((count) => count === 1)).toBe(true);
     // And the replacements are the objects that draw, over the live buffer.
     for (const mesh of mainKeys(world)) {
       expect(
@@ -1212,6 +1430,218 @@ describe("WorldCells with the GPU-driven main pass", () => {
     expect(mainMesh(world).count).toBe(pineIn("0,0", "0,1", "0,2", "1,0", "1,1", "1,2"));
     world.dispose();
   });
+
+  it("hands the dispatch a turned off-centre prop's sphere centred where its quaternion carries the bounds", async () => {
+    // The source record's centre is the authored bounds centre under the placement's own transform:
+    // a prop whose bounds reach ten metres along +Z, turned a quarter turn about +Y, has its centre
+    // ten metres along +X. The wiring translated the centre and never turned it, so the sphere sat
+    // where the unturned prop would be and the dispatch culled a prop on screen.
+    const { centre, radius } = stubTurnedPropFetch();
+    const placed = vi.spyOn(WorldGpuScene.prototype, "place");
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow: { position: { ...cellCentre(0, 0), y: 0 } as { x: number; z: number } },
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update(gpuRendererStub(), playerCamera([0, 0]));
+    await flushed(world);
+    // The production build is what placed it, through the same `place` the world always calls.
+    expect(placed).toHaveBeenCalled();
+    for (const [, , x, y, z, at] of placed.mock.calls) {
+      expect(x).toBeCloseTo(centre.x, 4);
+      expect(y).toBeCloseTo(centre.y, 4);
+      expect(z).toBeCloseTo(centre.z, 4);
+      expect(at).toBeCloseTo(radius, 4);
+    }
+    world.dispose();
+  });
+
+  it("scales the turned prop's sphere radius by the placement's own scale, once", async () => {
+    // The same turned prop, placed 3x: its authored bounds radius is half the 20 m diagonal (10),
+    // and the placement's uniform scale carries it to 30. The wiring halved it twice, so this read
+    // 7.5 — a sphere well inside the prop that culled most of it.
+    const { centre, radius } = stubTurnedPropFetch(3);
+    const placed = vi.spyOn(WorldGpuScene.prototype, "place");
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow: { position: { ...cellCentre(0, 0), y: 0 } as { x: number; z: number } },
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update(gpuRendererStub(), playerCamera([0, 0]));
+    await flushed(world);
+    expect(placed).toHaveBeenCalled();
+    for (const [, , x, y, z, at] of placed.mock.calls) {
+      expect(x).toBeCloseTo(centre.x, 4);
+      expect(y).toBeCloseTo(centre.y, 4);
+      expect(z).toBeCloseTo(centre.z, 4);
+      expect(at).toBeCloseTo(radius, 4);
+    }
+    world.dispose();
+  });
+
+  for (const bundles of [false, true])
+    it(`keeps the near LOD mesh of a walked-into key renderable while the CPU's level membership is stale (bundles ${bundles ? "on" : "off"})`, async () => {
+      /**
+       * The per-key coarse gate against a level only the dispatch ever selects.
+       *
+       * Authored `lods` put pine's second shape at 60 m, so a placement's level is decided twice:
+       * once on the CPU, from the follow point at build time, and every frame on the GPU, from the
+       * camera. `#refilterStale` is disabled while the scene is on, so the CPU's answer never moves:
+       * a follow point parked outside the package builds every placement into the coarse level and
+       * the near key's `#squareSizes` stays empty forever. The camera then walks in — a plain camera
+       * move, no residency change and no rebuild — and the dispatch selects the near level. The near
+       * mesh has no CPU cell of its own, so the old gate hid exactly the mesh the dispatch was
+       * drawing. Run with bundles both off (the default) and on: a bundled mesh is shown by its
+       * recorded bundle and never asked, so the two paths must both keep it renderable.
+       */
+      stubManifestFetch(true);
+      // Far past the 60 m switch from every resident cell, and never moved, so every build is coarse.
+      const follow = { position: { x: 200, z: -32, y: 0 } as { x: number; z: number } };
+      const world = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets,
+        bundles,
+        follow,
+        gpuScene: true,
+        loadModel: async () => multiPartModel(),
+        prefetchSeconds: 0,
+        ring: 2,
+        surface,
+        url: "/world/world.json",
+      });
+      await flushed(world);
+      // The near level of a multi-part tree: minted empty, because no placement reached it.
+      expect(mainLevel(world, "pine", 0).length).toBeGreaterThan(1);
+      expect(mainLevel(world, "pine", 1).length).toBe(mainLevel(world, "pine", 0).length);
+      for (const mesh of mainLevel(world, "pine", 0)) expect(mesh.count).toBe(0);
+
+      const renderer = gpuRendererStub();
+      const camera = playerCamera([3, 1]);
+      // One frame dresses every key, then the loading screen's prewarm submissions count — the moment
+      // the coarse gate takes over from the owed-draw exception. A unit world is never projected, so
+      // nothing else ever counts them.
+      world.update(renderer, camera);
+      for (const mesh of mainKeys(world)) (mesh.onBeforeRender as () => void)();
+      const before = world.stats();
+      world.update(renderer, camera);
+      await flushed(world);
+      // The camera is on the coarse-built trees now: the dispatch selects the near level for them.
+      // Every part of the near key has to stay renderable, empty on the CPU or not.
+      const near = mainLevel(world, "pine", 0);
+      const coarse = mainLevel(world, "pine", 1);
+      for (const mesh of near) {
+        expect(mesh.visible).toBe(true);
+        // A zero count is not renderable: three's own gate answers null there and the backend never
+        // submits the indirect record the dispatch wrote. The region's capacity is the bound the mesh
+        // is submitted at, and the record's count is what actually draws.
+        expect(mesh.count).toBeGreaterThan(0);
+        expect(threeAdmitsDraw(mesh)).toBe(true);
+        // A fresh, attached generation and not a detached one: a dressed replacement is parented on
+        // the bundle group when bundles are on and on the world when they are off, and the object the
+        // parent holds is this one.
+        expect(mesh.parent?.name === "world-main-bundles" || mesh.parent === world).toBe(true);
+        expect(mesh.parent?.children.includes(mesh)).toBe(true);
+        expect((mesh.geometry as BufferGeometry & { indirect: unknown }).indirect).not.toBeNull();
+      }
+      for (const mesh of coarse) {
+        expect(mesh.visible).toBe(true);
+        expect(threeAdmitsDraw(mesh)).toBe(true);
+      }
+      // Distinct live objects, one per `asset:level:part`: near and coarse never share a mesh. That a
+      // placement is also drawn by exactly one of them is the dispatch's own level test, proved by
+      // identity in the spec's "sends each placement to exactly one level" case.
+      const mainNames = mainKeys(world).map((mesh) => mesh.name);
+      expect(new Set(mainNames).size).toBe(mainNames.length);
+      expect(near.every((mesh) => coarse.includes(mesh) === false)).toBe(true);
+      // No CPU repack and no refilter: the level membership is stale by construction, which is the
+      // whole reason the gate was wrong.
+      const after = world.stats();
+      expect(after.mainCull.repacks - before.mainCull.repacks).toBe(0);
+      expect(after.refilters - before.refilters).toBe(0);
+
+      // Walk back out: same keys, same stale membership, still nothing repacked.
+      camera.position.set(follow.position.x, 4, follow.position.z);
+      camera.lookAt(follow.position.x, 4, follow.position.z + 1);
+      camera.updateMatrixWorld();
+      world.update(renderer, camera);
+      await flushed(world);
+      const home = world.stats();
+      expect(home.mainCull.repacks - after.mainCull.repacks).toBe(0);
+      expect(home.refilters - after.refilters).toBe(0);
+      expect(home.failures).toBe(0);
+      world.dispose();
+    });
+
+  for (const bundles of [false, true])
+    it(`rebinds a dressed mesh whose args buffer was replaced under it (bundles ${bundles ? "on" : "off"})`, async () => {
+      /**
+       * The seam a machinefall walk hit: the args buffer and the drawn matrix buffer are allocated
+       * and grown independently, and minting a key replaces `args` while `drawn` keeps its object.
+       * `#dressGpu`'s fast path checked only `drawn`, the capacity and the parent, so a mesh whose
+       * geometry held the old args attribute was left reading a buffer the dispatch no longer wrote —
+       * the forest drew nothing while the readback reported the counts correct.
+       *
+       * The growth is forced through the scene's own public `key`, the registration seam the world
+       * itself uses: capacity-zero keys left of the world grow the key count and so `args`, and touch
+       * `drawn` not at all. The scene is reached through a spy on `WorldGpuScene.prototype.key`, so
+       * nothing is exported or unwrapped for the test. One completed update, no settling frame.
+       */
+      stubManifestFetch();
+      const follow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+      const world = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets,
+        bundles,
+        follow,
+        gpuScene: true,
+        loadModel: async () => multiPartModel(),
+        prefetchSeconds: 0,
+        ring: 1,
+        surface,
+        url: "/world/world.json",
+      });
+      const keyed = vi.spyOn(WorldGpuScene.prototype, "key");
+      const renderer = gpuRendererStub();
+      const camera = playerCamera();
+      world.update(renderer, camera);
+      await flushed(world);
+      const scene = keyed.mock.contexts.at(-1) as WorldGpuScene;
+      expect(scene).toBeInstanceOf(WorldGpuScene);
+      const meshes = mainKeys(world);
+      expect(meshes.length).toBeGreaterThan(0);
+      const argsBefore = scene.args;
+      const drawnBefore = scene.drawn;
+      for (let index = 0; index < 600 && scene.args === argsBefore; index += 1)
+        scene.key(`pad:${String(index)}:0`, LOCAL, 0);
+      // The two buffers moved apart: args is a new object, drawn is not.
+      expect(scene.args).not.toBe(argsBefore);
+      expect(scene.drawn).toBe(drawnBefore);
+      // One completed update: every attached main mesh must read the args the dispatch will write.
+      world.update(renderer, camera);
+      const after = mainKeys(world);
+      expect(after.length).toBeGreaterThan(0);
+      for (const mesh of after) {
+        const region = scene.regionOf(mesh.name);
+        expect(region).toBeDefined();
+        expect(mesh.instanceMatrix).toBe(scene.drawn);
+        expect(mesh.geometry.indirect).toBe(scene.args);
+        expect(mesh.geometry.indirectOffset).toBe((region?.argsIndex ?? -1) * DRAW_ARGS_BYTES);
+      }
+      expect(world.stats().failures).toBe(0);
+      world.dispose();
+    });
 });
 
 describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set", () => {
@@ -1369,6 +1799,9 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
       const [, level, part] = name.split(":");
       const level0 = Number(level);
       return {
+        // A unit fixture has no mesh to read the binding off, so the identity the owner would ask of
+        // one is stated: this key's record is the scene's live args buffer's.
+        bound: true,
         instances: cpuKeyInstances(
           scene.placements,
           ASSETS.indexOf(asset),
@@ -1480,11 +1913,13 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
     const grown = run();
     expect(grown.get(keyOf(scene, "gc:0:0"))).toHaveLength(5);
     expect(grown.get(keyOf(scene, "gc:0:1"))).toHaveLength(5);
-    // The regrown region starts at the tail and the draw's own `firstInstance` says so.
+    // The regrown run is the level's whole, packed from the front of the buffer with its sibling
+    // right after it, and the draw's own `firstInstance` reads the same offsets.
     const region = scene.regionOf("gc:0:0") as IRegion;
     expect(region.capacity).toBe(8);
-    expect(region.start).toBeGreaterThanOrEqual(4);
-    expect(scene.regionOf("gc:0:1")?.start).toBe((region.start ?? 0) + 8);
+    expect(region.start).toBe(0);
+    expect(scene.regionOf("gc:0:1")?.start).toBe(8);
+    expect(scene.regionOf("gc:0:1")?.capacity).toBe(8);
     scene.dispose();
   });
 
@@ -1559,6 +1994,35 @@ describe("WorldCells GPU-driven main pass, against the CPU path's own drawn set"
     expect(cullAndSelect({ ...input, placements: atPoint }).counts[keyOf(scene, "pole:0:0")]).toBe(
       0,
     );
+    scene.dispose();
+  });
+
+  it("sends each placement to exactly one level, so two keys never draw it twice", () => {
+    // The coarse gate hides a key's mesh and the dispatch still has to draw the placement once. The
+    // kernel's level test is ascending and `>`, so a placement belongs to the last gate it passes and
+    // to no other — and this proves it by identity: the drawn matrix of every region is mapped back
+    // to the placement it carries, and no placement may answer for two keys.
+    const scene = wired([{ name: "prop", levels: [0, 20, 60] }], 1, 64);
+    placed(scene, 0, 12, 7);
+    const input: IKernelInput = {
+      camera: { planes: cameraAt(0, 0).planes, x: 0, y: 0, z: 0 },
+      count: scene.placements.length,
+      placements: scene.placements,
+      regionCount: scene.regions.length,
+      regions: scene.regions,
+      slots: scene.gates(),
+    };
+    const drawn = kernelDrawn(cullAndSelect(input), input);
+    const seen = new Map<number, number>();
+    for (const [key, indexes] of drawn)
+      for (const index of indexes) {
+        expect(seen.has(index)).toBe(false);
+        seen.set(index, key);
+      }
+    // Every placement is inside the camera's frustum here, so all twelve are drawn — none dropped,
+    // none twice.
+    expect(seen.size).toBe(12);
+    expect([...drawn.values()].reduce((sum, run) => sum + run.length, 0)).toBe(12);
     scene.dispose();
   });
 });
@@ -1820,6 +2284,81 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(differing.lines).toEqual(["pine:0:0 gpu=40 cpu=48", "pine:1:0 gpu=56 cpu=48"]);
   });
 
+  it("carries the memory fields a backend offers and omits the ones it does not", () => {
+    const base = {
+      compared: 1,
+      deviceError: "",
+      instancesCpu: 1,
+      instancesGpu: 1,
+      matricesMismatched: 0,
+      meshMismatched: 0,
+      meshMismatches: [] as readonly string[],
+      mismatched: 0,
+      mismatches: [] as readonly string[],
+      matrixMismatches: [] as readonly string[],
+      placed: 1,
+    };
+    const known = validationReport({
+      ...base,
+      memory: {
+        storageAttributes: 4,
+        storageAttributesSize: 256,
+        indirectStorageAttributes: 2,
+        indirectStorageAttributesSize: 128,
+        readbackBuffers: 1,
+        readbackBuffersSize: 512,
+        total: 2048,
+        footprintBytes: 4096,
+      },
+    });
+    expect(known.line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 " +
+        "matricesMismatched=0 meshMismatched=0 storageAttributes=4 storageAttributesSize=256 " +
+        "indirectStorageAttributes=2 indirectStorageAttributesSize=128 readbackBuffers=1 " +
+        "readbackBuffersSize=512 total=2048 footprintBytes=4096",
+    );
+    // No memory object at all is no memory fields, and the line is exactly what it always was.
+    expect(validationReport(base).line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 " +
+        "matricesMismatched=0 meshMismatched=0",
+    );
+    // A field the backend did not offer is omitted, not printed as a fake zero, and a non-finite
+    // reading is not a number either.
+    expect(validationReport({ ...base, memory: { readbackBuffers: 2 } }).line).toBe(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=1 instancesGpu=1 instancesCpu=1 mismatched=0 " +
+        "matricesMismatched=0 meshMismatched=0 readbackBuffers=2",
+    );
+    expect(
+      validationReport({ ...base, memory: { total: Number.NaN } }).line.includes("total="),
+    ).toBe(false);
+  });
+
+  it("counts a mesh reading a stale args buffer as a mismatch even when its record agrees", () => {
+    // The readback is of the live args buffer, so a record's numbers can agree with the reference
+    // while the mesh's own geometry still points at an older buffer with the same layout — the args
+    // buffer is allocated independently of `drawn`, and a mint replaces it under a dressed mesh. The
+    // record offset alone cannot see it; the owner's own `bound` is what does.
+    const region: IRegion = { argsIndex: 0, capacity: 4, indexCount: 96, local: LOCAL, start: 0 };
+    const gpu = Uint32Array.from([96, 2, 0, 0, 0]);
+    const drawn = new Float32Array(32);
+    drawn.set(LOCAL, 0);
+    drawn.set(LOCAL, 16);
+    const instances = new Float32Array(32);
+    instances.set(LOCAL, 0);
+    instances.set(LOCAL, 16);
+    const draw = (bound: boolean | undefined): IMeshDraw[] => [
+      { bound, instances, name: "pine:0:0", record: 0 },
+    ];
+    // A bound record and a stale one read the same numbers and the same matrices; only the binding
+    // differs, and it is the difference that reports.
+    expect(compareMeshDraws(gpu, drawn, draw(true), [region]).mismatched).toBe(0);
+    const stale = compareMeshDraws(gpu, drawn, draw(false), [region]);
+    expect(stale.mismatched).toBe(1);
+    expect(stale.mismatches[0]).toContain("indirect=stale");
+    // A missing field is not a pass: production is never blind to an unstated binding.
+    expect(compareMeshDraws(gpu, drawn, draw(undefined), [region]).mismatched).toBe(1);
+  });
+
   it("reports the device's own uncaptured error instead of the counts", async () => {
     // The device three's backend wrapped, raising exactly the error the real run raised.
     let raise: ((event: unknown) => void) | null = null;
@@ -1953,6 +2492,78 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     expect(scene.validation.compared).toBe(2);
   });
 
+  /**
+   * The snapshot carries the placement's own scale, so the reference selects the impostor terminal
+   * at the same distance the kernel does.
+   *
+   * `#snapshot` copied the centre, the matrix and the slot and dropped `scale`, so every placement
+   * whose scale is not 1 made `cullAndSelect(snapshot)` read `scale ?? 1`: the terminal switched at
+   * the unscaled base gate and the reference named a different key than the scaled/mirrored terminal
+   * the readback held. The mirror below is the kernel — it selects over the live placements, whose
+   * scale is exactly what the dispatch wrote into `info.y`.
+   */
+  it("validates a source/impostor switch under the placement's scale, not a default of 1", async () => {
+    setLodBias(1);
+    const lines: string[] = [];
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    // Three levels, the last a whole-asset impostor: its terminal is the base 120 scaled by the
+    // placement's magnitude, so the source/impostor boundary moves with the scale.
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.key("pine:1:0", LOCAL, 4, { group: "pine:1", part: 0, parts: 1 });
+    scene.key("pine:2:0", LOCAL, 4, { group: "pine:2", part: 0, parts: 1 });
+    scene.slot("pine", {
+      cull: undefined,
+      distances: [0, 40, 120],
+      impostor: true,
+      levels: [
+        { firstKey: 0, parts: 1 },
+        { firstKey: 1, parts: 1 },
+        { firstKey: 2, parts: 1 },
+      ],
+    });
+    // Half scale switches the terminal at 60 m, so 100 m draws the impostor; a snapshot defaulting
+    // to 1 keeps the 120 m source level.
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 100), 0, 0, 100, 0.5, 0.5);
+    // Twice the scale, and its mirror, floor the terminal at 240 m, so 200 m is still the source
+    // level; a snapshot defaulting to 1 puts both on the terminal.
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 200), 0, 0, 200, 0.5, 2);
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 200), 0, 0, 200, 0.5, -2);
+
+    await drive(scene, renderer, 30);
+    // The kernel's own selection: two source, one impostor. A snapshot that dropped the scale reads
+    // one source and two impostors, so both regions mismatch.
+    expect(scene.validation.verdict).toBe("ok");
+    expect(scene.validation.mismatched).toBe(0);
+    expect(scene.validation.matricesMismatched).toBe(0);
+    expect(lines).toContain(
+      "TN_WORLD_GPU_SCENE_VALIDATE ok compared=3 instancesGpu=3 instancesCpu=3 mismatched=0 matricesMismatched=0 meshMismatched=0",
+    );
+  });
+
   it("says a readback that never landed failed, instead of leaving the last verdict standing", async () => {
     const lines: string[] = [];
     const renderer = {
@@ -1983,6 +2594,129 @@ describe("WorldGpuScene storage bindings and its validation verdict", () => {
     lines.length = 0;
     await drive(scene, renderer, 30);
     expect(lines.some((line) => line.includes("readback-failed"))).toBe(true);
+  });
+
+  it("names the snapshot's own camera and nearest placement when a comparison held no instances", async () => {
+    // The zero/zero line the static map views printed: both counts at zero, and nothing on it to say
+    // whether the snapshot held no live source or held one the camera, sphere, range or frustum
+    // rejected. The probe is taken from the snapshot, so it names the camera and the nearest live
+    // placement the dispatch actually read.
+    const lines: string[] = [];
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: { backend: { hasFeature: (): boolean => true } },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    // Behind the camera, so the reference and the readback both select nothing.
+    scene.place(0, new Matrix4().makeTranslation(0, 0, -40), 0, 0, -40, 0.5);
+
+    await drive(scene, renderer, 30);
+    const line = lines.find((one) => one.startsWith("TN_WORLD_GPU_SCENE_VALIDATE ")) ?? "";
+    expect(line).toContain("instancesGpu=0 instancesCpu=0");
+    expect(line).toContain("eye=[0.000,0.000,0.000]");
+    expect(line).toContain("snapshot=1 live=1");
+    expect(line).toContain("nearSphere=[0.000,0.000,-40.000]");
+    expect(line).toContain("nearRoot=[0.000,0.000,-40.000]");
+    expect(line).toContain("nearSlot=0");
+    expect(line).toContain("nearCull=100.000");
+    expect(line).toContain("nearXZ=40.000");
+    // Rejected by the near plane, which is what the negative margin says.
+    expect(line).toContain("nearMargin=-");
+
+    // And a comparison that did hold instances carries no probe: the fields exist only to explain a
+    // zero/zero, and a nonzero line's counts are their own answer.
+    lines.length = 0;
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+    await drive(scene, renderer, 30);
+    const passing = lines.find((one) => one.startsWith("TN_WORLD_GPU_SCENE_VALIDATE ")) ?? "";
+    expect(passing).toContain("instancesGpu=1 instancesCpu=1");
+    expect(passing).not.toContain("eye=");
+    expect(passing).not.toContain("nearXZ=");
+    scene.dispose();
+  });
+
+  it("reports the device memory tally and the scene footprint on the validation line", async () => {
+    // The memory this seam has to expose: a backend whose Three renderer tracks `info.memory` gets
+    // those fields, plus the scene's own footprint, so a readback that accumulates staging buffers
+    // is visible as `readbackBuffersSize` growing rather than only as a later OOM.
+    const lines: string[] = [];
+    const { camera, planes } = cameraAt(0, 0);
+    const scene = new WorldGpuScene();
+    const mirror = (attribute: unknown): Promise<ArrayBuffer> => {
+      const result = cullAndSelect({
+        camera: { planes, x: 0, y: 0, z: 0 },
+        count: scene.placements.length,
+        placements: scene.placements,
+        regionCount: scene.regions.length,
+        regions: scene.regions,
+        slots: scene.gates(),
+      });
+      const words = (attribute as { array: Uint32Array | Float32Array }).array;
+      const bytes = words instanceof Float32Array ? result.drawn : result.args;
+      return Promise.resolve(bytes.slice().buffer as ArrayBuffer);
+    };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      log: (line: string): void => {
+        lines.push(line);
+      },
+      raw: {
+        backend: { hasFeature: (): boolean => true },
+        info: {
+          memory: {
+            indirectStorageAttributes: 2,
+            indirectStorageAttributesSize: 128,
+            readbackBuffers: 2,
+            readbackBuffersSize: 640,
+            storageAttributes: 5,
+            storageAttributesSize: 700,
+            total: 4096,
+          },
+        },
+      },
+      readback: mirror,
+    } as unknown as IRendererLike;
+    expect(scene.enable(renderer, true, true)).toBe(true);
+    scene.key("pine:0:0", LOCAL, 4, { group: "pine:0", part: 0, parts: 1 });
+    scene.slot("pine", { cull: 100, distances: DISTANCES, levels: [{ firstKey: 0, parts: 1 }] });
+    scene.place(0, new Matrix4().makeTranslation(0, 0, 8), 0, 0, 8, 0.5);
+
+    await drive(scene, renderer, 30);
+    const line = lines.find((one) => one.startsWith("TN_WORLD_GPU_SCENE_VALIDATE ")) ?? "";
+    expect(line).toContain("storageAttributes=5 storageAttributesSize=700");
+    expect(line).toContain("indirectStorageAttributes=2 indirectStorageAttributesSize=128");
+    expect(line).toContain("readbackBuffers=2 readbackBuffersSize=640");
+    expect(line).toContain("total=4096");
+    const footprint = Object.values(scene.footprint()).reduce(
+      (sum, buffer) => sum + buffer.bytes,
+      0,
+    );
+    expect(footprint).toBeGreaterThan(0);
+    expect(line).toContain(`footprintBytes=${String(footprint)}`);
+    scene.dispose();
   });
 
   /**
@@ -2502,5 +3236,75 @@ describe("WorldCells adaptive LOD bias", () => {
     }
     expect(lodBias()).toBe(held);
     world.dispose();
+  });
+});
+
+/**
+ * The placement-scale-correct impostor switch: every authored gate stays a world-metre distance
+ * compared directly, and only a whole-asset impostor's terminal gate — stored as the base sphere's
+ * projected distance at scale 1 — is scaled by the placement's own magnitude. The same rule is read
+ * by the CPU build (`WorldCells.#addPlacements`), the reference kernels and the TSL dispatch.
+ */
+describe("levelAtGates impostor terminal scale", () => {
+  const slot = { distances: [0, 60, 200], impostor: true };
+
+  it("scales only the impostor terminal by the placement's magnitude, so screen size is constant", () => {
+    // Authored gates compare directly whatever the scale: 100 is past 60 and before 200 at any scale.
+    expect(levelAtGates({ distances: [0, 60, 200], impostor: false }, 100, 8)).toBe(1);
+    // The terminal is base 200 at scale 1, so its switch distance is 200 * |scale|: same projected
+    // size for a placement scaled a half, once, or eight times.
+    expect(levelAtGates(slot, 99, 0.5)).toBe(1);
+    expect(levelAtGates(slot, 101, 0.5)).toBe(2);
+    expect(levelAtGates(slot, 199, 1)).toBe(1);
+    expect(levelAtGates(slot, 201, 1)).toBe(2);
+    expect(levelAtGates(slot, 1599, 8)).toBe(1);
+    expect(levelAtGates(slot, 1601, 8)).toBe(2);
+  });
+
+  it("reads a mirrored (negative) placement scale as its magnitude", () => {
+    expect(levelAtGates(slot, 101, -0.5)).toBe(2);
+    expect(levelAtGates(slot, 199, -1)).toBe(1);
+    expect(levelAtGates(slot, 1601, -8)).toBe(2);
+  });
+
+  it("never selects the terminal before the last source gate, however small the projected base", () => {
+    // The projected base 5 at scale 8 is 40, inside the 60 m last source gate: the unscaled source
+    // floor holds the terminal back until the last source level has ended, rather than scaling the
+    // floor away with the base.
+    const tiny = { distances: [0, 30, 60, 5], impostor: true };
+    expect(levelAtGates(tiny, 59.9, 8)).toBe(1);
+    // At its own gate the last source level is not yet past it (every gate is exclusive)...
+    expect(levelAtGates(tiny, 60, 8)).toBe(1);
+    // ...and just past it the last source level still draws: the terminal floor is strictly later,
+    // not the same distance, so the source level is not starved by the later terminal gate.
+    expect(levelAtGates(tiny, 60.000005, 8)).toBe(2);
+    expect(levelAtGates(tiny, 60.00002, 8)).toBe(3);
+  });
+
+  it("selects the terminal through the live reference at each scale, positive and mirrored", () => {
+    setLodBias(1);
+    const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const live: ILiveAsset = {
+      cull: undefined,
+      distances: [0, 60, 200],
+      id: "imp",
+      impostor: true,
+      locals: [[identity], [identity], [identity]],
+    };
+    const planes = cameraAt(0, 0).planes;
+    const at = (z: number, scale: number): Map<string, Float32Array> =>
+      liveKeyInstances(
+        [{ centre: new Float32Array([0, 0, z, 0.5]), matrix: identity, scale, slot: 0 }],
+        (index) => (index === 0 ? live : undefined),
+        { planes, x: 0, y: 0, z: 0 },
+      );
+    // Below the 60 m source floor every scale still draws the near level.
+    expect(at(50, 0.5).has("imp:0:0")).toBe(true);
+    expect(at(50, 8).has("imp:0:0")).toBe(true);
+    // Past the scaled terminal switch it draws the impostor, mirrored exactly like positive.
+    expect(at(150, 0.5).has("imp:2:0")).toBe(true);
+    expect(at(400, 1).has("imp:2:0")).toBe(true);
+    expect(at(3200, 8).has("imp:2:0")).toBe(true);
+    expect(at(150, -0.5).has("imp:2:0")).toBe(true);
   });
 });

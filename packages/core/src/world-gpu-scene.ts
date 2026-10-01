@@ -4,10 +4,12 @@ import {
   If,
   Loop,
   Return,
+  abs,
   atomicAdd,
   instanceIndex,
   int,
   length,
+  max,
   storage,
   struct,
   uniform,
@@ -135,6 +137,12 @@ export interface IGpuPlacement {
   readonly centre: Float32Array;
   /** The asset slot in `0`; `SLOT_NONE` for a record whose cell has left the ring. */
   slot: number;
+  /**
+   * The placement's uniform scale, in `info.y`: the whole-asset impostor's terminal gate is the
+   * base-sphere projected distance scaled by this, so a placement scaled ten times does not switch
+   * to the atlas until it is ten times as far. `1` when a caller does not carry one.
+   */
+  scale?: number;
 }
 
 /** One asset's slots: its level gates and the keys each level's parts draw into. */
@@ -145,6 +153,12 @@ export interface IAssetSlot {
   readonly cull: number | undefined;
   /** Per level: the first key its parts draw into and how many parts it has. */
   readonly levels: readonly { readonly firstKey: number; readonly parts: number }[];
+  /**
+   * Whether the last level is a whole-asset impostor: its gate is the base-sphere projected
+   * distance, and the placement's own scale is applied to it at selection. The reference and the
+   * kernel both read it, so an impostor terminal and an authored one cannot be crossed differently.
+   */
+  readonly impostor?: boolean;
 }
 
 /** One key's region of the shared drawn buffer, and the args record that counts it. */
@@ -252,6 +266,51 @@ interface IValidationSnapshot extends IKernelInput {
 }
 
 /**
+ * The level one placement draws with, from an asset's gate table and the placement's own scale.
+ *
+ * Every gate but a whole-asset impostor's terminal is an authored world-metre distance, compared
+ * directly. The impostor's terminal gate is the base-sphere *projected* distance: the atlas is
+ * built for the asset's own LOD0 size, so a placement scaled ten times reaches the atlas ten times
+ * as far — its threshold is `base * |scale|`, floored by the last source gate it must stay strictly
+ * beyond. The floor is nudged one representable step past that gate: sharing the gate's own switch
+ * distance would let the terminal overwrite the last source level at every distance past it, so the
+ * source level would never draw. Read by {@link cullAndSelect} and mirrored by the kernel and the
+ * CPU path, so all three cross the same switch.
+ */
+export function levelAtGates(
+  slot: Pick<IAssetSlot, "distances" | "impostor">,
+  distance: number,
+  scale: number,
+): number {
+  const last = slot.distances.length - 1;
+  const magnitude = Number.isFinite(scale) ? Math.abs(scale) : 1;
+  let level = 0;
+  for (let index = 1; index < slot.distances.length; index += 1) {
+    const gate = slot.distances[index] as number;
+    const threshold =
+      slot.impostor === true && index === last && last >= 1
+        ? Math.max(strictlyAfterGate(slot.distances[last - 1] as number), gate * magnitude)
+        : gate;
+    if (distance > threshold) level = index;
+  }
+  return level;
+}
+
+/**
+ * One representable Float32 step past a gate: `g * (1 + 2^-22)`, two f32 ULPs at `g`'s exponent.
+ *
+ * A floored terminal gate must start strictly after the source gate it is floored by and must stay
+ * so once the threshold is stored and compared in f32, which a bare `g` does not: the terminal
+ * shares `g`'s switch distance and the later gate wins every comparison, starving the source level.
+ * A relative step, not a fixed metre margin, so the ordering holds at every authored scale.
+ */
+const GATE_STEP = 2 ** -22;
+
+function strictlyAfterGate(gate: number): number {
+  return gate + Math.abs(gate) * GATE_STEP;
+}
+
+/**
  * The per-instance kernel, in plain TypeScript. The TSL kernel in {@link WorldGpuScene} is this
  * loop with the same branches, and the test proves this one against the CPU path.
  *
@@ -301,9 +360,7 @@ export function cullAndSelect(input: IKernelInput): IKernelResult {
     // Cull above is the authored distance; the level below is the biased one, the same multiplier
     // the kernel's uniform carries, so the reference and the dispatch cross a switch together.
     const lodDistance = biasedLodDistance(distance);
-    let level = 0;
-    for (let index2 = 1; index2 < slot.distances.length; index2 += 1)
-      if (lodDistance > (slot.distances[index2] as number)) level = index2;
+    const level = levelAtGates(slot, lodDistance, placement.scale ?? 1);
     const gate = slot.levels[level];
     if (gate === undefined) continue;
     for (let part = 0; part < gate.parts; part += 1) {
@@ -336,6 +393,8 @@ export interface ILiveAsset {
   readonly cull: number | undefined;
   /** Index-aligned with `distances`; each level's parts, each part's own offset inside the model. */
   readonly locals: readonly (readonly Float32Array[])[];
+  /** Whether the last level is a whole-asset impostor whose gate the placement's scale scales. */
+  readonly impostor?: boolean;
 }
 
 /**
@@ -383,9 +442,9 @@ export function liveKeyInstances(
     if (visible === false) continue;
     const distance = Math.hypot((at[0] as number) - camera.x, (at[2] as number) - camera.z);
     if (held.cull !== undefined && distance > held.cull) continue;
-    let level = 0;
-    for (let index = 1; index < held.distances.length; index += 1)
-      if (distance > (held.distances[index] as number)) level = index;
+    // The dispatch's own bias and the same gate rule: this reference is what the dressed mesh's
+    // instances are checked against, so it must cross the impostor switch exactly as the kernel does.
+    const level = levelAtGates(held, biasedLodDistance(distance), placement.scale ?? 1);
     const locals = held.locals[level];
     if (locals === undefined) continue;
     for (const [part, local] of locals.entries()) {
@@ -412,6 +471,7 @@ const LIVE_MATRIX = new Float32Array(LOCAL_WORDS);
  */
 function sameGates(one: IAssetSlot, other: IAssetSlot): boolean {
   if (one.cull !== other.cull) return false;
+  if ((one.impostor === true) !== (other.impostor === true)) return false;
   if (one.distances.length !== other.distances.length) return false;
   for (const [index, distance] of one.distances.entries())
     if (distance !== other.distances[index]) return false;
@@ -470,6 +530,18 @@ function sameMatrices(
   return true;
 }
 
+/**
+ * Whether two part offsets are the same matrix word for word. A re-dress copies the part's `Matrix4`
+ * into a fresh array, so a re-registration of the same key is the same `local` by value and not by
+ * reference; comparing the bytes is what makes it a no-op.
+ */
+function sameLocal(one: Float32Array, other: Float32Array): boolean {
+  if (one.length !== other.length) return false;
+  for (let word = 0; word < one.length; word += 1)
+    if ((one[word] as number) !== (other[word] as number)) return false;
+  return true;
+}
+
 /** One run of `mat4` as views, ordered by translation, and short reads truncated rather than read past. */
 function sorted(matrices: Float32Array, start: number, count: number): Float32Array[] {
   const out: Float32Array[] = [];
@@ -524,6 +596,16 @@ export interface IMeshDraw {
    * `mat4`: the whole answer, and never the per-cell records this path's own refilter left behind.
    */
   readonly instances: Float32Array;
+  /**
+   * Whether the mesh's own geometry reads the args buffer the readback came from, at the record above:
+   * `geometry.indirect === scene.args` and `geometry.indirectOffset === region.argsIndex *
+   * DRAW_ARGS_BYTES`, answered by the owner from the actual mesh. A record offset can agree with the
+   * live buffer while the mesh still points at an older buffer with the same numeric offset — the
+   * args buffer is allocated independently of `drawn`, and a mint can replace it under a dressed mesh
+   * — so an offset check alone reads `ok` over a mesh drawing a buffer nothing writes. A missing value
+   * is not a pass: only `true` is bound.
+   */
+  readonly bound?: boolean;
 }
 
 /** What the independent per-mesh check found, in the shape the report folds in. */
@@ -557,6 +639,21 @@ export function compareMeshDraws(
     const record = draw.record * DRAW_ARGS_WORDS;
     const landed = word(gpu, record + 1);
     const first = word(gpu, record + 4);
+    // A stale binding is a mismatch the counts and matrices cannot see: the mesh's own geometry
+    // points at an args buffer the readback did not come from, so whatever this record holds is not
+    // what that mesh draws. Only an explicit `true` is bound, so a caller that forgets the field
+    // fails closed rather than reading as agreement.
+    if (draw.bound !== true) {
+      mismatched += 1;
+      if (mismatches.length >= MESH_REPORTED_MESHES) continue;
+      const owner = regions.find((region) => region.argsIndex === draw.record);
+      mismatches.push(
+        `mesh=${draw.name} record=${String(draw.record)} ` +
+          `region=${owner?.name ?? "none"} indirect=stale count gpu=${String(landed)} ` +
+          `live=${String(draw.instances.length / LOCAL_WORDS)}`,
+      );
+      continue;
+    }
     if (
       sameMatrices(
         drawn,
@@ -594,6 +691,78 @@ export interface IGpuSceneValidation {
   readonly lines: readonly string[];
 }
 
+/**
+ * The memory numbers a validation line can carry, all of them optional.
+ *
+ * The first seven are three's `info.memory` fields (`WebGPURenderer`, 0.185); a backend that tracks
+ * none of them reports none, which is why every field is optional and only finite numbers are
+ * printed — an absent reading is not a zero. `footprintBytes` is the sum of this scene's own storage
+ * buffer `footprint()` bytes, the one number here Three did not write.
+ */
+export type GpuSceneMemoryField =
+  | "storageAttributes"
+  | "storageAttributesSize"
+  | "indirectStorageAttributes"
+  | "indirectStorageAttributesSize"
+  | "readbackBuffers"
+  | "readbackBuffersSize"
+  | "total"
+  | "footprintBytes";
+
+/** One validation's memory reading; a field is absent when the backend did not offer a finite one. */
+export type GpuSceneMemory = Partial<Record<GpuSceneMemoryField, number>>;
+
+const MEMORY_FIELDS = [
+  "storageAttributes",
+  "storageAttributesSize",
+  "indirectStorageAttributes",
+  "indirectStorageAttributesSize",
+  "readbackBuffers",
+  "readbackBuffersSize",
+  "total",
+  "footprintBytes",
+] as const satisfies readonly GpuSceneMemoryField[];
+
+/**
+ * The one placement nearest the camera (in XZ) a zero/zero comparison was handed, as the dispatch's
+ * own snapshot held it. Every number is the snapshot's, never the live scene's: the camera's eye and
+ * this placement's sphere, root translation, slot, slot cull, horizontal distance and the margin to
+ * the nearest of the six frustum planes are what say whether the snapshot held no live source or
+ * held one the camera, sphere, range or frustum rejected. A field is omitted, not printed as a fake
+ * zero, when the snapshot has no finite number for it.
+ */
+export interface IValidationNearest {
+  /** The bounding sphere: X, Y, Z and the radius. */
+  readonly centre: readonly [number, number, number];
+  readonly radius: number;
+  /** The placement matrix's translation, which is what a draw places. */
+  readonly root: readonly [number, number, number];
+  /** The asset slot the placement names. */
+  readonly slot: number;
+  /** The slot's authored cull distance, or absent when it has none. */
+  readonly cull?: number;
+  /** `hypot(cx - eye.x, cz - eye.z)`, the distance the level and cull gates read. */
+  readonly distance: number;
+  /** The least `plane·centre + plane.constant + radius` over the six planes: negative is rejected. */
+  readonly margin: number;
+}
+
+/**
+ * Why a comparison that landed both counts at zero was handed nothing: the snapshot's own camera eye,
+ * how many placements it held and how many of them were live, and the one live placement nearest the
+ * camera in XZ. Taken from the snapshot, so nothing that streams while the bytes are in flight can
+ * rewrite the answer. Attached only when `instancesGpu` and `instancesCpu` are both zero.
+ */
+export interface IValidationProbe {
+  readonly eye: readonly [number, number, number];
+  /** Placements the snapshot held, live and released. */
+  readonly snapshot: number;
+  /** Placements whose slot was not `SLOT_NONE`, the only ones the kernel considers. */
+  readonly live: number;
+  /** Absent when the snapshot held no live placement to name. */
+  readonly nearest?: IValidationNearest;
+}
+
 /** What a landed readback is judged on, gathered from the scene before it is formatted. */
 export interface IGpuSceneComparison {
   /** Keys whose GPU instance count was read back and held against the reference. */
@@ -625,6 +794,13 @@ export interface IGpuSceneComparison {
   readonly deviceError: string;
   /** What stopped the check — a rejected readback, say. Non-empty is an `error` on its own. */
   readonly cause?: string;
+  /**
+   * What the device and this scene held when the check reported. Absent when neither offered a
+   * finite number, and a field is omitted rather than printed as zero when its backend has none.
+   */
+  readonly memory?: GpuSceneMemory;
+  /** The snapshot's own camera and nearest live placement, when both instance totals landed zero. */
+  readonly probe?: IValidationProbe;
 }
 
 /**
@@ -652,6 +828,103 @@ export interface IGpuSceneComparison {
  * otherwise, and a line reading `error` with nothing after it is the report that hid a refused
  * pipeline in the first place.
  */
+/** One `[x,y,z]` at three decimals, the precision `xyz` names a matrix translation with. */
+function triple(values: readonly [number, number, number]): string {
+  return (
+    `[${(values[0] as number).toFixed(3)},` +
+    `${(values[1] as number).toFixed(3)},${(values[2] as number).toFixed(3)}]`
+  );
+}
+
+/** The `key=value` fields a zero/zero comparison's probe adds after the memory fields. */
+function probeFields(probe: IValidationProbe): string[] {
+  const out = [
+    `eye=${triple(probe.eye)}`,
+    `snapshot=${String(probe.snapshot)}`,
+    `live=${String(probe.live)}`,
+  ];
+  const near = probe.nearest;
+  if (near === undefined) return out;
+  out.push(
+    `nearSphere=${triple(near.centre)}`,
+    `nearRadius=${near.radius.toFixed(3)}`,
+    `nearRoot=${triple(near.root)}`,
+    `nearSlot=${String(near.slot)}`,
+  );
+  if (near.cull !== undefined) out.push(`nearCull=${near.cull.toFixed(3)}`);
+  out.push(`nearXZ=${near.distance.toFixed(3)}`, `nearMargin=${near.margin.toFixed(3)}`);
+  return out;
+}
+
+/**
+ * The snapshot's own camera and nearest live placement, for a comparison both of whose counts landed
+ * zero. The scan only picks the nearest; the six-plane margin is computed for that one placement
+ * alone, not for every placement the reference walked, and a field the snapshot has no finite number
+ * for is omitted rather than printed as a fake zero.
+ */
+function zeroComparisonProbe(snapshot: IValidationSnapshot): IValidationProbe {
+  const eye: readonly [number, number, number] = [
+    snapshot.camera.x,
+    snapshot.camera.y,
+    snapshot.camera.z,
+  ];
+  let live = 0;
+  let nearest: IGpuPlacement | undefined;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const placement of snapshot.placements) {
+    if (placement.slot < 0) continue;
+    live += 1;
+    const at = placement.centre;
+    const distance = Math.hypot(
+      (at[0] as number) - snapshot.camera.x,
+      (at[2] as number) - snapshot.camera.z,
+    );
+    if (Number.isFinite(distance) && distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = placement;
+    }
+  }
+  const probe: IValidationProbe = { eye, live, snapshot: snapshot.count };
+  if (nearest === undefined) return probe;
+  const at = nearest.centre;
+  const radius = at[3] as number;
+  const centre: readonly [number, number, number] = [
+    at[0] as number,
+    at[1] as number,
+    at[2] as number,
+  ];
+  const root: readonly [number, number, number] = [
+    nearest.matrix[12] as number,
+    nearest.matrix[13] as number,
+    nearest.matrix[14] as number,
+  ];
+  let margin = Number.POSITIVE_INFINITY;
+  for (let plane = 0; plane < 6; plane += 1) {
+    const offset = plane * 4;
+    const signed =
+      (snapshot.camera.planes[offset] as number) * (at[0] as number) +
+      (snapshot.camera.planes[offset + 1] as number) * (at[1] as number) +
+      (snapshot.camera.planes[offset + 2] as number) * (at[2] as number) +
+      (snapshot.camera.planes[offset + 3] as number);
+    margin = Math.min(margin, signed + radius);
+  }
+  const numbers = [...centre, ...root, radius, nearestDistance, margin];
+  if (numbers.some((value) => !Number.isFinite(value))) return probe;
+  const cull = snapshot.slots[nearest.slot]?.cull;
+  return {
+    ...probe,
+    nearest: {
+      centre,
+      distance: nearestDistance,
+      margin,
+      radius,
+      root,
+      slot: nearest.slot,
+      ...(cull === undefined ? {} : { cull }),
+    },
+  };
+}
+
 export function validationReport(input: IGpuSceneComparison): IGpuSceneValidation {
   const blind = input.compared === 0 && input.placed > 0;
   const cause =
@@ -664,11 +937,20 @@ export function validationReport(input: IGpuSceneComparison): IGpuSceneValidatio
       : input.mismatched > 0 || input.matricesMismatched > 0 || input.meshMismatched > 0
         ? "mismatch"
         : "ok";
+  const memory: string[] = [];
+  if (input.memory !== undefined)
+    for (const name of MEMORY_FIELDS) {
+      const value = input.memory[name];
+      if (typeof value === "number" && Number.isFinite(value))
+        memory.push(`${name}=${String(value)}`);
+    }
+  const details = [...memory, ...(input.probe === undefined ? [] : probeFields(input.probe))];
+  const suffix = details.length === 0 ? "" : ` ${details.join(" ")}`;
   const line =
     `TN_WORLD_GPU_SCENE_VALIDATE ${verdict} compared=${String(input.compared)} ` +
     `instancesGpu=${String(input.instancesGpu)} instancesCpu=${String(input.instancesCpu)} ` +
     `mismatched=${String(input.mismatched)} matricesMismatched=${String(input.matricesMismatched)} ` +
-    `meshMismatched=${String(input.meshMismatched)}`;
+    `meshMismatched=${String(input.meshMismatched)}${suffix}`;
   const lines: string[] = [...input.mismatches, ...input.matrixMismatches, ...input.meshMismatches];
   if (cause !== "") lines.push(`cause=${cause.slice(0, CAUSE_CHARS)}`);
   return { verdict, line, lines };
@@ -1185,8 +1467,26 @@ export class WorldGpuScene {
     // A part the level did not declare is refused rather than laid over the next level's key, which
     // is the one mistake this method exists to stop.
     if (level.part >= held.parts) return undefined;
-    if (capacity > held.capacity) held.capacity = capacity;
     const index = held.firstKey + level.part;
+    const opened = held.minted.has(level.part) === false;
+    const grew = capacity > held.capacity;
+    if (grew) held.capacity = capacity;
+    // A part already laid out at this capacity keeps its run: registering it again is not a
+    // structural change. Laying the level out again appended the whole group to the tail of the drawn
+    // buffer every call, so a frame that only re-dressed the ring grew the buffer by the level, the
+    // next frame's re-dress grew it by the level again, and the buffer doubled until the device
+    // refused the allocation. Only opening a part or outgrowing the capacity moves the run.
+    if (opened === false && grew === false) {
+      const settled = this.#regions[index] as IRegion;
+      this.#keysByName.set(name, index);
+      // A fresh `Float32Array` of the same offset is the same offset: a re-dress copies the part's
+      // matrix out each time, so comparing identity would re-upload the key table for nothing.
+      if (settled.name !== name || sameLocal(settled.local, local) === false) {
+        this.#regions[index] = { ...settled, local, name };
+        this.#writeKey(index);
+      }
+      return index;
+    }
     const slot = this.#regions[index] as IRegion;
     this.#keysByName.set(name, index);
     this.#regions[index] = {
@@ -1198,10 +1498,12 @@ export class WorldGpuScene {
       start: slot.start,
     };
     held.minted.set(level.part, index);
-    this.#drawnCapacity = this.#layoutGroup(held);
+    // A structural change re-packs every run from zero, so the buffer is bounded by the runs that
+    // exist rather than by every run ever abandoned in a relocation. See {@link #relayout}.
+    this.#drawnCapacity = this.#relayout();
     this.#growDrawn();
     // The live buffers, not the ones this method read: a regrow above may have replaced them.
-    for (const at of held.minted.values()) this.#writeKey(at);
+    this.#writeAllKeys();
     return index;
   }
 
@@ -1218,22 +1520,47 @@ export class WorldGpuScene {
   }
 
   /**
-   * Lay one level's minted parts out contiguously at the tail, and answer where the buffer now ends.
+   * Pack every region from the front of the drawn buffer, answering where it now ends.
    *
-   * Every part moves together, so a level's drawn runs are one run however many parts it has and in
-   * whatever order they were minted. A part already where the layout puts it is left alone, which is
-   * every frame of a settled walk.
+   * A level that opens a part or outgrows its capacity needs a new run, and appending only that level
+   * at the tail left its old run behind: a walk that streamed for a while relocated the same levels
+   * over and over, and the drawn buffer grew by every abandoned run until the device refused the
+   * allocation. Packing every region from zero on a structural change keeps the buffer bounded by the
+   * runs that exist — the sum of each level's own run, which is what a resident world holds.
+   *
+   * Non-grouped keys keep their order and their own capacity first; a level's parts follow together
+   * in part order, which is the run the kernel addresses as `firstKey + part`. Unminted parts hold a
+   * capacity-zero slot and take no room.
    */
-  #layoutGroup(held: ILevelGroup): number {
-    const ordered = [...held.minted.entries()].sort((one, other) => one[0] - other[0]);
-    let start = this.#drawnCapacity;
-    for (const [, index] of ordered) {
-      const region = this.#regions[index] as IRegion;
+  #relayout(): number {
+    const grouped = new Set<number>();
+    for (const held of this.#groups.values())
+      for (let part = 0; part < held.parts; part += 1) grouped.add(held.firstKey + part);
+    let start = 0;
+    for (const [index, region] of this.#regions.entries()) {
+      if (grouped.has(index)) continue;
       region.start = start;
-      region.capacity = held.capacity;
-      start += held.capacity;
+      start += region.capacity;
+    }
+    for (const held of this.#groups.values()) {
+      const ordered = [...held.minted.entries()].sort((one, other) => one[0] - other[0]);
+      for (const [, index] of ordered) {
+        const region = this.#regions[index] as IRegion;
+        region.start = start;
+        region.capacity = held.capacity;
+        start += held.capacity;
+      }
     }
     return start;
+  }
+
+  /**
+   * Re-write every key's gate and args record, which a re-layout moved, against the live buffers —
+   * a grow inside the layout may have replaced them, so the set the caller held is not the one a
+   * draw and the kernel will read.
+   */
+  #writeAllKeys(): void {
+    for (let index = 0; index < this.#regions.length; index += 1) this.#writeKey(index);
   }
 
   /** The region one key draws from, for the counters and the tests. */
@@ -1299,7 +1626,15 @@ export class WorldGpuScene {
    * Take a source record for one placement, or `undefined` when the buffer is full. A record is
    * 24 words: the world matrix, the sphere and the asset slot, which is everything the kernel reads.
    */
-  place(asset: number, matrix: Matrix4, x: number, y: number, z: number, radius: number): number {
+  place(
+    asset: number,
+    matrix: Matrix4,
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    scale = 1,
+  ): number {
     const reused = this.#free.pop();
     const index = reused ?? this.placements.length;
     if (reused === undefined && this.#reserve(index + 1) === false) return -1;
@@ -1308,6 +1643,7 @@ export class WorldGpuScene {
       placement = {
         centre: new Float32Array(4),
         matrix: new Float32Array(LOCAL_WORDS),
+        scale: 1,
         slot: SLOT_NONE,
       };
       this.placements[index] = placement;
@@ -1318,6 +1654,7 @@ export class WorldGpuScene {
     placement.centre[2] = z;
     placement.centre[3] = radius;
     placement.slot = asset;
+    placement.scale = Number.isFinite(scale) ? scale : 1;
     this.#live += 1;
     this.#writePlacement(index);
     return index;
@@ -1585,6 +1922,7 @@ export class WorldGpuScene {
       return {
         centre: flat.subarray(at + LOCAL_WORDS, at + LOCAL_WORDS + 4),
         matrix: flat.subarray(at, at + LOCAL_WORDS),
+        scale: placement.scale,
         slot: placement.slot,
       };
     });
@@ -1663,6 +2001,11 @@ export class WorldGpuScene {
     // should be holding are the owner's numbers, and the whole point is that nothing in this file
     // chose them.
     const meshes = compareMeshDraws(gpu, drawn, draws, snapshot.regions);
+    // Both totals at zero is the case that never says why it saw nothing: name the snapshot's own
+    // camera and nearest live placement, the two inputs a real static validation needs to tell a
+    // missing source from a camera, sphere, range or frustum that rejected every one it held.
+    const probe =
+      instancesGpu === 0 && instancesCpu === 0 ? zeroComparisonProbe(snapshot) : undefined;
     return {
       compared: snapshot.regions.length,
       deviceError: this.#deviceError,
@@ -1675,12 +2018,38 @@ export class WorldGpuScene {
       mismatches,
       matrixMismatches,
       placed: snapshot.placed,
+      ...(probe === undefined ? {} : { probe }),
     };
   }
 
-  /** One verdict, stored for a harness to read and printed once, with its cause if it failed. */
+  /**
+   * One verdict, stored for a harness to read and printed once, with its cause if it failed.
+   *
+   * The line also carries what the device and this scene held when the check reported, read here
+   * rather than polled: `renderer.raw.info.memory` is Three's own tally and `footprint()` is this
+   * scene's allocation, so a readback that leaks its staging buffer shows up as growing
+   * `readbackBuffers`/`readbackBuffersSize` across reports instead of only as a later OOM. A backend
+   * that tracks no memory field contributes none, and no field is ever printed as a fake zero.
+   */
   #publish(renderer: IRendererLike, input: IGpuSceneComparison): void {
-    const report = validationReport(input);
+    const source = (renderer.raw as { info?: { memory?: Partial<Record<string, unknown>> } })?.info
+      ?.memory;
+    let memory: GpuSceneMemory | undefined;
+    // A backend Three keeps no memory tally for contributes nothing, footprint included: a scene
+    // number printed next to absent device numbers reads as if the device had been measured.
+    if (source !== undefined) {
+      memory = {};
+      for (const name of MEMORY_FIELDS) {
+        const value = source[name];
+        if (typeof value === "number" && Number.isFinite(value)) memory[name] = value;
+      }
+      const footprint = Object.values(this.footprint());
+      if (footprint.length > 0)
+        memory.footprintBytes = footprint.reduce((sum, buffer) => sum + buffer.bytes, 0);
+    }
+    const report = validationReport(
+      Object.keys(memory ?? {}).length === 0 ? input : { ...input, memory },
+    );
     this.#verdict = report.verdict;
     this.#compared = input.compared;
     this.#mismatches = input.mismatched;
@@ -1798,6 +2167,9 @@ export class WorldGpuScene {
     array[at + 18] = placement.centre[2] as number;
     array[at + 19] = placement.centre[3] as number;
     array[at + 20] = placement.slot;
+    // `info.y` is the placement's uniform scale, read by the kernel's impostor gate. The remaining
+    // `info` words stay whatever they were, which is zero.
+    array[at + 21] = placement.scale ?? 1;
     buffers.source.addUpdateRange(at, PLACEMENT_WORDS);
     buffers.source.needsUpdate = true;
   }
@@ -1856,7 +2228,10 @@ export class WorldGpuScene {
         levelTable[at] = definition.distances[index] ?? 0;
         levelTable[at + 1] = gate.firstKey;
         levelTable[at + 2] = gate.parts;
-        levelTable[at + 3] = 0;
+        // `w` marks the whole-asset impostor's terminal gate: its stored distance is the base-sphere
+        // projected one, and the kernel multiplies it by the placement's own scale. See `levelAtGates`.
+        levelTable[at + 3] =
+          definition.impostor === true && index === definition.levels.length - 1 ? 1 : 0;
         level += 1;
       }
       const at = slot * VEC4_WORDS;
@@ -1916,8 +2291,24 @@ export class WorldGpuScene {
       // levels than any fixed count, and a level the loop stopped short of is a placement drawn at
       // the wrong shape by however many levels it missed.
       const level = int(0).toVar();
+      // The placement's own uniform scale, written into `info.y`; the whole-asset impostor's terminal
+      // gate is the base projected distance and is scaled by it. A mirrored placement's scale is
+      // negative, and the extent it reaches is the same, so the kernel takes the magnitude exactly as
+      // `levelAtGates` does; `info.y` is already finite-sanitised when the record is written.
+      const scale = abs(placement.get("info").y);
       Loop({ start: int(1), end: gate.y, type: "int", condition: "<" }, ({ i }: { i: unknown }) => {
-        If(lodDistance.greaterThan(levels.element(gate.x.add(i as never)).x), () => {
+        const candidate = levels.element(gate.x.add(i as never));
+        const threshold = nodes(candidate.x).toVar();
+        // Only the terminal level carries this mark: its stored distance is the base-sphere projected
+        // one, so its real threshold is `max(strictly after last source gate, base * |scale|)`. The
+        // source floor is the previous level's own authored gate, unscaled and nudged one f32 step,
+        // so a small scale cannot starve the last source level by sharing its switch distance.
+        If(candidate.w.greaterThan(0.5), () => {
+          const previous = levels.element(gate.x.add(i as never).sub(1)).x;
+          const floor = previous.add(abs(previous).mul(GATE_STEP));
+          threshold.assign(max(floor, candidate.x.mul(scale)));
+        });
+        If(lodDistance.greaterThan(threshold), () => {
           level.assign(i as never);
         });
       });

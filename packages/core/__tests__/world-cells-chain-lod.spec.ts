@@ -177,12 +177,16 @@ function quadGeometry(triangles: number): BufferGeometry {
 
 /**
  * The two-part asset the scots pine is: bark and needles, each with its own baked chain, registered
- * through the real plugin exactly as {@link chainedModel} registers one.
+ * through the real plugin exactly as {@link chainedModel} registers one. `needleAlpha` makes the
+ * needles part alpha-cutout foliage, the shape whose reduced cards drop the silhouette.
  */
-async function chainedTwoPartModel(): Promise<Group> {
+async function chainedTwoPartModel(
+  options: { readonly needleAlpha?: boolean } = {},
+): Promise<Group> {
   const group = new Group();
   const bark = new Mesh(quadGeometry(BARK_LOD0), new MeshBasicMaterial());
   const needles = new Mesh(quadGeometry(NEEDLE_LOD0), new MeshBasicMaterial());
+  if (options.needleAlpha === true) needles.material.transparent = true;
   group.add(bark);
   group.add(needles);
   const levels = [...BARK_COUNTS, ...NEEDLE_COUNTS].map((triangles) => {
@@ -525,9 +529,53 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
     world.dispose();
   });
 
+  it("reduces the alpha needles down their own chain, not to the root card at every level", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    // Alpha needles and opaque bark, each descending its own baked chain. `impostors: false`
+    // isolates the chain: this is not the atlas's coverage path.
+    const model = await chainedTwoPartModel({ needleAlpha: true });
+    const barkChain = lodChainOf((model.children[0] as Mesh).geometry);
+    const needleChain = lodChainOf((model.children[1] as Mesh).geometry);
+    stubManifestFetch(withoutAuthoredLods());
+
+    const world = await loadWorld({
+      budgets,
+      follow: { position: { x: -64, z: -64 } },
+      impostors: false,
+      loadModel: chainLoader(model),
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+
+    // The deep needle chain still sets the ladder: four levels, not two. Every part draws its own
+    // chain's shape, so the triangles fall along the merged ladder rather than pinning the leaf card.
+    const distances = MERGED_SWITCH.map((distance) => distance.toFixed(1)).join(",");
+    expect(markers()).toEqual([
+      `TN_WORLD_LOD_CHAIN pine: levels=4 distances=0.0,${distances} tris=${MERGED_TRIANGLES.join(",")}`,
+    ]);
+
+    // The alpha needles descend their own chain at the middle levels: the authored reduction is
+    // kept, not replaced by the root leaf card. Bark clamps to its one-step chain's last shape.
+    const barkShapes = [0, 1, 1, 1].map((level) => barkChain?.levels[level]);
+    const needleShapes = [0, 1, 2, 3].map((level) => needleChain?.levels[level]);
+    for (const level of [0, 1, 2, 3]) {
+      expect(levelMesh(world, "pine", level, 0)?.geometry).toBe(barkShapes[level]);
+      expect(levelMesh(world, "pine", level, 1)?.geometry).toBe(needleShapes[level]);
+    }
+    expect(needleChain?.levels[1]).not.toBe(needleChain?.levels[0]);
+    expect(world.stats().failures).toBe(0);
+    world.dispose();
+  });
+
   it("keeps the package's own lods when it names them, chain or not", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const model = await chainedModel(REGISTERED_PIXEL_ERROR);
+    // Both levels are alpha-cutout foliage, the shape the rejected coverage pass forced back to the
+    // root card: the authored middle must still draw its own geometry at its own distance.
+    ((model.children[0] as Mesh).material as MeshBasicMaterial).transparent = true;
     const chain = lodChainOf((model.children[0] as Mesh).geometry);
     const lodGeometry: BufferGeometry[] = [];
     // The authored lod, as the pipeline writes it: a second GLB, not a second level of this one.
@@ -535,7 +583,9 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
       if (url.includes("pine.glb")) return model;
       if (url.includes("pine_lod1")) {
         const group = plainModel();
-        lodGeometry.push((group.children[0] as Mesh).geometry);
+        const mesh = group.children[0] as Mesh;
+        (mesh.material as MeshBasicMaterial).transparent = true;
+        lodGeometry.push(mesh.geometry);
         return group;
       }
       return plainModel();
@@ -546,6 +596,7 @@ describe("WorldCells with a baked AutoLOD chain and no authored lods", () => {
     const world = await loadWorld({
       budgets,
       follow,
+      impostors: false,
       loadModel: load,
       ring: 0,
       surface,

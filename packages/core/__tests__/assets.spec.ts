@@ -113,6 +113,59 @@ describe("IAssetLoader", () => {
     expect(textureDispose).toHaveBeenCalledTimes(1);
   });
 
+  it("should release one model's material texture once, spare another cached model's, and reload", async () => {
+    const loaded: Texture[] = [];
+    const assets = createAssetLoader({
+      model: async () => {
+        const texture = new Texture();
+        loaded.push(texture);
+        const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ map: texture }));
+        return { scene: new Group().add(mesh) };
+      },
+    });
+    await assets.model("a.glb");
+    await assets.model("b.glb");
+    const [textureA, textureB] = loaded as [Texture, Texture];
+    const disposeA = vi.spyOn(textureA, "dispose");
+    const disposeB = vi.spyOn(textureB, "dispose");
+
+    expect(assets.release("model", "a.glb")).toBe(true);
+    expect(assets.release("model", "a.glb")).toBe(false);
+    expect(disposeA).toHaveBeenCalledTimes(1);
+    // b.glb is still cached and owns its own material texture: releasing a must not touch it.
+    expect(disposeB).not.toHaveBeenCalled();
+
+    await assets.model("a.glb");
+    expect(loaded.at(-1)).not.toBe(textureA);
+    expect(disposeA).toHaveBeenCalledTimes(1);
+  });
+
+  it("should release a model's material texture once when released before its load settles", async () => {
+    const texture = new Texture();
+    const dispose = vi.spyOn(texture, "dispose");
+    let settle: (() => void) | undefined;
+    const assets = createAssetLoader({
+      model: () =>
+        new Promise((resolve) => {
+          settle = () => {
+            const mesh = new Mesh(
+              new BoxGeometry(1, 1, 1),
+              new MeshBasicMaterial({ map: texture }),
+            );
+            resolve({ scene: new Group().add(mesh) });
+          };
+        }),
+    });
+
+    const pending = assets.model("a.glb");
+    await vi.waitUntil(() => settle !== undefined);
+    expect(assets.release("model", "a.glb")).toBe(true);
+    (settle as () => void)();
+    await pending;
+
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
   it("times each asset only when the caller asked, and names the path when it does", async () => {
     // The group totals a game logs cannot say *which* asset is slow; this seam is the engine's one
     // place that sees every settle. Off by default and silent when off.

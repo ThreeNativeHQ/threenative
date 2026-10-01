@@ -1050,7 +1050,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // draw gate reads, and `object.geometry` is what its cached render object re-reads, so this
       // needs no seam of its own. Not in the pool either: neither draws into this level, so neither
       // reaches as far as this level's depth has to cover.
-      if (biased && mesh.castShadow === true) {
+      // The whole-asset impostor is the far shadow's own coarse silhouette — an alpha caster whose
+      // cutout is the coarsest representation, not a source card the level cannot resolve — so it
+      // stays. The surface marks its own material (`WorldImpostorSurface`); every other alpha caster
+      // is still taken out here.
+      const wholeAsset =
+        !Array.isArray(mesh.material) && mesh.material.userData.tnWholeAssetImpostor === true;
+      if (biased && mesh.castShadow === true && !wholeAsset) {
         if (isAlphaCaster(mesh.material)) {
           mesh.castShadow = false;
           this.#alphaHidden.push(mesh);

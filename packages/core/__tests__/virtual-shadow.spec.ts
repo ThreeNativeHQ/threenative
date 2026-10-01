@@ -40,6 +40,8 @@ import {
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
+import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
+import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
 
 /**
  * The mechanism, without a GPU: level windows snap to their own texel grid, cached levels stay
@@ -1381,6 +1383,51 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     expect(cutout.castShadow).toBe(true);
     expect(proxy.castShadow).toBe(true);
     node.dispose();
+  });
+
+  it("should keep a marked whole-asset alpha impostor in every coarse level, skipping only the unmarked cutout", () => {
+    const { camera, light, scene } = world();
+    // The three casters one biased window holds: an ordinary cutout card the coarse levels cannot
+    // resolve, the opaque proxy that casts through its silhouette, and the world's whole-asset
+    // impostor quad. The impostor's alpha-tested material looks like the card, but its cutout IS the
+    // coarsest representation, so the biased skip must leave it in. `WorldImpostorSurface` marks its
+    // own material; see `#probe`.
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-8, 2, 0);
+    cutout.castShadow = true;
+    const atlas = new WorldImpostorAtlas(8);
+    const surface = new WorldImpostorSurface({
+      atlas,
+      center: new Vector3(0, 0, 0),
+      radius: 6,
+      source: new MeshBasicMaterial({ alphaTest: 0.5 }),
+    });
+    const whole = new Mesh(surface.geometry, surface.material);
+    whole.position.set(8, 2, 0);
+    whole.castShadow = true;
+    const proxy = new Mesh(new BoxGeometry(64, 2, 64), new MeshBasicMaterial());
+    proxy.position.set(0, -1, 0);
+    proxy.castShadow = true;
+    scene.add(cutout, whole, proxy);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [cutout, whole, proxy]);
+    renderAllLevels(node, camera, host);
+
+    const levelsFor = (object: Mesh): number[] =>
+      host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
+    // The unmarked cutout still ends where the finest level's window ends...
+    expect(levelsFor(cutout)).toEqual([0]);
+    // ...but the marked whole-asset impostor casts through every biased level with the opaque proxy.
+    expect(levelsFor(whole)).toEqual([0, 1, 2]);
+    expect(levelsFor(proxy)).toEqual([0, 1, 2]);
+    // Nothing was left disabled: the main pass and the next level's map still draw all three.
+    expect(cutout.castShadow).toBe(true);
+    expect(whole.castShadow).toBe(true);
+    expect(proxy.castShadow).toBe(true);
+    node.dispose();
+    surface.dispose();
+    atlas.dispose();
   });
 
   it("should draw both defaults off one walk, and leave the world exactly as authored", async () => {

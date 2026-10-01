@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   type Camera,
+  DynamicDrawUsage,
   Frustum,
   Group,
   InstancedBufferAttribute,
@@ -22,7 +23,7 @@ import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
-import { type ILodChain, lodChainOf, setLodBias } from "./model-lod.js";
+import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
 import { cutoutSurface } from "./render/foliage-alpha.js";
 import { materialKey } from "./render/material-key.js";
 import {
@@ -33,6 +34,20 @@ import {
   parkMesh,
   pooledMesh,
 } from "./render/mesh-pool.js";
+import {
+  IMPOSTOR_FAR_CULL_ATTRIBUTE,
+  WorldImpostorSurface,
+} from "./render/world-impostor-surface.js";
+import {
+  type IImpostorPart,
+  type IImpostorRawRenderer,
+  IMPOSTOR_FRAME_PIXELS,
+  IMPOSTOR_VIEWS,
+  WORLD_IMPOSTOR_MARKER,
+  type WorldImpostorAtlas,
+  WorldImpostorBaker,
+  impostorBounds,
+} from "./render/world-impostor.js";
 import type { IRendererLike } from "./renderer.js";
 import { isStatic, markStatic } from "./static-transform.js";
 import { addInSlices, loadAll } from "./streaming.js";
@@ -47,6 +62,7 @@ import {
   bundlesRequested,
   gpuSceneRequested,
   gpuSceneValidationRequested,
+  levelAtGates,
   liveKeyInstances,
 } from "./world-gpu-scene.js";
 import { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
@@ -178,6 +194,41 @@ const DEFAULT_AUTO_LOD_VIEWPORT_HEIGHT = 1080;
  */
 const DEFAULT_AUTO_LOD_MAX_PIXEL_ERROR = 4;
 /**
+ * GPU bytes of completed impostor atlases one world admits, 128 MiB. A 128 px two-attachment RGBA8
+ * atlas with mips is 2,796,160 B, so 48 fit and the 49th is refused before its atlas is allocated,
+ * keeping its source LODs. An atlas a live asset still draws from is never evicted, so the active
+ * record count is a hard admission cap rather than a target the cache trims toward — eviction only
+ * ever drops an inactive record to make room for a new one.
+ */
+const DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES = 128 * 1024 * 1024;
+/**
+ * The declared byte cost of one atlas at the bake's fixed frame, the same numbers
+ * `WorldImpostorAtlas.bytes` reports: both RGBA8 attachments' mip chains, the logical colour atlas
+ * cost rather than every physical GPU buffer a render target holds. Computed here so the cache
+ * budget is enforced BEFORE `baker.begin` allocates the atlas, never after.
+ */
+const IMPOSTOR_ATLAS_BYTES = ((): number => {
+  const levels = Math.floor(Math.log2(Math.max(1, IMPOSTOR_FRAME_PIXELS))) + 1;
+  let bytes = 0;
+  for (let level = 0; level < levels; level += 1) {
+    const edge = Math.max(1, IMPOSTOR_FRAME_PIXELS >> level);
+    bytes += edge * edge * IMPOSTOR_VIEWS * 4;
+  }
+  return 2 * bytes;
+})();
+/**
+ * The far-residency diagnostic marker: one bounded line per whole-map aggregate built, naming the one
+ * `InstancedMesh` per atlas cache key, its original placements, the live/near-owned split, its
+ * physical instance bytes and how many times its instance buffer has been written.
+ */
+const WORLD_IMPOSTOR_FAR_MARKER = "TN_WORLD_IMPOSTOR_FAR";
+/**
+ * Bytes one far instance costs: its sixteen-float32 matrix plus the one-float per-instance cull the
+ * shared far surface reads. Both are physical allocations the budget bounds; the cull is uploaded
+ * once because the placement never moves.
+ */
+const FAR_INSTANCE_BYTES = 16 * 4 + 4;
+/**
  * How far past the frustum a world-grid square is kept inside the main pass's draw window, in metres.
  *
  * The window is decided once per draw, from the camera that draw uses, and a square that has just
@@ -302,6 +353,14 @@ export interface IWorldCellsLoadOptions {
    * Loader the package's paths resolve through — its manifest, or the authored names when there is
    * none. Defaults to a fresh `createAssetLoader()`; inside a game, pass `ctx.assets` so the
    * package's compiled output and compressed textures reach the renderer the game booted with.
+   *
+   * The world releases the source models it asks this loader for only when it created the loader
+   * itself: each asset's requested level paths are released through `release("model", path)` once
+   * the last asset naming a path is gone, so a streamed package does not pin an internally owned
+   * cache. An explicitly supplied loader is the caller's — the world never releases its cache, so a
+   * second game or world holding the same model keeps it alive; the caller ends that lifetime with
+   * its own `release`. The loader is never cleared, and a path this world never asked for is never
+   * touched either way.
    */
   readonly assets?: IAssetLoader;
   /** Game-owned terrain surface, handed straight to `TerrainTiles`. */
@@ -525,6 +584,18 @@ export interface IWorldCellsLoadOptions {
    * GPU that would otherwise never exceed the share.
    */
   readonly mainGpuShare?: number;
+  /**
+   * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
+   * asset's terminal, two-triangle LOD, default true.
+   *
+   * The bake runs inside the render cadence — one of its sixteen views per `process` — so it costs a
+   * slice of a frame rather than a hitch, and it starts only after the asset's own model has been
+   * adopted. A seamless switch needs the impostor's atlas to cover the same cutout the source draws,
+   * so an asset whose levels carry no alpha-cutout part is never baked. `false` drops only the atlas
+   * terminal: every level the authored package and its baked chain give is kept, and the authored
+   * middle-level cutout coverage a level would otherwise be missing its foliage at is still applied.
+   */
+  readonly impostors?: boolean;
 }
 
 /**
@@ -636,6 +707,34 @@ export interface IWorldCellsStats {
     readonly children: number;
     readonly records: number;
   };
+  /**
+   * The runtime impostor path: how many assets appended a terminal level, how many bakes are still
+   * queued or in flight, the triangles all terminal levels submit together — the number the whole
+   * feature exists to reduce — and the cache size: the logical colour atlas bytes held (each atlas's
+   * RGBA8 colour and normal mip chains), not every physical GPU buffer a render target may own, and
+   * the budget those bytes are enforced against.
+   */
+  readonly impostor: {
+    readonly assets: number;
+    readonly pending: number;
+    readonly atlasBytes: number;
+    readonly budgetBytes: number;
+    readonly terminalTriangles: number;
+    /**
+     * The whole-map far aggregates: one `InstancedMesh` per atlas cache key, the ORIGINAL placements
+     * they hold (`instances`), how many of those the near ring has taken back (`nearOwned`), the
+     * physical instance bytes, and how many times an aggregate's buffer has been written. Missing
+     * measurements stay absent; a settled camera holds `uploads` still.
+     */
+    readonly far: {
+      readonly aggregates: number;
+      readonly instances: number;
+      readonly live: number;
+      readonly nearOwned: number;
+      readonly bytes: number;
+      readonly uploads: number;
+    };
+  };
   /** Cumulative rejected requests: cells skipped, instances or bytes refused, terrain retries. */
   readonly pressure: { readonly cells: number; readonly instances: number; readonly bytes: number };
   /**
@@ -691,6 +790,14 @@ interface ICellBatch {
    */
   wide: SharedBatch | undefined;
   wideSegment: number;
+  /**
+   * The root-matrix records this entry's level put in the far shadow, when the asset has an
+   * impostor: the placement transform alone, never `placement * part local`. The whole-asset impostor
+   * bakes every LOD0 part's own transform into its atlas, so its quad is drawn at the placement root
+   * and composing a source part's offset again would apply that part's transform twice. `undefined`
+   * for a non-impostor asset, whose wide half keeps the per-part source records.
+   */
+  wideRoot: InstancedBatch | undefined;
   /**
    * The world bounds of the records this entry holds, from the filter that built it. The shadow
    * invalidation is the union of these over the entries a swap moved in and out, which is the point
@@ -832,6 +939,18 @@ class SharedBatch {
         readonly key: string;
       }
     | undefined;
+  /**
+   * The instance count a GPU-dressed mesh is submitted with: its key's region capacity, written by
+   * `WorldCells#dressGpu`.
+   *
+   * A dressed mesh's own records are not what it draws — the dispatch appends survivors into the
+   * scene's shared buffer and the indirect record decides how many — so `#drawn` is not its count.
+   * Three skips the indirect draw entirely before the GPU ever reads the record when an
+   * `InstancedMesh.count` is zero (`RenderObject.getDrawParameters`), so the region's capacity is the
+   * submission bound: the record's own count draws what the GPU selected, and this only admits the
+   * submission. `0` until the mesh is dressed.
+   */
+  gpuCount = 0;
   /**
    * Whether this batch's mesh is parented under the world's one `BundleGroup`. Set by
    * `WorldCells#bundleIn` and cleared by `#bundleOut`.
@@ -989,8 +1108,16 @@ class SharedBatch {
    * each and `rebind` gives the buffer back before the first record is written into it.
    */
   park(): this {
-    this.#parked = this.mesh.instanceMatrix.count;
-    if (this.#parked > PARKED_SHARED_CAPACITY) this.#resize(PARKED_SHARED_CAPACITY);
+    // The batch's own ceiling, never its mesh's `count`: a dressed batch's `instanceMatrix` is the
+    // GPU scene's shared compaction buffer, so its count is the whole world's, and parking by it
+    // turned one key's capacity into the whole buffer — `rebind` then resized every later batch
+    // against the world and the shared buffer regrew until the device refused it.
+    this.#parked = this.#ceiling;
+    // `gpu` too, not only a capacity over one: a dressed batch's `instanceMatrix` is the GPU scene's
+    // shared compaction buffer whatever its logical ceiling is, so a batch parked at a ceiling of one
+    // that skipped this resized nothing and left the retired mesh holding the whole world's records.
+    if (this.gpu !== undefined || this.#parked > PARKED_SHARED_CAPACITY)
+      this.#resize(PARKED_SHARED_CAPACITY);
     return this;
   }
 
@@ -1126,8 +1253,19 @@ class SharedBatch {
    * costs one new uuid between them instead of one each. This used to push the old mesh onto an
    * unbounded `retired` array that nothing ever read and nothing ever freed.
    */
-  grow(): InstancedMesh {
+  grow(): InstancedMesh | undefined {
     const old = this.mesh;
+    if (this.gpu !== undefined) {
+      // A dressed batch's records are the GPU scene's, held in a buffer this batch must not copy,
+      // zero or regroup: its own share is the logical ceiling the next `#dressGpu` sizes the scene's
+      // region from, so growth is that number and nothing else. The live mesh is kept and nothing is
+      // returned: `#segmentIn` dresses, attaches and parks only a real replacement, and the next
+      // `#dressGpu` grows the region from this ceiling before the draw.
+      const was = this.#ceiling;
+      this.#ceiling = was * 2;
+      this.#hole(was, this.#ceiling);
+      return undefined;
+    }
     const mesh = SharedBatch.#meshFor(
       old.geometry,
       old.material as Material,
@@ -1219,6 +1357,11 @@ class SharedBatch {
     this.#size.delete(segment);
     this.#blockCluster.delete(segment);
     if (this.gpu !== undefined) {
+      // The block's range goes back to the free list, exactly as the CPU path's does below. Without
+      // this the GPU path's free list only ever shrank: a walk that streamed cells in and out
+      // exhausted it, `allocate` failed, `grow` doubled the batch's ceiling, and the scene's region
+      // — and with it the shared buffer — regrew for records that had already left.
+      this.#hole(start, start + size);
       this.#publish(this.#drawn);
       return;
     }
@@ -1331,6 +1474,10 @@ class SharedBatch {
    * away from the square it belongs to and the frustum test reads the squares.
    */
   #settle(): void {
+    // A dressed batch's layout is the dispatch's: its `instanceMatrix` is the scene's shared buffer,
+    // so a compact or regroup here would read that buffer's count as this batch's capacity and
+    // shuffle the whole world's records. `write` and `clear` bypass this already; `grow` does too.
+    if (this.gpu !== undefined) return;
     if (this.#clustered) {
       this.#regroup();
       // Records moved, so `mesh.count` is the live total again and the window has to be re-narrowed
@@ -1604,33 +1751,46 @@ class SharedBatch {
    * prewarmed batch over the whole load, which is the cost the prewarm is for.
    */
   #publish(count: number): void {
-    this.mesh.count = count;
-    // A dressed batch's instances are the GPU scene's, and its own count says nothing about how many
-    // of them the dispatch kept — so the coarse per-cell gate in `visibleFrom` is what shows it. The
-    // one exception is the prewarm draw, which stays visible *because* it is empty: that submission
-    // is what builds the node and the pipeline.
+    // A dressed batch's instances are the GPU scene's, and its own `count` says nothing about how
+    // many the dispatch kept — a zero there makes three skip the indirect draw before the GPU reads
+    // the record at all. So the mesh is submitted at its region's capacity and the record decides
+    // what draws; the per-asset coarse gate in `#cullMainPass` runs after this every frame and is
+    // what shows it. Until then the prewarm draw is the one reason to stay visible *because* it is
+    // empty: that submission is what builds the node and the pipeline.
     if (this.gpu !== undefined) {
+      this.mesh.count = this.gpuCount;
       if (this.bundled === false) this.mesh.visible = this.#awaitingPrewarm;
       return;
     }
+    this.mesh.count = count;
     this.mesh.visible = count > 0 || this.#awaitingPrewarm;
   }
 
   /**
-   * The GPU-driven main pass's coarse gate: one boolean per key a frame, from the same visibility
-   * cells, with no window, no copy and no upload. A key holding no visible cell draws nothing, and
-   * one holding any of them draws what the dispatch kept — which is the whole of what the CPU
-   * decides while the GPU decides the rest. See `WorldCells#cullMainPass`.
+   * The GPU-driven main pass's coarse gate, asked per key and answered per asset: whether any of
+   * this batch's CPU grid squares is in `visible`, or it still owes the draw that builds its node.
+   *
+   * It is deliberately *not* the draw decision. A key's squares are the level the CPU picked from the
+   * follow point when it built them, and the dispatch re-picks the level from the camera every frame
+   * — so a key holding no cell can be the one the dispatch draws, and hiding on its own empty answer
+   * is how a tree disappeared on approach. The caller unions this across every level and part of the
+   * asset and hands the asset's answer back; see `WorldCells#cullMainPass` and `applyGpuVisible`.
    */
-  visibleFrom(visible: ReadonlySet<string>): void {
-    if (this.gpu === undefined || this.#clustered === false) return;
-    let shown = this.#awaitingPrewarm;
-    for (const square of this.#squareSizes.keys())
-      if (visible.has(square)) {
-        shown = true;
-        break;
-      }
-    this.mesh.count = this.#drawn;
+  seenIn(visible: ReadonlySet<string>): boolean {
+    if (this.#awaitingPrewarm) return true;
+    for (const square of this.#squareSizes.keys()) if (visible.has(square)) return true;
+    return false;
+  }
+
+  /**
+   * Apply the asset's conservative visibility answer to this dressed mesh, and publish the count a
+   * draw and the census read. A bundled mesh is shown by its recorded bundle and never asked.
+   */
+  applyGpuVisible(shown: boolean): void {
+    // The region's capacity, not this batch's own records: an empty-looking key — one the CPU built
+    // at another level — must still submit its indirect draw, and the record inside it draws nothing
+    // when the dispatch selected none. See `gpuCount`.
+    this.mesh.count = this.gpuCount;
     this.mesh.visible = shown;
   }
 
@@ -1717,6 +1877,12 @@ interface IResidentCell {
   readonly bytes: number;
   readonly batches: ICellBatch[];
   readonly chunks: Object3D[];
+  /**
+   * The exact `assets.model` cache paths this cell's chunks asked the loader for, held in
+   * `#modelPaths` and handed back once the last cell naming a path is gone, exactly like an asset's
+   * levels; see `#releaseModelPaths`. Empty for a cell with no chunks or a `loadModel` override.
+   */
+  readonly retainedModelPaths: string[];
 }
 
 /**
@@ -1743,6 +1909,17 @@ interface IBuildJob {
   /** Next placement to filter; the filter is complete when it reaches `run.count`. */
   next: number;
   batches: InstancedBatch[][] | undefined;
+  /**
+   * One root-matrix batch per level the filter reached, filled only when the asset can become a
+   * whole-asset impostor: the placement transform with no part offset, which is what its far quad
+   * needs. `undefined` for every other asset, so nothing pays for records the wide half never reads.
+   */
+  roots: (InstancedBatch | undefined)[] | undefined;
+  /**
+   * Bypass the refilter's identical-answer fast path. A handoff that changes what a wide segment must
+   * hold is not an identical answer even when the level and records are, so the rebuild has to swap.
+   */
+  force: boolean;
   /** One world-bounds box per `(level, part)` batch, filled by `#addPlacements` and read on swap. */
   boxes: Box3[][] | undefined;
   /** How many of the (level, part) meshes have been built. */
@@ -1765,6 +1942,8 @@ interface IGpuSource {
   readonly z: number;
   /** Half the diagonal of the asset's authored bounds at this placement's scale. */
   readonly radius: number;
+  /** The placement's uniform scale, carried so the dispatch can scale a whole-asset impostor gate. */
+  readonly scale: number;
 }
 
 /** One drawable part of one level, read out of the level's own GLB. */
@@ -1776,6 +1955,104 @@ interface IAssetPart {
   readonly material: Material;
   /** The `materialKey` of that surface, released through the shared-surface registry. */
   readonly surface: string;
+}
+
+/**
+ * One completed whole-asset atlas, cached by its content key and its source cutout contract.
+ *
+ * Bounded, not a generic cache: the atlas is the one GPU resource a later far reference may want to
+ * hold without keeping the full source GLB, and the CPU `center`/`radius` are the two scalars the
+ * surface needs to project it. `users` counts the live assets drawing it; a record with no user is
+ * inactive and evictable once the byte budget is over, and one with a user is never evicted.
+ */
+interface IImpostorRecord {
+  readonly key: string;
+  readonly atlas: WorldImpostorAtlas;
+  readonly center: Vector3;
+  readonly radius: number;
+  readonly bytes: number;
+  users: number;
+}
+
+/** The terminal LOD one asset appended once its bake landed; owned and released with the asset. */
+interface IImpostorState {
+  readonly part: IAssetPart;
+  readonly surface: WorldImpostorSurface;
+  readonly record: IImpostorRecord;
+}
+
+/**
+ * One `(cell, run)`'s slice of a whole-map far aggregate.
+ *
+ * The records are the run's ORIGINAL placement roots, composed once when the aggregate is built and
+ * never rewritten while the camera moves. `live` is false while the near ring owns the run, which is
+ * the atomic handoff: a run is drawn by exactly one of the two, never both and never neither.
+ */
+interface IFarSegment {
+  readonly cell: IWorldCell;
+  readonly run: IWorldRun;
+  /** First instance record in the aggregate's buffer, and how many the run holds. */
+  readonly start: number;
+  readonly count: number;
+  /** This run's own view-distance gate, `Infinity` when its asset authored no `maxDistance`. */
+  readonly cull: number;
+  live: boolean;
+}
+
+/**
+ * One whole-map far aggregate per exact atlas cache key: a single `InstancedMesh` holding every
+ * ORIGINAL placement root of every canonical asset that bakes to that key, independent of the near
+ * full-geometry ring and of the near source GLBs.
+ *
+ * The surface is the aggregate's own, built from the record's atlas and the first source material
+ * that baked to it, so disposing a near asset's surface cannot invalidate the far mesh. The atlas is
+ * borrowed: `record.users` is incremented once for the aggregate and held until the world disposes,
+ * which is what stops `#evictImpostors` dropping an atlas the far mesh still draws.
+ */
+interface IFarAggregate {
+  readonly key: string;
+  readonly surface: WorldImpostorSurface;
+  readonly record: IImpostorRecord;
+  mesh: InstancedMesh;
+  capacity: number;
+  /** Every original placement root the aggregate holds, live and near-owned. */
+  readonly segments: Map<IWorldRun, IFarSegment>;
+  /** How many times the instance buffer has been written, for the settled-frame check. */
+  uploads: number;
+}
+
+/**
+ * The metadata a refused far cohort is kept as, without its source GLB.
+ *
+ * A hard budget refusal releases the asset's geometry and materials the way any release does; the
+ * atlas is pinned by one borrowed `users` and the aggregate's own surface is built once here, so a
+ * later capacity release retries from this alone — no full model is held alive for a cohort that may
+ * never fit. See `#deferFar`, `#retryFar`.
+ */
+interface IFarCohort {
+  readonly id: string;
+  readonly key: string;
+  readonly record: IImpostorRecord;
+  /** The alpha-foliage source material to twin; absent once a refused cohort has its surface built. */
+  readonly source?: Material;
+  readonly alphaTest: number;
+  readonly cull: number;
+  readonly runs: ReadonlyArray<{ cell: IWorldCell; run: IWorldRun }>;
+}
+
+/**
+ * A refused far cohort kept without its source GLB: metadata plus the surface already built from the
+ * source at refusal. No material, geometry or texture of the model survives here — only the surface,
+ * which cleared its UV maps and borrows the pinned atlas.
+ */
+interface IFarRetryEntry {
+  readonly id: string;
+  readonly key: string;
+  readonly record: IImpostorRecord;
+  readonly alphaTest: number;
+  readonly cull: number;
+  readonly runs: ReadonlyArray<{ cell: IWorldCell; run: IWorldRun }>;
+  readonly surface: WorldImpostorSurface;
 }
 
 /** A surface every part with the same material content draws with, and who still uses it. */
@@ -1810,10 +2087,29 @@ interface IAssetState {
   pending: boolean;
   disposed: boolean;
   /**
+   * The exact `assets.model` cache paths this state asked the loader for, held in `#modelPaths`
+   * until the last state naming each one is released. Empty when `loadModel` bypasses the cache;
+   * filled once per state, so a load retried after an empty answer does not count twice.
+   */
+  retainedPaths: string[];
+  /**
    * One part list per entry in `glbs`, so a level that failed to load reuses the level below it and
    * the batch builder never has to know a level is missing.
    */
   levels: readonly (readonly IAssetPart[])[];
+  /**
+   * Parts taken out of DRAW but still owned here until teardown. Authored levels now keep their own
+   * geometry, so this stays empty; it is drained once with the asset on release.
+   */
+  spilled: readonly IAssetPart[];
+  /**
+   * The loader's resolved cooked url for LOD0, recorded at load. It is the atlas cache key's model
+   * half, so two package entries that fetch the same cooked bytes share one bake even when their
+   * `lods`/`maxDistance` metadata stopped them aliasing. See `#impostorKey`.
+   */
+  resolvedGlb: string;
+  /** The whole-asset impostor level this asset appended, once its bake landed. See `#finishImpostor`. */
+  impostor?: IImpostorState;
 }
 
 interface IWorldCellsInit extends IWorldCellsLoadOptions {
@@ -1829,6 +2125,12 @@ interface IWorldCellsInit extends IWorldCellsLoadOptions {
    * is a duplicate. See {@link assetAliases}.
    */
   readonly aliases: ReadonlyMap<string, string>;
+  /**
+   * Whether `load` fabricated the loader it hands in as `assets` instead of the game supplying one.
+   * `load` always passes a loader to the constructor, so `assets === undefined` cannot tell an owned
+   * loader from a caller's; this is the bit that can. Left out, ownership is `assets === undefined`.
+   */
+  readonly ownsAssets?: boolean;
 }
 
 /** GPU resources already handed to a `dispose`, so no second path can tear the same one down. */
@@ -1872,6 +2174,55 @@ async function loadModelWith(assets: IAssetLoader, path: string): Promise<Object
 function resolveRelative(baseUrl: string, relative: string): string {
   if (/^(?:[a-z]+:)?\/\//iu.test(relative) || relative.startsWith("data:")) return relative;
   return `${baseUrl}${relative.replace(/^\//u, "")}`;
+}
+
+/**
+ * The raw renderer seam the impostor bake needs, or `undefined` when this backend does not expose it.
+ *
+ * `IRendererLike.raw` is `unknown` on purpose: it is whatever the running renderer is, and a backend
+ * without layered render targets has no bake seam at all. The shape is checked rather than cast, so a
+ * stub whose raw is not a renderer leaves the bake un-run instead of throwing inside a frame.
+ *
+ * A WebGL renderer is the reason the three-method shape alone is not enough: it carries `render`,
+ * `setRenderTarget` and `initRenderTarget` and would pass, then fail mid-frame on the layered MRT
+ * capture it cannot run. So the backend must declare itself WebGPU (`kind` and the renderer's own
+ * `isWebGPURenderer`), which a WebGL fallback and an unsupported native backend do not, and the full
+ * getter/setter seam the baker calls must be present before the cast — the ones the baker reaches
+ * with `?.` still have to exist on a real backend, and a raw object missing them would be half-run,
+ * not skipped cleanly.
+ */
+const REQUIRED_IMPOSTOR_METHODS = [
+  "getActiveCubeFace",
+  "getActiveMipmapLevel",
+  "getClearAlpha",
+  "getClearColor",
+  "getMRT",
+  "getRenderTarget",
+  "initRenderTarget",
+  "render",
+  "setClearAlpha",
+  "setClearColor",
+  "setMRT",
+  "setRenderTarget",
+] as const;
+
+function impostorRawRenderer(
+  renderer: IRendererLike | undefined,
+): IImpostorRawRenderer | undefined {
+  if (renderer === undefined || renderer.kind !== "webgpu") return undefined;
+  const raw = renderer.raw as
+    | (Partial<IImpostorRawRenderer> & { isWebGPURenderer?: boolean })
+    | null;
+  if (raw === null || raw === undefined) return undefined;
+  if (raw.isWebGPURenderer !== true) return undefined;
+  // A `WebGPURenderer` can wrap the WebGL fallback backend and still report `kind: 'webgpu'` and
+  // `isWebGPURenderer === true`; that backend cannot run a layered MRT capture, so the method shape
+  // alone would accept it and fail mid-frame. The backend it actually wrapped is the honest answer.
+  if ((raw as { backend?: { isWebGLBackend?: boolean } }).backend?.isWebGLBackend === true)
+    return undefined;
+  for (const method of REQUIRED_IMPOSTOR_METHODS)
+    if (typeof raw[method] !== "function") return undefined;
+  return raw as IImpostorRawRenderer;
 }
 
 /**
@@ -1948,6 +2299,7 @@ function scatterMaterial(
   );
   // The authored material is owned too: the batch draws the cutout, and the GLB's own surface is
   // still this asset's to hand back.
+  worldOwned.add(cutout);
   return { material: cutout, owned: [material, cutout] };
 }
 
@@ -2001,12 +2353,6 @@ function disposeModel(model: Object3D): number {
     for (const material of materials)
       if (!worldOwned.has(material) && release(material)) failed += 1;
   });
-  return failed;
-}
-
-function disposeModels(models: readonly (Object3D | undefined)[]): number {
-  let failed = 0;
-  for (const model of models) if (model !== undefined) failed += disposeModel(model);
   return failed;
 }
 
@@ -2445,14 +2791,6 @@ async function assetAliases(
   return aliases;
 }
 
-/** The level a placement `distance` out from the follow point draws with. */
-function levelAt(distances: readonly number[], distance: number): number {
-  let level = 0;
-  for (let index = 1; index < distances.length; index += 1)
-    if (distance > (distances[index] as number)) level = index;
-  return level;
-}
-
 /**
  * A geometry that draws `source`'s shape through an indirect record: its own object, so the record is
  * this mesh's, over the same attributes and index, so no vertex buffer is copied.
@@ -2676,6 +3014,11 @@ function chainDistances(
   return distances;
 }
 
+/** The one test that separates an alpha-cutout foliage part from an opaque one: MASK or BLEND. */
+function isAlphaFoliage(material: Material): boolean {
+  return material.transparent || material.alphaTest > 0;
+}
+
 /** One level's parts, and what they submit: the chain's shape where it has one, the one above where not. */
 function chainLevelParts(
   parts: readonly IAssetPart[],
@@ -2692,7 +3035,6 @@ function chainLevelParts(
       chain === undefined
         ? part.geometry
         : (chain.levels[Math.min(level, chain.levels.length - 1)] as BufferGeometry);
-    // The same part object when the shape did not change, so one resource is one teardown.
     at.push(geometry === part.geometry ? part : { ...part, geometry });
     triangles += levelTriangles(geometry);
   }
@@ -2738,6 +3080,49 @@ function chainLevels(
     triangles.push(at.triangles);
   }
   return { distances, levels, triangles };
+}
+
+/**
+ * The DRAW levels an authored asset gets: every level keeps the geometry, transform and surface it
+ * authored, and the root LOD0's alpha-cutout parts are appended to a level that authored fewer alpha
+ * slots than the root carries, so no middle level loses leaves its reduced card cannot honestly
+ * represent.
+ *
+ * An authored reduced foliage card has no honest twin — the automatic reducer's error metric cannot
+ * see the holes a cutout silhouette is made of — but a level that authored such a card keeps it:
+ * only the slots a level carries none of fall back to the root, in the root's own per-role order, so
+ * a middle with one reduced card and a root with two gets its own card plus the root's second. The
+ * fallback parts are appended after the level's authored parts, never reordered, so each level keeps
+ * its own part indices and counts. Nothing is spilled: a fallback shares the root part by reference,
+ * so one resource is still one teardown.
+ */
+function coverAuthoredLevels(
+  levels: readonly (readonly IAssetPart[])[],
+): readonly (readonly IAssetPart[])[] {
+  const rootAlpha = (levels[0] ?? []).filter((part) => isAlphaFoliage(part.material));
+  if (rootAlpha.length === 0 || levels.length < 2) return levels;
+  const covered: (readonly IAssetPart[])[] = [levels[0] as readonly IAssetPart[]];
+  for (const parts of levels.slice(1)) {
+    let authoredAlpha = 0;
+    for (const part of parts) if (isAlphaFoliage(part.material)) authoredAlpha += 1;
+    if (authoredAlpha >= rootAlpha.length) {
+      covered.push(parts);
+      continue;
+    }
+    const mapped: IAssetPart[] = [...parts];
+    for (let slot = authoredAlpha; slot < rootAlpha.length; slot += 1)
+      mapped.push(rootAlpha[slot] as IAssetPart);
+    covered.push(mapped);
+  }
+  return covered;
+}
+
+/** The bake's view of one asset level: each part's geometry, transform and surface, by reference. */
+function impostorParts(parts: readonly IAssetPart[]): IImpostorPart[] {
+  const staged: IImpostorPart[] = [];
+  for (const part of parts)
+    staged.push({ geometry: part.geometry, local: part.local, material: part.material });
+  return staged;
 }
 
 /**
@@ -2932,6 +3317,13 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #cellSize: number;
   readonly #follow: IWorldCellsFollow;
   readonly #loader: IAssetLoader;
+  /**
+   * Whether {@link #loader} was created here rather than supplied by the game. Only an internally
+   * owned loader may have its `model` cache released when this world's last cell stops naming a
+   * path: an explicitly supplied loader is the caller's, another world may hold the same cached
+   * model, and its own `release` is the caller's to call. See `#releaseModelPaths`.
+   */
+  readonly #ownsLoader: boolean;
   readonly #loadModel: ((url: string) => Promise<Object3D>) | undefined;
   readonly #limiter: ModelLoadLimiter;
   readonly #manifest: IWorldPackage;
@@ -2971,6 +3363,15 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   readonly #aliases: ReadonlyMap<string, string>;
   readonly #assets = new Map<string, IAssetState>();
+  /**
+   * Exact `assets.model` cache paths this world holds, and how many of its asset states ask for
+   * each. Two distinct canonical assets can name the same path when their `lods`/`maxDistance`
+   * differ — the package's own aliasing leaves them separate — so the loader entry is released only
+   * when the last state naming the path goes. Keyed on the logical path requested, which is what the
+   * loader caches by, not the cooked url it resolves to. Empty under a `loadModel` override, which
+   * reaches no cache.
+   */
+  readonly #modelPaths = new Map<string, number>();
   readonly #resident = new Map<string, IResidentCell>();
   /** Surfaces shared by material content across every asset part; see `materialKey`. */
   readonly #surfaces = new Map<string, ISharedSurface>();
@@ -3128,6 +3529,8 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #scale = new Vector3();
   readonly #matrix = new Matrix4();
   readonly #instance = new Matrix4();
+  /** The authored bounds' centre, placed: the source sphere's centre. See `#addPlacements`. */
+  readonly #sourceCentre = new Vector3();
   /** The corner `#addPlacements` widens one batch's bounds box with, twice per record. */
   readonly #recordPoint = new Vector3();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
@@ -3197,6 +3600,66 @@ export class WorldCells extends Group implements IComputeDriven {
   #lodBiasToldAt: number;
   /** The resident ring has been handed to the scene once; see `#seedGpuSources`. */
   #gpuSeeded = false;
+  /** Whether alpha-foliage assets append a baked whole-asset terminal level; see the option. */
+  readonly #impostors: boolean;
+  /** The baker one view per render-cadence update; see `#stepImpostor`. */
+  readonly #baker = new WorldImpostorBaker();
+  /** Assets whose bake is queued, in adoption order; `#impostorQueued` is the same set by id. */
+  readonly #impostorQueue: IAssetState[] = [];
+  readonly #impostorQueued = new Set<string>();
+  /** The asset whose bake holds the baker right now, if any. */
+  #impostorBaking: IAssetState | undefined;
+  /**
+   * Completed atlases by content key. An atlas a live asset draws from is active and never evicted;
+   * one with no user is kept for a later reference until the byte budget needs the room.
+   */
+  readonly #impostorRecords = new Map<string, IImpostorRecord>();
+  #impostorRecordBytes = 0;
+  /** The declared bytes of the one bake in flight, held against the budget before `begin`. */
+  #impostorReservedBytes = 0;
+  readonly #impostorBudgetBytes: number;
+  /** Assets whose `TN_WORLD_IMPOSTOR` line has printed, so the marker is one per asset. */
+  readonly #impostorReported = new Set<string>();
+  /**
+   * Assets whose pre-bake wide segments are still waiting for a block in the one whole-asset mesh,
+   * because the frame that handed the bake over had spent its fresh-mesh allowance. Retried on the
+   * next update rather than left with no far shadow.
+   */
+  readonly #wideRetry = new Set<string>();
+  /**
+   * The whole-map far aggregates, one per exact atlas cache key, and the `run -> aggregate` index a
+   * near-ready handoff and an eviction read to toggle a run's far segment without asking the asset.
+   *
+   * `#farInstances` and `#farBytes` are the physical allocations those meshes hold, charged against
+   * the world's own instance and byte budgets beside the near ring's records.
+   */
+  readonly #far = new Map<string, IFarAggregate>();
+  readonly #farSegments = new Map<IWorldRun, IFarAggregate>();
+  #farInstances = 0;
+  #farBytes = 0;
+  /** Atlas keys whose `TN_WORLD_IMPOSTOR_FAR` line has printed, so the marker is one per aggregate. */
+  readonly #farReported = new Set<string>();
+  /**
+   * Cohorts whose far aggregate a full budget refused, as metadata plus a built surface and never
+   * the source GLB. Retried when a near cell releases its allocation — an event, not a per-frame
+   * scan — so a walk away from the ring makes room and the refused species appears without holding
+   * a full model alive; see {@link IFarRetryEntry}, `#retryFar` and `#deferFar`.
+   */
+  readonly #farRetry = new Map<string, IFarRetryEntry>();
+  /**
+   * Canonical asset ids placed anywhere in the map, adopted on idle frames so a species that never
+   * enters the near ring still bakes its atlas and appears on the far mesh. Enumerated once from the
+   * static placements; see `#pumpFarAcquisition`.
+   */
+  readonly #farCandidateIds: readonly string[];
+  /** The rotating cursor over `#farCandidateIds`, so the map is walked a bounded step per idle frame. */
+  #farCursor = 0;
+  /** Canonical ids whose far handling has settled: baked and built, or classified with no atlas. */
+  readonly #farSeen = new Set<string>();
+  /** Canonical ids acquired for the far half alone, held until their aggregate lands or is refused. */
+  readonly #farTemp = new Set<string>();
+  /** Every candidate is settled, so the idle pump can stop scanning the map; see `#pumpFarAcquisition`. */
+  #farExhausted = false;
 
   private constructor(init: IWorldCellsInit) {
     super();
@@ -3213,13 +3676,18 @@ export class WorldCells extends Group implements IComputeDriven {
     // Before the first `#canonical` read, which is the run loop below.
     this.#aliases = init.aliases;
     this.#cells = init.manifest.cells;
+    const candidates = new Set<string>();
     for (const cell of this.#cells)
       for (const run of cell.runs) {
         // By the canonical id, so one key's buffer is sized for the largest run of *any* member of
         // the group and a duplicate's placements never overflow the block their canonical minted.
         const id = this.#canonical(run.asset);
         this.#runMax.set(id, Math.max(this.#runMax.get(id) ?? 0, run.count));
+        // Every species the map places, however far from the follow point it starts: the far half
+        // has to be able to bake it without the near ring ever bringing it in.
+        if (run.count > 0) candidates.add(id);
       }
+    this.#farCandidateIds = [...candidates];
     this.#cellSize = init.manifest.cellSize;
     this.#minX = init.manifest.extent.minX;
     const { extent, terrain } = init.manifest;
@@ -3246,6 +3714,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#baseUrl = init.baseUrl;
     this.#logicalBase = init.logicalBase;
     this.#loader = init.assets ?? createAssetLoader();
+    this.#ownsLoader = init.ownsAssets ?? init.assets === undefined;
     this.#loadModel = init.loadModel;
     this.#limiter = new ModelLoadLimiter(
       positiveInteger(init.concurrency ?? WORLD_LOAD_CONCURRENCY, "concurrency"),
@@ -3253,6 +3722,8 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
     this.#bundlesWanted = init.bundles ?? bundlesRequested();
+    this.#impostors = init.impostors ?? true;
+    this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
     // The warm-up and the step cadence are the world's own clock, so loading does not count as a
@@ -3390,6 +3861,9 @@ export class WorldCells extends Group implements IComputeDriven {
       heightmap,
       logicalBase,
       manifest,
+      // The loader made here when the game supplied none is this world's to release; one the game
+      // passed in is the game's, and `#releaseModelPaths` never touches its cache.
+      ownsAssets: options.assets === undefined,
       placements,
     });
   }
@@ -3527,6 +4001,16 @@ export class WorldCells extends Group implements IComputeDriven {
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
     this.#drainPrewarm();
+    // One bake view per render update, after the prewarm so its own atlas allocation never delays a
+    // node build the walk is waiting on, and before the levels are told so a level the bake just
+    // appended is in this frame's window.
+    this.#stepImpostor(renderer);
+    // After the bake handoff, so a wide block it deferred to this frame's exhausted allowance is
+    // claimed now; a no-op on every frame with nothing waiting.
+    this.#retryWide();
+    // After the near work, so a species no resident run has asked for still bakes and reaches the
+    // far mesh without the camera ever traversing its cell. Bounded to one asset per idle frame.
+    this.#pumpFarAcquisition();
     // After the drain, so the levels are told about this update's records and not the last one's.
     this.#tellShadows();
     // After the drain too, so a record admitted this update is in the window the camera draws and
@@ -3592,17 +4076,18 @@ export class WorldCells extends Group implements IComputeDriven {
       this.#cullScratch.clear();
     }
     const gpu = this.#gpuScene;
+    const dressed: Array<{ asset: string; shared: SharedBatch }> = [];
+    const version = gpu.version;
     for (const shared of [...this.#shared.values()]) {
       if (shared.role !== "main") continue;
       // A dressed batch draws from the GPU scene's own buffers, so the frame's per-instance answer is
-      // the dispatch's and this mesh's own window would be a second, stale copy of it. What the CPU
-      // still decides is the one coarse thing: whether any of its visibility cells is in the frustum.
+      // the dispatch's and this mesh's own window would be a second, stale copy of it.
       if (gpu.on && shared.gpu !== undefined) {
         this.#dressGpu(shared, shared.gpu);
         // A bundled mesh is in a render list three fixed when it recorded the bundle, and the
         // dispatch has already culled per instance: there is nothing coarse left to hide, and a
         // `visible` written here is one the replay never reads. See `#bundleIn`.
-        if (shared.bundled === false) shared.visibleFrom(this.#visibleSquares);
+        if (shared.bundled === false) dressed.push({ asset: shared.gpu.asset, shared });
         continue;
       }
       const outcome = shared.cullFrom(this.#visibleSquares, this.#visibleEpoch);
@@ -3613,10 +4098,42 @@ export class WorldCells extends Group implements IComputeDriven {
         this.#mainCullPacks += 1;
       }
     }
+    // A regrow late in the loop replaces the scene's `drawn` — and, a non-grouped key, its `args` —
+    // after an earlier mesh in the same loop was dressed against the generation before it, so that
+    // mesh would read a buffer the dispatch no longer writes for one frame. One more pass over the
+    // same settled set, only when the scene changed under the first, rebinds every mesh to the final
+    // buffers. Registration is idempotent and every key is already minted and sized, so this pass
+    // mints nothing and cannot grow the scene again.
+    if (gpu.on && gpu.version !== version)
+      for (const shared of [...this.#shared.values()])
+        if (shared.role === "main" && shared.gpu !== undefined) this.#dressGpu(shared, shared.gpu);
+    // After every key has been dressed, so the asset's answer is the union across its levels and
+    // parts.
+    this.#applyGpuMain(dressed);
     // After the coarse gate, and only for the main camera: an orthographic one — every shadow
     // level's own — returned at the top, so a level's render never dispatches over the main pass's
     // compaction.
     if (gpu.on) gpu.dispatch(this.#renderer as IRendererLike, camera);
+  }
+
+  /**
+   * The coarse gate for the GPU-dressed main pass, computed per asset and reused across every level
+   * and part of it.
+   *
+   * A key's own CPU squares are the level the follow point picked when it built them, and the
+   * dispatch re-picks the level from the camera every frame — so a key the CPU never gave a cell to
+   * can be exactly the one the dispatch draws, and a per-key answer hid it: a tree walked into at a
+   * level it was not built at disappeared. One conservative answer per asset — any key holds a
+   * visible cell, or still owes its prewarm draw — is what shows all of them, and the indirect
+   * record decides what each one actually draws.
+   */
+  #applyGpuMain(dressed: readonly { asset: string; shared: SharedBatch }[]): void {
+    const shown = new Map<string, boolean>();
+    for (const { asset, shared } of dressed) {
+      if (shown.get(asset) === true || shared.seenIn(this.#visibleSquares)) shown.set(asset, true);
+      else if (shown.has(asset) === false) shown.set(asset, false);
+    }
+    for (const { asset, shared } of dressed) shared.applyGpuVisible(shown.get(asset) === true);
   }
 
   /**
@@ -3937,23 +4454,28 @@ export class WorldCells extends Group implements IComputeDriven {
    * residency, two an update.
    */
   #queuePrewarm(asset: IAssetState): void {
-    const coarsest = asset.levels[asset.levels.length - 1];
+    const wideKey = `${asset.id}:*@${WIDE_CLUSTER}`;
     for (const [level, parts] of asset.levels.entries()) {
       for (const [part, entry] of parts.entries()) {
         const key = `${asset.id}:${String(level)}:${String(part)}`;
         for (const role of ["main", "cluster", "wide"] as const) {
           // Only a level that casts has a caster half at all; see `#casts`.
           if (role !== "main" && !this.#casts(level)) continue;
+          // One whole-asset representation covers the far shadow; see `#wideOwed`.
+          if (role === "wide" && !this.#wideOwed(asset.id, part)) continue;
+          // A baked impostor's far half is one mesh per asset, not one per level; prewarm the mesh the
+          // handoff will keep rather than a per-level key it would retire one frame later.
           const name =
             role === "main"
               ? key
-              : `${key}@${role === "cluster" ? this.#followCluster() : WIDE_CLUSTER}`;
+              : role === "wide" && asset.impostor !== undefined
+                ? wideKey
+                : `${key}@${role === "cluster" ? this.#followCluster() : WIDE_CLUSTER}`;
           // A retained key is already paid for; see `#mintPrewarm`.
           if (this.#shared.has(name) || this.#retired.has(name) || this.#prewarmKeys.has(name))
             continue;
-          // The wide half is prewarmed out of the coarsest level, exactly as it is drawn; see
-          // `#shapeFor`.
-          const shape = role === "wide" ? (coarsest?.[part] ?? entry) : entry;
+          // The wide half is prewarmed with the same shape the swap draws; see `#wideShape`.
+          const shape = role === "wide" ? this.#wideShape(asset, level, part, entry) : entry;
           this.#prewarmKeys.add(name);
           this.#prewarmQueue.push({
             asset: asset.id,
@@ -4150,6 +4672,7 @@ export class WorldCells extends Group implements IComputeDriven {
               gpuTriangles: gpu.gpuTriangles,
             }),
       },
+      impostor: this.#impostorStats(),
       instances: this.#instances,
       loadsInFlight: this.#limiter.inFlight,
       loadsQueued: this.#limiter.queued,
@@ -4199,6 +4722,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#proxyMaterials.clear();
     this.#renderer = undefined;
     this.#camera = undefined;
+    // After every asset's release above, so no record is still held by a surface; disposes the cached
+    // atlases and aborts any bake still in flight.
+    this.#drainImpostors();
     this.#gpuScene.dispose();
     this.#gpuResident.clear();
     if (this.#drainShared() > 0) this.#failures += 1;
@@ -4244,11 +4770,15 @@ export class WorldCells extends Group implements IComputeDriven {
       }
       const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
       const bytes = instances * PLACEMENT_RECORD_BYTES;
-      if (this.#instances + instances > this.#budgets.instances) {
+      // The retained far aggregates are physical allocations the renderer holds too, so they are
+      // charged against the same declared limits as the near ring: admitting a cell over the top of
+      // them would put the world past `budgets.instances`/`budgets.bytes` with the far half invisible
+      // to this check. See `#farBudgetRefuses`, the far half of the same total.
+      if (this.#instances + this.#farInstances + instances > this.#budgets.instances) {
         this.#pressure.instances += 1;
         continue;
       }
-      if (this.#bytes + bytes > this.#budgets.bytes) {
+      if (this.#bytes + this.#farBytes + bytes > this.#budgets.bytes) {
         this.#pressure.bytes += 1;
         continue;
       }
@@ -4267,6 +4797,7 @@ export class WorldCells extends Group implements IComputeDriven {
       generation: this.#generation++,
       instances,
       key: cellKey(cell.x, cell.z),
+      retainedModelPaths: [],
       x: cell.x,
       z: cell.z,
     };
@@ -4290,23 +4821,32 @@ export class WorldCells extends Group implements IComputeDriven {
     return this.#aliases.get(id) ?? id;
   }
 
+  /** One fresh asset state for a definition, registered and its gates noted. */
+  #newAsset(id: string, definition: IWorldAsset): IAssetState {
+    const asset: IAssetState = {
+      ...assetLevels(definition),
+      definition,
+      disposed: false,
+      id,
+      levels: [],
+      pending: false,
+      refcount: 0,
+      retainedPaths: [],
+      resolvedGlb: "",
+      spilled: [],
+    };
+    this.#assets.set(id, asset);
+    for (const gate of asset.gates) this.#noteGate(gate);
+    return asset;
+  }
+
   #acquire(run: IWorldRun, cell: IResidentCell): void {
     const id = this.#canonical(run.asset);
     let asset = this.#assets.get(id);
     if (asset === undefined) {
       const definition = this.#manifest.assets[id];
       if (definition === undefined) return;
-      asset = {
-        ...assetLevels(definition),
-        definition,
-        disposed: false,
-        id,
-        levels: [],
-        pending: false,
-        refcount: 0,
-      };
-      this.#assets.set(id, asset);
-      for (const gate of asset.gates) this.#noteGate(gate);
+      asset = this.#newAsset(id, definition);
     }
     asset.refcount += 1;
     if (asset.levels.length > 0) {
@@ -4329,7 +4869,13 @@ export class WorldCells extends Group implements IComputeDriven {
    * is attached, so a rebuild that waits three frames shows the old level for those three frames
    * instead of a hole.
    */
-  #queueBuild(asset: IAssetState, cell: IResidentCell, run: IWorldRun, replace = false): void {
+  #queueBuild(
+    asset: IAssetState,
+    cell: IResidentCell,
+    run: IWorldRun,
+    replace = false,
+    force = false,
+  ): void {
     // Keyed on the run, not the asset: one cell can hold two runs of the same canonical asset —
     // two names for one model — and each has its own records to build. A token per asset made the
     // second run a no-op and dropped its placements on the floor.
@@ -4344,6 +4890,7 @@ export class WorldCells extends Group implements IComputeDriven {
       batches: undefined,
       boxes: undefined,
       cell,
+      force,
       gpuByLevel: undefined,
       filterX: this.#follow.position.x,
       filterZ: this.#follow.position.z,
@@ -4354,6 +4901,7 @@ export class WorldCells extends Group implements IComputeDriven {
       replaced: replace
         ? cell.batches.filter((entry) => entry.asset === asset.id && entry.run === run)
         : [],
+      roots: undefined,
       run,
       sources: undefined,
     });
@@ -4448,7 +4996,7 @@ export class WorldCells extends Group implements IComputeDriven {
     // the cell, only its filter point moves, so the next gate is measured from where the follow
     // point is now rather than from where it was when the answer was already right. Everything
     // else falls through to the swap below untouched.
-    for (let index = job.fresh.length - 1; index >= 0; index -= 1) {
+    for (let index = job.fresh.length - 1; index >= 0 && job.force === false; index -= 1) {
       const fresh = job.fresh[index] as ICellBatch;
       const at = job.replaced.findIndex(
         (old) =>
@@ -4510,12 +5058,19 @@ export class WorldCells extends Group implements IComputeDriven {
       if (entry.shared !== undefined) entry.shared.write(entry.segment, entry.batch);
       if (this.#gpuScene.on) entry.gpu = this.#placeSources(job, entry);
       if (entry.caster !== undefined) entry.caster.write(entry.casterSegment, entry.batch);
-      if (entry.wide !== undefined) entry.wide.write(entry.wideSegment, entry.batch);
+      // The wide half draws the whole-asset impostor at the placement root when this entry kept one,
+      // and the source part shape otherwise; see `ICellBatch.wideRoot`.
+      if (entry.wide !== undefined)
+        entry.wide.write(entry.wideSegment, entry.wideRoot ?? entry.batch);
     }
     // A batch the walk just wrote to, cleared or compacted holds new records, so the shadow levels
     // that drew the old ones are stale. One flag, told at most once a second.
     if (job.fresh.length > 0 || job.replaced.length > 0)
       this.#shadowRecordsMoved(this.#changedBounds(job.fresh, job.replaced));
+    // This run's near representation is attached, so the far mesh stops drawing its original roots in
+    // the same synchronous block: a cell is never drawn by both and never by neither. A no-op until
+    // the asset's atlas lands; see `#syncFarSegments` for the build-time half and `#restoreFar`.
+    this.#disableFar(job.cell, job.run);
     return true;
   }
 
@@ -4558,8 +5113,14 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #claimWide(assetId: string, entry: ICellBatch): boolean {
     if (entry.wideSegment >= 0 || !this.#casts(entry.level)) return true;
+    // A part the asset's one whole-asset representation already covers: the entry keeps its near
+    // main and cluster, and the far shadow reads part 0's one quad; see `#wideOwed`.
+    if (!this.#wideOwed(assetId, entry.part)) return true;
     const wide = this.#wideFor(assetId, entry);
-    const at = wide === undefined ? undefined : this.#segmentIn(wide, entry.batch.count);
+    // The impostor's far half draws the placement root, not `placement * part local`, so its block
+    // is sized to the root records the build kept beside the part's own; see `ICellBatch.wideRoot`.
+    const count = entry.wideRoot?.count ?? entry.batch.count;
+    const at = wide === undefined ? undefined : this.#segmentIn(wide, count);
     if (wide === undefined || at === undefined) return false;
     entry.wide = wide;
     entry.wideSegment = at;
@@ -4731,6 +5292,9 @@ export class WorldCells extends Group implements IComputeDriven {
         (authored.max[1] as number) - (authored.min[1] as number),
         (authored.max[2] as number) - (authored.min[2] as number),
       );
+    // Decided once per slice, not per placement: the wide half needs the placement root only for an
+    // asset that can append a whole-asset impostor. See `ICellBatch.wideRoot`.
+    const wantRoots = this.#rootsNeeded(asset);
     for (let index = from; index < to; index += 1) {
       const base = index * PLACEMENT_RECORD_FLOATS;
       const x = records[base] as number;
@@ -4747,15 +5311,39 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       this.#scale.setScalar(records[base + 7] as number);
       this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+      const scale = this.#scale.x;
       // The placement transform, then the part's own offset inside the model: a bark primitive at
       // the trunk and a needles primitive higher up both land in the one instance matrix.
-      const level = levelAt(asset.distances, distance);
+      // The level is picked by the shared gate rule: authored world-metre gates directly, and a
+      // whole-asset impostor's terminal gate scaled by this placement's own scale. The bias is the
+      // same adaptive multiplier the dispatch carries, so a biased walk crosses a switch here too.
+      const level = levelAtGates(
+        { distances: asset.distances, impostor: asset.impostor !== undefined },
+        biasedLodDistance(distance),
+        scale,
+      );
       // The record's own world bounds: the placement widened by the asset's authored bounds at the
       // scale it is drawn at. Read here because this loop already holds the placement and the scale,
       // and it is the one number the shadow levels' invalidation is tested against — the cell box is
       // 64 m of it, so a level whose window is 48 m wide was redrawing over ground nothing in it.
       const bounds = asset.definition.bounds;
-      const scale = this.#scale.x;
+      // The far shadow of an asset that can bake a whole-asset impostor draws one quad per placement
+      // at the placement root: the parts' own offsets are baked into the atlas, so composing a source
+      // part's offset again would apply it twice. One root record per placement, beside the per-part
+      // batches and read only by the wide half; see `ICellBatch.wideRoot`.
+      if (wantRoots) {
+        job.roots ??= [];
+        const roots = job.roots;
+        let root = roots[level];
+        if (root === undefined) {
+          const anchor = asset.levels[level]?.[0];
+          if (anchor !== undefined) {
+            root = new InstancedBatch({ geometry: anchor.geometry, material: anchor.material });
+            roots[level] = root;
+          }
+        }
+        root?.add(this.#matrix);
+      }
       // The GPU scene's source record for this placement: the placement's own transform, the level it
       // reached, and a sphere the dispatch tests against the camera's planes. The part offset is the
       // key's own, so one record serves every part of the level — see `#placeSources`.
@@ -4763,19 +5351,35 @@ export class WorldCells extends Group implements IComputeDriven {
         const list = job.sources ?? [];
         job.sources = list;
         // The sphere is the asset's authored bounds *as placed*, centred where the bounds' centre
-        // lands: a sphere at the placement instead is not a bound of the placement, and every prop
-        // whose model does not straddle the origin lost the half of itself that reaches away from it
-        // — a post, a stump, a fern, all of them culled at the edge of the view with their bases
-        // outside it. The CPU path's own gate is the cell's box over the same widened bounds, and it
-        // is conservative in exactly the way this is now.
-        const at = scale;
+        // lands under the placement's own transform: a sphere at the placement instead is not a
+        // bound of the placement, and every prop whose model does not straddle the origin lost the
+        // half of itself that reaches away from it — a post, a stump, a fern, all of them culled at
+        // the edge of the view with their bases outside it. The CPU path's own gate is the cell's box
+        // over the same widened bounds, and it is conservative in exactly the way this is now. The
+        // centre is the matrix applied to the authored centre, so the placement's quaternion rotates
+        // it: composing the offsets by hand dropped the rotation and put a turned off-centre prop's
+        // sphere where the unturned one would be. The radius is rotation-invariant and takes the
+        // scale alone, which is uniform.
+        const centre = this.#sourceCentre
+          .set(
+            ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5,
+            ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5,
+            ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5,
+          )
+          .applyMatrix4(this.#matrix);
         list.push({
           level,
           matrix: this.#matrix.clone(),
-          radius: 0.5 * boundsRadius * Math.abs(at),
-          x: x + ((bounds.min[0] as number) + (bounds.max[0] as number)) * 0.5 * at,
-          y: y + ((bounds.min[1] as number) + (bounds.max[1] as number)) * 0.5 * at,
-          z: z + ((bounds.min[2] as number) + (bounds.max[2] as number)) * 0.5 * at,
+          // `boundsRadius` is already the asset's authored bounds radius (half the diagonal), so the
+          // placement's sphere radius is that times its own uniform scale — halving it again put the
+          // sphere inside the prop and culled the half of it that reaches away from the placement.
+          radius: boundsRadius * Math.abs(scale),
+          // The magnitude, finite-sanitised: the dispatch's impostor gate takes `|scale|` exactly as
+          // `levelAtGates` does, so a mirrored placement reaches the atlas the same way.
+          scale: Number.isFinite(scale) ? Math.abs(scale) : 1,
+          x: centre.x,
+          y: centre.y,
+          z: centre.z,
         });
       }
       const parts = asset.levels[level] as readonly IAssetPart[];
@@ -4841,6 +5445,7 @@ export class WorldCells extends Group implements IComputeDriven {
         gpu: undefined,
         wide: undefined,
         wideSegment: -1,
+        wideRoot: job.roots?.[level],
         lastFilterX: job.filterX,
         lastFilterZ: job.filterZ,
         level,
@@ -4890,7 +5495,12 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #wideFor(assetId: string, entry: ICellBatch): SharedBatch | undefined {
     if (!this.#casts(entry.level)) return undefined;
-    return this.#batchFor(assetId, entry, `${this.#keyOf(entry)}@${WIDE_CLUSTER}`, "wide", false);
+    // A whole-asset impostor is one shape for every part and level, so its far shadow is ONE mesh per
+    // asset holding one root record per placement, not one mesh per level whose records a source part
+    // offset would then double. Every other asset keeps the per-key mesh its per-part shapes need.
+    const impostor = this.#assets.get(assetId)?.impostor !== undefined;
+    const key = impostor ? `${assetId}:*@${WIDE_CLUSTER}` : `${this.#keyOf(entry)}@${WIDE_CLUSTER}`;
+    return this.#batchFor(assetId, entry, key, "wide", false);
   }
 
   /** `asset:level:part`, the main pass's one mesh per key. */
@@ -4910,11 +5520,56 @@ export class WorldCells extends Group implements IComputeDriven {
    * the level the placement selected. An asset with one level is its own coarsest, and every half
    * draws what it draws today.
    */
+  /**
+   * The shape the coarse wide half draws for one `(level, part)`, or `fallback` when the level has no
+   * honest coarse counterpart. Shared by {@link #shapeFor} and the prewarm, so the mesh minted behind
+   * the gate carries the same geometry the swap would later ask for — a prewarm built from the
+   * coarsest level's part 0 and then handed back unchanged is the wrong shape for good.
+   */
+  #wideShape(
+    asset: IAssetState | undefined,
+    level: number,
+    part: number,
+    fallback: IBatchShape,
+  ): IBatchShape {
+    const terminal = asset?.levels.at(-1);
+    // The whole-asset impostor is the one case where a part index has no meaning: it is a single
+    // representation of every LOD0 part, so every part routes through it. `terminal?.[0]` is only
+    // that shape. On the source-only path the terminal must have a part at this index with the same
+    // role — an alpha slot drawn with an opaque part's shape (or vice versa) is a different object,
+    // and a terminal with fewer parts must not fall back to part 0's, which duplicates it.
+    if (asset?.impostor !== undefined) {
+      const coarse = terminal?.[0];
+      if (coarse !== undefined) return coarse;
+    }
+    const coarse = terminal?.[part];
+    const source = asset?.levels[level]?.[part];
+    if (
+      coarse !== undefined &&
+      source !== undefined &&
+      isAlphaFoliage(source.material) === isAlphaFoliage(coarse.material)
+    )
+      return coarse;
+    return fallback;
+  }
+
   #shapeFor(entry: ICellBatch, role: "cluster" | "main" | "wide"): IBatchShape {
-    const coarse =
-      role === "wide" ? this.#assets.get(entry.asset)?.levels.at(-1)?.[entry.part] : undefined;
-    if (coarse !== undefined) return coarse;
+    if (role === "wide")
+      return this.#wideShape(this.#assets.get(entry.asset), entry.level, entry.part, {
+        geometry: entry.batch.geometry,
+        material: entry.batch.material,
+      });
     return { geometry: entry.batch.geometry, material: entry.batch.material };
+  }
+
+  /**
+   * Whether this entry still owes a wide caster. A terminal whole-asset impostor is one part, and one
+   * wide mesh per level already holds every placement: only part 0 opens it, so a walk pays one quad
+   * per placement on the far shadow instead of one per bark/needle part.
+   */
+  #wideOwed(assetId: string, part: number): boolean {
+    if (part === 0) return true;
+    return this.#assets.get(assetId)?.impostor === undefined;
   }
 
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
@@ -5170,17 +5825,33 @@ export class WorldCells extends Group implements IComputeDriven {
     const capacity = Math.max(shared.liveCeiling, this.#gpuResident.get(key.asset) ?? 0);
     const settled = scene.drawn;
     const held = scene.regionOf(key.key);
+    // The args buffer and the drawn buffer are allocated and grown independently: minting a key
+    // grows `args` and leaves `drawn` the object it was, so the mesh's `instanceMatrix` and its
+    // indirect record can point at two different generations. The fast path used to watch only
+    // `drawn`, and a mesh left holding an old args record was one the dispatch no longer wrote —
+    // a forest that drew nothing while the readback said the counts were correct.
+    const geometry = shared.mesh.geometry;
+    const liveArgs = scene.args;
+    const bound =
+      liveArgs !== undefined &&
+      geometry.indirect === liveArgs &&
+      geometry.indirectOffset === (held?.argsIndex ?? -1) * DRAW_ARGS_BYTES;
     if (
       settled !== undefined &&
       shared.mesh.instanceMatrix === settled &&
       shared.mesh.frustumCulled === false &&
       (held?.capacity ?? 0) >= capacity &&
+      bound &&
       // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
       // by a rebind is a child of the world again, and the bundle that last recorded it no longer
       // draws it. Without this the walk would re-mint a key into a bundle that is missing it.
       shared.mesh.parent === this.#bundleHome()
-    )
+    ) {
+      // A sibling may have grown the level's capacity without moving this mesh, so the submission
+      // bound follows the live region rather than the dress that wrote it. See `gpuCount`.
+      shared.gpuCount = held?.capacity ?? shared.gpuCount;
       return;
+    }
     const region = scene.key(key.key, new Float32Array(part.local.elements), capacity, {
       group: `${key.asset}:${String(key.level)}`,
       part: key.part,
@@ -5193,8 +5864,12 @@ export class WorldCells extends Group implements IComputeDriven {
     const args = scene.args;
     const args2 = scene.regionOf(key.key);
     if (drawn === undefined || args === undefined || args2 === undefined) return;
+    // Before the mesh is dressed, so the republish a replacement does takes the dressed branch and
+    // submits at this bound rather than at a zero the CPU never drew. See `gpuCount`.
+    shared.gpuCount = args2.capacity;
     // Before the mesh is dressed, so the republish a replacement does takes the dressed branch: a
-    // batch that draws from the scene's buffers is shown by `visibleFrom`, not by its own count.
+    // batch that draws from the scene's buffers is shown by the per-asset gate in `#cullMainPass`,
+    // not by its own count.
     shared.gpu = key;
     const mesh = shared.mesh;
     // Its own geometry object, so the indirect record is this mesh's, over the SAME attributes: the
@@ -5293,6 +5968,9 @@ export class WorldCells extends Group implements IComputeDriven {
     return {
       cull: cullDistance(asset.definition.maxDistance),
       distances: asset.distances,
+      // The dispatch scales the whole-asset impostor's terminal gate by each placement's own scale;
+      // the same flag the live-state reference reads, so the two cannot cross it differently.
+      impostor: asset.impostor !== undefined,
       levels: gates,
     };
   }
@@ -5407,6 +6085,7 @@ export class WorldCells extends Group implements IComputeDriven {
       { planes, x: _gpuEye.x, y: _gpuEye.y, z: _gpuEye.z },
     );
     const draws: IMeshDraw[] = [];
+    const args = this.#gpuScene.args;
     for (const shared of this.#shared.values()) {
       if (shared.role !== "main" || shared.gpu === undefined) continue;
       const geometry = shared.mesh.geometry;
@@ -5414,7 +6093,15 @@ export class WorldCells extends Group implements IComputeDriven {
       // number, and a list is not a record this check can name, so it is not compared.
       const offset = geometry.indirectOffset;
       if (geometry.indirect === undefined || typeof offset !== "number") continue;
+      const region = this.#gpuScene.regionOf(shared.mesh.name);
       draws.push({
+        // The actual binding, asked of the mesh and the scene at this turn, not the record number:
+        // an offset can name the right record while the mesh reads an older args buffer with the
+        // same layout, and the field is what lets the check see a stale binding at all.
+        bound:
+          args !== undefined &&
+          geometry.indirect === args &&
+          offset === (region?.argsIndex ?? -1) * DRAW_ARGS_BYTES,
         instances: expected.get(shared.mesh.name) ?? new Float32Array(0),
         name: shared.mesh.name,
         record: offset / DRAW_ARGS_BYTES,
@@ -5443,6 +6130,7 @@ export class WorldCells extends Group implements IComputeDriven {
         cull: cullDistance(asset.definition.maxDistance),
         distances: asset.distances,
         id: asset.id,
+        impostor: asset.impostor !== undefined,
         locals,
       });
     }
@@ -5476,6 +6164,7 @@ export class WorldCells extends Group implements IComputeDriven {
           source.y,
           source.z,
           source.radius,
+          source.scale,
         );
         if (at >= 0) records.push(at);
       }
@@ -5556,18 +6245,26 @@ export class WorldCells extends Group implements IComputeDriven {
   #segmentIn(shared: SharedBatch, count: number, cluster?: string): number | undefined {
     const segment = shared.allocate(count, cluster);
     if (segment !== undefined) return segment;
-    if (this.#freshThisUpdate >= this.#freshMeshesPerUpdate) return undefined;
-    this.#freshThisUpdate += 1;
+    // A dressed batch's grow is logical: it raises the ceiling the GPU scene sizes this key's region
+    // from and mints no mesh, so the fresh-mesh allowance — which bounds new pooled meshes and their
+    // node builds — does not gate it. A CPU grow is a real replacement mesh and still respects it.
+    if (shared.gpu === undefined && this.#freshThisUpdate >= this.#freshMeshesPerUpdate)
+      return undefined;
     const old = shared.grow();
-    // The replacement is a different object, so the layer and the cull hook `grow` copied neither of
-    // have to be dressed onto it again — a grown caster that kept layer 0 would be drawn by the main
-    // camera and lost to the shadow level, and a grown main batch would stop narrowing at all.
-    this.#dressMesh(shared, shared.role === "main" && this.#receiveShadow);
-    this.#attach(shared);
-    // The mesh this grow replaced goes back to the pool: a cached shadow level can still replay a
-    // draw of it until its window next moves, and the pool keeps the buffer and the uuid rather
-    // than letting one array of retired meshes grow without bound.
-    parkMesh(old);
+    // Only a real replacement is a new object to dress, attach and hand to the pool; a logical GPU
+    // grow keeps the live mesh, which `#dressGpu` re-points at the grown region before the draw.
+    if (old !== undefined) {
+      this.#freshThisUpdate += 1;
+      // The replacement is a different object, so the layer and the cull hook `grow` copied neither of
+      // have to be dressed onto it again — a grown caster that kept layer 0 would be drawn by the main
+      // camera and lost to the shadow level, and a grown main batch would stop narrowing at all.
+      this.#dressMesh(shared, shared.role === "main" && this.#receiveShadow);
+      this.#attach(shared);
+      // The mesh this grow replaced goes back to the pool: a cached shadow level can still replay a
+      // draw of it until its window next moves, and the pool keeps the buffer and the uuid rather
+      // than letting one array of retired meshes grow without bound.
+      parkMesh(old);
+    }
     return shared.allocate(count, cluster);
   }
 
@@ -5590,6 +6287,16 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #startAssetLoad(asset: IAssetState): void {
     asset.pending = true;
+    // The source models this state asks `assets.model` for are this world's to hand back; the
+    // loader caches by logical path and would otherwise pin every texture for the world's life.
+    // Counted once per state, so a load retried after an empty answer does not double-count.
+    // `loadModel` overrides the cache entirely, so it retains nothing.
+    if (this.#loadModel === undefined && asset.retainedPaths.length === 0) {
+      this.#retainModelPaths(
+        Array.from(asset.glbs, (glb) => resolveRelative(this.#logicalBase, glb)),
+        asset.retainedPaths,
+      );
+    }
     const wanted = (): boolean =>
       !this.#released && this.#assets.get(asset.id) === asset && !asset.disposed;
     // `Promise.all` hands back the levels in `glbs` order, and the limiter is what bounds them: it
@@ -5606,10 +6313,20 @@ export class WorldCells extends Group implements IComputeDriven {
           }),
       );
     }
-    void Promise.all(loads).then((models) => {
+    // The cooked url LOD0 was actually fetched from, resolved the same way `assetSignature` does,
+    // so the atlas key names the bytes rather than the package entry. It is needed before adoption,
+    // so the two promises are awaited together; a path the loader cannot resolve falls back to the
+    // logical url, exactly as `assetSignature`'s caller does.
+    const lod0 = resolveRelative(this.#logicalBase, asset.glbs[0] as string);
+    const resolved = this.#loader
+      .resolve(lod0)
+      .then((candidates) => candidates[0] ?? lod0)
+      .catch(() => lod0);
+    void Promise.all([Promise.all(loads), resolved]).then(([models, url]) => {
       // The state stays, refcount and all, whatever the loads answered: cells still resident are
       // holding it, and the next acquire retries. Dropping it here would let a later cell refcount
       // from zero and hand an eviction of an old cell the geometry a still-resident cell draws.
+      asset.resolvedGlb = url;
       asset.pending = false;
       this.#adoptAsset(asset, models);
     });
@@ -5622,7 +6339,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (parts.length === 0) {
       // Same as a refused load: counted, released, and the next acquire retries.
       this.#failures += 1;
-      this.#failures += disposeModel(model);
+      this.#failures += this.#disposeLoaded(model);
       return undefined;
     }
     return parts;
@@ -5642,7 +6359,7 @@ export class WorldCells extends Group implements IComputeDriven {
     for (const [index, model] of models.entries()) {
       const level = this.#partsOf(model) ?? levels[index - 1];
       if (level === undefined) {
-        this.#failures += disposeModels(models.slice(index));
+        for (const model of models.slice(index)) this.#failures += this.#disposeLoaded(model);
         for (const parts of levels) this.#failures += this.#releaseParts(parts);
         return undefined;
       }
@@ -5659,14 +6376,31 @@ export class WorldCells extends Group implements IComputeDriven {
    */
   #adoptAsset(asset: IAssetState, models: readonly (Object3D | undefined)[]): void {
     if (this.#released || this.#assets.get(asset.id) !== asset || asset.disposed) {
-      this.#failures += disposeModels(models);
+      for (const model of models) this.#failures += this.#disposeLoaded(model);
       return;
     }
     const adopted = this.#adoptLevels(models);
-    if (adopted === undefined) return;
+    if (adopted === undefined) {
+      // A far-only asset that would not load has nothing to bake; drop the temporary reference so
+      // the source it did fetch is not held for the world's whole life.
+      if (this.#farTemp.has(asset.id)) this.#releaseFarTemp(asset.id);
+      return;
+    }
     // Before the prewarm and the queued builds, both of which read the levels, the distances and
     // the gates: an asset whose chain widened it is batched at those levels from its first build.
     asset.levels = this.#widenWithChain(asset, adopted);
+    // A far-only asset is drawn by no near run, so it takes no prewarm and queues no cell build:
+    // its whole job is the atlas behind the aggregate, and its source is released once that lands.
+    if (this.#farTemp.has(asset.id)) {
+      this.#maybeQueueImpostor(asset);
+      // Nothing to bake (no alpha-cutout LOD0) and nothing queued: release the source now.
+      if (asset.impostor === undefined && !this.#impostorQueued.has(asset.id))
+        this.#releaseFarTemp(asset.id);
+      return;
+    }
+    // After the chain, so the impostor's switch sits beyond every synthesized gate; before the
+    // prewarm, so a cached atlas appends its level in this same admission.
+    this.#maybeQueueImpostor(asset);
     // Every level and part of the asset now, before any of them is asked for. A level with no
     // placement in it is not drawn and would otherwise mint its mesh — and pay its node build — on
     // the frame a walk first moves far enough to switch into it.
@@ -5681,18 +6415,20 @@ export class WorldCells extends Group implements IComputeDriven {
   /**
    * An asset's loaded levels, widened with the ones its model's baked AutoLOD chain carries.
    *
-   * An asset with authored `lods` keeps them: the package names its own shape at its own
-   * distances, and a chain the loader also happens to have registered is a fallback for a package
-   * that named none, not a second opinion over one that did. Everything downstream is unchanged by
-   * the widening — a level is a level, and its switch is a gate like any other — so the batch keys,
-   * the prewarm, the caster clusters and the retire/rebind pool all see the chain's levels as
-   * ordinary ones.
+   * An asset with authored `lods` keeps its own switch distances and its own middle geometry: each
+   * level draws the shape the pipeline authored for it, with the root LOD0's alpha cutouts appended
+   * to any level that authored fewer of them so no middle loses its leaves; see
+   * `coverAuthoredLevels`. A chain the loader also happens to have registered is a fallback for a
+   * package that named no `lods`, not a second opinion over one that did. Everything downstream is
+   * unchanged either way — a level is a level, and its switch is a gate like any other — so the
+   * batch keys, the prewarm, the caster clusters and the retire/rebind pool all see the derived
+   * levels as ordinary ones.
    */
   #widenWithChain(
     asset: IAssetState,
     levels: readonly (readonly IAssetPart[])[],
   ): readonly (readonly IAssetPart[])[] {
-    if (asset.definition.lods !== undefined) return levels;
+    if (asset.definition.lods !== undefined) return coverAuthoredLevels(levels);
     const chained = chainLevels(
       levels[0] as readonly IAssetPart[],
       this.#autoLodPixelsPerUnit,
@@ -5706,6 +6442,985 @@ export class WorldCells extends Group implements IComputeDriven {
     asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
     this.#reportChainLod(asset.id, chained);
     return chained.levels;
+  }
+
+  /**
+   * Whether this asset can append a whole-asset impostor, so its builds keep the placement-root
+   * records the far quad draws from. The same test `#maybeQueueImpostor` makes, minus the cache: an
+   * asset with no alpha-cutout LOD0 part never bakes, so it never needs the extra records.
+   */
+  #rootsNeeded(asset: IAssetState): boolean {
+    if (this.#impostors === false) return false;
+    const parts = asset.levels[0];
+    return parts !== undefined && this.#impostorSource(parts) !== undefined;
+  }
+
+  /**
+   * The first LOD0 part that is alpha foliage, and the cutoff its own material authored — or
+   * `undefined` when no part is. A BLEND part carries `alphaTest 0`, and the scatter path draws it
+   * through the same cutout a MASK part gets, so the contract records that default rather than a
+   * zero that would bake a solid impostor.
+   */
+  #impostorSource(
+    parts: readonly IAssetPart[],
+  ): { readonly source: Material; readonly alphaTest: number } | undefined {
+    for (const part of parts) {
+      const material = part.material;
+      if (!isAlphaFoliage(material)) continue;
+      return {
+        source: material,
+        alphaTest: material.alphaTest > 0 ? material.alphaTest : DEFAULT_CUTOUT_ALPHA,
+      };
+    }
+    return undefined;
+  }
+
+  /**
+   * The content key one impostor atlas is cached under: the loader's resolved cooked url of LOD0,
+   * plus every LOD0 source part's surface/content key and its exact cutout contract. Two package
+   * entries that fetch the same cooked model and draw the same parts with the same cutoffs are one
+   * bake, which is the canonical-asset idea applied to the atlas rather than to the levels — the
+   * package's own `lods`/`maxDistance` metadata may have stopped the two entries aliasing, but the
+   * atlas is built from LOD0 alone, so it must be shared anyway.
+   *
+   * The cutoff is the exact number the bake uses, never a rounded one: `0.42` and `0.420001` are
+   * different silhouettes and must not collide in the cache.
+   */
+  #impostorKey(asset: IAssetState): string {
+    const parts = asset.levels[0] ?? [];
+    const contract: string[] = [];
+    for (const part of parts) {
+      const cutoff = isAlphaFoliage(part.material)
+        ? part.material.alphaTest > 0
+          ? part.material.alphaTest
+          : DEFAULT_CUTOUT_ALPHA
+        : 0;
+      contract.push(`${part.surface}@${String(cutoff)}`);
+    }
+    return `${asset.resolvedGlb}|${this.#transparentScatter}|${contract.join(",")}`;
+  }
+
+  /** Mark a cached atlas touched, so the least recently used inactive record is the one evicted. */
+  #touchImpostor(key: string, record: IImpostorRecord): void {
+    this.#impostorRecords.delete(key);
+    this.#impostorRecords.set(key, record);
+  }
+
+  /**
+   * Queue one adopted asset's whole-asset impostor, or append it at once from a cached atlas.
+   *
+   * Called after `#widenWithChain` and before the prewarm, so the terminal level is known to the same
+   * prewarm and rebuild machinery every adoption uses. An asset with no alpha-cutout LOD0 part is
+   * never baked: a solid impostor is not the thing it replaces.
+   */
+  #maybeQueueImpostor(asset: IAssetState): void {
+    if (this.#impostors === false || asset.impostor !== undefined) return;
+    const parts = asset.levels[0];
+    if (parts === undefined) return;
+    const source = this.#impostorSource(parts);
+    if (source === undefined) return;
+    const key = this.#impostorKey(asset);
+    const cached = this.#impostorRecords.get(key);
+    if (cached !== undefined) {
+      this.#touchImpostor(key, cached);
+      this.#finishImpostor(asset, cached);
+      return;
+    }
+    if (this.#impostorQueued.has(asset.id)) return;
+    this.#impostorQueued.add(asset.id);
+    this.#impostorQueue.push(asset);
+  }
+
+  /**
+   * One view of the bake per render-cadence update, then the terminal level when it completes.
+   *
+   * The renderer is asked for its raw seam and the bake waits for one that can run it: a world that
+   * has no renderer yet — or a backend whose raw seam is not the layered-target API — simply does
+   * not advance, and nothing downstream of the bake is owed until it does. No landmark is already
+   * waited on, so a bake that never runs never deadlocks a loading screen.
+   */
+  #stepImpostor(renderer: IRendererLike | undefined): void {
+    if (this.#impostors === false || this.#released) return;
+    // A renderer that exists but carries no layered bake seam is a real answer, not a delay. Waiting
+    // on it would leave every queued asset pending and its atlas bytes reserved for the world's whole
+    // life, so the bake is cancelled, the reservation and queue dropped, and each asset reported:
+    // the source LODs stay, which is the documented fallback. A world with no renderer yet keeps
+    // waiting — that is the loading-screen case the wait exists for.
+    const current = renderer ?? this.#renderer;
+    if (current !== undefined && impostorRawRenderer(current) === undefined) {
+      this.#dropUnsupportedImpostors();
+      return;
+    }
+    if (this.#impostorBaking === undefined) {
+      while (this.#impostorQueue.length > 0) {
+        const asset = this.#impostorQueue.shift() as IAssetState;
+        this.#impostorQueued.delete(asset.id);
+        if (this.#assets.get(asset.id) !== asset || asset.disposed || asset.impostor !== undefined)
+          continue;
+        const parts = asset.levels[0];
+        if (parts === undefined || this.#impostorSource(parts) === undefined) continue;
+        // Re-check the completed cache when DEQUEUED, not only when queued: two entries whose bake
+        // was queued before either finished share one atlas instead of baking it twice.
+        const key = this.#impostorKey(asset);
+        const cached = this.#impostorRecords.get(key);
+        if (cached !== undefined) {
+          this.#touchImpostor(key, cached);
+          this.#finishImpostor(asset, cached);
+          continue;
+        }
+        // Enforce the declared colour+mip budget BEFORE the atlas is allocated, and never at the
+        // cost of an atlas a live asset draws from: inactive LRU records make room first.
+        if (
+          this.#impostorRecordBytes + this.#impostorReservedBytes + IMPOSTOR_ATLAS_BYTES >
+          this.#impostorBudgetBytes
+        )
+          this.#evictImpostors(IMPOSTOR_ATLAS_BYTES);
+        if (this.#impostorRecordBytes + IMPOSTOR_ATLAS_BYTES > this.#impostorBudgetBytes) {
+          // Out of room: keep the source LODs and say why, rather than overrun the budget with one
+          // more atlas or evict one still in use.
+          this.#reportImpostor(asset, "budget");
+          // A far-only species fetched for the far half alone has no near run to fall back on, and
+          // nothing here retries an atlas-budget refusal, so keeping its source GLB alive buys
+          // nothing. Release it; the near path re-acquires it normally if the follow point reaches it.
+          if (this.#farTemp.has(asset.id)) this.#releaseFarTemp(asset.id);
+          continue;
+        }
+        const staged: IImpostorPart[] = impostorParts(parts);
+        try {
+          this.#baker.begin(asset.id, staged, { pixels: IMPOSTOR_FRAME_PIXELS });
+        } catch {
+          this.#failures += 1;
+          this.#reportImpostor(asset, "begin-failed");
+          continue;
+        }
+        this.#impostorReservedBytes = IMPOSTOR_ATLAS_BYTES;
+        this.#impostorBaking = asset;
+        break;
+      }
+    }
+    const baking = this.#impostorBaking;
+    if (baking === undefined) return;
+    const raw = impostorRawRenderer(renderer);
+    if (raw === undefined) return;
+    let atlas: WorldImpostorAtlas | undefined;
+    try {
+      atlas = this.#baker.step(raw);
+    } catch {
+      this.#failures += 1;
+      this.#impostorBaking = undefined;
+      this.#impostorReservedBytes = 0;
+      this.#reportImpostor(baking, "bake-failed");
+      return;
+    }
+    if (atlas === undefined) return;
+    this.#impostorBaking = undefined;
+    this.#adoptImpostorAtlas(baking, atlas);
+  }
+
+  /**
+   * Drop every queued and in-flight bake because the renderer cannot run the layered capture, and
+   * report each asset once. The reservation is released with the abort, so a later supported renderer
+   * (a device swap, a backend that only comes up after a frame) can still bake: the queue is empty,
+   * but a fresh adoption re-queues, and an asset already refused here is left with its source LODs.
+   */
+  #dropUnsupportedImpostors(): void {
+    if (this.#impostorQueue.length === 0 && this.#impostorBaking === undefined) return;
+    const dropped: IAssetState[] = [];
+    if (this.#impostorBaking !== undefined) {
+      dropped.push(this.#impostorBaking);
+      this.#reportImpostor(this.#impostorBaking, "unsupported");
+      this.#baker.abort();
+      this.#impostorBaking = undefined;
+      this.#impostorReservedBytes = 0;
+    }
+    const queued = this.#impostorQueue.splice(0, this.#impostorQueue.length);
+    this.#impostorQueued.clear();
+    dropped.push(...queued);
+    for (const asset of queued) this.#reportImpostor(asset, "unsupported");
+    // A far-only species cannot bake on a backend that has none, so it must not keep holding the
+    // source it fetched for a bake that will never land. Its atlas cache key stays for a later backend.
+    for (const asset of dropped) if (this.#farTemp.has(asset.id)) this.#releaseFarTemp(asset.id);
+  }
+
+  /** Store a finished atlas and hand the asset its terminal level. */ #adoptImpostorAtlas(
+    asset: IAssetState,
+    atlas: WorldImpostorAtlas,
+  ): void {
+    this.#impostorReservedBytes = 0;
+    const parts = asset.levels[0];
+    const source = parts === undefined ? undefined : this.#impostorSource(parts);
+    if (parts === undefined || source === undefined || asset.impostor !== undefined) {
+      atlas.dispose();
+      return;
+    }
+    const key = this.#impostorKey(asset);
+    const existing = this.#impostorRecords.get(key);
+    if (existing !== undefined) {
+      atlas.dispose();
+      this.#touchImpostor(key, existing);
+      this.#finishImpostor(asset, existing);
+      return;
+    }
+    const staged: IImpostorPart[] = impostorParts(parts);
+    const bounds = impostorBounds(staged);
+    const record: IImpostorRecord = {
+      atlas,
+      bytes: atlas.bytes,
+      center: bounds.center,
+      key,
+      radius: bounds.radius,
+      users: 0,
+    };
+    this.#impostorRecords.set(key, record);
+    this.#impostorRecordBytes += record.bytes;
+    // Acquire the active user BEFORE any eviction, so the fresh record cannot be the eviction
+    // victim and `#finishImpostor` never builds a surface that borrows a disposed atlas. Admission
+    // already reserved this record's bytes, so the trim below only drops older inactive records.
+    this.#finishImpostor(asset, record);
+    this.#evictImpostors();
+  }
+
+  /**
+   * Append the whole-asset terminal level: one part, identity local, two triangles, and a switch at
+   * the projection the 128 px atlas sphere reaches — never a fixed metre, and strictly beyond the
+   * last authored or chain gate so `levelAt` cannot pick it before the level that gate named.
+   *
+   * The surface's own geometry and material are the part's, so the level is a normal level to every
+   * consumer downstream: the prewarm mints its keys, the swap rebuilds the resident runs, and the
+   * caster halves read it through `#shapeFor` like any other. The atlas is borrowed and released by
+   * the record; see `#releaseImpostor`.
+   */
+  #finishImpostor(asset: IAssetState, record: IImpostorRecord): void {
+    if (asset.impostor !== undefined || asset.disposed) return;
+    if (this.#assets.get(asset.id) !== asset) return;
+    const parts = asset.levels[0];
+    if (parts === undefined) return;
+    const source = this.#impostorSource(parts);
+    if (source === undefined) return;
+    let surface: WorldImpostorSurface;
+    try {
+      surface = new WorldImpostorSurface({
+        alphaTest: source.alphaTest,
+        atlas: record.atlas,
+        center: record.center,
+        radius: record.radius,
+        source: source.source,
+      });
+    } catch {
+      this.#failures += 1;
+      this.#reportImpostor(asset, "surface-failed");
+      return;
+    }
+    // The terminal gate is stored as the BASE-sphere projected distance — the distance at which the
+    // asset's own LOD0 sphere, at scale 1, covers the 128 px atlas — and the placement's own scale is
+    // applied per placement at selection (`levelAtGates`). A placement scaled 8-12x therefore reaches
+    // the atlas 8-12x as far instead of switching at the unit-scale distance. There is no fixed
+    // margin: `levelAtGates` floors the terminal one representable Float32 step past the last source
+    // gate, so the source level keeps a window while the ordering survives the f32 store.
+    const switchAt = (2 * record.radius * this.#autoLodPixelsPerUnit) / IMPOSTOR_FRAME_PIXELS;
+    if (!Number.isFinite(switchAt) || switchAt <= 0) {
+      surface.dispose();
+      return;
+    }
+    const part: IAssetPart = {
+      geometry: surface.geometry,
+      local: new Matrix4(),
+      material: surface.material,
+      surface: "",
+    };
+    asset.levels = [...asset.levels, [part]];
+    asset.distances = [...asset.distances, switchAt];
+    asset.gates = [...asset.gates, switchAt];
+    this.#noteGate(switchAt);
+    asset.threshold = asset.gates.length === 0 ? undefined : Math.min(...asset.gates);
+    asset.impostor = { part, record, surface };
+    record.users += 1;
+    // The whole-map far aggregate for this atlas key, before the rebuild loop below: its segments
+    // exist when the swaps land, and any run already near-ready is handed over immediately. A budget
+    // refusal keeps only the far cohort's metadata and surface in `#farRetry`; see `#buildFar`.
+    this.#buildFar(asset, record);
+    this.#reportImpostor(asset, "ready");
+    // A far-only asset has no near batches or casters to hand over; once its aggregate is up its
+    // temporary source has done its job and goes, while the atlas the aggregate borrows stays. A
+    // refusal releases the source too — the deferred cohort in `#farRetry` holds only metadata and a
+    // surface, never the GLB — so a far species that cannot fit is not kept alive wholesale.
+    if (this.#farTemp.has(asset.id)) {
+      this.#releaseFarTemp(asset.id);
+      return;
+    }
+    // The far casters of the levels that were already built: part 0's key is re-pointed at the one
+    // whole-asset shape, and the per-part keys the terminal level has no counterpart for are dropped,
+    // so the far shadow draws one quad per placement rather than a duplicate per bark/needle part.
+    this.#retargetWideCasters(asset);
+    // The terminal level's keys and every resident run of this asset, through the same prewarm and
+    // swap the first build took: no active job array is mutated halfway.
+    this.#queuePrewarm(asset);
+    for (const cell of [...this.#resident.values()]) {
+      for (const run of cell.cell.runs) {
+        if (this.#canonical(run.asset) === asset.id) this.#queueBuild(asset, cell, run, true);
+      }
+    }
+  }
+
+  /**
+   * The whole-map far aggregate for one exact atlas cache key: every ORIGINAL placement root of every
+   * canonical asset that bakes to that key, in one `InstancedMesh`, independent of the near ring and
+   * of the near source GLBs.
+   *
+   * One aggregate per EXACT atlas key, never one per `maxDistance`: a shared atlas can back assets
+   * with different authored cutoffs, and each placement's own value rides the instance buffer (see
+   * {@link IFarSegment.cull}) rather than splitting the key into a second aggregate — the exact key
+   * is what the atlas cache already bounds, and a split would build a second surface for one atlas.
+   * The first asset to bake a key builds the aggregate's own surface and instance buffer; a later
+   * canonical asset that shares the key appends its own runs to the same mesh, growing the buffer at
+   * most once per asset. A key already carrying every one of this asset's runs is left untouched, so
+   * re-adopting an asset from the cached atlas after its near source was released rebuilds nothing.
+   * Never `part.local`: the atlas bakes each part's own transform, so the far quad is the placement
+   * root alone.
+   */
+  #buildFar(asset: IAssetState, record: IImpostorRecord): boolean {
+    const parts = asset.levels[0];
+    const source = parts === undefined ? undefined : this.#impostorSource(parts);
+    if (parts === undefined || source === undefined) return false;
+    // Every run this asset owns anywhere in the map: the far half covers the whole map, not the ring.
+    const runs = this.#farRuns(asset.id);
+    if (runs.length === 0) return true;
+    return this.#buildFarCohort({
+      alphaTest: source.alphaTest,
+      cull: cullDistance(asset.definition.maxDistance) ?? Number.POSITIVE_INFINITY,
+      id: asset.id,
+      key: record.key,
+      record,
+      runs,
+      source: source.source,
+    });
+  }
+
+  /** Every run of one canonical asset anywhere in the map, the whole set a far aggregate holds. */
+  #farRuns(id: string): Array<{ cell: IWorldCell; run: IWorldRun }> {
+    const runs: Array<{ cell: IWorldCell; run: IWorldRun }> = [];
+    for (const held of this.#cells)
+      for (const run of held.runs) {
+        if (this.#canonical(run.asset) !== id || run.count <= 0) continue;
+        runs.push({ cell: held, run });
+      }
+    return runs;
+  }
+
+  /**
+   * Build or grow one far cohort's aggregate, or defer it against the hard budget.
+   *
+   * The budget check counts the growth transient, not the net new count: a grow allocates the new
+   * larger buffer while the old one is still alive, so the peak is the new buffer's size — the old
+   * buffer is already charged in `#farBytes`. See {@link #farBudgetRefuses}. A refusal is remembered
+   * as metadata plus a built surface, never the source GLB; see {@link #deferFar}.
+   */
+  #buildFarCohort(cohort: IFarCohort): boolean {
+    const key = cohort.key;
+    const aggregate = this.#far.get(key);
+    const missing =
+      aggregate === undefined
+        ? cohort.runs
+        : cohort.runs.filter((entry) => !(aggregate as IFarAggregate).segments.has(entry.run));
+    if (missing.length === 0) {
+      this.#dropFarRetry(cohort.id);
+      return true;
+    }
+    const extra = missing.reduce((total, entry) => total + entry.run.count, 0);
+    const peak = aggregate === undefined ? extra : (aggregate as IFarAggregate).capacity + extra;
+    if (this.#farBudgetRefuses(peak)) {
+      // Hard finite budget: say why rather than overrun it, and keep only the metadata the retry
+      // needs. Never the full source GLB; see `#deferFar`.
+      this.#reportFarBudget(key, cohort.id, extra);
+      this.#deferFar(cohort);
+      return false;
+    }
+    let built = aggregate as IFarAggregate | undefined;
+    const deferred = this.#farRetry.get(cohort.id);
+    // The surface actually drawn by the aggregate after this call. A new aggregate adopts the
+    // deferred surface; a grow reuses the aggregate's own and leaves the deferred one unused.
+    let usedSurface: WorldImpostorSurface | undefined;
+    if (built === undefined) {
+      usedSurface = deferred?.surface ?? this.#makeFarSurface(cohort);
+      if (usedSurface === undefined) return false;
+      built = {
+        capacity: extra,
+        key,
+        mesh: this.#newFarMesh(usedSurface, extra, cohort.id),
+        record: cohort.record,
+        segments: new Map<IWorldRun, IFarSegment>(),
+        surface: usedSurface,
+        uploads: 0,
+      };
+      cohort.record.users += 1;
+      this.#far.set(key, built);
+      this.#farInstances += extra;
+      this.#farBytes += extra * FAR_INSTANCE_BYTES;
+    } else {
+      this.#growFar(built, extra);
+    }
+    this.#dropFarRetry(cohort.id, usedSurface);
+    let at = this.#farAllocated(built);
+    for (const { cell: held, run } of missing) {
+      const segment: IFarSegment = {
+        cell: held,
+        count: run.count,
+        cull: cohort.cull,
+        live: true,
+        run,
+        start: at,
+      };
+      at += run.count;
+      built.segments.set(run, segment);
+      this.#farSegments.set(run, built);
+      this.#writeFarSegment(built, segment);
+    }
+    this.#syncFarSegments(built);
+    // The far half just gained records, so the shadow levels drawing the ground they stand on are
+    // stale; the same blanket tell a near swap makes. See `#shadowRecordsMoved`.
+    this.#shadowRecordsMoved();
+    if (!this.#farReported.has(key)) {
+      this.#farReported.add(key);
+      const split = this.#farSplit(built);
+      console.info(
+        `${WORLD_IMPOSTOR_FAR_MARKER} key=${key} asset=${cohort.id} ` +
+          `instances=${String(built.capacity)} live=${String(split.live)} ` +
+          `nearOwned=${String(split.nearOwned)} bytes=${String(built.capacity * FAR_INSTANCE_BYTES)} ` +
+          `uploads=${String(built.uploads)}`,
+      );
+    }
+    return true;
+  }
+
+  /** The aggregate's own far surface: the record's atlas, the cohort's material twin, per-instance cull. */
+  #makeFarSurface(cohort: IFarCohort): WorldImpostorSurface | undefined {
+    if (cohort.source === undefined) return undefined;
+    try {
+      return new WorldImpostorSurface({
+        alphaTest: cohort.alphaTest,
+        atlas: cohort.record.atlas,
+        center: cohort.record.center,
+        cull: true,
+        radius: cohort.record.radius,
+        source: cohort.source,
+      });
+    } catch {
+      this.#failures += 1;
+      return undefined;
+    }
+  }
+
+  /**
+   * Keep a refused far cohort as metadata alone: the atlas pinned by one borrowed user, the runs, and
+   * a built surface. The asset's own geometry and materials are released by the caller, so a refused
+   * far species never holds a full GLB alive; `#retryFar` rebuilds from this when a near release frees
+   * room. Idempotent: a repeat refusal keeps the surface already built.
+   */
+  #deferFar(cohort: IFarCohort): void {
+    if (this.#farRetry.has(cohort.id)) return;
+    const surface = this.#makeFarSurface(cohort);
+    if (surface === undefined) return;
+    cohort.record.users += 1;
+    this.#farRetry.set(cohort.id, {
+      alphaTest: cohort.alphaTest,
+      cull: cohort.cull,
+      id: cohort.id,
+      key: cohort.key,
+      record: cohort.record,
+      runs: cohort.runs,
+      surface,
+    });
+  }
+
+  /** Drop a deferred cohort, releasing its surface and the atlas user it pinned. */
+  #dropFarRetry(id: string, consumedSurface?: WorldImpostorSurface): void {
+    const entry = this.#farRetry.get(id);
+    if (entry === undefined) return;
+    this.#farRetry.delete(id);
+    if (consumedSurface !== entry.surface) entry.surface.dispose();
+    entry.record.users = Math.max(0, entry.record.users - 1);
+    this.#evictImpostors();
+  }
+
+  /** Retry the far aggregates a full budget refused, when a near cell freed its allocation. */
+  #retryFar(): void {
+    if (this.#farRetry.size === 0) return;
+    for (const entry of [...this.#farRetry.values()]) this.#buildFarCohort(entry);
+  }
+
+  /**
+   * Adopt one far-only species per idle frame: a canonical asset the map places but no resident run
+   * has asked for yet. Its LOD0 is loaded through the same limiter, classified by its actual
+   * materials, baked on the same queue, and its source released once the aggregate lands. Gated on an
+   * empty near queue so loading the unseen never delays the near ring or holds its overlay open.
+   */
+  #pumpFarAcquisition(): void {
+    if (this.#impostors === false || this.#released || this.#farExhausted) return;
+    if (this.#farCandidateIds.length === 0) return;
+    // Near work first: a queued build, an in-flight near load, a bake in flight or waiting. Only a
+    // settled frame spends itself on the unseen far half.
+    if (
+      this.#jobs.length > 0 ||
+      this.#limiter.inFlight > 0 ||
+      this.#limiter.queued > 0 ||
+      this.#prewarmQueue.length > 0 ||
+      this.#impostorQueue.length > 0 ||
+      this.#impostorBaking !== undefined
+    )
+      return;
+    // The bake needs a renderer that can run it; acquiring before one exists would hold source GLBs
+    // for a bake with no way to land. A renderer that is present but unsupported is the same answer.
+    const renderer = this.#renderer;
+    if (renderer === undefined || impostorRawRenderer(renderer) === undefined) return;
+    const count = this.#farCandidateIds.length;
+    for (let step = 0; step < count; step += 1) {
+      const at = (this.#farCursor + step) % count;
+      const id = this.#farCandidateIds[at] as string;
+      if (this.#farSeen.has(id) || this.#assets.has(id) || this.#farRetry.has(id)) continue;
+      this.#farCursor = (at + 1) % count;
+      const definition = this.#manifest.assets[id];
+      if (definition === undefined) {
+        this.#farSeen.add(id);
+        continue;
+      }
+      const asset = this.#newAsset(id, definition);
+      asset.refcount += 1;
+      this.#farTemp.add(id);
+      this.#startAssetLoad(asset);
+      return;
+    }
+    // A full pass with nothing startable means every species is either baked, held for a retry, or
+    // classified as having no atlas. Static placements add none later, so the scan stops here.
+    this.#farExhausted = true;
+  }
+
+  /**
+   * Drop a far-only asset's temporary reference once its atlas is held by an aggregate or has been
+   * deferred. The deferred cohort keeps its own pinned atlas user, so it is not dropped here.
+   */
+  #releaseFarTemp(id: string): void {
+    this.#farTemp.delete(id);
+    this.#farSeen.add(id);
+    this.#release(id);
+  }
+
+  /**
+   * Whether an incoming far allocation would overrun the world's instance or byte budget.
+   *
+   * `count` is the peak, not the net: a grow allocates the new larger buffer while the old one is
+   * still alive, so the caller passes the new buffer's full size — the old buffer is already inside
+   * `#farInstances`/`#farBytes`. A net-new count would understate the transient a resize holds.
+   */
+  #farBudgetRefuses(count: number): boolean {
+    return (
+      this.#instances + this.#farInstances + count > this.#budgets.instances ||
+      this.#bytes + this.#farBytes + count * FAR_INSTANCE_BYTES > this.#budgets.bytes
+    );
+  }
+
+  /** One bounded line for a far aggregate the world's own budgets refused, once per atlas key. */
+  #reportFarBudget(key: string, assetId: string, count: number): void {
+    if (this.#farReported.has(key)) return;
+    this.#farReported.add(key);
+    console.info(
+      `${WORLD_IMPOSTOR_FAR_MARKER} key=${key} asset=${assetId} ` +
+        `instances=${String(count)} reason=budget`,
+    );
+  }
+
+  /**
+   * One far mesh: the whole-asset quad, every original root, drawn regardless of how far the camera
+   * resolves it. `frustumCulled = false` is what keeps the draw: the projected-size gate exempts it
+   * before it ever reads bounds, so no `alwaysRender` marker is needed when a game configured no
+   * shadows to exempt it under `renderer.minimumProjectedPixels`. The per-placement cull rides the
+   * geometry's instance attribute, one static value per placement; see
+   * {@link IMPOSTOR_FAR_CULL_ATTRIBUTE}.
+   */
+  #newFarMesh(surface: WorldImpostorSurface, capacity: number, assetId: string): InstancedMesh {
+    const mesh = new InstancedMesh(surface.geometry, surface.material, capacity);
+    mesh.count = capacity;
+    mesh.frustumCulled = false;
+    mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    mesh.name = `tn-far:${assetId}`;
+    if (surface.cull) this.#attachFarCull(surface.geometry, capacity);
+    // Far trees cast like near ones, into the coarse wide caster layer. The same mesh draws the main
+    // pass (layer 0) and the virtual-shadow levels (wide layer), so one representation covers both
+    // and a run hands its far segment over to the near ring exactly once; see `#disableFar`. The
+    // per-asset maxDistance gate is a main-pass shader gate, so the shadow half still reaches the map.
+    if (this.#castShadowLevels > 0) {
+      mesh.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      mesh.castShadow = true;
+      mesh.receiveShadow = false;
+    }
+    this.add(mesh);
+    return mesh;
+  }
+
+  /** Install a fresh per-instance cull buffer on the aggregate's shared geometry, all gates open. */
+  #attachFarCull(geometry: BufferGeometry, capacity: number): void {
+    geometry.setAttribute(
+      IMPOSTOR_FAR_CULL_ATTRIBUTE,
+      new InstancedBufferAttribute(new Float32Array(capacity).fill(Number.POSITIVE_INFINITY), 1),
+    );
+  }
+
+  /** Append `extra` instance slots to an aggregate, one mesh swap, charged to the budgets. */
+  #growFar(aggregate: IFarAggregate, extra: number): void {
+    const old = aggregate.mesh;
+    const capacity = aggregate.capacity + extra;
+    // Capture the cull values before the replacement mesh attaches a fresh buffer to the SHARED
+    // geometry; the old attribute object is replaced in place there.
+    const oldCull = aggregate.surface.cull
+      ? (
+          aggregate.surface.geometry.getAttribute(IMPOSTOR_FAR_CULL_ATTRIBUTE)?.array as
+            | Float32Array
+            | undefined
+        )?.slice(0, aggregate.capacity)
+      : undefined;
+    const next = this.#newFarMesh(aggregate.surface, capacity, old.name.replace(/^tn-far:/u, ""));
+    (next.instanceMatrix.array as Float32Array).set(
+      (old.instanceMatrix.array as Float32Array).subarray(0, aggregate.capacity * 16),
+    );
+    next.instanceMatrix.needsUpdate = true;
+    if (oldCull !== undefined) {
+      const attribute = next.geometry.getAttribute(IMPOSTOR_FAR_CULL_ATTRIBUTE) as
+        | InstancedBufferAttribute
+        | undefined;
+      if (attribute !== undefined) (attribute.array as Float32Array).set(oldCull, 0);
+    }
+    this.remove(old);
+    old.dispose();
+    aggregate.mesh = next;
+    aggregate.capacity = capacity;
+    aggregate.uploads += 1;
+    this.#farInstances += extra;
+    this.#farBytes += extra * FAR_INSTANCE_BYTES;
+  }
+
+  /** Slots allocated in an aggregate: the sum of its segment counts, the offset the next one takes. */
+  #farAllocated(aggregate: IFarAggregate): number {
+    let at = 0;
+    for (const segment of aggregate.segments.values()) at += segment.count;
+    return at;
+  }
+
+  /** Compose one run's ORIGINAL placement roots into its segment, exactly as `#addPlacements` does. */
+  #writeFarSegment(aggregate: IFarAggregate, segment: IFarSegment): void {
+    const records = cellPlacements(this.#placements, segment.run);
+    const array = aggregate.mesh.instanceMatrix.array as Float32Array;
+    const base = segment.start * 16;
+    for (let index = 0; index < segment.count; index += 1) {
+      const at = index * PLACEMENT_RECORD_FLOATS;
+      this.#position.set(
+        records[at] as number,
+        records[at + 1] as number,
+        records[at + 2] as number,
+      );
+      this.#rotation.set(
+        records[at + 3] as number,
+        records[at + 4] as number,
+        records[at + 5] as number,
+        records[at + 6] as number,
+      );
+      this.#scale.setScalar(records[at + 7] as number);
+      this.#matrix.compose(this.#position, this.#rotation, this.#scale);
+      this.#matrix.toArray(array, base + index * 16);
+    }
+    aggregate.mesh.instanceMatrix.needsUpdate = true;
+    // The per-placement gate is static, so it is written with the matrices and re-uploaded only when
+    // a handoff rewrites this segment. A whole-map surface reads it so every canonical asset keeps
+    // its own authored cutoff over the shared atlas. See {@link IFarSegment.cull}.
+    const cull = aggregate.mesh.geometry.getAttribute(IMPOSTOR_FAR_CULL_ATTRIBUTE) as
+      | InstancedBufferAttribute
+      | undefined;
+    if (cull !== undefined) {
+      (cull.array as Float32Array).fill(segment.cull, segment.start, segment.start + segment.count);
+      cull.needsUpdate = true;
+    }
+    aggregate.uploads += 1;
+    this.#farBoundsStale(aggregate);
+  }
+
+  /**
+   * Zero one segment's records: the run is drawn by the near ring now, not the far mesh. Each record
+   * keeps a homogeneous `w` of 1 while its xyz/scale terms collapse to 0, so the instance projects
+   * to the origin and draws nothing. An all-zero record would leave `w = 0`, and Three's
+   * `Box3.applyMatrix4` divides by it, so `computeBoundingBox` over the shared buffer would return
+   * NaN and every caster in the aggregate would be dropped by the shadow levels.
+   */
+  #zeroFarSegment(aggregate: IFarAggregate, segment: IFarSegment): void {
+    const array = aggregate.mesh.instanceMatrix.array as Float32Array;
+    const from = segment.start * 16;
+    const to = (segment.start + segment.count) * 16;
+    array.fill(0, from, to);
+    for (let at = from; at < to; at += 16) array[at + 15] = 1;
+    aggregate.mesh.instanceMatrix.needsUpdate = true;
+    aggregate.uploads += 1;
+    this.#farBoundsStale(aggregate);
+  }
+
+  /**
+   * A far matrix write changes the mesh's instance extent, so drop the cached pair and let Three
+   * rebuild it on the next read; this is the native `null` convention `computeBoundingBox` honors.
+   */
+  #farBoundsStale(aggregate: IFarAggregate): void {
+    aggregate.mesh.boundingBox = null;
+    aggregate.mesh.boundingSphere = null;
+  }
+
+  /** The near ring has attached this run's full representation; the far mesh stops drawing it. */
+  #disableFar(cell: IResidentCell, run: IWorldRun): void {
+    const aggregate = this.#farSegments.get(run);
+    if (aggregate === undefined) return;
+    const segment = aggregate.segments.get(run);
+    if (segment === undefined || segment.live === false) return;
+    this.#zeroFarSegment(aggregate, segment);
+    segment.live = false;
+  }
+
+  /** This run is leaving the ring; the far mesh draws it again before the near batches are cleared. */
+  #restoreFar(cell: IResidentCell, run: IWorldRun): void {
+    const aggregate = this.#farSegments.get(run);
+    if (aggregate === undefined) return;
+    const segment = aggregate.segments.get(run);
+    if (segment === undefined || segment.live === true) return;
+    this.#writeFarSegment(aggregate, segment);
+    segment.live = true;
+  }
+
+  /**
+   * Hand over every run of an aggregate a resident cell already draws. A run is near-ready exactly
+   * when the cell holds one of its batches; the whole job is attached in one swap, so presence is the
+   * answer. This is the build-time half of the atomic handoff; `#swap` is the per-frame half.
+   */
+  #syncFarSegments(aggregate: IFarAggregate): void {
+    for (const segment of aggregate.segments.values()) {
+      if (segment.live === false) continue;
+      const resident = this.#resident.get(cellKey(segment.cell.x, segment.cell.z));
+      if (resident === undefined) continue;
+      if (!resident.batches.some((entry) => entry.run === segment.run)) continue;
+      this.#zeroFarSegment(aggregate, segment);
+      segment.live = false;
+    }
+  }
+
+  /** An aggregate's live and near-owned instance counts. */
+  #farSplit(aggregate: IFarAggregate): { live: number; nearOwned: number } {
+    let live = 0;
+    let nearOwned = 0;
+    for (const segment of aggregate.segments.values()) {
+      if (segment.live) live += segment.count;
+      else nearOwned += segment.count;
+    }
+    return { live, nearOwned };
+  }
+
+  /** The far block {@link stats} reports: aggregates, physical instances/bytes and their split. */
+  #farStats(): IWorldCellsStats["impostor"]["far"] {
+    let instances = 0;
+    let live = 0;
+    let nearOwned = 0;
+    let uploads = 0;
+    for (const aggregate of this.#far.values()) {
+      instances += aggregate.capacity;
+      uploads += aggregate.uploads;
+      const split = this.#farSplit(aggregate);
+      live += split.live;
+      nearOwned += split.nearOwned;
+    }
+    return {
+      aggregates: this.#far.size,
+      bytes: this.#farBytes,
+      instances,
+      live,
+      nearOwned,
+      uploads,
+    };
+  }
+
+  /** Dispose every far aggregate: its own mesh and surface, and its borrowed atlas user. */
+  #drainFar(): void {
+    for (const aggregate of this.#far.values()) {
+      aggregate.mesh.removeFromParent();
+      aggregate.mesh.dispose();
+      aggregate.surface.dispose();
+      aggregate.record.users = Math.max(0, aggregate.record.users - 1);
+    }
+    this.#far.clear();
+    this.#farSegments.clear();
+    this.#farInstances = 0;
+    this.#farBytes = 0;
+  }
+
+  /**
+   * Move this asset's already-built wide casters into the one whole-asset mesh, with root records.
+   *
+   * Before the bake landed the far shadow held one wide mesh per (level, part 0), each carrying
+   * `placement * part 0 local` for its own level's placements. The whole-asset representation is one
+   * root draw per placement, so every one of those segments is dropped and re-claimed from the root
+   * records the builds kept (`ICellBatch.wideRoot`) in the single mesh `#wideFor` now names. When a
+   * block cannot be taken in this update's fresh-mesh allowance the asset is retried next frame; the
+   * old per-level meshes, empty by then, are retired so the far shadow stops submitting them.
+   */
+  #retargetWideCasters(asset: IAssetState): void {
+    const impostor = asset.impostor;
+    if (impostor === undefined) return;
+    const globalKey = `${asset.id}:*@${WIDE_CLUSTER}`;
+    for (const cell of this.#resident.values())
+      for (const entry of cell.batches) {
+        if (entry.asset !== asset.id) continue;
+        if (entry.wide !== undefined && entry.wide.mesh.name === globalKey) continue;
+        // The old segment's shape and its doubled part offset are both wrong now; hand it back.
+        if (entry.wideSegment >= 0) entry.wide?.clear(entry.wideSegment);
+        entry.wide = undefined;
+        entry.wideSegment = -1;
+        if (!this.#casts(entry.level) || !this.#wideOwed(asset.id, entry.part)) continue;
+        const source = entry.wideRoot;
+        if (source === undefined) continue;
+        const wide = this.#batchFor(asset.id, entry, globalKey, "wide", false);
+        const at = wide === undefined ? undefined : this.#segmentIn(wide, source.count);
+        if (wide === undefined || at === undefined) {
+          this.#wideRetry.add(asset.id);
+          continue;
+        }
+        entry.wide = wide;
+        entry.wideSegment = at;
+        wide.write(at, source);
+      }
+    this.#retireWideKeys(asset.id, globalKey);
+  }
+
+  /** Give the asset's pre-bake per-key wide meshes back, once the handoff has emptied them. */
+  #retireWideKeys(assetId: string, keep: string): void {
+    const prefix = `${assetId}:`;
+    for (const [key, shared] of [...this.#shared]) {
+      if (key === keep || shared.role !== "wide" || !key.startsWith(prefix)) continue;
+      if (shared.live > 0) continue;
+      shared.mesh.removeFromParent();
+      this.#bundleOut(shared);
+      this.#shared.delete(key);
+      this.#retire(key, shared);
+    }
+  }
+
+  /** Retry the handoffs a frame's fresh-mesh allowance deferred; one bounded pass per update. */
+  #retryWide(): void {
+    if (this.#wideRetry.size === 0) return;
+    const ids = [...this.#wideRetry];
+    this.#wideRetry.clear();
+    for (const id of ids) {
+      const asset = this.#assets.get(id);
+      if (asset === undefined || asset.impostor === undefined) continue;
+      this.#retargetWideCasters(asset);
+    }
+  }
+
+  /** The impostor block {@link stats} reports: assets landed, bakes pending, atlas bytes, terminal tris. */
+  #impostorStats(): IWorldCellsStats["impostor"] {
+    let assets = 0;
+    let terminalTriangles = 0;
+    for (const asset of this.#assets.values()) {
+      if (asset.impostor === undefined) continue;
+      assets += 1;
+      terminalTriangles += levelTriangles(asset.impostor.part.geometry);
+    }
+    return {
+      assets,
+      atlasBytes: this.#impostorRecordBytes,
+      budgetBytes: this.#impostorBudgetBytes,
+      far: this.#farStats(),
+      pending: this.#impostorQueue.length + (this.#impostorBaking === undefined ? 0 : 1),
+      terminalTriangles,
+    };
+  }
+
+  /** Drop queued/baking work for an asset whose source geometry is about to be released. */
+  #cancelImpostor(asset: IAssetState): void {
+    this.#impostorQueued.delete(asset.id);
+    const at = this.#impostorQueue.indexOf(asset);
+    if (at >= 0) this.#impostorQueue.splice(at, 1);
+    if (this.#impostorBaking === asset) {
+      // Before the borrowed source geometry is released: the baker stages it, and a view drawn after
+      // the teardown reads a disposed buffer.
+      this.#baker.abort();
+      this.#impostorBaking = undefined;
+      this.#impostorReservedBytes = 0;
+    }
+  }
+
+  /** Release an asset's terminal level and give its atlas back to the cache; see `#release`. */
+  #releaseImpostor(asset: IAssetState): void {
+    const impostor = asset.impostor;
+    if (impostor === undefined) return;
+    asset.impostor = undefined;
+    // Marked first, so `#releaseParts` skips the part whose geometry and material the surface owns.
+    releasedParts.add(impostor.part);
+    dropPooledFor(impostor.part.geometry, impostor.part.material);
+    impostor.surface.dispose();
+    impostor.record.users = Math.max(0, impostor.record.users - 1);
+    this.#evictImpostors();
+  }
+
+  /**
+   * Drop the oldest inactive atlases until the cache is back under budget; active ones are kept.
+   *
+   * `reserve` is the declared bytes of a bake about to start: the caller asks whether evicting
+   * inactive records can make room for it. A record with a live user is never dropped, so a full
+   * cache of active atlases simply leaves the reservation unmet and the caller refuses the bake.
+   */
+  #evictImpostors(reserve = 0): void {
+    if (this.#impostorRecordBytes + reserve <= this.#impostorBudgetBytes) return;
+    for (const [key, record] of [...this.#impostorRecords]) {
+      if (this.#impostorRecordBytes + reserve <= this.#impostorBudgetBytes) break;
+      if (record.users > 0) continue;
+      this.#impostorRecords.delete(key);
+      this.#impostorRecordBytes -= record.bytes;
+      record.atlas.dispose();
+    }
+  }
+
+  /** Dispose every cached atlas and any in-flight bake; the world's teardown path calls it once. */
+  #drainImpostors(): void {
+    // Far-only sources no cell run owns would otherwise never reach `#evict`; release them here so
+    // their geometry goes the way every near asset's does.
+    for (const id of [...this.#farTemp]) this.#release(id);
+    this.#farTemp.clear();
+    // Deferred far cohorts own a surface and pin an atlas user; release both before the records are
+    // disposed below, so no surface is left pointing at a disposed atlas.
+    for (const entry of this.#farRetry.values()) {
+      entry.surface.dispose();
+      entry.record.users = Math.max(0, entry.record.users - 1);
+    }
+    this.#farRetry.clear();
+    this.#farSeen.clear();
+    // The far aggregates own surfaces over these atlases and hold a user on their records; they go
+    // first, so no far surface is left pointing at an atlas disposed below it.
+    this.#drainFar();
+    this.#impostorQueue.length = 0;
+    this.#impostorQueued.clear();
+    this.#impostorBaking = undefined;
+    this.#impostorReservedBytes = 0;
+    this.#baker.dispose();
+    for (const record of this.#impostorRecords.values()) record.atlas.dispose();
+    this.#impostorRecords.clear();
+    this.#impostorRecordBytes = 0;
+  }
+
+  /**
+   * `TN_WORLD_IMPOSTOR`, one bounded line per asset: its terminal level, the metres it takes over at,
+   * the views the atlas holds, its GPU bytes, and — when the world can name it — why it did not land.
+   */
+  #reportImpostor(asset: IAssetState, reason: string): void {
+    if (this.#impostorReported.has(asset.id)) return;
+    this.#impostorReported.add(asset.id);
+    const impostor = asset.impostor;
+    const atlas = impostor?.record.atlas ?? this.#baker.pending?.atlas;
+    console.info(
+      `${WORLD_IMPOSTOR_MARKER} asset=${asset.id} level=${String(asset.levels.length - 1)} ` +
+        `switch=${(asset.distances.at(-1) ?? 0).toFixed(1)} ` +
+        `views=${String(atlas === undefined ? 0 : IMPOSTOR_VIEWS)} ` +
+        `bytes=${String(atlas?.bytes ?? 0)} reason=${reason}`,
+    );
   }
 
   /**
@@ -5870,6 +7585,11 @@ export class WorldCells extends Group implements IComputeDriven {
     const paths: string[] = [];
     for (const chunk of cell.cell.chunks ?? [])
       paths.push(resolveRelative(this.#logicalBase, chunk));
+    // A chunk's source is the same loader cache entry an asset's level would be: held while this
+    // cell is resident and handed back with the last cell naming the path, through the one
+    // `#modelPaths` map. A `loadModel` override parses per load and reaches no cache, so it owns
+    // nothing here either; see `#releaseModelPaths`.
+    if (this.#loadModel === undefined) this.#retainModelPaths(paths, cell.retainedModelPaths);
     loadAll(
       paths,
       (path) =>
@@ -6004,7 +7724,7 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       if (report.stopped)
         for (let i = report.added; i < models.length; i += 1)
-          this.#failures += disposeModel(models[i] as Object3D);
+          this.#failures += this.#disposeLoaded(models[i] as Object3D);
       for (const { object, proxies } of prepared) {
         // The compile is the whole point of the wait, and the wait is the only thing between the
         // merge and the attach. Everything the world does not own is released when the cell that
@@ -6012,7 +7732,7 @@ export class WorldCells extends Group implements IComputeDriven {
         // rather than compiled and thrown at a world that is not looking.
         if (live()) await this.#warmChunk(object);
         if (!live()) {
-          this.#failures += disposeModel(object);
+          this.#failures += this.#disposeLoaded(object);
           continue;
         }
         cell.chunks.push(object);
@@ -6034,12 +7754,16 @@ export class WorldCells extends Group implements IComputeDriven {
     } catch {
       this.#failures += 1;
       for (let i = attached; i < models.length; i += 1)
-        this.#failures += disposeModel(models[i] as Object3D);
+        this.#failures += this.#disposeLoaded(models[i] as Object3D);
     }
   }
 
   #evict(cell: IResidentCell): void {
     this.#residencyEpoch += 1;
+    // Every run this cell held goes back to the far mesh BEFORE the near batches below are cleared:
+    // the far mesh owns the ORIGINAL roots and this is the same synchronous block, so no frame draws
+    // the cell twice or not at all. Skipped at teardown, where the far aggregates are drained whole.
+    if (!this.#released) for (const run of cell.cell.runs) this.#restoreFar(cell, run);
     // Work queued for a cell that has left is dropped, not resumed: a later frame would build
     // batches into a graph that no longer holds the cell, and the residency slot is already gone.
     this.#jobs = this.#jobs.filter((job) => {
@@ -6060,14 +7784,21 @@ export class WorldCells extends Group implements IComputeDriven {
     cell.batches.length = 0;
     for (const chunk of cell.chunks) {
       chunk.removeFromParent();
-      this.#failures += disposeModel(chunk);
+      this.#failures += this.#disposeLoaded(chunk);
     }
     cell.chunks.length = 0;
+    // The cell's chunk sources go back to the loader here, on the last cell that named them, exactly
+    // as an asset's levels do in `#release`. Run even at teardown: the loader is never cleared, so a
+    // path this world asked for must be handed back however the world leaves.
+    this.#releaseModelPaths(cell.retainedModelPaths);
     this.#resident.delete(cell.key);
     this.#cullEvicted(cell);
     this.#instances -= cell.instances;
     this.#bytes -= cell.bytes;
     this.#evictions += 1;
+    // Room just freed: retry the far aggregates a full budget refused, so a species held back while
+    // the ring was tight appears without another scan. Skipped at teardown, where the far half drains.
+    if (!this.#released) this.#retryFar();
     // One per run, so the canonical's refcount reaches zero exactly when the last run naming any
     // member of its group has left the ring.
     for (const run of cell.cell.runs) this.#release(this.#canonical(run.asset));
@@ -6084,6 +7815,28 @@ export class WorldCells extends Group implements IComputeDriven {
    *
    * @returns how many teardowns threw, for the caller to count.
    */
+  /**
+   * Tear down a model the loader handed this world, respecting who owns the loader.
+   *
+   * A model from the loader this world created is the world's to dispose. A model from an
+   * explicitly supplied loader is the caller's — another world or game may hold the same cached
+   * scene — so this world drops its batches but leaves the shapes and surfaces alone; the caller's
+   * own `release` ends that lifetime. See `#releaseModelPaths`.
+   */
+  #disposeLoaded(model: Object3D | undefined): number {
+    if (model === undefined) return 0;
+    return this.#ownsLoader ? disposeModel(model) : 0;
+  }
+
+  /**
+   * Release an adopted source shape or authored surface, unless a caller-supplied loader owns it.
+   * The caller's cache holds another world's copy too, so only a world-owned loader disposes what
+   * it adopted; a cutout this world built is always its own. See `#disposeLoaded`.
+   */
+  #releaseSource(target: { dispose: () => void } | undefined): boolean {
+    return this.#ownsLoader && release(target);
+  }
+
   #releaseParts(parts: readonly IAssetPart[]): number {
     let failed = 0;
     for (const part of parts) {
@@ -6094,7 +7847,7 @@ export class WorldCells extends Group implements IComputeDriven {
       // buffer waiting on a disposed resource. Dropped here, so it does not sit in the pool counting
       // against the meshes a walk can park.
       dropPooledFor(part.geometry, part.material);
-      if (release(part.geometry)) failed += 1;
+      if (this.#releaseSource(part.geometry)) failed += 1;
       failed += this.#releaseSurface(part.surface);
     }
     return failed;
@@ -6110,7 +7863,7 @@ export class WorldCells extends Group implements IComputeDriven {
     const shared = this.#surfaces.get(key);
     if (shared !== undefined) {
       shared.users += 1;
-      if (!shared.owned.includes(source) && release(source)) this.#failures += 1;
+      if (!shared.owned.includes(source) && this.#releaseSource(source)) this.#failures += 1;
       return { key, material: shared.material };
     }
     const drawn = scatterMaterial(source, this.#transparentScatter);
@@ -6126,7 +7879,11 @@ export class WorldCells extends Group implements IComputeDriven {
     if (shared.users > 0) return 0;
     this.#surfaces.delete(key);
     let failed = 0;
-    for (const material of shared.owned) if (release(material)) failed += 1;
+    // A caller-supplied loader's authored surfaces belong to the caller's cache, like its shapes.
+    // The cutout clones this world built are still the world's to release — `worldOwned` is the
+    // marker. See `#releaseSource`.
+    for (const material of shared.owned)
+      if ((this.#ownsLoader || worldOwned.has(material)) && release(material)) failed += 1;
     return failed;
   }
 
@@ -6137,17 +7894,68 @@ export class WorldCells extends Group implements IComputeDriven {
     if (asset.refcount > 0) return;
     this.#assets.delete(id);
     asset.disposed = true;
+    // Before anything is released: a pending bake stages this asset's borrowed geometry, and a view
+    // drawn after the teardown reads a disposed buffer. Then the terminal level's own surface, whose
+    // geometry and material `#releaseParts` must skip; see `#releaseImpostor`.
+    this.#cancelImpostor(asset);
+    this.#releaseImpostor(asset);
     // The last cell drawing this asset is gone, so this is the one teardown its levels get. It is
     // also the one a lost device makes expensive, which is why every part goes through `release`:
     // at most once per resource, and a level that fell back shares the level below's parts, so one
     // shape is torn down once however many levels point at it. One refusal is counted per asset,
     // the way one refused `lod0` load was.
     const levels = asset.levels;
+    const spilled = asset.spilled;
     asset.levels = [];
+    asset.spilled = [];
     let failed = 0;
     failed += this.#drainShared(id);
     for (const parts of levels) failed += this.#releaseParts(parts);
+    // The middle levels' own reduced foliage cards, taken out of DRAW but still owned here. The
+    // released-parts set makes the ones a draw level also holds single-teardown, so a shared surface
+    // is never dropped early.
+    failed += this.#releaseParts(spilled);
     if (failed > 0) this.#failures += 1;
+    this.#releaseModelPaths(asset.retainedPaths);
+  }
+
+  /**
+   * Note the exact `assets.model` cache paths an owner (an asset's levels, a cell's chunks) asks the
+   * loader for, in the one world-wide `#modelPaths` map, so the last owner to let a path go can hand
+   * it back. Both owners share the map, so an asset and a chunk that name the same bytes keep the
+   * entry alive until neither holds it.
+   */
+  #retainModelPaths(paths: readonly string[], into: string[]): void {
+    for (const path of paths) {
+      this.#modelPaths.set(path, (this.#modelPaths.get(path) ?? 0) + 1);
+      into.push(path);
+    }
+  }
+
+  /**
+   * Hand back the exact `assets.model` cache paths this owner requested, so the loader drops the
+   * source scenes and their textures instead of pinning them for the world's whole life.
+   *
+   * A path another owner still names is not released: two definitions that fetch the same bytes but
+   * carry different `lods`/`maxDistance` are distinct assets, and the one leaving the ring must not
+   * tear out a cached source the other still draws with. Keyed on the requested logical path, so a
+   * path this world never asked for is never touched.
+   *
+   * Only the loader this world created is released. An explicitly supplied `assets` loader is the
+   * caller's: another game or world may hold the same cached model, so this world never drops a
+   * cache entry it does not own — the caller's own `release` is where that lifetime ends.
+   */
+  #releaseModelPaths(paths: string[]): void {
+    for (const path of paths) {
+      const holders = (this.#modelPaths.get(path) ?? 1) - 1;
+      if (holders > 0) {
+        this.#modelPaths.set(path, holders);
+        continue;
+      }
+      this.#modelPaths.delete(path);
+      if (this.#ownsLoader) this.#loader.release("model", path);
+    }
+    paths.length = 0;
   }
 
   /** Releases the shared meshes of one asset (or of every asset), keeping them for the walk back. */

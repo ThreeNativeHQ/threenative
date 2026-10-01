@@ -112,17 +112,24 @@ export function modelContentKey(input: Buffer): string | undefined {
  * Groups model sources that would cook to the same bytes, and maps every member to the member
  * that is cooked: the lexicographically smallest source path, so the choice does not depend on
  * walk order, worker completion order or a scheduler.
+ *
+ * `read` defaults to reading the file under `sourceRoot`, but a caller may inject its own reader
+ * so generated sources that exist only in memory (a cook-time HLOD proxy) take part without being
+ * written to the authored tree.
  */
 export async function groupModelSources(
   sourceRoot: string,
   models: readonly string[],
+  read?: (logical: string) => Promise<Buffer>,
 ): Promise<ReadonlyMap<string, string>> {
   const canonicalByKey = new Map<string, string>();
   const canonicalOf = new Map<string, string>();
   for (const logical of [...models].sort()) {
     let key: string | undefined;
     try {
-      key = modelContentKey(await readFile(path.join(sourceRoot, logical)));
+      const bytes =
+        read === undefined ? await readFile(path.join(sourceRoot, logical)) : await read(logical);
+      key = modelContentKey(bytes);
     } catch {
       continue;
     }
