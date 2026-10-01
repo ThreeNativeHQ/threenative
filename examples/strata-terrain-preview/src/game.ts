@@ -8,16 +8,7 @@ import {
   RigidBody3D,
   rapier,
 } from "@threenative/physics";
-import {
-  CapsuleGeometry,
-  Color,
-  DirectionalLight,
-  FogExp2,
-  HemisphereLight,
-  Mesh,
-  MeshStandardMaterial,
-  Vector3,
-} from "three";
+import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
@@ -27,6 +18,7 @@ import {
   flatPropMaterials,
 } from "./render/props.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
+import { type IOutdoorSky, createOutdoorSky } from "./render/sky.js";
 import { createTerrain } from "./render/terrain.js";
 import baked from "./world/baked.json";
 
@@ -87,7 +79,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
     #player: CharacterBody3D | undefined;
     #surfaces: { advance: (elapsed: number) => void } | undefined;
     #elapsed = 0;
-    #sun: DirectionalLight | undefined;
+    #sky: IOutdoorSky | undefined;
     #ocean: ReturnType<typeof createOcean> | undefined;
 
     override enter(ctx: TerrainCtx): void {
@@ -115,16 +107,15 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           (mesh.material as MeshStandardMaterial).dispose();
         },
       });
-      ctx.scene.background = new Color(0x9dc2d2);
-      ctx.scene.fog = new FogExp2(0x9dc2d2, 0.0008);
-      // 2.8 with a 1.2 hemisphere filled every sunlit surface past 1.0, and nothing here tone maps,
-      // so the ground clipped to a flat warm haze and its albedo detail had nowhere left to live.
-      const sun = new DirectionalLight(0xffeed0, 1.9);
-      sun.position.set(-180, 240, 120);
-      ctx.add(sun);
-      this.#sun = sun;
-      ctx.entities.add("sun", { object: sun, debug: () => ({ x: sun.position.x }) });
-      ctx.add(new HemisphereLight(0xbcd4ed, 0x5e6548, 0.55));
+      // One rig owns the whole of the sky, the sun, the shadows that follow the eye, the haze the
+      // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
+      // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
+      // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
+      const sky = createOutdoorSky(ctx.camera);
+      ctx.add(sky.daylight);
+      ctx.add(sky.sun);
+      this.#sky = sky;
+      ctx.entities.add("sun", { object: sky.sun, debug: () => ({ x: sky.sunX }) });
 
       const actor = new Mesh(
         new CapsuleGeometry(0.35, 1.0, 6, 12),
@@ -384,7 +375,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         frames++;
         ctx.state.set({
           world,
-          sunX: sun.position.x,
+          sunX: sky.sunX,
           frames,
           travel,
           grounded: player.grounded,
@@ -437,10 +428,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         ctx.state.set({ view: order[(current + 1) % order.length] });
       }
       this.#ocean?.advance(this.#elapsed);
-      if (ctx.input.justPressed("light") && this.#sun) {
-        const sun = this.#sun;
-        sun.position.set(sun.position.x < 0 ? 180 : -180, 240, 120);
-      }
+      if (ctx.input.justPressed("light")) this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
       const player = this.#player;
       if (!player) return;
       const move = ctx.input.vector("move");

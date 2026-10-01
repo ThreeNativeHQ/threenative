@@ -9,10 +9,14 @@
 // the high flat ground. Nothing here resamples the terrain or adds a mask texture that could
 // disagree with the geometry.
 //
-// WebGPU allows sixteen sampled textures per stage, so this binds fourteen and takes the rest of
-// its relief from a per-layer constant: six albedos, four normal maps on the surfaces that have
-// relief, roughness on the two layers the sun reads a specular break on, and ambient occlusion on
-// grass and cliff, where the crevices are the picture.
+// WebGPU allows sixteen samplers per fragment stage, and the daylight rig's clipmap shadow spends
+// two of them per window before this file binds anything: three windows, six samplers, and ten
+// textures left. So this binds six albedos and four normal maps — every layer that covers ground,
+// and relief on the four surfaces whose relief you can see — and takes the rest from what it
+// already has. Roughness is a constant, because soil at 0.94 has no specular break worth a binding.
+// Crevices come out of the normal maps' own blue channel, which is a baked ambient occlusion
+// sitting in the texture that was already sampled for the tilt: a texel the map painted as facing
+// away from the sky is a crevice, and darkening it costs no binding at all.
 import type { IAssetLoader } from "@threenative/core";
 import { Heightfield } from "@threenative/core/world";
 import {
@@ -63,8 +67,6 @@ const LAYERS: readonly LayerKey[] = ["dirt", "moss", "sand", "rock", "snow"];
 interface ILayerMaps {
   diffuse: Texture;
   normal?: Texture;
-  roughness?: Texture;
-  ao?: Texture;
 }
 
 /**
@@ -85,36 +87,35 @@ const TILE: Record<LayerKey, number> = {
 };
 
 /** Which CC0 starter maps each surface binds. This mapping is the game's, not the package's. */
-const MAPS: Record<
-  LayerKey,
-  { diffuse: string; normal?: string; roughness?: string; ao?: string }
-> = {
+const MAPS: Record<LayerKey, { diffuse: string; normal?: string }> = {
   dirt: {
     diffuse: "forest_ground_04/forest_ground_04_diff_1k.jpg",
     normal: "forest_ground_04/forest_ground_04_nor_gl_1k.jpg",
   },
   grass: {
-    ao: "leafy_grass/leafy_grass_ao_1k.jpg",
     diffuse: "leafy_grass/leafy_grass_diff_1k.jpg",
     normal: "leafy_grass/leafy_grass_nor_gl_1k.jpg",
-    roughness: "leafy_grass/leafy_grass_rough_1k.jpg",
   },
   moss: {
     diffuse: "mossy_rock/mossy_rock_diff_1k.jpg",
     normal: "mossy_rock/mossy_rock_nor_gl_1k.jpg",
   },
   rock: {
-    ao: "cliff_side/cliff_side_ao_1k.jpg",
     diffuse: "cliff_side/cliff_side_diff_1k.jpg",
     normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
-    roughness: "cliff_side/cliff_side_rough_1k.jpg",
   },
   sand: { diffuse: "sand_01/sand_01_diff_1k.jpg" },
   snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
 };
 
-/** How far a crevice darkens its layer, from its ambient occlusion map. */
-const OCCLUSION = 0.45;
+/**
+ * How far a crevice darkens its layer, as a share of the normal map's own up-facing channel.
+ *
+ * The blue channel of a tangent-space normal is 1 on a texel facing straight up and falls away on
+ * every crease, undercut and hollow in the surface it was cooked from — which is what an ambient
+ * occlusion map is, drawn into the map that was already bound for the tilt.
+ */
+const OCCLUSION = 0.5;
 
 /** Where the snow line sits, in metres, and the slope above which it cannot settle. */
 const SNOW = { from: 52, to: 70, sheds: 0.22 };
@@ -152,33 +153,48 @@ function layerUV(key: LayerKey, scale = 1): Node<"vec2"> {
 }
 
 /**
- * The tilt a normal map asks for on the ground plane, as an object-space vector.
+ * One normal map's two answers on the ground plane: the tilt it asks for, and how much of its own
+ * up-facing it kept.
  *
- * Only the two tangential channels are kept. The surface direction is already the heightfield's own
- * normal, and folding a second "out of the surface" term in here would cancel the relief this map
- * exists to add. On the ground plane the map's red runs along +x and its green along +z.
+ * Only the two tangential channels go into the tilt. The surface direction is already the
+ * heightfield's own normal, and folding a second "out of the surface" term in here would cancel the
+ * relief this map exists to add. On the ground plane the map's red runs along +x and its green
+ * along +z. The third channel is not thrown away: it is the crevice term below.
  */
-function planarTilt(source: Texture, uv: Node<"vec2">, strength: number): Node<"vec3"> {
-  const tangent = texture(source, uv).xy.mul(2).sub(1);
-  return vec3(tangent.y, 0, tangent.x).mul(strength);
+interface IRelief {
+  /** How much this texel faces up, 0..1. A crevice is a texel that does not. */
+  readonly crevice: Node<"float">;
+  readonly tilt: Node<"vec3">;
+}
+
+function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRelief {
+  const sample = texture(source, uv);
+  return {
+    crevice: sample.z,
+    tilt: vec3(sample.y, 0, sample.x).mul(strength),
+  };
 }
 
 /**
- * The same tilt projected on all three axes — this is what keeps a cliff from smearing.
+ * The same relief projected on all three axes — this is what keeps a cliff from smearing.
  *
  * Each projection owns a different pair of world axes, so one map tilts the surface along a
- * different direction per axis and the three are recombined by the surface's own blend weights.
+ * different direction per axis and the three are recombined by the surface's own blend weights. The
+ * crevice term is the one projection, because a crease is a crease whichever way the cliff faces.
  */
-function triplanarTilt(source: Texture, key: LayerKey): Node<"vec3"> {
+function triplanarRelief(source: Texture, key: LayerKey): IRelief {
   const tile = float(TILE[key]);
-  const x = texture(source, positionWorld.yz.div(tile)).xy.mul(2).sub(1);
-  const y = texture(source, positionWorld.zx.div(tile)).xy.mul(2).sub(1);
-  const z = texture(source, positionWorld.xy.div(tile)).xy.mul(2).sub(1);
+  const x = texture(source, positionWorld.yz.div(tile));
+  const y = texture(source, positionWorld.zx.div(tile));
+  const z = texture(source, positionWorld.xy.div(tile));
   const weight = abs(normalWorld).normalize();
-  return weight.x
-    .mul(vec3(0, x.x, x.y))
-    .add(weight.y.mul(vec3(y.y, 0, y.x)))
-    .add(weight.z.mul(vec3(z.x, z.y, 0)));
+  return {
+    crevice: x.z,
+    tilt: weight.x
+      .mul(vec3(0, x.x, x.y))
+      .add(weight.y.mul(vec3(y.y, 0, y.x)))
+      .add(weight.z.mul(vec3(z.x, z.y, 0))),
+  };
 }
 
 /**
@@ -254,46 +270,37 @@ export function createGroundMaterial(
   };
   // The relief takes the same two scales as the colour, or the ground keeps its detail underfoot
   // and goes flat past twenty metres.
-  const tiltOf = (key: LayerKey, strength: number): Node<"vec3"> => {
+  const reliefOf = (key: LayerKey, strength: number): IRelief => {
     const source = layer(key).normal;
-    if (source === undefined) return vec3(0);
+    if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
     held.add(source);
-    if (key === "rock") return triplanarTilt(source, key);
-    return mix(
-      planarTilt(source, layerUV(key), strength),
-      planarTilt(source, layerUV(key, 2.35), strength * 0.6),
-      far,
-    );
+    if (key === "rock") return triplanarRelief(source, key);
+    const near = planarRelief(source, layerUV(key), strength);
+    const coarse = planarRelief(source, layerUV(key, 2.35), strength * 0.6);
+    return {
+      crevice: mix(near.crevice, coarse.crevice, far),
+      tilt: mix(near.tilt, coarse.tilt, far),
+    };
   };
 
+  const grassRelief = reliefOf("grass", 1.45);
   let albedo = albedoOf("grass").mul(MEADOW);
-  let normal = tiltOf("grass", 1.45).mul(weights.grass);
-  let roughness: Node<"float"> = float(0.94);
+  let normal = grassRelief.tilt.mul(weights.grass);
+  // The crevice term follows the surface the eye is actually looking at, so it is blended by the
+  // same weights as the colour rather than applied to every layer at once.
+  let crevice = grassRelief.crevice;
   for (const key of LAYERS) {
-    const maps_ = layer(key);
     const weight = weights[key];
     // A surface takes the ground over once it *is* most of the ground. Blending every layer by a
     // share of the running total instead leaves a beach a third sand, a third grass and a third
     // dirt, which is mud with a texture on it.
     const over = smoothstep(0.45, 0.92, weight);
     albedo = mix(albedo, albedoOf(key), over);
-    normal = normal.add(tiltOf(key, 1.3).mul(weight));
-    if (maps_.roughness === undefined) continue;
-    held.add(maps_.roughness);
-    roughness = mix(roughness, texture(maps_.roughness, layerUV(key)).g, over);
+    const relief = reliefOf(key, 1.3);
+    normal = normal.add(relief.tilt.mul(weight));
+    crevice = mix(crevice, relief.crevice, over);
   }
-
-  // Crevices, on the two layers whose occlusion is worth a texture slot.
-  for (const key of ["grass", "rock"] as const) {
-    const source = layer(key).ao;
-    if (source === undefined) continue;
-    held.add(source);
-    albedo = mix(
-      albedo,
-      albedo.mul(float(1).add(texture(source, layerUV(key)).r.sub(1).mul(OCCLUSION))),
-      smoothstep(0.45, 0.92, weights[key]),
-    );
-  }
+  albedo = albedo.mul(mix(float(1), crevice, OCCLUSION));
 
   // Macro colour variation, in metres rather than in tile space so it survives the tiling, and at
   // two scales: one wide enough to read across a valley, one at the distance where a player is
@@ -303,7 +310,6 @@ export function createGroundMaterial(
     .mul(0.16)
     .add(mx_fractal_noise_float(positionWorld.mul(0.045), 2).mul(0.1));
   material.colorNode = albedo.mul(float(1).add(macro));
-  material.roughnessNode = roughness;
   material.normalNode = transformNormalToView(normalize(normalWorld.add(normal)));
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
@@ -373,7 +379,7 @@ async function loadGroundMaps(
       for (const [slot, path] of Object.entries(paths)) {
         if (slot === "diffuse") continue;
         const found = await get(assets, path, true);
-        if (found !== undefined) maps[slot as "normal" | "roughness" | "ao"] = found;
+        if (found !== undefined) maps[slot as "normal"] = found;
       }
       return [key, maps] as const;
     }),
