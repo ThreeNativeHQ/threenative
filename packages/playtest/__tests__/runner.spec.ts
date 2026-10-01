@@ -1990,6 +1990,30 @@ test("a mid-run navigation is reported with the location the page moved to", () 
   expect(diagnostic?.message).toContain("http://127.0.0.1:4173/game-over");
 });
 
+test("a page that closed without navigating is not reported as a navigation", () => {
+  // The exact lifecycle a production profile recorded when its browser went away 18.8 s into a
+  // 60 s window: the page closed, and the only main-frame navigation was the run's own.
+  const closed = new Error("page.evaluate: Target page, context or browser has been closed");
+
+  const diagnostic = pageLifecycleDiagnostic(
+    closed,
+    {
+      closed: true,
+      crashed: false,
+      frameNavigations: ["http://127.0.0.1:4173/"],
+      navigations: [],
+      settled: true,
+      tail: ['log: TN_PROD_FRAME_SAMPLES:[{"clockMs":18804,"frameIndex":1080}]'],
+    },
+    "http://127.0.0.1:4173",
+  );
+
+  expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_CLOSED");
+  expect(diagnostic?.message).not.toContain("navigated");
+  // Still a failure: the run reached no assertion, and the report must not read as a pass.
+  expect(diagnostic?.severity).toBe("error");
+});
+
 test("an error that is neither a crash nor a navigation keeps propagating", () => {
   const unrelated = new Error("TypeError: entity registry is not iterable");
 

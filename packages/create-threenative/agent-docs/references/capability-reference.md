@@ -3866,6 +3866,23 @@ export async function connectPlaytestBridgeTransport( transport: IBridgeTranspor
 const bridge = await connectPlaytestBridge(page, scenario);
 ```
 
+### `decideDisplayStrategy`
+
+`function` — Decide which display a pixel-producing run paints on, the same decision the runner makes.
+
+```ts
+export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy { … }
+```
+
+- **Use when:** judge whether a measured frame rate came from a display that can carry one
+- **Constraints:** a private Xvfb is software, so a rate read there measures the X server
+
+```ts
+import { decideDisplayStrategy } from "@threenative/playtest/runner";
+const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
+if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
+```
+
 ### `DesktopPlaytestDriver`
 
 `class` — Drive a local desktop playtest mailbox.
