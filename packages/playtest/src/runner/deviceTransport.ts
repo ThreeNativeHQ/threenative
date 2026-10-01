@@ -172,6 +172,9 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   private closed = false;
   private nextId = 1;
   private nextOrder = 1;
+  // Calls that gave up before the host answered. The host still answers them, late, and that
+  // answer is theirs, not an error in whichever call is waiting when it lands.
+  private readonly abandonedIds = new Set<string>();
   private responseObserver?: (observation: IDeviceResponseObservation) => void;
 
   constructor(
@@ -189,6 +192,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     this.connected = false;
     this.nextId = 1;
     this.nextOrder = 1;
+    this.abandonedIds.clear();
     await this.mailbox.remove(this.paths.request);
     await this.mailbox.remove(this.paths.response);
   }
@@ -246,11 +250,13 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
         const response = parseResponse(raw);
         this.responseObserver?.({ body: raw, method, order, requestId: response.id });
         await this.mailbox.remove(this.paths.response);
-        if (response.id !== id) throw new Error(`Unexpected device response id '${response.id}'.`);
-        return response;
+        if (response.id === id) return response;
+        if (this.abandonedIds.has(response.id)) continue;
+        throw new Error(`Unexpected device response id '${response.id}'.`);
       }
       await delayUntil(deadline);
     }
+    this.abandonedIds.add(id);
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",
       `Device mailbox operation '${id}' exceeded ${timeoutMs}ms.`,
