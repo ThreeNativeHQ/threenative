@@ -879,15 +879,32 @@ describe("native physics contract", () => {
         "0.30.0",
       );
 
-    for (const count of [1, 2, 3, 5, 12]) {
+    const fourWheeler = (count: number) => {
       const native = withCount(count);
       native.createBody(bodyOptions());
       const id = native.createVehicle?.({
         ...vehicleOptions,
         wheels: [frontLeft, frontLeft, frontLeft, frontLeft],
       }) as number;
+      return { native, id };
+    };
+
+    for (const count of [1, 2, 3, 5, 12]) {
+      const { native, id } = fourWheeler(count);
       expect(() => native.readVehicleState?.(id)).toThrow(/TN_VEHICLE_STATE_SHORT/);
     }
+
+    // The guard has to be "exactly the record", not "at least the record" and not "at most it":
+    // one float over means the ABI grew a field, and accepting it would read this car's wheels
+    // out of a record shaped for a different vehicle.
+    for (const count of [14, 26]) {
+      const { native, id } = fourWheeler(count);
+      expect(() => native.readVehicleState?.(id)).toThrow(/TN_VEHICLE_STATE_SHORT/);
+    }
+
+    // 13 is the one honest answer for four wheels: one speed float plus three per wheel.
+    const exact = fourWheeler(13);
+    expect(() => exact.native.readVehicleState?.(exact.id)).not.toThrow();
 
     // -1 is the runtime's own "unknown vehicle or short buffer", which stays TN_VEHICLE_UNKNOWN.
     const gone = withCount(-1);
