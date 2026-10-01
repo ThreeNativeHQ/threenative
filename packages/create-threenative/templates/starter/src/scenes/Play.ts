@@ -138,7 +138,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const audio = ctx.entities.add("audio", new AudioBus({ camera: ctx.camera }));
     const pickupAudio = ctx.assets.audio("pickup.wav");
     void pickupAudio.catch(() => undefined);
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
     // isMobile() arrives as an argument because src/render/ imports no framework package:
     // the platform decision is made here, in portable game code, exactly like createRandom.
     const { key } = setupLighting(
