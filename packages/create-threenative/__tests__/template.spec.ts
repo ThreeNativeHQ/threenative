@@ -1048,19 +1048,24 @@ describe("template contracts", () => {
     expect(failures.join("\n\n")).toBe("");
   }, 180_000);
 
-  it("should build the starter scaffold with no optional effect folder left to prune", async () => {
-    // The `effects/` folder was three optional TSL stages nobody referenced; deleting it was a
-    // supported edit, and the gate was that the scaffold still built. The folder is gone, so what
-    // is left to prove is the part that mattered: the shipped tree compiles as generated.
+  it("should build a starter scaffold after pruning its optional effect sources", async () => {
+    // `effects/` ships three standalone TSL effect sources the starter's own look never imports:
+    // real, typechecked algorithm code that sits beside the default look instead of inside it (the
+    // pristine-scaffold typecheck above is what proves those sources compile). Deleting the folder
+    // is a supported edit, and the gate is that the scaffold still builds without it — which is
+    // what proves the default look is genuinely independent of these optional sources.
     const root = await makeTempDir("threenative-optional-effects-");
     try {
       const result = await createProject(
         { install: false, target: "optional-effects", template: "starter" },
         root,
       );
-      await expect(
-        readFile(path.join(result.target, "src/render/effects/lensDistortion.ts"), "utf8"),
-      ).rejects.toThrow();
+      for (const file of ["lensDistortion.ts", "sparkle.ts", "gradualBackground.ts"]) {
+        await expect(
+          readFile(path.join(result.target, "src/render/effects", file), "utf8"),
+        ).resolves.toBeTruthy();
+      }
+      await rm(path.join(result.target, "src/render/effects"), { force: true, recursive: true });
       await linkScaffoldBuildDependencies(result.target);
       const vite = await findPnpmPackage("vite");
       await execFileAsync(process.execPath, [path.join(vite, "bin/vite.js"), "build"], {
