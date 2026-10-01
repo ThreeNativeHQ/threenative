@@ -101,6 +101,18 @@ t.paste({ id: 'copied-mass', data: heights, at: [-120,-90], size: 110,
 
 The copy contains heights only. Paste/stamp data is `{width,height,values}` in world metres. Fluent `heightmap()` / `paste()` / `stamp()` normalize typed arrays to plain arrays; raw recipe JSON must already contain plain arrays. RAW files have no self-describing dimensions/range. Preserve sidecars. PNG import accepts non-interlaced grayscale 8/16-bit images only, not RGB/palette images, and reports `hasEmbeddedRange`.
 
+Stamp and paste footprints use `at: [x,z]`, `radius: [halfWidth,halfDepth]` or
+`size: [width,depth]`, and `rotation` in degrees (positive turns +X towards +Z).
+Existing `radius` takes precedence over `size`. All three landform operations use
+positive `scale` for vertical gain and `offset` in metres after that gain;
+additive blends add both the scaled height and offset. Heightmap accepts optional
+`at`, `size`, `rotation` and `falloff` to place a bounded rectangular footprint.
+Without these footprint fields it retains the supplied full-world sampling.
+Outside a bounded footprint, existing terrain remains unchanged. Samples must
+all be finite numbers. X/Z rotations that create overhangs have no heightfield
+representation. These transforms change recipe parameters, not an independent
+solid hidden inside the evaluated terrain.
+
 ## Inspect and export
 
 ```js

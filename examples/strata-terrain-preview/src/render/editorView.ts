@@ -16,7 +16,6 @@ import {
   HemisphereLight,
   Line,
   LineBasicMaterial,
-  LineLoop,
   type Mesh,
   type MeshStandardMaterial,
   type PerspectiveCamera,
@@ -81,7 +80,7 @@ export async function createEditorView(
   let requestedRevision = "";
   let evaluationMs = 0;
   let seen = "";
-  const brush = new LineLoop(
+  const brush = new Line(
     new BufferGeometry().setFromPoints(
       Array.from(
         { length: 65 },
@@ -91,7 +90,7 @@ export async function createEditorView(
     ),
     new LineBasicMaterial({ color: 0xe1f4bb, depthTest: false }),
   );
-  brush.visible = false; // engine-override: this target-dependent LineLoop is not a mesh handled by prewarm.
+  brush.visible = false; // engine-override: this target-dependent Line is not a mesh handled by prewarm.
   const spline = new Line(
     new BufferGeometry(),
     new LineBasicMaterial({ color: 0xd9efb9, depthTest: false }),
@@ -196,6 +195,17 @@ export async function createEditorView(
       if (hit?.instanceId === undefined) return undefined;
       const id = hit.object.userData.placementIds?.[hit.instanceId];
       return typeof id === "string" ? id : undefined;
+    },
+    (x, z) => {
+      if (!mesh) return undefined;
+      mesh.geometry.computeBoundingBox();
+      const top = mesh.geometry.boundingBox?.max.y;
+      if (top === undefined) return undefined;
+      return ctx.raycast({
+        origin: new Vector3(x, top + 1, z),
+        direction: new Vector3(0, -1, 0),
+        targets: [mesh],
+      })?.point.y;
     },
   );
   return {
@@ -327,7 +337,7 @@ export async function createEditorView(
         targets: mesh ? [mesh] : [],
       });
       if (!hit) {
-        brush.visible = false; // engine-override: no terrain target exists; prewarm handles meshes, not this LineLoop. // engine-override: this target-dependent LineLoop is not a mesh handled by prewarm.
+        brush.visible = false; // engine-override: no terrain target exists; prewarm handles meshes, not this Line. // engine-override: this target-dependent Line is not a mesh handled by prewarm.
         return;
       }
       brush.position.set(value.at[0], hit.point.y + 0.2, value.at[1]);
@@ -344,6 +354,9 @@ export async function createEditorView(
     },
     setSelection(enabled): void {
       selection.setActive(enabled);
+    },
+    selectLayer(id): void {
+      selection.selectLayer(id);
     },
     setView(value): void {
       if (!mesh) return;

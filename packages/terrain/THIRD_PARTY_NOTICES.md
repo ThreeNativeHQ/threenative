@@ -29,3 +29,10 @@ intentionally differ from the supplied source; the supplied noise/erosion
 regression remains unchanged. The adapter's pine, boulder and grass shapes are
 adapted in the example's editable `src/render/props.ts`, using installed merge and
 instance mechanisms; no addon material or renderer is introduced.
+
+Landform extensions add positive vertical gain to stamp/paste and a bounded,
+translated/rotated rectangular footprint to heightmap. Additive stamp/paste now
+honor the supplied vertical offset, which the recovered additive branch ignored.
+Height data validation rejects missing or nonnumeric samples. Default gain/offset and heightmaps without
+footprint fields retain the recovered sampling; the numerical noise/erosion
+golden remains unchanged.

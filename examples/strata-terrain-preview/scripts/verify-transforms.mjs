@@ -97,7 +97,9 @@ export async function verifyPropTransforms(session, controller, config) {
     }),
   );
   await session.page.locator('[data-tool="select"]').click();
-  await session.page.getByLabel("Placement", { exact: true }).selectOption(selected.id);
+  await session.page
+    .getByLabel("Placement", { exact: true })
+    .selectOption(`placement:${selected.id}`);
   await session.page.getByRole("button", { name: "Focus selection", exact: true }).click();
   await advanceFixedStep(session.page, session.bridge, 4);
   const clickAt = await session.page.evaluate(
@@ -343,7 +345,9 @@ export async function verifyPropTransforms(session, controller, config) {
     "Reload must restore every actual instance matrix by durable key",
   );
   await session.page.locator('[data-tool="select"]').click();
-  await session.page.getByLabel("Placement", { exact: true }).selectOption(selected.id);
+  await session.page
+    .getByLabel("Placement", { exact: true })
+    .selectOption(`placement:${selected.id}`);
   await session.page.getByLabel("Ground to terrain", { exact: true }).check();
   await session.page.getByRole("button", { name: "Apply transform", exact: true }).click();
   await session.page.waitForFunction(

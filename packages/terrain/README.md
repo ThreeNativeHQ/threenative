@@ -57,3 +57,10 @@ numeric fields, saves once per drag, and preserves newer edits on conflict.
 `mountTerrainEditor` passes `(host, controller)` to `createView`. The view implements
 `setDocument(document, revision)` for metadata changes without terrain evaluation;
 its `update(state)` may return the resolved state for inspection and data bakes.
+
+The example also selects stamp, paste and heightmap layers by stable ID. One proxy
+edits recipe footprints and vertical gain/offset; its line follows the visible
+terrain, with rebuilding on commit. X/Z rotation is disabled because a heightfield
+cannot overhang. `stamp`/`paste` accept positive vertical `scale`; `heightmap` also
+accepts optional metre `at`/`size`, degree `rotation` and `falloff` for a bounded
+footprint. The original full-world heightmap path remains the default.

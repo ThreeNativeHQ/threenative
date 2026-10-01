@@ -14,6 +14,93 @@ import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "thr
 import { describe, expect, it } from "vitest";
 
 describe("public terrain consumer", () => {
+  it("rejects missing or nonnumeric height samples before changing a recipe", () => {
+    const terrain = new Terrain({ size: 16, resolution: 17 });
+    const before = terrain.toJSON();
+    for (const values of [[0, 1, 2, "3"], [0, 1, 2, null], [0, 1, 2, undefined], new Array(4)]) {
+      const command = {
+        op: "upsert",
+        layer: {
+          id: "bad-map",
+          type: "heightmap",
+          params: { data: { width: 2, height: 2, values } },
+        },
+      };
+      expect(() => terrain.applyPatch([command as never])).toThrow();
+      expect(terrain.toJSON()).toEqual(before);
+    }
+  });
+  it("applies a stamp's vertical offset to additive height", () => {
+    const terrain = new Terrain({ size: 16, resolution: 17 })
+      .noise({ id: "base", base: 5, amplitude: 0 })
+      .stamp({ id: "peak", at: [0, 0], radius: 4, amplitude: 4, roughness: 0, offset: 1 });
+    expect(terrain.evaluate().height[8 * 17 + 8]).toBe(10);
+  });
+
+  it("scales landform heights before offset for each blend and preserves the saved recipe", () => {
+    for (const [blend, expected] of [
+      ["add", 14],
+      ["replace", 9],
+      ["max", 9],
+      ["min", 5],
+    ] as const) {
+      const terrain = new Terrain({ size: 16, resolution: 17 })
+        .noise({ id: "base", base: 5, amplitude: 0 })
+        .stamp({
+          id: "peak",
+          radius: [4, 2],
+          amplitude: 4,
+          roughness: 0,
+          scale: 2,
+          offset: 1,
+          blend,
+        });
+      expect(terrain.evaluate().height[8 * 17 + 8]).toBe(expected);
+      expect(Terrain.fromJSON(terrain.toJSON()).evaluate().height).toEqual(
+        terrain.evaluate().height,
+      );
+      const before = terrain.toJSON();
+      for (const scale of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(() => terrain.update("peak", { params: { scale } })).toThrow();
+        expect(terrain.toJSON()).toEqual(before);
+      }
+    }
+  });
+
+  it("transforms pasted and imported height footprints without clamping the outside", () => {
+    const data = { width: 2, height: 2, values: [0, 2, 10, 12] };
+    for (const type of ["paste", "heightmap"] as const) {
+      const terrain = new Terrain({ size: 16, resolution: 17 }).noise({
+        id: "base",
+        base: 5,
+        amplitude: 0,
+      });
+      terrain[type]({
+        id: "mass",
+        data,
+        at: [2, -2],
+        size: [8, 4],
+        rotation: 90,
+        scale: 2,
+        offset: 3,
+        falloff: 0,
+      });
+      const state = terrain.evaluate();
+      expect(state.height[6 * 17 + 10]).toBe(15); // footprint centre: sample 6 * gain 2 + offset 3
+      expect(state.height[8 * 17 + 10]).toBe(16); // +Z is source +X after 90 degrees
+      expect(state.height[6 * 17 + 11]).toBe(10); // +X is source -Z, not an overhanging rotation
+      expect(state.height[0]).toBe(5);
+      expect(Terrain.fromJSON(terrain.toJSON()).evaluate().height).toEqual(state.height);
+      expect(bakeTerrain(state).collision.heights).toEqual(state.height);
+    }
+    const original = new Terrain({ size: 16, resolution: 17 })
+      .heightmap({ data, scale: 2, offset: 3 })
+      .evaluate();
+    expect(original.height[0]).toBe(3);
+    expect(original.height[16 * 17 + 16]).toBe(27);
+    expect(original.height[8 * 17 + 8]).toBe(15);
+  });
+
   it("evaluates without DOM globals and replaces stable IDs deterministically", () => {
     expect(typeof document).toBe("undefined");
     const terrain = new Terrain({ size: 64, resolution: 33, seed: 123 })

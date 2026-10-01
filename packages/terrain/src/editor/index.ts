@@ -16,6 +16,7 @@ export interface IEditorView {
   showSpline(points: readonly [number, number, number][]): void;
   setNavigation(enabled: boolean): void;
   setSelection?(enabled: boolean): void;
+  selectLayer?(id: string): void;
   setView(view: string): void;
   frame(): void;
   registerAsset?(id: string, object: unknown): void;

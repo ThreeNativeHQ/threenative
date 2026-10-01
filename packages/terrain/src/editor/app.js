@@ -39,7 +39,11 @@ export function mountRecoveredEditor({
     ["scatter", "Scatter", "Place deterministic assets inside the brush."],
     ["spline", "Spline", "Click control points. Enter finishes the road or river."],
     ["water", "Water", "Flood a connected basin from the clicked point."],
-    ["select", "Select", "Select one prop. Drag its handles or edit its transform."],
+    [
+      "select",
+      "Select",
+      "Select a prop or recipe landform. Drag its handles or enter precise values.",
+    ],
   ];
   const options = {
     flatten: { height: 24 },
@@ -232,6 +236,7 @@ export function mountRecoveredEditor({
       row.onclick = () => {
         selected = l.id;
         renderLayers();
+        if (active === "select") view.selectLayer?.(l.id);
       };
       row.ondragstart = (e) => e.dataTransfer.setData("text/plain", l.id);
       row.ondragover = (e) => e.preventDefault();
@@ -424,7 +429,8 @@ export function mountRecoveredEditor({
     points = [];
     showPoints();
     const i = tools.findIndex((t) => t[0] === id);
-    $("brush-title").textContent = id === "select" ? "Select one prop" : `${tools[i][1]} terrain`;
+    $("brush-title").textContent =
+      id === "select" ? "Select a prop or landform" : `${tools[i][1]} terrain`;
     $("brush-desc").textContent = tools[i][2];
     $("tool-key").textContent = id === "select" ? "Q" : (i + 1) % 10;
     for (const b of document.querySelectorAll(".tool-button")) {

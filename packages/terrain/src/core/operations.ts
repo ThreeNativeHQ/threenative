@@ -377,14 +377,15 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
           }
           const alpha = weight(i) * w;
           const blend = p.blend ?? (type === "paste" ? "replace" : "add");
+          const height = profile * (p.scale ?? 1) + (p.offset ?? 0);
           const value =
             blend === "replace"
-              ? profile + (p.offset ?? 0)
+              ? height
               : blend === "max"
-                ? Math.max(s.height[i] as number, profile + (p.offset ?? 0))
+                ? Math.max(s.height[i] as number, height)
                 : blend === "min"
-                  ? Math.min(s.height[i] as number, profile + (p.offset ?? 0))
-                  : (s.height[i] as number) + profile;
+                  ? Math.min(s.height[i] as number, height)
+                  : (s.height[i] as number) + height;
           s.height[i] = lerp(s.height[i] as number, value, alpha);
         }
       }
@@ -480,6 +481,19 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
       s.waterRules.push({ id: layer.id, ...p, mask: layer.mask, opacity });
       break;
     case "heightmap": {
+      if (
+        p.at !== undefined ||
+        p.size !== undefined ||
+        p.rotation !== undefined ||
+        p.falloff !== undefined
+      ) {
+        applyOperation(s, {
+          ...layer,
+          type: "paste",
+          params: { ...p, size: p.size ?? s.size, falloff: p.falloff ?? 0 },
+        });
+        break;
+      }
       const data = p.data;
       for (let z = 0; z < n; z += 1) {
         for (let x = 0; x < n; x += 1) {

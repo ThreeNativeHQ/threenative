@@ -366,14 +366,14 @@ not claim native editor props, final PBR starter art or steady-state FPS.
 ### Phase 2: Individual selection and persistent gizmos
 
 **Status:** PARTIAL
-**Files:** game-owned `src/render/selection.ts`, `editorView.ts` and `props.ts`,
-addon `core/placements.ts`, shared authoring validation,
-`__tests__/placement-overrides.spec.ts` and the editor browser scenario.
+**Files:** game-owned `src/render/selection.ts`, `landforms.ts`, `editorView.ts`
+and `props.ts`; addon `core/placements.ts`, operation types/validation/evaluation;
+public consumer/override tests and the editor browser scenario.
 **Implementation:** Reuse picker/gizmo, preserve instance identity, persist one
 transaction per drag, and consume overrides in bake/export. Preserve recipe
 intent for landforms. Invalidate only affected static/instance data during drag.
 
-- [ ] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — a real mesh click maps `instanceId` to one durable key; the object list selects that same placement. Actual mouse drags exercise translate X, rotate Y and nonuniform scale X, plus keyboard-accessible numeric inputs. Sibling matrices stay exactly unchanged, Orbit pauses during drag, each completed gesture saves once, and Escape saves nothing. Transform/undo metadata dispatches no terrain evaluation. Heightfield landform selection and explicit supported/disabled axes remain pending, so this box stays open.
+- [x] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS — a real mesh click selects one durable placement key; actual translate X, rotate Y and nonuniform scale X drags change only that instance, suspend Orbit and save once. Escape saves nothing. Stamp selection reuses the same proxy with a terrain-following footprint; actual translate X/Y, rotate Y and vertical-gain Y drags change the stable recipe layer, rebuild on commit and retain selection. Numeric inputs change anisotropic stamp half-extents and bounded heightmap/paste footprints; layer-list clicks select those stable layers. X/Z rotation controls and handles are disabled with the heightfield-overhang reason; other unsupported rotation handles reject before a gesture. Landform Escape saves nothing and selective undo preserves another actor's layer name and roughness. The full real browser integration and standalone scene scenario pass on WebGPU NVIDIA/turing.
 - [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` and `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — public tests cover stable candidates across rejection changes, saved nonuniform transforms, unit quaternion/finite/positive-scale validation, atomic rejection (including explicit null grounding), retained unmatched diagnostics and transform records in `bakeTerrain`. The real browser restores every actual instance pose on reload; an unrelated layer edit retains the override, a stale drag preserves the newer actor edit and retains an explicit reapply draft, and selective undo retains the other actor's layer edit. Unmatched override removal works through the GUI. Installed `GroundSnap` uses the actual model bounds and terrain-triangle query; grounding on reaches clearance below 1e-4 m, while a real Y-handle lift records `grounding: false` and reports 2.5549 m clearance. Complete portable game/GLB consumption and exercised reassignment remain pending; this box stays open.
 
 Prop transforms use one ordinary Three.js `TransformControls` proxy around the
@@ -415,6 +415,35 @@ command passes documentation/build/package checks and 523 test files / 6,489 tes
 (12 skips), with no suite temporary-directory growth. The real browser integration
 and standalone scene scenario pass at this source state; no resumed test verdict
 is needed for this follow-up.
+
+Landform milestone (2026-10-01): game-owned `src/render/landforms.ts` maps stamp,
+paste and heightmap recipe parameters to the existing proxy. The line marks a
+footprint on the actual rendered triangles; no independent landform solid moves
+inside an eroded heightfield. Positive vertical gain applies before metre offset;
+additive stamp/paste now honor offset. Heightmaps retain their original full-world
+sampler unless optional footprint fields are present, then reuse the existing
+paste sampler. Public tests reject missing/nonnumeric height samples atomically,
+exercise every blend and rotated anisotropic footprints, round-trip recipes and
+compare baked collision arrays. The supplied noise/erosion golden remains exact.
+
+All 24 public terrain tests and the expanded browser integration pass, including
+stamp gizmo drags, numeric heightmap/paste edits, layer selection, preserved prop
+behavior, cancellation/conflicts/recovery and the fresh standalone scene. The
+100-prop revision observations draw in 164–188 ms on NVIDIA/turing RTX 2080.
+WebGPU rejects `LineLoop`, so both the footprint and brush ring use ordinary
+closed `Line` geometry. The expanded harness has a bounded 120-second callback;
+individual simple-edit latency assertions still require less than two seconds.
+Prop-only grounding/reset controls remain hidden on landforms despite the recovered
+CSS, with actual visibility assertions. Object-list values distinguish placements
+from layers even when a scatter rule is named `landform`; saved IDs are unchanged.
+Phase 2 remains partial: reassignment and complete portable bake/export
+consumption are still AC-4 work. Root typecheck, lint, budgets, documentation links
+and 180 documentation tests pass. The complete `pnpm test` command passes
+documentation/build/package checks and 523 files / 6,493 tests (12 skips), with no
+suite temporary-directory growth. Browser and Linux desktop terrain/ocean consumer
+regressions pass; the inspected nonblank desktop capture renders 300 frames with
+202 presentations. Four actual 1440 × 900 WebGPU landform screenshots are tracked
+for PR #381. This does not claim native editor props, final PBR starter art or FPS.
 
 ### Phase 3: GUI polish and GLB handoff
 

@@ -1,6 +1,6 @@
 /**
  * Shared shapes for the recovered Strata evaluator. Every type here is derived from the recovered
- * `src/core/*` implementation and its `PARAMS` allow-lists; nothing is invented. A recipe is plain
+ * `src/core/*` implementation and its `PARAMS` allow-lists, with explicit landform transform extensions. A recipe is plain
  * JSON, so the evaluator validates it at runtime and these types only describe what the evaluator
  * accepts.
  */
@@ -165,6 +165,9 @@ export interface IStampParams extends IOperationBase {
   readonly mirrorZ?: boolean;
   readonly blend?: "add" | "replace" | "min" | "max";
   readonly roughness?: number;
+  /** Positive vertical gain, applied before offset; defaults to 1. */
+  readonly scale?: number;
+  /** Metres added to the scaled landform, including additive blends. */
   readonly offset?: number;
   readonly data?: IHeightData;
   readonly falloff?: number;
@@ -269,6 +272,14 @@ export interface IWaterParams extends IOperationBase {
 
 export interface IHeightmapParams extends IOperationBase {
   readonly data: IHeightData;
+  /** Optional footprint centre in metres; without footprint fields the map fills the world. */
+  readonly at?: readonly [number, number];
+  /** Full footprint width/depth in metres; defaults to the world size. */
+  readonly size?: number | readonly [number, number];
+  /** Degrees in the terrain X/Z plane, matching stamp/paste. */
+  readonly rotation?: number;
+  readonly falloff?: number;
+  /** Positive vertical gain, applied before offset. */
   readonly scale?: number;
   readonly offset?: number;
   readonly blend?: "add" | "replace";

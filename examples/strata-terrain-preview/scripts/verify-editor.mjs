@@ -12,6 +12,7 @@ import {
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
 
+import { verifyLandforms } from "./verify-landforms.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
 
 const root = resolve(".");
@@ -41,7 +42,7 @@ try {
     "webgpu",
     "--headed",
     "--timeout",
-    "60000",
+    "120000",
     "--artifacts",
     "artifacts/playtest/editor",
   ]);
@@ -96,6 +97,7 @@ try {
     );
     assert.equal(new Set(observed.map((item) => item.revision)).size, 3);
     await verifyPropTransforms(session, controller, config);
+    await verifyLandforms(session, controller);
     const validPreview = await session.page.evaluate(() => window.strata.view.inspect());
     const beforeMissing = await controller.snapshot();
     await controller.commit({

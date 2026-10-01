@@ -55,6 +55,7 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "mirrorZ",
     "blend",
     "roughness",
+    "scale",
     "offset",
     "data",
     "falloff",
@@ -68,6 +69,7 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "mirrorZ",
     "blend",
     "offset",
+    "scale",
     "data",
     "falloff",
   ],
@@ -117,7 +119,7 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
   ],
   ramp: ["from", "to", "width", "shoulder", "material"],
   water: ["kind", "at", "radius", "level", "color"],
-  heightmap: ["data", "scale", "offset", "blend"],
+  heightmap: ["data", "scale", "offset", "blend", "at", "size", "rotation", "falloff"],
 });
 
 function fail(message: string): never {
@@ -467,6 +469,9 @@ export function validateLayer(layer: Layer): void {
     num(data.height, "data.height", 2, 4097, true);
     if (!Array.isArray(data.values) || data.values.length !== data.width * data.height)
       fail("heightmap dimensions do not match values");
+    for (const value of data.values)
+      if (typeof value !== "number" || !Number.isFinite(value))
+        fail("data.values must contain only finite numbers");
   }
 }
 
