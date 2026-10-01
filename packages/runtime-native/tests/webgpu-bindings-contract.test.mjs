@@ -187,6 +187,13 @@ test("native requestAdapter publishes the real adapter.info identity", () => {
   assert.match(bindings, /setProperty\(adapter, "info", info\)/u);
   assert.match(bindings, /wgpuAdapterInfoFreeMembers\(adapterInfo\)/u);
 
+  // Core reads the software-adapter fact from these four names, so the host has to publish exactly
+  // them: a rename on either side would leave `softwareAdapter` absent on native while the web
+  // lane kept working, which is a silent platform split rather than a failure.
+  for (const field of ["architecture", "description", "device", "vendor"]) {
+    assert.match(bindings, new RegExp(`"${field}", state->engine->newString`, "u"), `native adapter.info must publish ${field}`);
+  }
+
   const withoutInfo = bindings.replace(
     /WGPUAdapterInfo adapterInfo = \{\};[\s\S]*?wgpuAdapterInfoFreeMembers\(adapterInfo\);/u,
     "",
