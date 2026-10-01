@@ -1,10 +1,38 @@
 import type { PatchCommand } from "../core/terrain.js";
 import type { ITerrainState } from "../core/types.js";
 import { mountRecoveredEditor } from "./app.js";
+import type {
+  ICameraOperation,
+  ICameraResult,
+  IFocusBounds,
+  IFocusOutcome,
+  IFocusRequest,
+  IFocusTarget,
+  ISavedCamera,
+} from "./cameras.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
 import { editorShell } from "./shell.js";
 import type { ISpatialObservation, ISpatialQuery } from "./spatialInspector.js";
 
+export {
+  focusCamera,
+  runCameraOperation,
+  validateCamera,
+  validateCameras,
+} from "./cameras.js";
+export type {
+  ICameraOperation,
+  ICameraPose,
+  ICameraResult,
+  ICameraSet,
+  IFocusBounds,
+  IFocusFraming,
+  IFocusOutcome,
+  IFocusRequest,
+  IFocusResolver,
+  IFocusTarget,
+  ISavedCamera,
+} from "./cameras.js";
 export {
   inspectSpatial,
   probeTerrain,
@@ -23,6 +51,34 @@ export type {
   ISurfaceReading,
 } from "./spatialInspector.js";
 
+/** The live view's own camera surface, shared by the GUI list and a controller. */
+export interface IViewCamera {
+  /** The actual current viewer pose, not the last saved bookmark. */
+  read(): IViewerPose;
+  /** Apply a saved pose to the real camera, or the ordinary editor camera when given null. */
+  apply(camera: ISavedCamera | null): void;
+  /** Frame a target; an unknown target keeps the last valid camera and reports why. */
+  focus(request: IFocusRequest): IFocusOutcome;
+  /** Resolves a non-point target against the live world; the view owns the world matrices. */
+  resolve(target: { kind: "prop" | "landmark" | "region"; id: string }): IFocusBounds | undefined;
+  /** Clip-square extent of bounds under the live camera, so a framing can be measured, not assumed. */
+  measure(bounds: IFocusBounds): { x: number; y: number; z: boolean };
+}
+
+export interface IViewerPose {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+  readonly up: readonly [number, number, number];
+  readonly projection: "perspective" | "orthographic";
+  readonly fov: number | null;
+  readonly extent: number | null;
+  readonly zoom: number | null;
+  readonly near: number;
+  readonly far: number;
+  readonly aspect: number;
+  readonly activeCamera: string | null;
+}
+
 export interface IEditorView {
   readonly backend: string;
   update(state: ITerrainState): ITerrainState | undefined;
@@ -39,6 +95,7 @@ export interface IEditorView {
   setView(view: string): void;
   frame(): void;
   registerAsset?(id: string, object: unknown): void;
+  cameras?(): IViewCamera;
   dispose(): void;
 }
 
@@ -85,6 +142,17 @@ export class TerrainEditorController {
    */
   inspect(query: ISpatialQuery, baseRevision: string): Promise<{ result: ISpatialObservation }> {
     return this.#request("inspect", { baseRevision, query });
+  }
+  /**
+   * Run one create / get / list / update / delete / activate camera operation against one exact
+   * revision. Editor observation cameras only: gameplay cameras belong to the consuming game.
+   * @param operation a camera operation from {@link ICameraOperation}
+   */
+  camera(
+    operation: ICameraOperation,
+    baseRevision: string,
+  ): Promise<ICameraResult & { revision: string }> {
+    return this.#request("cameras", { baseRevision, operation });
   }
   commit(
     transaction:

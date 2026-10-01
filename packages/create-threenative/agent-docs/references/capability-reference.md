@@ -5508,6 +5508,23 @@ const transforms = validatePlacementOverrides(document.placementOverrides);
 
 ## `@threenative/terrain/editor`
 
+### `focusCamera`
+
+`function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera
+
+```ts
+export function focusCamera( camera: ISavedCamera, request: IFocusRequest, resolve: IFocusResolver, ): IFocusOutcome { … }
+```
+
+- **Use when:** frame one selected prop, a registered landmark, a terrain region or a local point
+- **Constraints:** framing only; an unknown target returns a named diagnostic and no camera
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the view supplies target bounds, the live aspect and the camera to keep
+
+```ts
+const outcome = focusCamera(camera, { target: { kind: "prop", id: "pine-3" }, aspect: 16 / 9 }, resolve);
+```
+
 ### `inspectSpatial`
 
 `function` — Read-only spatial inspection of one evaluated terrain revision.
@@ -5559,6 +5576,23 @@ export function probeTerrain( state: ITerrainState, revision: string, at: readon
 const probe = probeTerrain(state, revision, [12, -4]);
 ```
 
+### `runCameraOperation`
+
+`function` — Run one create / get / list / update / delete / activate operation over saved cameras. @summary Apply an editor camera operation to a saved camera set
+
+```ts
+export function runCameraOperation(set: ICameraSet, operation: unknown): ICameraResult { … }
+```
+
+- **Use when:** drive the terrain editor camera list from an agent or the GUI through one shared dispatch
+- **Constraints:** pure: the input set is never mutated, an unknown id throws, and deleting the live camera falls back
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller persists the returned set against its own revision
+
+```ts
+const next = runCameraOperation(set, { op: "activate", id: "survey" });
+```
+
 ### `TerrainEditorController`
 
 `class` — HTTP controller for the project-local terrain editor.
@@ -5574,6 +5608,40 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `validateCamera`
+
+`function` — Normalise and validate one saved camera, exactly as a document commit would store it. @summary Validate an editor observation camera bookmark
+
+```ts
+export function validateCamera( input: unknown, existing: readonly ISavedCamera[] = [], ): ISavedCamera { … }
+```
+
+- **Use when:** create or update a named terrain-editor camera in the shared authoring document
+- **Constraints:** authoring metadata only; finite noncoincident poses, usable up, valid projection, ordered planes
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the document revision and the live viewport aspect
+
+```ts
+const camera = validateCamera({ id: "survey", name: "Survey", position: [40, 60, 40], target: [0, 12, 0], up: [0, 1, 0], projection: "perspective", fov: 50, near: 0.5, far: 900 });
+```
+
+### `validateCameras`
+
+`function` — Validate a document's saved camera list, keeping ids unique across it. @summary Validate the saved editor camera list of an authoring document
+
+```ts
+export function validateCameras(input: unknown): ISavedCamera[] { … }
+```
+
+- **Use when:** reject a disk document whose saved cameras are malformed or duplicated
+- **Constraints:** authoring metadata only; the same validation the camera operations apply
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the document owns how many cameras it keeps; the list bound is the editor's own
+
+```ts
+const cameras = validateCameras(JSON.parse(saved).cameras ?? []);
 ```
 
 ### `validateSpatialReference`

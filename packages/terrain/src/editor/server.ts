@@ -8,6 +8,12 @@ import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
 import {
+  type ICameraResult,
+  type ISavedCamera,
+  runCameraOperation,
+  validateCameras,
+} from "./cameras.js";
+import {
   type ISpatialObservation,
   type ISpatialQuery,
   inspectSpatial,
@@ -24,6 +30,10 @@ export interface IAuthoringDocument {
   placementOverrides?: Record<string, IPlacementOverride>;
   /** Saved reference registrations. Authoring metadata: never evaluated, never exported. */
   references?: ReturnType<typeof validateSpatialReference>[];
+  /** Saved editor observation cameras. Authoring metadata: never evaluated, never exported. */
+  cameras?: ISavedCamera[];
+  /** Which saved camera is live; absent or `null` is the ordinary editor camera. */
+  activeCamera?: string | null;
 }
 export interface IEditorSnapshot {
   revision: string;
@@ -44,7 +54,15 @@ function validate(value: unknown): IAuthoringDocument {
   if (
     input.version !== 1 ||
     Object.keys(input).some(
-      (key) => !["version", "recipe", "placementOverrides", "references"].includes(key),
+      (key) =>
+        ![
+          "version",
+          "recipe",
+          "placementOverrides",
+          "references",
+          "cameras",
+          "activeCamera",
+        ].includes(key),
     )
   )
     throw new Error("Unsupported authoring document fields/version");
@@ -56,6 +74,19 @@ function validate(value: unknown): IAuthoringDocument {
     if (!Array.isArray(input.references) || input.references.length > MAX_REFERENCES)
       throw new Error(`A document holds at most ${MAX_REFERENCES} saved references`);
     document.references = input.references.map((entry) => validateSpatialReference(entry));
+  }
+  if (input.cameras !== undefined) document.cameras = validateCameras(input.cameras);
+  if (input.activeCamera !== undefined) {
+    // An active camera that no longer exists is not a stale document: it falls back to the editor camera.
+    const active = input.activeCamera;
+    if (active !== null) {
+      if (
+        typeof active !== "string" ||
+        !(document.cameras ?? []).some((entry) => entry.id === active)
+      )
+        throw new Error("activeCamera must name a saved camera");
+    }
+    document.activeCamera = active;
   }
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
     throw new Error("Authoring document exceeds 64 MiB");
@@ -322,6 +353,42 @@ export function terrainEditor(options: { documentPath: string; viewerUrl?: strin
             }
             if (request.method === "POST" && path === `${PREFIX}api/document`) {
               json(response, 200, document.commit(await body(request)));
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/cameras`) {
+              const transaction = await body(request);
+              if (
+                !transaction ||
+                typeof transaction !== "object" ||
+                Array.isArray(transaction) ||
+                Object.keys(transaction).some((key) => !["baseRevision", "operation"].includes(key))
+              )
+                throw new Error("Expected { baseRevision, operation }");
+              const cameras = transaction as { baseRevision?: unknown; operation?: unknown };
+              const current = document.snapshot();
+              if (cameras.baseRevision !== current.revision)
+                throw new EditorError(409, "Stale base revision");
+              // Cameras are authoring metadata: no evaluator, no erosion and no collider rebuild.
+              const result: ICameraResult = runCameraOperation(
+                {
+                  cameras: current.document.cameras ?? [],
+                  activeCamera: current.document.activeCamera ?? null,
+                },
+                cameras.operation,
+              );
+              const next = validate({
+                ...current.document,
+                cameras: result.cameras,
+                activeCamera: result.activeCamera,
+              });
+              // Reads and no-op updates leave the document, and its revision, untouched.
+              const changed =
+                JSON.stringify(result.cameras) !== JSON.stringify(current.document.cameras ?? []) ||
+                result.activeCamera !== (current.document.activeCamera ?? null);
+              const revision = changed
+                ? document.commit({ baseRevision: current.revision, document: next }).revision
+                : current.revision;
+              json(response, 200, { ...result, revision });
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/inspect`) {

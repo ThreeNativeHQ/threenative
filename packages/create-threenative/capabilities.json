@@ -6617,6 +6617,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["framing only; an unknown target returns a named diagnostic and no camera"],
+      "example": "const outcome = focusCamera(camera, { target: { kind: \"prop\", id: \"pine-3\" }, aspect: 16 / 9 }, resolve);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the view supplies target bounds, the live aspect and the camera to keep"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function focusCamera( camera: ISavedCamera, request: IFocusRequest, resolve: IFocusResolver, ): IFocusOutcome { … }",
+      "situations": [
+        "frame one selected prop, a registered landmark, a terrain region or a local point"
+      ],
+      "summary": "Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera",
+      "supersedes": [],
+      "symbol": "focusCamera"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "authoring data only; queries outside the extent or without observations throw"
       ],
@@ -6673,6 +6690,25 @@
     {
       "aliases": [],
       "constraints": [
+        "pure: the input set is never mutated, an unknown id throws, and deleting the live camera falls back"
+      ],
+      "example": "const next = runCameraOperation(set, { op: \"activate\", id: \"survey\" });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the caller persists the returned set against its own revision"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function runCameraOperation(set: ICameraSet, operation: unknown): ICameraResult { … }",
+      "situations": [
+        "drive the terrain editor camera list from an agent or the GUI through one shared dispatch"
+      ],
+      "summary": "Run one create / get / list / update / delete / activate operation over saved cameras. @summary Apply an editor camera operation to a saved camera set",
+      "supersedes": [],
+      "symbol": "runCameraOperation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "optional tooling; only subscribe/mount touches DOM; stale revisions fail explicitly"
       ],
       "example": "const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();",
@@ -6686,6 +6722,42 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "authoring metadata only; finite noncoincident poses, usable up, valid projection, ordered planes"
+      ],
+      "example": "const camera = validateCamera({ id: \"survey\", name: \"Survey\", position: [40, 60, 40], target: [0, 12, 0], up: [0, 1, 0], projection: \"perspective\", fov: 50, near: 0.5, far: 900 });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the caller owns the document revision and the live viewport aspect"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateCamera( input: unknown, existing: readonly ISavedCamera[] = [], ): ISavedCamera { … }",
+      "situations": [
+        "create or update a named terrain-editor camera in the shared authoring document"
+      ],
+      "summary": "Normalise and validate one saved camera, exactly as a document commit would store it. @summary Validate an editor observation camera bookmark",
+      "supersedes": [],
+      "symbol": "validateCamera"
+    },
+    {
+      "aliases": [],
+      "constraints": ["authoring metadata only; the same validation the camera operations apply"],
+      "example": "const cameras = validateCameras(JSON.parse(saved).cameras ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the document owns how many cameras it keeps; the list bound is the editor's own"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateCameras(input: unknown): ISavedCamera[] { … }",
+      "situations": ["reject a disk document whose saved cameras are malformed or duplicated"],
+      "summary": "Validate a document's saved camera list, keeping ids unique across it. @summary Validate the saved editor camera list of an authoring document",
+      "supersedes": [],
+      "symbol": "validateCameras"
     },
     {
       "aliases": [],
