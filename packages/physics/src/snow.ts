@@ -253,13 +253,6 @@ export interface ISnowPhysicsOptions {
   readonly deposition?: number;
   /** Wind erosion rate, forwarded to `SnowField.recover`. Default 0. */
   readonly wind?: number;
-  /**
-   * Scale on the powder's resistance to a body ploughing through it. Default 1: a supported body
-   * loses `sqrt(sinkage / width) * load` of horizontal force, the soft-ground rolling-resistance
-   * coefficient, so a ball comes to rest in powder and stays in its crater on a gentle slope.
-   * 0 turns it off (the snow then only changes shape, and takes no energy).
-   */
-  readonly resistance?: number;
 }
 
 /** What the last consumed step observed, for a registry snapshot or a playtest probe. */
@@ -278,8 +271,6 @@ export interface ISnowPhysicsObservation {
   readonly colliderVersion: number;
   /** Largest gap between the collider's source samples and the canonical surface, in metres. */
   readonly colliderError: number;
-  /** Horizontal impulse the powder took back from bodies in that step, newton-seconds. */
-  readonly resistance: number;
 }
 
 export interface ISnowPhysicsBinding {
@@ -336,8 +327,6 @@ export interface ISnowPhysicsBinding {
  * @constraint the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach
  * @constraint verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it
  * @constraint automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
- * @situation a ball pushed through powder slows and comes to rest instead of rolling forever
- * @override resistance scales how much horizontal momentum powder takes from a supported body (0 turns it off; `observe().resistance` reports what it took)
  * @override loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
  * @requires @threenative/core/world SnowField as the surface it deforms
  * @example const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });
@@ -364,8 +353,6 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
   const colliderTolerance = finiteOr(options.colliderTolerance, 0.0005, "colliderTolerance");
   if (colliderTolerance < 0)
     throw new Error("attachSnowPhysics colliderTolerance must be non-negative.");
-  const resistance = finiteOr(options.resistance, 1, "resistance");
-  if (resistance < 0) throw new Error("attachSnowPhysics resistance must be non-negative.");
 
   const watched = new Map<number, IWatchedBody>();
   let colliderHeights = field.toColliderHeights();
@@ -373,7 +360,6 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
   let contacts = 0;
   let supported = 0;
   let load = 0;
-  let resisted = 0;
   let version = snow.version;
   let disposed = false;
 
@@ -496,9 +482,8 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       if (transform === undefined) throw new Error("attachSnowPhysics lost a watched body.");
       const oriented = orientedFootprint(entry, transform, cellSize);
       const bodyLoad = (entry.impulse / deltaTime) * loadScale;
-      const area = footprintArea(oriented.footprint);
       snow.stamp({
-        area,
+        area: footprintArea(oriented.footprint),
         duration: deltaTime,
         footprint: oriented.footprint,
         load: bodyLoad,
@@ -510,49 +495,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       load += bodyLoad;
       entry.load = bodyLoad;
       entry.impulse = 0;
-      if (resistance > 0) resist(entry, transform.position, oriented, area, bodyLoad, deltaTime);
     }
-  }
-
-  /**
-   * Take back the horizontal momentum the powder absorbs: soft-ground rolling resistance,
-   * `sqrt(sinkage / width)` of the load, from what the snow measures under the body. Never more
-   * than the body has, so a resting body stops rather than being pushed back uphill.
-   *
-   * It acts over the next step at the height where a rolling body loses spin and speed together
-   * (`I / (m r)` above the centre: 0.4 r for a ball, 0.5 r for a capsule rolling on its side), so a
-   * slowing ball keeps rolling rather than spinning in place; a box slides and takes it at its
-   * centre.
-   */
-  function resist(
-    entry: IWatchedBody,
-    centre: { readonly x: number; readonly y: number; readonly z: number },
-    at: { readonly x: number; readonly z: number },
-    area: number,
-    bodyLoad: number,
-    deltaTime: number,
-  ): void {
-    const body = entry.body;
-    if (!("applyForceAtPoint" in body) || body.type !== "dynamic") return;
-    const velocity = body.linearVelocity;
-    const speed = Math.hypot(velocity.x, velocity.z);
-    if (speed === 0) return;
-    const sinkage = Math.max(0, snow.sample(at.x, at.z).indent);
-    const width = 2 * Math.sqrt(area / Math.PI);
-    const impulse = Math.min(
-      resistance * Math.sqrt(sinkage / width) * bodyLoad * deltaTime,
-      body.mass * speed,
-    );
-    if (impulse <= 0) return;
-    const shape = entry.shape;
-    const lever =
-      shape?.kind === "sphere" ? 0.4 * shape.x : shape?.kind === "capsule" ? 0.5 * shape.y : 0;
-    const force = impulse / deltaTime;
-    body.applyForceAtPoint(
-      { x: (-velocity.x / speed) * force, y: 0, z: (-velocity.z / speed) * force },
-      { x: centre.x, y: centre.y + lever, z: centre.z },
-    );
-    resisted += impulse;
   }
 
   const binding: ISnowPhysicsBinding = {
@@ -581,7 +524,6 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
         contacts,
         load,
         loadProvenance: "solver-impulse-per-step",
-        resistance: resisted,
         supported,
         version: snow.version,
       };
@@ -599,7 +541,6 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       contacts = 0;
       supported = 0;
       load = 0;
-      resisted = 0;
       if (watched.size > 0) press(deltaTime);
       const deposition = Math.max(0, finiteOr(binding.deposition, 0, "deposition"));
       const wind = Math.max(0, finiteOr(binding.wind, 0, "wind"));

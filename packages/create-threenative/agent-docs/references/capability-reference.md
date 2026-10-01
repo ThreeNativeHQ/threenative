@@ -3097,10 +3097,10 @@ const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1
 export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBinding { … }
 ```
 
-- **Use when:** leave footprints and tracks where physical bodies actually touch snow · let a dropped or pushed sphere carve and settle into deformable snow · make a crate, capsule or ball compress the surface it rests on · a ball pushed through powder slows and comes to rest instead of rolling forever
+- **Use when:** leave footprints and tracks where physical bodies actually touch snow · let a dropped or pushed sphere carve and settle into deformable snow · make a crate, capsule or ball compress the surface it rests on
 - **Constraints:** register `rapier()` before attaching, and call `step` once per fixed step after the physics step · the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach · verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it · automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
 - **Requires:** @threenative/core/world SnowField as the surface it deforms
-- **Overrides:** resistance scales how much horizontal momentum powder takes from a supported body (0 turns it off; `observe().resistance` reports what it took) · loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
+- **Overrides:** loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
 
 ```ts
 const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });

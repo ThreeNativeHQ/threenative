@@ -58,14 +58,10 @@ function snowField(
   return new SnowField({ depth: options.depth ?? SNOW_DEPTH, field });
 }
 
-async function scene(options: Parameters<typeof snowField>[0] & { resistance?: number } = {}) {
+async function scene(options: Parameters<typeof snowField>[0] = {}) {
   const ctx = await world();
   const snow = snowField(options);
-  const binding = attachSnowPhysics({
-    physics: ctx.physics,
-    snow,
-    ...(options.resistance === undefined ? {} : { resistance: options.resistance }),
-  });
+  const binding = attachSnowPhysics({ physics: ctx.physics, snow });
   disposers.push(() => binding.dispose());
   return { binding, ctx, snow };
 }
@@ -149,8 +145,7 @@ describe("sphere on deformable snow under real physics", () => {
   });
 
   it("rolls a pushed sphere through a connected circular track", async () => {
-    // Drag off: this is about the track and the roll; the powder's resistance has its own tests.
-    const { binding, ctx, snow } = await scene({ resistance: 0 });
+    const { binding, ctx, snow } = await scene();
     const body = ball(ctx.physics, 0, 0.6, -2);
     binding.add(body);
     run(ctx, binding, 90);
@@ -341,8 +336,7 @@ describe("box and capsule contacts", () => {
       { slopeX: 0.15, slopeZ: 0 },
       { slopeX: 0, slopeZ: 0.15 },
     ]) {
-      // Drag off: the box must slide to rest on the collider's own slope, not be held mid-slide.
-      const { binding, ctx, snow } = await scene({ ...slope, resistance: 0 });
+      const { binding, ctx, snow } = await scene(slope);
       // Placed up the slope: a transposed or mis-scaled collider would put it at the wrong height.
       const object = new Object3D();
       object.position.set(slope.slopeX > 0 ? 1.8 : 0, 2, slope.slopeZ > 0 ? 1.8 : 0);
@@ -361,69 +355,6 @@ describe("box and capsule contacts", () => {
       // It stayed far enough up the slope that a transposed collider would be > 0.09 m off.
       expect(slope.slopeX > 0 ? position.x : position.z).toBeGreaterThan(0.6);
     }
-  });
-});
-
-describe("powder resists what ploughs through it", () => {
-  /** Horizontal distance the ball's solved centre covers from where it was after settling. */
-  async function roll(options: { resistance?: number; slopeX?: number; push?: number }) {
-    const { binding, ctx } = await scene({
-      depth: 0.28,
-      slopeX: options.slopeX ?? 0,
-      ...(options.resistance === undefined ? {} : { resistance: options.resistance }),
-    });
-    const body = ball(ctx.physics, -1, 0.28 + BALL_RADIUS + 0.01 - (options.slopeX ?? 0), 0);
-    binding.add(body);
-    run(ctx, binding, 30);
-    const start = { ...solved(ctx, body).position };
-    if (options.push !== undefined) body.applyImpulse({ x: options.push, y: 0, z: 0 });
-    let spin = 0;
-    let path = 0;
-    let last = solved(ctx, body);
-    let pose = { position: { ...last.position }, rotation: { ...last.rotation } };
-    run(ctx, binding, 240, () => {
-      last = solved(ctx, body);
-      spin += turned(pose.rotation, last.rotation);
-      path += Math.hypot(last.position.x - pose.position.x, last.position.z - pose.position.z);
-      pose = { position: { ...last.position }, rotation: { ...last.rotation } };
-    });
-    const end = solved(ctx, body).position;
-    const velocity = body.linearVelocity;
-    return {
-      distance: Math.hypot(end.x - start.x, end.z - start.z),
-      rollRatio: path > 0 ? (spin * BALL_RADIUS) / path : 0,
-      speed: Math.hypot(velocity.x, velocity.z),
-    };
-  }
-
-  it("holds a resting ball in its crater on a 7% slope; resistance 0 lets it roll away", async () => {
-    const held = await roll({ slopeX: -0.07 });
-    const free = await roll({ resistance: 0, slopeX: -0.07 });
-    expect(held.distance).toBeLessThan(0.1);
-    expect(held.speed).toBeLessThan(0.05);
-    expect(free.distance).toBeGreaterThan(0.5);
-  });
-
-  it("brings a pushed ball to rest in powder, short of where frictionless snow lets it go", async () => {
-    const held = await roll({ push: 18 });
-    const free = await roll({ push: 18, resistance: 0 });
-    expect(held.distance).toBeGreaterThan(0.2);
-    expect(held.speed).toBeLessThan(0.05);
-    expect(held.distance).toBeLessThan(free.distance * 0.8);
-    // It slows by rolling slower, not by skidding or spinning in place.
-    expect(held.rollRatio).toBeGreaterThan(0.6);
-    expect(held.rollRatio).toBeLessThan(1.25);
-  });
-
-  it("rejects a negative or non-finite resistance", async () => {
-    const ctx = await world();
-    const snow = snowField();
-    expect(() => attachSnowPhysics({ physics: ctx.physics, resistance: -1, snow })).toThrow(
-      /resistance/,
-    );
-    expect(() => attachSnowPhysics({ physics: ctx.physics, resistance: Number.NaN, snow })).toThrow(
-      /resistance/,
-    );
   });
 });
 
