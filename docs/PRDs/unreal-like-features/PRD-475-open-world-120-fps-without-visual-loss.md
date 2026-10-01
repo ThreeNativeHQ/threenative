@@ -99,7 +99,7 @@ Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 m
 
 - [ ] Shadow passes: map-walk `gpuShadow` p95 ≤ 2.5 ms. The shadow pass's share of CPU render time halves against the baseline, with a red-green spec on the mechanism and AC-3's A/B at the four walk poses. proof: `pnpm exec vitest run packages/core/__tests__/<shadow spec>` plus `playtest perf`.
 - [ ] Main pass: map-walk `gpuMain` p95 ≤ 5 ms, with a red-green spec on the mechanism and the same A/B. proof: the mechanism's spec plus `playtest perf`.
-- [ ] A failed world load names itself: `WorldCells` prints the asset or cell and the error behind a `TN_WORLD_CELL_FAILURE` marker instead of only counting it (`world-cells.ts` `#startAssetLoad`, `#startChunkLoad`, `#attachChunks`). proof: a red-green spec in `packages/core/__tests__/` with a rejecting loader.
+- [x] A failed world load names itself: `WorldCells` prints the asset or cell and the error behind a `TN_WORLD_CELL_FAILURE` marker instead of only counting it (`world-cells.ts` `#startAssetLoad`, `#startChunkLoad`, `#attachChunks`). proof: a red-green spec in `packages/core/__tests__/` with a rejecting loader. — `packages/core/__tests__/world-cells.spec.ts::WorldCells > names a refused world load in a TN_WORLD_CELL_FAILURE marker`, red without the marker, green with it; core 2184/2184.
 - [ ] CPU render phase p95 ≤ 4 ms on map-walk, with a red-green spec on the mechanism and the same A/B. proof: the mechanism's spec plus `playtest perf`.
 
 **Verification:** each cut is measured A/B against the build before it, interleaved and on a quiet machine. A cut that fails its meter, or the visual A/B, is reverted and recorded under Decisions.

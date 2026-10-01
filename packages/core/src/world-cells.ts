@@ -6366,8 +6366,9 @@ export class WorldCells extends Group implements IComputeDriven {
       loads.push(
         this.#limiter
           .load(() => this.#model(path), wanted)
-          .catch(() => {
+          .catch((error: unknown) => {
             this.#failures += 1;
+            this.#reportCellFailure("asset", asset.id, [path], error);
             return undefined;
           }),
       );
@@ -7483,6 +7484,25 @@ export class WorldCells extends Group implements IComputeDriven {
   }
 
   /**
+   * `TN_WORLD_CELL_FAILURE`, one line per refused world load: which stage refused (`asset`, `chunk`
+   * or `attach`), the asset id or cell key it refused for, the paths it was reading, and the error
+   * behind it. A counted failure alone says a world lost something; this says which world load and
+   * why, which is the only thing a playtest's `state.failures` can be attributed from. A warning
+   * rather than an error, because a refused load is a world that draws the rest, not a crash.
+   */
+  #reportCellFailure(
+    kind: "asset" | "chunk" | "attach",
+    id: string,
+    paths: readonly string[],
+    error: unknown,
+  ): void {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `TN_WORLD_CELL_FAILURE kind=${kind} id=${id} paths=${paths.join(",")} message=${message}`,
+    );
+  }
+
+  /**
    * `TN_WORLD_LOD_CHAIN`, one line per asset that was widened: how many levels it is now drawn at,
    * where each takes over in metres to one decimal, and what each submits in triangles. Level 0
    * leads, so the first triangle count is what the asset submits today and the last is what it
@@ -7669,8 +7689,9 @@ export class WorldCells extends Group implements IComputeDriven {
           models.filter((model): model is Object3D => model !== undefined),
         );
       },
-      () => {
+      (error: unknown) => {
         this.#failures += 1;
+        this.#reportCellFailure("chunk", cell.key, paths, error);
       },
     );
   }
@@ -7814,8 +7835,14 @@ export class WorldCells extends Group implements IComputeDriven {
         if (proxies > 0) this.#shadowRecordsMoved(new Box3().setFromObject(object, false));
         attached += 1;
       }
-    } catch {
+    } catch (error) {
       this.#failures += 1;
+      this.#reportCellFailure(
+        "attach",
+        cell.key,
+        Array.from(cell.cell.chunks ?? [], (chunk) => resolveRelative(this.#logicalBase, chunk)),
+        error,
+      );
       for (let i = attached; i < models.length; i += 1)
         this.#failures += this.#disposeLoaded(models[i] as Object3D);
     }
