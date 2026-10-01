@@ -805,8 +805,13 @@ jobs:
           echo "shard $SHARD of ${{ matrix.template }}: ${#mine[@]} of ${#scenarios[@]} scenarios"
           scenario_args=()
           for scenario in "${mine[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          # `--server-timeout` is the offline asset cook, not the game: a fresh scaffold's `pnpm dev`
+          # now holds its port until the first cook settles (the templates await `handle.ready`), and
+          # that cook is 19 s of KTX2 on a cold 4096x2048 equirect here. The runner's 15 s default is
+          # sized for a server that is listening, so it is raised for this lane only — every scenario
+          # assertion, frame bound and budget is unchanged, and an ordinary CLI run keeps 15 s.
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
-            --browser-recipe webgpu --headed --no-screenshots \
+            --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
         env:
           SHARD: ${{ matrix.shard }}

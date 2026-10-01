@@ -2014,6 +2014,31 @@ test("a page that closed without navigating is not reported as a navigation", ()
   expect(diagnostic?.severity).toBe("error");
 });
 
+test("a renderer that goes away without either Playwright event is not reported as a navigation", () => {
+  // Run 36821800527, `template-nonvisual (starter, 2/3)`: `page closed: false`,
+  // `main-frame navigations: 1` (the run's own), no navigation after the handshake, no crash event,
+  // and the report read "navigated to an unrecorded location" with a fix aimed at the game. Nothing
+  // moved the document and nothing closed the page: the renderer was destroyed.
+  const destroyed = new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+
+  const diagnostic = pageLifecycleDiagnostic(
+    destroyed,
+    {
+      closed: false,
+      crashed: false,
+      frameNavigations: ["http://127.0.0.1:37675/"],
+      navigations: [],
+      settled: true,
+      tail: ['log: TN_FRAME_HITCH:{"gapMs":2649.9,"uptimeMs":4641.9}'],
+    },
+    "http://127.0.0.1:37675",
+  );
+
+  expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_CRASHED");
+  expect(diagnostic?.message).toContain("without navigating or closing");
+  expect(diagnostic?.severity).toBe("error");
+});
+
 test("an error that is neither a crash nor a navigation keeps propagating", () => {
   const unrelated = new Error("TypeError: entity registry is not iterable");
 
