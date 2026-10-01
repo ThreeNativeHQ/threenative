@@ -209,25 +209,72 @@ test("native: a marker from a host that then exits nonzero is not a completed ru
   assert.throws(() => assertFinishedRun({ ...run, presents: 0 }), /presented 0 of the 3 frames/u);
 });
 
-test("native: a softwareAdapter fact that contradicts the observed identity is rejected", () => {
-  // The corrupted flag: a `swiftshader` string beside this host's real NVIDIA identity. An
-  // assertion that derives the expected class from the fact under test calls that software, picks
-  // the low tier, and passes — the fact becomes its own witness.
-  const observed = observePolicy(hostRun().output);
-  assert.equal(observed.softwareAdapter, null, "this host is hardware; the control below needs that");
+/**
+ * The negative control: a `softwareAdapter` fact that CONTRADICTS the identity beside it is rejected,
+ * on either host class.
+ *
+ * An assertion that derives the expected class from the fact under test calls whatever that fact
+ * says, picks the tier it implies, and passes — the fact becomes its own witness. So the corrupted
+ * value is the one this host does NOT have, and the expectation comes from the OBSERVED identity:
+ * `softwareAdapterName` on the four fields core read. A software host (a CI runner's Mesa llvmpipe)
+ * names software and picks `low`; a hardware host names nothing and picks `high`.
+ */
+function assertContradictingFactRejected(observed) {
+  const classified = softwareAdapterName(observed.identity ?? {}) ?? null;
+  const corrupted = classified === null ? "swiftshader" : null;
+  // Substring, not a regex: the classified name is an adapter description, and `(` in one of them
+  // would otherwise turn the expectation into a group.
+  const expected = `where the observed identity classifies as ${JSON.stringify(classified)}`;
   // The whole self-consistent chain a wrong flag produces: the fact, the class it selects, and the
   // tier that class picks. Every one of those agrees with the others, and none of them agrees with
   // the identity beside them.
   assert.throws(
     () => assertPolicyFollowsIdentity({
       ...observed,
-      adapterClass: "software",
-      policyTier: "low",
-      renderChainTier: "low",
-      softwareAdapter: "swiftshader",
+      adapterClass: corrupted === null ? "hardware" : "software",
+      policyTier: corrupted === null ? "high" : "low",
+      renderChainTier: corrupted === null ? null : "low",
+      softwareAdapter: corrupted,
     }),
-    /where the observed identity classifies as null/u,
+    (error) => typeof error?.message === "string" && error.message.includes(expected),
+    `the rejection did not name the observed classification: ${expected}`,
   );
+}
+
+test("native: a softwareAdapter fact that contradicts the observed identity is rejected", () => {
+  assertContradictingFactRejected(observePolicy(hostRun().output));
+});
+
+// CI run 36866893285 ran this file on a software host and failed it before the control above could
+// prove anything: it asserted `softwareAdapter === null` as a PRECONDITION, so a Mesa llvmpipe
+// runner — which correctly reports its own software name — was a red before any control ran. The
+// identity below is that runner's reported description; the other three fields are only there so
+// `adapter.info` has all four (the real host fills them, and this asserts the control's behaviour,
+// not a byte-exact capture). The claim is that the control holds on a software host too.
+test("native: the contradicting-fact control also holds on a software host", () => {
+  const identity = {
+    architecture: "vulkan",
+    description: "llvmpipe: Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+    device: "Mesa 25.2.8 (LLVM 20.1.2)",
+    vendor: "mesa",
+  };
+  const software = softwareAdapterName(identity);
+  assert.ok(software !== undefined, "the classifier no longer names a llvmpipe adapter");
+  // The honest report for that host: the fact is the name the classifier read, the class is
+  // software, and the policy picked the low tier.
+  const observed = {
+    adapterClass: "software",
+    censusIdentity: IDENTITY_FIELDS.map((field) => `${field}=${identity[field]}`).join("|"),
+    identity,
+    kind: "webgpu",
+    policyTier: "low",
+    renderChainTier: "low",
+    softwareAdapter: software,
+    softwarePolicy: { renderChainTier: "low", tier: "low" },
+  };
+  assertPolicyFollowsIdentity(observed);
+  // And the control that catches a fact claiming hardware beside a software identity.
+  assertContradictingFactRejected(observed);
 });
 
 test("native: the bundle is a real core build, not a stubbed renderer", () => {
