@@ -48,11 +48,13 @@ import {
   positionView,
   positionWorld,
   rotateUV,
+  sin,
   smoothstep,
   texture,
   transformNormalToView,
   vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
@@ -152,6 +154,27 @@ const SNOW = { from: 52, to: 70, sheds: 0.22 };
  * halfway up it. The bake paints sand below 6 m for the same reason.
  */
 const SHORE = { beach: 7.5, wet: 1 };
+
+/**
+ * The wet band, and what it does to the sand.
+ *
+ * Sand that the sea has just left is darker and more saturated than the sand above it, because the
+ * water is still in the pores and the grains are closer together for it. The band is a metre and a half
+ * of height above the bake's own sea level and it feathers: a hard line at the high-water mark is
+ * exactly the "straight-edged white shape" the foam work removed from the water.
+ *
+ * It is also the reason the beach reads as a *beach* rather than as a tan field, and it is a colour
+ * the sand layer cannot supply on its own because it is a fact about the water's last reach, not about
+ * the sand.
+ */
+const WET_SAND = {
+  /** Height above sea level over which the band fades out, in metres. */
+  band: 1.6,
+  /** How much darker and how much more saturated the wet sand is. */
+  darken: vec3(0.52, 0.5, 0.55),
+  /** The grain the band adds: wet sand is smooth and packed, so the ripples flatten in it. */
+  calm: 0.45,
+} as const;
 
 /**
  * What makes the ground grass rather than the dry autumn meadow the CC0 set photographs.
@@ -317,6 +340,45 @@ function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IR
 const TRIPLANAR_SLOPE = 0.57;
 
 /**
+ * The sand's own relief: shore-aligned ripples, as a tilt in world space.
+ *
+ * A beach's texture is not isotropic. Waves run roughly parallel to the shore and leave ripple crests
+ * parallel to it too, so the sand's strongest visual line runs *across* the fall line — and a planar
+ * noise sampled in world XZ ignores that entirely, which is what the "zig-zag streaks" in the coastal
+ * captures were: the tile's own diagonal ridges, following the tile grid rather than the water.
+ *
+ * The shore's direction is the fall line's horizontal component, which is the surface normal's own x/z
+ * with y dropped: on a beach the normal points up-and-downhill, so its horizontal part points downhill,
+ * and the ripples run perpendicular to that. Ripples are then a sine of the distance measured across
+ * the fall line, modulated by a slow noise so the crest spacing wanders the way real ripples do, and
+ * faded out where the beach is not a beach.
+ */
+const RIPPLE = {
+  /** Crests per metre across the fall line. Real ripples are 5-20 cm apart; these read at 25 cm. */
+  frequency: 4,
+  /** How far the crests tilt the surface, and how much their spacing wanders. */
+  strength: 0.26,
+  wander: 1.4,
+} as const;
+
+function sandRipples(): Node<"vec3"> {
+  // Downhill, in world xz. Normalised so the ripple amplitude does not change with the slope.
+  const fall = vec2(normalWorld.x, normalWorld.z);
+  const downhill = fall.length().max(float(0.0001));
+  const across = vec2(fall.x.div(downhill), fall.y.div(downhill));
+  // Distance across the shore, in metres, with a slow noise on the frequency so the crest spacing is
+  // not a perfect comb.
+  const phase = positionWorld.x
+    .mul(across.x)
+    .add(positionWorld.z.mul(across.y))
+    .div(RIPPLE.frequency);
+  const wobble = mx_noise_float(positionWorld.mul(0.09)).mul(RIPPLE.wander);
+  const crest = phase.add(wobble).sin();
+  // The tilt is along the fall line, so the crests face the sea.
+  return vec3(across.x, 0, across.y).mul(crest).mul(RIPPLE.strength);
+}
+
+/**
  * One albedo map projected on all three axes, recombined by the surface's own normal.
  *
  * This is the same idea as {@link triplanarRelief} on the colour side, and it is what a hillside
@@ -424,6 +486,19 @@ export function createGroundMaterial(
       : smoothstep(float(SHORE.beach), float(SHORE.wet), positionWorld.y).mul(
           smoothstep(0.34, 0.1, steep),
         );
+  /**
+   * How wet the sand under this fragment is, 0..1: one at the sea surface, gone `WET_SAND.band`
+   * metres above it.
+   *
+   * The band is broken by the same slow noise the litter uses so the high-water mark is a ragged edge
+   * rather than a contour line — the same reason the foam's outer edge wanders in `ocean.ts`.
+   */
+  const wetness = (): Node<"float"> => {
+    if (data.waterLevel === null) return float(0);
+    const above = positionWorld.y.sub(float(data.waterLevel));
+    const wander = mx_fractal_noise_float(positionWorld.mul(0.06), 3).mul(0.55).add(0.5);
+    return float(1).sub(smoothstep(float(0), float(WET_SAND.band), above.div(wander)));
+  };
   const weights: Record<LayerKey, Node<"float">> = {
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
     // has to be the one that speaks for the shore; painted dirt steps aside where it does.
@@ -476,6 +551,8 @@ export function createGroundMaterial(
    * 2.6 m is a dozen pixels wide from fifty metres away, and the middle distance goes to a wash. The
    * two are blended rather than switched so the crossover has no seam to find.
    */
+  const flatLayer = (key: LayerKey): boolean => key === "snow";
+
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
@@ -484,12 +561,14 @@ export function createGroundMaterial(
       texture(diffuse, tiledUV(key, 7, 2.35).add(vec2(0.37, 0.19))),
       far,
     );
-    // Only the layers that actually cover a steep face pay for the wall projection. Grass and dirt
-    // do, because they are what a hillside wears; sand and snow do not, because a beach is flat by
-    // definition and snow sheds off anything steep.
-    if (key === "sand" || key === "snow") return flat;
+    if (flatLayer(key)) return flat;
     const walls = triplanarAlbedo(diffuse, key);
-    return mix(walls, flat, planarShare);
+    const blended = mix(walls, flat, planarShare);
+    // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
+    // because it is a *height* fact about the water's last reach, not a weight another surface has.
+    if (key !== "sand" || data.waterLevel === null) return blended;
+    const wet = wetness();
+    return vec4(blended.rgb.mul(mix(float(1), WET_SAND.darken, wet)), blended.a);
   };
 
   // The relief takes the same scales as the colour, or the ground keeps its detail underfoot and goes
@@ -504,14 +583,22 @@ export function createGroundMaterial(
       crevice: mix(near.crevice, coarse.crevice, far),
       tilt: mix(near.tilt, coarse.tilt, far),
     };
-    if (key === "sand" || key === "snow") return flat;
+    if (flatLayer(key)) return flat;
     // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
     // dirt sample at theirs, which is why a cliff's grass fringe keeps the same grain as the meadow.
     const walls = triplanarRelief(source, key, key === "rock" ? 1 : 0.55);
-    return {
+    const blended: IRelief = {
       crevice: mix(walls.crevice, flat.crevice, planarShare),
       tilt: mix(walls.tilt, flat.tilt, planarShare),
     };
+    // Sand has no normal map at all, so its relief is entirely the ripple field below — and the
+    // ripples flatten in the wet band, because wet sand is packed and the sea has ironed them out.
+    return key === "sand"
+      ? {
+          ...blended,
+          tilt: blended.tilt.add(sandRipples().mul(float(1).sub(wetness().mul(WET_SAND.calm)))),
+        }
+      : blended;
   };
 
   const grassRelief = reliefOf("grass", 1.45);
