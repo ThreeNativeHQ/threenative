@@ -7,7 +7,12 @@ import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { PhysicsDirectSpaceState3D } from "../src/PhysicsDirectSpaceState3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import * as webEntry from "../src/index.js";
-import { type INativeSimulation, createNativePhysicsSimulation } from "../src/native/host.js";
+import {
+  type INativeShapeDescriptor,
+  type INativeSimulation,
+  createNativePhysicsSimulation,
+  heightfieldTrimesh,
+} from "../src/native/host.js";
 import {
   Area3D as NativeArea3D,
   CharacterBody3D as NativeCharacterBody3D,
@@ -142,15 +147,142 @@ describe("native physics contract", () => {
         position: { x: 0, y: 0, z: 0 },
         rotation: { w: 1, x: 0, y: 0, z: 0 },
         sensor: false,
-        shape: CollisionShape3D.heightfield(2, 2, new Float32Array(4), {
-          x: 1,
-          y: 1,
-          z: 1,
-        }).descriptor,
+        shape: {
+          collisionLayer: 1,
+          collisionMask: 0xffff,
+          kind: "convexHull",
+          sensor: false,
+          vertices: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+          x: 0,
+          y: 0,
+          z: 0,
+        },
         type: "fixed",
       }),
-    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*heightfield/);
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*convexHull/);
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("hands a heightfield to the native host as the trimesh of its canonical samples", () => {
+    const createBody = vi.fn((_options: { shape: INativeShapeDescriptor }) => 3);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    // Rapier's column-major order: height(row, column) sits at column * rows + row.
+    const heights = new Float32Array([0, 1, 2, 3, 4, 5]);
+    native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.heightfield(2, 3, heights, { x: 4, y: 2, z: 6 }).descriptor,
+      type: "fixed",
+    });
+    const shape = createBody.mock.calls[0]?.[0].shape;
+    expect(shape?.kind).toBe("heightfield");
+    // Row-major vertices: row 0 is z = -3, columns span x = -2..2, y is height * scale.y.
+    expect(Array.from(shape?.vertices ?? [])).toEqual([
+      -2, 0, -3, 0, 4, -3, 2, 8, -3, -2, 2, 3, 0, 6, 3, 2, 10, 3,
+    ]);
+    // Each cell splits along the upper-right / lower-left diagonal, wound to face up.
+    expect(Array.from(shape?.indices ?? [])).toEqual([0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5]);
+  });
+
+  it("builds the native heightfield trimesh as the same surface as the web heightfield", async () => {
+    await RAPIER.init();
+    const rows = 9;
+    const columns = 7;
+    const scale = { x: 3, y: 1.5, z: 4 };
+    const heights = new Float32Array(rows * columns);
+    for (let index = 0; index < heights.length; index += 1)
+      heights[index] = Math.sin(index * 1.7) * 0.4 + (index % 3) * 0.1;
+    const descriptor = CollisionShape3D.heightfield(rows, columns, heights, scale).descriptor;
+    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
+    world.createCollider(RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale));
+    world.step();
+    const trimesh = heightfieldTrimesh(descriptor);
+    const vertices = trimesh.vertices as Float32Array;
+    const indices = trimesh.indices as Uint32Array;
+    let worst = 0;
+    for (let sample = 0; sample < 200; sample += 1) {
+      const x = (((sample * 0.618) % 1) - 0.5) * scale.x * 0.98;
+      const z = (((sample * 0.414) % 1) - 0.5) * scale.z * 0.98;
+      const hit = world.castRay(new RAPIER.Ray({ x, y: 10, z }, { x: 0, y: -1, z: 0 }), 20, true);
+      if (hit === null) throw new Error("the web heightfield missed an interior ray");
+      // Height of the adapter triangle containing (x, z), by barycentric interpolation.
+      let height: number | undefined;
+      for (let triangle = 0; triangle < indices.length && height === undefined; triangle += 3) {
+        const [a, b, c] = [0, 1, 2].map((corner) => (indices[triangle + corner] as number) * 3);
+        const ax = vertices[a as number] as number;
+        const az = vertices[(a as number) + 2] as number;
+        const bx = vertices[b as number] as number;
+        const bz = vertices[(b as number) + 2] as number;
+        const cx = vertices[c as number] as number;
+        const cz = vertices[(c as number) + 2] as number;
+        const area = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+        const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / area;
+        const v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / area;
+        if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
+        height =
+          u * (vertices[(a as number) + 1] as number) +
+          v * (vertices[(b as number) + 1] as number) +
+          (1 - u - v) * (vertices[(c as number) + 1] as number);
+      }
+      if (height === undefined) throw new Error("no adapter triangle covers an interior point");
+      worst = Math.max(worst, Math.abs(10 - hit.timeOfImpact - height));
+    }
+    expect(worst).toBeLessThan(1e-4);
+  });
+
+  it("reads native contacts and refreshes a collider shape, failing closed on an old runtime", () => {
+    const readContacts = vi.fn(() => 2);
+    const setColliderShape = vi.fn();
+    const createBody = vi.fn(() => 0);
+    const native = createNativePhysicsSimulation(
+      { createBody, readContacts, setColliderShape } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const surface = native.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.heightfield(2, 2, new Float32Array(4), { x: 1, y: 1, z: 1 })
+        .descriptor,
+      type: "fixed",
+    });
+    const ids = new Uint32Array([4]);
+    const buffer = new Float32Array(16);
+    expect(native.readContacts?.(surface.collider, ids, buffer)).toBe(2);
+    expect(readContacts).toHaveBeenCalledWith(0, ids, buffer);
+    native.setColliderShape?.(
+      surface.collider,
+      CollisionShape3D.heightfield(2, 2, new Float32Array(4), { x: 1, y: 1, z: 1 }).descriptor,
+    );
+    expect(setColliderShape.mock.calls[0]?.[1]).toMatchObject({ kind: "heightfield" });
+    expect(() =>
+      native.setColliderShape?.(surface.collider, CollisionShape3D.sphere(1).descriptor),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED/);
+    expect(() => native.readContacts?.({ id: 99, raw: undefined }, ids, buffer)).toThrow(
+      /not a live collider/,
+    );
+
+    const old = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const oldSurface = old.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.sphere(1).descriptor,
+      type: "fixed",
+    });
+    expect(() => old.readContacts?.(oldSurface.collider, ids, buffer)).toThrow(
+      /TN_NATIVE_PHYSICS_CONTACTS_MISSING/,
+    );
   });
 
   it("hands a trimesh body's vertices and indices to the native host", () => {

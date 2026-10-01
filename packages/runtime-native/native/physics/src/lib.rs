@@ -9,6 +9,11 @@ const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
 const CHARACTER_STATE_WIDTH: usize = 6;
+/// `[collider id, world x, y, z, normal x, y, z, impulse]`, the shared `PHYSICS_CONTACT_STRIDE`.
+const CONTACT_WIDTH: usize = 8;
+/// Shape type of a heightfield surface carried as a trimesh: the same triangles as a heightfield
+/// cell split, with internal-edge correction so a resting body is not kicked by ghost edges.
+const SHAPE_HEIGHTFIELD_SURFACE: u32 = 4;
 
 #[repr(C)]
 pub struct TnPhysicsWorldOptions {
@@ -212,6 +217,50 @@ impl EventHandler for CollisionEventCollector {
     }
 }
 
+fn trimesh_flags(shape_type: u32) -> TriMeshFlags {
+    if shape_type == SHAPE_HEIGHTFIELD_SURFACE {
+        TriMeshFlags::FIX_INTERNAL_EDGES
+    } else {
+        TriMeshFlags::empty()
+    }
+}
+
+/// Validate and copy a flat xyz vertex buffer and a flat triangle-index buffer from C.
+fn copy_trimesh(
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> Option<(Vec<Point3<Real>>, Vec<[u32; 3]>)> {
+    if vertices.is_null() || indices.is_null() {
+        return None;
+    }
+    let vertex_count = vertex_floats as usize;
+    let triangle_vertices = index_count as usize;
+    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
+    {
+        return None;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
+    let point_count = vertex_count / 3;
+    if raw_indices.iter().any(|index| *index as usize >= point_count) {
+        return None;
+    }
+    let points = floats
+        .chunks_exact(3)
+        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+        .collect();
+    let triangles = raw_indices
+        .chunks_exact(3)
+        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+        .collect();
+    Some((points, triangles))
+}
+
 pub struct Simulation {
     gravity: Vector<Real>,
     pipeline: PhysicsPipeline,
@@ -283,10 +332,86 @@ impl Simulation {
         vertices: Vec<Point3<Real>>,
         indices: Vec<[u32; 3]>,
     ) -> bool {
-        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+        let Ok(collider) = ColliderBuilder::trimesh_with_flags(
+            vertices,
+            indices,
+            trimesh_flags(options.shape_type),
+        ) else {
             return false;
         };
         self.insert_body(options, collider)
+    }
+
+    /// Replace one body's trimesh collider in place: same handle, parent, groups and events.
+    /// Bodies sleeping on it wake, since the new surface may no longer hold them up.
+    fn set_trimesh_shape(
+        &mut self,
+        id: u32,
+        shape_type: u32,
+        vertices: Vec<Point3<Real>>,
+        indices: Vec<[u32; 3]>,
+    ) -> bool {
+        let Some(entry) = self.entries.get_mut(&id) else {
+            return false;
+        };
+        let Ok(shape) = SharedShape::trimesh_with_flags(vertices, indices, trimesh_flags(shape_type))
+        else {
+            return false;
+        };
+        let Some(collider) = self.colliders.get_mut(entry.collider) else {
+            return false;
+        };
+        // Rapier wakes the bodies touching a collider whose shape changed; the test holds it to that.
+        collider.set_shape(shape.clone());
+        entry.shape = shape;
+        self.query_dirty = true;
+        true
+    }
+
+    /// One record per solved manifold between `target` and each awake candidate. Returns the total
+    /// count; records past `output`'s capacity are counted but not written, so a caller can grow
+    /// its buffer and read again instead of losing a contact.
+    fn read_contacts(&self, target: u32, candidates: &[u32], output: &mut [f32]) -> Option<usize> {
+        let target_collider = self.entries.get(&target)?.collider;
+        let capacity = output.len() / CONTACT_WIDTH;
+        let mut count = 0;
+        for &id in candidates {
+            if id == target {
+                continue;
+            }
+            let Some(entry) = self.entries.get(&id) else {
+                continue;
+            };
+            // A sleeping body was not solved this step, so its stored impulses are not this step's.
+            if self.bodies.get(entry.body).is_none_or(|body| body.is_sleeping()) {
+                continue;
+            }
+            let Some(pair) = self.narrow_phase.contact_pair(target_collider, entry.collider) else {
+                continue;
+            };
+            let sign = if pair.collider1 == target_collider { 1.0 } else { -1.0 };
+            for manifold in &pair.manifolds {
+                let solved = manifold.data.solver_contacts.len();
+                if solved == 0 {
+                    continue;
+                }
+                if count < capacity {
+                    let impulse: Real = manifold.points.iter().map(|point| point.data.impulse).sum();
+                    let mut centre = Vector::zeros();
+                    for contact in &manifold.data.solver_contacts {
+                        centre += contact.point.coords;
+                    }
+                    centre /= solved as Real;
+                    let normal = manifold.data.normal * sign;
+                    output[count * CONTACT_WIDTH..(count + 1) * CONTACT_WIDTH].copy_from_slice(&[
+                        id as f32, centre.x, centre.y, centre.z, normal.x, normal.y, normal.z,
+                        impulse,
+                    ]);
+                }
+                count += 1;
+            }
+        }
+        Some(count)
     }
 
     fn insert_body(&mut self, options: TnPhysicsBodyOptions, collider: ColliderBuilder) -> bool {
@@ -1208,36 +1333,71 @@ pub extern "C" fn tn_physics_add_trimesh_body(
     let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
         return false;
     };
-    if vertices.is_null() || indices.is_null() {
+    let Some((points, triangles)) = copy_trimesh(vertices, vertex_floats, indices, index_count)
+    else {
         return false;
-    }
-    let vertex_count = vertex_floats as usize;
-    let triangle_vertices = index_count as usize;
-    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
-    {
-        return false;
-    }
-    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
-    if !floats.iter().all(|value| value.is_finite()) {
-        return false;
-    }
-    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
-    let point_count = vertex_count / 3;
-    if raw_indices
-        .iter()
-        .any(|index| *index as usize >= point_count)
-    {
-        return false;
-    }
-    let points = floats
-        .chunks_exact(3)
-        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
-        .collect();
-    let triangles = raw_indices
-        .chunks_exact(3)
-        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
-        .collect();
+    };
     simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
+}
+
+/// Replace a body's collider with a new triangle mesh, keeping its id, parent body, collision
+/// groups and events. `shape_type` 3 is a plain trimesh and 4 a heightfield surface.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_trimesh_shape(
+    simulation: *mut Simulation,
+    id: u32,
+    shape_type: u32,
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> bool {
+    let Some(simulation) = (unsafe { simulation.as_mut() }) else {
+        return false;
+    };
+    if shape_type != 3 && shape_type != SHAPE_HEIGHTFIELD_SURFACE {
+        return false;
+    }
+    let Some((points, triangles)) = copy_trimesh(vertices, vertex_floats, indices, index_count)
+    else {
+        return false;
+    };
+    simulation.set_trimesh_shape(id, shape_type, points, triangles)
+}
+
+/// Persistent solved contacts between one body's collider and a list of candidate bodies, one
+/// `CONTACT_WIDTH` record per solved manifold. Returns the total count, which may exceed what
+/// `output` holds (only that many are written), or -1 for an unknown target or a bad buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_contacts(
+    simulation: *const Simulation,
+    target: u32,
+    candidates: *const u32,
+    candidate_count: usize,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    if (candidate_count > 0 && candidates.is_null()) || (output_float_capacity > 0 && output.is_null())
+    {
+        return -1;
+    }
+    let candidates = if candidate_count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(candidates, candidate_count) }
+    };
+    let output = if output_float_capacity == 0 {
+        &mut [][..]
+    } else {
+        unsafe { std::slice::from_raw_parts_mut(output, output_float_capacity) }
+    };
+    match simulation.read_contacts(target, candidates, output) {
+        Some(count) => i32::try_from(count).unwrap_or(-1),
+        None => -1,
+    }
 }
 
 #[unsafe(no_mangle)]

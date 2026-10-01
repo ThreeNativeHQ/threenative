@@ -30,11 +30,12 @@ import {
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
-  readonly kind: "box" | "capsule" | "sphere" | "trimesh";
+  /** `heightfield` crosses the ABI as the trimesh of its canonical samples. */
+  readonly kind: "box" | "capsule" | "heightfield" | "sphere" | "trimesh";
   readonly x: number;
   readonly y: number;
   readonly z: number;
-  /** Present for `trimesh` only: a flat xyz vertex buffer and a flat triangle-index buffer. */
+  /** Present for `trimesh` and `heightfield`: flat xyz vertices and flat triangle indices. */
   readonly vertices?: Float32Array;
   readonly indices?: Uint32Array;
   collisionLayer: number;
@@ -125,6 +126,9 @@ export interface INativeSimulation {
   readBodySleepStates(buffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
   readAreaIntersections(buffer: Uint32Array): number;
+  /** Optional so old runtimes fail loudly through the adapter instead of reporting no contact. */
+  readContacts?(target: number, candidates: Uint32Array, output: Float32Array): number;
+  setColliderShape?(id: number, shape: INativeShapeDescriptor): void;
   intersectRay(
     query: INativeRayQuery,
     output?: Float32Array,
@@ -234,13 +238,15 @@ function primitiveShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor 
 }
 
 /**
- * A body's shape, including the one concave shape a static level needs.
+ * A body's shape, including the concave shapes a level needs.
  *
  * A doorway, an arch or a floor with a hole cannot be a box, a ball or a capsule, so a trimesh is
- * the only shape that keeps the opening the model actually has. Queries stay primitive-only: the
- * native query path has no trimesh representation and says so instead of silently missing.
+ * the only shape that keeps the opening the model actually has. A heightfield crosses as the
+ * trimesh of its canonical samples. Queries stay primitive-only: the native query path has no
+ * trimesh representation and says so instead of silently missing.
  */
 function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
+  if (shape.kind === "heightfield") return heightfieldTrimesh(shape);
   if (shape.kind === "trimesh") {
     if (shape.vertices === undefined || shape.indices === undefined)
       throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: trimesh requires vertices and indices");
@@ -257,6 +263,71 @@ function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor
     };
   }
   return primitiveShape(shape);
+}
+
+const heightfieldIndices = new Map<string, Uint32Array>();
+
+/**
+ * The trimesh of a heightfield's canonical samples, in the collider's own frame.
+ *
+ * Heights arrive in Rapier's column-major matrix order (`column * rows + row`), rows along z and
+ * columns along x, centred on the body like Rapier's heightfield. Each cell splits along the
+ * same diagonal Rapier's heightfield and `Heightfield.toGeometry` use, so the web heightfield,
+ * this trimesh and the rendered mesh are one surface. Index buffers depend only on the grid and
+ * are shared.
+ */
+export function heightfieldTrimesh(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
+  const { columns, heights, rows, scale } = shape;
+  if (
+    rows === undefined ||
+    columns === undefined ||
+    heights === undefined ||
+    scale === undefined ||
+    !Number.isInteger(rows) ||
+    !Number.isInteger(columns) ||
+    rows < 2 ||
+    columns < 2 ||
+    heights.length !== rows * columns
+  )
+    throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: heightfield requires rows x columns heights");
+  const vertices = new Float32Array(rows * columns * 3);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const offset = (row * columns + column) * 3;
+      vertices[offset] = (column / (columns - 1) - 0.5) * scale.x;
+      vertices[offset + 1] = (heights[column * rows + row] as number) * scale.y;
+      vertices[offset + 2] = (row / (rows - 1) - 0.5) * scale.z;
+    }
+  }
+  const key = `${String(rows)}x${String(columns)}`;
+  let indices = heightfieldIndices.get(key);
+  if (indices === undefined) {
+    indices = new Uint32Array((rows - 1) * (columns - 1) * 6);
+    let offset = 0;
+    for (let row = 0; row < rows - 1; row += 1) {
+      for (let column = 0; column < columns - 1; column += 1) {
+        const upperLeft = row * columns + column;
+        const lowerLeft = upperLeft + columns;
+        indices.set(
+          [upperLeft, lowerLeft, upperLeft + 1, upperLeft + 1, lowerLeft, lowerLeft + 1],
+          offset,
+        );
+        offset += 6;
+      }
+    }
+    heightfieldIndices.set(key, indices);
+  }
+  return {
+    collisionLayer: shape.collisionLayer,
+    collisionMask: shape.collisionMask,
+    indices,
+    kind: "heightfield",
+    sensor: shape.sensor,
+    vertices,
+    x: 0,
+    y: 0,
+    z: 0,
+  };
 }
 
 function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
@@ -585,6 +656,38 @@ export function createNativePhysicsSimulation(
       if (disposed) throw new Error("Physics simulation is disposed.");
       requirePhysicsSleepStateBuffer(buffer, bodyIds.size);
       return raw.readBodySleepStates(buffer);
+    },
+    readContacts: (target, colliders, buffer) => {
+      requireLive();
+      if (raw.readContacts === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_CONTACTS_MISSING: runtime ABI is too old");
+      if (!(buffer instanceof Float32Array) || !(colliders instanceof Uint32Array))
+        throw new Error(
+          "IPhysicsSimulation.readContacts requires Uint32Array ids and a Float32Array.",
+        );
+      if (!bodyIds.has(target.id))
+        throw new Error(
+          `IPhysicsSimulation contact target ${String(target.id)} is not a live collider.`,
+        );
+      const count = raw.readContacts(target.id, colliders, buffer);
+      if (!Number.isInteger(count) || count < 0)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: contact read returned an invalid count");
+      return count;
+    },
+    setColliderShape: (collider, shape) => {
+      requireLive();
+      if (raw.setColliderShape === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_SHAPE_REFRESH_MISSING: runtime ABI is too old");
+      if (!bodyIds.has(collider.id))
+        throw new Error(
+          `IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`,
+        );
+      if (shape.kind !== "heightfield" && shape.kind !== "trimesh")
+        throw new Error(
+          `TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED: native setColliderShape takes heightfield or trimesh, not ${shape.kind}`,
+        );
+      raw.setColliderShape(collider.id, nativeBodyShape(shape));
+      invalidateObservations();
     },
     intersectRay: (value) => {
       requireLive();
