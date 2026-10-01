@@ -54,7 +54,11 @@ export interface IPlaytestDiagnosticsPolicy {
 export interface IPlaytestCaptureProvenance {
   adapter: Record<string, string>;
   browserArgs: readonly string[];
-  captureMethod: "page.screenshot";
+  /**
+   * How this run's pixels were captured. `page.screenshot` is a browser capture session;
+   * `device.screenshot` is a native host asked for its framebuffer directly.
+   */
+  captureMethod: "device.screenshot" | "page.screenshot";
   rendererKind: "webgl" | "webgpu";
   target: string;
   viewport: IPlaytestViewport;

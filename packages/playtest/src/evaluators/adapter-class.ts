@@ -1,4 +1,5 @@
-import type { IPlaytestReport } from "../report.js";
+import type { IPlaytestObservations } from "../assertion-report.js";
+import type { IPlaytestCaptureProvenance, IPlaytestReport } from "../report.js";
 import { softwareAdapterName } from "../runner/browser.js";
 import type { PlaytestAdapterClass } from "../scenario/schema-base.js";
 
@@ -20,6 +21,13 @@ export interface IAdapterClassification {
  * A run with no `adapter.info` at all — a WebGL renderer, or a lane that reported no capture — is
  * unclassified rather than hardware: a CPU rasteriser that named itself in no known field is the
  * case a hardware verdict would silently pass.
+ *
+ * Native runs carry their provenance in `capture` too, read by `nativeCaptureProvenance` at the
+ * point the report is built. It is the same four fields off the same `requestAdapter()` read, from
+ * the renderer rather than a browser's capture session — which is why it is produced there and not
+ * derived here. Nothing in this function reads a console marker, a tier the game chose, or any
+ * other game-visible text: a browser report that arrived without its own capture stays
+ * unclassified, exactly as before.
  */
 export function classifyAdapter(report: IPlaytestReport): IAdapterClassification {
   const capture = report.capture;
@@ -55,4 +63,72 @@ function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined):
     if (typeof value === "string" && value.trim() !== "") return value;
   }
   return undefined;
+}
+
+/**
+ * The four `adapter.info` fields back out of a native adapter identity, or none.
+ *
+ * The renderer builds one string from its own `requestAdapter().info` read and hands it to the
+ * pipeline census: `webgpu:` then `field=encodeURIComponent(value)` joined by `|`. Both separators
+ * are encoded inside a value, so the split is unambiguous and this is a decode, not a guess.
+ *
+ * All four keys must be present and non-blank, which is the same requirement `adapterIdentity`
+ * places on a browser capture. A string that is not this shape — an empty identity, a `webgl2`
+ * census, a truncated one — yields `undefined`, and the run stays unclassified. There is no
+ * partial answer here: three fields out of four would classify a machine from the identity of
+ * somebody else.
+ */
+export function adapterFieldsFromIdentity(identity: unknown): Record<string, string> | undefined {
+  if (typeof identity !== "string") return undefined;
+  const prefix = "webgpu:";
+  if (!identity.startsWith(prefix)) return undefined;
+  const fields: Record<string, string> = {};
+  for (const pair of identity.slice(prefix.length).split("|")) {
+    const separator = pair.indexOf("=");
+    if (separator <= 0) return undefined;
+    const key = pair.slice(0, separator);
+    let value: string;
+    try {
+      value = decodeURIComponent(pair.slice(separator + 1));
+    } catch {
+      return undefined;
+    }
+    if (value.trim() === "") return undefined;
+    fields[key] = value;
+  }
+  const complete = Object.keys(fields).sort().join(",");
+  if (complete !== [...ADAPTER_IDENTITY_KEYS].sort().join(",")) return undefined;
+  return fields;
+}
+
+/**
+ * Native adapter provenance for a run report, from what the engine measured on the host.
+ *
+ * `observations.pipelineCensus.adapter.identity` is core's own read of `adapter.info` on this
+ * machine, already riding every WebGPU report. It is engine measurement, not a game-visible marker
+ * and not something the game can influence, so it is an honest origin for the same classification a
+ * browser capture provides. Anything that is not that shape yields `undefined`, and the caller
+ * leaves `capture` unset — which is the unclassified answer, not a hardware one.
+ */
+export function nativeCaptureProvenance(
+  census: IPlaytestObservations["pipelineCensus"],
+  target: string,
+  viewport: { readonly height: number; readonly width: number },
+): IPlaytestCaptureProvenance | undefined {
+  if (census === undefined || census === null || typeof census !== "object" || Array.isArray(census)) return undefined;
+  const adapterRecord = census.adapter;
+  if (adapterRecord === undefined || adapterRecord === null || typeof adapterRecord !== "object"
+    || Array.isArray(adapterRecord)) return undefined;
+  const adapter = adapterFieldsFromIdentity(adapterRecord.identity);
+  if (adapter === undefined) return undefined;
+  return {
+    adapter,
+    // A native launch carries no browser command line; there is no argument list to report and
+    // inventing one would be a flag nobody can check.
+    browserArgs: [],
+    captureMethod: "device.screenshot",
+    rendererKind: "webgpu",
+    target,
+    viewport,
+  };
 }

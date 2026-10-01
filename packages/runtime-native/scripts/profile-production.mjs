@@ -496,6 +496,25 @@ function nativeAssertions(assertions, timeoutMs, hostedSoftware) {
     : { maxReadyMs: timeoutMs }) };
 }
 
+/**
+ * What the collector ITSELF pinned, restated as the tier the run may be held to.
+ *
+ * `--hosted-software` is explicit policy configuration, not a claim about the machine: it writes
+ * `__THREENATIVE_PROFILE__.hostedSoftware`, and the template's own render source answers that by
+ * choosing the low preset. A hardware adapter that honours a pinned-low profile is the run working
+ * as configured, so the expectation the collector writes has to be the tier it asked for.
+ *
+ * This changes nothing about classification. `perAdapter` is carried through untouched, so a run
+ * that IS on a software adapter still takes its own branch, and a hardware run with no profile
+ * input is still held to the template's flat `high`. Only the flat fallback moves, and only when the
+ * collector pinned it.
+ */
+function hostedSoftwareAssertions(assertions, hostedSoftware) {
+  if (!hostedSoftware || assertions?.renderChain === undefined) return assertions;
+  const { perAdapter: _perAdapter, ...renderChain } = assertions.renderChain;
+  return { ...assertions, renderChain: { ...renderChain, tier: 'low' } };
+}
+
 export async function writeRunScenarios(project, options) {
   const scenarioPath = options.scenario ?? join(project, platformerScenario);
   const source = JSON.parse(await readFile(scenarioPath, 'utf8').catch(() => {
@@ -568,7 +587,7 @@ export async function writeRunScenarios(project, options) {
   const timeoutMs = playtestTimeoutMs(workload);
   const nativeWorkload = {
     ...workload,
-    assert: nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware),
+    assert: hostedSoftwareAssertions(nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware), options.hostedSoftware),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'

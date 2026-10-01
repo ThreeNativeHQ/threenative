@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { evaluateRichPlaytestAssertions, loadPlaytestScenario } from "../src/index.js";
+import { nativeCaptureProvenance } from "../src/evaluators/adapter-class.js";
 import type { IPlaytestRenderChainObservation } from "../src/protocol.js";
 import type { IPlaytestCaptureProvenance, IPlaytestReport } from "../src/report.js";
 
@@ -330,5 +331,106 @@ describe("renderChain perAdapter selection", () => {
     await expect(load(SCENARIO({ perAdapter: { software: { tier: "low" } } }))).rejects.toThrow(
       /must assert tier, stages, contributions, or velocity/u,
     );
+  });
+  // A native run carries its adapter identity in the census the engine already built from its own
+  // `requestAdapter().info` read, not in a browser capture session. Before this, `buildReport` was
+  // called on the device path without a capture at all, so EVERY device run reached
+  // `classifyAdapter` with nothing to read and `perAdapter` could never apply — the flat `high` was
+  // used against a `low` tier a software adapter had legitimately produced. These are the real
+  // shapes: the identity string core builds, on the snapshot that carries it.
+  describe("native adapter provenance from the pipeline census", () => {
+    const CENSUS_IDENTITY = [
+      "webgpu:architecture=swiftshader",
+      "description=Swift%20Shader%20Device%20(Subzero)",
+      "device=llvmpipe",
+      "vendor=google",
+    ].join("|");
+
+    function censusReport(identity: unknown): IPlaytestReport {
+      return {
+        capture: nativeCaptureProvenance(
+          { adapter: { identity, thermal: "unavailable" } } as never,
+          "desktop",
+          { height: 720, width: 1280 },
+        ),
+        diagnostics: [],
+        distance: 0,
+        entity: "proof",
+        expectMoved: false,
+        frames: 2,
+        observations: { console: [], hud: {}, network: [], resources: {}, renderChain: LOW },
+        trivialityOptOuts: [],
+      };
+    }
+
+    it("classifies a native software adapter and applies its own branch", async () => {
+      const scenario = await load(SCENARIO(ASSERTION));
+      const result = evaluateRichPlaytestAssertions({ report: censusReport(CENSUS_IDENTITY), scenario });
+
+      expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+      expect(result.assertions).toContainEqual(
+        expect.objectContaining({
+          details: expect.objectContaining({ adapterClass: "software" }),
+          id: "renderChain.tier",
+          pass: true,
+        }),
+      );
+    });
+
+    it("classifies a native hardware adapter and keeps the flat high policy", async () => {
+      const scenario = await load(SCENARIO(ASSERTION));
+      const hardware = CENSUS_IDENTITY.replace(/swiftshader|llvmpipe|google|Subzero/gu, "x");
+      const report = {
+        ...censusReport("webgpu:architecture=turing|description=NVIDIA%3A%20615.71.09|device=NVIDIA%20GeForce%20RTX%202080|vendor=nvidia"),
+        observations: { console: [], hud: {}, network: [], resources: {}, renderChain: HIGH },
+      };
+      expect(hardware).not.toBe(CENSUS_IDENTITY);
+      const result = evaluateRichPlaytestAssertions({ report, scenario });
+
+      expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+      expect(result.assertions).toContainEqual(
+        expect.objectContaining({
+          details: expect.objectContaining({ adapterClass: "hardware" }),
+          id: "renderChain.tier",
+          pass: true,
+        }),
+      );
+    });
+
+    // Malformed, partial, empty or absent provenance is the unclassified answer, which fails a
+    // `perAdapter` scenario closed. A fallback that guessed from those would hand a machine a
+    // hardware verdict from a reading that observed nothing.
+    it.each([
+      ["absent", undefined],
+      ["empty", ""],
+      ["not this shape", "turing"],
+      ["another renderer kind", "webgl2:architecture=turing|description=x|device=y|vendor=nvidia"],
+      ["a missing field", "webgpu:architecture=turing|description=NVIDIA|device=RTX"],
+      ["an empty field", "webgpu:architecture=|description=NVIDIA|device=RTX|vendor=nvidia"],
+      ["an undecodable value", "webgpu:architecture=%E0%A4%A|description=N|device=R|vendor=nvidia"],
+    ])("leaves a native run with %s identity unclassified, and fails a perAdapter scenario", async (
+      _name,
+      identity,
+    ) => {
+      const scenario = await load(SCENARIO(ASSERTION));
+      const report = censusReport(identity);
+      expect(report.capture).toBeUndefined();
+
+      const result = evaluateRichPlaytestAssertions({ report, scenario });
+      expect(result.assertions).toContainEqual(
+        expect.objectContaining({ id: "renderChain.adapterClass", pass: false }),
+      );
+    });
+
+    // The browser path is untouched by this: a browser report without its own capture stays
+    // unclassified, because nothing on it is an independent engine reading of the adapter.
+    it("leaves a browser report with no capture of its own unclassified", async () => {
+      const scenario = await load(SCENARIO(ASSERTION));
+      const result = evaluateRichPlaytestAssertions({ report: report(LOW), scenario });
+
+      expect(result.assertions).toContainEqual(
+        expect.objectContaining({ id: "renderChain.adapterClass", pass: false }),
+      );
+    });
   });
 });
