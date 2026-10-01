@@ -560,7 +560,7 @@ function generate(config) {
         `export let ${name}: TextureNode = ${sampler.node}(${name}Placeholder).setGroup(frameGroup);`,
         `export function ${setter}(value: TextureNode): void {`,
         `  ${name} = value;`,
-        `}`,
+        "}",
       );
     } else {
       missing.push(`${name} (${type})`);

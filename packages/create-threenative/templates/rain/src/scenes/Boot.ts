@@ -114,7 +114,9 @@ export class Coast extends Scene<GameState> {
     this.#post = post;
     this.#lightning = lightning;
     this.#measureClouds = world.clouds;
-    this.#curtainLifted = () => loading.done;
+    // `loading.ts` lifts its cover by making the canvas layer transparent again; that is the frame
+    // the world is on screen, so it is the frame the interface may appear on.
+    this.#curtainLifted = () => !ctx.canvasLayer.opaque;
     // Registered, so the engine's registry disposes it with the game and `game.ts` can reach it by
     // name for the two holds that arrive outside a frame (the pause intent and tab visibility).
     const audio = ctx.entities.add(STORM_AUDIO_ENTITY, createStormAudio(ctx));

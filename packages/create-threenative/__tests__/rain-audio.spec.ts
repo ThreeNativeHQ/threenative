@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { audioPass } from "@threenative/assets";
 import { AudioContext, Object3D } from "three";
 import { describe, expect, it } from "vitest";
-import { audioPass } from "@threenative/assets";
 import {
-  STORM_AUDIO_ENTITY,
   type IStormAudio,
+  STORM_AUDIO_ENTITY,
   createStormAudio,
 } from "../templates/rain/src/audio/storm.js";
 import type { GameState } from "../templates/rain/src/state.js";
@@ -228,7 +228,9 @@ describe("the storm audio entity", () => {
     const storm = await armed();
     ramps = [];
 
-    storm.update(state({ weather: { cloud: 1, exposure: 1, fog: 1, rain: 0.5, wet: 1, wind: 0.5 } }));
+    storm.update(
+      state({ weather: { cloud: 1, exposure: 1, fog: 1, rain: 0.5, wet: 1, wind: 0.5 } }),
+    );
     expect([...new Set(ramps.map(([, tau]) => tau))].sort()).toEqual([0.25, 0.4]);
     storm.dispose();
   });

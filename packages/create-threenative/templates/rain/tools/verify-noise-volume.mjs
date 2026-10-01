@@ -28,8 +28,9 @@ function functionSource(text, name) {
     if (text[index] === "{") {
       depth += 1;
       opened = true;
-    } else if (text[index] === "}" && opened && (depth -= 1) === 0) {
-      return text.slice(start, index + 1);
+    } else if (text[index] === "}" && opened) {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
     }
   }
   throw new Error(`TN_SOURCE_UNBALANCED: ${name} never closes`);

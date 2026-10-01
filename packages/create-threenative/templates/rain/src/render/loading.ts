@@ -49,15 +49,13 @@ interface ILoadingHost {
 }
 
 interface ILoadingController {
-  /** True once the cover has lifted and the world is on screen. */
-  readonly done: boolean;
   update(): void;
   finish(): void;
 }
 
 function noOp(layer: ILoadingHost["canvasLayer"]): ILoadingController {
   layer.opaque = false;
-  return { done: true, finish: () => undefined, update: () => undefined };
+  return { finish: () => undefined, update: () => undefined };
 }
 
 function meshFor(
@@ -321,9 +319,6 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   })();
 
   return {
-    get done() {
-      return done;
-    },
     finish,
     update(): void {
       if (!done) updateProgress(host.startup.progress);

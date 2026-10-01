@@ -8,7 +8,7 @@
 //
 // The engine owns the frame loop, the scene and the renderer, so this file owns three things — the
 // uniforms, the geometry, and its own lifetime — and draws nothing itself. No render loop, no raw
-// GL, no `@threenative/` import, so the same file runs wherever the game runs.
+// GL, no engine package import, so the same file runs wherever the game runs.
 import {
   DoubleSide,
   Float32BufferAttribute,
@@ -112,7 +112,7 @@ export interface IStormRain {
 /**
  * The rain pass: one instanced draw of six-vertex quads, added to `scene`.
  *
- * `GPUParticles3D` from `@threenative/core` was the thing to reach for and it cannot carry this
+ * The engine's `GPUParticles3D` was the thing to reach for and it cannot carry this
  * shader: it extends `Sprite`, it overwrites the material's `positionNode` with a storage buffer, and
  * it derives every particle's position from a compute node — there is nowhere to hand it an authored
  * vertex stage that hashes its own drop index, wraps its own cell and projects its own two endpoints

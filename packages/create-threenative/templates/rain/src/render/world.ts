@@ -54,7 +54,7 @@ export interface IWeatherWorldOptions {
 }
 
 export interface IWeatherWorld {
-  /** The screen quad, for the engine's culling pass: see `alwaysRender` in `@threenative/core`. */
+  /** The screen quad, for the engine's culling pass: see the engine's `alwaysRender`. */
   readonly quad: Mesh;
   /** What the cloud pass really drew last frame: its target size and its march steps. */
   readonly clouds: ICloudPass["measured"];

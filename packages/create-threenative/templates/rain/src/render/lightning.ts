@@ -11,7 +11,7 @@
 //
 // The engine owns the frame loop, the scene and the renderer, so this file owns the bolt geometry,
 // its uniforms and its own lifetime — and draws nothing itself. No render loop, no raw GL, no
-// `@threenative/` import, so the same file runs wherever the game runs.
+// engine package import, so the same file runs wherever the game runs.
 // Conventions: one world unit is one metre, so a strike lands at a real point on the coast.
 import {
   AdditiveBlending,
@@ -147,7 +147,7 @@ export interface IStormLightning {
 /**
  * The bolt pass: one draw of six-vertex quads, added to `scene`.
  *
- * `GPUParticles3D` from `@threenative/core` cannot carry this: the bolt is not a particle system,
+ * The engine's `GPUParticles3D` cannot carry this: the bolt is not a particle system,
  * it is CPU geometry with per-segment endpoints handed straight to the vertex stage. This is the
  * smallest thing that holds the study's maths — one non-indexed `BufferGeometry` whose attribute
  * buffers are allocated once, and a draw range that stays empty until a strike asks for it.
