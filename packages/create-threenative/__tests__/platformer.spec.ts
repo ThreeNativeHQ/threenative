@@ -41,11 +41,13 @@ describe("platformer checkpoints", () => {
     globals.__THREENATIVE_PROFILE__ = { hostedSoftware: true };
     setupPost(renderer, scene, camera, { mobile: false });
     expect(info).toHaveBeenLastCalledWith(
-      "TN_QUALITY_TIER low mobile=false source=hosted-software",
+      "TN_QUALITY_TIER low mobile=false software=false source=hosted-software",
     );
 
     setupPost(renderer, scene, camera, { mobile: false, tier: "high" });
-    expect(info).toHaveBeenLastCalledWith("TN_QUALITY_TIER high mobile=false source=override");
+    expect(info).toHaveBeenLastCalledWith(
+      "TN_QUALITY_TIER high mobile=false software=false source=override",
+    );
     // The three names must be three looks. On this level the difference is contact occlusion: a
     // 2,300-mesh route where every mesh costs per-object work is where a phone loses the screen-space
     // stages and a desktop keeps them.
