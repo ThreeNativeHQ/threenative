@@ -129,7 +129,11 @@ export function Menu({
 
   return (
     <>
-      <aside aria-label="Weather controls" className={`panel${panelOpen ? " mobile-open" : ""}`}>
+      <aside
+        aria-hidden={state.uiHidden}
+        aria-label="Weather controls"
+        className={`panel${panelOpen ? " mobile-open" : ""}${state.uiHidden ? " hidden" : ""}`}
+      >
         <div className="panel-header">
           <div className="weather-glyph">
             <svg aria-hidden="true" viewBox="0 0 36 36">

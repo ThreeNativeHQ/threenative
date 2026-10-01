@@ -241,6 +241,8 @@ export type GameState = {
   strikes: number;
   /** The last strike: simulation time, metres from the camera, and its thunder delay in seconds. */
   lastStrike: { at: number; delay: number; metres: number };
+  /** The engine's launch: how far first-use compilation has got, and whether the frame is ready. */
+  loading: { progress: number; ready: boolean };
   /** The automation's stopped clock: frames still draw, only `stepRequest` advances it. */
   frozen: boolean;
   /** Seconds the next frame simulates on top of its own, from `step(dt)`. Cleared once used. */

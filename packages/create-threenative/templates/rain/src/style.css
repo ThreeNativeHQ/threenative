@@ -88,7 +88,8 @@ select:focus-visible {
   transition: opacity 0.35s;
 }
 
-.interface.hidden {
+.interface.hidden,
+.panel.hidden {
   opacity: 0;
   visibility: hidden;
 }
@@ -254,7 +255,13 @@ select:focus-visible {
   background: linear-gradient(130deg, #1b2c317a, #0b161cbd);
   backdrop-filter: blur(20px);
   box-shadow: 0 20px 60px #0002;
-  overflow: hidden;
+  /* Never taller than the window leaves above the sound pill and key hints: a long panel (the
+     rendering details open) scrolls inside itself instead of running under them. */
+  max-height: calc(100% - 106px - 170px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #b6d9cc33 transparent;
   pointer-events: auto;
 }
 
@@ -502,11 +509,15 @@ kbd {
 }
 
 .render-footer select {
-  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c2d6ce' stroke-width='1.4'/%3E%3C/svg%3E")
+    no-repeat right 4px center;
   border: none;
   color: #c2d6ce;
   font: 10px monospace;
-  padding: 4px;
+  padding: 4px 20px 4px 4px;
   outline-offset: 2px;
   cursor: pointer;
 }
@@ -625,10 +636,14 @@ kbd {
   transform: translateY(0);
 }
 
+.bottom-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 40px;
+}
+
 .sound-pill {
-  position: absolute;
-  right: 36px;
-  bottom: 116px;
   font: 9px monospace;
   letter-spacing: 1px;
   color: #d8e5df;
@@ -684,6 +699,62 @@ kbd {
   to {
     height: 2px;
   }
+}
+
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: #101c24;
+  transition: opacity 0.8s;
+  /* A curtain, not a control: a press during the fade reaches the storm underneath. */
+  pointer-events: none;
+}
+
+.loading.gone {
+  opacity: 0;
+}
+
+.loading-inner {
+  width: 290px;
+  text-align: center;
+}
+
+.loading-title {
+  font-size: 28px;
+  letter-spacing: 7px;
+  font-weight: 400;
+  margin-bottom: 30px;
+}
+
+.loading-text {
+  font: 10px monospace;
+  color: #9cafae;
+  letter-spacing: 1px;
+  line-height: 1.7;
+}
+
+.loading-line {
+  width: 100%;
+  height: 1px;
+  background: #314247;
+  margin: 22px 0;
+}
+
+.loading-line span {
+  display: block;
+  height: 100%;
+  background: var(--mint);
+  transition: width 0.4s;
+}
+
+.loading-note {
+  font-size: 10px;
+  line-height: 1.8;
+  color: #7f969a;
+  margin: 22px -15px;
 }
 
 .panel-toggle {
@@ -811,6 +882,7 @@ kbd {
 @media (max-height: 800px) {
   .panel {
     top: 91px;
+    max-height: calc(100% - 91px - 100px);
   }
 
   .panel-header {
@@ -848,8 +920,11 @@ kbd {
     bottom: 115px;
   }
 
-  .sound-pill {
-    bottom: 115px;
+  /* Short windows: the pill sits beside the hints instead of above them, below the panel. */
+  .bottom-actions {
+    flex-direction: row;
+    align-items: center;
+    gap: 22px;
   }
 
   .advanced {
@@ -898,10 +973,6 @@ kbd {
 
   .key-hint {
     display: none;
-  }
-
-  .sound-pill {
-    right: 22px;
   }
 
   .hero {
@@ -996,11 +1067,20 @@ kbd {
     display: none;
   }
 
+  .bottom-actions {
+    margin-bottom: 44px;
+  }
+
   .sound-pill {
-    right: 23px;
-    bottom: 76px;
     font-size: 8px;
     padding: 9px 12px;
+    min-height: 44px;
+  }
+
+  /* Touch targets: every control a thumb reaches is at least 44 px. */
+  .icon-btn {
+    width: 44px;
+    height: 44px;
   }
 
   .toast {
@@ -1013,6 +1093,13 @@ kbd {
   .brand .mark {
     width: 30px;
     height: 30px;
+  }
+}
+
+/* The narrowest phones: the subtitle would run under the three buttons, so the title stands alone. */
+@media (max-width: 480px) {
+  .brand-sub {
+    display: none;
   }
 }
 

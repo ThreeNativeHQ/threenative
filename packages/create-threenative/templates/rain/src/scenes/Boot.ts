@@ -66,6 +66,7 @@ export class Coast extends Scene<GameState> {
     muted: false,
     paused: false,
     lastStrike: { at: -1, delay: 0, metres: 0 },
+    loading: { progress: 0, ready: false },
     pendingThunderAt: -1,
     position: { x: 0, y: 0, z: 0 },
     preset: "storm",
@@ -244,6 +245,22 @@ export class Coast extends Scene<GameState> {
       // `game.ts`, so the sound stops on the press rather than a frame later.
       audio.update(frameCtx.state.getState());
     };
+  }
+
+  /**
+   * The launch, published from the render hook rather than the simulation frame: a frame is drawn
+   * whether or not the clock moved (a paused or tick-driven run draws without simulating), and the
+   * loading curtain must lift on the frame that shows the storm. First-use compilation settling is
+   * that moment; the stricter `phase === "ready"` also waits for a frame-time window a slow GPU may
+   * never meet.
+   */
+  override render(ctx: WeatherCtx): void {
+    const progress = ctx.startup.progress;
+    const ready = ctx.startup.compileSettled || ctx.startup.phase === "ready";
+    const current = ctx.state.getState().loading;
+    if (current.ready === ready && current.progress === progress) return;
+    ctx.state.set({ loading: { progress, ready } });
+    ctx.state.flush();
   }
 
   /** The scene is leaving: both passes were built here, so both are released here. */

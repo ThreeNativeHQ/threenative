@@ -5,8 +5,8 @@ import {
   Data3DTexture,
   LinearFilter,
   NoColorSpace,
-  RepeatWrapping,
   RGBAFormat,
+  RepeatWrapping,
   UnsignedByteType,
 } from "three";
 

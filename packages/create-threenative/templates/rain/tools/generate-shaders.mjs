@@ -116,7 +116,11 @@ const SHADERS = [
         find: "for(int j=-1;j<=1;j++)",
         replace: "for(int j=-1;j<=1;j++){",
       },
-      { what: "the ripple loop close", find: " }return sum*uRain;", replace: " }}return sum*uRain;" },
+      {
+        what: "the ripple loop close",
+        find: " }return sum*uRain;",
+        replace: " }}return sum*uRain;",
+      },
     ],
     header: `// The shader is the coast: terrain, road, sea, the rail and cabin on it, wet reflections and the
 // fog that closes the distance. It is raymarched, so it is one full-screen quad and one function
@@ -348,7 +352,8 @@ function typeLoopBounds(body, injected) {
 function flattenNestedLoop(body) {
   const pattern = /Loop\(\s*(\{[^{}]*name: 'j'[^{}]*\}),\s*\(\s*\{\s*j\s*\}\s*\)\s*=>\s*\{/;
   const nested = body.match(pattern);
-  if (nested === null) throw new Error("TN_TRANSPILER_NO_NESTED_LOOP: the ripple loop changed shape");
+  if (nested === null)
+    throw new Error("TN_TRANSPILER_NO_NESTED_LOOP: the ripple loop changed shape");
   const outerOpen = body.indexOf("{", nested.index + nested[0].length - 1);
   const outerClose = closingBrace(body, outerOpen);
   const innerStart = body.indexOf("Loop(", outerOpen);
@@ -384,7 +389,8 @@ function typeCallbackParameters(body) {
     const types = [...layout.matchAll(/(\w+)\s*:\s*'(\w+)'/g)]
       .filter(([, name]) => name !== "return")
       .map(([, , type]) => `Node<"${type}">`);
-    if (types.length === 0) throw new Error("TN_TRANSPILER_NO_PARAMETERS: a function declares none");
+    if (types.length === 0)
+      throw new Error("TN_TRANSPILER_NO_PARAMETERS: a function declares none");
     if (types.length > 1 && !parameters.startsWith("[")) {
       throw new Error(
         `TN_TRANSPILER_PARAMETER_COUNT: ${parameters} has no ${types.length} parameters`,
@@ -434,7 +440,7 @@ function generate(config) {
   const provenance = raw.match(/^(?:\/\/[^\n]*\n)+/);
   if (provenance === null)
     throw new Error(`${config.marker}_NO_PROVENANCE: the source has no header note`);
-  let normalized = rewriteAll(
+  const normalized = rewriteAll(
     raw.slice(provenance[0].length),
     [
       ...COMMON_REWRITES,
@@ -452,7 +458,8 @@ function generate(config) {
     const [, type, names] = match;
     for (const name of names.split(",")) declared.set(name.trim(), type);
   }
-  if (declared.size === 0) throw new Error(`${config.marker}_NO_UNIFORMS: the source declares none`);
+  if (declared.size === 0)
+    throw new Error(`${config.marker}_NO_UNIFORMS: the source declares none`);
 
   const warnings = [];
   const quiet = (action) => {
@@ -492,7 +499,8 @@ function generate(config) {
 
   const injected = new Set();
   // A rewrite that substitutes a different TSL call brings its own import with it.
-  for (const rule of config.outputRewrites) for (const name of rule.imports ?? []) injected.add(name);
+  for (const rule of config.outputRewrites)
+    for (const name of rule.imports ?? []) injected.add(name);
   body = typeLoopBounds(body, injected);
   if (config.nestedLoop) {
     body = flattenNestedLoop(body);
@@ -515,7 +523,9 @@ function generate(config) {
       // registered on that sub-builder's group, leaving the shader's uniform struct short of members
       // and the WGSL invalid. One frame-wide buffer, read once per frame, is also what these values
       // are: each shader is a single quad, and every one of them is set by the same call each frame.
-      bound.push(`export const ${name} = uniform(${DEFAULTS[type]}, "${type}").setGroup(frameGroup);`);
+      bound.push(
+        `export const ${name} = uniform(${DEFAULTS[type]}, "${type}").setGroup(frameGroup);`,
+      );
     } else if (config.samplers.includes(type)) {
       const sampler = SAMPLERS[type];
       threeImports.add(sampler.texture);
@@ -541,7 +551,9 @@ function generate(config) {
     }
   }
   if (missing.length > 0) {
-    throw new Error(`${config.marker}_UNBOUND: the shader reads ${missing.join(", ")} with no binding`);
+    throw new Error(
+      `${config.marker}_UNBOUND: the shader reads ${missing.join(", ")} with no binding`,
+    );
   }
   if (bound.length === 0) throw new Error(`${config.marker}_NO_BOUND_UNIFORMS: nothing is bound`);
 
@@ -594,7 +606,9 @@ ${config.header}`;
     (name) => !imported.has(name) && !declared.has(name) && !local.has(name),
   );
   if (unimported.length > 0) {
-    throw new Error(`${config.marker}_UNIMPORTED: ${unimported.join(", ")} is called but never imported`);
+    throw new Error(
+      `${config.marker}_UNIMPORTED: ${unimported.join(", ")} is called but never imported`,
+    );
   }
 
   mkdirSync(dirname(target), { recursive: true });

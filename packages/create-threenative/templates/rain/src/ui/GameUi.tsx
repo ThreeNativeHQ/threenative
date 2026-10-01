@@ -2,6 +2,7 @@ import { UiLayer, useUiIntent, useUiState } from "@threenative/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type GameState, VISIBILITY_INTENT } from "../state.js";
 import { Hud, captureScene, toggleFullscreen } from "./Hud.js";
+import { LoadingOverlay } from "./LoadingOverlay.js";
 import { Menu } from "./Menu.js";
 import { automationRequest } from "./automation.js";
 
@@ -166,6 +167,7 @@ function RainInterface() {
         state={state}
         toggleAutoLightning={toggleAutoLightning}
       />
+      <LoadingOverlay progress={state.loading.progress} ready={state.loading.ready} />
     </>
   );
 }

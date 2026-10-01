@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { createNoiseVolume, NOISE_SIZE } from "../src/render/noise-volume.js";
+import { NOISE_SIZE, createNoiseVolume } from "../src/render/noise-volume.js";
 
 const [source] = process.argv.slice(2);
 if (source === undefined) {
@@ -51,7 +51,9 @@ if (actual.length !== expected.length || expected.length !== NOISE_SIZE ** 3 * 4
 }
 for (let index = 0; index < expected.length; index += 1) {
   if (actual[index] !== expected[index]) {
-    throw new Error(`TN_NOISE_BYTE: index ${index} is ${actual[index]}, source has ${expected[index]}`);
+    throw new Error(
+      `TN_NOISE_BYTE: index ${index} is ${actual[index]}, source has ${expected[index]}`,
+    );
   }
 }
 const digest = createHash("sha256").update(actual).digest("hex");

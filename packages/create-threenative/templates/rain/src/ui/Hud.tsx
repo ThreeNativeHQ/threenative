@@ -250,30 +250,6 @@ export function Hud({ send, say, panelOpen, setPanelOpen, state, toast, toastVis
           <p>Somewhere between stillness and the storm.</p>
         </section>
 
-        <button
-          aria-label="Enable rain and thunder audio"
-          className={`sound-pill${soundOn ? " active" : ""}`}
-          data-tn-interactive
-          onClick={() => {
-            if (soundOn) {
-              send("setMuted", true);
-              return;
-            }
-            send("setAudioEnabled", true);
-            send("setMuted", false);
-            say("Stereo rain, wind and distance-delayed thunder enabled");
-          }}
-          type="button"
-        >
-          <span className="sound-wave">
-            <span />
-            <span />
-            <span />
-            <span />
-          </span>
-          <span>{soundOn ? "SOUND ON" : "ENABLE SOUND"}</span>
-        </button>
-
         <footer className="bottom-bar">
           <div className="telemetry">
             <div>
@@ -298,10 +274,38 @@ export function Hud({ send, say, panelOpen, setPanelOpen, state, toast, toastVis
               </div>
             </div>
           </div>
-          <div className="key-hint">
-            <kbd>DRAG</kbd> LOOK &nbsp; <kbd>W A S D</kbd> MOVE &nbsp; <kbd>Q E</kbd> ALTITUDE
-            <br />
-            <kbd>H</kbd> HIDE INTERFACE &nbsp; <kbd>R</kbd> RESET CAMERA
+          {/* The pill and the key hints share one column, so neither can be drawn over the other or
+              over the panel above them however short the window is. */}
+          <div className="bottom-actions">
+            <button
+              aria-label={soundOn ? "Mute rain and thunder audio" : "Enable rain and thunder audio"}
+              aria-pressed={soundOn}
+              className={`sound-pill${soundOn ? " active" : ""}`}
+              data-tn-interactive
+              onClick={() => {
+                if (soundOn) {
+                  send("setMuted", true);
+                  return;
+                }
+                send("setAudioEnabled", true);
+                send("setMuted", false);
+                say("Stereo rain, wind and distance-delayed thunder enabled");
+              }}
+              type="button"
+            >
+              <span className="sound-wave">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+              <span>{soundOn ? "SOUND ON" : "ENABLE SOUND"}</span>
+            </button>
+            <div className="key-hint">
+              <kbd>DRAG</kbd> LOOK &nbsp; <kbd>W A S D</kbd> MOVE &nbsp; <kbd>Q E</kbd> ALTITUDE
+              <br />
+              <kbd>H</kbd> HIDE INTERFACE &nbsp; <kbd>R</kbd> RESET CAMERA
+            </div>
           </div>
         </footer>
 
