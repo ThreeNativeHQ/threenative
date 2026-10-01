@@ -33,6 +33,7 @@ import {
   mix,
   mul,
   normalize,
+  oneMinus,
   pow,
   property,
   reflect,
@@ -537,7 +538,7 @@ export const reflected = /*@__PURE__*/ Fn(
 export const tempestWorld = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
   const worldDepth = float(1).toVar();
   const rd = ray(vUv).toVar();
-  const sky = uSky.sample(vUv).rgb.toVar();
+  const sky = uSky.sample(vec2(vUv.x, vUv.y.oneMinus())).rgb.toVar();
   const planeT = select(rd.y.lessThan(-0.0001), uCam.y.negate().div(rd.y), 2200).toVar();
   const pp = uCam.add(rd.mul(planeT)).toVar();
   const water = pp.x.greaterThan(coast(pp.z)).and(terrain(pp.xz).lessThan(0)).toVar();
@@ -608,7 +609,11 @@ export const tempestWorld = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
     color.assign(surfaceLight(p, n, rd.negate(), alb, rough));
     const fres = add(0.025, mul(0.975, pow(sub(1, max(dot(rd.negate(), n), 0)), 5))).toVar();
     const suv = clamp(vUv.add(vec2(n.x, n.z).mul(vec2(0.07, 0.05))), 0.002, 0.998).toVar();
-    const refl = reflected(p.add(n.mul(0.1)), reflect(rd, n), uSky.sample(suv).rgb).toVar();
+    const refl = reflected(
+      p.add(n.mul(0.1)),
+      reflect(rd, n),
+      uSky.sample(vec2(suv.x, suv.y.oneMinus())).rgb,
+    ).toVar();
     const reflection = select(
       water,
       add(0.25, fres.mul(0.7)),
