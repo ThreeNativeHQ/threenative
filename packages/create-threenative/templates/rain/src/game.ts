@@ -1,14 +1,14 @@
-import { defineGame, type IGame } from "@threenative/core";
+import { type IGame, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { UI_READY_INTENT } from "@threenative/core/ui-layer";
 import config from "../threenative.config.js";
-import { STORM_AUDIO_ENTITY, type IStormAudio } from "./audio/storm.js";
+import { type IStormAudio, STORM_AUDIO_ENTITY } from "./audio/storm.js";
 import { Coast } from "./scenes/Boot.js";
 import {
-  VISIBILITY_INTENT,
   type GameState,
   type PresetName,
   type QualityName,
+  VISIBILITY_INTENT,
   type WeatherKey,
   intentPatch,
 } from "./state.js";
@@ -17,6 +17,9 @@ const game = defineGame<GameState>({
   input: {
     altitude: { down: ["KeyQ"], up: ["KeyE"] },
     boost: { keys: ["ShiftLeft", "ShiftRight"] },
+    // The drag's own motion, sampled at the tick. No click capture: the study looks by dragging,
+    // and a locked pointer would take the cursor away from the panel beside it.
+    look: { captureOnClick: false, pointerRelative: true },
     move: {
       down: ["ArrowDown", "KeyS"],
       left: ["ArrowLeft", "KeyA"],
@@ -51,12 +54,14 @@ export type RainIntent =
   | { readonly name: "setAutoLightning"; readonly payload: boolean }
   | { readonly name: "setCinematic"; readonly payload: boolean }
   | { readonly name: "setDroplets"; readonly payload: boolean }
+  | { readonly name: "setFrozen"; readonly payload: boolean }
   | { readonly name: "setMuted"; readonly payload: boolean }
   | { readonly name: "setPreset"; readonly payload: PresetName }
   | { readonly name: "setQuality"; readonly payload: QualityName }
   | { readonly name: "setSafe"; readonly payload: boolean }
   | { readonly name: "setWeather"; readonly payload: Partial<Record<WeatherKey, number>> }
   | { readonly name: "showUi" }
+  | { readonly name: "step"; readonly payload: number }
   | { readonly name: "strike"; readonly payload?: never }
   | { readonly name: typeof VISIBILITY_INTENT; readonly payload: boolean };
 
@@ -70,9 +75,9 @@ game.ui.onIntent((intent, payload) => {
     game.state.flush();
     return;
   }
-  // The two holds that cannot arrive inside a frame: the loop is stopped while paused and while the
-  // tab is hidden, so nothing in `Boot.ts` runs to notice. They are answered here, before the
-  // validator, because neither is a weather intent and neither needs a state field of its own.
+  // The two audio holds, answered at the door: a hidden tab stops the loop, so nothing in `Boot.ts`
+  // runs to notice it, and the pause hold has to land on the same edge as the press. Neither is a
+  // weather intent and neither needs a state field of its own.
   const storm = (): IStormAudio | undefined =>
     game.ctx?.entities.get<IStormAudio>(STORM_AUDIO_ENTITY);
   if (intent === "pause" || intent === "resume") storm()?.setSilenced(intent === "pause");
@@ -93,10 +98,6 @@ game.ui.onIntent((intent, payload) => {
     console.warn(`TN_RAIN_INTENT ${intent}: ${(why as Error).message}`);
     return;
   }
-  // The loop's own pause, so the renderer, the shaders and the clock all stop together. The
-  // state patch above publishes the pause through the bridge either way.
-  if (intent === "pause") game.pause();
-  if (intent === "resume") game.resume();
   game.state.set(patch);
   // The frame loop flushes too, but a control must feel instant: a slider that waits for the next
   // frame reads as a dropped drag.

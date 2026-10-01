@@ -3,6 +3,7 @@ import { type ICtx, Scene, type SceneFrame, alwaysRender, isMobile } from "@thre
 import { type PerspectiveCamera, Vector3 } from "three";
 import { STORM_AUDIO_ENTITY, createStormAudio } from "../audio/storm.js";
 import { createCameraRig, setupCamera } from "../render/camera.js";
+import { type IStormLightning, createStormLightning } from "../render/lightning.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { type IStormPost, setupPost } from "../render/postprocessing.js";
 import { type IStormRain, createStormRain } from "../render/rain.js";
@@ -47,6 +48,7 @@ export class Coast extends Scene<GameState> {
   // scene goes away: a dropped handle is a shader chain and a geometry that never come back.
   #rain: IStormRain | undefined;
   #post: IStormPost | undefined;
+  #lightning: IStormLightning | undefined;
 
   static override readonly initialState: GameState = {
     audioEnabled: false,
@@ -59,16 +61,21 @@ export class Coast extends Scene<GameState> {
     flash: 0,
     fps: 0,
     frame: 0,
+    frozen: false,
     heading: 0,
     helpOpen: false,
     muted: false,
     paused: false,
+    lastStrike: { at: -1, delay: 0, metres: 0 },
     pendingThunderAt: -1,
+    position: { x: 0, y: 0, z: 0 },
     preset: "storm",
     quality: "balanced",
     safe: false,
     status: "steady",
+    stepRequest: 0,
     strikeRequested: false,
+    strikes: 0,
     target: { ...STORM },
     uiHidden: false,
     uiReady: false,
@@ -90,11 +97,16 @@ export class Coast extends Scene<GameState> {
     // bounds say nothing about where they land and the same marker keeps it drawn at any heading.
     const rain = createStormRain(ctx.scene, camera);
     alwaysRender(rain.mesh);
+    // The bolt is drawn after the coast and depth-tested against it, so a strike behind the
+    // headland is hidden by it. Its quads are projected by its own vertex stage, like the rain.
+    const lightning = createStormLightning(ctx.scene, camera);
+    alwaysRender(lightning.mesh);
     // Retained, not called and dropped: `update` is where the post pass learns this frame's time,
     // exposure, rain and droplet toggle, and `uRes` is zero until it has run once.
     const post = setupPost(ctx.renderer, ctx.scene, camera, { mobile: isMobile() });
     this.#rain = rain;
     this.#post = post;
+    this.#lightning = lightning;
     // Registered, so the engine's registry disposes it with the game and `game.ts` can reach it by
     // name for the two holds that arrive outside a frame (the pause intent and tab visibility).
     const audio = ctx.entities.add(STORM_AUDIO_ENTITY, createStormAudio(ctx));
@@ -107,8 +119,13 @@ export class Coast extends Scene<GameState> {
     let pendingThunderAt = -1;
     let cinematic = false;
     let safe = false;
+    let strikes = 0;
+    let lastStrike = { at: -1, delay: 0, metres: 0 };
+    // Where the bolt lands, and where it entered the cloud deck. The deck point is what the clouds
+    // glow around and what the coast is lit from; the ground point is what the thunder crosses.
     // Out at sea, so a flash that lands before the first strike still lights open water.
     const site = new Vector3(0, 0, -400);
+    const strikePoint = new Vector3(0, 180, -400);
 
     /**
      * A strike is queued on the same clock as everything else, so the flash, the thunder and the
@@ -123,11 +140,16 @@ export class Coast extends Scene<GameState> {
         0,
         STRIKE_SITE.nearZ - ctx.random() * STRIKE_SITE.spread,
       );
-      pendingThunderAt = elapsed + thunderDelay(rig.position.distanceTo(site));
+      strikePoint.copy(lightning.strike(site, ctx.random));
+      const metres = rig.position.distanceTo(site);
+      const delay = thunderDelay(metres);
+      pendingThunderAt = elapsed + delay;
       nextStrikeAt = elapsed + STRIKE_MIN_GAP + ctx.random() * STRIKE_SPREAD;
+      strikes += 1;
+      lastStrike = { at: elapsed, delay, metres };
       // The thunder is queued on the same clock the flash is drawn against, by the same distance
       // the delay came from, so what is heard cannot disagree with what was seen.
-      audio.queueStrike({ at: pendingThunderAt, metres: rig.position.distanceTo(site) });
+      audio.queueStrike({ at: pendingThunderAt, metres });
     };
 
     /** Read the intent the UI sent between frames, before anything is derived from it. */
@@ -149,30 +171,36 @@ export class Coast extends Scene<GameState> {
     };
 
     const advance = (ui: GameState, step: number): void => {
-      // No pause check here on purpose: `game.pause()` stops the whole loop, so the renderer, the
-      // shaders and this clock all stop together instead of the weather freezing while time runs.
+      // A held simulation still draws, as the study's did: the look follows the panel at once
+      // instead of easing on a clock that is not running, and nothing else moves.
+      if (ui.paused || ui.frozen) weather = { ...ui.target };
+      if (step <= 0) return;
       elapsed += step;
       weather = easeWeather(weather, ui.target, step);
-      if (!ui.autoLightning || elapsed <= nextStrikeAt) return;
-      if (weather.cloud > AUTO_STRIKE_CLOUD) strike();
-      else nextStrikeAt = elapsed + STRIKE_MIN_GAP;
+      // The study's own gate: past its time, the first frame with real cloud cover strikes.
+      if (ui.autoLightning && elapsed > nextStrikeAt && weather.cloud > AUTO_STRIKE_CLOUD) strike();
     };
 
     return (frameCtx, dt) => {
-      const step = Math.min(dt, MAX_STEP);
       const ui = readIntent(frameCtx);
+      // Pause holds the simulation the way the study's did — the frame is still drawn, so a drag
+      // still looks around — and `frozen` is the automation's stopped clock, which only an explicit
+      // `step` moves on. A step never runs while paused, exactly as the study's `step(dt)`.
+      const wall = ui.paused || ui.frozen ? 0 : Math.min(dt, MAX_STEP);
+      const step = wall + (ui.paused ? 0 : ui.stepRequest);
       advance(ui, step);
 
       const flash = safe ? 0 : flashAt(elapsed - strikeAt);
       if (pendingThunderAt >= 0 && elapsed >= pendingThunderAt) pendingThunderAt = -1;
 
-      rig.update(step, elapsed, frameCtx.input, cinematic);
+      rig.update(wall, elapsed, frameCtx.input, cinematic);
       // The rig only learns it is being driven once it has run, so the published flag is settled
       // after it: a hand on the camera ends the orbit on the same frame it happened.
       if (rig.manual) cinematic = false;
       // Both passes read the weather this frame has just eased towards, not the target the UI
       // asked for, so a drop and a lens bead are lit by the same air the coast is drawn with.
       rain.update({ elapsed, flash, weather, quality: ui.quality });
+      lightning.update(flash);
       post.update({
         elapsed,
         exposure: weather.exposure,
@@ -184,7 +212,7 @@ export class Coast extends Scene<GameState> {
         flash,
         quality: ui.quality,
         rainBudget: QUALITY_RAIN_BUDGET[ui.quality],
-        strike: site,
+        strike: strikePoint,
         weather,
       });
       loading.update();
@@ -200,16 +228,20 @@ export class Coast extends Scene<GameState> {
         fps: frameCtx.fps,
         frame,
         heading: rig.heading,
+        lastStrike,
         pendingThunderAt,
+        position: { x: rig.position.x, y: rig.position.y, z: rig.position.z },
         safe,
+        stepRequest: 0,
         strikeRequested: false,
+        strikes,
         status: statusOf(ui.paused, flash, weather, ui.target),
         weather,
       });
       frameCtx.state.flush();
       // Last, so the mix is written from the frame that just ran rather than the one before it:
-      // `getState` already carries the patch above, and a paused frame never reaches this line
-      // because the loop itself stopped — which is why the pause hold is an intent, not a frame.
+      // `getState` already carries the patch above. The pause hold itself is an intent in
+      // `game.ts`, so the sound stops on the press rather than a frame later.
       audio.update(frameCtx.state.getState());
     };
   }
@@ -218,8 +250,10 @@ export class Coast extends Scene<GameState> {
   override exit(): void {
     this.#rain?.dispose();
     this.#post?.dispose();
+    this.#lightning?.dispose();
     this.#rain = undefined;
     this.#post = undefined;
+    this.#lightning = undefined;
   }
 }
 

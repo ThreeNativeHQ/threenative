@@ -1,12 +1,13 @@
 /**
  * The source study's `window.tempest`, rebuilt on this framework's own doors.
  *
- * The source was one HTML file with its own render loop, so it could hand a script a `render()`
- * and a `step(dt)`. This build does not: `IGame` offers `pause()` / `resume()` / `stop()` and
- * nothing that draws one frame or advances the simulation by hand, so those two methods are
- * absent here rather than faked — a facade that bumped a counter and called it a frame is worse
- * than one that is missing. Everything the source published that the engine really owns is here,
- * and every value it reports is read back from the store the simulation wrote.
+ * The source was one HTML file with its own render loop, so `render()` drew a frame and `step(dt)`
+ * advanced the simulation by hand. Here the engine owns the loop and draws every frame anyway, so
+ * `render()` resolves once the scene has really drawn another one, and `step(dt)` hands the next
+ * frame `dt` seconds of simulation through the same intent door the buttons use. `stop()` freezes
+ * the simulation clock rather than the loop, so a stopped study can still be stepped and rendered,
+ * which is what the source's `stop` + `step` pairing was for. Every value it reports is read back
+ * from the store the simulation wrote.
  *
  * It lives in the UI realm because `window`, `document` and the UI end of the state bridge are
  * browser APIs. `src/game.ts` stays portable: this sends the same validated intents the buttons do.
@@ -20,7 +21,14 @@ import { captureScene, sceneCanvas } from "./Hud.js";
 import { automationRequest, qualityTier } from "./automation.js";
 
 /** One automation verb, mapped to the intent the interface already sends. */
-type IntentName = "pause" | "setPreset" | "setQuality" | "setSafe" | "setWeather" | "strike";
+type IntentName =
+  | "setFrozen"
+  | "setPreset"
+  | "setQuality"
+  | "setSafe"
+  | "setWeather"
+  | "step"
+  | "strike";
 
 export interface ITempestApi {
   /** Frames the scene has actually simulated and drawn, as it counted them. */
@@ -36,7 +44,12 @@ export interface ITempestApi {
   readonly setQuality: (name: string) => void;
   readonly setSafe: (on: boolean) => void;
   readonly setWeather: (values: Partial<Record<WeatherKey, number>>) => void;
+  /** Freeze the simulation clock. Frames still draw; only `step` moves it on. */
   readonly stop: () => void;
+  /** Advance the simulation by `dt` seconds (clamped to 0..60) and resolve on the frame that drew it. */
+  readonly step: (dt: number) => Promise<number>;
+  /** Resolve with the frame count once the scene has drawn at least one more frame. */
+  readonly render: () => Promise<number>;
   readonly triggerLightning: () => void;
   /** Save the frame. Resolves with the image that was really encoded, or why there was none. */
   readonly capture: () => Promise<ICaptureResult>;
@@ -80,6 +93,19 @@ export function installTempest(game: IGame<GameState>): ITempestApi {
     say("?offline selects no adapter: this build loads Three from its own install");
   }
 
+  /** Resolves once the simulation has counted a frame past the one this was called on. */
+  const nextFrame = (): Promise<number> => {
+    const from = game.state.getState().frame;
+    return new Promise((resolve) => {
+      const stop = mirror.subscribe(() => {
+        const frame = mirror.get()?.frame ?? 0;
+        if (frame <= from) return;
+        stop();
+        resolve(frame);
+      });
+    });
+  };
+
   const api: ITempestApi = {
     get frames() {
       return game.state.getState().frame;
@@ -98,9 +124,13 @@ export function installTempest(game: IGame<GameState>): ITempestApi {
     setQuality: (name) => send("setQuality", qualityTier(name)),
     setSafe: (on) => send("setSafe", on),
     setWeather: (values) => send("setWeather", values),
-    // The source cancelled its own animation frame; the engine's loop stops the same way and
-    // `resume` is the way back.
-    stop: () => send("pause"),
+    stop: () => send("setFrozen", true),
+    step: (dt) => {
+      const frame = nextFrame();
+      send("step", dt);
+      return frame;
+    },
+    render: nextFrame,
     triggerLightning: () => send("strike"),
     capture: () => captureScene(say),
   };
@@ -108,7 +138,7 @@ export function installTempest(game: IGame<GameState>): ITempestApi {
     const stop = mirror.subscribe(() => {
       if ((mirror.get()?.frame ?? 0) < 1) return;
       stop();
-      send("pause");
+      send("setFrozen", true);
       say(`still · loop stopped on frame ${api.frames} · t=${api.state.elapsed.toFixed(2)}s`);
     });
   }

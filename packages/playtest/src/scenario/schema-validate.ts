@@ -13,6 +13,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "inputDelivery",
   "name",
   "parity",
+  "reducedMotion",
   "schemaVersion",
   "setup",
   "steps",
@@ -50,6 +51,12 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.bootFailure !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
+  if (value.reducedMotion !== undefined && value.reducedMotion !== "reduce") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion must be 'reduce' when present.");
+  }
+  if (value.reducedMotion !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");
@@ -76,6 +83,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
+    ...(value.reducedMotion === "reduce" ? { reducedMotion: value.reducedMotion } : {}),
     schemaVersion: 1,
     ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath, subject) } : {}),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),

@@ -18,13 +18,18 @@ describe("rain weather intents", () => {
       ["setAutoLightning", "autoLightning"],
       ["setCinematic", "cinematic"],
       ["setDroplets", "droplets"],
+      ["setFrozen", "frozen"],
       ["setMuted", "muted"],
-      ["setSafe", "safe"],
     ] as const;
     for (const [intent, field] of fields) {
       expect(intentPatch(intent, true, storm())).toEqual({ [field]: true });
       expect(intentPatch(intent, false, storm())).toEqual({ [field]: false });
     }
+  });
+
+  it("takes automatic lightning down with photosensitivity mode, at the one door", () => {
+    expect(intentPatch("setSafe", true, storm())).toEqual({ autoLightning: false, safe: true });
+    expect(intentPatch("setSafe", false, storm())).toEqual({ safe: false });
   });
 
   it("rejects a toggle that is not a boolean", () => {
@@ -77,6 +82,11 @@ describe("rain weather intents", () => {
     });
     expect(intentPatch("pause", undefined, storm())).toEqual({ paused: true });
     expect(intentPatch("resume", undefined, storm())).toEqual({ paused: false });
+    expect(intentPatch("step", 0.5, storm())).toEqual({ stepRequest: 0.5 });
+    expect(intentPatch("step", 600, storm())).toEqual({ stepRequest: 60 });
+    expect(intentPatch("step", -1, storm())).toEqual({ stepRequest: 0 });
+    expect(() => intentPatch("step", "0.5", storm())).toThrow();
+    expect(() => intentPatch("step", Number.NaN, storm())).toThrow();
     expect(() => intentPatch("setWeather", "storm", storm())).toThrow();
     expect(() => intentPatch("teleport", true, storm())).toThrow();
   });

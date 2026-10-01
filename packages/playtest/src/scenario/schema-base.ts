@@ -707,6 +707,11 @@ export interface IPlaytestScenario {
   inputDelivery?: PlaytestInputDelivery;
   name: string;
   parity?: IPlaytestParityConfig;
+  /**
+   * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that
+   * honours the preference can prove it. Applied before navigation, so the first read sees it.
+   */
+  reducedMotion?: "reduce";
   schemaVersion: 1;
   setup?: IPlaytestScenarioSetup;
   sourcePath?: string;

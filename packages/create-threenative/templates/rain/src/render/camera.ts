@@ -37,14 +37,17 @@ const BOUNDS = {
  * Three.js and must not import a package.
  */
 export interface ICameraInput {
-  axis(name: string): number;
+  pressed(name: string): boolean;
   raw: {
     readonly pointer: {
       readonly buttons: number;
       readonly down: boolean;
-      readonly relative: { x: number; y: number };
     };
   };
+  /**
+   * `move` and `altitude` are key vectors; `look` is the drag's motion since the last tick, in
+   * pixels — the engine samples it at the tick, so the raw pointer's own counter is already spent.
+   */
   vector(name: string): { x: number; y: number };
 }
 
@@ -116,10 +119,10 @@ export function createCameraRig(camera: PerspectiveCamera): ICameraRig {
     up,
     update(dt, elapsed, input, cinematic) {
       const move = input.vector("move");
-      const altitude = input.axis("altitude");
+      const altitude = input.vector("altitude").y;
+      const boost = input.pressed("boost");
       const dragging = input.raw.pointer.down && (input.raw.pointer.buttons & LEFT_MOUSE) !== 0;
-      manual =
-        move.x !== 0 || move.y !== 0 || altitude !== 0 || input.axis("boost") !== 0 || dragging;
+      manual = move.x !== 0 || move.y !== 0 || altitude !== 0 || boost || dragging;
       if (cinematic && !manual) {
         // A slow orbit of the opening view: the coast stays in frame while the weather plays out.
         position.set(
@@ -134,17 +137,14 @@ export function createCameraRig(camera: PerspectiveCamera): ICameraRig {
         return;
       }
       if (dragging) {
-        yaw += input.raw.pointer.relative.x * LOOK_SENSITIVITY;
-        pitch = MathUtils.clamp(
-          pitch - input.raw.pointer.relative.y * LOOK_SENSITIVITY,
-          PITCH_RANGE[0],
-          PITCH_RANGE[1],
-        );
+        const look = input.vector("look");
+        yaw += look.x * LOOK_SENSITIVITY;
+        pitch = MathUtils.clamp(pitch - look.y * LOOK_SENSITIVITY, PITCH_RANGE[0], PITCH_RANGE[1]);
       }
       // Yaw only, so walking never climbs the hill the camera is standing on.
       const flatForward = new Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
       const flatRight = new Vector3(Math.cos(yaw), 0, Math.sin(yaw));
-      const speed = dt * (input.axis("boost") > 0 ? RUN_SPEED : WALK_SPEED);
+      const speed = dt * (boost ? RUN_SPEED : WALK_SPEED);
       position.addScaledVector(flatForward, speed * move.y);
       position.addScaledVector(flatRight, speed * move.x);
       position.y += speed * altitude;

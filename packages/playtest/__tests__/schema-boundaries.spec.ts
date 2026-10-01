@@ -83,6 +83,26 @@ describe("scenario schema boundaries", () => {
     expect(parsed.target).toBe("web");
   });
 
+  it("accepts reduced-motion emulation on the web target and refuses it elsewhere", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }, "reduced-motion.playtest.json");
+    expect(parsed.reducedMotion).toBe("reduce");
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "desktop",
+      viewport: { height: 720, width: 1280 },
+    }, "desktop-reduced-motion.playtest.json")).toThrow(/reducedMotion is browser-only/u);
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "no-preference",
+    }, "invalid-reduced-motion.playtest.json")).toThrow(/reducedMotion must be 'reduce'/u);
+  });
+
   it("rejects an unknown boot-failure seam", () => {
     expect(() => validatePlaytestScenario({
       ...scenario(undefined),

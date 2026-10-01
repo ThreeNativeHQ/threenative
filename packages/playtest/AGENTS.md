@@ -430,6 +430,9 @@ treated as ticks when the bridge exposes `runtime.fixedStep`; `warmupFrames` rem
 requestAnimationFrame warmup. Never introduce a wall-clock sleep or a millisecond-based step
 into scenario semantics.
 
+`"reducedMotion": "reduce"` (web target only) opens the page with `prefers-reduced-motion: reduce`
+emulated before navigation, so a game that suppresses flashes or motion for it can prove so.
+
 **Ticks are not the clock a launch runs on.** A run advances ticks as fast as the machine allows,
 so a whole scenario can complete during a launch that has not finished — and everything the
 application gates on startup (compute dispatch, the first world present) then never happens inside

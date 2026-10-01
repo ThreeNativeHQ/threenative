@@ -101,6 +101,7 @@ export const TOGGLE_FIELDS = {
   setAutoLightning: "autoLightning",
   setCinematic: "cinematic",
   setDroplets: "droplets",
+  setFrozen: "frozen",
   setMuted: "muted",
   setSafe: "safe",
 } as const satisfies Record<string, keyof GameState>;
@@ -147,6 +148,9 @@ export function intentPatch(
     : undefined;
   if (toggle !== undefined) {
     if (typeof payload !== "boolean") throw new Error("expected a boolean payload");
+    // Photosensitivity mode also takes automatic lightning down, at the one door every caller
+    // uses: a reader who asked for no flashes must not get them from the sky on their own.
+    if (toggle === "safe" && payload) return { autoLightning: false, safe: true };
     return { [toggle]: payload } as Partial<GameState>;
   }
   switch (intent) {
@@ -175,6 +179,13 @@ export function intentPatch(
     case "strike":
       // A request, not a value: the scene owns the clock the flash is measured against.
       return { strikeRequested: true };
+    case "step":
+      // The automation's `step(dt)`: seconds of simulation for the next frame, clamped as the
+      // study clamped them. Consumed by that frame, and ignored while paused.
+      if (typeof payload !== "number" || !Number.isFinite(payload)) {
+        throw new Error("expected a finite number of seconds");
+      }
+      return { stepRequest: clamp(payload, 0, 60) };
     case "hideUi":
       return { uiHidden: true };
     case "showUi":
@@ -226,6 +237,8 @@ export type GameState = {
   helpOpen: boolean;
   uiReady: boolean;
   heading: number;
+  /** Where the fly camera stands, in metres, so a move is read back rather than assumed. */
+  position: { x: number; y: number; z: number };
   fps: number;
   /**
    * Drops the renderer was actually asked to draw this frame — the rain geometry's own
@@ -235,6 +248,14 @@ export type GameState = {
   dropCount: number;
   /** Absolute simulation time thunder is due, or -1 when nothing is in the air. */
   pendingThunderAt: number;
+  /** Strikes so far, manual and automatic, that got past the photosensitivity gate. */
+  strikes: number;
+  /** The last strike: simulation time, metres from the camera, and its thunder delay in seconds. */
+  lastStrike: { at: number; delay: number; metres: number };
+  /** The automation's stopped clock: frames still draw, only `stepRequest` advances it. */
+  frozen: boolean;
+  /** Seconds the next frame simulates on top of its own, from `step(dt)`. Cleared once used. */
+  stepRequest: number;
   status: SimStatus;
   /** Set by the reset-camera intent, cleared by the frame that acted on it. */
   cameraReset: boolean;
