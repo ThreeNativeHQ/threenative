@@ -344,11 +344,14 @@ export class CommanderAI {
         const e = army[i];
         if (e !== undefined && e.id !== this.scoutId) force.push(e);
       }
+      // The scout stays home with the first of the rest: the assault never takes every unit, so
+      // the base keeps a defender. Starting at 1 is the `.slice(1)` this loop replaced.
       this.force.length = 0;
-      for (let i = 0; i < force.length; i++) {
+      for (let i = 1; i < force.length; i++) {
         const e = force[i];
         if (e !== undefined) this.force.push(e.id);
       }
+      force.length = this.force.length;
       this.initialForce = force.length;
       // The assault's target is state the commander keeps, so it gets its own object once.
       this.target = { x: target.x, z: target.z, team: target.team };
@@ -425,9 +428,10 @@ export class CommanderAI {
     for (let i = 0; i < known.length; i++) {
       const entry = known[i];
       if (entry === undefined) continue;
-      // The old comparator was `Number(b.core) - Number(a.core) || dist(a) - dist(b)`, i.e. a core
-      // outranks anything nearer, so the offset has to make a core the *smaller* score.
-      const score = (entry.type === "core" ? 1_000_000 : 0) + dist(entry, target);
+      // The old comparator was `Number(b.core) - Number(a.core) || dist(a) - dist(b)`, sorted
+      // ascending, so a core outranks anything nearer. Minimising the score has to make a core the
+      // *smaller* one, or the offset ranks cores last and the army walks at the nearest shed.
+      const score = (entry.type === "core" ? -1_000_000 : 0) + dist(entry, target);
       if (score < bestScore) {
         bestScore = score;
         best = entry;
