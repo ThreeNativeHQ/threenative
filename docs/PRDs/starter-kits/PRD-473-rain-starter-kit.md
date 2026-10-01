@@ -38,9 +38,9 @@ themselves through `kit.json` (`packages/create-threenative/src/index.ts:251`).
 ### Reference captures (root lane, 2026-09-30)
 
 The unchanged `/home/joao/Downloads/tempest.html` was loaded in a headless Chromium via Playwright with
-`?still&offline&quality=high` and captured at three viewports: `.playwright-mcp/rain-reference-desktop.png`
-(1440×900), `.playwright-mcp/rain-reference-tablet.png` (1024×768) and
-`.playwright-mcp/rain-reference-mobile.png` (390×844). These are the **reference only** — no Rain output
+`?still&offline&quality=high` and captured at three viewports: [reference desktop](../../verification/visuals/rain/reference-desktop.png)
+(1440×900), [reference tablet](../../verification/visuals/rain/reference-tablet.png) (1024×768) and
+[reference mobile](../../verification/visuals/rain/reference-mobile.png) (390×844). These are the **reference only** — no Rain output
 has been rendered yet, so no parity, match or gap between them and the kit is claimed anywhere in this
 PRD. Phase 3 copies them into the PR beside the kit's own captures taken at the same three viewports.
 
@@ -145,7 +145,7 @@ and score in `docs/verification/visuals/`, and `native-playtests/*.playtest.json
 - [ ] AC-3 [local]: rain is registered everywhere a template must be registered — CI matrices, capability-recall brief, applicability row, docs, visual score. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts
   scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts`
 - [ ] AC-4 [local]: every row of the source inventory above (A simulation, B camera, C render passes, D audio, E interface, F automation API) is present in the rendered kit, checked one row at a time rather than by assertion. proof: a line per inventory row in the PR body naming where the kit realises it, each paired with the playtest observation or capture that shows it
-- [ ] AC-5 [local]: the kit is captured at the same three viewports as the reference and the PR embeds both sets side by side, stating the comparison the owner actually sees — including any row where it differs, with nothing inferred. proof: the three `.playwright-mcp/rain-reference-*.png` files and the kit's own desktop/tablet/mobile captures uploaded in the PR body at 1440×900, 1024×768 and 390×844
+- [ ] AC-5 [local]: the kit is captured at the same three viewports as the reference and the PR embeds both sets side by side, stating the comparison the owner actually sees — including any row where it differs, with nothing inferred. proof: the three `docs/verification/visuals/rain/reference-*.png` files and the kit's own desktop/tablet/mobile captures uploaded in the PR body at 1440×900, 1024×768 and 390×844
 
 ## Blocked on
 
@@ -161,7 +161,7 @@ green.
 | --- | --- | --- | --- |
 | Kit registration | `npx threenative create --template rain` → `packages/create-threenative/src/index.ts:251` | new kit, no incumbent | AC-1 |
 | Weather control surface | UI slider/preset → `sendUiIntent` → `game.ui.onIntent` in `src/game.ts` → `Atmosphere`/`RippleField`/`GPUParticles3D` uniforms | replaces the source's inline DOM handlers | AC-1, AC-3 |
-| Volumetric noise volume | generated source `templates/rain/src/render/noise-volume.ts` (`createRandom` + `Data3DTexture`) consumed by `src/render/clouds.ts` | generated kit source; no engine export, `capabilities.json` unchanged | Phase 2 box |
+| Volumetric noise volume | generated source `templates/rain/src/render/noise-volume.ts` (`createRandom` + `Data3DTexture`) consumed by `src/render/clouds.ts` | generated kit source; generated-source capability entries point to the kit files | Phase 2 box |
 | Storm post chain | `src/render/postprocessing.ts` → `RenderChain` built-ins + one authored stage | replaces the source's single POST pass | Phase 1 box |
 | Storm audio | `src/audio/storm.ts` → `AudioBus.play`/`playAt` over `ctx.assets.audio` | replaces the source's `StormAudio` Web Audio graph | AC-2 |
 | Capture proof | playtest `capture` assertions and PR screenshots | replaces the source's `window.tempest.capture` | AC-1, Phase 3 box |
@@ -214,7 +214,7 @@ changed after an intent, a non-blank capture, and fps/draw-call bounds.
 **Status:** NOT STARTED
 **Files:** `templates/rain/src/render/{noise-volume,clouds,sea,wetRoad,rain}.ts` ·
 `templates/rain/playtests/tiers.playtest.json` · `scripts/capability-recall.ts` (`rain` brief) ·
-`docs/verification/visuals/rain.png` + `scores.json`
+`docs/verification/visuals/rain.png` + `scores.json` · regenerated capability manifests
 **Implementation:** the seeded fBm noise volume in generated source, the volumetric cloud pass ray-marched
 through it over `Atmosphere`/`Daylight`; the coast and sea through `Heightfield` + `WaterSurface3D` with
 the kit's wetness and Fresnel look; rain ripples through `RippleField`; rain streaks through
@@ -224,7 +224,7 @@ reflection on/off, matching the source's table. No `packages/core` file changes 
 its captures read as one full scene, not a texture unit test — the volume is only proven by the image it
 produces.
 
-- [ ] Phase 2: the cloud volume, sea, wet road and rain streaks render at every tier inside the declared bounds, from generated source rather than a new engine export. proof: `pnpm exec tsx scripts/check-template-quality.ts`; `git diff --stat origin/develop -- packages/core packages/create-threenative/capabilities.json` shows no engine surface added; the `rain` brief in `scripts/capability-recall.ts:120` answers a mechanic search for a volumetric noise volume; and
+- [ ] Phase 2: the cloud volume, sea, wet road and rain streaks render at every tier inside the declared bounds, from generated source rather than a new engine export. proof: `pnpm exec tsx scripts/check-template-quality.ts`; `pnpm build` regenerates the manifests; `engine_search_capabilities` and `engine_capability_detail` find the extracted Rain abstractions at valid generated-source paths, exercised by the `rain` brief in `scripts/capability-recall.ts`; and
   node packages/playtest/dist/runner/cli.js
   packages/create-threenative/templates/rain/playtests/tiers.playtest.json --url http://127.0.0.1:5173
   --server-command "pnpm --filter rain dev" --browser-recipe webgpu
