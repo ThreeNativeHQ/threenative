@@ -171,6 +171,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
   // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
   // Values measured through createProject by the spec that asserts them, not by hand.
+  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
+  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
+  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
+  // beside it. Only the two sailing template files changed, so only this one tree moves.
   "action-rpg": "b1b2dbf0c28708c6c68585e795413675a54b1dacadbd1015411ac17b1c67eba0",
   minimal: "03d260f37b6596e4d08d2112608f4fc5bb2d99b6fe38d734400b3f2f253d7a40",
   platformer: "652251e10a5f74b7d9a6858313e7dd1ad429fcae976bce79604cd8531003946d",
@@ -178,7 +182,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   racing: "914c62bf6ce97e535bed60d66ea8485ca1c7262667a1c50060c5b338f35eec8d",
   rts: "2680a13043b6da20fb790a4d7fb629e193df65306fd9c7816b45941969a4cbb6",
   runner: "e889bfbf16f132921ab3ea93f62238fefe3ed47e0bb44ba35d4f73087ee767b9",
-  sailing: "ba07cd4a766baedc29be7f088e12ec7db327cb059eed36d8bfc35bd311eb1cc5",
+  sailing: "6552352ec33ad1470c5c9d45823d024e633bf3acd1812f6d8ecb4653de2f4a36",
   shooter: "1e9e44e2fb173d56bbf6ae4035a16210b27b4116a1f22f446a06c40b10a38ce3",
   starter: "47f40062a7a7dea1c0c461401c3831585302e7bd7249daf043fb208a42a006cd",
   "tower-defense": "a61876346b8a1a197206bbbc858a07e70ba7e0d7fdc99a3b6feac252bb4ff3dc",
