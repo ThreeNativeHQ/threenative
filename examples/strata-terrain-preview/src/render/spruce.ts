@@ -39,8 +39,9 @@ export const SPRUCE = {
    * bare sticks with foliage on them.
    */
   whorls: 26,
-  /** Branches per whorl at the widest part of the crown. */
-  branchesPerWhorl: 8,
+  /** Branches per whorl at the widest part of the crown. Ten narrow sprays read as a spruce; eight
+   *  wide ones read as a Christmas tree, which is the same silhouette with the gaps filled in. */
+  branchesPerWhorl: 10,
   /** Longest branch, as a share of height. A spruce is spire, not sphere. */
   crown: 0.2,
   /** Trunk radius at the base, as a share of height. */
@@ -244,7 +245,11 @@ function crown(height: number, seed: number): BufferGeometry {
         origin: new Vector3(0, at * height, 0),
         roll: (random() - 0.5) * 1.5,
         segments: 3,
-        width: length * (0.72 + random() * 0.2),
+        // The card is close to the atlas cell's own proportions on purpose. The needles in that cell
+        // radiate from a twig across its whole width, so a card much narrower than it is long
+        // squeezes a spray of needles into a blade, and a spruce drawn with blades is worse than one
+        // drawn with paddies. Two thirds is the narrowest the spray still reads as a spray.
+        width: length * (0.62 + random() * 0.16),
       });
     }
   }

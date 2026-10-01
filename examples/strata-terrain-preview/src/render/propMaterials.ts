@@ -24,6 +24,7 @@ import {
 import {
   abs,
   attribute,
+  color,
   dFdx,
   dFdy,
   float,
@@ -43,6 +44,7 @@ import {
   uv,
   vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
@@ -188,27 +190,65 @@ function stoneSurface(maps: { diffuse?: Texture; normal?: Texture }) {
 }
 
 /**
+ * How much of a card one pixel covers, read from the card's own UV derivatives.
+ *
+ * Two answers, because a card is a rectangle and a pixel is a square, and the two axes of a card seen
+ * from a meadow are rarely the same length. `worst` is the deeper of the two levels: that is the
+ * right question for a cutoff, because a card compressed along one axis still has to keep its
+ * needles. `area` is the geometric mean, which is how many texels the pixel really lands on, and the
+ * only honest answer to how far away the tree is — a card seen edge-on covers a sliver of the screen
+ * however far away it is, and a sliver does not need to be a solid mass.
+ *
+ * The atlas is generated at 1024x1024 by `scripts/make-needle-atlas.mjs`, and the chain is read from
+ * the texture's own dimensions so a regenerated atlas at another size still measures itself.
+ */
+function mipLevels(atlas: Texture): { area: Node<"float">; worst: Node<"float"> } {
+  const image = atlas.image as { width?: number; height?: number } | undefined;
+  const size = vec2(image?.width ?? 1024, image?.height ?? 1024);
+  const x = length(dFdx(uv()).mul(size));
+  const y = length(dFdy(uv()).mul(size));
+  const level = (texels: Node<"float">): Node<"float"> =>
+    max(log2(max(texels, float(1))), float(0));
+  return { area: level(x.mul(y).sqrt()), worst: level(max(x, y)) };
+}
+
+/**
  * The alpha cutoff as a node, falling with the mip level the fragment is really sampling.
  *
  * Ben Golus's compensation: the deeper the mip the smaller the effective cutoff, because a deeper mip
  * is a coarser question about the same texel rather than a stricter one. A needle card forty metres
- * away is sampled from mip four or five, where its alpha has averaged down towards 0.1, and a
- * `discard` at 0.42 throws the needles away and leaves a forest of bare trunks. The ramp
- * `smoothstep(cutoff, cutoff + fwidth(alpha), alpha)` is the same author's alpha-to-coverage edge,
- * and three resolves that itself once the cutoff is a node.
+ * away is sampled from mip three or four, where its alpha has averaged down towards 0.2, and a
+ * `discard` at 0.42 throws the needles away and leaves a forest of bare trunks.
  */
-function mipCompensatedCutoff(atlas: Texture) {
-  const image = atlas.image as { width?: number; height?: number } | undefined;
-  // The atlas is generated at 1024x1024 by `scripts/make-needle-atlas.mjs`; the mip chain is read
-  // from the texture's own dimensions so a regenerated atlas at another size still compensates.
-  const size = vec2(image?.width ?? 1024, image?.height ?? 1024);
-  const footprint = max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size)));
-  // Golus's compensation in its cutoff form: divide the cutoff by the mip's alpha scale. A card
-  // forty metres away is sampled from mip four or five, where its alpha has averaged towards 0.1,
-  // and a flat discard at 0.42 would throw the needles away and leave a forest of bare trunks.
-  const scale = float(1).add(max(log2(footprint), float(0)).mul(MIP_ALPHA_SCALE));
+function mipCompensatedCutoff(mip: Node<"float">) {
+  // Golus's compensation in its cutoff form: divide the cutoff by the mip's alpha scale.
+  const scale = float(1).add(mip.mul(MIP_ALPHA_SCALE));
   return float(CUTOUT).div(scale) as unknown as Node<"float">;
 }
+
+/**
+ * How far a cutout has become a solid mass instead of a spray of separate needles, 0..1.
+ *
+ * Lowering the cutoff alone is half a fix, and the half that is left produces the failure this exists
+ * to remove: a crown that is a lace of surviving specks. A needle card is mostly empty, so its mip
+ * average is a low number everywhere, and what clears a threshold there is chosen by noise — which is
+ * stipple, not foliage, and it is worst exactly where a tree is smallest on screen.
+ *
+ * Coverage is not a constant, though. A card sampled from a deep mip *is* a distant tree, and a
+ * distant tree is a mass, not a spray of needles: the mip average of a card is the fraction of the
+ * card that card covers, and the further off it is the less that fraction matters. So the alpha
+ * ramps towards solid as the footprint grows, and the cutoff ramp above keeps the fringe crisp where
+ * the fringe is still readable. The two together are the distance LOD in the shader: needles under
+ * thirty metres, mass past a hundred and fifty, and a crown that gains density all the way between.
+ *
+ * The ramp starts where a card's cell is about eight texels across on screen, which is the point
+ * where separate needles stop being resolvable and start being texture. Start it earlier and the
+ * near trees stop being trees: the cards fill in, and a spruce becomes a stack of solid leaves.
+ */
+const SOLID = { from: 3, to: 5.5 } as const;
+
+/** The colour a poppy is at the far edge of a meadow, where its petal is a handful of texels. */
+const POPPY_RED = 0xe23a2c;
 
 /** Every prop surface, plus the one uniform the wind reads. */
 export interface IPropSurfaces {
@@ -264,21 +304,26 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   crownMaterial.alphaTest = CUTOUT;
   if (atlas === undefined) crownMaterial.colorNode = vec3(0.09, 0.24, 0.11);
   else {
+    const mip = mipLevels(atlas);
+    const card = texture(atlas);
+    const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
     crownMaterial.map = atlas;
-    crownMaterial.alphaTestNode = mipCompensatedCutoff(atlas);
-  }
-  // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
-  // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
-  // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them reads
-  // as a field of white cutouts.
-  if (atlas !== undefined)
-    crownMaterial.colorNode = texture(atlas).rgb.mul(
-      mix(
-        vec3(0.8, 0.9, 0.78),
-        vec3(1.35, 1.4, 1.15),
-        smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
+    crownMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst);
+    // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
+    // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
+    // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them
+    // reads as a field of white cutouts.
+    crownMaterial.colorNode = vec4(
+      card.rgb.mul(
+        mix(
+          vec3(0.95, 1.05, 0.9),
+          vec3(1.5, 1.55, 1.3),
+          smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
+        ),
       ),
+      mix(card.a, float(1), solid),
     );
+  }
   crownMaterial.roughness = 0.87;
   sway(crownMaterial, seconds, WIND.amplitude.crown);
 
@@ -306,8 +351,28 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   petalMaterial.alphaTest = CUTOUT;
   if (atlas === undefined) petalMaterial.colorNode = vec3(0.72, 0.09, 0.08);
   else {
+    // A poppy is five centimetres across: at any distance past twenty metres its petal is a handful
+    // of texels, and a cutout that keeps only the texels which happen to clear the threshold is a
+    // grey smudge where a red one should be. The same coverage ramp the crown uses is what makes a
+    // patch of poppies read as red at the far edge of a meadow.
+    const mip = mipLevels(atlas);
+    const petal = texture(atlas);
+    const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
     petalMaterial.map = atlas;
-    petalMaterial.alphaTestNode = mipCompensatedCutoff(atlas);
+    petalMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst);
+    // The colour goes with the coverage: a petal cell is mostly empty, so its mip average is a dark
+    // red, and a patch of poppies that goes solid at sixty metres would go black with it. The
+    // sampled colour is faded into the red the game wants at that distance instead.
+    petalMaterial.colorNode = vec4(
+      mix(petal.rgb, color(POPPY_RED), solid),
+      mix(petal.a, float(1), solid),
+    );
+    // A poppy petal is the most translucent thing in a meadow and the most saturated, and it is the
+    // one surface whose colour has to survive the tone curve: lit by the fill alone, a dark red
+    // petal takes the sky's blue and a patch of poppies goes violet, which is what the first capture
+    // of this lane showed. Light comes *through* a petal, so it is emissive, and by exactly as much
+    // as the distance fade asks for.
+    petalMaterial.emissiveNode = color(POPPY_RED).mul(float(0.22).add(solid.mul(0.4)));
   }
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 

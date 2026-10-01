@@ -148,7 +148,11 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         },
       });
 
-      // A deliberately asymmetric nonplanar fixture, on the same runtime/physics path.
+      // A deliberately asymmetric nonplanar fixture, on the same runtime/physics path. It is
+      // invisible: it exists to be ray-queried, and at x = 600 there is no terrain under it, so
+      // drawing it put a small orange wedge in the sky of every overview capture. The scene picker
+      // walks the hierarchy without consulting visibility and the collider is its own body, so
+      // both contact paths below still answer for a mesh that is not drawn.
       const fixture = new Heightfield({
         rows: 17,
         columns: 17,
@@ -166,6 +170,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         new MeshStandardMaterial({ color: 0xd3a168 }),
       );
       probeMesh.position.x = 600;
+      probeMesh.visible = false;
       ctx.add(probeMesh);
       const probeBody = new RigidBody3D({
         object: probeMesh,
