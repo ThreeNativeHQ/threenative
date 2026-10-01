@@ -30,14 +30,18 @@ import {
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
-  /** `heightfield` crosses the ABI as the trimesh of its canonical samples. */
   readonly kind: "box" | "capsule" | "heightfield" | "sphere" | "trimesh";
   readonly x: number;
   readonly y: number;
   readonly z: number;
-  /** Present for `trimesh` and `heightfield`: flat xyz vertices and flat triangle indices. */
+  /** Present for `trimesh` only: a flat xyz vertex buffer and a flat triangle-index buffer. */
   readonly vertices?: Float32Array;
   readonly indices?: Uint32Array;
+  /** Present for `heightfield` only: column-major samples, the grid and its full extent. */
+  readonly heights?: Float32Array;
+  readonly rows?: number;
+  readonly columns?: number;
+  readonly scale?: { readonly x: number; readonly y: number; readonly z: number };
   collisionLayer: number;
   collisionMask: number;
   sensor: boolean;
@@ -241,12 +245,38 @@ function primitiveShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor 
  * A body's shape, including the concave shapes a level needs.
  *
  * A doorway, an arch or a floor with a hole cannot be a box, a ball or a capsule, so a trimesh is
- * the only shape that keeps the opening the model actually has. A heightfield crosses as the
- * trimesh of its canonical samples. Queries stay primitive-only: the native query path has no
- * trimesh representation and says so instead of silently missing.
+ * the only shape that keeps the opening the model actually has. A heightfield crosses as its own
+ * samples, in the column-major order the web backend hands Rapier, so both runtimes build the same
+ * surface. Queries stay primitive-only: the native query path has no trimesh representation and
+ * says so instead of silently missing.
  */
 function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
-  if (shape.kind === "heightfield") return heightfieldTrimesh(shape);
+  if (shape.kind === "heightfield") {
+    const { columns, heights, rows, scale } = shape;
+    if (
+      rows === undefined ||
+      columns === undefined ||
+      heights === undefined ||
+      scale === undefined ||
+      heights.length !== rows * columns
+    )
+      throw new Error(
+        "TN_NATIVE_PHYSICS_SHAPE_INVALID: heightfield requires rows x columns heights",
+      );
+    return {
+      collisionLayer: shape.collisionLayer,
+      collisionMask: shape.collisionMask,
+      columns,
+      heights,
+      kind: "heightfield",
+      rows,
+      scale,
+      sensor: shape.sensor,
+      x: 0,
+      y: 0,
+      z: 0,
+    };
+  }
   if (shape.kind === "trimesh") {
     if (shape.vertices === undefined || shape.indices === undefined)
       throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: trimesh requires vertices and indices");
@@ -263,71 +293,6 @@ function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor
     };
   }
   return primitiveShape(shape);
-}
-
-const heightfieldIndices = new Map<string, Uint32Array>();
-
-/**
- * The trimesh of a heightfield's canonical samples, in the collider's own frame.
- *
- * Heights arrive in Rapier's column-major matrix order (`column * rows + row`), rows along z and
- * columns along x, centred on the body like Rapier's heightfield. Each cell splits along the
- * same diagonal Rapier's heightfield and `Heightfield.toGeometry` use, so the web heightfield,
- * this trimesh and the rendered mesh are one surface. Index buffers depend only on the grid and
- * are shared.
- */
-export function heightfieldTrimesh(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
-  const { columns, heights, rows, scale } = shape;
-  if (
-    rows === undefined ||
-    columns === undefined ||
-    heights === undefined ||
-    scale === undefined ||
-    !Number.isInteger(rows) ||
-    !Number.isInteger(columns) ||
-    rows < 2 ||
-    columns < 2 ||
-    heights.length !== rows * columns
-  )
-    throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: heightfield requires rows x columns heights");
-  const vertices = new Float32Array(rows * columns * 3);
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const offset = (row * columns + column) * 3;
-      vertices[offset] = (column / (columns - 1) - 0.5) * scale.x;
-      vertices[offset + 1] = (heights[column * rows + row] as number) * scale.y;
-      vertices[offset + 2] = (row / (rows - 1) - 0.5) * scale.z;
-    }
-  }
-  const key = `${String(rows)}x${String(columns)}`;
-  let indices = heightfieldIndices.get(key);
-  if (indices === undefined) {
-    indices = new Uint32Array((rows - 1) * (columns - 1) * 6);
-    let offset = 0;
-    for (let row = 0; row < rows - 1; row += 1) {
-      for (let column = 0; column < columns - 1; column += 1) {
-        const upperLeft = row * columns + column;
-        const lowerLeft = upperLeft + columns;
-        indices.set(
-          [upperLeft, lowerLeft, upperLeft + 1, upperLeft + 1, lowerLeft, lowerLeft + 1],
-          offset,
-        );
-        offset += 6;
-      }
-    }
-    heightfieldIndices.set(key, indices);
-  }
-  return {
-    collisionLayer: shape.collisionLayer,
-    collisionMask: shape.collisionMask,
-    indices,
-    kind: "heightfield",
-    sensor: shape.sensor,
-    vertices,
-    x: 0,
-    y: 0,
-    z: 0,
-  };
 }
 
 function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
@@ -682,9 +647,9 @@ export function createNativePhysicsSimulation(
         throw new Error(
           `IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`,
         );
-      if (shape.kind !== "heightfield" && shape.kind !== "trimesh")
+      if (shape.kind !== "heightfield")
         throw new Error(
-          `TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED: native setColliderShape takes heightfield or trimesh, not ${shape.kind}`,
+          `TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED: native setColliderShape takes a heightfield, not ${shape.kind}`,
         );
       raw.setColliderShape(collider.id, nativeBodyShape(shape));
       invalidateObservations();

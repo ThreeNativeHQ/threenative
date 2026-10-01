@@ -1,5 +1,5 @@
 use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
-use rapier3d::na::{Point3, Quaternion, UnitQuaternion};
+use rapier3d::na::{DMatrix, Point3, Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ptr;
@@ -11,9 +11,6 @@ const EVENT_WIDTH: usize = 4;
 const CHARACTER_STATE_WIDTH: usize = 6;
 /// `[collider id, world x, y, z, normal x, y, z, impulse]`, the shared `PHYSICS_CONTACT_STRIDE`.
 const CONTACT_WIDTH: usize = 8;
-/// Shape type of a heightfield surface carried as a trimesh: the same triangles as a heightfield
-/// cell split, with internal-edge correction so a resting body is not kicked by ghost edges.
-const SHAPE_HEIGHTFIELD_SURFACE: u32 = 4;
 
 #[repr(C)]
 pub struct TnPhysicsWorldOptions {
@@ -217,12 +214,31 @@ impl EventHandler for CollisionEventCollector {
     }
 }
 
-fn trimesh_flags(shape_type: u32) -> TriMeshFlags {
-    if shape_type == SHAPE_HEIGHTFIELD_SURFACE {
-        TriMeshFlags::FIX_INTERNAL_EDGES
-    } else {
-        TriMeshFlags::empty()
+/// A heightfield over `rows` x `columns` samples in the column-major order the web backend hands
+/// Rapier (`DMatrix::from_vec`), spanning `scale` and centred on its body, with internal-edge
+/// correction so a resting body is not kicked by ghost edges. `None` for malformed input.
+fn heightfield_shape(
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale: [f32; 3],
+) -> Option<SharedShape> {
+    if heights.is_null() || rows < 2 || columns < 2 || count as u64 != rows as u64 * columns as u64 {
+        return None;
     }
+    if !scale.iter().all(|value| value.is_finite() && *value > 0.0) {
+        return None;
+    }
+    let samples = unsafe { std::slice::from_raw_parts(heights, count as usize) };
+    if !samples.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some(SharedShape::heightfield_with_flags(
+        DMatrix::from_vec(rows as usize, columns as usize, samples.to_vec()),
+        vector![scale[0], scale[1], scale[2]],
+        HeightFieldFlags::FIX_INTERNAL_EDGES,
+    ))
 }
 
 /// Validate and copy a flat xyz vertex buffer and a flat triangle-index buffer from C.
@@ -332,30 +348,16 @@ impl Simulation {
         vertices: Vec<Point3<Real>>,
         indices: Vec<[u32; 3]>,
     ) -> bool {
-        let Ok(collider) = ColliderBuilder::trimesh_with_flags(
-            vertices,
-            indices,
-            trimesh_flags(options.shape_type),
-        ) else {
+        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
             return false;
         };
         self.insert_body(options, collider)
     }
 
-    /// Replace one body's trimesh collider in place: same handle, parent, groups and events.
+    /// Replace one body's collider shape in place: same handle, parent, groups and events.
     /// Bodies sleeping on it wake, since the new surface may no longer hold them up.
-    fn set_trimesh_shape(
-        &mut self,
-        id: u32,
-        shape_type: u32,
-        vertices: Vec<Point3<Real>>,
-        indices: Vec<[u32; 3]>,
-    ) -> bool {
+    fn set_collider_shape(&mut self, id: u32, shape: SharedShape) -> bool {
         let Some(entry) = self.entries.get_mut(&id) else {
-            return false;
-        };
-        let Ok(shape) = SharedShape::trimesh_with_flags(vertices, indices, trimesh_flags(shape_type))
-        else {
             return false;
         };
         let Some(collider) = self.colliders.get_mut(entry.collider) else {
@@ -1340,29 +1342,53 @@ pub extern "C" fn tn_physics_add_trimesh_body(
     simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
 }
 
-/// Replace a body's collider with a new triangle mesh, keeping its id, parent body, collision
-/// groups and events. `shape_type` 3 is a plain trimesh and 4 a heightfield surface.
+/// Add a fixed body whose collider is a heightfield. `heights` holds `rows * columns` samples in
+/// column-major order; it is copied during the call.
 #[unsafe(no_mangle)]
-pub extern "C" fn tn_physics_set_trimesh_shape(
+pub extern "C" fn tn_physics_add_heightfield_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale_x: f32,
+    scale_y: f32,
+    scale_z: f32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    let Some(shape) = heightfield_shape(heights, count, rows, columns, [scale_x, scale_y, scale_z])
+    else {
+        return false;
+    };
+    simulation.insert_body(unsafe { ptr::read(options) }, ColliderBuilder::new(shape))
+}
+
+/// Replace a body's collider with a new heightfield in place, keeping its id, parent body,
+/// collision groups and events. Rebuilding a heightfield copies its samples and nothing else, so
+/// a deforming surface can be refreshed every fixed step.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_heightfield_shape(
     simulation: *mut Simulation,
     id: u32,
-    shape_type: u32,
-    vertices: *const f32,
-    vertex_floats: u32,
-    indices: *const u32,
-    index_count: u32,
+    heights: *const f32,
+    count: u32,
+    rows: u32,
+    columns: u32,
+    scale_x: f32,
+    scale_y: f32,
+    scale_z: f32,
 ) -> bool {
     let Some(simulation) = (unsafe { simulation.as_mut() }) else {
         return false;
     };
-    if shape_type != 3 && shape_type != SHAPE_HEIGHTFIELD_SURFACE {
-        return false;
-    }
-    let Some((points, triangles)) = copy_trimesh(vertices, vertex_floats, indices, index_count)
+    let Some(shape) = heightfield_shape(heights, count, rows, columns, [scale_x, scale_y, scale_z])
     else {
         return false;
     };
-    simulation.set_trimesh_shape(id, shape_type, points, triangles)
+    simulation.set_collider_shape(id, shape)
 }
 
 /// Persistent solved contacts between one body's collider and a list of candidate bodies, one

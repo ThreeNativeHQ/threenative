@@ -387,6 +387,53 @@ export class SnowField {
     };
   }
 
+  /**
+   * One channel over a window of cells, row-major, written into `target` (allocated when absent
+   * or too small) and returned. The bulk read a renderer uses to encode a refreshed window: a
+   * `sample` per vertex costs a bilinear lookup and an object each, and a refill window is
+   * thousands of vertices. A window outside the field throws.
+   */
+  copyChannel(
+    channel: keyof ISnowFieldSample,
+    bounds: IHeightfieldRegionBounds,
+    target?: Float32Array,
+  ): Float32Array {
+    const values =
+      channel === "indent"
+        ? this.#indent
+        : channel === "bank"
+          ? this.#bank
+          : channel === "compaction"
+            ? this.#compaction
+            : channel === "disturbance"
+              ? this.#disturbance
+              : undefined;
+    if (values === undefined) throw new Error(`SnowField has no channel '${String(channel)}'.`);
+    const { column, columns, row, rows } = bounds;
+    if (
+      !Number.isInteger(column) ||
+      !Number.isInteger(row) ||
+      !Number.isInteger(columns) ||
+      !Number.isInteger(rows) ||
+      column < 0 ||
+      row < 0 ||
+      columns < 1 ||
+      rows < 1 ||
+      column + columns > this.columns ||
+      row + rows > this.rows
+    )
+      throw new Error("SnowField.copyChannel window must lie inside the field.");
+    const output =
+      target !== undefined && target.length >= columns * rows
+        ? target
+        : new Float32Array(columns * rows);
+    for (let index = 0; index < rows; index += 1) {
+      const start = (row + index) * this.columns + column;
+      output.set(values.subarray(start, start + columns), index * columns);
+    }
+    return output;
+  }
+
   /** Snow surface height at a world position, from the same samples geometry and collision read. */
   heightAt(x: number, z: number): number {
     return this.field.heightAt(x, z);

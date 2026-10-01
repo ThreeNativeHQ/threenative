@@ -339,6 +339,31 @@ describe("SnowField canonical surface", () => {
     expect(region?.row).toBeGreaterThan(0);
   });
 
+  it("copies a channel window that matches sample at every cell, and rejects a window outside", () => {
+    const snow = new SnowField({ field: fixtureTerrain(), depth: 0.28 });
+    snow.stamp({ area: 0.02, footprint: snowDiscFootprint(0.3), load: 2000, x: 0, z: 0 });
+    const region = snow.dirtyRegion;
+    if (region === undefined) throw new Error("the stamp reported no window");
+    const indent = snow.copyChannel("indent", region);
+    const compaction = snow.copyChannel("compaction", region, new Float32Array(1));
+    let worst = 0;
+    for (let row = 0; row < region.rows; row += 1) {
+      for (let column = 0; column < region.columns; column += 1) {
+        const x = snow.minimumX + (region.column + column) * snow.cellWidth;
+        const z = snow.minimumZ + (region.row + row) * snow.cellDepth;
+        const sample = snow.sample(x, z);
+        const index = row * region.columns + column;
+        worst = Math.max(worst, Math.abs((indent[index] as number) - sample.indent));
+        worst = Math.max(worst, Math.abs((compaction[index] as number) - sample.compaction));
+      }
+    }
+    expect(worst).toBeLessThan(1e-6);
+    expect(Math.max(...indent)).toBeGreaterThan(0.02);
+    expect(() =>
+      snow.copyChannel("indent", { column: snow.columns - 2, columns: 4, row: 0, rows: 1 }),
+    ).toThrow(/inside the field/);
+  });
+
   it("hands a renderer the union of every window written since it last looked", () => {
     const snow = new SnowField({ field: fixtureTerrain(), depth: 0.28 });
     snow.takeDirtyRegion();

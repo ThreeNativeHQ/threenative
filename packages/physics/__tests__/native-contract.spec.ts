@@ -11,7 +11,6 @@ import {
   type INativeShapeDescriptor,
   type INativeSimulation,
   createNativePhysicsSimulation,
-  heightfieldTrimesh,
 } from "../src/native/host.js";
 import {
   Area3D as NativeArea3D,
@@ -163,13 +162,12 @@ describe("native physics contract", () => {
     expect(createBody).not.toHaveBeenCalled();
   });
 
-  it("hands a heightfield to the native host as the trimesh of its canonical samples", () => {
+  it("hands a heightfield to the native host as its own column-major samples", () => {
     const createBody = vi.fn((_options: { shape: INativeShapeDescriptor }) => 3);
     const native = createNativePhysicsSimulation(
       { createBody } as unknown as INativeSimulation,
       "0.30.0",
     );
-    // Rapier's column-major order: height(row, column) sits at column * rows + row.
     const heights = new Float32Array([0, 1, 2, 3, 4, 5]);
     native.createBody({
       mass: 0,
@@ -180,59 +178,23 @@ describe("native physics contract", () => {
       type: "fixed",
     });
     const shape = createBody.mock.calls[0]?.[0].shape;
-    expect(shape?.kind).toBe("heightfield");
-    // Row-major vertices: row 0 is z = -3, columns span x = -2..2, y is height * scale.y.
-    expect(Array.from(shape?.vertices ?? [])).toEqual([
-      -2, 0, -3, 0, 4, -3, 2, 8, -3, -2, 2, 3, 0, 6, 3, 2, 10, 3,
-    ]);
-    // Each cell splits along the upper-right / lower-left diagonal, wound to face up.
-    expect(Array.from(shape?.indices ?? [])).toEqual([0, 3, 1, 1, 3, 4, 1, 4, 2, 2, 4, 5]);
-  });
-
-  it("builds the native heightfield trimesh as the same surface as the web heightfield", async () => {
-    await RAPIER.init();
-    const rows = 9;
-    const columns = 7;
-    const scale = { x: 3, y: 1.5, z: 4 };
-    const heights = new Float32Array(rows * columns);
-    for (let index = 0; index < heights.length; index += 1)
-      heights[index] = Math.sin(index * 1.7) * 0.4 + (index % 3) * 0.1;
-    const descriptor = CollisionShape3D.heightfield(rows, columns, heights, scale).descriptor;
-    const world = new RAPIER.World({ x: 0, y: 0, z: 0 });
-    world.createCollider(RAPIER.ColliderDesc.heightfield(rows - 1, columns - 1, heights, scale));
-    world.step();
-    const trimesh = heightfieldTrimesh(descriptor);
-    const vertices = trimesh.vertices as Float32Array;
-    const indices = trimesh.indices as Uint32Array;
-    let worst = 0;
-    for (let sample = 0; sample < 200; sample += 1) {
-      const x = (((sample * 0.618) % 1) - 0.5) * scale.x * 0.98;
-      const z = (((sample * 0.414) % 1) - 0.5) * scale.z * 0.98;
-      const hit = world.castRay(new RAPIER.Ray({ x, y: 10, z }, { x: 0, y: -1, z: 0 }), 20, true);
-      if (hit === null) throw new Error("the web heightfield missed an interior ray");
-      // Height of the adapter triangle containing (x, z), by barycentric interpolation.
-      let height: number | undefined;
-      for (let triangle = 0; triangle < indices.length && height === undefined; triangle += 3) {
-        const [a, b, c] = [0, 1, 2].map((corner) => (indices[triangle + corner] as number) * 3);
-        const ax = vertices[a as number] as number;
-        const az = vertices[(a as number) + 2] as number;
-        const bx = vertices[b as number] as number;
-        const bz = vertices[(b as number) + 2] as number;
-        const cx = vertices[c as number] as number;
-        const cz = vertices[(c as number) + 2] as number;
-        const area = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
-        const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / area;
-        const v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / area;
-        if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
-        height =
-          u * (vertices[(a as number) + 1] as number) +
-          v * (vertices[(b as number) + 1] as number) +
-          (1 - u - v) * (vertices[(c as number) + 1] as number);
-      }
-      if (height === undefined) throw new Error("no adapter triangle covers an interior point");
-      worst = Math.max(worst, Math.abs(10 - hit.timeOfImpact - height));
-    }
-    expect(worst).toBeLessThan(1e-4);
+    // The same buffer, grid and extent the web backend passes Rapier, so both build one surface.
+    expect(shape).toMatchObject({ columns: 3, kind: "heightfield", rows: 2 });
+    expect(shape?.heights).toBe(heights);
+    expect(shape?.scale).toEqual({ x: 4, y: 2, z: 6 });
+    expect(() =>
+      native.createBody({
+        mass: 0,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { w: 1, x: 0, y: 0, z: 0 },
+        sensor: false,
+        shape: {
+          ...CollisionShape3D.heightfield(2, 3, heights, { x: 4, y: 2, z: 6 }).descriptor,
+          heights: new Float32Array(5),
+        },
+        type: "fixed",
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_INVALID/);
   });
 
   it("reads native contacts and refreshes a collider shape, failing closed on an old runtime", () => {

@@ -172,6 +172,46 @@ struct TrimeshBuffers {
   uint32_t index_count = 0;
 };
 
+// A heightfield's samples (column-major, as the web backend hands Rapier), grid and extent.
+struct HeightfieldBuffers {
+  const float *heights = nullptr;
+  uint32_t count = 0;
+  uint32_t rows = 0;
+  uint32_t columns = 0;
+  float scale_x = 0.0f;
+  float scale_y = 0.0f;
+  float scale_z = 0.0f;
+};
+
+bool readGridCount(js::Engine *engine, js::JSValueHandle object, const char *name,
+                   uint32_t &output) {
+  float value = 0.0f;
+  if (!readFiniteNumber(engine, object, name, value) || value < 2.0f ||
+      value > 65536.0f || std::floor(value) != value)
+    return false;
+  output = static_cast<uint32_t>(value);
+  return true;
+}
+
+// The samples' data pointer stays valid for the synchronous call that parses it, like a trimesh's.
+bool parseHeightfield(js::Engine *engine, js::JSValueHandle shape,
+                      HeightfieldBuffers &heightfield) {
+  const auto heights = engine->getProperty(shape, "heights");
+  if (!isTypedArray(engine, heights, "Float32Array") ||
+      !readGridCount(engine, shape, "rows", heightfield.rows) ||
+      !readGridCount(engine, shape, "columns", heightfield.columns) ||
+      !readVector(engine, shape, "scale", heightfield.scale_x, heightfield.scale_y,
+                  heightfield.scale_z))
+    return false;
+  size_t bytes = 0;
+  void *data = engine->getArrayBufferData(heights, &bytes);
+  if (data == nullptr || bytes % sizeof(float) != 0)
+    return false;
+  heightfield.heights = static_cast<const float *>(data);
+  heightfield.count = static_cast<uint32_t>(bytes / sizeof(float));
+  return true;
+}
+
 // The mesh's data pointers stay valid for the synchronous call that parses them: the typed
 // arrays are reachable from the object the caller passed in, so nothing is collected mid-call.
 bool parseTrimeshBuffers(js::Engine *engine, js::JSValueHandle shape,
@@ -196,7 +236,8 @@ bool parseTrimeshBuffers(js::Engine *engine, js::JSValueHandle shape,
 }
 
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
-                      TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh) {
+                      TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh,
+                      HeightfieldBuffers &heightfield) {
   if (!engine->isObject(value))
     return false;
   options = {id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
@@ -229,10 +270,14 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
     options.shape_type = 1;
   else if (shapeName == "capsule")
     options.shape_type = 2;
-  else if (shapeName == "trimesh" || shapeName == "heightfield") {
-    // A heightfield arrives as the trimesh of its canonical samples (shape type 4).
-    options.shape_type = shapeName == "trimesh" ? 3 : 4;
+  else if (shapeName == "trimesh") {
+    options.shape_type = 3;
     if (!parseTrimeshBuffers(engine, shape, trimesh))
+      return false;
+  } else if (shapeName == "heightfield") {
+    // Shape type 4 never crosses the C ABI: it selects tn_physics_add_heightfield_body.
+    options.shape_type = 4;
+    if (!parseHeightfield(engine, shape, heightfield))
       return false;
   } else
     return false;
@@ -548,14 +593,21 @@ js::JSValueHandle makeSimulationObject(
               return fail(engine, "createBody requires options and an available id");
             TnPhysicsBodyOptions options{};
             TrimeshBuffers trimesh{};
-            if (!parseBodyOptions(engine, args[0], owner->nextId, options, trimesh))
+            HeightfieldBuffers heightfield{};
+            if (!parseBodyOptions(engine, args[0], owner->nextId, options, trimesh,
+                                  heightfield))
               return fail(engine, "physics body options are invalid");
             const bool added =
-                options.shape_type == 3 || options.shape_type == 4
+                options.shape_type == 3
                     ? tn_physics_add_trimesh_body(
                           owner->simulation, &options, trimesh.vertices,
                           trimesh.vertex_floats, trimesh.indices,
                           trimesh.index_count)
+                : options.shape_type == 4
+                    ? tn_physics_add_heightfield_body(
+                          owner->simulation, &options, heightfield.heights,
+                          heightfield.count, heightfield.rows, heightfield.columns,
+                          heightfield.scale_x, heightfield.scale_y, heightfield.scale_z)
                     : tn_physics_add_body(owner->simulation, &options);
             if (!added)
               return fail(engine, "physics body options are invalid");
@@ -918,15 +970,14 @@ js::JSValueHandle makeSimulationObject(
             const auto kind = engine->getProperty(args[1], "kind");
             if (!engine->isString(kind))
               return fail(engine, "setColliderShape requires a shape kind");
-            const std::string shapeName = engine->toString(kind);
-            if (shapeName != "trimesh" && shapeName != "heightfield")
-              return fail(engine, "setColliderShape supports trimesh and heightfield shapes");
-            TrimeshBuffers trimesh{};
-            if (!parseTrimeshBuffers(engine, args[1], trimesh) ||
-                !tn_physics_set_trimesh_shape(
-                    owner->simulation, id, shapeName == "trimesh" ? 3 : 4,
-                    trimesh.vertices, trimesh.vertex_floats, trimesh.indices,
-                    trimesh.index_count))
+            if (engine->toString(kind) != "heightfield")
+              return fail(engine, "setColliderShape supports heightfield shapes");
+            HeightfieldBuffers heightfield{};
+            if (!parseHeightfield(engine, args[1], heightfield) ||
+                !tn_physics_set_heightfield_shape(
+                    owner->simulation, id, heightfield.heights, heightfield.count,
+                    heightfield.rows, heightfield.columns, heightfield.scale_x,
+                    heightfield.scale_y, heightfield.scale_z))
               return fail(engine, "setColliderShape shape was rejected");
             return engine->newUndefined();
           }));

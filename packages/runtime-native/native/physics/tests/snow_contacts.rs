@@ -1,13 +1,14 @@
 use threenative_native_physics::{
     Simulation, TnPhysicsBodyOptions, TnPhysicsWorldOptions, tn_physics_add_body,
-    tn_physics_add_trimesh_body, tn_physics_create, tn_physics_destroy,
+    tn_physics_add_heightfield_body, tn_physics_create, tn_physics_destroy,
     tn_physics_read_body_sleep_states, tn_physics_read_contacts,
-    tn_physics_read_visible_transforms, tn_physics_set_trimesh_shape, tn_physics_step,
+    tn_physics_read_visible_transforms, tn_physics_set_heightfield_shape, tn_physics_step,
 };
 
 const CONTACT_WIDTH: usize = 8;
 const TRANSFORM_WIDTH: usize = 8;
-const HEIGHTFIELD_SURFACE: u32 = 4;
+const SAMPLES: u32 = 33;
+const SIZE: f32 = 6.0;
 const STEP: f32 = 1.0 / 60.0;
 const SURFACE: u32 = 0;
 const BALL: u32 = 1;
@@ -35,35 +36,23 @@ fn options(id: u32, body_type: u32, shape_type: u32, y: f32, radius: f32) -> TnP
     }
 }
 
-/// A flat heightfield surface at `height`, triangulated the way the TypeScript adapter does.
-fn surface(height: f32) -> (Vec<f32>, Vec<u32>) {
-    let (rows, columns, size) = (33u32, 33u32, 6.0f32);
-    let mut vertices = Vec::new();
-    for row in 0..rows {
-        for column in 0..columns {
-            vertices.extend_from_slice(&[
-                -size / 2.0 + column as f32 * size / (columns - 1) as f32,
-                height,
-                -size / 2.0 + row as f32 * size / (rows - 1) as f32,
-            ]);
-        }
-    }
-    let mut indices = Vec::new();
-    for row in 0..rows - 1 {
-        for column in 0..columns - 1 {
-            let upper_left = row * columns + column;
-            let lower_left = upper_left + columns;
-            indices.extend_from_slice(&[
-                upper_left,
-                lower_left,
-                upper_left + 1,
-                upper_left + 1,
-                lower_left,
-                lower_left + 1,
-            ]);
-        }
-    }
-    (vertices, indices)
+/// A flat heightfield at `height`, `SAMPLES` x `SAMPLES`, in the web backend's column-major order.
+fn surface(height: f32) -> Vec<f32> {
+    vec![height; (SAMPLES * SAMPLES) as usize]
+}
+
+fn set_surface(simulation: *mut Simulation, id: u32, heights: &[f32], rows: u32) -> bool {
+    tn_physics_set_heightfield_shape(
+        simulation,
+        id,
+        heights.as_ptr(),
+        heights.len() as u32,
+        rows,
+        SAMPLES,
+        SIZE,
+        1.0,
+        SIZE,
+    )
 }
 
 fn ball_height(simulation: *mut Simulation) -> f32 {
@@ -108,14 +97,17 @@ fn reads_solved_support_and_refreshes_the_surface_in_place() {
         gravity_y: -9.81,
         gravity_z: 0.0,
     });
-    let (vertices, indices) = surface(0.28);
-    assert!(tn_physics_add_trimesh_body(
+    let heights = surface(0.28);
+    assert!(tn_physics_add_heightfield_body(
         simulation,
-        &options(SURFACE, 1, HEIGHTFIELD_SURFACE, 0.0, 0.0),
-        vertices.as_ptr(),
-        vertices.len() as u32,
-        indices.as_ptr(),
-        indices.len() as u32,
+        &options(SURFACE, 1, 0, 0.0, 0.0),
+        heights.as_ptr(),
+        heights.len() as u32,
+        SAMPLES,
+        SAMPLES,
+        SIZE,
+        1.0,
+        SIZE,
     ));
     assert!(tn_physics_add_body(
         simulation,
@@ -177,16 +169,8 @@ fn reads_solved_support_and_refreshes_the_surface_in_place() {
     assert_eq!(read(simulation, &mut output), 0);
 
     // Lower the surface in place: same body, and the sleeping ball wakes and follows it down.
-    let (lowered, indices) = surface(0.1);
-    assert!(tn_physics_set_trimesh_shape(
-        simulation,
-        SURFACE,
-        HEIGHTFIELD_SURFACE,
-        lowered.as_ptr(),
-        lowered.len() as u32,
-        indices.as_ptr(),
-        indices.len() as u32,
-    ));
+    let lowered = surface(0.1);
+    assert!(set_surface(simulation, SURFACE, &lowered, SAMPLES));
     step(simulation, 120);
     assert!(
         (ball_height(simulation) - 0.35).abs() < 0.01,
@@ -196,23 +180,11 @@ fn reads_solved_support_and_refreshes_the_surface_in_place() {
     assert!(read(simulation, &mut output) > 0 || ball_sleeping(simulation));
 
     // Malformed refreshes are refused rather than half-applied.
-    assert!(!tn_physics_set_trimesh_shape(
-        simulation,
-        SURFACE,
-        1,
-        lowered.as_ptr(),
-        lowered.len() as u32,
-        indices.as_ptr(),
-        indices.len() as u32,
-    ));
-    assert!(!tn_physics_set_trimesh_shape(
-        simulation,
-        42,
-        HEIGHTFIELD_SURFACE,
-        lowered.as_ptr(),
-        lowered.len() as u32,
-        indices.as_ptr(),
-        indices.len() as u32,
-    ));
+    assert!(!set_surface(simulation, SURFACE, &lowered, SAMPLES + 1));
+    assert!(!set_surface(simulation, 42, &lowered, SAMPLES));
+    let mut broken = lowered.clone();
+    broken[5] = f32::NAN;
+    assert!(!set_surface(simulation, SURFACE, &broken, SAMPLES));
+    assert!((ball_height(simulation) - 0.35).abs() < 0.01);
     tn_physics_destroy(simulation);
 }

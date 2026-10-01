@@ -481,23 +481,19 @@ export class Heightfield extends Group implements IComputeDriven {
         : regionColumns(bounds, this.columns);
     const row =
       bounds === undefined ? { count: this.rows, start: 0 } : regionRows(bounds, this.rows);
-    const normal = new Vector3();
     let lowest = Number.POSITIVE_INFINITY;
     let highest = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < row.count; index += 1) {
       const target = row.start + index;
-      const worldZ = this.origin.z - this.depth / 2 + target * this.#cellDepth;
       for (let offset = 0; offset < column.count; offset += 1) {
         const source = column.start + offset;
         const vertex = target * this.columns + source;
-        const worldX = this.origin.x - this.width / 2 + source * this.#cellWidth;
         const height = this.#height(vertex);
         position.setY(vertex, height);
         lowest = Math.min(lowest, height);
         highest = Math.max(highest, height);
         if (normalAttribute === undefined) continue;
-        this.normalAt(worldX, worldZ, normal);
-        normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
+        this.#gridNormal(source, target, normalAttribute, vertex);
       }
     }
     position.needsUpdate = true;
@@ -615,6 +611,31 @@ export class Heightfield extends Group implements IComputeDriven {
         Math.abs((sample.data[index] as number) - (expected[index] as number)),
       );
     return maximum;
+  }
+
+  /**
+   * `normalAt` at a sample, read straight from the grid: the same central differences, one-sided
+   * at the border, without five validated bilinear queries per vertex. On a 401-sample field a
+   * windowed refresh spent most of its time in those queries.
+   */
+  #gridNormal(
+    column: number,
+    row: number,
+    target: { setXYZ(index: number, x: number, y: number, z: number): unknown },
+    vertex: number,
+  ): void {
+    const left = Math.max(0, column - 1);
+    const right = Math.min(this.columns - 1, column + 1);
+    const near = Math.max(0, row - 1);
+    const far = Math.min(this.rows - 1, row + 1);
+    const slopeX =
+      (this.#height(row * this.columns + right) - this.#height(row * this.columns + left)) /
+      ((right - left) * this.#cellWidth);
+    const slopeZ =
+      (this.#height(far * this.columns + column) - this.#height(near * this.columns + column)) /
+      ((far - near) * this.#cellDepth);
+    const length = Math.hypot(slopeX, 1, slopeZ);
+    target.setXYZ(vertex, -slopeX / length, 1 / length, -slopeZ / length);
   }
 
   #height(index: number): number {
