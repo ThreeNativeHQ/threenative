@@ -206,12 +206,26 @@ describe("renderChain perAdapter selection", () => {
     );
   });
 
-  // `capture.rendererKind` is a fact about the canvas. Three provenance shapes carry that marker
-  // without carrying an adapter, and all three used to classify `hardware`.
+  // `capture.rendererKind` is a fact about the canvas. Four provenance shapes carry that marker
+  // without naming an adapter, and all four used to classify `hardware`. The last one is the shape
+  // a real capture actually has: `readCaptureProvenance` adds `features` and `limit.*` beside the
+  // four identity fields, so an object full of non-identity text is the common case, not a corner.
   it.each([
     ["no adapter object", undefined],
     ["an empty adapter object", {}],
     ["an adapter that named nothing", { architecture: "", description: "", device: "", vendor: "" }],
+    [
+      "only the metadata a real capture adds beside its identity fields",
+      {
+        architecture: "",
+        description: "",
+        device: "",
+        features: "timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        vendor: "",
+      },
+    ],
   ])("refuses to call hardware a run whose capture reports %s", async (_name, adapter) => {
     const scenario = await load(SCENARIO(ASSERTION));
     const result = evaluateRichPlaytestAssertions({

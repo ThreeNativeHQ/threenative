@@ -37,10 +37,21 @@ export function classifyAdapter(report: IPlaytestReport): IAdapterClassification
     : { adapterClass: "software", softwareAdapter: software };
 }
 
-/** One independently observed `adapter.info` field, or none when the run named nothing. */
+/** The same four `adapter.info` fields core's `softwareAdapter` reads, in that order. */
+const ADAPTER_IDENTITY_KEYS = ["architecture", "description", "device", "vendor"] as const;
+
+/**
+ * One independently observed `adapter.info` identity field, or none when the run named nothing.
+ *
+ * Exactly those four keys, never every key present: `readCaptureProvenance` records `features` and
+ * `limit.*` beside them, so scanning the object's values read a real capture full of non-identity
+ * text — a `timestamp-query` feature and a bind-group limit — as an adapter that named itself, and
+ * handed a run with an empty identity a hardware verdict.
+ */
 function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined): string | undefined {
   if (adapter === undefined) return undefined;
-  for (const value of Object.values(adapter)) {
+  for (const key of ADAPTER_IDENTITY_KEYS) {
+    const value = adapter[key];
     if (typeof value === "string" && value.trim() !== "") return value;
   }
   return undefined;
