@@ -2916,34 +2916,34 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   }
 
   /**
-   * Rebuild at most one dirty block, charging it to the frame's admission budget like any other
-   * streamed work. A rebuild concatenates a K×K block of settled tile levels, so it is bounded and
-   * never one long task; a refused rebuild stays dirty and the next `follow` runs it. With no budget
-   * every dirty block rebuilds, which is what a test or a one-shot harness wants.
+   * Rebuild one dirty block, charging it to the frame's admission budget like any other streamed
+   * work. One, per frame, whatever the budget still holds: a rebuild concatenates a K×K block of
+   * settled tile levels, and a follow that paid for every block its own streaming churn left dirty
+   * is the frame-time spike this cap exists to prevent — the plan's `TN_FRAME_SPANS` check watches
+   * for exactly that. A refused rebuild stays dirty and the next `follow` runs it, so N dirty blocks
+   * take N frames and a still follow point converges.
    */
   #rebuildDirtyBlocks(budget: IAdmissionBudget | undefined): void {
-    if (!this.#mergeTiles || this.#dirtyBlocks.size === 0) return;
-    while (this.#dirtyBlocks.size > 0) {
-      let key: string | undefined;
-      for (const candidate of this.#dirtyBlocks)
-        if (key === undefined || candidate < key) key = candidate;
-      if (key === undefined) return;
-      const dirty = key;
-      const run = (): void => {
-        this.#dirtyBlocks.delete(dirty);
-        this.#rebuildBlock(dirty);
-      };
-      // With no budget every dirty block rebuilds; with one, a refusal stops the loop and leaves the
-      // rest dirty for a later frame, so no single `follow` pays for more than the frame's allowance.
-      if (budget === undefined) {
-        run();
-        continue;
-      }
-      if (!budget.admit(run)) {
-        this.#deferredAdmissions = 1;
-        return;
-      }
+    if (!this.#mergeTiles) return;
+    const dirty = this.#nextDirtyBlock();
+    if (dirty === undefined) return;
+    const run = (): void => {
+      this.#dirtyBlocks.delete(dirty);
+      this.#rebuildBlock(dirty);
+    };
+    if (budget === undefined) {
+      run();
+      return;
     }
+    if (!budget.admit(run)) this.#deferredAdmissions = 1;
+  }
+
+  /** The lowest block key still waiting, so the one rebuild a frame spends is the same every time. */
+  #nextDirtyBlock(): string | undefined {
+    let first: string | undefined;
+    for (const candidate of this.#dirtyBlocks)
+      if (first === undefined || candidate < first) first = candidate;
+    return first;
   }
 
   /**

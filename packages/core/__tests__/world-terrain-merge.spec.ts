@@ -280,6 +280,112 @@ describe("TerrainTiles merge", () => {
     }
   });
 
+  it("rebuilds one dirty block per frame, so three dirty blocks take three frames", () => {
+    const tiles = terrain(true);
+    try {
+      // Following (0, 0) splits the 3x3 ring across four block cells, so one follow leaves three
+      // block-forming rebuilds dirty at once.
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.terrainTiles.rebuilds).toBeLessThanOrEqual(1);
+      let frames = 1;
+      while (tiles.terrainTiles.rebuilds < 3 && frames < 8) {
+        const before = tiles.terrainTiles.rebuilds;
+        tiles.follow({ x: 0, z: 0 });
+        expect(tiles.terrainTiles.rebuilds - before).toBeLessThanOrEqual(1);
+        frames += 1;
+      }
+      expect(frames).toBeGreaterThanOrEqual(3);
+      expect(tiles.terrainTiles.blocks).toBe(3);
+      expect(tiles.terrainTiles.draws).toBe(4);
+      // Nothing is left dirty, so a settled follow point builds nothing.
+      const settled = tiles.terrainTiles.rebuilds;
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.terrainTiles.rebuilds).toBe(settled);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("defers a rebuild the frame budget refuses to the next frame that allows it", () => {
+    const tiles = terrain(true);
+    try {
+      tiles.follow({ x: 16, z: 16 });
+      expect(tiles.terrainTiles.blocks).toBe(1);
+      const rebuilds = tiles.terrainTiles.rebuilds;
+      // The point moves 24 tiles away, so the ring and its blocks are all dirty again, and the frame
+      // pays for nothing: the rebuild waits instead of being dropped.
+      tiles.follow({ x: 400, z: 0 }, { admit: () => false });
+      expect(tiles.terrainTiles.rebuilds).toBe(rebuilds);
+      expect(tiles.deferredAdmissions).toBeGreaterThan(0);
+      // Every frame that allows the work rebuilds one block, so the ring here converges.
+      let frames = 0;
+      while (frames < 12 && tiles.terrainTiles.rebuilds === rebuilds) {
+        tiles.follow(
+          { x: 400, z: 0 },
+          {
+            admit: (work) => {
+              work();
+              return true;
+            },
+          },
+        );
+        frames += 1;
+      }
+      expect(frames).toBeLessThan(12);
+      expect(tiles.terrainTiles.rebuilds).toBe(rebuilds + 1);
+      for (let frame = 0; frame < 12; frame += 1)
+        tiles.follow(
+          { x: 400, z: 0 },
+          {
+            admit: (work) => {
+              work();
+              return true;
+            },
+          },
+        );
+      // The stale block at the old point is gone and nothing is left dirty.
+      const settled = tiles.terrainTiles.rebuilds;
+      tiles.follow(
+        { x: 400, z: 0 },
+        {
+          admit: (work) => {
+            work();
+            return true;
+          },
+        },
+      );
+      expect(tiles.terrainTiles.rebuilds).toBe(settled);
+      expect(tiles.terrainTiles.draws).toBe(submittedMeshes(tiles));
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("re-merges a blending tile's block on a later frame once its blend ends", () => {
+    const tiles = terrain(true, { lodDistances: [8], lodFactors: [1, 2] });
+    try {
+      tiles.follow({ x: 16, z: 16 });
+      tiles.follow({ x: 24.5, z: 16 });
+      expect(tiles.blendingTiles).toBeGreaterThan(0);
+      // The blend is three frames, and the block that will take the tile back is rebuilt on a frame
+      // of its own, so the tile must not stay an individual mesh for good.
+      for (let frame = 0; frame < 8 && tiles.blendingTiles > 0; frame += 1) {
+        tiles.process();
+        tiles.follow({ x: 24.5, z: 16 });
+      }
+      expect(tiles.blendingTiles).toBe(0);
+      const merged = tiles.residentKeys.filter((key) => {
+        const tile = tiles.getTile(key);
+        if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
+        return !tile.lod.levels.some(({ object }) => object.visible);
+      });
+      expect(merged.length).toBeGreaterThan(0);
+      expect(tiles.terrainTiles.draws).toBe(submittedMeshes(tiles));
+    } finally {
+      tiles.dispose();
+    }
+  });
+
   it("dissolves blocks and restores individual meshes when tiles stream out", () => {
     const tiles = terrain(true);
     try {
@@ -305,7 +411,9 @@ describe("TerrainTiles merge", () => {
   it("keeps a lone block member individual rather than copying its geometry", () => {
     const tiles = terrain(true);
     try {
-      tiles.follow({ x: 0, z: 0 });
+      // One block per frame, so the ring is followed until every cell has been rebuilt.
+      for (let frame = 0; frame < 8 && tiles.terrainTiles.rebuilds < 3; frame += 1)
+        tiles.follow({ x: 0, z: 0 });
       // tileX -1..1 x tileZ -1..1 splits into three blocks of two or more tiles and one lone tile.
       expect(tiles.terrainTiles.blocks).toBe(3);
       expect(tiles.terrainTiles.tiles).toBe(9);
