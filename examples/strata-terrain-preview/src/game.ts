@@ -92,6 +92,31 @@ const BENCHMARK: Record<"coastal" | "forest", IBenchmark> = {
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = { drawCalls: 0, frameMs: 0 };
 
+/**
+ * Per-view frame cost, latched across the windows that closed while that camera was up.
+ *
+ * `budget` alone cannot answer "did the trees cost more at the meadow or at the overview": a playtest
+ * cycles the cameras faster than a window closes, so the one number it holds belongs to whichever
+ * view happened to be current. This keeps every window grouped by the view that was on screen, and
+ * reports the median of each group's p50s and the worst p99 — the worst, because a LOD band that pops
+ * once is a one-frame cost the median hides.
+ */
+interface IViewWindow {
+  readonly view: string;
+  readonly p50s: number[];
+  readonly p99s: number[];
+  readonly triangles: number[];
+}
+const viewBudgets = new Map<string, IViewWindow>();
+let currentView = "";
+
+/** The middle of a sample set, for a summary that one outlier cannot move. */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] ?? 0;
+}
+
 const initialState = {
   world: "forest",
   frames: 0,
@@ -111,6 +136,12 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
+  meadowFrameP50: 0,
+  meadowFrameP99: 0,
+  meadowTriangles: 0,
+  overviewFrameP50: 0,
+  overviewFrameP99: 0,
+  overviewTriangles: 0,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
@@ -337,6 +368,8 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
 
       let frames = 0;
       let travel = 0;
+      currentView = `${world}:player`;
+      viewBudgets.set(currentView, { view: currentView, p50s: [], p99s: [], triangles: [] });
       const previous = actor.position.clone();
       let contactSamples = 0;
       let maxContactError = 0;
@@ -442,6 +475,14 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
             ) ?? 0,
           windowDrawCalls: budget.drawCalls,
           windowFrameMs: budget.frameMs,
+          // The two framings the trees are judged from, published as plain state so the run report
+          // carries the numbers rather than a console ring buffer that outlives neither run.
+          meadowFrameP50: median(viewBudgets.get("forest:meadow-close")?.p50s ?? []),
+          meadowFrameP99: Math.max(0, ...(viewBudgets.get("forest:meadow-close")?.p99s ?? [])),
+          meadowTriangles: median(viewBudgets.get("forest:meadow-close")?.triangles ?? []),
+          overviewFrameP50: median(viewBudgets.get("forest:overview")?.p50s ?? []),
+          overviewFrameP99: Math.max(0, ...(viewBudgets.get("forest:overview")?.p99s ?? [])),
+          overviewTriangles: median(viewBudgets.get("forest:overview")?.triangles ?? []),
         });
       });
       // --- the fixed benchmark cameras ---------------------------------------------------------
@@ -480,7 +521,16 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       if (ctx.input.justPressed("view")) {
         const cycle = BENCHMARK[world].views;
         const current = cycle.indexOf(ctx.state.getState().view as ViewName);
-        ctx.state.set({ view: cycle[(current + 1) % cycle.length] ?? "player" });
+        const next = cycle[(current + 1) % cycle.length] ?? "player";
+        // Keyed by world as well as view: `meadow-close` frames a different hillside in each world,
+        // so folding them together would report one number for two different pictures.
+        currentView = `${world}:${next}`;
+        // Cumulative, not reset: a view is entered once per cycle but latched across every pass the
+        // run makes through it, so a second visit measures the same framing with more samples behind
+        // it rather than starting the count from nothing.
+        if (!viewBudgets.has(currentView))
+          viewBudgets.set(currentView, { view: currentView, p50s: [], p99s: [], triangles: [] });
+        ctx.state.set({ view: next });
       }
       this.#ocean?.advance(this.#elapsed);
       if (ctx.input.justPressed("light")) this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
@@ -524,8 +574,21 @@ const game = defineGame<TerrainState, IPhysicsContext>({
         0,
       );
       budget.frameMs = window.frame.p50;
+      const group = viewBudgets.get(currentView);
+      if (group) {
+        group.p50s.push(window.frame.p50);
+        group.p99s.push(window.frame.p99);
+        group.triangles.push(
+          Object.values(window.passes ?? {}).reduce((sum, pass) => sum + pass.triangles.p50, 0),
+        );
+      }
     },
-    reportEvery: 90,
+    // Small because this counts PRESENTED frames, not simulated ones. The native host presents at
+    // roughly fifteen a second under Xvfb, so a 1459-frame run presents only a couple of hundred
+    // times: the default 300-present window never closes at all, and every framing would report zero
+    // samples. Ten presents is a second of steady state here, enough that each benchmark view that
+    // the scenario holds on screen accumulates several windows to take a median over.
+    reportEvery: 10,
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
   render: { preferWebGPU: true },

@@ -232,6 +232,30 @@
         "id": "GameState",
         "path": "windowDrawCalls",
         "gte": 1
+      },
+      {
+        "id": "GameState",
+        "path": "meadowFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewFrameP50",
+        "gte": 0.01,
+        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view."
+      },
+      {
+        "id": "GameState",
+        "path": "meadowTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the meadow framing. A floor on real geometry, so a run that reported zero could not be the picture the trees are judged in."
+      },
+      {
+        "id": "GameState",
+        "path": "overviewTriangles",
+        "gte": 1000,
+        "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
       }
     ]
   }
