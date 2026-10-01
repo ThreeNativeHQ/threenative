@@ -206,6 +206,11 @@ async function runLoadingPlaytest() {
   // stall; it does not add a wall-clock step to the shared playtest runner.
   const timedTransport = addNativeStallTiming(transport);
   const config = {
+    // The same declared acceptance `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1` already
+    // expresses on the CLI, read here because this proof calls the runner API directly. The hosted
+    // Windows runner has no GPU and answers `Microsoft Basic Render Driver`; a local desktop run
+    // leaves the variable unset and still fails closed.
+    allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
     artifactDirectory,
     desktop: { executable: binary },
     endpoint: "http://127.0.0.1:41777/playtest",
