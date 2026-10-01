@@ -1,8 +1,16 @@
 // Generated for you. The boot is a look decision: this profile is what a footprint looks like.
 // Change the sole, the tread or the rim here; `SnowField` only presses whatever shape it is given.
-import type { ISnowFootprint, ISnowFootprintSample } from "@threenative/core/world";
 
-const NOTHING: ISnowFootprintSample = { bank: 0, coverage: 0, disturbance: 0, relief: 0, shape: 0 };
+/** One sample of a contact profile, in the shape `SnowField.stamp` reads. */
+interface IPrintSample {
+  readonly bank: number;
+  readonly coverage: number;
+  readonly disturbance: number;
+  readonly relief: number;
+  readonly shape: number;
+}
+
+const NOTHING: IPrintSample = { bank: 0, coverage: 0, disturbance: 0, relief: 0, shape: 0 };
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
@@ -16,7 +24,10 @@ export const BOOT_AREA = 0.074;
  * A rounded boot sole — a slightly wider toe than heel — with raised chevrons, a centre groove,
  * and a rim of displaced snow around it. Local z runs heel to toe.
  */
-export const bootPrint: ISnowFootprint = {
+export const bootPrint: {
+  readonly extent: number;
+  readonly sample: (x: number, z: number) => IPrintSample;
+} = {
   extent: 0.48,
   sample: (x, z) => {
     const width = 0.13 + smoothstep(-0.22, 0.15, z) * 0.013;

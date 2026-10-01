@@ -1,7 +1,7 @@
-// Generated for you. Snowfall, the blizzard and the powder a boot kicks up. `GPUParticles3D` owns
+// Generated for you. Snowfall, the blizzard and the powder a boot kicks up. `GPUParticles3D` (the
+// scene passes it in) owns
 // the buffers, dispatch and lifetime; the flake's shape, colour, size, drift and fall are here.
-import { GPUParticles3D } from "@threenative/core";
-import { Vector2 } from "three";
+import { type Sprite, Vector2 } from "three";
 import {
   Fn,
   atan,
@@ -42,9 +42,22 @@ const BURST_LIFETIME = 1.05;
 
 const random = (salt: number) => hash(instanceIndex.add(salt));
 
+/** What a particle mechanism takes: a pool size, a sprite material and two compute passes. */
+export interface IParticleOptions {
+  readonly amount: number;
+  readonly material: SpriteNodeMaterial;
+  readonly start: (buffers: { readonly positions: StorageBufferNode<"vec3"> }) => ComputeNode;
+  readonly process: (buffers: { readonly positions: StorageBufferNode<"vec3"> }) => ComputeNode;
+}
+
+/** The pooled sprite the scene builds from those options — `GPUParticles3D` in this game. */
+export type ParticleSystem = Sprite & {
+  readonly buffers: { readonly positions: StorageBufferNode<"vec3"> };
+};
+
 export interface ISnowWeather {
-  readonly snowfall: GPUParticles3D;
-  readonly bursts: readonly GPUParticles3D[];
+  readonly snowfall: ParticleSystem;
+  readonly bursts: readonly ParticleSystem[];
   /** Live wind at the snowfield, m/s, gusts included. */
   readonly wind: number;
   /** 0 clear .. 1 blizzard, eased. */
@@ -113,7 +126,10 @@ function flakeMaterial(
  * `drift` and `fall` are integrated on the CPU from the live wind and fall speed, so changing a
  * slider never teleports the flakes, and the box wraps around the explorer wherever they walk.
  */
-function createSnowfall(amount: number) {
+function createSnowfall(
+  amount: number,
+  particlesFor: (options: IParticleOptions) => ParticleSystem,
+) {
   const storm = floatUniform(0);
   const visible = floatUniform(amount);
   const drift = uniform(new Vector2());
@@ -140,7 +156,7 @@ function createSnowfall(amount: number) {
       positions.element(instanceIndex).assign(vec3(wrapped.x, height, wrapped.y));
     })().compute(amount);
   const material = new SpriteNodeMaterial();
-  const particles = new GPUParticles3D({
+  const particles = particlesFor({
     amount,
     material,
     process: ({ positions }) => place(positions),
@@ -160,7 +176,7 @@ function createSnowfall(amount: number) {
 }
 
 /** One pooled burst: every particle leaves the boot at once and fades by its own lifetime. */
-function createBurst() {
+function createBurst(particlesFor: (options: IParticleOptions) => ParticleSystem) {
   const age = uniform(BURST_LIFETIME);
   const kick = uniform(1);
   const wind = uniform(0);
@@ -193,7 +209,7 @@ function createBurst() {
         .element(instanceIndex)
         .assign(launch.add(across.mul(travelled)).add(vec3(0, height, 0)));
     })().compute(BURST_PARTICLES);
-  const particles = new GPUParticles3D({
+  const particles = particlesFor({
     amount: BURST_PARTICLES,
     material,
     process: ({ positions }) => place(positions),
@@ -204,9 +220,13 @@ function createBurst() {
   return { age, kick, particles, wind };
 }
 
-export function createWeather(options: { readonly flakes: number }): ISnowWeather {
-  const fall = createSnowfall(options.flakes);
-  const bursts = Array.from({ length: 8 }, createBurst);
+export function createWeather(options: {
+  readonly flakes: number;
+  /** Builds a pooled particle system; the scene passes `GPUParticles3D`. */
+  readonly particles: (options: IParticleOptions) => ParticleSystem;
+}): ISnowWeather {
+  const fall = createSnowfall(options.flakes, options.particles);
+  const bursts = Array.from({ length: 8 }, () => createBurst(options.particles));
   let cursor = 0;
   let time = 0;
   let storm = 0;

@@ -1,4 +1,5 @@
 import {
+  GPUParticles3D,
   type ICtx,
   Scene,
   type SceneFrame,
@@ -187,7 +188,10 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     ctx.add(logObject);
     for (const body of [ball, crate, log]) snowPhysics.add(body);
 
-    const weather = createWeather({ flakes: mobile ? 6_000 : 16_000 });
+    const weather = createWeather({
+      flakes: mobile ? 6_000 : 16_000,
+      particles: (options) => new GPUParticles3D(options),
+    });
     ctx.add(weather.snowfall);
     for (const burst of weather.bursts) ctx.add(burst);
     const audio = new SnowAudio(camera, (name) => ctx.assets.audio(name));

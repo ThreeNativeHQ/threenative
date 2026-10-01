@@ -1,7 +1,6 @@
 // Generated for you. How the snow looks: its colour, the blue in a pressed footprint, the
 // compaction view, the glints. `SnowField` stores numbers; everything a screenshot shows is here.
-import type { IHeightfieldRegionBounds, SnowField } from "@threenative/core/world";
-import { BufferAttribute, Mesh, PlaneGeometry } from "three";
+import { BufferAttribute, type BufferGeometry, Mesh, PlaneGeometry } from "three";
 import {
   attribute,
   color,
@@ -33,7 +32,33 @@ const URGENT_CELLS = 12_000;
 const SLICE_FRAMES = 15;
 const SLICE_ROWS = 8;
 
-type Bounds = IHeightfieldRegionBounds;
+type Bounds = {
+  readonly column: number;
+  readonly columns: number;
+  readonly row: number;
+  readonly rows: number;
+};
+
+/** The parts of `SnowField` (and its `Heightfield`) this renderer reads, by shape. */
+export interface ISnowSource {
+  readonly depth: number;
+  readonly field: {
+    readonly columns: number;
+    readonly rows: number;
+    readonly width: number;
+    readonly depth: number;
+    readonly origin: { readonly x: number; readonly z: number };
+    toGeometry(): BufferGeometry;
+    refreshGeometry(geometry: BufferGeometry, bounds?: Bounds): void;
+    toColliderHeights(): Float32Array;
+  };
+  takeDirtyRegion(): Bounds | undefined;
+  copyChannel(
+    channel: "indent" | "compaction",
+    bounds: Bounds,
+    target?: Float32Array,
+  ): Float32Array;
+}
 
 function union(current: Bounds | undefined, next: Bounds): Bounds {
   if (current === undefined) return { ...next };
@@ -100,7 +125,7 @@ function snowMaterial(compactionView: FloatUniform, sun: FloatUniform) {
   return material;
 }
 
-export function createSnowSurface(snow: SnowField): ISnowSurface {
+export function createSnowSurface(snow: ISnowSource): ISnowSurface {
   const field = snow.field;
   const compactionView = floatUniform();
   const sun = floatUniform();
@@ -135,7 +160,7 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
 
   let indents: Float32Array = new Float32Array(0);
   let compactions: Float32Array = new Float32Array(0);
-  const writeState = (bounds: IHeightfieldRegionBounds): void => {
+  const writeState = (bounds: Bounds): void => {
     indents = snow.copyChannel("indent", bounds, indents);
     compactions = snow.copyChannel("compaction", bounds, compactions);
     const values = state.array as Float32Array;
