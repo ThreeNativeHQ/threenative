@@ -104,6 +104,8 @@ Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 m
 
 **Verification:** each cut is measured A/B against the build before it, interleaved and on a quiet machine. A cut that fails its meter, or the visual A/B, is reverted and recorded under Decisions.
 
+Cut 1 (terrain super-tiles, PRD-473 plan): landed in ec9a739ad, b9442ec5a, bc998f510, 8349962ce, 0421ed329; Machinefall A/B pending.
+
 #### Phase 3: Hold 120 fps with the look intact
 **Status:** NOT STARTED
 **Files:** Machinefall `apps/client/playtests/scenes/map-walk.playtest.json`; this PRD.
