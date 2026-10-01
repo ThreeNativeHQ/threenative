@@ -139,6 +139,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: lighting.key,
       mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
     });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);

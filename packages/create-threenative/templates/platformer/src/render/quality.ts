@@ -42,7 +42,7 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -53,6 +53,12 @@ export function resolveQualityTier(
     }
     return requested;
   }
+  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
+  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
+  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
+  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
+  // `tier` above still wins over it.
+  if (request.software === true) return "low";
   return request.mobile === true ? "low" : "high";
 }
 
@@ -96,7 +102,7 @@ const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
  * 2,300-mesh level the per-object cost of GTAO is the part that does not scale down, so this tier
  * drops it rather than the effects on top of it.
  */
-const low: IWorldEnvironmentOptions = shared;
+const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 

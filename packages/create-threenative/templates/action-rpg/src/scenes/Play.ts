@@ -114,6 +114,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     setupPost(ctx.renderer, ctx.scene, camera, {
       godraysLight: lighting.key,
       mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
     });
     const loading = createLoadingScreen(ctx);
     ctx.add(camera);

@@ -40,6 +40,8 @@ export function setupPost(
   environment: IAdaptiveQualityOptions & {
     godraysLight?: DirectionalLight;
     mobile?: boolean;
+    /** The renderer named a software adapter; this game's answer is its `low` tier. */
+    software?: boolean;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
   } = {},
@@ -66,7 +68,9 @@ export function setupPost(
   apply();
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
-    `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} source=${source}`,
+    `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
+      environment.software === true
+    } source=${source}`,
   );
   const controller = {
     debug: () => observation,

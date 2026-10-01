@@ -230,5 +230,6 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "stages": (value: unknown) => isRecord(value),
     "contributions": (value: unknown) => isRecord(value),
     "velocity": (value: unknown) => isRecord(value),
+    "perAdapter": (value: unknown) => isRecord(value),
   }),
 });

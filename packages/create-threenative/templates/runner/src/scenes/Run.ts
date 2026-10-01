@@ -52,7 +52,11 @@ export class Run extends Scene<GameState, RunnerPhysics> {
     );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: key, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: key,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     ctx.add(camera);

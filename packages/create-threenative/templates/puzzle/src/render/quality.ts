@@ -50,7 +50,7 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -61,6 +61,12 @@ export function resolveQualityTier(
     }
     return requested;
   }
+  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
+  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
+  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
+  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
+  // `tier` above still wins over it.
+  if (request.software === true) return "low";
   return request.mobile === true ? "low" : "high";
 }
 
@@ -126,6 +132,10 @@ const medium: IWorldEnvironmentOptions = {
  * first thing to go — forty simulated bodies are already the frame's budget on a phone.
  */
 const low: IWorldEnvironmentOptions = {
+  // The chain's own quality tier, separate from which stages this preset enables: without it
+  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
+  // paid for the high chain's denoise and slice counts.
+  renderChainTier: "low",
   // ~4.6 ms in the ablation named above, at that scene's own strength.
   bloomEnabled: true,
   bloomRadius: 0.32,

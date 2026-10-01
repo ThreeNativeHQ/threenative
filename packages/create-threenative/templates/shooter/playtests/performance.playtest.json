@@ -51,7 +51,8 @@
       "runtimeReady": true
     },
     "renderChain": {
-      "tier": "high"
+      "tier": "high",
+      "perAdapter": { "software": { "tier": "low" } }
     },
     "performance": {
       "maxDrawCalls": 1300,

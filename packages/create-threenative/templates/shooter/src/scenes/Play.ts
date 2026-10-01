@@ -145,7 +145,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       TOWN_HALF,
       mobile,
     );
-    setupPost(ctx.renderer, ctx.scene, camera, { godraysLight: key, mobile });
+    setupPost(ctx.renderer, ctx.scene, camera, {
+      godraysLight: key,
+      mobile,
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     ctx.add(camera);
 
     // The in-canvas launch screen. It rides `startup.whenReady()` and prewarms the pipelines

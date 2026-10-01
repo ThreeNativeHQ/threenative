@@ -486,10 +486,35 @@ export class Ship {
    * so a threshold on it is already true before a scenario starts and proves nothing; this is
    * false at the start by construction and can only become true if the wind is actually moving
    * the cloth.
+   *
+   * **Zero also means "not measured yet" until two readbacks have landed**, and `sailSamples`
+   * is how a scenario tells those apart. One copy makes the slackest and the fullest the same
+   * frame, so the difference is zero by arithmetic rather than by observation, and a bound on it
+   * passed a run whose canvas had never been read twice. Do not read a zero here as a still sail
+   * without the sample count beside it.
    */
   get sailMotion(): number {
     if (this.#bellyLow > this.#bellyHigh) return 0;
     return this.#bellyHigh - this.#bellyLow;
+  }
+
+  /**
+   * How many cloth readbacks have landed, so `sailMotion` is not read as a measured zero.
+   *
+   * Counted from the readback that produced the extremes rather than per tick, because the two
+   * are not the same number: `GPUReadback` keeps one copy in flight and drops requests made while
+   * it is pending, so a landed copy is *reused* for every tick until the next one arrives. On a
+   * CPU rasteriser one copy lands every two to six **seconds** while hundreds of ticks pass, and a
+   * per-tick count would report thousands of samples from a single frame's worth of bytes.
+   *
+   * `sailBelly` needs this context: on a CPU adapter the copy is a `mapAsync` round trip, so how
+   * many land inside a scenario is a property of the adapter's readback latency and not of the
+   * scenario's tick count. A scenario that binds `sailMotion` should bind this too. Two is the
+   * floor: with one copy the range is zero whatever the cloth did.
+   */
+  get sailSamples(): number {
+    const debug = this.#sails[0]?.body.debug() as { readbackStats?: { lands: number } } | undefined;
+    return debug?.readbackStats?.lands ?? 0;
   }
 
   /** Fraction of the hull the sea is over, from the swell the ship is actually sitting in. */
@@ -513,6 +538,9 @@ export class Ship {
       seaHeight: this.#seaHeight,
       sailBelly: this.sailBelly,
       sailMotion: this.sailMotion,
+      // Beside `sailMotion` on purpose: one landed readback makes that number a zero by
+      // arithmetic, and a screenshot cannot tell a canvas that was never sampled from a still one.
+      sailSamples: this.sailSamples,
       floatGap: this.visual.position.y - this.#seaHeight,
       readbackStaleFrames: this.#staleFrames,
       oceanSteps: this.#ocean.steps,

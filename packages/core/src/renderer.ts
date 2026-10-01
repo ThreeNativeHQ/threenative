@@ -135,6 +135,21 @@ export interface IRendererLike {
    * the `TN_ALPHA_ANTIALIASING` marker is printed either way, so nothing is only readable here.
    */
   alphaAntialiasing?: () => IAlphaAntialiasingReport;
+  /**
+   * The `adapter.info` field value that identifies a CPU rasteriser — `swiftshader`, `llvmpipe`,
+   * a `Microsoft Basic Render Driver` — when the adapter named one, else absent.
+   *
+   * Reading it needs `navigator.gpu`, so it is read here rather than in a game's render source.
+   * It is a fact about the machine, not a look: which tier a game runs on a software adapter is
+   * that game's own decision, and every tier name it might pick is already in its own
+   * `src/render/quality.ts`. What this removes is the reason it could not make that decision
+   * before its first expensive frame — a CPU rasteriser running a desktop render chain can lose
+   * the device on the very first frame, which no adaptation after it survives.
+   *
+   * Absent means no software name was found, never that the adapter is hardware. The native host
+   * exposes the same four `adapter.info` fields, so the same read works on every target.
+   */
+  readonly softwareAdapter?: string;
   compute(node: unknown): void;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
@@ -348,6 +363,7 @@ function wrapRenderer(
   pipelineCensus: PipelineCensus | undefined,
   timestampCapable: boolean,
   timestampFrameInterval: number,
+  softwareAdapter?: string,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   let outputPass: PassNode | undefined;
@@ -491,6 +507,7 @@ function wrapRenderer(
     }),
     surfaceDrawingBufferHeight: () => applied.height,
     alphaAntialiasing: () => alphaAntialiasing.report(),
+    ...(softwareAdapter === undefined ? {} : { softwareAdapter }),
     domElement: raw.domElement,
     kind,
     raw,
@@ -804,29 +821,45 @@ function createRendererPipelineCensus(
 async function createWebGpuPipelineCensus(
   raw: RendererInstance,
   options: IRendererOptions,
+  adapter: IWebGpuAdapterFacts,
 ): Promise<PipelineCensus | undefined> {
-  if (options.pipelineCensus === false) return undefined;
-  const adapterIdentity = await readWebGpuAdapterIdentity(raw);
-  return createRendererPipelineCensus(raw, "webgpu", options, adapterIdentity);
+  return createRendererPipelineCensus(raw, "webgpu", options, adapter.identity);
 }
 
-async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string | undefined> {
+/**
+ * Which field of `adapter.info` names a CPU rasteriser.
+ *
+ * Every field is searched because which one carries the giveaway depends on the platform: Linux
+ * Dawn puts `swiftshader` in `architecture`, Mesa reports `llvmpipe` in `description`, and a
+ * headless Windows run says `Microsoft Basic Render Driver` in `device`.
+ */
+const SOFTWARE_ADAPTER =
+  /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
+
+interface IWebGpuAdapterFacts {
+  /** The URI-encoded identity the pipeline census records; absent when the adapter reported none. */
+  readonly identity?: string;
+  /** The field value that names a CPU rasteriser; absent when none of them does. */
+  readonly software?: string;
+}
+
+async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAdapterFacts> {
   const gpu = raw.backend?.gpu;
-  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return undefined;
+  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return {};
   try {
     const adapter = await gpu.requestAdapter.call(gpu, {
       featureLevel: "compatibility",
       powerPreference: raw.backend?.parameters?.powerPreference,
       xrCompatible: raw.xr?.enabled === true,
     });
-    if (!isObject(adapter)) return undefined;
+    if (!isObject(adapter)) return {};
     const infoCandidate = isObject(adapter.info) ? adapter.info : undefined;
     const legacyInfo =
       infoCandidate === undefined && typeof adapter.requestAdapterInfo === "function"
         ? await adapter.requestAdapterInfo()
         : undefined;
     const info = infoCandidate ?? (isObject(legacyInfo) ? legacyInfo : undefined);
-    if (info === undefined) return undefined;
+    if (info === undefined) return {};
     const fields = ["architecture", "description", "device", "vendor"] as const;
     const entries = fields.flatMap((field) => {
       const value = info[field];
@@ -834,11 +867,17 @@ async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string 
         ? [[field, encodeURIComponent(value)] as const]
         : [];
     });
-    return entries.length === 0
-      ? undefined
-      : `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}`;
+    const software = fields
+      .map((field) => info[field])
+      .find((value): value is string => typeof value === "string" && SOFTWARE_ADAPTER.test(value));
+    return {
+      ...(entries.length === 0
+        ? {}
+        : { identity: `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}` }),
+      ...(software === undefined ? {} : { software }),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -933,7 +972,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
       const timestampCapable = instance.backend?.trackTimestamp === true;
-      const pipelineCensus = await createWebGpuPipelineCensus(instance, options);
+      const adapter = await readWebGpuAdapterFacts(instance);
+      const pipelineCensus = await createWebGpuPipelineCensus(instance, options, adapter);
       installDrawHook(instance, alphaAntialiasing);
       renderer = wrapRenderer(
         instance,
@@ -945,6 +985,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         pipelineCensus,
         timestampCapable,
         gpuTimestampFrameInterval,
+        adapter.software,
       );
     } catch {
       renderer = undefined;

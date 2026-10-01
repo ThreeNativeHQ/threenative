@@ -149,6 +149,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       setupPost(ctx.renderer, ctx.scene, ctx.camera, {
         godraysLight: key,
         mobile: isMobile(),
+        software: ctx.renderer.softwareAdapter !== undefined,
         targetFps: config.display?.maxFps ?? 60,
         ready: () => ctx.startup.phase === "ready",
       }),

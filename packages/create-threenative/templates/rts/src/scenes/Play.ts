@@ -150,7 +150,11 @@ export class Play extends Scene<GameState, undefined> {
     this.#sun = sun;
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code, exactly like createRandom.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun.key, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: sun.key,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     const loading = createLoadingScreen(ctx);
     this.#terrain = createTerrain();
     this.#models = createUnitModels();
