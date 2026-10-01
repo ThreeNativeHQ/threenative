@@ -37,6 +37,11 @@ const GRAVITY = 9.81;
 const HALF_HEIGHT = 0.55;
 const RADIUS = 0.3;
 const WAIST = HALF_HEIGHT + RADIUS;
+/**
+ * How far each boot lands from the line of travel. Wide enough that the left and right prints
+ * stay two rows with snow between them rather than merging into one trench.
+ */
+export const STANCE = 0.2;
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -103,8 +108,8 @@ export class Explorer {
     this.position.y = snow.heightAt(start.x, start.z) - 0.07;
     this.#last = { x: start.x, z: start.z };
     for (const side of [-1, 1]) {
-      const x = start.x + side * 0.16 * Math.cos(this.heading);
-      const z = start.z - side * 0.16 * Math.sin(this.heading);
+      const x = start.x + side * STANCE * Math.cos(this.heading);
+      const z = start.z - side * STANCE * Math.sin(this.heading);
       this.#feet.push({
         angle: this.heading,
         from: { x, z },
@@ -198,8 +203,8 @@ export class Explorer {
         foot.angle = this.heading;
         const reach = running ? 0.64 : 0.49;
         foot.to = {
-          x: this.position.x + forward.x * reach + right.x * foot.side * 0.165,
-          z: this.position.z + forward.z * reach + right.z * foot.side * 0.165,
+          x: this.position.x + forward.x * reach + right.x * foot.side * STANCE,
+          z: this.position.z + forward.z * reach + right.z * foot.side * STANCE,
         };
       }
       if (foot.swing) {

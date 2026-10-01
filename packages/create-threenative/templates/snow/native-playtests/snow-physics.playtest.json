@@ -97,9 +97,9 @@
       },
       {
         "entity": "ball",
-        "component": "travelled",
-        "gte": 1,
-        "allowTrivial": "The push must move the solved body a metre; a ball that never rolls leaves no track to check."
+        "component": "reach",
+        "gte": 0.5,
+        "allowTrivial": "The push must carry the solved body half a metre or more through fresh powder; how far depends on the slope it was pushed up, so this is a floor, not a distance."
       },
       {
         "entity": "ball",
@@ -117,8 +117,8 @@
       {
         "entity": "ball",
         "component": "trackSamples",
-        "gte": 8,
-        "allowTrivial": "The connected-track check needs a path to check; fewer than eight points means the ball barely moved."
+        "gte": 5,
+        "allowTrivial": "The connected-track check needs a path to check: five or more points ten centimetres apart."
       },
       {
         "entity": "snow",

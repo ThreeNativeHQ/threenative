@@ -29,7 +29,8 @@ import { palette } from "./palette.js";
 const STATE = "snowState";
 /** A window up to this many samples is redrawn at once; wider ones are sliced. */
 const URGENT_CELLS = 12_000;
-/** Rows of a wide window redrawn per frame. */
+/** A wide window is spread over about this many frames, never fewer than eight rows a frame. */
+const SLICE_FRAMES = 15;
 const SLICE_ROWS = 8;
 
 type Bounds = IHeightfieldRegionBounds;
@@ -59,7 +60,10 @@ export interface ISnowSurface {
   refresh(): void;
   /** Rows still waiting to be redrawn from a wide refill. */
   readonly pendingRows: number;
-  /** Largest gap between a rendered vertex and the canonical surface, metres. */
+  /**
+   * Largest gap between a rendered vertex and the canonical surface, metres, after drawing every
+   * window still waiting: what the next frame shows, not a frame caught mid-redraw.
+   */
   renderError(): number;
   setCompactionView(on: boolean): void;
   /** 0 clear .. 1 blizzard: dims the glints with the sun. */
@@ -129,14 +133,18 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
   const outskirts = new Mesh(outskirtsGeometry, material);
   outskirts.receiveShadow = true;
 
+  let indents: Float32Array = new Float32Array(0);
+  let compactions: Float32Array = new Float32Array(0);
   const writeState = (bounds: IHeightfieldRegionBounds): void => {
-    const step = field.width / (field.columns - 1);
-    const left = field.origin.x - field.width / 2;
-    const near = field.origin.z - field.depth / 2;
-    for (let row = bounds.row; row < bounds.row + bounds.rows; row += 1) {
-      for (let column = bounds.column; column < bounds.column + bounds.columns; column += 1) {
-        const sample = snow.sample(left + column * step, near + row * step);
-        state.setXY(row * field.columns + column, sample.indent, sample.compaction);
+    indents = snow.copyChannel("indent", bounds, indents);
+    compactions = snow.copyChannel("compaction", bounds, compactions);
+    const values = state.array as Float32Array;
+    for (let row = 0; row < bounds.rows; row += 1) {
+      for (let column = 0; column < bounds.columns; column += 1) {
+        const cell = row * bounds.columns + column;
+        const vertex = (bounds.row + row) * field.columns + bounds.column + column;
+        values[vertex * 2] = indents[cell] as number;
+        values[vertex * 2 + 1] = compactions[cell] as number;
       }
     }
     state.needsUpdate = true;
@@ -144,6 +152,8 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
 
   let urgent: Bounds | undefined;
   let background: Bounds | undefined;
+  // `toGeometry` already drew the field as it stands; the field's own first full write is not news.
+  snow.takeDirtyRegion();
   const redraw = (written: Bounds): void => {
     // A normal reads its neighbours, so one sample beyond the written window moves too.
     const column = Math.max(0, written.column - 1);
@@ -183,7 +193,11 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
       if (urgent !== undefined) redraw(urgent);
       urgent = undefined;
       if (background === undefined) return;
-      const rows = Math.min(SLICE_ROWS, background.rows);
+      // Proportional to what is waiting, so a refill always finishes before the next one lands.
+      const rows = Math.min(
+        background.rows,
+        Math.max(SLICE_ROWS, Math.ceil(background.rows / SLICE_FRAMES)),
+      );
       redraw({ ...background, rows });
       background =
         rows === background.rows
@@ -191,6 +205,11 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
           : { ...background, row: background.row + rows, rows: background.rows - rows };
     },
     renderError() {
+      collect();
+      if (urgent !== undefined) redraw(urgent);
+      if (background !== undefined) redraw(background);
+      urgent = undefined;
+      background = undefined;
       const positions = geometry.getAttribute("position");
       const heights = field.toColliderHeights();
       let worst = 0;

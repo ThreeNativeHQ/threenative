@@ -15,7 +15,7 @@ import {
 import type { Object3D, PerspectiveCamera } from "three";
 import { SnowAudio } from "../audio.js";
 import { type Command, commands } from "../commands.js";
-import { Explorer, type IFootstep } from "../entities/Explorer.js";
+import { Explorer, type IFootstep, STANCE } from "../entities/Explorer.js";
 import { BOOT_AREA, bootPrint } from "../render/bootPrint.js";
 import { OrbitFollow, setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
@@ -187,7 +187,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     ctx.add(logObject);
     for (const body of [ball, crate, log]) snowPhysics.add(body);
 
-    const weather = createWeather({ flakes: mobile ? 7_500 : 22_000 });
+    const weather = createWeather({ flakes: mobile ? 6_000 : 16_000 });
     ctx.add(weather.snowfall);
     for (const burst of weather.bursts) ctx.add(burst);
     const audio = new SnowAudio(camera, (name) => ctx.assets.audio(name));
@@ -215,7 +215,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     // A short arrival trail, so the snow's memory is the first thing on screen.
     for (let index = 0; index < 14; index += 1) {
       const z = 6.4 - index * 0.46;
-      const x = 0.35 * Math.sin(z * 0.7) + (index % 2 ? -0.165 : 0.165);
+      const x = 0.35 * Math.sin(z * 0.7) + (index % 2 ? -STANCE : STANCE);
       const angle = Math.PI + Math.cos(z * 0.7) * 0.2;
       const penetration = snow.stamp({
         area: BOOT_AREA,
@@ -319,7 +319,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     });
     ctx.entities.add("player", explorer);
     // The first print of the arrival trail: nothing walks back over it unless steered there.
-    const trailStart = { x: 0.35 * Math.sin(6.4 * 0.7) + 0.165, z: 6.4 };
+    const trailStart = { x: 0.35 * Math.sin(6.4 * 0.7) + STANCE, z: 6.4 };
     ctx.entities.add("snow", {
       debug: () => ({
         trailPressed: snow.sample(trailStart.x, trailStart.z).indent > 0.01,
@@ -444,8 +444,12 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
           telemetry.reach,
           Math.hypot(p.x - telemetry.kickedAt.x, p.z - telemetry.kickedAt.z),
         );
+        // Only where the ball is on the snow: a hop off the crater lip presses nothing beneath it.
         const last = telemetry.path[telemetry.path.length - 1];
-        if (last === undefined || Math.hypot(p.x - last.x, p.z - last.z) > 0.1)
+        if (
+          clearance <= 0.01 &&
+          (last === undefined || Math.hypot(p.x - last.x, p.z - last.z) > 0.1)
+        )
           telemetry.path.push({ x: p.x, z: p.z });
       }
       telemetry.lastRotation = { w: rotation.w, x: rotation.x, y: rotation.y, z: rotation.z };

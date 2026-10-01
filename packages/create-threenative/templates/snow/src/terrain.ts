@@ -3,10 +3,11 @@ import { Heightfield, SnowField } from "@threenative/core/world";
 /** The playable snowfield is a square this many metres across, centred on the origin. */
 export const FIELD_SIZE = 24;
 /**
- * Samples along each side. 321 puts one every 7.5 cm, fine enough for a boot's heel and toe to
- * read; the same samples are the collider, so raising it costs collision rebuilds too.
+ * Samples along each side. 401 puts one every 6 cm, fine enough for a boot's heel and toe and
+ * the gap between two prints to read. The same samples are the drawn mesh and the collider, so
+ * raising it costs triangles and collider rebuilds as well.
  */
-export const FIELD_SAMPLES = 321;
+export const FIELD_SAMPLES = 401;
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
