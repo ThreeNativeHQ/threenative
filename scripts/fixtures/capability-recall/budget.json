@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.8970588235294118,
+  "recallAtK": 0.9027777777777778,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -61,10 +61,14 @@
     "prd451.capture-mouse",
     "prd451.lod-pixel-scale",
     "prd451.frame-budget",
-    "prd451.merge-parts"
+    "prd451.merge-parts",
+    "request.drive-a-racing-kart",
+    "request.vehicle-suspension-grip",
+    "request.vehicle-pedals-steering",
+    "request.vehicle-rescue-respawn"
   ],
   "rejectHits": 16,
-  "rowCount": 68,
+  "rowCount": 72,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -133,10 +137,14 @@
     "prd451.capture-mouse",
     "prd451.lod-pixel-scale",
     "prd451.frame-budget",
-    "prd451.merge-parts"
+    "prd451.merge-parts",
+    "request.drive-a-racing-kart",
+    "request.vehicle-suspension-grip",
+    "request.vehicle-pedals-steering",
+    "request.vehicle-rescue-respawn"
   ],
   "version": 1,
-  "zeroResultRate": 0.07352941176470588,
+  "zeroResultRate": 0.06944444444444445,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
