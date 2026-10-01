@@ -2,17 +2,35 @@
   "name": "rain-auto-lightning-waits-for-cloud-cover",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1440, "height": 900 },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
   "warmupFrames": 30,
   "steps": [
     {
       "kind": "click",
-      "at": { "x": 1160, "y": 377 },
+      "at": {
+        "element": {
+          "id": "cloud"
+        }
+      },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Home",
       "label": "thin-cloud",
       "waitTicks": 10,
       "release": true
     },
-    { "kind": "wait", "label": "past-due", "waitTicks": 900, "release": true }
+    {
+      "kind": "wait",
+      "label": "past-due",
+      "waitTicks": 900,
+      "release": true
+    }
   ],
   "assert": {
     "diagnostics": {
@@ -22,9 +40,21 @@
       "runtimeReady": true
     },
     "resources": [
-      { "id": "state", "path": "target.cloud", "lte": 0.2 },
-      { "id": "state", "path": "weather.cloud", "lte": 0.3 },
-      { "id": "state", "path": "elapsed", "gte": 43 },
+      {
+        "id": "state",
+        "path": "target.cloud",
+        "lte": 0.2
+      },
+      {
+        "id": "state",
+        "path": "weather.cloud",
+        "lte": 0.3
+      },
+      {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 43
+      },
       {
         "id": "state",
         "path": "strikes",

@@ -282,6 +282,7 @@ export function Hud({ send, say, panelOpen, setPanelOpen, state, toast, toastVis
               aria-pressed={soundOn}
               className={`sound-pill${soundOn ? " active" : ""}`}
               data-tn-interactive
+              id="sound"
               onClick={() => {
                 if (soundOn) {
                   send("setMuted", true);

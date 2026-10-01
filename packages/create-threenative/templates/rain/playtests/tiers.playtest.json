@@ -21,8 +21,9 @@
     {
       "kind": "click",
       "at": {
-        "x": 1320,
-        "y": 687
+        "element": {
+          "id": "quality"
+        }
       },
       "waitTicks": 2,
       "release": true

@@ -14,8 +14,9 @@
     {
       "kind": "click",
       "at": {
-        "x": 1338,
-        "y": 766
+        "element": {
+          "id": "sound"
+        }
       },
       "label": "sound",
       "waitTicks": 10,

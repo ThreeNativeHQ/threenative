@@ -21,8 +21,9 @@
     {
       "kind": "click",
       "at": {
-        "x": 1175,
-        "y": 264
+        "element": {
+          "id": "preset-drizzle"
+        }
       },
       "label": "drizzle",
       "waitTicks": 10,
@@ -31,9 +32,16 @@
     {
       "kind": "click",
       "at": {
-        "x": 1356,
-        "y": 329
+        "element": {
+          "id": "rain"
+        }
       },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "End",
       "label": "slider",
       "waitTicks": 10,
       "release": true

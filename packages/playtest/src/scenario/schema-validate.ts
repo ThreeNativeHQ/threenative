@@ -746,6 +746,18 @@ function validateClickTarget(value: unknown, scenarioPath: string, index: number
     return value.entity.length === 0 ? undefined : { entity: value.entity };
   }
   if (value.entity !== undefined) return undefined;
+  if (value.element !== undefined) {
+    const objectPath = `steps[${index}].at`;
+    rejectUnknownKeys(value, ["element"], scenarioPath, objectPath);
+    const element = requireRecord(value.element, scenarioPath, `${objectPath}.element`);
+    rejectUnknownKeys(element, ["id", "selector"], scenarioPath, `${objectPath}.element`);
+    const id = optionalString(element, "id", scenarioPath, `${objectPath}.element`);
+    const selector = optionalString(element, "selector", scenarioPath, `${objectPath}.element`);
+    if ((id === undefined) === (selector === undefined)) {
+      throw invalidStep(scenarioPath, `Scenario ${objectPath}.element must name exactly one of id or selector.`);
+    }
+    return { element: id === undefined ? { selector: selector as string } : { id } };
+  }
   rejectUnknownKeys(value, ["x", "y"], scenarioPath, `steps[${index}].at`);
   return typeof value.x === "number"
     && Number.isFinite(value.x)

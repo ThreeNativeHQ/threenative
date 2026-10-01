@@ -411,6 +411,10 @@ from the registry at apply time, or a target coincident with the subject is a NA
 (`TN_PLAYTEST_SETUP_UNAPPLIED`), never a silent skip. One entity may be placed by only one
 of `setup.entities` / `setup.place`.
 
+A `click` step's `at` is viewport pixels `{ x, y }`, a registered entity `{ entity }`, or (browser
+only) a DOM element `{ element: { id } | { selector } }` clicked at the centre of its live box. Prefer
+the element form for interface controls: pixel positions move with the fonts a machine has
+installed, which is how a rain scenario passed locally and missed its switch on CI.
 Steps can also carry `{ kind: "aimAt", target: { x, z } | { entity }, pitch?, waitTicks?, screenshot?, label? }`.
 The runner samples the subject's current position, computes yaw/pitch toward the target,
 and applies them through the setup channel as quaternion data — no CDP mouse events and no

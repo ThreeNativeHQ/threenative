@@ -151,6 +151,7 @@ export function Menu({
               aria-pressed={state.preset === name && !customTarget.current}
               className={state.preset === name && !customTarget.current ? "active" : undefined}
               data-tn-interactive
+              id={`preset-${name}`}
               key={name}
               onClick={() => choosePreset(name)}
               type="button"
@@ -220,6 +221,7 @@ export function Menu({
         <button
           className="strike-button"
           data-tn-interactive
+          id="strike"
           disabled={state.safe}
           onClick={() => send("strike")}
           type="button"

@@ -19,8 +19,9 @@
     {
       "kind": "click",
       "at": {
-        "x": 1257,
-        "y": 596
+        "element": {
+          "id": "strike"
+        }
       },
       "label": "button",
       "waitTicks": 6,
