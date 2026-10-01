@@ -2957,10 +2957,10 @@ export function terrainValidationRequested(): boolean { … }
 - **Constraints:** off by default: it is the work it checks, every frame
 
 ```ts
+// Reads its own the way `renderListValidationRequested` does: a native launch sets the
+// environment variable, a browser asks with the query string, a test or harness sets the
+// global. `0` and `false` are off, so a saved URL that enabled it still says "off".
 const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });
-Read the way `renderListValidationRequested` reads its own: a native launch sets the environment
-variable, a browser asks with the query string, and a test or a harness sets the global. `0` and
-`false` are off, so a saved URL that used to enable a switch still says "off".
 ```
 
 ### `validateWorldPackage`

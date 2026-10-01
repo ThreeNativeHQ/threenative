@@ -3746,7 +3746,7 @@
     {
       "aliases": [],
       "constraints": ["off by default: it is the work it checks, every frame"],
-      "example": "const tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });\nRead the way `renderListValidationRequested` reads its own: a native launch sets the environment\nvariable, a browser asks with the query string, and a test or a harness sets the global. `0` and\n`false` are off, so a saved URL that used to enable a switch still says \"off\".",
+      "example": "// Reads its own the way `renderListValidationRequested` does: a native launch sets the\n// environment variable, a browser asks with the query string, a test or harness sets the\n// global. `0` and `false` are off, so a saved URL that enabled it still says \"off\".\nconst tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });",
       "importPath": "@threenative/core/world",
       "kind": "function",
       "overrides": [],
