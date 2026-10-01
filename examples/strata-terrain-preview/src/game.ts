@@ -19,8 +19,44 @@ import {
   Vector3,
 } from "three";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
+import { createPropSurfaces } from "./render/propMaterials.js";
+import {
+  type PropGroundQuery,
+  buildPropVariants,
+  createProps,
+  flatPropMaterials,
+} from "./render/props.js";
+import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { createTerrain } from "./render/terrain.js";
 import baked from "./world/baked.json";
+
+/**
+ * The fixed benchmark framings, in world metres, per world.
+ *
+ * Fixed rather than relative to the player so a capture at seed 73 is the same picture on every
+ * machine, and so the rubric's "close ground/vegetation view" and "landscape overview" are two
+ * numbers rather than two moods. `eye` is the height above the terrain under the camera, which is
+ * what makes "eye height ~1.7 m" true on a slope instead of true only on a flat.
+ *
+ * The meadow focus is where the ground is grass with spruces on it and a slope to look along, and
+ * it is also where the dense grass goes: ground cover is placed around this point, not around the
+ * origin, because a meadow is a place rather than a texture.
+ */
+const BENCHMARK = {
+  forest: {
+    focus: { x: 200, z: 62 },
+    "meadow-close": { at: [176, 84], eye: 1.7, look: [214, 44], lookUp: 2.2 },
+    overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
+  },
+  coastal: {
+    focus: { x: 78, z: -128 },
+    "meadow-close": { at: [56, -108], eye: 1.7, look: [96, -146], lookUp: 2.2 },
+    overview: { at: [150, 60], eye: 110, look: [40, -80], lookUp: 6 },
+  },
+} as const;
+
+/** The last closed frame-budget window, published into state by the scene. */
+const budget = { drawCalls: 0, frameMs: 0 };
 
 const initialState = {
   world: "forest",
@@ -35,6 +71,12 @@ const initialState = {
   waveRange: 0,
   sampleSlopeRange: 0,
   sunX: -180,
+  propDraws: 0,
+  propInstances: 0,
+  propTriangles: 0,
+  view: "player",
+  windowDrawCalls: 0,
+  windowFrameMs: 0,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
@@ -43,6 +85,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
     #player: CharacterBody3D | undefined;
+    #surfaces: { advance: (elapsed: number) => void } | undefined;
     #elapsed = 0;
     #sun: DirectionalLight | undefined;
     #ocean: ReturnType<typeof createOcean> | undefined;
@@ -167,6 +210,81 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           },
         });
       }
+      // --- the meadow's props -------------------------------------------------------------------
+      //
+      // One variant set and one surface set per scene, built from the baked field: the placement
+      // rule reads the same colours and the same heights the ground material draws from, so a spruce
+      // stands where the ground says there is meadow rather than where a second opinion says so.
+      const propField: IPlacementField = {
+        colors: data.colors,
+        field,
+        resolution: data.size === 0 ? 0 : field.rows,
+        size: data.size,
+        waterLevel: data.waterLevel,
+      };
+      const scatter = scatterProps(propField, BENCHMARK[world].focus);
+      const propParts = buildPropVariants();
+      const flat = flatPropMaterials();
+      // Ground contact is a raycast against the drawn terrain mesh, not the bilinear sampler: a
+      // spruce whose base floats a centimetre above the visible surface reads as a mistake at the
+      // exact distance a player spends the most time at.
+      const geometryBounds = mesh.geometry.boundingBox ?? mesh.geometry.computeBoundingBox();
+      const top = geometryBounds?.max.y ?? 0;
+      const groundAt: PropGroundQuery = (placement, at) => {
+        const [x, , z] = at;
+        const hit = ctx.raycast({
+          direction: new Vector3(0, -1, 0),
+          origin: new Vector3(x, top + 2, z),
+          targets: [mesh],
+        });
+        const [originX, originY, originZ] = placement.position;
+        return {
+          height: hit?.point.y ?? null,
+          offset: originY - field.heightAt(originX, originZ),
+        };
+      };
+      const props = createProps(scatter.placements, groundAt, propParts, flat);
+      ctx.add(props.object);
+      ctx.entities.add("props", {
+        object: props.object,
+        debug: () => ({
+          boulders: scatter.counts.boulder,
+          draws: props.meshes.length,
+          grass: scatter.counts.grass,
+          poppies: scatter.counts.poppy,
+          spruces: scatter.counts.spruce,
+          totalInstances: props.meshes.reduce((sum, mesh) => sum + mesh.count, 0),
+          triangles: props.meshes.reduce(
+            (sum, mesh) => sum + (mesh.count * (mesh.geometry.index?.count ?? 0)) / 3,
+            0,
+          ),
+        }),
+        dispose: () => {
+          released = true;
+          surfacesDispose?.();
+          flat.dispose();
+          props.dispose();
+          for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
+        },
+      });
+      // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
+      // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
+      // server costs this world its bark and its needles rather than its trees.
+      let released = false;
+      let surfacesDispose: (() => void) | undefined;
+      void createPropSurfaces(ctx.assets).then((surfaces) => {
+        this.#surfaces = surfaces;
+        if (released) {
+          surfaces.dispose();
+          return;
+        }
+        for (const mesh of props.meshes) {
+          const role = mesh.name.split(":").at(-1) as keyof typeof surfaces.materials;
+          mesh.material = surfaces.materials[role];
+        }
+        surfacesDispose = surfaces.dispose;
+      });
+
       let frames = 0;
       let travel = 0;
       const previous = actor.position.clone();
@@ -261,17 +379,46 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           waveSamples,
           waveRange: waveSamples ? maxWave - minWave : 0,
           sampleSlopeRange: waveSamples ? maxSlope - minSlope : 0,
+          propDraws: props.meshes.length,
+          propInstances: props.meshes.reduce((sum, mesh) => sum + mesh.count, 0),
+          propTriangles: props.meshes.reduce(
+            (sum, mesh) => sum + (mesh.count * (mesh.geometry.index?.count ?? 0)) / 3,
+            0,
+          ),
+          windowDrawCalls: budget.drawCalls,
+          windowFrameMs: budget.frameMs,
         });
       });
-      const cameraOffset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
+      // --- the fixed benchmark cameras ---------------------------------------------------------
+      //
+      // Three framings, all fixed in world metres: the one the player walks behind, the eye-height
+      // meadow view the rubric asks for, and the overview. They are data rather than a camera rig
+      // so a capture at seed 73 is the same picture on every machine.
+      const poses = BENCHMARK[world];
+      const at = (x: number, z: number, up: number): Vector3 =>
+        new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
-        ctx.camera.position.copy(actor.position).add(cameraOffset);
-        ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
+        const view = ctx.state.getState().view;
+        if (view === "player") {
+          const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
+          ctx.camera.position.copy(actor.position).add(offset);
+          ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
+          return;
+        }
+        const pose = poses[view === "meadow-close" ? "meadow-close" : "overview"];
+        ctx.camera.position.copy(at(pose.at[0], pose.at[1], pose.eye));
+        ctx.camera.lookAt(at(pose.look[0], pose.look[1], pose.lookUp));
       });
     }
 
     override update(ctx: TerrainCtx, dt: number): void {
       this.#elapsed += dt;
+      this.#surfaces?.advance(this.#elapsed);
+      if (ctx.input.justPressed("view")) {
+        const order = ["player", "meadow-close", "overview"] as const;
+        const current = order.indexOf(ctx.state.getState().view as (typeof order)[number]);
+        ctx.state.set({ view: order[(current + 1) % order.length] });
+      }
       this.#ocean?.advance(this.#elapsed);
       if (ctx.input.justPressed("light") && this.#sun) {
         const sun = this.#sun;
@@ -300,8 +447,25 @@ const game = defineGame<TerrainState, IPhysicsContext>({
       up: ["ArrowUp", "KeyW"],
     },
     jump: { keys: ["Space"] },
+    view: { keys: ["KeyV"] },
     coast: { keys: ["KeyC"] },
     light: { keys: ["KeyL"] },
+  },
+  // A short window so a playtest run actually closes one: the default 300 frames is longer than
+  // this scenario runs. The window is read into state, which is what puts the measured draw count
+  // and frame cost into the run report instead of only on a console line nobody reads.
+  frameBudget: {
+    // A short window so a playtest run actually closes one; the default 300 frames is longer than
+    // this scenario runs. The scene reads the result into state, which is what puts the measured
+    // draw count and frame cost into the run report rather than only on a console line.
+    onWindow: (window) => {
+      budget.drawCalls = Object.values(window.passes ?? {}).reduce(
+        (sum, pass) => sum + pass.draws.p50,
+        0,
+      );
+      budget.frameMs = window.frame.p50;
+    },
+    reportEvery: 90,
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
   render: { preferWebGPU: true },

@@ -3,8 +3,8 @@
   "name": "strata-terrain",
   "subject": "Baked terrain triangles and physics match during a playable 50 metre walk",
   "viewport": {
-    "width": 1280,
-    "height": 720
+    "width": 1920,
+    "height": 1080
   },
   "warmupFrames": 90,
   "artifacts": {
@@ -18,6 +18,47 @@
       "waitTicks": 120,
       "release": true,
       "screenshot": "forest-start"
+    },
+    {
+      "kind": "input",
+      "label": "meadow-close-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "meadow-close",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "meadow-close"
+    },
+    {
+      "kind": "input",
+      "label": "overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "overview"
+    },
+    {
+      "kind": "input",
+      "label": "player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "back-to-player",
+      "waitTicks": 30,
+      "release": true
     },
     {
       "kind": "input",
@@ -127,6 +168,26 @@
         "path": "sunX",
         "equals": 180,
         "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "propInstances",
+        "gte": 1000
+      },
+      {
+        "id": "GameState",
+        "path": "propDraws",
+        "lte": 24
+      },
+      {
+        "id": "GameState",
+        "path": "propTriangles",
+        "gte": 100000
+      },
+      {
+        "id": "GameState",
+        "path": "windowDrawCalls",
+        "gte": 1
       }
     ]
   }

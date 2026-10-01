@@ -33,8 +33,10 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
+import { createPropSurfaces } from "./propMaterials.js";
 import {
   type PropGroundQuery,
+  buildPropVariants,
   createProps,
   preparePropTransform,
   readPropTransform,
@@ -177,6 +179,7 @@ export async function createEditorView(
     }
     override update(_context: ICtx<EditorState>, dt: number): void {
       elapsed += dt;
+      propSurfaces.advance(elapsed);
       sea?.advance(elapsed);
       controls.update();
     }
@@ -191,6 +194,11 @@ export async function createEditorView(
     start: "editor",
   });
   await game.start();
+  // One variant set and one surface set for the editor's whole life: the shapes and the maps do not
+  // change when the terrain is edited, and rebuilding them per revision would recompile every
+  // material on every brush stroke.
+  const propParts = buildPropVariants();
+  const propSurfaces = await createPropSurfaces(ctx.assets);
   const selection = createPropSelection(
     ctx,
     controls,
@@ -286,7 +294,7 @@ export async function createEditorView(
             offset: originalY - sampleHeight(state, originalX, originalZ),
           };
         };
-        nextProps = createProps(resolved.instances, nextGround);
+        nextProps = createProps(resolved.instances, nextGround, propParts, propSurfaces.materials);
         groundAt = nextGround;
       } catch (error) {
         next.geometry.dispose();
@@ -448,6 +456,8 @@ export async function createEditorView(
     },
     dispose(): void {
       selection.dispose();
+      propSurfaces.dispose();
+      for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
       clearWater();
       props?.dispose();
       mesh?.geometry.dispose();
