@@ -1,0 +1,75 @@
+{
+  "name": "minimap-state",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "shot",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "advance",
+      "press": "KeyW",
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "read-state",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "playerZ",
+        "changed": true,
+        "lte": 31
+      },
+      {
+        "id": "state",
+        "path": "playerX",
+        "gte": -100,
+        "lte": 100,
+        "allowTrivial": "the minimap feed must report a finite player x from the first frame"
+      },
+      {
+        "id": "state",
+        "path": "playerYaw",
+        "gte": -7,
+        "lte": 7,
+        "allowTrivial": "the minimap feed must report a finite facing from the first frame"
+      },
+      {
+        "id": "state",
+        "path": "blips.0.alive",
+        "equals": true,
+        "allowTrivial": "the mid defender is alive at rest, so the opening value is the honest one"
+      },
+      {
+        "id": "state",
+        "path": "blips.4.x",
+        "gte": -100,
+        "lte": 100,
+        "allowTrivial": "a fifth blip entry must exist with a finite coordinate for the south rover"
+      }
+    ]
+  }
+}

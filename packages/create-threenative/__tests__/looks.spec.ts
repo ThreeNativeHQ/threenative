@@ -1,12 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { float, rtt } from "three/tsl";
-import { describe, expect, it, vi } from "vitest";
-import { buildImplicitSurface } from "../templates/starter/src/render/implicitSurface.js";
-import { createKuwaharaStage } from "../templates/starter/src/render/kuwahara.js";
+import { describe, expect, it } from "vitest";
 import { qualityPreset } from "../templates/starter/src/render/quality.js";
-import { createRockRidge, sampleGraniteField } from "../templates/starter/src/render/rockRidge.js";
-import { createWatercolorStage } from "../templates/starter/src/render/watercolor.js";
 
 const starter = path.resolve("packages/create-threenative/templates/starter");
 // PRD-449: engine-only guards, copied into the scaffold by `pnpm test:templates` rather than
@@ -50,154 +45,79 @@ describe("starter visual floor", () => {
     expect(play).toContain("setupPost");
   });
 
-  it("should collect the starter's authored outline caller", async () => {
-    const [environment, painterly] = await Promise.all([
+  it("should keep the kit's look in its own render folder, never in the shared chain", async () => {
+    // `worldEnvironment.ts` is the plumbing every kit copies verbatim, so this kit's aesthetic must
+    // not be inside it — `shared-render-sources.spec.ts` fails when it is, and this says why in
+    // one place. What replaced the authored paint stages is the grid: three materials, two greys
+    // and one saturated colour, with world-metre UVs.
+    const [environment, materials, arena] = await Promise.all([
       readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/materials.ts"), "utf8"),
+      readFile(path.join(starter, "src/render/arena.ts"), "utf8"),
     ]);
-    expect(painterly).toContain("createOutlineStage");
-    expect(painterly).toContain('names.push("outline")');
     expect(environment).toContain("createRenderChain");
-    // The other half of the same rule, and the one that actually bites: `worldEnvironment.ts` is
-    // the plumbing every kit copies verbatim, so this kit's aesthetic must not be inside it.
-    // `shared-render-sources.spec.ts` fails when it is, and this says why in one place.
-    expect(environment).not.toContain("createOutlineStage");
+    expect(environment).not.toMatch(/create(?:Outline|Kuwahara|Watercolor)Stage/u);
+    expect(`${materials}\n${arena}`).toMatch(/gridTexture\(|worldGridUVs/u);
+    // One grid tile is one metre on every face of every prop, whichever axis dominates.
+    expect(materials).toContain("export function worldGridUVs");
   });
 
-  it("should keep painterly stages in generated source with a measured tier policy", async () => {
-    const [environment, painterly, quality, outline, kuwahara, watercolor] = await Promise.all([
-      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/painterly.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/quality.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/outline.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/watercolor.ts"), "utf8"),
-    ]);
-    const generated = [outline, kuwahara, watercolor].join("\n");
-    expect(generated).not.toContain("@threenative/");
-    expect(generated).not.toMatch(/ShaderMaterial|gl_FragColor|postprocessing/iu);
-    expect(painterly).toContain("createKuwaharaStage");
-    expect(painterly).toContain("createWatercolorStage");
-    expect(environment).not.toContain("createKuwaharaStage");
-    expect(environment).not.toContain("createWatercolorStage");
-    expect(generated.indexOf('name: "outline"')).toBeGreaterThanOrEqual(0);
-    expect(generated.indexOf('name: "kuwahara"')).toBeGreaterThanOrEqual(0);
-    expect(generated.indexOf('name: "watercolor"')).toBeGreaterThanOrEqual(0);
-    expect(generated.indexOf('after: "outline"')).toBeGreaterThanOrEqual(0);
-    expect(generated.indexOf('after: "kuwahara"')).toBeGreaterThanOrEqual(0);
-    expect(quality).toContain("outlineEnabled: true");
-    expect(quality).toContain("kuwaharaRadius: 5");
-    expect(quality).toContain("kuwaharaResolutionScale: 0.5");
-    expect(quality).toContain("outlineEnabled: false");
-    expect(quality).toContain("kuwaharaEnabled: false");
-    expect(quality).toContain("watercolorEnabled: false");
-    expect(kuwahara).toContain("HalfFloatType");
-    expect(kuwahara).toContain("scope.own");
-    expect(kuwahara).toContain("scope.dispose");
-    expect(watercolor).not.toMatch(/ACES|toneMapping/iu);
+  it("should ship the deleted painterly stages as no fields at all", async () => {
+    // The three authored paint stages and the rock ridge are gone from the generated source, not
+    // left dormant behind a false switch. What is asserted now is the fact behind the deletion:
+    // a photographed sky under one sun carries the shading, so the chain asks for occlusion,
+    // bloom, vignette and the tone curve and nothing that smears the frame's contrast.
+    const quality = await readFile(path.join(starter, "src/render/quality.ts"), "utf8");
+    const post = await readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8");
+    for (const stage of ["outline", "kuwahara", "watercolor", "ridge", "scenery", "coast"]) {
+      expect(`${quality}\n${post}`, `${stage} wiring`).not.toMatch(
+        new RegExp(`${stage}[A-Za-z]*(?:Enabled|Stage|Stages)\\b`, "u"),
+      );
+    }
+    expect(quality).toContain("gtaoEnabled: true");
+    expect(quality).toContain("bloomEnabled: true");
+    expect(quality).toContain("vignetteAmount:");
   });
 
-  it("should preserve hue while transforming paint", async () => {
-    const watercolor = await readFile(path.join(starter, "src/render/watercolor.ts"), "utf8");
-    expect(watercolor).toContain("base.rgb.mul(stepped.div(sceneLuminance.max(0.0001)))");
-    const original = { b: 0.2, g: 0.4, r: 0.8 };
-    const luminance = 0.2126 * original.r + 0.7152 * original.g + 0.0722 * original.b;
-    const stepped = Math.min(1, (Math.floor(luminance * 8) + 0.5) / 8);
-    const scale = stepped / luminance;
-    const grouped = { b: original.b * scale, g: original.g * scale, r: original.r * scale };
-    expect(grouped.r / original.r).toBeCloseTo(grouped.g / original.g, 9);
-    expect(grouped.g / original.g).toBeCloseTo(grouped.b / original.b, 9);
+  it("should keep the metre grid on the same byte layout minimal ships", async () => {
+    // Two kits now build the same arena, and a generated project must not get two subtly different
+    // grids. The three grid builders are compared function by function, so a change to one is a
+    // change to both.
+    const definitions = async (root: string): Promise<string[]> => {
+      const source = await readFile(path.join(root, "src/render/materials.ts"), "utf8");
+      return ["gridTexture", "grainNormalTexture", "worldGridUVs"].map((name) => {
+        const start = source.indexOf(`function ${name}`);
+        if (start < 0) throw new Error(`${root}/materials.ts has no ${name}.`);
+        let depth = 0;
+        for (let index = source.indexOf("{", start); index < source.length; index += 1) {
+          if (source[index] === "{") depth += 1;
+          else if (source[index] === "}") depth -= 1;
+          if (depth === 0) return source.slice(start, index + 1);
+        }
+        throw new Error(`${root}/materials.ts has an unterminated ${name}.`);
+      });
+    };
+    expect(await definitions(starter)).toEqual(await definitions(minimal));
   });
 
-  it("should use the half-angle in the runtime tensor graph", async () => {
-    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
-    expect(kuwahara).toMatch(
-      /const orientation = tsl\s*\.\s*atan\(\s*tensorSample\.y\.mul\(2\),\s*tensorSample\.x\.sub\(tensorSample\.z\)\s*\)\s*\.\s*mul\(0\.5\);/u,
-    );
-  });
-
-  it("should sample bounded two-dimensional Kuwahara areas at radius five", async () => {
-    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
-    expect(kuwahara).toMatch(/function sectorSampleOffsets\(radius: number\)/u);
-    expect(kuwahara).toMatch(/for \(let radial = 1; radial <= bounded; radial \+= 1\)/u);
-    expect(kuwahara).toMatch(
-      /for \(let tangent = -halfWidth; tangent <= halfWidth; tangent \+= 1\)/u,
-    );
-    expect(kuwahara).toMatch(/for \(const localOffset of sectorOffsets\)/u);
-    expect(5 * 5).toBe(25);
-    expect(5 * 5 * 8).toBe(200);
-  });
-
-  it("should keep the runtime node transform in matrix-times-vector order", async () => {
-    const kuwahara = await readFile(path.join(starter, "src/render/kuwahara.ts"), "utf8");
-    const helper = kuwahara.slice(kuwahara.indexOf("function transformKernelOffsetNode"));
-    expect(helper).toMatch(
-      /axis\.x\s*\.\s*mul\(scaled\.x\)\s*\.\s*sub\(axis\.y\s*\.\s*mul\(scaled\.y\)\)[\s\S]*axis\.y\s*\.\s*mul\(scaled\.x\)\s*\.\s*add\(axis\.x\s*\.\s*mul\(scaled\.y\)\)/u,
-    );
-    expect(helper).not.toMatch(/scaled\.x\s*\.\s*mul\(axis\.x\)/u);
-    expect(helper).not.toMatch(/scaled\.y\s*\.\s*mul\(axis\.y\)/u);
-  });
-
-  it("should use fewer watercolor luminance bands on medium than high", () => {
+  it("should gather occlusion with fewer samples on medium than high", () => {
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");
-    const highLevels = highPreset.watercolorLevels ?? 8;
-    expect(highLevels).toBe(8);
-    expect(mediumPreset.watercolorLevels).toBe(6);
-    expect(mediumPreset.watercolorLevels).toBeLessThan(highLevels);
+    const highSamples = highPreset.gtaoSamples ?? 16;
+    expect(highSamples).toBe(16);
+    expect(mediumPreset.gtaoSamples).toBe(8);
+    expect(mediumPreset.gtaoSamples).toBeLessThan(highSamples);
   });
 
-  it("should preserve most source contrast through the shipped Kuwahara mix", () => {
-    for (const tier of ["high", "medium"] as const) {
-      const strength = qualityPreset(tier).kuwaharaStrength;
-      expect(strength, tier).toBeDefined();
-      expect(1 - (strength ?? 1), tier).toBeGreaterThanOrEqual(0.6);
+  it("should ship no contrast-reducing stage at any tier", () => {
+    // The shipped look is graded by bloom, vignette and the tone curve, and nothing smears the
+    // image's contrast on the way there.
+    for (const tier of ["high", "medium", "low"] as const) {
+      const preset = qualityPreset(tier);
+      expect(preset.ssrEnabled, tier).toBeFalsy();
+      expect(preset.ssgiEnabled, tier).toBeFalsy();
+      expect(preset.sharpenEnabled, tier).toBeFalsy();
     }
-  });
-
-  it("should fail closed on missing paint input even for zero-strength no-ops", () => {
-    expect(() => createKuwaharaStage({ strength: 0 }).build(undefined)).toThrow(
-      /kuwahara input is missing/u,
-    );
-    expect(() => createWatercolorStage({ strength: 0 }).build(undefined)).toThrow(
-      /watercolor input is missing/u,
-    );
-  });
-
-  it("should dispose owned RTT targets and materials without touching shared inputs", async () => {
-    const { createTextureScope } = await import(
-      "../templates/starter/src/render/textureLifetime.js"
-    );
-    const scope = createTextureScope();
-    expect(() => scope.own({ isRTTNode: true })).toThrow(/disposable RTTNode/u);
-    const generated = scope.texture(float(1));
-    const explicit = rtt(float(1));
-    scope.own(explicit);
-    scope.own(explicit);
-    scope.own(generated);
-    const external = rtt(float(1));
-    expect(scope.texture(external)).toBe(external);
-    const nodes = [generated, explicit, external] as unknown as Array<{
-      renderTarget: { dispose: () => void };
-      _quadMesh: { geometry: { dispose: () => void }; material: { dispose: () => void } };
-    }>;
-    const spies = nodes.map((node) => ({
-      target: vi.spyOn(node.renderTarget, "dispose"),
-      material: vi.spyOn(node._quadMesh.material, "dispose"),
-      geometry: vi.spyOn(node._quadMesh.geometry, "dispose"),
-    }));
-
-    scope.dispose();
-    for (const { target, material, geometry } of spies.slice(0, 2)) {
-      expect(target).toHaveBeenCalledOnce();
-      expect(material).toHaveBeenCalledOnce();
-      expect(geometry).not.toHaveBeenCalled();
-    }
-    expect(spies[2]?.target).not.toHaveBeenCalled();
-    expect(spies[2]?.material).not.toHaveBeenCalled();
-    scope.dispose();
-    expect(spies[0]?.target).toHaveBeenCalledOnce();
-    expect(spies[1]?.material).toHaveBeenCalledOnce();
   });
 
   it("should remove debug materials and wire live shadows", async () => {
@@ -209,9 +129,10 @@ describe("starter visual floor", () => {
       readFile(path.join(minimal, "src/scenes/Play.ts"), "utf8"),
     ]);
     expect(files.join("\n")).not.toContain("MeshNormalMaterial");
-    expect(await readFile(path.join(starter, "src/render/materials.ts"), "utf8")).toMatch(
-      /floor:[\s\S]*player:[\s\S]*crate:/,
-    );
+    // Light grid on the walking surface, dark grid on the sides, one saturated prop: three
+    // materials, and the arena is the only thing that chooses between them.
+    const materials = await readFile(path.join(starter, "src/render/materials.ts"), "utf8");
+    expect(materials).toMatch(/floorMaterial[\s\S]*structureMaterial[\s\S]*propMaterial/u);
     expect(await readFile(path.join(starter, "src/render/lighting.ts"), "utf8")).toContain(
       "shadowMap.enabled = true",
     );
@@ -295,342 +216,122 @@ describe("starter visual floor", () => {
     // taught every cold agent reading the starter to write the copy rather than the import.
     // The seeded source now comes from the framework and is threaded in from the scene, because
     // `src/render/` may not import a framework package. Assert the property, not the copy:
-    // the scatter is seeded, and nothing in the chain reaches for `Math.random`.
-    const scenery = await readFile(path.join(starter, "src/render/scenery.ts"), "utf8");
-    expect(scenery).toContain("random: () => number");
-    expect(scenery).not.toContain("Math.random(");
+    // the level is seeded, and nothing in the chain reaches for `Math.random`.
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
+    const arena = await readFile(path.join(starter, "src/render/arena.ts"), "utf8");
     expect(play).toContain("createRandom");
-    expect(play).toMatch(/createScenery\([^)]*createRandom\(\d[\d_]*\)\)/u);
+    expect(play).toContain("ctx.random.range");
     expect(play).not.toContain("Math.random(");
+    expect(arena).not.toContain("Math.random(");
   });
 
-  it("should build deterministic watertight granite from the live field", () => {
-    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
-    const build = (seed: number, cellSize = 2.1) =>
-      buildImplicitSurface({
-        bounds,
-        cellSize,
-        latticeCap: 100_000,
-        closed: true,
-        protectBoundary: true,
-        sample: (x, y, z) => sampleGraniteField(x, y, z, seed, bounds),
-      });
-    const bytes = (array: Float32Array | Uint32Array) =>
-      Buffer.from(array.buffer, array.byteOffset, array.byteLength).toString("hex");
-    for (const seed of [20_260_821, 11, 99]) {
-      const result = build(seed);
-      expect(result.report).toMatchObject({
-        boundaryEdges: 0,
-        degenerateTriangles: 0,
-        windingConflicts: 0,
-      });
-      expect(result.report.signedVolume).toBeGreaterThan(1);
-    }
-    const first = build(20_260_821);
-    const same = build(20_260_821);
-    const different = build(11);
-    expect(bytes(first.positions)).toBe(bytes(same.positions));
-    expect(bytes(first.indices)).toBe(bytes(same.indices));
-    expect(bytes(first.positions)).not.toBe(bytes(different.positions));
-  });
-
-  it("should carry the fused ridge through its authored contact band", async () => {
-    const ridge = await readFile(path.join(starter, "src/render/rockRidge.ts"), "utf8");
-    const contact = /const contactY = (-?\d+(?:\.\d+)?)/u.exec(ridge)?.[1];
-    if (contact === undefined)
-      throw new Error("Rock ridge contact band is not authored in the field.");
-    const contactY = Number(contact);
-    expect(contactY).toBe(-20);
-    expect(ridge).toContain("minY: -32");
-    const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
-    const result = buildImplicitSurface({
-      bounds,
-      cellSize: 2.1,
-      latticeCap: 100_000,
-      closed: true,
-      protectBoundary: true,
-      sample: (x, y, z) => sampleGraniteField(x, y, z, 20_260_821, bounds),
-    });
-    const minimumY = Math.min(
-      ...Array.from(
-        { length: result.positions.length / 3 },
-        (_, index) => result.positions[index * 3 + 1] as number,
-      ),
-    );
-    expect(sampleGraniteField(0, contactY, -58, 20_260_821, bounds)).toBeLessThan(0);
-    expect(minimumY).toBeLessThan(contactY);
-    expect(result.report).toMatchObject({
-      boundaryEdges: 0,
-      degenerateTriangles: 0,
-      windingConflicts: 0,
-    });
-  });
-
-  it("should drive look movement before the long refinement wait", async () => {
+  it("should keep the look scenario on the frame the arena now draws", async () => {
     const scenario = JSON.parse(
       await readFile(path.join(templatePlaytests, "look.playtest.json"), "utf8"),
     ) as {
       assert?: {
-        components?: Array<{
-          allowTrivial?: string;
-          atSteps?: Array<{ equals?: unknown; label: string }>;
-          component?: string;
-          entity?: string;
-          equals?: unknown;
-          path?: string;
-        }>;
+        camera?: { entity?: string; follows?: string; within?: number };
+        movement?: { entity?: string; minDistance?: number };
+        renderChain?: {
+          contributions?: Record<string, string[]>;
+          stages?: { includes?: string[] };
+        };
         resources?: Array<{
           atSteps?: Array<{ label: string; textIncludes?: string }>;
           id?: string;
           path?: string;
         }>;
+        visual?: Array<{ region?: { maxDarkPixelRatio?: number; minNonblankPixelRatio?: number } }>;
       };
-      steps: Array<{
-        holdTicks?: number;
-        kind?: string;
-        label?: string;
-        press?: string;
-        release?: boolean;
-        waitTicks?: number;
-      }>;
+      steps: Array<{ holdTicks?: number; kind?: string; label?: string; press?: string }>;
       warmupFrames?: number;
     };
-    const labels = scenario.steps.map(({ label }) => label);
-    expect(labels).toEqual(["preview-pending", "move-before-refinement", "refinement-settles"]);
+    // The arena is built in the first frame, so there is no preview wait to prove any more: the
+    // scenario is move, settle, and read the frame the camera is actually pointing at.
+    expect(scenario.steps.map(({ label }) => label)).toEqual([
+      "scene-ready",
+      "move-across-the-platform",
+      "frame-settles",
+    ]);
     expect(scenario.warmupFrames).toBe(1);
-    expect(scenario.steps[0]).toMatchObject({
-      kind: "wait",
-      label: "preview-pending",
-      waitTicks: 1,
-      release: true,
-    });
-    const movementIndex = scenario.steps.findIndex(
-      ({ label }) => label === "move-before-refinement",
-    );
-    const refinementIndex = scenario.steps.findIndex(({ label }) => label === "refinement-settles");
-    expect(movementIndex).toBeGreaterThanOrEqual(0);
-    expect(refinementIndex).toBeGreaterThan(movementIndex);
-    expect(scenario.steps[movementIndex]).toMatchObject({
-      kind: "input",
+    expect(scenario.steps[1]).toMatchObject({
       holdTicks: 140,
+      kind: "input",
       press: "ArrowRight",
-      release: true,
     });
-    expect(scenario.steps[refinementIndex]).toMatchObject({ kind: "wait", waitTicks: 600 });
-    const pendingState = scenario.assert?.components?.find(
-      ({ component, entity }) => component === "state" && entity === "scenery.ridge",
-    );
-    expect(pendingState).toMatchObject({
-      atSteps: [{ equals: "preview", label: "preview-pending" }],
-      component: "state",
-      entity: "scenery.ridge",
-      equals: "refined",
-    });
-    expect(pendingState).not.toHaveProperty("allowTrivial");
-    const pendingGeneration = scenario.assert?.components?.find(
-      ({ component, entity }) => component === "generation" && entity === "scenery.ridge",
-    );
-    expect(pendingGeneration).toMatchObject({
-      atSteps: [{ equals: 0, label: "preview-pending" }],
-      component: "generation",
-      entity: "scenery.ridge",
-      gte: 1,
-    });
-    expect(pendingGeneration).not.toHaveProperty("allowTrivial");
+    expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
+    expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
+    // AO, bloom and vignette are the whole shipped chain, and each one is proved to have changed
+    // the graph output rather than being reported as applied.
+    expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
+      "ambientOcclusion",
+      "bloom",
+      "vignette",
+    ]);
+    expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
+      "graphOutputChanged",
+    ]);
     expect(scenario.assert?.resources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          atSteps: [{ label: "move-before-refinement", textIncludes: "." }],
+          atSteps: [{ label: "move-across-the-platform", textIncludes: "." }],
           id: "state",
           path: "odometer",
         }),
       ]),
     );
-    expect(scenario.assert?.components).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ component: "state", entity: "scenery.ridge", equals: "refined" }),
-        expect.objectContaining({
-          component: "topology",
-          entity: "scenery.ridge",
-          equals: 0,
-          path: "boundaryEdges",
-        }),
-      ]),
-    );
+    // The frame is graded, not black. `maxLuminance` is the guard that matters: a black or
+    // unlit capture still counts as "non-blank", so the dark-pixel ceiling is a design bound —
+    // this is a dark-grid arena, and its walls, pillar and platform flanks are a quarter of the
+    // frame by design. The floor is the other half of that: a frame that lost its dark structure
+    // is as wrong as one that drowned in it.
+    const regions = (scenario.assert?.visual ?? [])
+      .flatMap((entry) => (entry.region === undefined ? [] : [entry.region]))
+      .filter((region): region is NonNullable<typeof region> => region !== undefined);
+    expect(regions).toHaveLength(3);
+    const [whole, sky, middle] = regions as [
+      {
+        maxDarkPixelRatio?: number;
+        maxLuminance?: number;
+        minDarkPixelRatio?: number;
+        minNonblankPixelRatio?: number;
+      },
+      { maxDarkPixelRatio?: number; maxLuminance?: number; minNonblankPixelRatio?: number },
+      { minNonblankPixelRatio?: number },
+    ];
+    expect(whole?.minNonblankPixelRatio).toBeGreaterThan(0.9);
+    expect(whole?.maxLuminance).toBeLessThan(0.3);
+    expect(whole?.minDarkPixelRatio).toBeGreaterThan(0);
+    expect(whole?.maxDarkPixelRatio).toBeGreaterThan(0.3);
+    expect(sky?.minNonblankPixelRatio).toBeGreaterThan(0.9);
+    expect(sky?.maxLuminance).toBeLessThan(0.3);
+    expect(sky?.maxDarkPixelRatio).toBeGreaterThan(0.2);
+    expect(middle?.minNonblankPixelRatio).toBeGreaterThan(0.5);
   });
 
-  it("should protect a boundary-touching surface and reject malformed fields", () => {
-    const bounds = { maxX: 1, maxY: 1, maxZ: 1, minX: 0, minY: 0, minZ: 0 } as const;
-    const touching = (x: number, y: number, z: number) =>
-      Math.hypot(x - 0.2, y - 0.5, z - 0.5) - 0.4;
-    const build = (sample: (x: number, y: number, z: number) => number, protectBoundary = true) =>
-      buildImplicitSurface({
-        bounds,
-        cellSize: 0.25,
-        latticeCap: 10_000,
-        closed: true,
-        protectBoundary,
-        sample,
-      });
-    expect(build(touching).report).toMatchObject({
-      boundaryEdges: 0,
-      degenerateTriangles: 0,
-      windingConflicts: 0,
-    });
-    expect(() => build(touching, false)).toThrow("TN_IMPLICIT_SURFACE_TOPOLOGY_INVALID");
-    expect(() => build(() => Number.NaN)).toThrow("TN_IMPLICIT_SURFACE_SAMPLE_INVALID");
-    expect(() => build(() => 1, true)).toThrow("TN_IMPLICIT_SURFACE_EMPTY");
-    expect(() =>
-      buildImplicitSurface({
-        bounds,
-        cellSize: 0.01,
-        latticeCap: 10_000,
-        closed: true,
-        protectBoundary: true,
-        sample: () => 1,
-      }),
-    ).toThrow("TN_IMPLICIT_SURFACE_LATTICE_OVERFLOW");
-  });
-
-  it("should replace the block horizon with a game-owned Worker refinement", async () => {
-    const [scenery, ridge, surface, worker, play, instructions, mirror] = await Promise.all([
-      readFile(path.join(starter, "src/render/scenery.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/rockRidge.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/implicitSurface.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/rockRidge.worker.ts"), "utf8"),
+  it("should tell the generated project what the arena is and what replaced the coast", async () => {
+    const [arena, play, instructions, mirror] = await Promise.all([
+      readFile(path.join(starter, "src/render/arena.ts"), "utf8"),
       readFile(path.join(starter, "src/scenes/Play.ts"), "utf8"),
       readFile(path.join(starter, "AGENTS.md"), "utf8"),
       readFile(path.join(starter, "CLAUDE.md"), "utf8"),
     ]);
-    expect(scenery).toContain("createRockRidge");
-    expect(scenery).toContain("deferRefinement: true");
-    expect(scenery).toContain("scenery.object.add");
-    expect(scenery).toContain("Play.enter imports and invokes createScenery");
-    expect(scenery).toContain("gameplay rules and colliders unchanged");
-    expect(scenery).not.toContain("Delete this file and the game plays identically");
-    expect(scenery).not.toContain("MIDGROUND");
-    expect(scenery).not.toContain("index < 9");
-    expect(ridge).toContain("sampleGraniteField");
-    expect(ridge).toContain("smoothMin");
-    expect(ridge).toContain("field = smoothMin(field, lobe, 0.22)");
-    expect(ridge).toContain("for (let index = -4;");
-    expect(ridge).toContain("cellSize: 10");
-    expect(ridge).toContain("cellSize: 8");
-    expect(ridge).toContain("new Worker(url)");
-    expect(ridge).toContain("new Blob");
-    expect(ridge).toContain("URL.revokeObjectURL");
-    expect(ridge).not.toContain('type: "module"');
-    expect(`${ridge}\n${surface}\n${worker}`).not.toContain("@threenative/");
-    expect(surface).not.toMatch(/\b(?:color|colour)\b/iu);
-    expect(ridge.indexOf("object.add(next.mesh)")).toBeLessThan(
-      ridge.indexOf("object.remove(previous)"),
-    );
-    expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
-    expect(play).toContain("scenery.rebuild()");
-    expect(play).toContain("this.#scenery?.dispose()");
-    expect(instructions).toContain("rockRidge.ts");
-    expect(instructions).toContain("implicitSurface.ts");
-    expect(instructions).toContain("topology audit");
-    expect(instructions).toContain("Preview immediately");
-    expect(mirror).toContain("rockRidge.ts");
-    expect(mirror).toContain("Preview immediately");
-  });
-
-  it("should fail closed when Worker refinement is unavailable", () => {
-    vi.stubGlobal("Worker", undefined);
-    try {
-      expect(() => createRockRidge({ dispose: vi.fn() } as never, 20_260_821)).toThrow(
-        "TN_ROCK_RIDGE_WORKER_FAILED",
-      );
-    } finally {
-      vi.unstubAllGlobals();
+    // The generated instructions are the product: an agent editing this game has to be told the
+    // scene is a test arena and where its parts live, or it will go looking for the coast.
+    for (const text of [instructions, mirror]) {
+      expect(text).toContain("arena.ts");
+      expect(text).toContain("test arena");
+      expect(text).toContain("grid");
     }
-  });
-
-  it("should keep Preview visible and discard stale Worker generations", () => {
-    class FakeWorker {
-      static instances: FakeWorker[] = [];
-      onmessage:
-        | ((
-            event: MessageEvent<{
-              generation: number;
-              indices: Uint32Array;
-              positions: Float32Array;
-              report: Record<string, number>;
-            }>,
-          ) => void)
-        | null = null;
-      onerror: ((event: ErrorEvent) => void) | null = null;
-      terminated = false;
-      constructor() {
-        FakeWorker.instances.push(this);
-      }
-      postMessage(): void {}
-      terminate(): void {
-        this.terminated = true;
-      }
-      emit(result: {
-        generation: number;
-        indices: Uint32Array;
-        positions: Float32Array;
-        report: Record<string, number>;
-      }): void {
-        this.onmessage?.({ data: result } as MessageEvent<typeof result>);
-      }
-    }
-    vi.stubGlobal("Worker", FakeWorker);
-    try {
-      const material = { dispose: vi.fn() } as never;
-      const controller = createRockRidge(material, 20_260_821);
-      expect(controller.state).toBe("preview");
-      expect(controller.debug().generation).toBe(0);
-      expect(controller.object.children).toHaveLength(1);
-      const bounds = { maxX: 54, maxY: 18, maxZ: -42, minX: -54, minY: -32, minZ: -74 } as const;
-      const build = (seed: number) =>
-        buildImplicitSurface({
-          bounds,
-          cellSize: 2.1,
-          latticeCap: 100_000,
-          closed: true,
-          protectBoundary: true,
-          sample: (x, y, z) => sampleGraniteField(x, y, z, seed, bounds),
-        });
-      const initialWorker = FakeWorker.instances[0];
-      if (initialWorker === undefined) throw new Error("fake Worker was not dispatched");
-      const first = build(20_260_821);
-      initialWorker.emit({ ...first, generation: 1 });
-      expect(controller.state).toBe("refined");
-      expect(controller.debug().generation).toBe(1);
-      expect(initialWorker.terminated).toBe(true);
-      expect(controller.object.children).toHaveLength(1);
-
-      controller.rebuild(11);
-      controller.rebuild(99);
-      const staleWorker = FakeWorker.instances[1];
-      const currentWorker = FakeWorker.instances[2];
-      if (staleWorker === undefined || currentWorker === undefined)
-        throw new Error("fake Worker generations were not dispatched");
-      const stale = build(11);
-      staleWorker.emit({ ...stale, generation: 2 });
-      expect(controller.debug().generation).toBe(1);
-      expect(staleWorker.terminated).toBe(true);
-      const current = build(99);
-      currentWorker.emit({ ...current, generation: 3 });
-      expect(controller.state).toBe("refined");
-      expect(controller.debug().generation).toBe(3);
-      expect(currentWorker.terminated).toBe(true);
-      expect(controller.object.children).toHaveLength(1);
-      controller.rebuild(123);
-      const pendingWorker = FakeWorker.instances[3];
-      if (pendingWorker === undefined) throw new Error("pending fake Worker was not dispatched");
-      controller.dispose();
-      expect(controller.state).toBe("disposed");
-      expect(controller.object.children).toHaveLength(0);
-      expect(pendingWorker.terminated).toBe(true);
-      controller.dispose();
-    } finally {
-      vi.unstubAllGlobals();
+    // Two solids per platform and one fixed body each: the collider is the triangles on screen.
+    expect(arena).toContain("export function platform");
+    expect(play).toContain("createArena()");
+    for (const name of [
+      "arena.solids",
+      'CollisionShape3D.fromMesh(mesh, "trimesh")',
+      'type: "fixed"',
+    ]) {
+      expect(play, name).toContain(name);
     }
   });
 
@@ -647,7 +348,11 @@ describe("starter visual floor", () => {
   it("should light silhouettes with a rim, not just a key", async () => {
     for (const root of [starter, minimal, platformer]) {
       const lighting = await readFile(path.join(root, "src/render/lighting.ts"), "utf8");
-      expect(lighting).toContain("const rim = new DirectionalLight");
+      const sky = await readFile(path.join(root, "src/render/sky.ts"), "utf8");
+      // An image-based environment puts the sky's own highlight on every silhouette, which is the
+      // job the rim light was doing; `minimal` lights with its sky photograph instead of a rim.
+      if (/scene\.environment\s*=/u.test(sky)) expect(sky).toContain("environmentIntensity");
+      else expect(lighting).toContain("const rim = new DirectionalLight");
       expect(lighting).toContain("PCFSoftShadowMap");
       expect(lighting).toContain("normalBias");
     }

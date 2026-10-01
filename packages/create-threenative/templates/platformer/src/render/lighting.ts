@@ -1,46 +1,55 @@
-import {
-  AmbientLight,
-  DirectionalLight,
-  HemisphereLight,
-  PCFSoftShadowMap,
-  type Scene,
-} from "three";
-import { palette } from "./palette.js";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// One sun, and the sky photograph in `sky.ts` is the fill. Nothing else is stacked on top: a
+// hemisphere or ambient light next to an image-based environment fills the same faces twice and
+// flattens exactly the shadow side the sun was there to make. The low-poly geometry keeps its own
+// separation through `flatShading` and baked vertex mottle, which is why this level reads as
+// facetted without a second light.
+import { DirectionalLight, PCFSoftShadowMap, type Scene, type Vector3 } from "three";
+import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-// Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
-// the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
-// rendering a black pass.
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+export interface ILighting {
+  /** Aimed at the player every frame, so one map covers the route instead of 100 m of it. */
+  readonly key: DirectionalLight;
+  follow(player: Vector3): void;
+}
+
+export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = false): ILighting {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(palette.skyLow, palette.ground, 0.5));
 
-  // Warm white, not the accent. Keyed with a saturated yellow, the grass, the character and the
-  // stone all took the same cast and the palette collapsed towards one pale band — the same
-  // failure the fog note in `sky.ts` describes, arriving through the light instead.
-  const key = new DirectionalLight(0xfff2d8, 2.1);
-  key.position.set(5, 8, 4);
+  // Warm white, matched by eye to the photographed midday sun against its own sky.
+  const key = new DirectionalLight(0xfff1e0, 4.2);
   key.castShadow = true;
-  // 1024² is one quarter of a 2048² map's texel storage and fill work. The
-  // 24-unit extent covers the generated opening route; widen both together
-  // when a larger level needs more shadow coverage, accepting softer shadows.
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 80;
-  const extent = 24;
+  // The camera never sees more than about 40 m of the route at once, so the map is fitted to that
+  // window and travels with the player. 4096² over 40 m is under a centimetre a texel; phones
+  // take 2048². Fitted to the whole 100 m route instead, every shadow would be the same size as
+  // the fox's ear.
+  const size = mobile ? 2048 : 4096;
+  const extent = mobile ? 14 : 22;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 120;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
   key.shadow.camera.bottom = -extent;
-  key.shadow.normalBias = 0.04;
+  // Small biases: a large normal bias is what lifts a shadow off the feet of the thing casting it.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
-
-  const rim = new DirectionalLight(palette.skyLow, 0.45);
-  rim.position.set(-5, 4, -7);
-  scene.add(rim);
-  scene.add(new AmbientLight(palette.skyLow, 0.42));
-
-  return key;
+  scene.add(key.target);
+  const offset = SUN_DIRECTION.clone().multiplyScalar(40);
+  return {
+    follow(player: Vector3): void {
+      key.position.set(player.x + offset.x, player.y + offset.y, player.z + offset.z);
+      key.target.position.copy(player);
+      key.target.updateMatrixWorld();
+    },
+    key,
+  };
 }

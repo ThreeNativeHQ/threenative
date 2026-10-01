@@ -4,7 +4,7 @@ Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit 
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the room, the crates, the hinge, the ball, the goal, the HUD
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the vault, the warden, the crates, the seal, the HUD
 and the look; `src/game.ts` is portable and React mounts only from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
 
 ## Start every change
@@ -46,19 +46,19 @@ pnpm dev
 pnpm build
 pnpm build --target desktop
 pnpm test
-pnpm typecheck
 ```
 
-`src/room.ts` builds the room's geometry and hands it to `buildStaticColliders`, so collision is
-the geometry rather than a second hand-written list of boxes: move a wall and its collider moves.
-The same file places the floor grid through one `InstancedBatch`, which is why 100+ tiles cost one
-draw. `src/entities/Pendulum.ts` hangs a bob from a fixed beam with `Joint3D.hinge` — anchors are
-in each body's **local** space. `src/entities/Ball.ts` owns the goal as an `Area3D` and listens for
-`bodyEntered`; a distance check instead would fire on a ball that flew over the ring. A carried
-crate is steered by velocity in `src/entities/Crate.ts` and never teleported, because snapping a
-dynamic body each frame pushes it through walls. Register gameplay entities with `ctx.entities`;
-the single React HUD reads `GameState`, never an entity. Keep `playtests/survives.playtest.json`
-as smoke proof, and `carry` and `swing` honest when you change what they assert.
+Forty-five dynamic bodies from seed 6132 — 41 solid crates to shove, 4 phase crates to walk through, and a
+seal to stand on. `src/scenes/Play.ts` authors the layout, drops the pile on the first observed frame so the
+settle is provable, and refuses a crate inside the seal (`assertClearOfSeal`) or in the crossing
+(`assertLaneClear`) — a check: the lane check once made a finishable level unfinishable when two crates placed
+elsewhere shifted the jitter. `src/render/vault.ts` returns the geometry and the solid boxes, so `src/render/`
+imports no framework package. The third collision layer in `src/entities/Crate.ts` is the glowing ward: it has
+to fall and stack, so it cannot be a sensor, and it must be transparent to *everything the player can move*.
+`Warden.ts` sets `pushesDynamicBodies` (Rapier's `false` default reads as a broken collider); `Seal.ts` ends
+the run on a backend-reported **overlap**, never a distance check. V replays the vault twice and publishes the
+drift. `src/render/touch-controls.ts` adds a thumbstick on touch, and `playtests/survives.playtest.json` is
+the smoke proof; keep the other thirteen honest.
 
 ## Portable authoring contracts
 
@@ -66,9 +66,8 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-Generated conventions call `GroundSnap` for floor contact and `normaliseToMetres` for authored model scale.
-The camera reads the claw **after** the step through `afterPhysics`; reading it in the frame function
-is one step of lag, and on a swinging weight one step of lag is visible.
+The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the
+camera reads the body in the frame function; a trailing follow camera is a different game.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game state; from
 a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
@@ -89,7 +88,7 @@ supposed to be touching. Two loading conventions come from `@threenative/core`, 
 Edit `src/render/` directly; `postprocessing.ts` reports stages but decides no game colour. Quality
 tiers live in `src/render/quality.ts`: `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise
 `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER`
-reports the source. A scenario with no assertions or missing observations fails; open a real capture. The engine warns you before a human does: `TN_SCENE_WARNING` fires when the GPU used under a third of the frame while the JS render phase ran longer than the display's own period, and names the census behind it — objects considered, draws per pass, triangles per draw, shadow-exempt casters. It is a scene-shape verdict, so answer it by moving the draw and object counts, not the engine: read the bucket census before promising a merge. `npx threenative doctor` repeats the last verdict and the `DEV_MODE=true` chip shows it beside the frame rate; `TN_FRAME_SPANS=1` adds the render phase's own span tree when you need to know which part costs the milliseconds. The cheapest static object is one whose transform you never write: measured on 1,561 objects, leaving them alone costs 10.10 ms of render phase against 17.45 ms when the game rewrites every transform each frame, because three skips the per-object binding update when nothing changed. So do not touch a transform you do not need to — that is worth ~7 ms where `markStatic(root)`, which additionally composes a never-moving subtree once, measured 0.009 ms. Use it for scenery you are sure of, and `invalidateStatic(object)` to announce a write inside one; it deletes matrix arithmetic, not the walk. `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way each frame and throws on the first that disagrees, which is how you prove a freeze did not leave something stale on screen.
+reports the source. A scenario with no assertions or missing observations fails; open a real capture. The engine warns you before a human does: `TN_SCENE_WARNING` fires when the GPU used under a third of the frame while the JS render phase ran longer than the display's own period, and names the census behind it — objects considered, draws per pass, triangles per draw, shadow-exempt casters. It is a scene-shape verdict, so answer it by moving the draw and object counts, not the engine: read the bucket census before promising a merge. `npx threenative doctor` repeats the last verdict and the `DEV_MODE=true` chip shows it on screen (it draws the verdict alone — no frame rate, which reads throttled under a compositor or a virtual display; see `agent-docs/references/performance-basics.md`); `TN_FRAME_SPANS=1` adds the render phase's own span tree when you need to know which part costs the milliseconds. The cheapest static object is one whose transform you never write: measured on 1,561 objects, leaving them alone costs 10.10 ms of render phase against 17.45 ms when the game rewrites every transform each frame, because three skips the per-object binding update when nothing changed. So do not touch a transform you do not need to — that is worth ~7 ms where `markStatic(root)`, which additionally composes a never-moving subtree once, measured 0.009 ms. Use it for scenery you are sure of, and `invalidateStatic(object)` to announce a write inside one; it deletes matrix arithmetic, not the walk. `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way each frame and throws on the first that disagrees, which is how you prove a freeze did not leave something stale on screen.
 
 Recipes in the installed create-threenative: `node_modules/create-threenative/agent-docs/references/assertion-reference.md`, `node_modules/create-threenative/agent-docs/references/build-profiles.md`, `node_modules/create-threenative/agent-docs/references/capability-reference.md`, `node_modules/create-threenative/agent-docs/references/capture-the-frame.md`, `node_modules/create-threenative/agent-docs/references/creating-creatures.md`, `node_modules/create-threenative/agent-docs/references/ctx-cookbook.md`, `node_modules/create-threenative/agent-docs/references/debug-surface.md`, `node_modules/create-threenative/agent-docs/references/finding-assets.md`, `node_modules/create-threenative/agent-docs/references/gameplay-recipes.md`, `node_modules/create-threenative/agent-docs/references/menu-screens.md`, `node_modules/create-threenative/agent-docs/references/mobile-memory-budget.md`, `node_modules/create-threenative/agent-docs/references/performance-basics.md`, `node_modules/create-threenative/agent-docs/references/rigging-characters.md`, `node_modules/create-threenative/agent-docs/references/sculpt-from-a-reference.md`, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md`, `node_modules/create-threenative/agent-docs/references/visual-baseline.md`, and `node_modules/create-threenative/agent-docs/references/webview-ui.md`.
 ## Optional multiplayer transport

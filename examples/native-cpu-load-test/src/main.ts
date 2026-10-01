@@ -120,7 +120,7 @@ function workloadConfigOf(input: IBrowserScenario): IWorkloadConfig {
 
 const VERIFIED_ADVISOR_EXAMPLES = {
   gpuParticles: "examples/abyss-framework/src/scenes/Abyss.ts",
-  hudInstancing: "packages/create-threenative/templates/minimal/src/render/hud.ts",
+  hudInstancing: "packages/create-threenative/templates/rts/src/render/army.ts",
   materialSharing: "packages/create-threenative/templates/starter/src/render/materials.ts",
   staticMerge: "examples/native-cpu-load-test/src/main.ts",
 } as const;

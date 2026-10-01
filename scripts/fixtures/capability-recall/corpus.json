@@ -411,7 +411,7 @@
       "id": "request.tower-defense-game",
       "query": "tower defense game",
       "scope": "request",
-      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
       "expect": ["Scheduler"],
       "reject": []
     },
@@ -428,7 +428,7 @@
       "id": "request.enemy-ai",
       "query": "enemy AI that chases the player",
       "scope": "request",
-      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person arena shooter",
+      "source": "template:shooter#AGENTS.md — __PROJECT_NAME__ first-person town firefight",
       "expect": ["NavigationAgent3D", "CharacterBody3D"],
       "reject": []
     },
@@ -462,7 +462,7 @@
       "id": "request.spawn-waves",
       "query": "spawn waves of enemies",
       "scope": "request",
-      "source": "template:defense#AGENTS.md — __PROJECT_NAME__ defense",
+      "source": "template:tower-defense#AGENTS.md — __PROJECT_NAME__ tower defense",
       "expect": ["Scheduler"],
       "reject": [
         "WaveField",
@@ -594,6 +594,38 @@
       "scope": "mechanic",
       "source": "sandbox:fps#render/facade.ts",
       "expect": ["mergeParts"],
+      "reject": []
+    },
+    {
+      "id": "request.drive-a-racing-kart",
+      "query": "racing car racing kart drift vehicle go-kart",
+      "scope": "request",
+      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "expect": ["VehicleBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.vehicle-suspension-grip",
+      "query": "suspension wheel traction tyre grip",
+      "scope": "request",
+      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "expect": ["VehicleBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.vehicle-pedals-steering",
+      "query": "accelerator pedal handbrake steering wheel",
+      "scope": "request",
+      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "expect": ["VehicleBody3D"],
+      "reject": []
+    },
+    {
+      "id": "request.vehicle-rescue-respawn",
+      "query": "rescue respawn flip back on track",
+      "scope": "request",
+      "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
+      "expect": ["VehicleBody3D"],
       "reject": []
     }
   ]

@@ -1,0 +1,85 @@
+{
+  "name": "survives",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pan",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fight",
+      "waitTicks": 840,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "camera.main",
+      "minDistance": 0.5
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "wave",
+        "equals": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 1,
+        "changed": true
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}

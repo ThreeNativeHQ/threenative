@@ -1,30 +1,19 @@
-import { MeshStandardMaterial } from "three";
-
-/**
- * Six names, one accent.
- *
- * A runner is read at speed, from behind, in a fraction of a second: the only thing that has to
- * be unmistakable is *what will kill you*. So the accent belongs to obstacles and to nothing
- * else, the track is a cool dark ribbon, and the horizon is warm so the direction of travel is
- * legible even when the track is empty.
- */
+// Generated for you. Keep these six palette roles coherent when you change the look.
+// The same neutral greys and one saturated blue the arena ships: the track is the light grid,
+// everything structural is the dark grid, and the accent marks what will kill you.
+// `horizon` is the sky photograph's own horizon, measured from its HDR, so the fog fades into the
+// horizon the frame actually shows.
 export const palette = {
-  skyHigh: 0x120c22,
-  skyLow: 0xd4623a,
-  track: 0x2a2740,
-  rail: 0x4a4569,
-  accent: 0x64f0d0,
-  shadow: 0x07060f,
+  /** Light grid: the track surface and the ground it runs over. */
+  floor: 0xb4b1ae,
+  /** Dark grid: the rails, the runner's fin, anything structural. */
+  structure: 0x747578,
+  /** The metre line both grids are drawn in. */
+  gridLine: 0x3a3a3c,
+  /** The one saturated colour, and it belongs to obstacles and nothing else. */
+  accent: 0x2a6cf0,
+  /** Touch-control highlight. */
+  highlight: 0xffffff,
+  /** The sky photograph's horizon: distance fades into this. */
+  horizon: 0xacb1c1,
 } as const;
-
-const materials = new Map<string, MeshStandardMaterial>();
-
-/** One cached standard material per colour and roughness, so a track of rails is one material. */
-export function surface(color: number, roughness = 0.8, metalness = 0.05): MeshStandardMaterial {
-  const key = `${color}:${roughness}:${metalness}`;
-  const cached = materials.get(key);
-  if (cached !== undefined) return cached;
-  const material = new MeshStandardMaterial({ color, metalness, roughness });
-  materials.set(key, material);
-  return material;
-}

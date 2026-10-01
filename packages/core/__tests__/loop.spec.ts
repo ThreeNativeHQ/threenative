@@ -355,6 +355,17 @@ describe("FixedStepLoop metrics collection", () => {
     expect(loop.runtimeDiagnosticsSeries()).toHaveLength(1);
   });
 
+  it("forgets the samples taken so far and collects the frames after them", () => {
+    const { loop } = makeLoop(true);
+    loop.start(0);
+    for (let index = 1; index <= 4; index += 1) loop.stepFrame(index * 16);
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(3);
+    loop.clearRuntimeDiagnostics();
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(0);
+    loop.stepFrame(80);
+    expect(loop.runtimeDiagnosticsSeries()).toHaveLength(1);
+  });
+
   it("renders but does not simulate, tick or bank time while held", () => {
     // Boot holds the loop so a loading screen can draw before the start scene has loaded. Three
     // things have to survive that hold: nothing is stepped, `tick()` still reads zero -- the

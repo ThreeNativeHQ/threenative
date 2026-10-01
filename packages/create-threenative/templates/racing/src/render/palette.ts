@@ -1,30 +1,28 @@
 // Generated for you: every colour the race uses, in one place. ThreeNative does not read this file.
 //
-// These are afternoon-daylight values on purpose. The first version of this palette used a
-// near-black road (`0x202936`) lit by a strongly yellow key light, and the blind score of the first
-// frame called it a black strip in a swamp: the tarmac never came up off the shadow floor and the
-// grass went olive. Tarmac is a *mid* grey — brighter than intuition says — and grass only reads as
-// grass when the sun on it is close to white.
+// Six named roles, and only one of them is saturated. That is the whole rule: a track read at
+// speed is a grey circuit, a grey sky and one colour that means *this is the thing you are here
+// for* — the rival's nose, the boost chevrons, the finish banner. Every other surface is a value
+// on the same neutral ramp, so the eye goes to the racing, not to the paint job.
+//
+// The two `sky*` roles are the loading screen's backdrop and progress track (`loading.ts` reads
+// them by name); `horizon` is the photographed sky's own haze, which is what distance fades into.
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
 
 export const palette = {
-  /** Zenith. Deep enough to give the dome a gradient worth having. */
-  skyHigh: 0x2c6cae,
-  /** Horizon haze, and the fog colour, so distance dissolves into the sky instead of into grey. */
-  skyLow: 0xbcd6e4,
-  /** Tarmac. Mid grey with a blue cast; anything darker eats the car's own shadow. */
-  road: 0x51565f,
-  /** Freshly cut infield. */
-  field: 0x5c8f45,
-  /** Kerbing, race numbers, boost chevrons. */
-  accent: 0xffc233,
-  /** Ambient fill and the underside of everything. Not black — black flattens. */
-  shadow: 0x35414f,
+  /** Loading screen backdrop. */
+  skyLow: 0xb8bcc2,
+  /** Loading screen progress track. */
+  skyHigh: 0x2f3640,
+  /** The sky photograph's own horizon: distance fades into this rather than into grey. */
+  horizon: 0xacb1c1,
+  /** Light grid: the run-off apron and the infield, so the ground reads as a measured surface. */
+  floor: 0xb4b1ae,
+  /** Dark grid: grandstands, hoardings, tyre walls, the treeline. */
+  structure: 0x747578,
+  /** The one saturated colour: the rival, the boost, the finish banner, a held touch control. */
+  accent: 0x2a6cf0,
 } as const;
-
-// The circuit's other surfaces are shades of the six roles above rather than roles of their own:
-// the palette stays six named colours, and anything derived belongs beside the material that uses
-// it. `materials.ts` owns them.
 
 const materials = new Map<string, MeshStandardMaterial>();
 

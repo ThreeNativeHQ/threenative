@@ -1,0 +1,177 @@
+{
+  "name": "tower-defense-target-priority",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fastest",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "auto",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tap-sentry",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.39857,
+          "y": 0.42275
+        }
+      ],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "tap-sentry-up",
+      "pointers": [],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "engaged",
+      "waitTicks": 1750,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "prioritise",
+      "at": {
+        "x": 1135,
+        "y": 459
+      },
+      "waitTicks": 4
+    },
+    {
+      "kind": "wait",
+      "label": "switched",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "selMode",
+        "atSteps": [
+          {
+            "label": "engaged",
+            "equals": "first"
+          },
+          {
+            "label": "switched",
+            "equals": "strongest"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "selected",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "selKind",
+        "equals": "sentry"
+      },
+      {
+        "id": "state",
+        "path": "hostiles",
+        "gte": 3
+      }
+    ],
+    "components": [
+      {
+        "entity": "tower.0",
+        "component": "mode",
+        "atSteps": [
+          {
+            "label": "engaged",
+            "equals": "first"
+          },
+          {
+            "label": "switched",
+            "equals": "strongest"
+          }
+        ]
+      },
+      {
+        "entity": "tower.0",
+        "component": "target",
+        "atSteps": [
+          {
+            "label": "engaged",
+            "equals": "enemy.skitter.2.w3"
+          },
+          {
+            "label": "switched",
+            "equals": "enemy.bulwark.0.w3"
+          }
+        ]
+      },
+      {
+        "entity": "tower.0",
+        "component": "target",
+        "changed": true
+      },
+      {
+        "entity": "tower.0",
+        "component": "shots",
+        "gte": 2,
+        "changed": true
+      },
+      {
+        "entity": "enemy.skitter.2",
+        "component": "hp",
+        "gte": 1
+      },
+      {
+        "entity": "enemy.bulwark.0",
+        "component": "hp",
+        "gte": 1
+      }
+    ]
+  }
+}

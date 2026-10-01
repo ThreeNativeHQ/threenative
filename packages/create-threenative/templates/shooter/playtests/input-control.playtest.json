@@ -23,7 +23,8 @@
       "label": "wake-pointer",
       "pointerPosition": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.5,
+        "buttons": 1
       },
       "holdTicks": 2,
       "release": true
@@ -44,7 +45,7 @@
     {
       "kind": "wait",
       "label": "reset-settle",
-      "waitTicks": 20,
+      "waitTicks": 30,
       "release": true
     },
     {
@@ -62,39 +63,6 @@
       "kind": "wait",
       "label": "aim-settle",
       "waitTicks": 6,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "look-right",
-      "pointerPosition": {
-        "x": 0.75,
-        "y": 0.5
-      },
-      "holdTicks": 2,
-      "release": false
-    },
-    {
-      "kind": "wait",
-      "label": "look-right-settle",
-      "waitTicks": 8,
-      "release": true,
-      "screenshot": "input-look-right"
-    },
-    {
-      "kind": "input",
-      "label": "look-back",
-      "pointerPosition": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "holdTicks": 2,
-      "release": false
-    },
-    {
-      "kind": "wait",
-      "label": "look-back-settle",
-      "waitTicks": 8,
       "release": true
     },
     {
@@ -117,7 +85,7 @@
     {
       "kind": "input",
       "label": "aim-key",
-      "press": "KeyQ",
+      "press": "KeyF",
       "holdTicks": 2,
       "release": false
     },
@@ -143,6 +111,23 @@
       "label": "fire-settle",
       "waitTicks": 8,
       "release": true
+    },
+    {
+      "kind": "input",
+      "label": "look-right",
+      "pointerPosition": {
+        "x": 0.75,
+        "y": 0.5
+      },
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "look-right-settle",
+      "waitTicks": 8,
+      "release": true,
+      "screenshot": "input-look-right"
     }
   ],
   "assert": {
@@ -158,103 +143,63 @@
     "resources": [
       {
         "id": "state",
-        "path": "shotsFired",
+        "path": "shots",
         "atSteps": [
           {
             "label": "fire-settle",
             "equals": 1
           }
-        ]
+        ],
+        "allowTrivial": "shots is zero until a round leaves the barrel, so the initial state cannot satisfy this"
       },
       {
         "id": "state",
-        "path": "aimedShots",
+        "path": "ammo",
         "atSteps": [
           {
             "label": "fire-settle",
-            "equals": 1
+            "equals": 29
           }
-        ]
+        ],
+        "allowTrivial": "the magazine starts full, so a resting 30 cannot satisfy this"
       },
       {
-        "allowTrivial": "The released leg expects the initial unaimed value; the engaged leg at aim-settle is the input-driven half of this row.",
         "id": "state",
         "path": "aiming",
         "atSteps": [
           {
             "label": "aim-settle",
-            "equals": 1
+            "equals": true
           },
           {
             "label": "release-settle",
-            "equals": 0
+            "equals": false
           },
           {
             "label": "aim-key-settle",
-            "equals": 1
-          }
-        ]
-      },
-      {
-        "allowTrivial": "The returned leg expects the initial heading after the equal-and-opposite look pair; the look-right leg carries the rotation proof, halved because the right button is held \u2014 aiming down the sights covers half the angle for the same hand movement.",
-        "id": "state",
-        "path": "yawDegrees",
-        "atSteps": [
-          {
-            "label": "look-right-settle",
-            "equals": 46
-          },
-          {
-            "label": "look-back-settle",
-            "equals": 0
+            "equals": true
           }
         ]
       },
       {
         "id": "state",
-        "path": "demoTargetAlive",
-        "equals": 0,
-        "changed": true
-      },
-      {
-        "id": "state",
-        "path": "demoDamage",
-        "equals": 40,
-        "changed": true
+        "path": "playerYaw",
+        "gte": -0.5,
+        "lte": -0.2
       }
     ],
-    "signals": [
+    "components": [
       {
-        "name": "aim-engaged",
-        "entity": "player",
-        "minCount": 1
+        "entity": "rifle",
+        "component": "barrelAxisErrorDeg",
+        "lte": 0.5
       },
       {
-        "name": "fired",
-        "entity": "player",
-        "minCount": 1
-      },
-      {
-        "name": "hit",
-        "entity": "player",
-        "minCount": 1
-      },
-      {
-        "name": "defeated",
-        "entity": "target",
-        "minCount": 1
-      },
-      {
-        "name": "aim-released",
-        "entity": "player",
-        "minCount": 1
-      }
-    ],
-    "visibility": [
-      {
-        "allowTrivial": "The player's own capsule is invisible in first person; the viewmodel is what the player sees of themselves, so this row measures the weapon in frame.",
-        "entity": "viewmodel",
-        "minProjectedPixels": 400
+        "entity": "rifle",
+        "component": "opticScreen",
+        "path": "x",
+        "gte": 0.48,
+        "lte": 0.52
       }
     ]
   }

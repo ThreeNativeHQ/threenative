@@ -143,8 +143,8 @@ export async function withBrowserCapture<T>(
     await stage("warmup", () => waitFrames(activePage, scenario.warmupFrames), startupBudget);
     const startup = await stage("engine startup readiness", () => waitForStartupReady({
       aborted: () => controller.signal.aborted,
-      acceptCompileSettled: active.allowSoftwareAdapter === true,
       bridge,
+      declaredSoftware: active.allowSoftwareAdapter === true,
       pump: () => waitFrames(activePage, 1),
     }), startupBudget);
     if (startup === undefined) throw new Error("TN_CAPTURE_SESSION_READINESS_REQUIRED: no startup observation was returned");

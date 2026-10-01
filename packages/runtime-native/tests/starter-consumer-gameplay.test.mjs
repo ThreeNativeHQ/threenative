@@ -325,4 +325,42 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     assert.equal(recorded[0].pass, false);
     assert.match(recorded[0].failures[0], /TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE/u);
   });
+
+  // CI run 36866893285, both scaffolded-starter lanes (linux-x64 and linux-arm64): the desktop
+  // gate passed 300 frames, then the consumer run exited 1 and reported
+  // `RUNNER_FAILED: no JSON failure report; stderr: (empty)`. Exit 1 is a FAILED ASSERTION and the
+  // report naming it is on stdout; only exit 2 puts its reason on stderr. So the status check ran
+  // before the report, discarded the report, and printed nothing about what failed.
+  test('names the failing assertion when exit 1 carries its report on stdout', () => {
+    const project = desktopConsumerProject();
+
+    assert.throws(
+      () =>
+        verifyStarterConsumerGameplay({
+          applicationId: builtApplicationId,
+          project,
+          runner: () => ({
+            status: 1,
+            stderr: '',
+            stdout: `${JSON.stringify({
+              assertionResults: [
+                { id: 'diagnostics', pass: true },
+                { id: 'movement.axisDelta', pass: false },
+              ],
+              diagnostics: [],
+              pass: false,
+              target: 'desktop',
+            })}\n`,
+          }),
+          target: 'desktop',
+        }),
+      /TN_STARTER_CONSUMER_ASSERTION_FAILED.*movement\.axisDelta/u,
+    );
+
+    const recorded = JSON.parse(
+      readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
+    );
+    assert.equal(recorded[0].pass, false);
+    assert.match(recorded[0].failures[0], /movement\.axisDelta/u);
+  });
 });

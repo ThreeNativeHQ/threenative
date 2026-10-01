@@ -9,12 +9,26 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
   input: {
+    // Three bindings over the same keys, and the split is deliberate.
+    //
+    // `vector()` ends in `clampLength(0, 1)`, which is exactly right for a thumbstick and exactly
+    // wrong for a ship: a stick pushed into a corner is one direction and must not exceed unit
+    // length, but a helm and a set of sheets are two independent controls. Read through `move`,
+    // holding forward *and* starboard handed the ship 0.707 of each — so the one input a player
+    // holds for the entire passage was also the one that could never reach full sail or full
+    // rudder, and the ship felt mushy in every turn it ever made.
+    //
+    // `move` is kept for the touch stick, where the clamp is the correct behaviour.
     move: {
       down: ["ArrowDown", "KeyS"],
       left: ["ArrowLeft", "KeyA"],
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    /** The helm, on its own axis: hard over is hard over whatever the sails are doing. */
+    helm: { left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] },
+    /** The sheets, on their own axis: full sail is full sail whatever the helm is doing. */
+    sheets: { down: ["ArrowDown", "KeyS"], up: ["ArrowUp", "KeyW"] },
     capsize: { keys: ["KeyC"] },
     restart: { keys: ["KeyR"] },
   },

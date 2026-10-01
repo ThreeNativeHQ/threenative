@@ -12,7 +12,9 @@ import {
   type IPlaytestObservationSnapshot,
   type IPlaytestScenario,
 } from "../src/index.js";
+import { classifyAdapter } from "../src/evaluators/adapter-class.js";
 import type { JsonValue } from "../src/protocol.js";
+import type { IPlaytestReport } from "../src/report.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import {
@@ -452,6 +454,10 @@ function reportWithAdapter(
   );
 }
 
+function errorCodes(report: IPlaytestReport): string[] {
+  return report.diagnostics.filter(({ severity }) => severity === "error").map(({ code }) => code);
+}
+
 test.each([
   ["architecture", { architecture: "swiftshader", vendor: "google" }],
   ["description", { description: "llvmpipe (LLVM 17, 256 bits)", vendor: "mesa" }],
@@ -460,6 +466,9 @@ test.each([
   const result = reportWithAdapter(adapter);
 
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+  // The scenario `reportWithAdapter` builds asserts nothing, so it is red whatever the adapter
+  // says. Asserting only `pass` here would leave this test green with the diagnostic demoted.
+  expect(errorCodes(result)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
   expect(result.pass).toBe(false);
 });
 
@@ -476,6 +485,60 @@ test("--allow-software accepts the fallback deliberately", () => {
   );
 
   expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+});
+
+// A native host reporting its own software adapter is not a licence: the target only says which
+// machine asked, not that anyone accepted the answer. Hosted device lanes have no hardware to
+// reach for (the emulator is configured `-gpu swiftshader_indirect`, the Linux runners bind
+// llvmpipe, the Windows runner answers `Microsoft Basic Render Driver`), and a generic local
+// desktop run can hit the same wall by accident. So the error stands on every target, and the
+// hosted lanes say `TN_PLAYTEST_ALLOW_SOFTWARE=1` where they declare their own acceptance.
+test.each(["android", "desktop", "ios"] as const)(
+  "a software adapter the %s host reported itself fails unless it was accepted",
+  (target) => {
+    const result = reportWithAdapter(
+      { device: "Microsoft Basic Render Driver", vendor: "microsoft" },
+      { ...CONFIG, target },
+    );
+    const diagnostic = result.diagnostics.find(({ code }) => code === "TN_PLAYTEST_SOFTWARE_ADAPTER");
+
+    expect(diagnostic?.severity).toBe("error");
+    expect(diagnostic?.message).toContain("Microsoft Basic Render Driver");
+    expect(errorCodes(result)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+    // The acceptance only removes the error; the fact stays on the report and still classifies.
+    expect(result.capture?.adapter).toEqual({
+      device: "Microsoft Basic Render Driver",
+      vendor: "microsoft",
+    });
+  },
+);
+
+test.each(["android", "desktop", "ios"] as const)(
+  "a %s host that declared --allow-software passes with the adapter labelled",
+  (target) => {
+    const result = reportWithAdapter(
+      { device: "Microsoft Basic Render Driver", vendor: "microsoft" },
+      { ...CONFIG, allowSoftwareAdapter: true, target },
+    );
+
+    expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+    expect(classifyAdapter(result)).toEqual({
+      adapterClass: "software",
+      softwareAdapter: "Microsoft Basic Render Driver",
+    });
+  },
+);
+
+test("a software adapter on the desktop host still classifies the run as software", () => {
+  const result = reportWithAdapter(
+    { architecture: "swiftshader", vendor: "google" },
+    { ...CONFIG, target: "desktop" },
+  );
+
+  expect(classifyAdapter(result)).toEqual({
+    adapterClass: "software",
+    softwareAdapter: "swiftshader",
+  });
 });
 
 test("runner carries a supplied HUD observation into the evaluated report", () => {
@@ -2011,6 +2074,31 @@ test("a page that closed without navigating is not reported as a navigation", ()
   expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_CLOSED");
   expect(diagnostic?.message).not.toContain("navigated");
   // Still a failure: the run reached no assertion, and the report must not read as a pass.
+  expect(diagnostic?.severity).toBe("error");
+});
+
+test("a renderer that goes away without either Playwright event is not reported as a navigation", () => {
+  // Run 36821800527, `template-nonvisual (starter, 2/3)`: `page closed: false`,
+  // `main-frame navigations: 1` (the run's own), no navigation after the handshake, no crash event,
+  // and the report read "navigated to an unrecorded location" with a fix aimed at the game. Nothing
+  // moved the document and nothing closed the page: the renderer was destroyed.
+  const destroyed = new Error("page.evaluate: Execution context was destroyed, most likely because of a navigation");
+
+  const diagnostic = pageLifecycleDiagnostic(
+    destroyed,
+    {
+      closed: false,
+      crashed: false,
+      frameNavigations: ["http://127.0.0.1:37675/"],
+      navigations: [],
+      settled: true,
+      tail: ['log: TN_FRAME_HITCH:{"gapMs":2649.9,"uptimeMs":4641.9}'],
+    },
+    "http://127.0.0.1:37675",
+  );
+
+  expect(diagnostic?.code).toBe("TN_PLAYTEST_PAGE_CRASHED");
+  expect(diagnostic?.message).toContain("without navigating or closing");
   expect(diagnostic?.severity).toBe("error");
 });
 

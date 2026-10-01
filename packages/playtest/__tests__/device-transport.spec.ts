@@ -73,6 +73,32 @@ test("Android mailbox transport consumes the native ready handshake and correlat
   }
 });
 
+test("Android mailbox transport skips the late answer to a call that already timed out", async () => {
+  const paths = androidMailboxPaths("com.example.game", "/late-device-files");
+  // The fake never answers inside the test: this one writes the responses itself, in the order a
+  // slow host produces them.
+  const mailbox = new FakeMailbox(paths, 30_000);
+  const transport = new DeviceMailboxTransport(mailbox, paths);
+  await transport.start();
+  try {
+    await mailbox.write(paths.response, JSON.stringify({ id: "ready", result: null }));
+    await expect(transport.waitForBridge(1_000)).resolves.toBe(true);
+    // A startup poll gives up after its operation timeout on a slow machine and polls again.
+    await expect(transport.call("slow", undefined, 20)).rejects.toMatchObject({
+      diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" },
+    });
+    const next = transport.call<{ ok: boolean }>("next", undefined, 2_000);
+    // The host finally answers the abandoned call, and only then the one that is still waiting.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    mailbox.files.set(paths.response, JSON.stringify({ id: "1", result: { stale: true } }));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    mailbox.files.set(paths.response, JSON.stringify({ id: "2", result: { ok: true } }));
+    await expect(next).resolves.toEqual({ ok: true });
+  } finally {
+    await transport.close();
+  }
+});
+
 test("Android mailbox transport observes the raw response before consuming it", async () => {
   const paths = androidMailboxPaths("com.example.game", "/observed-device-files");
   const mailbox = new FakeMailbox(paths);

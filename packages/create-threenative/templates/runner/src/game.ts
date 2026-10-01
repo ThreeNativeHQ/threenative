@@ -20,6 +20,8 @@ const game = defineGame<GameState, RunnerPhysics>({
   },
   // Gravity is zero on purpose: nothing in this game falls. The jump is an authored arc in
   // `Runner`, and the only physics the runner needs is the overlap query its `Area3D` performs.
+  // The look is the arena's: `sky.jpg` lights and fogs the scene, the track is the light metre
+  // grid, and the accent belongs to obstacles — never to the runner.
   plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest()],
   display: config.display,
   render: config.renderer,

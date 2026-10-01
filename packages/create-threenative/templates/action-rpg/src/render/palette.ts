@@ -1,16 +1,17 @@
-// Generated for you. Repaint the dungeon by keeping these six roles coherent.
-// A torchlit dungeon. `stone` was 0x27303b under a 0x080b12 sky, and the first frame showed a
-// black void filling half the picture with a dark tilted floor cutting across it: the walls were
-// too low for the camera height, so the shot was mostly the nothing above them.
+// Generated for you. Keep these roles coherent when you change the look.
+// Neutral greys carry the light; one saturated blue marks what you can touch.
 export const palette = {
-  accent: 0xe8b86a,
-  hostile: 0xd96572,
-  player: 0x71d1c4,
-  skyHigh: 0x2c3050,
-  skyLow: 0x121728,
-  /** Wall and floor masonry. Mid, so a figure standing on it has something to read against. */
-  stone: 0x4a5566,
+  /** Light grid: room floors and the ground the dungeon stands on. */
+  floor: 0xb4b1ae,
+  /** Dark grid: walls, door lintels, pillars — anything structural. */
+  structure: 0x747578,
+  /** The metre line both grids are drawn in. */
+  gridLine: 0x3a3a3c,
+  /** The one saturated colour: chests, dropped loot, and anything else you can touch. */
+  accent: 0x2a6cf0,
+  /** The sky photograph's own horizon: distance fades into this, and it is the loading backdrop. */
+  horizon: 0xacb1c1,
 } as const;
 
-// The darker masonry course and the torch flame are shades of these six rather than roles of their
-// own; `materials.ts` owns them, next to the surfaces that use them.
+// The hostile tint, the torch flame and the blade steel are not roles of their own — they are
+// materials, so `materials.ts` owns them next to the surfaces that use them.

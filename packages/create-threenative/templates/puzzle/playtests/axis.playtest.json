@@ -1,0 +1,20 @@
+{
+  "name": "both-axes-reach-the-warden",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "fall-and-settle", "waitTicks": 400, "release": true },
+    { "kind": "input", "label": "north", "press": "ArrowUp", "holdTicks": 60, "release": true },
+    { "kind": "wait", "label": "stop", "waitTicks": 20, "release": true },
+    { "kind": "input", "label": "south", "press": "ArrowDown", "holdTicks": 60, "release": true },
+    { "kind": "wait", "label": "stop-again", "waitTicks": 20, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "state", "path": "playerZ", "changed": true }],
+    "movement": { "entity": "player", "minAxisDelta": { "axis": "z", "min": 1 } }
+  }
+}

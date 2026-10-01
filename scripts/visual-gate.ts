@@ -205,9 +205,13 @@ export function inspectTemplate(
     errors.push(`${template}: materials.ts must import palette.ts`);
   if (!/from ["']\.\/palette\.js["']/u.test(sky))
     errors.push(`${template}: sky.ts must import palette.ts`);
-  if ((lighting.match(/new DirectionalLight/g) ?? []).length < 2)
+  // An image-based environment is fill and rim at once: it lights every face the key misses and
+  // puts the sky's own highlight on every silhouette, which is what the rim light was faking.
+  const imageLit = /\.environment\s*=/u.test(`${sky}\n${lighting}`);
+  const directional = (lighting.match(/new DirectionalLight/g) ?? []).length;
+  if (directional < (imageLit ? 1 : 2))
     errors.push(`${template}: lighting.ts needs a key and rim DirectionalLight`);
-  if (!/new (?:HemisphereLight|AmbientLight)/u.test(lighting))
+  if (!imageLit && !/new (?:HemisphereLight|AmbientLight)/u.test(lighting))
     errors.push(`${template}: lighting.ts needs a fill or ambient light`);
   for (const marker of ["PCFSoftShadowMap", "normalBias"]) {
     if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);

@@ -18,17 +18,17 @@ export interface IStartupReadyOutcome {
 export interface IWaitForStartupReadyOptions {
   readonly bridge: IStartupReadySource;
   /**
-   * Accept compile settlement instead of full readiness.
+   * The operator has declared this lane's adapter is software (`--allow-software`).
    *
-   * Set only from `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE`, never from a timeout, an
-   * adapter guess or any other fallback. Readiness requires a sustained in-budget frame window,
-   * which asks "is this running smoothly enough to show a player" — a lane that has been told
-   * out loud that the machine has no GPU has already conceded it is not measuring that, and on
-   * a CPU rasteriser the window can only ever expire rather than be met. Compile settlement is
-   * still required either way: that is the part that makes the run observe the game instead of
-   * the loading screen, and it is not weakened here.
+   * Readiness always waits for `phase === "ready"` — including the game's own launch holds,
+   * because a game that builds its world on `whenReady()` has not run when the lane is observed
+   * any earlier. The declaration only changes the *label* the wait reports: a CPU rasteriser
+   * reaches `ready` when its bounded frame window expires rather than on five sustained in-budget
+   * frames, so the result is reported as `rule: "compile-settled"` and must not be read as a
+   * smoothness measurement. It is set only from `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE`,
+   * never from a timeout, an adapter guess or any other fallback.
    */
-  readonly acceptCompileSettled?: boolean;
+  readonly declaredSoftware?: boolean;
   /**
    * Advances the application. A browser run pumps a frame; a device renders on its own clock and
    * passes a short wait. This is not scenario semantics — no step is being counted here — it is
@@ -90,16 +90,16 @@ export async function waitForStartupReady(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error(`TN_PLAYTEST_STARTUP_TIMEOUT_INVALID: ${String(options.timeoutMs)}`);
   const deadline = now() + timeoutMs;
-  // A game that does not report compile settlement cannot be relaxed against: the relaxation
-  // needs the earlier signal to exist, and inferring it from a phase that cannot distinguish the
-  // two would be the implicit fallback this must never have.
-  const settled = (observation: IPlaytestStartupObservation): boolean =>
-    options.acceptCompileSettled === true && observation.compileSettled === true;
   const aborted = options.aborted ?? (() => false);
   if (aborted()) throw abortedDuringStartup();
   const hostAlive = options.hostAlive ?? (async () => undefined);
   let observed = await pollStartup(bridge);
-  while (observed === BUSY || (observed.phase !== "ready" && !settled(observed))) {
+  // Readiness, never bare compile settlement. A game whose launch holds build its world on
+  // `whenReady()` (the puzzle's crate pile is one), so observing at compile settlement catches it
+  // mid-load: the runs then assert against a half-built world and fail on state that never had a
+  // chance to arrive. The bounded frame window still expires on a CPU rasteriser, so this is at
+  // most `STARTUP_STABLE_WINDOW_MS` more per scenario, not a wait the lane can never meet.
+  while (observed === BUSY || observed.phase !== "ready") {
     if (aborted()) throw abortedDuringStartup();
     // Only an unreadable bridge asks the question: a host that answers is running by definition,
     // and probing a live one every pump would charge each poll for a process lookup.
@@ -126,7 +126,9 @@ export async function waitForStartupReady(
     observed = await pollStartup(bridge);
   }
   return {
-    rule: observed.phase === "ready" ? "sustained-frames" : "compile-settled",
+    // A declared software lane reaches `ready` on the bounded window rather than on sustained
+    // in-budget frames, so it is labelled for what it is: not a smoothness measurement.
+    rule: options.declaredSoftware === true ? "compile-settled" : "sustained-frames",
     startup: observed,
   };
 }

@@ -730,6 +730,22 @@ describe("capability manifest generator", () => {
         owners: ["CharacterBody3D"],
       },
       "close engagement range": { ids: ["brief.fps.12"], owners: ["NavigationAgent3D"] },
+      "racing car racing kart drift vehicle go-kart": {
+        ids: ["request.drive-a-racing-kart"],
+        owners: ["VehicleBody3D"],
+      },
+      "suspension wheel traction tyre grip": {
+        ids: ["request.vehicle-suspension-grip"],
+        owners: ["VehicleBody3D"],
+      },
+      "accelerator pedal handbrake steering wheel": {
+        ids: ["request.vehicle-pedals-steering"],
+        owners: ["VehicleBody3D"],
+      },
+      "rescue respawn flip back on track": {
+        ids: ["request.vehicle-rescue-respawn"],
+        owners: ["VehicleBody3D"],
+      },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

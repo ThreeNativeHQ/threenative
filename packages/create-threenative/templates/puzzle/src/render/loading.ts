@@ -12,17 +12,17 @@ import {
 import { palette } from "./palette.js";
 
 /* BEGIN THREENATIVE LOADING APPEARANCE */
-/** Puzzle look and composition; edit this generated source to change the screen. */
+/** Vault look and composition; edit this generated source to change the screen. */
 export const loading = {
-  backgroundColor: palette.skyLow,
+  backgroundColor: palette.void,
   backgroundImage: undefined as string | undefined,
   enabled: true,
   fillImage: undefined as string | undefined,
   logoImage: undefined as string | undefined,
   progressColor: palette.accent,
   showStatus: false,
-  trackColor: palette.skyHigh,
-  bar: { anchorX: 0.5, anchorY: 0.76, height: 11, maxWidth: 520, minWidth: 1, width: 0.6 },
+  trackColor: palette.timber,
+  bar: { anchorX: 0.5, anchorY: 0.72, height: 12, maxWidth: 520, minWidth: 1, width: 0.62 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */
 

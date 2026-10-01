@@ -1,0 +1,214 @@
+{
+  "name": "tower-defense-arsenal",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "tap-sentry",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.39857,
+          "y": 0.42275
+        }
+      ],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "tap-sentry-up",
+      "pointers": [],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "recycled",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arc",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.34601,
+          "y": 0.33203
+        }
+      ],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "arc-up",
+      "pointers": [],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mortar",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.39857,
+          "y": 0.42275
+        }
+      ],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "mortar-up",
+      "pointers": [],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch-1",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-1",
+      "waitTicks": 1100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-cryo",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cryo",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.43047,
+          "y": 0.32896
+        }
+      ],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cryo-up",
+      "pointers": [],
+      "waitTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "launch-2",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wave-2",
+      "waitTicks": 700,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "tower.1",
+        "component": "shots",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "tower.2",
+        "component": "shots",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "entity": "tower.3",
+        "component": "shots",
+        "gte": 1,
+        "changed": true
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [
+          {
+            "label": "recycled",
+            "equals": 0
+          },
+          {
+            "label": "arc-up",
+            "equals": 1
+          },
+          {
+            "label": "mortar-up",
+            "equals": 2
+          },
+          {
+            "label": "cryo-up",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 6,
+        "changed": true
+      }
+    ]
+  }
+}
