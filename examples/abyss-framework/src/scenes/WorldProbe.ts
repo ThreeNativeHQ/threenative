@@ -1,4 +1,4 @@
-import { type ICtx, Scene } from "@threenative/core";
+import { type ICtx, Scene, VirtualShadowNode } from "@threenative/core";
 import { WorldCells } from "@threenative/core/world";
 import { Color, DirectionalLight, HemisphereLight } from "three";
 import { terrainMaterial } from "../render/terrain.js";
@@ -40,6 +40,10 @@ const initialState = {
   maxResidentCells: 0,
   residenceChanges: 0,
   residentCells: 0,
+  shadowDeferrals: 0,
+  shadowFrame: 0,
+  shadowLevels: 0,
+  shadowRendered: 0,
 };
 
 export type WorldState = typeof initialState;
@@ -53,6 +57,7 @@ export class WorldProbe extends Scene<WorldState> {
   #previousResident = -1;
   #maxResident = 0;
   #residenceChanges = 0;
+  #shadow: VirtualShadowNode | undefined;
 
   override async load(ctx: WorldCtx): Promise<void> {
     this.#world = await WorldCells.load({
@@ -78,6 +83,16 @@ export class WorldProbe extends Scene<WorldState> {
     const sky = new HemisphereLight(0xbfd8ff, 0x2a2f22, 2.2);
     const sun = new DirectionalLight(0xffffff, 2.6);
     sun.position.set(-80, 120, 60);
+    // A sun that casts, so the streamed cells have a shadow to be culled into. The node is the
+    // engine's own: this scene names no shadow mechanism, it just asks for one and reports what
+    // the engine did with it.
+    sun.castShadow = true;
+    this.#shadow = new VirtualShadowNode(sun, { clipExtents: [24, 96, 320] });
+    sun.shadow.shadowNode = this.#shadow;
+    // The framework's renderer ships with the shadow map off, because most games never ask for
+    // one. This one does, so it turns it on the way the engine's own `Daylight` rig does.
+    const raw = ctx.renderer.raw as { shadowMap?: { enabled: boolean } } | undefined;
+    if (raw?.shadowMap !== undefined) raw.shadowMap.enabled = true;
     ctx.add(sky);
     ctx.add(sun);
     ctx.entities.add("world", {
@@ -90,6 +105,12 @@ export class WorldProbe extends Scene<WorldState> {
 
   override update(ctx: WorldCtx, dt: number): void {
     this.#update(ctx, dt);
+  }
+
+  override render(ctx: WorldCtx): void {
+    // The shadow node's `updateBefore` runs inside the render pass, so this is the only hook where
+    // its per-frame `deferred` counter is the frame that just happened rather than the one before.
+    this.#sample();
   }
 
   #update(ctx: WorldCtx, dt: number): void {
@@ -112,10 +133,19 @@ export class WorldProbe extends Scene<WorldState> {
       this.#residenceChanges += 1;
     }
     this.#maxResident = Math.max(this.#maxResident, stats.residentCells);
+    // Cumulative, because the per-frame counter reads zero on any frame the node had nothing to do.
+    const shadow = this.#shadow?.stats;
+    if (shadow === undefined) return;
+    if (shadow.deferred > 0) this.#shadowDeferrals += 1;
+    this.#shadowRenders += shadow.rendered;
   }
+
+  #shadowDeferrals = 0;
+  #shadowRenders = 0;
 
   #debug(): Record<string, number> {
     const stats = this.#world?.stats();
+    const shadow = this.#shadow?.stats;
     return {
       evictions: stats?.evictions ?? 0,
       failures: stats?.failures ?? 0,
@@ -124,6 +154,10 @@ export class WorldProbe extends Scene<WorldState> {
       maxResidentCells: this.#maxResident,
       residenceChanges: this.#residenceChanges,
       residentCells: stats?.residentCells ?? 0,
+      shadowDeferrals: this.#shadowDeferrals,
+      shadowFrame: shadow?.frame ?? 0,
+      shadowLevels: shadow?.levels ?? 0,
+      shadowRendered: this.#shadowRenders,
     };
   }
 }

@@ -48,7 +48,11 @@ subpath never selects a terrain shape, material, biome, species, lighting or pla
 report `gpu`, `cpu-fallback` with its reduced iteration count, or `unsupported` with the reason.
 Use `heightAt`, `normalAt` and `sample` on the resident field so queries stay tied to the same
 stored values that produce geometry and collision. `follow` is the only residency update entry
-point; a tile is evicted as one unit with its collider, geometry and asset release.
+point; a tile is evicted as one unit with its collider, geometry and asset release. The per-frame
+measurements — seam gap, LOD pop and the rendered-vertex finiteness scan — are opt-in, because a
+six-second walk on a 289-tile ring paid ~270 ms for them: `TN_TERRAIN_VALIDATE=1`,
+`?tnTerrainValidate=1` or `validate: true` runs them, and `maxSeamGap`, `maxVisualSeamGap` and
+`maxLodPop` report `undefined` while they are off, never an unmeasured `0`.
 
 `picking.ts` is the one place a third-party dependency other than `three` and `zustand`
 reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,

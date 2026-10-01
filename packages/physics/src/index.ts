@@ -149,6 +149,7 @@ export {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
+  PHYSICS_VEHICLE_WHEEL_STRIDE,
 } from "./simulation.js";
 export type {
   IPhysicsBodyCreateOptions,
@@ -167,5 +168,28 @@ export type {
   IPhysicsRotation,
   IPhysicsShapeQuery,
   IPhysicsVector3,
+  IPhysicsVehicleCreateOptions,
+  IPhysicsVehicleInput,
+  IPhysicsVehicleState,
   PhysicsJointKind,
 } from "./simulation.js";
+/**
+ * Drive a car on ray-cast suspension instead of faking speed and heading.
+ * @situation drive a car, truck or bike around a track
+ * @situation make a vehicle roll over kerbs, brake into a corner or stop at a wall
+ * @alias racing car racing kart drift vehicle go-kart
+ * @alias suspension wheel traction tyre grip
+ * @alias accelerator pedal handbrake steering wheel
+ * @alias rescue respawn flip back on track
+ * @constraint write engineForce, brake and steering every physics update; a car with no input does not move
+ * @constraint suspensionStiffness is a frequency squared, not newtons per metre; 100 is a road car and 20 bottoms out
+ * @override a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask
+ * @override continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall
+ * @example const car = new VehicleBody3D({ object: chassis, physics: ctx.physics, shape: CollisionShape3D.box(1.6, 0.5, 3.6), mass: 900, wheels: [{ position: { x: 0.8, y: -0.15, z: -1.2 }, wheelRadius: 0.34, suspensionRestLength: 0.3, suspensionStiffness: 100, dampingCompression: 2.3, dampingRelaxation: 4.4, wheelFrictionSlip: 10.5, maxSuspensionTravel: 0.3, useAsSteering: true, useAsTraction: false }] });
+ */
+export { VehicleBody3D } from "./VehicleBody3D.js";
+export type {
+  IVehicleBody3DOptions,
+  IVehicleWheel3D,
+  VehicleForwardAxis,
+} from "./VehicleBody3D.js";

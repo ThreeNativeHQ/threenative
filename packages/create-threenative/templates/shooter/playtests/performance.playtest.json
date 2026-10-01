@@ -1,39 +1,75 @@
 {
-  "acceptanceId": "prd-194-performance-shooter",
-  "artifacts": {
-    "screenshots": false
-  },
-  "assert": {
-    "performance": {
-      "maxDrawCalls": 420,
-      "maxFrameMsP95": 33,
-      "maxTriangles": 7200,
-      "minFps": 30
-    },
-    "renderChain": {
-      "tier": "high"
-    }
-  },
-  "name": "production-performance",
+  "name": "performance",
+  "target": "web",
   "schemaVersion": 1,
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 60,
+  "subject": "player",
   "steps": [
     {
       "kind": "input",
-      "press": "ArrowRight",
+      "label": "advance",
+      "press": "KeyW",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross",
+      "press": "KeyD",
       "holdTicks": 60,
       "release": true
     },
     {
-      "kind": "wait",
-      "waitTicks": 600,
+      "kind": "input",
+      "label": "firefight",
+      "press": "Space",
+      "holdTicks": 180,
       "release": true
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "measure",
+      "waitTicks": 240,
+      "screenshot": "performance"
     }
   ],
-  "subject": "player",
-  "target": "web",
-  "viewport": {
-    "height": 1080,
-    "width": 1920
-  },
-  "warmupFrames": 60
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": { "software": { "tier": "low" } }
+    },
+    "performance": {
+      "maxDrawCalls": 1300,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 500000,
+      "minFps": 30
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
 }

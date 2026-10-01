@@ -52,7 +52,6 @@ import {
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
 import {
-  type ISceneWarning,
   describeSceneShape,
   describeSceneWarning,
   formatSceneWarning,
@@ -99,6 +98,7 @@ import {
   staticRoots,
   staticTransformCensus,
 } from "./static-transform.js";
+import { resolveTargetFps } from "./target-fps.js";
 import {
   type IUiBridge,
   UI_DEV_METRICS_MESSAGE,
@@ -163,9 +163,11 @@ export interface IGamePluginRuntime {
   /**
    * Hold start-scene entry until `gate` settles.
    *
-   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
-   * gate after applying pre-entry setup, then await the returned promise before describing
-   * entity-derived capabilities. The frame loop remains held throughout.
+   * The returned promise settles after the scene that owns the world has entered: the start scene
+   * unless it navigated out of its own `enter()`, in which case it is the scene it navigated to,
+   * loaded and entered. A runner can therefore release the gate after applying pre-entry setup,
+   * then await the returned promise before describing entity-derived capabilities — the entities
+   * they read are the ones the world actually has. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
   readonly observations: IGameRuntimeObservations;
@@ -318,8 +320,6 @@ export type GamePlugin<
   TPhysics = undefined,
 > = GamePluginFunction<TState, TPhysics> | IGamePluginHooks<TState, TPhysics>;
 
-/** The `display.maxFps` a game gets when its config does not name one. */
-const DEFAULT_TARGET_FPS = 60;
 /**
  * The global a native host reads to know the world is on screen. Named here rather than written
  * inline so the host and the framework agree on one spelling.
@@ -707,6 +707,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
+  /**
+   * The scene a `goto()` is loading right now, or undefined when none is.
+   *
+   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
+   * reader that needs the world's entities has to wait for this rather than for the scene it
+   * navigated from. The playtest handshake reads exactly that.
+   */
+  #pendingSceneEnter: Promise<void> | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -857,10 +865,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#scene = scene;
     this.#sceneName = name;
     const loaded = scene.load(ctx);
-    if (loaded === undefined) {
-      return this.#enterTransitionScene(scene, ctx);
-    }
-    return Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const transition =
+      loaded === undefined
+        ? this.#enterTransitionScene(scene, ctx)
+        : Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const settled = (): void => {
+      if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
+    };
+    // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
+    // its transition away, and the gate below still has to learn that no world arrived.
+    void transition.then(settled, settled);
+    this.#pendingSceneEnter = transition;
+    return transition;
   }
 
   #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean {
@@ -1240,6 +1256,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
+    // The GPU-selected main-pass tally, registered by whichever streamed world is added to the
+    // scene. The frame budget reads it once per window; a world with no sample reports undefined, so
+    // the window carries nothing rather than a zero no frame selected.
+    let gpuTallyProvider:
+      | (() => { readonly instances: number; readonly triangles: number } | undefined)
+      | undefined;
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
@@ -1256,6 +1278,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (activeRenderer === undefined)
             throw new Error("Cannot add a compute-driven object before the game starts.");
           this.#computeDriven.add(node, activeRenderer);
+        }
+        // A streamed world that can say what the GPU selected, so `TN_FRAME_BUDGET` reports the
+        // GPU-selected main-pass count beside its pass record. The tally is asked for only when the
+        // frame budget is on: with it off and no validation, the world adds no readback at all.
+        const tallySource = node as {
+          enableGpuSceneTally?: () => void;
+          gpuSceneTally?: () =>
+            | { readonly instances: number; readonly triangles: number }
+            | undefined;
+        };
+        if (typeof tallySource.gpuSceneTally === "function") {
+          gpuTallyProvider = tallySource.gpuSceneTally.bind(node);
+          if (this.#config.frameBudget !== false) tallySource.enableGpuSceneTally?.();
         }
         return object;
       },
@@ -1348,18 +1383,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
     // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
+    // `maxFps: 0` removes the ceiling, and a scaler with no budget is not a scaler with a loose
+    // one, so an uncapped game simply does not get adaptive scaling.
+    const initialTarget = resolveTargetFps(this.#config, getPlatform());
+    let heldTargetFps = initialTarget.targetFps;
     const scaler =
-      renderer.surface().scaleSource === "auto"
-        ? new ResolutionScaler({ targetFps: this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS })
+      renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
+        ? new ResolutionScaler({ targetFps: initialTarget.targetFps })
         : undefined;
+    // The panel's own rate, once a window of presented frames can say it. The native host's
+    // present counter is the only series there that counts displays rather than loop iterations;
+    // on the web one rAF callback is one vblank, so the median presented interval is the period.
+    let measuredRefreshHz: number | undefined;
     // The world pass's own draw-call count, kept from the last frame of the window so the
     // projection line can report what the renderer was handed beside what the plan predicted.
     // A plan and a measurement that disagree is the finding; one number pretending to be both
     // is how an optimizer reports a win it did not deliver.
     let lastWorldDrawCalls: number | undefined;
-    // The last verdict, so `doctor` and the dev chip read the same one the log printed rather than
-    // recomputing it from a different window.
-    let lastSceneWarning: ISceneWarning | undefined;
     // Completion on the last frame must not make an otherwise compiling window look clean.
     let compilingInWindow = false;
     let lastCompileCount = renderer.compileCount;
@@ -1381,6 +1421,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               observeCompilation();
               const compileObserved = compilingInWindow;
               compilingInWindow = false;
+              // The display's own rate, read once per window from the cadence the loop already
+              // measured: the host's present counter where there is one, else the median presented
+              // interval, which on the web is the vblank period because rAF is the presentation.
+              measuredRefreshHz =
+                reported.presentedFps ??
+                (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
+              const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              if (
+                scaler !== undefined &&
+                target.targetFps > 0 &&
+                target.targetFps !== heldTargetFps
+              ) {
+                heldTargetFps = target.targetFps;
+                scaler.retarget(heldTargetFps);
+              }
               renderer.observeRenderChainBudget?.(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
@@ -1414,10 +1469,25 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               const warning = sceneWarning(
                 reported,
                 describeSceneShape(reported, this.#cameraCull?.report),
-                this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS,
+                target.targetFps,
               );
-              lastSceneWarning = warning;
               if (warning !== undefined) console.warn(formatSceneWarning(warning));
+              // The same sentence goes to the UI on a dev launch, so a human watching the window
+              // and an agent reading the log are told the same thing at the same time. No frame
+              // rate rides it: the loop's own rAF rate reads throttled under a compositor or a
+              // virtual display, so a number drawn from it lies in exactly the sessions where
+              // somebody is trying to measure.
+              if (
+                devMetricsEnabled &&
+                warning !== undefined &&
+                this.#uiBridge?.hasPeer() === true
+              ) {
+                const verdict = describeSceneWarning(warning);
+                if (verdict !== postedVerdict) {
+                  postedVerdict = verdict;
+                  this.#uiBridge.post({ type: UI_DEV_METRICS_MESSAGE, sceneWarning: verdict });
+                }
+              }
               if (scaler === undefined) return;
               // **Not while the world is still arriving.** The scaler judges the game by closed
               // frame-budget windows, and the windows that close during a launch are not the game:
@@ -1442,6 +1512,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
+            // The world's own count of what the GPU selected, not `info.render.triangles`' upper
+            // bound over mesh capacity. Absent until the world's first tally lands.
+            readGpuTally: () => gpuTallyProvider?.(),
+            // The resolved budget rides the window rather than a marker of its own, so a harness
+            // reads the target and the frames it was judged against out of one line. It lags the
+            // window by one, because the window is built before this callback runs.
+            readTarget: () => resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz),
             readSurface: () => {
               observeCompilation();
               return {
@@ -1490,33 +1567,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
-    // Dev metrics are decided once per launch, and counted here rather than timed: a chip that
-    // changed every frame would be unreadable, and a timer would be a second clock.
+    // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
+    // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
+    // say nothing new.
     const devMetricsEnabled = isDevLaunch();
-    let devMetricsFrames = 0;
+    let postedVerdict: string | undefined;
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
-        // A dev launch also reports the rate it is running at, for the UI's own frame-rate chip.
-        // Four times a second is a readable number and no measurable cost; the loop's own smoothed
-        // rate is the measurement, not a second one taken here.
-        if (devMetricsEnabled && this.#uiBridge?.hasPeer() === true) {
-          devMetricsFrames += 1;
-          if (devMetricsFrames >= 15) {
-            devMetricsFrames = 0;
-            // The scene verdict rides the same message as the frame rate, so a human watching the
-            // window and an agent reading the log are told the same thing at the same time.
-            this.#uiBridge.post({
-              type: UI_DEV_METRICS_MESSAGE,
-              fps: gameLoop.fps,
-              ...(lastSceneWarning === undefined
-                ? {}
-                : { sceneWarning: describeSceneWarning(lastSceneWarning) }),
-            });
-          }
-        }
         observeCompilation();
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
@@ -1568,7 +1628,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
           try {
-            this.#computeDriven.processRender(this.#renderer);
+            // The render camera comes with it, because a render-cadence consumer that culls by the
+            // view — a streamed world's main batches — has to be driven from here and not from a draw
+            // three skips for a mesh that is hidden because it has nothing to draw.
+            this.#computeDriven.processRender(this.#renderer, camera);
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1746,8 +1809,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // resolved frame id so a resolve still in flight is counted stale, not measured twice.
           const gpuSample = renderer.gpuFrameSample?.();
           frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
+          // The one summed render timestamp split by pass: main and shadow come from the pass
+          // recorder's per-uid query results, and everything else in that pool (post chain,
+          // reflections, HUD) is the remainder. Compute is its own pool.
+          const gpuSplit =
+            gpuSample === undefined || gpuSample.frame === undefined
+              ? undefined
+              : renderPassBudget?.gpuPassMs(gpuSample.frame);
+          if (gpuSplit !== undefined && gpuSample !== undefined) {
+            const computeMs = renderer.gpuComputeMs?.();
+            frameBudget?.addGpuBucketMs({
+              main: gpuSplit.main,
+              shadow: gpuSplit.shadow,
+              other: Math.max(0, gpuSample.ms - gpuSplit.main - gpuSplit.shadow),
+              ...(computeMs === undefined ? {} : { compute: computeMs }),
+            });
+          }
+          // The main pass's own GPU series, for the adaptive LOD control loop: the frame budget's
+          // `gpuMain` bucket is the record, and this is the same number smoothed on the renderer so
+          // a world holding only the renderer can read it. Fed every frame, fresh or not.
+          renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
+            if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
             worldRendered = true;
           }
           if (this.#renderMetricsEnabled) {
@@ -1931,7 +2015,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     try {
       this.#enterScene(scene, ctx);
       timeline.enteredMs ??= now();
-      for (const startGate of startGates) startGate.resolveEntered();
+      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
+      // run a world that is still in `load()`, and the entity registry is empty until it enters.
+      // Releasing the gate there described a game that had not been built yet, so every
+      // entity-derived capability was read off nothing. The gate follows the scene that entered.
+      const worldEntered = this.#pendingSceneEnter;
+      const entered = (): void => {
+        for (const startGate of startGates) startGate.resolveEntered();
+      };
+      if (worldEntered === undefined) entered();
+      else
+        void worldEntered.then(entered, (error: unknown) => {
+          for (const startGate of startGates) startGate.rejectEntered(error);
+        });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);

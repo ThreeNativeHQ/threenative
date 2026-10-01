@@ -127,7 +127,14 @@ export async function bakeVirtualGeometry(
     for (const primitive of mesh.listPrimitives()) {
       const indices = primitive.getIndices();
       const positions = positionsOf(primitive);
-      if (indices === null || positions === null || primitive.getMode() !== 4) {
+      // A skinned body ships whole: the loader's clustered mesh is a plain `Mesh`, so a baked
+      // primitive would lose its skin (and the rig would not clone).
+      if (
+        indices === null ||
+        positions === null ||
+        primitive.getMode() !== 4 ||
+        primitive.getAttribute("JOINTS_0") !== null
+      ) {
         skipped += 1;
         continue;
       }

@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PerspectiveCamera, Scene } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   QUALITY_TIERS,
   costCommentGaps,
@@ -18,7 +18,11 @@ const names = await templateNames(templatesDir);
 
 interface IQualityModule {
   readonly qualityPreset: (tier: string) => Record<string, unknown>;
-  readonly resolveQualityTier: (request?: { mobile?: boolean; tier?: string }) => string;
+  readonly resolveQualityTier: (request?: {
+    mobile?: boolean;
+    software?: boolean;
+    tier?: string;
+  }) => string;
 }
 
 async function load(template: string): Promise<IQualityModule> {
@@ -87,6 +91,115 @@ describe("template quality tiers", () => {
     const { resolveQualityTier } = await load("starter");
     expect(resolveQualityTier({ mobile: true, tier: "high" })).toBe("high");
     expect(resolveQualityTier({ mobile: false, tier: "low" })).toBe("low");
+  });
+
+  // Run 36821800527, `template-nonvisual (starter, 2/3)`: a SwiftShader adapter reported
+  // `swiftshader/google`, the game took `high`, one frame cost 2,649.9 ms at 4.6 s uptime and the
+  // device was gone. The engine reads the adapter; what a software rasteriser gets to look at is
+  // this game's own answer, and it has to be one of the tiers the game already declares.
+  it("should take the cheap tier on a named software adapter in every template", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(
+        resolveQualityTier({ software: true }),
+        `${name}: software adapter at the desktop tier`,
+      ).toBe("low");
+    }
+  });
+
+  it("should still let a named tier override a software adapter", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(
+        resolveQualityTier({ software: true, tier: "high" }),
+        `${name}: override ignored`,
+      ).toBe("high");
+      expect(
+        () => resolveQualityTier({ tier: "ultra", software: true }),
+        `${name}: unknown name`,
+      ).toThrow(/"ultra"/u);
+    }
+  });
+
+  // The actual flow, not the resolver: `setupPost` is where the environment reaches
+  // `resolveQualityTier`, and ten of eleven call sites read `mobile` and `tier` while dropping
+  // `software`. Every assertion above calls the resolver directly and every one of them stayed
+  // green with the fact discarded, so this drives each template's own `setupPost` and reads the
+  // tier it reported for itself. On the old call sites these report `high`.
+  it("should take the cheap tier through each template's own setupPost on a software adapter", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      for (const name of names) {
+        const post = (await import(
+          path.join(templatesDir, name, "src", "render", "postprocessing.ts")
+        )) as {
+          setupPost: (
+            renderer: unknown,
+            scene: unknown,
+            camera: unknown,
+            environment?: { mobile?: boolean; software?: boolean; tier?: string },
+          ) => { dispose?: () => void };
+        };
+        const renderer = {
+          kind: "webgpu",
+          raw: {},
+          createRenderChain: () => ({ applied: { dropped: [], stages: [] }, dispose() {} }),
+        };
+        const reported = (environment: Parameters<typeof post.setupPost>[3]): string => {
+          info.mockClear();
+          post.setupPost(renderer, new Scene(), new PerspectiveCamera(), environment);
+          // The chain prints its own report after the tier line, so pick that line out.
+          return (
+            info.mock.calls
+              .map((call) => String(call[0]))
+              .find((line) => line.startsWith("TN_QUALITY_TIER")) ?? ""
+          );
+        };
+
+        expect(reported({ mobile: false, software: true }), `${name}: software adapter`).toContain(
+          "TN_QUALITY_TIER low",
+        );
+        // The tier the game pinned still wins over the adapter fact, or the pin is not a pin.
+        expect(
+          reported({ mobile: false, software: true, tier: "high" }),
+          `${name}: override`,
+        ).toContain("TN_QUALITY_TIER high");
+        expect(reported({ mobile: false, software: false }), `${name}: hardware`).toContain(
+          "TN_QUALITY_TIER high",
+        );
+        expect(reported({ mobile: true, software: false }), `${name}: phone`).toContain(
+          "TN_QUALITY_TIER low",
+        );
+      }
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("should keep the desktop tier when no adapter was named", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(resolveQualityTier({ software: false }), `${name}: reads absence as hardware`).toBe(
+        "high",
+      );
+    }
+  });
+
+  // The tier the game picks and the tier the renderer's chain runs at are two separate settings, and
+  // a preset that names only the first leaves the chain at its own `high` default. Found by a real
+  // forced-SwiftShader run on `minimal`: TN_QUALITY_TIER said `low`, and the run still reported
+  // `renderChain.tier: "high"`, because no template but `starter` set `renderChainTier` — so the low
+  // preset paid for the high chain's denoise and slice counts. Every fixture asserting
+  // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
+  // game chose rather than off the chain that ran.
+  it("should carry the chain's own tier in every template's low preset", async () => {
+    for (const name of names) {
+      const { qualityPreset } = await load(name);
+      expect(
+        qualityPreset("low").renderChainTier,
+        `${name}: low preset leaves the render chain on its high default`,
+      ).toBe("low");
+    }
   });
 
   it("should differ between low and high in at least one enabled stage", async () => {

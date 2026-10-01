@@ -38,12 +38,47 @@ interface IRenderCounters {
 }
 
 /**
+ * The slice of three's timestamp query pool this reads.
+ *
+ * Three keys one pool per query type (`render`, `compute`) at
+ * `renderer.backend.timestampQueryPool`, and each pool exposes the two maps it fills in itself:
+ * `queryOffsets` is the uid of every allocated pass (appended synchronously as the pass begins,
+ * cleared when a resolve starts) and `timestamps` is every uid's resolved duration in
+ * milliseconds, written when the asynchronous resolve lands. Both are three's own public fields,
+ * not a borrowed internal, and reading them is what turns the one summed `info.render.timestamp`
+ * into a per-pass number.
+ */
+export interface ITimestampQueryPool {
+  readonly queryOffsets?: Map<string, number> | undefined;
+  readonly timestamps?: Map<string, number> | undefined;
+}
+
+/**
  * The slice of a renderer this reads: the raw three renderer, not `IRendererLike`. It is
  * deliberately structural so the unit test can stand in a fake that nests exactly as three does.
  */
 export interface IRenderPassTarget {
   readonly info?: { render?: IRenderCounters } | undefined;
+  /**
+   * Three's backend, for per-pass GPU time. Optional: a WebGL2 fallback and a test double may
+   * carry no timestamp pool, and every GPU read is then absent rather than zero.
+   */
+  readonly backend?:
+    | { readonly timestampQueryPool?: Record<string, ITimestampQueryPool | null> }
+    | undefined;
   render(scene: unknown, camera: unknown): void;
+}
+
+/** One allocated timestamp query, before its duration resolves: the pass kind and three's uid. */
+interface IGpuUidEntry {
+  readonly kind: FramePassKind;
+  readonly uid: string;
+}
+
+/** GPU milliseconds of a frame's main and shadow render passes, summed across each kind. */
+export interface IGpuPassSplit {
+  readonly main: number;
+  readonly shadow: number;
 }
 
 interface IPassFrame {
@@ -52,6 +87,8 @@ interface IPassFrame {
   readonly kind: FramePassKind;
   childDraws: number;
   childTriangles: number;
+  /** Timestamp uids the nested calls this pass made allocated, in allocation order. */
+  childUids?: string[];
 }
 
 function readCounters(target: IRenderPassTarget): { draws: number; triangles: number } | undefined {
@@ -66,6 +103,13 @@ function readCounters(target: IRenderPassTarget): { draws: number; triangles: nu
 }
 
 const installed = new WeakSet<object>();
+
+/**
+ * Resolved frames kept for GPU attribution. A resolve lags the frame it measures by a few frames,
+ * so the uid list for a frame must outlive the frame that produced it; 64 frames is far more than
+ * that lag and bounds the map on a game that never resolves.
+ */
+const GPU_UID_FRAME_LIMIT = 64;
 
 /**
  * Names a render call by what three already calls it: the outermost call is the main camera, and a
@@ -94,6 +138,8 @@ export class RenderPassBudget {
   readonly #original: (scene: unknown, camera: unknown) => void;
   readonly #frame: IRenderPassSample[] = [];
   readonly #stack: IPassFrame[] = [];
+  /** Timestamp uids each render call allocated, keyed by the Three.js frame they belong to. */
+  readonly #gpuUids = new Map<number, IGpuUidEntry[]>();
 
   private constructor(target: IRenderPassTarget) {
     this.#target = target;
@@ -104,6 +150,8 @@ export class RenderPassBudget {
         this.#original.call(target, scene, camera);
         return;
       }
+      const offsets = target.backend?.timestampQueryPool?.render?.queryOffsets;
+      const allocatedBefore = offsets?.size ?? 0;
       const depth = this.#stack.length;
       const frame: IPassFrame = {
         childDraws: 0,
@@ -132,6 +180,7 @@ export class RenderPassBudget {
             triangles: Math.max(0, totalTriangles - frame.childTriangles),
           });
         }
+        this.#attributeGpu(frame, offsets, allocatedBefore);
       }
     };
     target.render = instrumented;
@@ -171,5 +220,75 @@ export class RenderPassBudget {
    */
   passes(): readonly IRenderPassSample[] {
     return this.#frame;
+  }
+
+  /**
+   * GPU milliseconds of one resolved frame's own main and shadow passes, or `undefined` until the
+   * frame's queries resolve and while no timestamp pool exists.
+   *
+   * A kind with no pass in the frame is zero, not absent: a frame that drew a main pass and no
+   * shadow genuinely spent 0 ms on shadow, and the caller subtracts both from the frame's summed
+   * `info.render.timestamp` to leave `other` (post chain, reflection, HUD). Entries are summed per
+   * kind, so a shadow cascade's several passes are one number.
+   */
+  gpuPassMs(frame: number): IGpuPassSplit | undefined {
+    const entries = this.#gpuUids.get(frame);
+    const timestamps = this.#target.backend?.timestampQueryPool?.render?.timestamps;
+    if (timestamps === undefined || entries === undefined) return undefined;
+    let main = 0;
+    let shadow = 0;
+    let resolved = 0;
+    for (const { kind, uid } of entries) {
+      const ms = timestamps.get(uid);
+      if (ms === undefined || !Number.isFinite(ms) || ms < 0) continue;
+      resolved += 1;
+      if (kind === "main") main += ms;
+      else if (kind === "shadow") shadow += ms;
+    }
+    return resolved === 0 ? undefined : { main, shadow };
+  }
+
+  /**
+   * Attributes the uids allocated during one render call to that call, not its parent, by the same
+   * child-subtraction the draws get: a nested render's uids are claimed by the nested frame before
+   * the parent computes its own, so `main` does not absorb a shadow's pass.
+   */
+  #attributeGpu(
+    frame: IPassFrame,
+    offsets: Map<string, number> | undefined,
+    allocatedBefore: number,
+  ): void {
+    if (offsets === undefined || offsets.size <= allocatedBefore) return;
+    const allocated: string[] = [];
+    let index = 0;
+    for (const uid of offsets.keys()) {
+      index += 1;
+      if (index > allocatedBefore) allocated.push(uid);
+    }
+    if (allocated.length === 0) return;
+    const childUids = frame.childUids;
+    const own =
+      childUids === undefined ? allocated : allocated.filter((uid) => !childUids.includes(uid));
+    const parent = this.#stack[this.#stack.length - 1];
+    if (parent !== undefined) {
+      parent.childUids ??= [];
+      parent.childUids.push(...allocated);
+    }
+    for (const uid of own) this.#recordGpuUid(uid, frame.kind);
+  }
+
+  /** Files one allocated uid under the frame the uid names, dropping the oldest frames over time. */
+  #recordGpuUid(uid: string, kind: FramePassKind): void {
+    const match = /:f(\d+)$/u.exec(uid);
+    if (match === null) return;
+    const frame = Number(match[1]);
+    const entries = this.#gpuUids.get(frame);
+    if (entries === undefined) this.#gpuUids.set(frame, [{ kind, uid }]);
+    else entries.push({ kind, uid });
+    while (this.#gpuUids.size > GPU_UID_FRAME_LIMIT) {
+      const oldest = this.#gpuUids.keys().next().value;
+      if (oldest === undefined) break;
+      this.#gpuUids.delete(oldest);
+    }
   }
 }

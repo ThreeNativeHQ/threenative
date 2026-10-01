@@ -100,6 +100,14 @@ export interface ILodJoinedRow {
 export interface ILodRow {
   /** Bytes the derived index buffers add, before compression. */
   readonly byteOverhead: number;
+  /**
+   * The foliage cutout conversion the cook ran before generating (PRD-458 §4): the `BLEND`
+   * materials that became alpha-tested, and the ones that kept blending and why.
+   */
+  readonly cutout?: {
+    readonly converted: readonly string[];
+    readonly kept: readonly { readonly name: string; readonly reason: string }[];
+  };
   /** Migration/legacy notes the resolver raised, by code. */
   readonly diagnostics: readonly string[];
   /** The resolved increasing geometric-error targets, as the bake consumed them. */
@@ -337,6 +345,14 @@ function spectrumLine(row: IAudioRow): readonly string[] {
 }
 
 /** One compiled model plus a total, before against after the optimization pass. */
+/** The cook's material merge (PRD-458 §5): what collapsed, and the counts either side of it. */
+export interface IMaterialsRow {
+  /** Distinct signatures — the count a draw call is bound by. */
+  readonly distinct: { readonly after: number; readonly before: number };
+  readonly materials: { readonly after: number; readonly before: number };
+  readonly merged: readonly string[];
+}
+
 export interface IModelSizeRow {
   readonly after: number;
   readonly before: number;
@@ -363,6 +379,8 @@ export interface IModelSizeRow {
   readonly compact?: IModelCompactSummary;
   /** The cluster-DAG bake, when it was configured for this model. */
   readonly virtual?: IVirtualRow;
+  /** The material merge the cook ran unconditionally, before any other geometry stage. */
+  readonly materials?: IMaterialsRow;
   /** Triangle count of the compiled output, recorded in the manifest. */
   readonly triangles?: number;
 }

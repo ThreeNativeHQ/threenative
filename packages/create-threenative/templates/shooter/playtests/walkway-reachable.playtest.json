@@ -1,0 +1,67 @@
+{
+  "name": "walkway-reachable",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "let-patrols-open",
+      "waitTicks": 100,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "edge-east",
+      "press": "KeyD",
+      "holdTicks": 9,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-north-lane",
+      "press": "KeyW",
+      "holdTicks": 690,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross-ct-yard",
+      "press": "KeyD",
+      "holdTicks": 25,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "climb-ramp",
+      "press": "KeyS",
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "on-deck",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "positionY",
+        "gte": 2.3
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import type { Camera, Object3D, WebGLRenderer } from "three";
+import type { BufferGeometry, Camera, Object3D, WebGLRenderer } from "three";
 import { type PassNode, RenderPipeline } from "three/webgpu";
 import type { IFrameSurfaceState } from "./frame-budget.js";
 import {
@@ -135,7 +135,33 @@ export interface IRendererLike {
    * the `TN_ALPHA_ANTIALIASING` marker is printed either way, so nothing is only readable here.
    */
   alphaAntialiasing?: () => IAlphaAntialiasingReport;
+  /**
+   * The `adapter.info` field value that identifies a CPU rasteriser — `swiftshader`, `llvmpipe`,
+   * a `Microsoft Basic Render Driver` — when the adapter named one, else absent.
+   *
+   * Reading it needs `navigator.gpu`, so it is read here rather than in a game's render source.
+   * It is a fact about the machine, not a look: which tier a game runs on a software adapter is
+   * that game's own decision, and every tier name it might pick is already in its own
+   * `src/render/quality.ts`. What this removes is the reason it could not make that decision
+   * before its first expensive frame — a CPU rasteriser running a desktop render chain can lose
+   * the device on the very first frame, which no adaptation after it survives.
+   *
+   * Absent means no software name was found, never that the adapter is hardware. The native host
+   * exposes the same four `adapter.info` fields, so the same read works on every target.
+   */
+  readonly softwareAdapter?: string;
   compute(node: unknown): void;
+  /**
+   * Creates the GPU buffers these geometries draw from, through the backend's own attribute path,
+   * and reports how many it created.
+   *
+   * `compileAsync` builds pipelines, not buffers: a streamed mesh's first draw is where its
+   * attributes reach the device, and one chunk's first draw measured 230 ms of a frame for it. This
+   * moves that to admission, one chunk at a time. WebGPU only — the WebGL fallback has no seam
+   * this can call without inventing a GL enum — and absent or throwing answers 0, so the first
+   * draw uploads exactly as it did before.
+   */
+  uploadAttributes?(geometries: Iterable<BufferGeometry>): number;
   /**
    * Copies one GPU storage attribute back to the CPU, asynchronously.
    *
@@ -186,6 +212,31 @@ export interface IRendererLike {
    * contract. `createRenderer` always provides it.
    */
   gpuFrameSample?(): { readonly frame: number; readonly ms: number } | undefined;
+  /**
+   * GPU milliseconds of the last resolved compute frame, when the adapter reports one.
+   *
+   * The compute pool is a separate series from the render pool and `resolveGpuFrame` resolves it,
+   * so a GPU simulation's cost is measurable instead of being charged to whatever render frame
+   * happened to overlap. `undefined` for a WebGL2 fallback, an adapter without timestamps, or a
+   * frame that ran no compute.
+   */
+  gpuComputeMs?(): number | undefined;
+  /**
+   * The main render pass's GPU milliseconds, smoothed over fresh resolved samples, or `undefined`
+   * while no reading is fresh.
+   *
+   * `gpuFrameMs` is the whole render pool, main plus every shadow, reflection, post and HUD pass;
+   * the adaptive LOD control loop needs the main-pass share alone. `game.ts` splits the resolved
+   * frame through the pass recorder and feeds the sample here with {@link noteGpuMainMs}. A
+   * repeated frame id is a resolve still in flight and not a new reading, and with no fresh sample
+   * for too long the value reads absent, so a caller never adapts on a stale number.
+   */
+  gpuMainMs?(): number | undefined;
+  /**
+   * Records one resolved frame's main-pass GPU milliseconds into {@link gpuMainMs}. Called once a
+   * frame by `game.ts`; `ms` is `undefined` when the frame attributed no main-pass reading.
+   */
+  noteGpuMainMs?(ms: number | undefined, frame?: number): void;
   /** Starts a resolve of the GPU timestamps for the frames drawn since the last call. */
   resolveGpuFrame(): void;
   /**
@@ -257,9 +308,16 @@ export interface IRendererOptions {
 type RendererInstance = {
   autoClear?: boolean;
   /** three's resolved GPU timings; `info.render.timestamp` is milliseconds. */
-  info?: { frame?: number; render?: { timestamp?: number } };
+  info?: {
+    frame?: number;
+    render?: { timestamp?: number };
+    compute?: { timestamp?: number };
+  };
   backend?: {
     trackTimestamp?: boolean;
+    /** The backend's own attribute creation, which a compile does not do. */
+    createAttribute?: (attribute: unknown) => void;
+    createIndexAttribute?: (attribute: unknown) => void;
     getTimestampFrames?: (type: string) => number[];
     createRenderPipeline?: (...args: unknown[]) => unknown;
     createComputePipeline?: (...args: unknown[]) => unknown;
@@ -348,6 +406,7 @@ function wrapRenderer(
   pipelineCensus: PipelineCensus | undefined,
   timestampCapable: boolean,
   timestampFrameInterval: number,
+  softwareAdapter?: string,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
   let outputPass: PassNode | undefined;
@@ -434,6 +493,33 @@ function wrapRenderer(
       else Reflect.deleteProperty(raw, "autoClear");
     }
   };
+  // The main pass's own GPU series, fed a frame at a time by `game.ts` because only the pass
+  // recorder can attribute the render pool to its main call. Half/half smoothing, and a short
+  // freshness window: the adaptive LOD loop reads this every half second and must not act on a
+  // resolve that stopped landing.
+  const mainSmoothing = 0.5;
+  const mainStaleLimit = 8;
+  let gpuMainEma: number | undefined;
+  let gpuMainStaleFrames = 0;
+  let gpuMainLastFrame: number | undefined;
+  const noteGpuMainMs = (ms: number | undefined, frame?: number): void => {
+    const stale = (): void => {
+      gpuMainStaleFrames += 1;
+      if (gpuMainStaleFrames >= mainStaleLimit) gpuMainEma = undefined;
+    };
+    if (ms === undefined || !Number.isFinite(ms) || ms < 0) {
+      stale();
+      return;
+    }
+    // A repeated frame id is the previous resolve still in flight, not a new reading.
+    if (frame !== undefined && frame === gpuMainLastFrame) {
+      stale();
+      return;
+    }
+    if (frame !== undefined) gpuMainLastFrame = frame;
+    gpuMainStaleFrames = 0;
+    gpuMainEma = gpuMainEma === undefined ? ms : gpuMainEma + (ms - gpuMainEma) * mainSmoothing;
+  };
   const wrapped: IRendererLike = {
     get compileCount() {
       return compileCount;
@@ -452,6 +538,16 @@ function wrapRenderer(
       return frame - sample.frame;
     },
     gpuFrameSample,
+    gpuMainMs: () => gpuMainEma,
+    noteGpuMainMs,
+    gpuComputeMs: () => {
+      const timestamp = raw.info?.compute?.timestamp;
+      // Three writes `0` before the first resolve and on a failed one, so a non-positive value is
+      // no reading rather than a frame that cost nothing.
+      return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0
+        ? timestamp
+        : undefined;
+    },
     resolveGpuFrame: () => {
       // Fire and forget: a rejected resolve means this adapter has no timestamps, which is a
       // reported absence rather than a frame-time error.
@@ -491,6 +587,7 @@ function wrapRenderer(
     }),
     surfaceDrawingBufferHeight: () => applied.height,
     alphaAntialiasing: () => alphaAntialiasing.report(),
+    ...(softwareAdapter === undefined ? {} : { softwareAdapter }),
     domElement: raw.domElement,
     kind,
     raw,
@@ -607,6 +704,28 @@ function wrapRenderer(
         throw new Error("webgpu renderer does not expose compute().");
       setTimestampTracking();
       raw.compute(node);
+    },
+    uploadAttributes: (geometries) => {
+      const backend = kind === "webgpu" ? raw.backend : undefined;
+      if (typeof backend?.createAttribute !== "function") return 0;
+      let created = 0;
+      try {
+        for (const geometry of geometries) {
+          for (const attribute of Object.values(geometry.attributes)) {
+            backend.createAttribute(attribute);
+            created += 1;
+          }
+          const index = geometry.getIndex();
+          if (index !== null && typeof backend.createIndexAttribute === "function") {
+            backend.createIndexAttribute(index);
+            created += 1;
+          }
+        }
+      } catch {
+        // A backend that will not take an attribute is a device that has already lost; the frame
+        // that needs it tries again there, where the error belongs.
+      }
+      return created;
     },
     readback: async (attribute) => {
       if (kind !== "webgpu") throw new Error(`readback is unavailable on the ${kind} renderer.`);
@@ -804,29 +923,45 @@ function createRendererPipelineCensus(
 async function createWebGpuPipelineCensus(
   raw: RendererInstance,
   options: IRendererOptions,
+  adapter: IWebGpuAdapterFacts,
 ): Promise<PipelineCensus | undefined> {
-  if (options.pipelineCensus === false) return undefined;
-  const adapterIdentity = await readWebGpuAdapterIdentity(raw);
-  return createRendererPipelineCensus(raw, "webgpu", options, adapterIdentity);
+  return createRendererPipelineCensus(raw, "webgpu", options, adapter.identity);
 }
 
-async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string | undefined> {
+/**
+ * Which field of `adapter.info` names a CPU rasteriser.
+ *
+ * Every field is searched because which one carries the giveaway depends on the platform: Linux
+ * Dawn puts `swiftshader` in `architecture`, Mesa reports `llvmpipe` in `description`, and a
+ * headless Windows run says `Microsoft Basic Render Driver` in `device`.
+ */
+const SOFTWARE_ADAPTER =
+  /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/i;
+
+interface IWebGpuAdapterFacts {
+  /** The URI-encoded identity the pipeline census records; absent when the adapter reported none. */
+  readonly identity?: string;
+  /** The field value that names a CPU rasteriser; absent when none of them does. */
+  readonly software?: string;
+}
+
+async function readWebGpuAdapterFacts(raw: RendererInstance): Promise<IWebGpuAdapterFacts> {
   const gpu = raw.backend?.gpu;
-  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return undefined;
+  if (gpu === undefined || typeof gpu.requestAdapter !== "function") return {};
   try {
     const adapter = await gpu.requestAdapter.call(gpu, {
       featureLevel: "compatibility",
       powerPreference: raw.backend?.parameters?.powerPreference,
       xrCompatible: raw.xr?.enabled === true,
     });
-    if (!isObject(adapter)) return undefined;
+    if (!isObject(adapter)) return {};
     const infoCandidate = isObject(adapter.info) ? adapter.info : undefined;
     const legacyInfo =
       infoCandidate === undefined && typeof adapter.requestAdapterInfo === "function"
         ? await adapter.requestAdapterInfo()
         : undefined;
     const info = infoCandidate ?? (isObject(legacyInfo) ? legacyInfo : undefined);
-    if (info === undefined) return undefined;
+    if (info === undefined) return {};
     const fields = ["architecture", "description", "device", "vendor"] as const;
     const entries = fields.flatMap((field) => {
       const value = info[field];
@@ -834,11 +969,17 @@ async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string 
         ? [[field, encodeURIComponent(value)] as const]
         : [];
     });
-    return entries.length === 0
-      ? undefined
-      : `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}`;
+    const software = fields
+      .map((field) => info[field])
+      .find((value): value is string => typeof value === "string" && SOFTWARE_ADAPTER.test(value));
+    return {
+      ...(entries.length === 0
+        ? {}
+        : { identity: `webgpu:${entries.map(([field, value]) => `${field}=${value}`).join("|")}` }),
+      ...(software === undefined ? {} : { software }),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -933,7 +1074,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       await instance.init?.();
       const alphaAntialiasing = arm(instance);
       const timestampCapable = instance.backend?.trackTimestamp === true;
-      const pipelineCensus = await createWebGpuPipelineCensus(instance, options);
+      const adapter = await readWebGpuAdapterFacts(instance);
+      const pipelineCensus = await createWebGpuPipelineCensus(instance, options, adapter);
       installDrawHook(instance, alphaAntialiasing);
       renderer = wrapRenderer(
         instance,
@@ -945,6 +1087,7 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         pipelineCensus,
         timestampCapable,
         gpuTimestampFrameInterval,
+        adapter.software,
       );
     } catch {
       renderer = undefined;

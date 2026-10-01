@@ -71,8 +71,8 @@ async function sparseFixtureGlb(): Promise<Buffer> {
   return torusKnotGlb(64, 16);
 }
 
-async function singleImageFixtureGlb(): Promise<Buffer> {
-  const document = buildFixtureDocument();
+async function singleImageFixtureGlb(gridDepth = 3): Promise<Buffer> {
+  const document = buildFixtureDocument({ gridDepth });
   const cloth = document
     .getRoot()
     .listMaterials()
@@ -312,9 +312,11 @@ describe("compileAssets", () => {
   it("should share images on an android build while retaining decoder-free model work", async () => {
     const root = await makeTempDir("threenative-compile-android-shared-");
     await mkdir(path.join(root, "assets"));
-    const source = await singleImageFixtureGlb();
-    await writeFile(path.join(root, "assets", "one.glb"), source);
-    await writeFile(path.join(root, "assets", "two.glb"), source);
+    // Different geometry, same image: two models that share an image, which is the subject of
+    // both native lanes. A byte-identical copy would be one model under two names
+    // (TN_ASSET_MODEL_DEDUPE), so there would be nothing to share.
+    await writeFile(path.join(root, "assets", "one.glb"), await singleImageFixtureGlb());
+    await writeFile(path.join(root, "assets", "two.glb"), await singleImageFixtureGlb(4));
     const lines: string[] = [];
     const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => {
       lines.push(String(line));
@@ -403,9 +405,11 @@ describe("compileAssets", () => {
   it("should share images on an ios build", async () => {
     const root = await makeTempDir("threenative-compile-ios-shared-");
     await mkdir(path.join(root, "assets"));
-    const source = await singleImageFixtureGlb();
-    await writeFile(path.join(root, "assets", "one.glb"), source);
-    await writeFile(path.join(root, "assets", "two.glb"), source);
+    // Different geometry, same image: two models that share an image, which is the subject of
+    // both native lanes. A byte-identical copy would be one model under two names
+    // (TN_ASSET_MODEL_DEDUPE), so there would be nothing to share.
+    await writeFile(path.join(root, "assets", "one.glb"), await singleImageFixtureGlb());
+    await writeFile(path.join(root, "assets", "two.glb"), await singleImageFixtureGlb(4));
 
     await compileAssets({
       config: { budget: "none" },

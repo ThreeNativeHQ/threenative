@@ -388,7 +388,11 @@ export function vehicle(materials: Materials): Group {
   }
 
   // Running gear. Rear tyres are larger, which is both true of the class and the cheapest way to
-  // make the tail read as the driven end.
+  // make the tail read as the driven end. The four groups are **named and kept as direct children
+  // of the returned root**, because they are the suspension's only handle on the visual: a car's
+  // physics reads their own names to build `VehicleBody3D`'s wheel list (so the physics and the
+  // mesh can never disagree about which wheel is the steered one) and writes spin and steer back
+  // into them each frame.
   for (const [x, radius] of [
     [1.28, 0.33],
     [-1.42, 0.37],
@@ -401,7 +405,13 @@ export function vehicle(materials: Materials): Group {
       root.add(group);
     }
   }
-  shell.attachTo(root);
+  // The shell goes in a group of its own so the **body can lean on its suspension** while the
+  // wheels stay planted: rotating the whole root would tilt the contact patches off the road.
+  // `body.rotation` is the car's own roll and pitch; nothing else in the scene writes it.
+  const body = new Group();
+  body.name = "body";
+  shell.attachTo(body);
+  root.add(body);
   return root;
 }
 
@@ -485,8 +495,8 @@ export function hoardingGeometry(width = 5): {
 } {
   const frame: Mesh[] = [];
   for (const side of [-1, 1]) {
-    const post = new Mesh(new CylinderGeometry(0.06, 0.06, 1.1, 5));
-    post.position.set(0, 0.55, (side * width) / 2.6);
+    const post = new Mesh(new CylinderGeometry(0.06, 0.06, 1.3, 5));
+    post.position.set(0, 0.65, (side * width) / 2.6);
     frame.push(post);
   }
   const rail = new Mesh(new BoxGeometry(0.12, 0.08, width));
@@ -494,8 +504,12 @@ export function hoardingGeometry(width = 5): {
   frame.push(rail);
   // Upright, not raked. A tilt looked like a fallen board once the row was rotated to face the
   // road, because the tilt is applied in the board's own frame and turns into a lean.
-  const panel = new Mesh(new BoxGeometry(0.08, 0.72, width));
-  panel.position.y = 0.94;
+  //
+  // The panel reaches the **tarmac**. It used to float 580 mm above it, which read as a fence on
+  // legs and was worse than that: the board is the barrier's collider, so the gap underneath was a
+  // gap a car drove straight through and out of the circuit.
+  const panel = new Mesh(new BoxGeometry(0.08, 1.3, width));
+  panel.position.y = 0.65;
   return { board: merged([panel]), frame: merged(frame) };
 }
 

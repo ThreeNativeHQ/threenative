@@ -415,13 +415,13 @@ if (
     const templates = argv.includes("--all")
       ? [
           "action-rpg",
-          "defense",
           "minimal",
           "platformer",
           "racing",
           "sailing",
           "shooter",
           "starter",
+          "tower-defense",
         ]
       : [flag("--template") ?? "starter"];
     const scenario = flag("--scenario") ?? "playtests/play.playtest.json";

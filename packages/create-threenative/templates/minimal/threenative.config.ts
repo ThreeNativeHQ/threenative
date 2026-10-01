@@ -13,7 +13,9 @@ const config: IThreeNativeConfig = {
     orientation: "landscape", // Mobile viewport orientation.
     fullscreen: true, // Keep the game surface edge to edge.
     keepScreenOn: true, // Do not dim during a play session.
-    maxFps: 60, // Set 120 to opt into a supported high-refresh display mode.
+    // No `maxFps`: the engine targets the display's own refresh rate, capped at 120 on desktop
+    // and web and 60 on mobile, and reports the resolved value in every `TN_FRAME_BUDGET` window.
+    // Set a number to override it, or 0 to remove the ceiling.
   },
   window: {
     title: "__PROJECT_NAME__", // Desktop window title.

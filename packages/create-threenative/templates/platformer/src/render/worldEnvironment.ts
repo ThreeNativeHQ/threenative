@@ -24,8 +24,10 @@ import {
 } from "three";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { godrays } from "three/addons/tsl/display/GodraysNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
@@ -33,6 +35,7 @@ import {
   color,
   convertToTexture,
   float,
+  max,
   metalness,
   mrt,
   normalView,
@@ -44,6 +47,9 @@ import {
   vec2,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+
+/** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
+export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
 /** Godot's `Environment.tonemap_mode`, with the modes Three.js actually ships. */
 export type TonemapMode = "aces" | "agx" | "neutral";
@@ -184,6 +190,16 @@ export interface IWorldEnvironmentOptions {
   readonly sharpenStrength?: number;
   /** Corner darkening, as a fraction removed at the extreme corner. Zero disables it. */
   readonly vignetteAmount?: number;
+  /**
+   * Post-process antialiasing, run last. Godot's `Viewport.screen_space_aa`. Default `"smaa"`.
+   *
+   * Not optional in practice: the chain renders `pass(scene, camera)` single-sampled, so the moment
+   * any stage runs, the renderer's own multisampling no longer reaches the frame and every edge
+   * stairsteps — the single loudest "this is a prototype" signal in a frame. It is requested only
+   * when some other stage (or a `baseColour`) installs a chain; with nothing installed the renderer
+   * draws straight to the canvas with its own MSAA and this would be paying twice.
+   */
+  readonly screenSpaceAA?: ScreenSpaceAA;
   /** Godot's `glow_enabled`. */
   readonly bloomEnabled?: boolean;
   readonly bloomStrength?: number;
@@ -391,6 +407,7 @@ export class WorldEnvironment {
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
       vignetteAmount: options.vignetteAmount ?? 0,
+      screenSpaceAA: options.screenSpaceAA ?? "smaa",
       bloomEnabled: options.bloomEnabled ?? true,
       bloomStrength: options.bloomStrength ?? 0.7,
       bloomRadius: options.bloomRadius ?? 0.5,
@@ -432,6 +449,11 @@ export class WorldEnvironment {
         (name === "vignette" && options.vignetteAmount > 0),
     );
     requested.push(...options.authoredStageNames);
+    if (
+      options.screenSpaceAA !== "disabled" &&
+      (requested.length > 0 || target.baseColour !== undefined)
+    )
+      requested.push("antialias");
 
     // With no stage running there is no node graph to install — the renderer's own
     // tone-mapping path renders the frame, and the exposure scalar is live there (measured:
@@ -542,7 +564,14 @@ export class WorldEnvironment {
           // Applied before SSGI by the chain's canonical order; composing it after the GI
           // combine instead darkens crevices the gather re-lit — that is a look choice, and
           // this file is where you make it.
-          return input.mul(contact.r);
+          //
+          // Denoised with the same depth-aware filter as the GI gather: GTAO's interleaved
+          // sampling otherwise reads as a speckled halo around every contact — around feet on a
+          // plain floor most of all — which is exactly the "not smooth" a player notices first.
+          const occlusion = options.denoiseEnabled
+            ? denoised(denoise(contact.getTextureNode(), depth(), normal(), view))
+            : contact;
+          return input.mul(occlusion.r);
         },
       }),
       stage({
@@ -668,6 +697,26 @@ export class WorldEnvironment {
           return input.mul(fall.oneMinus());
         },
       }),
+      {
+        // Last, after every built-in: antialiasing is defined on the finished picture, and any
+        // stage after it would put the stairsteps back.
+        name: "antialias",
+        after: "gradualBackground",
+        build: (input) => {
+          const colour = input as ChainNode;
+          // SMAA and FXAA find edges by local contrast and expect display-range colour, but this is
+          // the linear HDR frame before the tone curve — a sun-lit edge at 20 against sky at 3
+          // would blend into a bright halo. The reversible Karis weighting squeezes it into [0, 1)
+          // for the filter and expands it back afterwards, so edges resolve without the halo.
+          const peak = max(colour.r, max(colour.g, colour.b));
+          const squeezed = colour.div(peak.add(1));
+          const filtered = (options.screenSpaceAA === "fxaa"
+            ? fxaa(squeezed)
+            : smaa(squeezed)) as unknown as ChainNode;
+          const back = max(filtered.r, max(filtered.g, filtered.b));
+          return filtered.div(float(1).sub(back).max(1e-4));
+        },
+      },
     ];
 
     // The kit's own stages, composed after the built-ins. The factory is called with the two
@@ -723,6 +772,7 @@ export class WorldEnvironment {
     const options = this.#options;
     const off: Record<string, string> = {
       ambientOcclusion: "gtaoEnabled is false",
+      antialias: 'screenSpaceAA is "disabled", or no other stage installed a chain',
       bloom: "bloomEnabled is false",
       godRays: "godraysEnabled is false",
       sharpen: "sharpenEnabled is false",
@@ -745,6 +795,7 @@ export class WorldEnvironment {
         denoise: options.denoiseEnabled,
         exposure: options.exposure,
         marker: "TN_WORLD_ENVIRONMENT",
+        screenSpaceAA: options.screenSpaceAA,
         ssgiQuality: options.ssgiQuality,
         stages,
         tonemapMode: options.tonemapMode,

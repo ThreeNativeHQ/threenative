@@ -51,10 +51,11 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   /**
    * What the run waited for before it observed anything, and what it settled on.
    *
-   * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
-   * because the operator declared a software adapter. A pass from such a run is not a smoothness
-   * measurement and must not be read as one, so the report says which rule applied rather than
-   * leaving a reader to assume the stricter one.
+    * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
+    * because the operator declared a software adapter: the wait still ran to full readiness, but
+    * a CPU rasteriser reaches it on the bounded window rather than on five sustained frames. A
+    * pass from such a run is not a smoothness measurement and must not be read as one, so the
+    * report says which rule applied rather than leaving a reader to assume the stricter one.
    */
   startup?: {
     compileSettled?: boolean;

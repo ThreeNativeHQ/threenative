@@ -1,34 +1,40 @@
 import { GroundSnap, attachToBone, normaliseToMetres, skeletonBones } from "@threenative/core";
-import { Bone, type Group } from "three";
+import type { Object3D } from "three";
+
+/** The combat mannequin's right hand, by the name the rig authors it under. */
+export const HAND_BONE = "hand_r";
 
 export interface IActionRpgConventions {
   readonly applyGrounding: (surfaceY: number, dt: number) => void;
+  /** The bone the held weapon resolved to, read back by name. */
   readonly attachedBone: string;
   readonly boneNames: readonly string[];
   readonly groundSnap: GroundSnap;
   readonly normaliseFactor: number;
 }
 
-export function preparePlayerConventions(model: Group): IActionRpgConventions {
-  const weapon = model.getObjectByName("held-blade");
-  if (weapon === undefined) throw new Error("Action RPG player is missing its held blade.");
-
-  const normaliseFactor = normaliseToMetres(weapon, { axis: "longest", metres: 0.9 });
-  const hand = new Bone();
-  hand.name = "RightHand";
-  hand.position.copy(weapon.position);
-  hand.rotation.copy(weapon.rotation);
-  model.add(hand);
-  weapon.position.set(0, 0, 0);
-  weapon.rotation.set(0, 0, 0);
-
-  const boneNames = skeletonBones(model);
-  attachToBone(model, "RightHand", weapon);
+/**
+ * The three conventions a rigged character owes its level, in the order they depend on each other.
+ *
+ * `model` is the cloned rig; `weapon` is a small mesh this game owns and the hand has to hold.
+ */
+export function preparePlayerConventions(
+  model: Object3D,
+  weapon?: Object3D,
+): IActionRpgConventions {
+  // A skinned figure is measured from its origin to its crown joint, and on this Unreal-style
+  // skeleton that is `Head` — the base of the skull, not its top. 1.545 m at that joint puts the
+  // top of the head at 1.8 m, the height the capsule in `Player.ts` is built for.
+  const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.545 });
+  // The hand owns the sword: parenting by bone name is what makes every clip that moves the hand
+  // move the sword with it, without a per-frame follow and without a second animation track. A
+  // bare-handed fighter skips it and reports no attached bone rather than an invented one.
+  if (weapon !== undefined) attachToBone(model, HAND_BONE, weapon);
   const groundSnap = new GroundSnap(model);
   return {
     applyGrounding: (surfaceY, dt) => groundSnap.apply(model, surfaceY, dt),
-    attachedBone: weapon.parent?.name ?? "",
-    boneNames,
+    attachedBone: weapon?.parent?.name ?? "",
+    boneNames: skeletonBones(model),
     groundSnap,
     normaliseFactor,
   };

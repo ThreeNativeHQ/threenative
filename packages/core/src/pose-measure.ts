@@ -1,5 +1,22 @@
-import { Box3, type Object3D, Quaternion, Vector3 } from "three";
+import { AttachedBindMode, Box3, type Object3D, Quaternion, Vector3 } from "three";
 import type { Mesh, SkinnedMesh } from "three";
+
+/**
+ * Brings every attached-mode skinned mesh under `root` to the bind state the renderer would give it.
+ *
+ * `SkinnedMesh` refreshes `bindMatrixInverse` in `updateMatrixWorld` — the renderer's call — and not
+ * in `updateWorldMatrix`, which is what a measurement makes. After a figure moves between a render
+ * and a measurement, three places the skin at the figure's old transform: measured that way, a
+ * finger bone of the shipped mannequin got a 3.8 m envelope sphere and GroundSnap held the figure
+ * 0.66 m above its floor. Re-deriving it here is exactly what `updateMatrixWorld` does.
+ */
+function syncSkinBindings(root: Object3D): void {
+  root.traverse((object) => {
+    const skinned = object as Partial<SkinnedMesh>;
+    if (skinned.isSkinnedMesh === true && skinned.bindMode === AttachedBindMode)
+      skinned.bindMatrixInverse?.copy(object.matrixWorld).invert();
+  });
+}
 
 export type ThreePoseVector = readonly [number, number, number];
 export type ThreePoseQuaternion = readonly [number, number, number, number];
@@ -55,6 +72,8 @@ export function measureThreePose(
   // A socket/bone probe needs its ancestors current, not every descendant bone. Avoiding that
   // subtree walk matters when a registered entity reports several joints each debug sample.
   object.updateWorldMatrix(true, options.bounds !== false);
+  if (options.bounds !== false)
+    for (const bounded of options.bounds ?? [object]) syncSkinBindings(bounded);
   const worldPosition = object.getWorldPosition(new Vector3());
   const worldQuaternion = object.getWorldQuaternion(new Quaternion());
   const worldScale = object.getWorldScale(new Vector3());
@@ -231,6 +250,8 @@ function createEnvelope(
   selection: IPosedBoundsEnvelope["selection"],
 ): IPosedBoundsEnvelope {
   root.updateWorldMatrix(true, true);
+  syncSkinBindings(root);
+  for (const mesh of meshes) syncSkinBindings(mesh);
   const radii = new Map<Object3D, number>();
   const statics: IStaticSphere[] = [];
   const vertex = new Vector3();

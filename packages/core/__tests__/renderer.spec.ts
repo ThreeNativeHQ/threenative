@@ -49,6 +49,35 @@ describe("createRenderer", () => {
     }
   });
 
+  it("smooths the main-pass GPU time and reports it absent once the samples go stale", async () => {
+    const canvas = testCanvas();
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info: { frame: 0 },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.gpuMainMs?.()).toBeUndefined();
+      renderer.noteGpuMainMs?.(8, 1);
+      expect(renderer.gpuMainMs?.()).toBe(8);
+      // A repeated frame id is the previous resolve still in flight, not a second measurement.
+      renderer.noteGpuMainMs?.(12, 1);
+      expect(renderer.gpuMainMs?.()).toBe(8);
+      renderer.noteGpuMainMs?.(12, 2);
+      expect(renderer.gpuMainMs?.()).toBe(10);
+      // No fresh sample for long enough reads absent rather than as the last number forever.
+      for (let frame = 0; frame < 8; frame += 1) renderer.noteGpuMainMs?.(undefined);
+      expect(renderer.gpuMainMs?.()).toBeUndefined();
+    } finally {
+      renderer.dispose();
+    }
+  });
+
   it("records GPU timestamps on one of every eight renderer frames by default", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
@@ -631,6 +660,78 @@ describe("createRenderer", () => {
       expect(renderer.pipelineCensus?.().adapter.identity).toContain("vendor=acme");
       expect(renderer.pipelineCensus?.().adapter.identity).toContain("device=gpu-42");
       expect(renderer.pipelineCensus?.().adapter.identity).not.toBe("webgpu:Object");
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  // A game cannot ask `navigator.gpu` what it is running on without becoming the thing that has to
+  // know about WebGPU, a platform seam and the driver strings each one uses, so the fact rides on
+  // the renderer it already has. A `swiftshader` adapter running the desktop tier has been measured
+  // losing the device inside its first frame — a tier the game could have chosen differently had
+  // anything told it.
+  it.each([
+    ["architecture", "swiftshader"],
+    ["description", "llvmpipe (LLVM 15.0.7, 256 bits)"],
+    ["device", "Microsoft Basic Render Driver"],
+  ])("names a software adapter reported in %s", async (field, value) => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestAdapter = vi.fn(async () => ({
+      info: { architecture: "", description: "", device: "", vendor: "", [field]: value },
+    }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.softwareAdapter).toBe(value);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports no software adapter for a hardware one rather than claiming a proof", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestAdapter = vi.fn(async () => ({
+      info: { architecture: "turing", description: "Acme GPU", device: "gpu-42", vendor: "acme" },
+    }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.softwareAdapter).toBeUndefined();
+      expect(renderer.pipelineCensus?.().adapter.identity).toContain("vendor=acme");
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

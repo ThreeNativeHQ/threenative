@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -366,6 +366,49 @@ export function validateRenderChainAssertion(
   objectPath: string,
 ): IPlaytestRenderChainAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
+  const perAdapter = record.perAdapter === undefined
+    ? undefined
+    : validateRenderChainPerAdapter(record.perAdapter, scenarioPath, `${objectPath}.perAdapter`);
+  const expectation = validateRenderChainExpectation(record, scenarioPath, objectPath);
+  return perAdapter === undefined ? expectation : { ...expectation, perAdapter };
+}
+
+function validateRenderChainPerAdapter(
+  value: unknown,
+  scenarioPath: string,
+  objectPath: string,
+): NonNullable<IPlaytestRenderChainAssertion["perAdapter"]> {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    throw invalidScenario(scenarioPath, `'${objectPath}' must name at least one adapter class.`);
+  }
+  const result: Record<string, IPlaytestRenderChainExpectation> = {};
+  for (const [kind, branch] of entries) {
+    if (kind !== "hardware" && kind !== "software") {
+      throw invalidScenario(
+        scenarioPath,
+        `'${objectPath}.${kind}' is not an adapter class this harness can classify; expected hardware or software.`,
+      );
+    }
+    // The branch is a whole render-chain expectation, validated by the same function as the flat
+    // form — so an empty or mistyped one throws here rather than evaluating to nothing at runtime.
+    // A nested `perAdapter` is not accepted: one level of branch is a choice between two policies,
+    // and a second level would be a decision the harness cannot make.
+    result[kind] = validateRenderChainExpectation(
+      requireRecord(branch, scenarioPath, `${objectPath}.${kind}`),
+      scenarioPath,
+      `${objectPath}.${kind}`,
+    );
+  }
+  return result as NonNullable<IPlaytestRenderChainAssertion["perAdapter"]>;
+}
+
+function validateRenderChainExpectation(
+  record: Record<string, unknown>,
+  scenarioPath: string,
+  objectPath: string,
+): IPlaytestRenderChainExpectation {
   const tier = record.tier;
   if (tier !== undefined && tier !== "high" && tier !== "medium" && tier !== "low" && tier !== "off") {
     throw invalidScenario(scenarioPath, `'${objectPath}.tier' must be high, medium, low, or off, received ${describeValue(tier)}.`);
@@ -1067,28 +1110,41 @@ export function validateNestedAssertionKeys(
       `assert.${kind}${suffix}.runtime`,
     );
   }
-  if (kind === "renderChain" && isRecord(value.velocity)) {
-    rejectUnknownKeys(
-      value.velocity,
-      ["maxRejectionFraction"],
-      scenarioPath,
-      `assert.${kind}${suffix}.velocity`,
-    );
+  if (kind === "renderChain") {
+    rejectRenderChainExpectationKeys(value, scenarioPath, `assert.${kind}${suffix}`);
+    if (isRecord(value.perAdapter)) {
+      const branchPath = `assert.renderChain${suffix}.perAdapter`;
+      rejectUnknownKeys(value.perAdapter, ["hardware", "software"], scenarioPath, branchPath);
+      for (const [adapterKind, branch] of Object.entries(value.perAdapter)) {
+        // A branch is the same shape as the flat assertion, so it runs the same key check at both
+        // levels — and `perAdapter` is not one of its keys, which is what makes a second level a
+        // load error. Without the nested pass, `perAdapter.software.stages.includess` validated
+        // where the flat `stages.includess` was rejected: a typo named no stage while reading as
+        // an assertion that did.
+        if (isRecord(branch)) {
+          rejectUnknownKeys(branch, ["contributions", "stages", "tier", "velocity"], scenarioPath, `${branchPath}.${adapterKind}`);
+          rejectRenderChainExpectationKeys(branch, scenarioPath, `${branchPath}.${adapterKind}`);
+        }
+      }
+    }
   }
-  if (kind === "renderChain" && isRecord(value.contributions)) {
-    rejectUnknownKeys(
-      value.contributions,
-      ["graphOutputChanged"],
-      scenarioPath,
-      `assert.${kind}${suffix}.contributions`,
-    );
-  }
-  if (kind === "renderChain" && isRecord(value.stages)) {
-    rejectUnknownKeys(
-      value.stages,
-      ["excludes", "includes", "order"],
-      scenarioPath,
-      `assert.${kind}${suffix}.stages`,
-    );
+}
+
+const RENDER_CHAIN_NESTED_KEYS = {
+  contributions: ["graphOutputChanged"],
+  stages: ["excludes", "includes", "order"],
+  velocity: ["maxRejectionFraction"],
+} as const;
+
+/** The nested `stages` / `contributions` / `velocity` of one expectation, flat form or branch. */
+function rejectRenderChainExpectationKeys(
+  value: Record<string, unknown>,
+  scenarioPath: string,
+  objectPath: string,
+): void {
+  for (const [field, keys] of Object.entries(RENDER_CHAIN_NESTED_KEYS)) {
+    if (isRecord(value[field])) {
+      rejectUnknownKeys(value[field], keys, scenarioPath, `${objectPath}.${field}`);
+    }
   }
 }

@@ -1,31 +1,209 @@
+@import "tailwindcss";
+
+/*
+ * Sources declared explicitly rather than left to automatic detection. When
+ * Tailwind finds no sources it still builds successfully — it emits the @theme
+ * variables and zero utilities, so every class name in src/ui/ becomes an inert
+ * string with no error anywhere to explain it. Being explicit makes that
+ * failure impossible rather than merely unlikely.
+ */
+@source "../index.html";
+@source "./";
+
+/*
+ * Your palette. Every name here becomes a real Tailwind utility — `bg-ink`,
+ * `text-lume`, `border-line` — so the HUD reads in game terms instead of
+ * `bg-slate-950`. Rename them, add to them, or delete the block and use
+ * Tailwind's defaults. Nothing in @threenative/* reads this.
+ */
+@theme {
+  --color-ink: #04080d;
+  --color-panel: #0d1c26;
+  --color-line: #14313f;
+  --color-lume: #6fe8ff;
+  --color-warn: #ffd27a;
+  --color-text: #a8ccd8;
+  --color-dim: #4e7686;
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * `100dvh`, not `100%`.
+ *
+ * `height: 100%` resolves against the initial containing block, which on mobile Chrome is the
+ * *large* viewport — the one that counts the space behind the retractable URL bar. Measured on a
+ * Pixel 8: the canvas came out 411x840 while only 784 px of it was ever on the glass. Two things
+ * broke because of it. The canvas rendered 56 rows of pixels nobody could see, and every
+ * `bottom-*` anchored HUD element — the ammo counter among them — sat below the fold.
+ *
+ * `100dvh` is the viewport as it is right now, so the canvas matches the glass, the crosshair sits
+ * at the centre of what you can see, and the bottom cluster is on screen. `overflow: hidden` keeps
+ * the page unscrollable, so the URL bar does not retract and this does not thrash the resize.
+ */
 html,
 body,
 #root {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
 }
 
+/*
+ * The backdrop belongs to the web document's own mount point, never to `body`: `src/ui/main.tsx`
+ * imports this stylesheet, and on native that file is what the transparent web view loads over the
+ * game, where a `body` background is an opaque sheet over the frame just rendered.
+ */
+#root {
+  background: var(--color-ink);
+}
+
 body {
-  color: #dce5e8;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--color-text);
+  font-family: var(--font-mono);
   -webkit-font-smoothing: antialiased;
 }
 
 /*
- * The page's backdrop belongs to the web document's own mount point, never to `body`.
- * `src/ui/main.tsx` imports this same stylesheet, and on native that file is what the platform's
- * transparent web view loads over the game: a `body` background there paints an opaque sheet over
- * the frame the game just rendered, and the HUD appears to float on nothing. `#root` exists only
- * in the web page, so the backdrop stays where it belongs and the UI layer stays see-through.
+ * No mouse cursor over the game. Pointer lock hides it while it is engaged, but the cursor is
+ * visible before the first click and every time the player presses Escape — an arrow sitting on
+ * top of a crosshair in a first-person shooter reads as an unfinished game.
  */
-
-#root {
-  background: #263449;
+html,
+body,
+canvas {
+  cursor: none;
 }
 
-/* Boot failures are a page state, so the generated game owns their presentation. */
+/*
+ * Thumb controls, and the desktop legend they replace.
+ *
+ * Gated on `pointer: coarse` rather than on a width breakpoint: a narrow desktop window is still a
+ * mouse, and a tablet in landscape is still a thumb. Width would get both of those wrong.
+ */
+.touch-only,
+.touch-show {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch-only {
+    display: block;
+    /*
+     * The root is already `100dvh`; the remaining job is the gesture bar, which overlays the
+     * bottom of the viewport and would otherwise swallow the fire button's lower edge.
+     */
+    height: calc(100% - env(safe-area-inset-bottom, 0px));
+    bottom: auto;
+  }
+  /*
+   * `.touch-only` carries the full-surface sizing the thumb overlay needs. `.touch-show` is just
+   * the visibility half of it, for controls that live inside somebody else's layout — a button in
+   * a centred flex column must not also be told it is 100% tall.
+   */
+  .touch-show {
+    display: block;
+  }
+  .desktop-only {
+    display: none;
+  }
+
+  /*
+   * The HUD was laid out against a 1280x720 desktop window. On a 411 px phone the same pixel
+   * sizes are roughly three times the share of the screen they were designed to take: the 180 px
+   * minimap covered 44% of the width and sat on top of the roster, the clock and the objective
+   * line, and in landscape it covered the left thumb's stick band entirely.
+   *
+   * Scaled rather than re-laid-out, because the composition is right — it is only ever asked to
+   * be too big. Each cluster scales about the corner it is anchored to, so nothing drifts off an
+   * edge, and the touch controls are deliberately NOT scaled: their sizes are thumb dimensions,
+   * not layout dimensions, and a thumb is the same size on every phone.
+   */
+  .hud-minimap {
+    height: 108px;
+    width: 108px;
+  }
+  /*
+   * `scale` alone, with no translate of its own. Tailwind 4 centres these with the standalone
+   * `translate` property, not with `transform`, and the two compose — an extra `translateX(-50%)`
+   * here shifted the whole roster half its own width off the left edge of the screen.
+   */
+  .hud-top {
+    transform: scale(0.78);
+    transform-origin: top center;
+  }
+  .hud-bottom {
+    transform: scale(0.74);
+    transform-origin: bottom center;
+  }
+  .hud-corner {
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+}
+
+/*
+ * A phone in portrait is 411 px wide, and three things want the same corners.
+ *
+ * The roster row spans almost the full width even scaled, so the immersive button sat on top of
+ * the fifth chip; it drops below the row instead. And the bottom cluster is centred, which on a
+ * surface this narrow puts the ammo readout underneath the fire button — a number you cannot read
+ * because your thumb is on it. Nudging the cluster left of the fire circle is enough; it clears
+ * the move ring vertically, so nothing else has to move.
+ */
+@media (pointer: coarse) and (max-width: 520px) {
+  .hud-immersive {
+    top: 46px;
+  }
+  .hud-bottom {
+    transform: translateX(-25%) scale(0.66);
+  }
+  /*
+   * The money chip goes. It is a hardcoded `$10000` placeholder with no gameplay behind it, and on
+   * a 411 px surface it lands underneath the armour badge — two numbers overlapping, one of them
+   * fiction. The key legend in the same corner is already hidden here, so this empties the block.
+   */
+  .hud-corner {
+    display: none;
+  }
+}
+
+/*
+ * A phone held in landscape gives the game 303 px of height in Chrome, and the game-over card,
+ * the credits and the objective line all shared that space with the fight. Below 420 px the
+ * overlay drops to a single tight column.
+ */
+@media (pointer: coarse) and (max-height: 420px) {
+  .hud-top {
+    transform: scale(0.62);
+  }
+  .hud-bottom {
+    transform: scale(0.62);
+  }
+  .hud-minimap {
+    height: 92px;
+    width: 92px;
+  }
+  /*
+   * The stick hint is 148 px across, which is half the height of a phone held sideways in Chrome.
+   * At that size it collided with the minimap in the top-left and read as clutter rather than as
+   * a resting place. The stick itself still floats to wherever the thumb lands, so shrinking the
+   * ring costs no reach — only the drawn hint gets smaller.
+   */
+  .stick-hint {
+    bottom: 56px !important;
+    height: 104px !important;
+    width: 104px !important;
+  }
+}
+
+/*
+ * The boot-failure surface. The engine sets this attribute on the canvas when the
+ * renderer cannot start at all, and the message it carries is the only thing on screen.
+ * Generated source: restyle it freely, delete it if your game never fails to boot.
+ */
 [data-threenative-canvas-error="true"] {
   position: fixed;
   inset: 0;
@@ -36,11 +214,29 @@ body {
   padding: clamp(1.5rem, 8vw, 6rem);
   overflow: auto;
   background: #fff7ed;
-  color: #263449;
+  color: var(--color-ink);
   font-family: inherit;
   font-size: clamp(1rem, 2vw, 1.5rem);
   line-height: 1.5;
   text-align: center;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The debug surface is framework plumbing; its default presentation is yours to change. */
+[data-threenative-debug-overlay="true"] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  max-width: 24rem;
+  padding: 0.75rem;
+  pointer-events: none;
+  background: rgb(4 8 13 / 90%);
+  color: #6fe8ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

@@ -1,5 +1,5 @@
 diff --git a/build/three.cjs b/build/three.cjs
-index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda32176ef6a 100644
+index 8939a67..b0f9172 100644
 --- a/build/three.cjs
 +++ b/build/three.cjs
 @@ -26116,6 +26116,8 @@ function copyArrayContents( src, target ) {
@@ -12,7 +12,7 @@ index 8939a67dd76325ccd25ee8806fc4d22b1caea88a..b0f917241f1f2cd25baa21dec20edda3
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.core.js b/build/three.core.js
-index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d55d6dd6e7 100644
+index 0bb9262..868a634 100644
 --- a/build/three.core.js
 +++ b/build/three.core.js
 @@ -26136,6 +26136,8 @@ function copyArrayContents( src, target ) {
@@ -25,10 +25,257 @@ index 0bb9262cd029f411933d077fd44197a51ec5e8e9..868a634b4294be5f32664912a50813d5
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f7c7df601 100644
+index 2e49079..7aa62ad 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
-@@ -18320,7 +18320,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -141,6 +141,15 @@ class NodeMaterialObserver {
+ 		 */
+ 		this.renderId = 0;
+ 
++		/**
++		 * Whether the current render produces motion vectors. Objects keep refreshing
++		 * fully while this is the case.
++		 *
++		 * @type {boolean}
++		 * @default false
++		 */
++		this.renderingVelocity = false;
++
+ 	}
+ 
+ 	/**
+@@ -240,6 +249,88 @@ class NodeMaterialObserver {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the given render object is a static object whose per-object state - world
++	 * matrix, material, geometry and the scene environment - did not change since the last
++	 * refresh. A settled object is still drawn every frame and its FRAME and RENDER nodes still
++	 * have to be updated; what it may skip is the work whose inputs it froze: its OBJECT node
++	 * updates, its object uniform group upload and its per-draw attribute scan.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const data = this.renderObjects.get( renderObject );
++
++		return data !== undefined && data.settledState === true;
++
++	}
++
++	/**
++	 * Recomputes {@link NodeMaterialObserver#isSettled} for the given render object, once per draw,
++	 * so every step of that draw reads the same answer.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	updateSettled( renderObject ) {
++
++		const { object, material, geometry, scene } = renderObject;
++		const data = this.getRenderObjectData( renderObject );
++
++		if ( object.static !== true || this.renderingVelocity === true ) {
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		let settled = data.settled;
++
++		if ( settled === undefined ) {
++
++			data.settled = settled = {
++				matrix: object.matrixWorld.clone(),
++				environmentRotation: scene.environmentRotation.clone(),
++				environmentIntensity: scene.environmentIntensity,
++				materialVersion: material.version,
++				geometryVersion: geometry.version
++			};
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		if ( settled.matrix.equals( object.matrixWorld ) !== true ||
++			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
++			settled.environmentIntensity !== scene.environmentIntensity ||
++			settled.materialVersion !== material.version ||
++			settled.geometryVersion !== geometry.version ) {
++
++			// re-arm with the current state, so the object settles again once it stops changing
++
++			settled.matrix.copy( object.matrixWorld );
++			settled.environmentRotation.copy( scene.environmentRotation );
++			settled.environmentIntensity = scene.environmentIntensity;
++			settled.materialVersion = material.version;
++			settled.geometryVersion = geometry.version;
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		data.settledState = true;
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Returns an attribute data structure holding the attributes versions for
+ 	 * monitoring.
+@@ -306,7 +397,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: -1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -335,7 +425,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: -1, _equal: false };
++			data = { _renderId: -1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -419,7 +509,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -431,7 +520,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -440,7 +528,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -456,18 +543,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -510,7 +591,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -523,7 +603,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -534,7 +613,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -552,7 +630,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -564,16 +641,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -724,7 +795,14 @@ class NodeMaterialObserver {
+ 	 */
+ 	needsRefresh( renderObject, nodeFrame ) {
+ 
+-		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.needsVelocity( nodeFrame.renderer ) )
++		this.renderingVelocity = this.needsVelocity( nodeFrame.renderer );
++
++		// Answered for the whole draw, so updateBefore, the geometry scan, the node updates and
++		// the object uniform upload of this object all skip or all refresh.
++
++		this.updateSettled( renderObject );
++
++		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.renderingVelocity )
+ 			return true;
+ 
+ 		const { renderId } = nodeFrame;
+@@ -737,10 +815,14 @@ class NodeMaterialObserver {
+ 
+ 		}
+ 
+-		const isStatic = renderObject.object.static === true;
+ 		const isBundle = renderObject.bundle !== null && renderObject.bundle.static === true && this.getRenderObjectData( renderObject ).version === renderObject.bundle.version;
+ 
+-		if ( isStatic || isBundle )
++		// `object.static` is not the question - it is a switch, and a brand new object has it set
++		// before it has been drawn once, so answering from it skips the draw that creates this
++		// object's bind groups and leaves the pipeline reading a layout that was never built. A
++		// static object that moved, or whose material or geometry was edited, has to refresh like
++		// any other; only a settled one may skip, and nothing is settled before its first refresh.
++		if ( this.isSettled( renderObject ) === true || isBundle )
+ 			return false;
+ 
+ 		const lightsData = this.getLights( renderObject.lightsNode, renderId );
+@@ -18320,7 +18402,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
  
  		const uniformBufferSize = matrixCount * 16 * 4;
  
@@ -38,7 +285,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
  
-@@ -18414,7 +18415,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18414,7 +18497,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
  
@@ -48,7 +295,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			interleavedMatrix = _matrixBuffers.get( matrices );
  
-@@ -18500,7 +18502,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+@@ -18500,7 +18584,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
  
  			const previousInstanceData = _previousInstanceMatrices.get( object );
  
@@ -58,7 +305,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		} );
  
-@@ -18599,6 +18602,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18599,6 +18684,7 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
  
  	const matricesTexture = batchMesh._matricesTexture;
@@ -66,7 +313,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
  	const j = float( indirectId ).mul( 4 ).toInt().toConst();
-@@ -18626,6 +18630,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -18626,6 +18712,19 @@ const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  
  	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
  
@@ -86,7 +333,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
  	const batchingNormal = bm.mul( transformedNormal ).xyz;
-@@ -18777,7 +18794,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -18777,7 +18876,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -96,7 +343,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			}
  
-@@ -18844,7 +18862,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
+@@ -18844,7 +18944,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
  
  			if ( state !== undefined ) {
  
@@ -106,7 +353,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			}
  
-@@ -29911,6 +29930,18 @@ class RenderObject {
+@@ -29911,6 +30012,18 @@ class RenderObject {
  		 */
  		this._sourceMaterial = renderer._currentSourceMaterial;
  
@@ -125,7 +372,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -30098,7 +30129,7 @@ class RenderObject {
+@@ -30098,7 +30211,7 @@ class RenderObject {
  	 */
  	getChainArray() {
  
@@ -134,7 +381,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  	}
  
-@@ -30548,6 +30579,7 @@ class RenderObject {
+@@ -30548,6 +30661,7 @@ class RenderObject {
  		}
  
  		cacheKey = hash$1( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
@@ -142,7 +389,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		return cacheKey;
  
-@@ -30680,6 +30712,8 @@ class RenderObjects {
+@@ -30680,6 +30794,8 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = material;
  		_chainKeys$3[ 2 ] = renderContext;
  		_chainKeys$3[ 3 ] = lightsNode;
@@ -151,7 +398,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		//
  
-@@ -30707,9 +30741,18 @@ class RenderObjects {
+@@ -30707,9 +30823,18 @@ class RenderObjects {
  
  			}
  
@@ -159,20 +406,20 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
 +			// When the renderer is drawing through an override material, that material is shared by
 +			// the whole pass and mutated per object, so its `version` alone answers the wrong
 +			// question. The source material this object actually carries answers the right one.
- 
--				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
++
 +			const sourceMaterial = this.renderer._currentSourceMaterial;
 +			const sourceTracked = sourceMaterial !== null && sourceMaterial !== undefined;
 +			const sourceReplaced = sourceTracked && renderObject._sourceMaterial !== sourceMaterial;
 +			const sourceChanged = sourceTracked && ( sourceReplaced || renderObject.sourceVersion !== sourceMaterial.version );
 +
 +			if ( renderObject.version !== material.version || sourceChanged || renderObject.needsUpdate ) {
-+
+ 
+-				if ( renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
 +				if ( sourceReplaced || renderObject.initialCacheKey !== renderObject.getCacheKey() ) {
  
  					renderObject.dispose();
  
-@@ -30719,6 +30762,8 @@ class RenderObjects {
+@@ -30719,6 +30844,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -181,7 +428,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  				}
  
  			}
-@@ -30731,6 +30776,7 @@ class RenderObjects {
+@@ -30731,6 +30858,7 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = null;
  		_chainKeys$3[ 2 ] = null;
  		_chainKeys$3[ 3 ] = null;
@@ -189,7 +436,155 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		//
  
-@@ -33952,7 +33998,8 @@ class RenderContexts {
+@@ -31165,6 +31293,14 @@ class Geometries extends DataMap {
+ 		 */
+ 		this._geometryDisposeListeners = new Map();
+ 
++		/**
++		 * This Weak Map holds the attribute versions a settled render object was last drawn with,
++		 * so a write into one of them is what brings the object back out of the settled path.
++		 *
++		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
++		 */
++		this._settledAttributes = new WeakMap();
++
+ 	}
+ 
+ 	/**
+@@ -31190,10 +31326,69 @@ class Geometries extends DataMap {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
+ 
++		// A settled static object has no attribute that could have changed since the last refresh,
++		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
++		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
++		// the attributes' own versions are the signal - and the only one there is.
++
++		const monitor = renderObject.getMonitor();
++
++		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
++
+ 		this.updateAttributes( renderObject );
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if an attribute of the given render object - or its index - was written to
++	 * since the last time its versions were read, and records the versions it holds now.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether any of the render object's versions moved.
++	 */
++	attributesChanged( renderObject ) {
++
++		const attributes = renderObject.getAttributes();
++		const index = this.getIndex( renderObject );
++		const settled = this._settledAttributes.get( renderObject );
++
++		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++
++			let changed = false;
++
++			for ( const attribute of attributes ) {
++
++				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++
++					changed = true;
++					break;
++
++				}
++
++			}
++
++			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++
++		}
++
++		const versions = new Map();
++
++		for ( const attribute of attributes ) {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++
++			versions.set( data, data.version );
++
++		}
++
++		if ( index !== null ) versions.set( index, index.version );
++
++		this._settledAttributes.set( renderObject, versions );
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+@@ -32771,7 +32966,7 @@ class Bindings extends DataMap {
+ 	 */
+ 	updateForRender( renderObject ) {
+ 
+-		this._updateBindings( this.getForRender( renderObject ) );
++		this._updateBindings( this.getForRender( renderObject ), this.nodes.isSettled( renderObject ) );
+ 
+ 	}
+ 
+@@ -32918,12 +33113,13 @@ class Bindings extends DataMap {
+ 	 * Updates the given array of bindings.
+ 	 *
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_updateBindings( bindings ) {
++	_updateBindings( bindings, settled ) {
+ 
+ 		for ( const bindGroup of bindings ) {
+ 
+-			this._update( bindGroup, bindings );
++			this._update( bindGroup, bindings, settled );
+ 
+ 		}
+ 
+@@ -32934,11 +33130,27 @@ class Bindings extends DataMap {
+ 	 *
+ 	 * @param {BindGroup} bindGroup - The bind group to update.
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_update( bindGroup, bindings ) {
++	_update( bindGroup, bindings, settled ) {
+ 
+ 		const { backend } = this;
+ 
++		// A group a node added after this object's first draw has no buffers and no layout yet, and
++		// the pipeline reads that layout whatever this draw decides to do with it - so it is built
++		// here, on every draw. A group that did not exist cannot have been written either, so it is
++		// written now: `settled` is what tells the loop below to write it, not to skip it.
++		if ( this.get( bindGroup ).bindGroup === undefined ) {
++
++			this._createBindings( [ bindGroup ] );
++
++			settled = false;
++
++		}
++
++		// a settled object keeps the values it uploaded the last time it refreshed, so an object
++		// group it has already written is the one thing in here it may skip
++
+ 		let needsBindingsUpdate = false;
+ 		let cacheBindings = true;
+ 		let cacheIndex = 0;
+@@ -32948,7 +33160,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding );
++			const updatedGroup = this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+@@ -33952,7 +34164,8 @@ class RenderContexts {
  
  		}
  
@@ -199,7 +594,29 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -39725,7 +39772,8 @@ class VelocityNode extends TempNode {
+@@ -34181,6 +34394,21 @@ class Textures extends DataMap {
+ 
+ 			backend.destroyTexture( texture );
+ 
++			// delete cached bind groups so they don't point to the destroyed texture
++
++			if ( textureData.bindGroups ) {
++
++				for ( const bindGroup of textureData.bindGroups ) {
++
++					const bindingsData = this.backend.get( bindGroup );
++
++					bindingsData.groups = undefined;
++					bindingsData.versions = undefined;
++
++				}
++
++			}
++
+ 		}
+ 
+ 		//
+@@ -39725,7 +39953,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -209,7 +626,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		//
  
-@@ -53841,7 +53889,7 @@ class NodeBuilder {
+@@ -53841,7 +54070,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -218,7 +635,93 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  	}
  
-@@ -62731,6 +62779,7 @@ class Renderer {
+@@ -55244,15 +55473,17 @@ class NodeManager extends DataMap {
+ 	 * Returns `true` if the given node uniforms group must be updated or not.
+ 	 *
+ 	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 * @return {boolean} Whether the node uniforms group requires an update or not.
+ 	 */
+-	updateGroup( nodeUniformsGroup ) {
++	updateGroup( nodeUniformsGroup, settled ) {
+ 
+ 		const groupNode = nodeUniformsGroup.groupNode;
+ 
+-		// groups that are updated per object always require an update so no further checks are needed
++		// groups that are updated per object always require an update so no further checks are needed.
++		// A settled static object keeps the values it uploaded the last time it was refreshed.
+ 
+-		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
+ 
+ 		// check for update
+ 
+@@ -56056,6 +56287,21 @@ class NodeManager extends DataMap {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the per-object updates of the given render object can be skipped
++	 * because the object is static and nothing it depends on changed since its last refresh.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const monitor = renderObject.getMonitor();
++
++		return monitor !== undefined ? monitor.isSettled( renderObject ) : false;
++
++	}
++
+ 	/**
+ 	 * Triggers the call of `updateBefore()` methods
+ 	 * for all nodes of the given render object.
+@@ -56065,9 +56311,14 @@ class NodeManager extends DataMap {
+ 	updateBefore( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateBeforeNodes ) {
+ 
++			// a settled static object has nothing to update per object
++
++			if ( settled === true && node.getUpdateBeforeType() === NodeUpdateType.OBJECT ) continue;
++
+ 			// update frame state for each node
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
+@@ -56085,10 +56336,11 @@ class NodeManager extends DataMap {
+ 	updateAfter( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateAfterNodes ) {
+ 
+-			// update frame state for each node
++			if ( settled === true && node.getUpdateAfterType() === NodeUpdateType.OBJECT ) continue;
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
+ 
+@@ -56125,9 +56377,14 @@ class NodeManager extends DataMap {
+ 
+ 		const nodeFrame = this.getNodeFrameForRender( renderObject );
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateNodes ) {
+ 
++			// a settled static object keeps the per-object values it uploaded last time
++
++			if ( settled === true && node.getUpdateType() === NodeUpdateType.OBJECT ) continue;
++
+ 			nodeFrame.updateNode( node );
+ 
+ 		}
+@@ -62731,6 +62988,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -226,7 +729,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +62805,7 @@ class Renderer {
+@@ -62756,6 +63014,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -234,7 +737,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +62813,15 @@ class Renderer {
+@@ -62763,7 +63022,15 @@ class Renderer {
  
  			}
  
@@ -251,7 +754,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +62883,7 @@ class Renderer {
+@@ -62825,6 +63092,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -259,7 +762,45 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		}
  
-@@ -79004,7 +79063,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -62886,18 +63154,17 @@ class Renderer {
+ 
+ 		//
+ 
+-		const needsRefresh = this._nodes.needsRefresh( renderObject );
++		this._nodes.needsRefresh( renderObject );
+ 
+-		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
+-
+-			this._geometries.updateForRender( renderObject );
+-
+-			this._nodes.updateForRender( renderObject );
+-			this._bindings.updateForRender( renderObject );
+-
+-		}
++		// Every step of a draw runs, settled or not. What a settled static object skips is decided
++		// inside each of them - its OBJECT node updates, its object uniform group write and its
++		// attribute scan - because each of those answers for itself, and a step left out here
++		// cannot: a group a node added after this object's first draw still has to be created, and
++		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._geometries.updateForRender( renderObject );
++		this._nodes.updateBefore( renderObject );
++		this._nodes.updateForRender( renderObject );
++		this._bindings.updateForRender( renderObject );
+ 
+ 		this._pipelines.updateForRender( renderObject );
+ 
+@@ -62907,7 +63174,7 @@ class Renderer {
+ 
+ 			this.backend.draw( renderObject, this.info );
+ 
+-			if ( needsRefresh ) this._nodes.updateAfter( renderObject );
++			this._nodes.updateAfter( renderObject );
+ 
+ 		}
+ 
+@@ -79004,7 +79271,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -275,7 +816,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +79652,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79860,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -285,7 +826,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			} else {
  
-@@ -80329,9 +80396,12 @@ ${ flowData.code }
+@@ -80329,9 +80604,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -301,7 +842,25 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  				if ( needsSampler ) {
  
-@@ -81598,18 +81668,16 @@ class WebGPUBindingUtils {
+@@ -81295,9 +81573,15 @@ class WebGPUAttributeUtils {
+ 	destroyAttribute( attribute ) {
+ 
+ 		const backend = this.backend;
+-		const data = backend.get( this._getBufferAttribute( attribute ) );
++		const bufferAttribute = this._getBufferAttribute( attribute );
++		const data = backend.get( bufferAttribute );
+ 
+-		data.buffer.destroy();
++		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
++		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
++		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
++		if ( data.buffer !== undefined ) data.buffer.destroy();
++
++		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
+ 
+ 		backend.delete( attribute );
+ 
+@@ -81598,18 +81882,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -312,10 +871,10 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  		if ( bindingsData.layout ) {
  
 -			return bindingsData.layout.layoutGPU;
--
--		}
 +			if ( bindingsData.layoutKey === bindGroupLayoutKey ) return bindingsData.layout.layoutGPU;
  
+-		}
+-
 -		// if not, assing one
 +			this.deleteBindGroupData( bindGroup );
  
@@ -325,7 +884,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82199,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82413,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -335,7 +894,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  	}
  
  	/**
-@@ -83814,6 +83885,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84099,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -350,7 +909,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84005,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84219,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -361,7 +920,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			if ( adapter === null ) {
  
-@@ -85461,13 +85542,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85756,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -378,7 +937,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			}
  
-@@ -85766,6 +85846,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86060,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -386,7 +945,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +85868,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86082,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -396,7 +955,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +85889,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86103,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -404,7 +963,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  			needsUpdate = true;
  
-@@ -85828,6 +85911,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86125,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -412,7 +971,7 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +85930,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +86144,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -420,11 +979,861 @@ index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..631fcf011c58b3d46814e1110361be5f
  			utils.getCurrentColorSpace( renderContext ), utils.getCurrentColorFormat( renderContext ), utils.getCurrentDepthStencilFormat( renderContext ),
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index f707acc..b8a7b2f 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -141,6 +141,15 @@ class NodeMaterialObserver {
+ 		 */
+ 		this.renderId = 0;
+ 
++		/**
++		 * Whether the current render produces motion vectors. Objects keep refreshing
++		 * fully while this is the case.
++		 *
++		 * @type {boolean}
++		 * @default false
++		 */
++		this.renderingVelocity = false;
++
+ 	}
+ 
+ 	/**
+@@ -240,6 +249,88 @@ class NodeMaterialObserver {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the given render object is a static object whose per-object state - world
++	 * matrix, material, geometry and the scene environment - did not change since the last
++	 * refresh. A settled object is still drawn every frame and its FRAME and RENDER nodes still
++	 * have to be updated; what it may skip is the work whose inputs it froze: its OBJECT node
++	 * updates, its object uniform group upload and its per-draw attribute scan.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const data = this.renderObjects.get( renderObject );
++
++		return data !== undefined && data.settledState === true;
++
++	}
++
++	/**
++	 * Recomputes {@link NodeMaterialObserver#isSettled} for the given render object, once per draw,
++	 * so every step of that draw reads the same answer.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	updateSettled( renderObject ) {
++
++		const { object, material, geometry, scene } = renderObject;
++		const data = this.getRenderObjectData( renderObject );
++
++		if ( object.static !== true || this.renderingVelocity === true ) {
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		let settled = data.settled;
++
++		if ( settled === undefined ) {
++
++			data.settled = settled = {
++				matrix: object.matrixWorld.clone(),
++				environmentRotation: scene.environmentRotation.clone(),
++				environmentIntensity: scene.environmentIntensity,
++				materialVersion: material.version,
++				geometryVersion: geometry.version
++			};
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		if ( settled.matrix.equals( object.matrixWorld ) !== true ||
++			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
++			settled.environmentIntensity !== scene.environmentIntensity ||
++			settled.materialVersion !== material.version ||
++			settled.geometryVersion !== geometry.version ) {
++
++			// re-arm with the current state, so the object settles again once it stops changing
++
++			settled.matrix.copy( object.matrixWorld );
++			settled.environmentRotation.copy( scene.environmentRotation );
++			settled.environmentIntensity = scene.environmentIntensity;
++			settled.materialVersion = material.version;
++			settled.geometryVersion = geometry.version;
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		data.settledState = true;
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Returns an attribute data structure holding the attributes versions for
+ 	 * monitoring.
+@@ -306,7 +397,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: -1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -335,7 +425,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: -1, _equal: false };
++			data = { _renderId: -1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -419,7 +509,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -431,7 +520,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -440,7 +528,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -456,18 +543,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -510,7 +591,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -523,7 +603,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -534,7 +613,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -552,7 +630,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -564,16 +641,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -724,7 +795,14 @@ class NodeMaterialObserver {
+ 	 */
+ 	needsRefresh( renderObject, nodeFrame ) {
+ 
+-		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.needsVelocity( nodeFrame.renderer ) )
++		this.renderingVelocity = this.needsVelocity( nodeFrame.renderer );
++
++		// Answered for the whole draw, so updateBefore, the geometry scan, the node updates and
++		// the object uniform upload of this object all skip or all refresh.
++
++		this.updateSettled( renderObject );
++
++		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.renderingVelocity )
+ 			return true;
+ 
+ 		const { renderId } = nodeFrame;
+@@ -737,10 +815,14 @@ class NodeMaterialObserver {
+ 
+ 		}
+ 
+-		const isStatic = renderObject.object.static === true;
+ 		const isBundle = renderObject.bundle !== null && renderObject.bundle.static === true && this.getRenderObjectData( renderObject ).version === renderObject.bundle.version;
+ 
+-		if ( isStatic || isBundle )
++		// `object.static` is not the question - it is a switch, and a brand new object has it set
++		// before it has been drawn once, so answering from it skips the draw that creates this
++		// object's bind groups and leaves the pipeline reading a layout that was never built. A
++		// static object that moved, or whose material or geometry was edited, has to refresh like
++		// any other; only a settled one may skip, and nothing is settled before its first refresh.
++		if ( this.isSettled( renderObject ) === true || isBundle )
+ 			return false;
+ 
+ 		const lightsData = this.getLights( renderObject.lightsNode, renderId );
+@@ -18320,7 +18402,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+ 
+ 		const uniformBufferSize = matrixCount * 16 * 4;
+ 
+-		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( false ) {
+ 
+ 			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+ 
+@@ -18414,7 +18497,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
+ 
+-		if ( uniformBufferSize > builder.getUniformBufferLimit() ) {
++		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
++		if ( true ) {
+ 
+ 			interleavedMatrix = _matrixBuffers.get( matrices );
+ 
+@@ -31165,6 +31249,14 @@ class Geometries extends DataMap {
+ 		 */
+ 		this._geometryDisposeListeners = new Map();
+ 
++		/**
++		 * This Weak Map holds the attribute versions a settled render object was last drawn with,
++		 * so a write into one of them is what brings the object back out of the settled path.
++		 *
++		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
++		 */
++		this._settledAttributes = new WeakMap();
++
+ 	}
+ 
+ 	/**
+@@ -31190,10 +31282,69 @@ class Geometries extends DataMap {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
+ 
++		// A settled static object has no attribute that could have changed since the last refresh,
++		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
++		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
++		// the attributes' own versions are the signal - and the only one there is.
++
++		const monitor = renderObject.getMonitor();
++
++		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
++
+ 		this.updateAttributes( renderObject );
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if an attribute of the given render object - or its index - was written to
++	 * since the last time its versions were read, and records the versions it holds now.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether any of the render object's versions moved.
++	 */
++	attributesChanged( renderObject ) {
++
++		const attributes = renderObject.getAttributes();
++		const index = this.getIndex( renderObject );
++		const settled = this._settledAttributes.get( renderObject );
++
++		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++
++			let changed = false;
++
++			for ( const attribute of attributes ) {
++
++				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++
++					changed = true;
++					break;
++
++				}
++
++			}
++
++			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++
++		}
++
++		const versions = new Map();
++
++		for ( const attribute of attributes ) {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++
++			versions.set( data, data.version );
++
++		}
++
++		if ( index !== null ) versions.set( index, index.version );
++
++		this._settledAttributes.set( renderObject, versions );
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+@@ -32771,7 +32922,7 @@ class Bindings extends DataMap {
+ 	 */
+ 	updateForRender( renderObject ) {
+ 
+-		this._updateBindings( this.getForRender( renderObject ) );
++		this._updateBindings( this.getForRender( renderObject ), this.nodes.isSettled( renderObject ) );
+ 
+ 	}
+ 
+@@ -32918,12 +33069,13 @@ class Bindings extends DataMap {
+ 	 * Updates the given array of bindings.
+ 	 *
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_updateBindings( bindings ) {
++	_updateBindings( bindings, settled ) {
+ 
+ 		for ( const bindGroup of bindings ) {
+ 
+-			this._update( bindGroup, bindings );
++			this._update( bindGroup, bindings, settled );
+ 
+ 		}
+ 
+@@ -32934,11 +33086,27 @@ class Bindings extends DataMap {
+ 	 *
+ 	 * @param {BindGroup} bindGroup - The bind group to update.
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_update( bindGroup, bindings ) {
++	_update( bindGroup, bindings, settled ) {
+ 
+ 		const { backend } = this;
+ 
++		// A group a node added after this object's first draw has no buffers and no layout yet, and
++		// the pipeline reads that layout whatever this draw decides to do with it - so it is built
++		// here, on every draw. A group that did not exist cannot have been written either, so it is
++		// written now: `settled` is what tells the loop below to write it, not to skip it.
++		if ( this.get( bindGroup ).bindGroup === undefined ) {
++
++			this._createBindings( [ bindGroup ] );
++
++			settled = false;
++
++		}
++
++		// a settled object keeps the values it uploaded the last time it refreshed, so an object
++		// group it has already written is the one thing in here it may skip
++
+ 		let needsBindingsUpdate = false;
+ 		let cacheBindings = true;
+ 		let cacheIndex = 0;
+@@ -32948,7 +33116,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding );
++			const updatedGroup = this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+@@ -34181,6 +34349,21 @@ class Textures extends DataMap {
+ 
+ 			backend.destroyTexture( texture );
+ 
++			// delete cached bind groups so they don't point to the destroyed texture
++
++			if ( textureData.bindGroups ) {
++
++				for ( const bindGroup of textureData.bindGroups ) {
++
++					const bindingsData = this.backend.get( bindGroup );
++
++					bindingsData.groups = undefined;
++					bindingsData.versions = undefined;
++
++				}
++
++			}
++
+ 		}
+ 
+ 		//
+@@ -55244,15 +55427,17 @@ class NodeManager extends DataMap {
+ 	 * Returns `true` if the given node uniforms group must be updated or not.
+ 	 *
+ 	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 * @return {boolean} Whether the node uniforms group requires an update or not.
+ 	 */
+-	updateGroup( nodeUniformsGroup ) {
++	updateGroup( nodeUniformsGroup, settled ) {
+ 
+ 		const groupNode = nodeUniformsGroup.groupNode;
+ 
+-		// groups that are updated per object always require an update so no further checks are needed
++		// groups that are updated per object always require an update so no further checks are needed.
++		// A settled static object keeps the values it uploaded the last time it was refreshed.
+ 
+-		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
+ 
+ 		// check for update
+ 
+@@ -56056,6 +56241,21 @@ class NodeManager extends DataMap {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the per-object updates of the given render object can be skipped
++	 * because the object is static and nothing it depends on changed since its last refresh.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const monitor = renderObject.getMonitor();
++
++		return monitor !== undefined ? monitor.isSettled( renderObject ) : false;
++
++	}
++
+ 	/**
+ 	 * Triggers the call of `updateBefore()` methods
+ 	 * for all nodes of the given render object.
+@@ -56065,9 +56265,14 @@ class NodeManager extends DataMap {
+ 	updateBefore( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateBeforeNodes ) {
+ 
++			// a settled static object has nothing to update per object
++
++			if ( settled === true && node.getUpdateBeforeType() === NodeUpdateType.OBJECT ) continue;
++
+ 			// update frame state for each node
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
+@@ -56085,10 +56290,11 @@ class NodeManager extends DataMap {
+ 	updateAfter( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateAfterNodes ) {
+ 
+-			// update frame state for each node
++			if ( settled === true && node.getUpdateAfterType() === NodeUpdateType.OBJECT ) continue;
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
+ 
+@@ -56125,9 +56331,14 @@ class NodeManager extends DataMap {
+ 
+ 		const nodeFrame = this.getNodeFrameForRender( renderObject );
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateNodes ) {
+ 
++			// a settled static object keeps the per-object values it uploaded last time
++
++			if ( settled === true && node.getUpdateType() === NodeUpdateType.OBJECT ) continue;
++
+ 			nodeFrame.updateNode( node );
+ 
+ 		}
+@@ -62886,18 +63097,17 @@ class Renderer {
+ 
+ 		//
+ 
+-		const needsRefresh = this._nodes.needsRefresh( renderObject );
+-
+-		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
+-
+-			this._geometries.updateForRender( renderObject );
+-
+-			this._nodes.updateForRender( renderObject );
+-			this._bindings.updateForRender( renderObject );
++		this._nodes.needsRefresh( renderObject );
+ 
+-		}
++		// Every step of a draw runs, settled or not. What a settled static object skips is decided
++		// inside each of them - its OBJECT node updates, its object uniform group write and its
++		// attribute scan - because each of those answers for itself, and a step left out here
++		// cannot: a group a node added after this object's first draw still has to be created, and
++		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._geometries.updateForRender( renderObject );
++		this._nodes.updateBefore( renderObject );
++		this._nodes.updateForRender( renderObject );
++		this._bindings.updateForRender( renderObject );
+ 
+ 		this._pipelines.updateForRender( renderObject );
+ 
+@@ -62907,7 +63117,7 @@ class Renderer {
+ 
+ 			this.backend.draw( renderObject, this.info );
+ 
+-			if ( needsRefresh ) this._nodes.updateAfter( renderObject );
++			this._nodes.updateAfter( renderObject );
+ 
+ 		}
+ 
+@@ -79004,7 +79214,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+ 
+ 		} else {
+ 
+-			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, u32( ${ levelSnippet } ) )`;
++			// naga v25 (wgpu-native v25.0.2.2) rejects a u32 sample index on a
++			// multisampled textureLoad; i32 is accepted by every backend. Mip-level
++			// operands (including the array form above) stay u32.
++			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
++			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
++			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
++			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
++			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
+ 
+ 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
+ 
+@@ -81295,9 +81512,15 @@ class WebGPUAttributeUtils {
+ 	destroyAttribute( attribute ) {
+ 
+ 		const backend = this.backend;
+-		const data = backend.get( this._getBufferAttribute( attribute ) );
++		const bufferAttribute = this._getBufferAttribute( attribute );
++		const data = backend.get( bufferAttribute );
++
++		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
++		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
++		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
++		if ( data.buffer !== undefined ) data.buffer.destroy();
+ 
+-		data.buffer.destroy();
++		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
+ 
+ 		backend.delete( attribute );
+ 
+diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
+index 1f4c254..7e2cb99 100644
+--- a/src/materials/nodes/manager/NodeMaterialObserver.js
++++ b/src/materials/nodes/manager/NodeMaterialObserver.js
+@@ -133,6 +133,15 @@ class NodeMaterialObserver {
+ 		 */
+ 		this.renderId = 0;
+ 
++		/**
++		 * Whether the current render produces motion vectors. Objects keep refreshing
++		 * fully while this is the case.
++		 *
++		 * @type {boolean}
++		 * @default false
++		 */
++		this.renderingVelocity = false;
++
+ 	}
+ 
+ 	/**
+@@ -232,6 +241,88 @@ class NodeMaterialObserver {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the given render object is a static object whose per-object state - world
++	 * matrix, material, geometry and the scene environment - did not change since the last
++	 * refresh. A settled object is still drawn every frame and its FRAME and RENDER nodes still
++	 * have to be updated; what it may skip is the work whose inputs it froze: its OBJECT node
++	 * updates, its object uniform group upload and its per-draw attribute scan.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const data = this.renderObjects.get( renderObject );
++
++		return data !== undefined && data.settledState === true;
++
++	}
++
++	/**
++	 * Recomputes {@link NodeMaterialObserver#isSettled} for the given render object, once per draw,
++	 * so every step of that draw reads the same answer.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the given render object is settled or not.
++	 */
++	updateSettled( renderObject ) {
++
++		const { object, material, geometry, scene } = renderObject;
++		const data = this.getRenderObjectData( renderObject );
++
++		if ( object.static !== true || this.renderingVelocity === true ) {
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		let settled = data.settled;
++
++		if ( settled === undefined ) {
++
++			data.settled = settled = {
++				matrix: object.matrixWorld.clone(),
++				environmentRotation: scene.environmentRotation.clone(),
++				environmentIntensity: scene.environmentIntensity,
++				materialVersion: material.version,
++				geometryVersion: geometry.version
++			};
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		if ( settled.matrix.equals( object.matrixWorld ) !== true ||
++			settled.environmentRotation.equals( scene.environmentRotation ) !== true ||
++			settled.environmentIntensity !== scene.environmentIntensity ||
++			settled.materialVersion !== material.version ||
++			settled.geometryVersion !== geometry.version ) {
++
++			// re-arm with the current state, so the object settles again once it stops changing
++
++			settled.matrix.copy( object.matrixWorld );
++			settled.environmentRotation.copy( scene.environmentRotation );
++			settled.environmentIntensity = scene.environmentIntensity;
++			settled.materialVersion = material.version;
++			settled.geometryVersion = geometry.version;
++
++			data.settledState = false;
++
++			return false;
++
++		}
++
++		data.settledState = true;
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Returns an attribute data structure holding the attributes versions for
+ 	 * monitoring.
+@@ -298,7 +389,6 @@ class NodeMaterialObserver {
+ 
+ 			data = {
+ 				_renderId: - 1,
+-				_equal: false,
+ 
+ 				attributes: this.getAttributesData( geometry.attributes ),
+ 				indexId: geometry.index ? geometry.index.id : null,
+@@ -327,7 +417,7 @@ class NodeMaterialObserver {
+ 
+ 		if ( data === undefined ) {
+ 
+-			data = { _renderId: - 1, _equal: false };
++			data = { _renderId: - 1 };
+ 
+ 			for ( const property of this.refreshUniforms ) {
+ 
+@@ -411,7 +501,6 @@ class NodeMaterialObserver {
+ 
+ 						value.copy( mtlValue );
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -423,7 +512,6 @@ class NodeMaterialObserver {
+ 						value.id = mtlValue.id;
+ 						value.version = mtlValue.version;
+ 
+-						materialData._equal = false;
+ 						return false;
+ 
+ 					}
+@@ -432,7 +520,6 @@ class NodeMaterialObserver {
+ 
+ 					materialData[ property ] = mtlValue;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -448,18 +535,12 @@ class NodeMaterialObserver {
+ 					renderObjectData.bufferWidth = width;
+ 					renderObjectData.bufferHeight = height;
+ 
+-					materialData._equal = false;
+ 					return false;
+ 
+ 				}
+ 
+ 			}
+ 
+-			materialData._equal = true;
+-
+-		} else {
+-
+-			if ( materialData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -502,7 +583,6 @@ class NodeMaterialObserver {
+ 					// attribute was removed
+ 					delete storedAttributes[ name ];
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -515,7 +595,6 @@ class NodeMaterialObserver {
+ 					storedAttributeData.id = id;
+ 					storedAttributeData.version = version;
+ 
+-					geometryData._equal = false;
+ 					return false;
+ 
+ 				}
+@@ -526,7 +605,6 @@ class NodeMaterialObserver {
+ 
+ 				geometryData.attributes = this.getAttributesData( attributes );
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -544,7 +622,6 @@ class NodeMaterialObserver {
+ 				geometryData.indexId = currentIndexId;
+ 				geometryData.indexVersion = currentIndexVersion;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+@@ -556,16 +633,10 @@ class NodeMaterialObserver {
+ 				geometryData.drawRange.start = geometry.drawRange.start;
+ 				geometryData.drawRange.count = geometry.drawRange.count;
+ 
+-				geometryData._equal = false;
+ 				return false;
+ 
+ 			}
+ 
+-			geometryData._equal = true;
+-
+-		} else {
+-
+-			if ( geometryData._equal === false ) return false;
+ 
+ 		}
+ 
+@@ -716,7 +787,14 @@ class NodeMaterialObserver {
+ 	 */
+ 	needsRefresh( renderObject, nodeFrame ) {
+ 
+-		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.needsVelocity( nodeFrame.renderer ) )
++		this.renderingVelocity = this.needsVelocity( nodeFrame.renderer );
++
++		// Answered for the whole draw, so updateBefore, the geometry scan, the node updates and
++		// the object uniform upload of this object all skip or all refresh.
++
++		this.updateSettled( renderObject );
++
++		if ( this.hasNode || this.hasAnimation || this.firstInitialization( renderObject ) || this.renderingVelocity )
+ 			return true;
+ 
+ 		const { renderId } = nodeFrame;
+@@ -729,10 +807,14 @@ class NodeMaterialObserver {
+ 
+ 		}
+ 
+-		const isStatic = renderObject.object.static === true;
+ 		const isBundle = renderObject.bundle !== null && renderObject.bundle.static === true && this.getRenderObjectData( renderObject ).version === renderObject.bundle.version;
+ 
+-		if ( isStatic || isBundle )
++		// `object.static` is not the question - it is a switch, and a brand new object has it set
++		// before it has been drawn once, so answering from it skips the draw that creates this
++		// object's bind groups and leaves the pipeline reading a layout that was never built. A
++		// static object that moved, or whose material or geometry was edited, has to refresh like
++		// any other; only a settled one may skip, and nothing is settled before its first refresh.
++		if ( this.isSettled( renderObject ) === true || isBundle )
+ 			return false;
+ 
+ 		const lightsData = this.getLights( renderObject.lightsNode, renderId );
 diff --git a/src/nodes/accessors/Batch.js b/src/nodes/accessors/Batch.js
-index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b243694ef 100644
+index ab62e98..2cf4bb6 100644
 --- a/src/nodes/accessors/Batch.js
 +++ b/src/nodes/accessors/Batch.js
-@@ -1,6 +0,6 @@
+@@ -1,6 +1,6 @@
  
  import { normalLocal } from './Normal.js';
 -import { positionLocal } from './Position.js';
@@ -432,7 +1841,7 @@ index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b
  import { vec3, mat3, mat4, int, ivec2, float, Fn } from '../tsl/TSLBase.js';
  import { textureLoad } from './TextureNode.js';
  import { textureSize } from './TextureSizeNode.js';
-@@ -64,6 +63,7 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -64,6 +64,7 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const indirectId = getIndirectIndex( batchMesh._indirectTexture, int( batchingIdNode ) );
  
  	const matricesTexture = batchMesh._matricesTexture;
@@ -440,7 +1849,7 @@ index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b
  
  	const size = int( textureSize( textureLoad( matricesTexture ), 0 ).x ).toConst();
  	const j = float( indirectId ).mul( 4 ).toInt().toConst();
-@@ -90,6 +90,19 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -90,6 +91,19 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	const bm = mat3( batchingMatrix );
  
  	positionLocal.assign( batchingMatrix.mul( positionLocal ) );
@@ -460,17 +1869,17 @@ index ab62e98dadab2539d7e1d663fd42267bbc8ebcaa..2cf4bb6039853d5c922e89041419250b
  
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
-@@ -104,5 +117,3 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
+@@ -104,5 +118,3 @@ export const batch = /*@__PURE__*/ Fn( ( [ batchMesh ], builder ) => {
  	}
  
  }, 'void' );
 -
 -
 diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
-index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef8940a4f4 100644
+index b89834b..ed00e75 100644
 --- a/src/nodes/accessors/Instance.js
 +++ b/src/nodes/accessors/Instance.js
-@@ -40,7 +39,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+@@ -40,7 +40,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
  
  		const uniformBufferSize = matrixCount * 16 * 4;
  
@@ -480,7 +1889,7 @@ index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef
  
  			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
  
-@@ -134,7 +134,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+@@ -134,7 +135,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
  
  		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
  
@@ -490,7 +1899,7 @@ index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef
  
  			interleavedMatrix = _matrixBuffers.get( matrices );
  
-@@ -220,7 +221,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+@@ -220,7 +222,8 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
  
  			const previousInstanceData = _previousInstanceMatrices.get( object );
  
@@ -501,10 +1910,10 @@ index b89834b9166c75fd946ade24db265bf8c367d244..ed00e75ba4fd7b49343cfada26eacdef
  		} );
  
 diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
-index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867ddad01b6 100644
+index 2356aed..aaeea63 100644
 --- a/src/nodes/accessors/Skinning.js
 +++ b/src/nodes/accessors/Skinning.js
-@@ -149,7 +148,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -149,7 +149,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -514,7 +1923,7 @@ index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867
  
  			}
  
-@@ -216,7 +216,8 @@ export const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = n
+@@ -216,7 +217,8 @@ export const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = n
  
  			if ( state !== undefined ) {
  
@@ -525,10 +1934,10 @@ index 2356aed8656dceb1ea74b73ea2e739371a960484..aaeea633a8ece291be5faf868e312867
  			}
  
 diff --git a/src/nodes/accessors/VelocityNode.js b/src/nodes/accessors/VelocityNode.js
-index 373548b0b587e7da3ef0993bfe316af420e7f66c..c48002abbce20ee8b29908cf314d7b03afe0db03 100644
+index 373548b..c48002a 100644
 --- a/src/nodes/accessors/VelocityNode.js
 +++ b/src/nodes/accessors/VelocityNode.js
-@@ -106,7 +105,8 @@ class VelocityNode extends TempNode {
+@@ -106,7 +106,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -539,10 +1948,10 @@ index 373548b0b587e7da3ef0993bfe316af420e7f66c..c48002abbce20ee8b29908cf314d7b03
  		//
  
 diff --git a/src/nodes/core/NodeBuilder.js b/src/nodes/core/NodeBuilder.js
-index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966d8de3cb6 100644
+index be00b81..1990da8 100644
 --- a/src/nodes/core/NodeBuilder.js
 +++ b/src/nodes/core/NodeBuilder.js
-@@ -3450,7 +3449,7 @@ class NodeBuilder {
+@@ -3450,7 +3450,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -552,10 +1961,10 @@ index be00b81ef36e1af83b0066603e616f8f1f81a115..1990da8fe8f1f29a7b53030756dfd966
  	}
  
 diff --git a/src/objects/BatchedMesh.js b/src/objects/BatchedMesh.js
-index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d 100644
+index 2ef7cb2..35cc0ff 100644
 --- a/src/objects/BatchedMesh.js
 +++ b/src/objects/BatchedMesh.js
-@@ -181,6 +180,8 @@ function copyArrayContents( src, target ) {
+@@ -181,6 +181,8 @@ function copyArrayContents( src, target ) {
   */
  class BatchedMesh extends Mesh {
  
@@ -565,10 +1974,19 @@ index 2ef7cb257438826059eb2408b3756c4891f06a10..35cc0ffe83a69ea9fa5fca6dec2d820c
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/src/renderers/common/Bindings.js b/src/renderers/common/Bindings.js
-index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9f3ea95ef 100644
+index 5f3d213..a3cec4e 100644
 --- a/src/renderers/common/Bindings.js
 +++ b/src/renderers/common/Bindings.js
-@@ -206,10 +205,14 @@ class Bindings extends DataMap {
+@@ -145,7 +145,7 @@ class Bindings extends DataMap {
+ 	 */
+ 	updateForRender( renderObject ) {
+ 
+-		this._updateBindings( this.getForRender( renderObject ) );
++		this._updateBindings( this.getForRender( renderObject ), this.nodes.isSettled( renderObject ) );
+ 
+ 	}
+ 
+@@ -206,10 +206,14 @@ class Bindings extends DataMap {
  
  					} else if ( binding.isSampledTexture ) {
  
@@ -583,11 +2001,168 @@ index 5f3d213a016b37db3b2e5d022da3dd0234d86f6d..7a9a168f29773f37ef9a51ef9f07ade9
  						this.textures.updateSampler( binding );
  
  					} else if ( binding.isStorageBuffer ) {
+@@ -292,12 +296,13 @@ class Bindings extends DataMap {
+ 	 * Updates the given array of bindings.
+ 	 *
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_updateBindings( bindings ) {
++	_updateBindings( bindings, settled ) {
+ 
+ 		for ( const bindGroup of bindings ) {
+ 
+-			this._update( bindGroup, bindings );
++			this._update( bindGroup, bindings, settled );
+ 
+ 		}
+ 
+@@ -308,11 +313,27 @@ class Bindings extends DataMap {
+ 	 *
+ 	 * @param {BindGroup} bindGroup - The bind group to update.
+ 	 * @param {Array<BindGroup>} bindings - The bind groups.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 */
+-	_update( bindGroup, bindings ) {
++	_update( bindGroup, bindings, settled ) {
+ 
+ 		const { backend } = this;
+ 
++		// A group a node added after this object's first draw has no buffers and no layout yet, and
++		// the pipeline reads that layout whatever this draw decides to do with it - so it is built
++		// here, on every draw. A group that did not exist cannot have been written either, so it is
++		// written now: `settled` is what tells the loop below to write it, not to skip it.
++		if ( this.get( bindGroup ).bindGroup === undefined ) {
++
++			this._createBindings( [ bindGroup ] );
++
++			settled = false;
++
++		}
++
++		// a settled object keeps the values it uploaded the last time it refreshed, so an object
++		// group it has already written is the one thing in here it may skip
++
+ 		let needsBindingsUpdate = false;
+ 		let cacheBindings = true;
+ 		let cacheIndex = 0;
+@@ -322,7 +343,7 @@ class Bindings extends DataMap {
+ 
+ 		for ( const binding of bindGroup.bindings ) {
+ 
+-			const updatedGroup = this.nodes.updateGroup( binding );
++			const updatedGroup = this.nodes.updateGroup( binding, settled );
+ 
+ 			// every uniforms group is a uniform buffer. So if no update is required,
+ 			// we move one with the next binding. Otherwise the next if block will update the group.
+diff --git a/src/renderers/common/Geometries.js b/src/renderers/common/Geometries.js
+index eb332c4..979da2f 100644
+--- a/src/renderers/common/Geometries.js
++++ b/src/renderers/common/Geometries.js
+@@ -139,6 +139,14 @@ class Geometries extends DataMap {
+ 		 */
+ 		this._geometryDisposeListeners = new Map();
+ 
++		/**
++		 * This Weak Map holds the attribute versions a settled render object was last drawn with,
++		 * so a write into one of them is what brings the object back out of the settled path.
++		 *
++		 * @type {WeakMap<RenderObject,Map<BufferAttribute,number>>}
++		 */
++		this._settledAttributes = new WeakMap();
++
+ 	}
+ 
+ 	/**
+@@ -164,10 +172,69 @@ class Geometries extends DataMap {
+ 
+ 		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
+ 
++		// A settled static object has no attribute that could have changed since the last refresh,
++		// unless a writer bumped one. An InstancedMesh's instance buffer is a vertex attribute of
++		// this draw, and a BufferGeometry carries no version of its own to announce the write, so
++		// the attributes' own versions are the signal - and the only one there is.
++
++		const monitor = renderObject.getMonitor();
++
++		if ( monitor !== undefined && monitor.isSettled( renderObject ) === true && this.attributesChanged( renderObject ) === false ) return;
++
+ 		this.updateAttributes( renderObject );
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if an attribute of the given render object - or its index - was written to
++	 * since the last time its versions were read, and records the versions it holds now.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether any of the render object's versions moved.
++	 */
++	attributesChanged( renderObject ) {
++
++		const attributes = renderObject.getAttributes();
++		const index = this.getIndex( renderObject );
++		const settled = this._settledAttributes.get( renderObject );
++
++		if ( settled !== undefined && settled.size === attributes.length + ( index === null ? 0 : 1 ) ) {
++
++			let changed = false;
++
++			for ( const attribute of attributes ) {
++
++				if ( settled.get( attribute.isInterleavedBufferAttribute ? attribute.data : attribute ) !== attribute.version ) {
++
++					changed = true;
++					break;
++
++				}
++
++			}
++
++			if ( changed === false && ( index === null || settled.get( index ) === index.version ) ) return false;
++
++		}
++
++		const versions = new Map();
++
++		for ( const attribute of attributes ) {
++
++			const data = attribute.isInterleavedBufferAttribute ? attribute.data : attribute;
++
++			versions.set( data, data.version );
++
++		}
++
++		if ( index !== null ) versions.set( index, index.version );
++
++		this._settledAttributes.set( renderObject, versions );
++
++		return true;
++
++	}
++
+ 	/**
+ 	 * Initializes the geometry of the given render object.
+ 	 *
+diff --git a/src/renderers/common/RenderContexts.js b/src/renderers/common/RenderContexts.js
+index 64ecdee..7319e25 100644
+--- a/src/renderers/common/RenderContexts.js
++++ b/src/renderers/common/RenderContexts.js
+@@ -77,7 +77,8 @@ class RenderContexts {
+ 
+ 		}
+ 
+-		if ( renderTarget !== null ) renderState.sampleCount = renderTarget.samples === 0 ? 1 : renderTarget.samples;
++		const sampleCount = renderTarget !== null ? renderTarget.samples : this.renderer.currentSamples;
++		renderState.sampleCount = sampleCount === 0 ? 1 : sampleCount;
+ 
+ 		renderState.clearDepthValue = this.renderer.getClearDepth();
+ 		renderState.clearStencilValue = this.renderer.getClearStencil();
 diff --git a/src/renderers/common/RenderObject.js b/src/renderers/common/RenderObject.js
-index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9ba5de81f 100644
+index c900fa4..a3dcba2 100644
 --- a/src/renderers/common/RenderObject.js
 +++ b/src/renderers/common/RenderObject.js
-@@ -299,6 +298,18 @@ class RenderObject {
+@@ -299,6 +299,18 @@ class RenderObject {
  		 */
  		this._sourceMaterial = renderer._currentSourceMaterial;
  
@@ -606,7 +2181,7 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -486,7 +497,7 @@ class RenderObject {
+@@ -486,7 +498,7 @@ class RenderObject {
  	 */
  	getChainArray() {
  
@@ -615,7 +2190,7 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9
  
  	}
  
-@@ -936,6 +947,7 @@ class RenderObject {
+@@ -936,6 +948,7 @@ class RenderObject {
  		}
  
  		cacheKey = hash( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
@@ -624,10 +2199,10 @@ index c900fa4c9654f8cf3512e96de52a2c1c83e189a6..aebfa5183bd0b18e7f4d2c0ae905b9c9
  		return cacheKey;
  
 diff --git a/src/renderers/common/RenderObjects.js b/src/renderers/common/RenderObjects.js
-index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a803c852a6 100644
+index 676cc2b..72569d0 100644
 --- a/src/renderers/common/RenderObjects.js
 +++ b/src/renderers/common/RenderObjects.js
-@@ -97,6 +95,8 @@ class RenderObjects {
+@@ -97,6 +97,8 @@ class RenderObjects {
  		_chainKeys[ 1 ] = material;
  		_chainKeys[ 2 ] = renderContext;
  		_chainKeys[ 3 ] = lightsNode;
@@ -636,7 +2211,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  
  		//
  
-@@ -124,9 +124,18 @@ class RenderObjects {
+@@ -124,9 +126,18 @@ class RenderObjects {
  
  			}
  
@@ -657,7 +2232,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  
  					renderObject.dispose();
  
-@@ -136,6 +145,8 @@ class RenderObjects {
+@@ -136,6 +147,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -666,7 +2241,7 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  				}
  
  			}
-@@ -148,6 +159,7 @@ class RenderObjects {
+@@ -148,6 +161,7 @@ class RenderObjects {
  		_chainKeys[ 1 ] = null;
  		_chainKeys[ 2 ] = null;
  		_chainKeys[ 3 ] = null;
@@ -675,10 +2250,10 @@ index 676cc2bd4169427ed420f2467b1e6684bd2aeebc..72569d0339314d26eb7a35ff2a8462a8
  		//
  
 diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
-index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60afd2b259 100644
+index 8dfc2ae..89b33ef 100644
 --- a/src/renderers/common/Renderer.js
 +++ b/src/renderers/common/Renderer.js
-@@ -3550,6 +3548,7 @@ class Renderer {
+@@ -3550,6 +3550,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -686,7 +2261,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -3575,6 +3574,7 @@ class Renderer {
+@@ -3575,6 +3576,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -694,7 +2269,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -3582,7 +3582,15 @@ class Renderer {
+@@ -3582,7 +3584,15 @@ class Renderer {
  
  			}
  
@@ -711,7 +2286,7 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -3644,6 +3652,7 @@ class Renderer {
+@@ -3644,6 +3654,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -719,11 +2294,165 @@ index 8dfc2ae055ad7b9d4c00e91f7d52a39e747caebe..e9d27b3ddad3b1f080a717d1f6683b60
  
  		}
  
+@@ -3705,18 +3716,17 @@ class Renderer {
+ 
+ 		//
+ 
+-		const needsRefresh = this._nodes.needsRefresh( renderObject );
++		this._nodes.needsRefresh( renderObject );
+ 
+-		if ( needsRefresh ) {
+-
+-			this._nodes.updateBefore( renderObject );
+-
+-			this._geometries.updateForRender( renderObject );
+-
+-			this._nodes.updateForRender( renderObject );
+-			this._bindings.updateForRender( renderObject );
+-
+-		}
++		// Every step of a draw runs, settled or not. What a settled static object skips is decided
++		// inside each of them - its OBJECT node updates, its object uniform group write and its
++		// attribute scan - because each of those answers for itself, and a step left out here
++		// cannot: a group a node added after this object's first draw still has to be created, and
++		// the pipeline reads that group's layout whatever this draw decided to do with it.
++		this._geometries.updateForRender( renderObject );
++		this._nodes.updateBefore( renderObject );
++		this._nodes.updateForRender( renderObject );
++		this._bindings.updateForRender( renderObject );
+ 
+ 		this._pipelines.updateForRender( renderObject );
+ 
+@@ -3726,7 +3736,7 @@ class Renderer {
+ 
+ 			this.backend.draw( renderObject, this.info );
+ 
+-			if ( needsRefresh ) this._nodes.updateAfter( renderObject );
++			this._nodes.updateAfter( renderObject );
+ 
+ 		}
+ 
+diff --git a/src/renderers/common/Textures.js b/src/renderers/common/Textures.js
+index f42b90e..be47645 100644
+--- a/src/renderers/common/Textures.js
++++ b/src/renderers/common/Textures.js
+@@ -215,6 +215,21 @@ class Textures extends DataMap {
+ 
+ 			backend.destroyTexture( texture );
+ 
++			// delete cached bind groups so they don't point to the destroyed texture
++
++			if ( textureData.bindGroups ) {
++
++				for ( const bindGroup of textureData.bindGroups ) {
++
++					const bindingsData = this.backend.get( bindGroup );
++
++					bindingsData.groups = undefined;
++					bindingsData.versions = undefined;
++
++				}
++
++			}
++
+ 		}
+ 
+ 		//
+diff --git a/src/renderers/common/nodes/NodeManager.js b/src/renderers/common/nodes/NodeManager.js
+index f6d4f0b..033128c 100644
+--- a/src/renderers/common/nodes/NodeManager.js
++++ b/src/renderers/common/nodes/NodeManager.js
+@@ -109,15 +109,17 @@ class NodeManager extends DataMap {
+ 	 * Returns `true` if the given node uniforms group must be updated or not.
+ 	 *
+ 	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
++	 * @param {boolean} [settled] - Whether the render object is a settled static object.
+ 	 * @return {boolean} Whether the node uniforms group requires an update or not.
+ 	 */
+-	updateGroup( nodeUniformsGroup ) {
++	updateGroup( nodeUniformsGroup, settled ) {
+ 
+ 		const groupNode = nodeUniformsGroup.groupNode;
+ 
+-		// groups that are updated per object always require an update so no further checks are needed
++		// groups that are updated per object always require an update so no further checks are needed.
++		// A settled static object keeps the values it uploaded the last time it was refreshed.
+ 
+-		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return true;
++		if ( groupNode.updateType === NodeUpdateType.OBJECT ) return settled !== true;
+ 
+ 		// check for update
+ 
+@@ -921,6 +923,21 @@ class NodeManager extends DataMap {
+ 
+ 	}
+ 
++	/**
++	 * Returns `true` if the per-object updates of the given render object can be skipped
++	 * because the object is static and nothing it depends on changed since its last refresh.
++	 *
++	 * @param {RenderObject} renderObject - The render object.
++	 * @return {boolean} Whether the render object is settled or not.
++	 */
++	isSettled( renderObject ) {
++
++		const monitor = renderObject.getMonitor();
++
++		return monitor !== undefined ? monitor.isSettled( renderObject ) : false;
++
++	}
++
+ 	/**
+ 	 * Triggers the call of `updateBefore()` methods
+ 	 * for all nodes of the given render object.
+@@ -930,9 +947,14 @@ class NodeManager extends DataMap {
+ 	updateBefore( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateBeforeNodes ) {
+ 
++			// a settled static object has nothing to update per object
++
++			if ( settled === true && node.getUpdateBeforeType() === NodeUpdateType.OBJECT ) continue;
++
+ 			// update frame state for each node
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
+@@ -950,10 +972,11 @@ class NodeManager extends DataMap {
+ 	updateAfter( renderObject ) {
+ 
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateAfterNodes ) {
+ 
+-			// update frame state for each node
++			if ( settled === true && node.getUpdateAfterType() === NodeUpdateType.OBJECT ) continue;
+ 
+ 			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
+ 
+@@ -990,9 +1013,14 @@ class NodeManager extends DataMap {
+ 
+ 		const nodeFrame = this.getNodeFrameForRender( renderObject );
+ 		const nodeBuilder = renderObject.getNodeBuilderState();
++		const settled = this.isSettled( renderObject );
+ 
+ 		for ( const node of nodeBuilder.updateNodes ) {
+ 
++			// a settled static object keeps the per-object values it uploaded last time
++
++			if ( settled === true && node.getUpdateType() === NodeUpdateType.OBJECT ) continue;
++
+ 			nodeFrame.updateNode( node );
+ 
+ 		}
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda9020642f77 100644
+index 06e2036..69b8b67 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
-@@ -102,6 +100,14 @@ class WebGPUBackend extends Backend {
+@@ -102,6 +102,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -738,7 +2467,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  		/**
  		 * A reference to the device.
  		 *
-@@ -214,7 +220,9 @@ class WebGPUBackend extends Backend {
+@@ -214,7 +222,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -749,7 +2478,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  
  			if ( adapter === null ) {
  
-@@ -1749,13 +1757,12 @@ class WebGPUBackend extends Backend {
+@@ -1749,13 +1759,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -766,7 +2495,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  
  			}
  
-@@ -2054,6 +2061,7 @@ class WebGPUBackend extends Backend {
+@@ -2054,6 +2063,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -774,7 +2503,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -2075,7 +2083,8 @@ class WebGPUBackend extends Backend {
+@@ -2075,7 +2085,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -784,7 +2513,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -2095,6 +2104,7 @@ class WebGPUBackend extends Backend {
+@@ -2095,6 +2106,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -792,7 +2521,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  
  			needsUpdate = true;
  
-@@ -2116,6 +2126,7 @@ class WebGPUBackend extends Backend {
+@@ -2116,6 +2128,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -800,7 +2529,7 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -2134,6 +2145,7 @@ class WebGPUBackend extends Backend {
+@@ -2134,6 +2147,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -809,10 +2538,10 @@ index 06e203693ed9b168a2bddf773cd8ce8dc23196e4..69b8b67fdeec5be24de34d8382beda90
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
-index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593ef058c398 100644
+index be07536..2acc832 100644
 --- a/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
 +++ b/src/renderers/webgpu/nodes/WGSLNodeBuilder.js
-@@ -741,7 +739,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -741,7 +741,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -828,7 +2557,7 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593e
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -1323,7 +1328,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -1323,7 +1330,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -838,7 +2567,7 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593e
  
  			} else {
  
-@@ -2066,9 +2072,12 @@ ${ flowData.code }
+@@ -2066,9 +2074,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -854,65 +2583,33 @@ index be07536301cd47ef2544e4a54f6abe17407f52af..2acc832a628f43adac49614dad8e593e
  
  				if ( needsSampler ) {
  
-diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc24f5711fdae065ce920b08435b0869c1b..1cbd470029bab6f61b12a3b71894a8a84db58fab 100644
---- a/build/three.webgpu.nodes.js
-+++ b/build/three.webgpu.nodes.js
-@@ -18320,7 +18318,8 @@ function createInstanceMatrixNode( builder, instanceMatrix ) {
+diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+index f683d74..83bbe18 100644
+--- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+@@ -361,9 +361,15 @@ class WebGPUAttributeUtils {
+ 	destroyAttribute( attribute ) {
  
- 		const uniformBufferSize = matrixCount * 16 * 4;
+ 		const backend = this.backend;
+-		const data = backend.get( this._getBufferAttribute( attribute ) );
++		const bufferAttribute = this._getBufferAttribute( attribute );
++		const data = backend.get( bufferAttribute );
++
++		// An interleaved attribute's GPU buffer lives on its InterleavedBuffer, and several attributes
++		// share it: destroy it once and forget it there too, as the WebGL backend does, or the next
++		// createAttribute() finds the destroyed buffer and submits it (threenative patch).
++		if ( data.buffer !== undefined ) data.buffer.destroy();
  
--		if ( uniformBufferSize <= builder.getUniformBufferLimit() ) {
-+		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
-+		if ( false ) {
+-		data.buffer.destroy();
++		if ( bufferAttribute !== attribute ) backend.delete( bufferAttribute );
  
- 			instanceMatrixNode = buffer( instanceMatrix.array, 'mat4', matrixCount ).element( instanceIndex );
+ 		backend.delete( attribute );
  
-@@ -18414,7 +18413,8 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
- 
- 		const uniformBufferSize = Math.max( matrices.count, 1 ) * 16 * 4;
- 
--		if ( uniformBufferSize > builder.getUniformBufferLimit() ) {
-+		// threenative: the uniform path re-uploads every draw; the attribute path uploads on version change
-+		if ( true ) {
- 
- 			interleavedMatrix = _matrixBuffers.get( matrices );
- 
-@@ -79004,7 +79004,14 @@ class WGSLNodeBuilder extends NodeBuilder {
- 
- 		} else {
- 
--			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, u32( ${ levelSnippet } ) )`;
-+			// naga v25 (wgpu-native v25.0.2.2) rejects a u32 sample index on a
-+			// multisampled textureLoad; i32 is accepted by every backend. Mip-level
-+			// operands (including the array form above) stay u32.
-+			const sampleData = texture ? this.renderer?.backend?.utils?.getTextureSampleData?.( texture ) : null;
-+			const backendMultisampled = sampleData !== null && sampleData !== undefined && sampleData.primarySamples > 1;
-+			const targetMultisampled = Boolean( texture && texture.renderTarget && texture.renderTarget.samples > 1 );
-+			const indexType = ( backendMultisampled || targetMultisampled ) ? 'i32' : 'u32';
-+			snippet = `textureLoad( ${ textureProperty }, ${ uvIndexSnippet }, ${ indexType }( ${ levelSnippet } ) )`;
- 
- 			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
- 
-diff --git a/src/renderers/common/RenderContexts.js b/src/renderers/common/RenderContexts.js
-index 64ecdeeeabcd2b28000fc503e826d1cbf8d3c118..7319e25e280452b69c6f0c4c2f8c93c955ff9be3 100644
---- a/src/renderers/common/RenderContexts.js
-+++ b/src/renderers/common/RenderContexts.js
-@@ -77,7 +75,8 @@ class RenderContexts {
- 
- 		}
- 
--		if ( renderTarget !== null ) renderState.sampleCount = renderTarget.samples === 0 ? 1 : renderTarget.samples;
-+		const sampleCount = renderTarget !== null ? renderTarget.samples : this.renderer.currentSamples;
-+		renderState.sampleCount = sampleCount === 0 ? 1 : sampleCount;
- 
- 		renderState.clearDepthValue = this.renderer.getClearDepth();
- 		renderState.clearStencilValue = this.renderer.getClearStencil();
 diff --git a/src/renderers/webgpu/utils/WebGPUBindingUtils.js b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
-index da4bd473bd8df021159108bac235d211ff2a011f..a5da7ca09f746c0b2859ef173df663ccdc851ebc 100644
+index da4bd47..a5da7ca 100644
 --- a/src/renderers/webgpu/utils/WebGPUBindingUtils.js
 +++ b/src/renderers/webgpu/utils/WebGPUBindingUtils.js
-@@ -97,18 +95,16 @@ class WebGPUBindingUtils {
+@@ -97,18 +97,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -936,7 +2633,7 @@ index da4bd473bd8df021159108bac235d211ff2a011f..a5da7ca09f746c0b2859ef173df663cc
  
  		// try to find an existing layout in the cache
  
-@@ -630,6 +626,9 @@ class WebGPUBindingUtils {
+@@ -630,6 +628,9 @@ class WebGPUBindingUtils {
  
  		}
  

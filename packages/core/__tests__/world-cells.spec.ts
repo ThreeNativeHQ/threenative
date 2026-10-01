@@ -18,6 +18,23 @@ import {
   Texture,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * The loader a world builds for itself, overridable per test. `vi.mock` replaces the named export
+ * the constructor calls, which `spyOn` on a namespace cannot reach — an ESM named import is a live
+ * read of the module record, and a factory is the one seam that reroutes it.
+ */
+const internalLoader = vi.hoisted(() => ({ load: undefined as (() => IAssetLoader) | undefined }));
+vi.mock("../src/assets.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/assets.js")>();
+  return {
+    ...actual,
+    createAssetLoader: (...args: Parameters<typeof actual.createAssetLoader>) =>
+      internalLoader.load?.() ?? actual.createAssetLoader(...args),
+  };
+});
+
+import { type IAssetLoader, createAssetLoader } from "../src/assets.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
@@ -330,15 +347,22 @@ function levelLoader(refuse: (url: string) => boolean = () => false): ILevelLoad
 }
 
 /** The cell `1:1` batch of `asset` at `level`, the runtime's own name for it. */
+/**
+ * The first cluster mesh one asset level and part draws through. A key is one mesh per world-grid
+ * square (PRD-458), so this is the first of them rather than the only one.
+ */
 function levelMesh(
   world: WorldCells,
   asset: string,
   level: number,
   part = 0,
 ): InstancedMesh | undefined {
-  return world.getObjectByName(`${asset}:${String(level)}:${String(part)}`) as
-    | InstancedMesh
-    | undefined;
+  const key = `${asset}:${String(level)}:${String(part)}`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
+  });
+  return meshes[0];
 }
 
 /** Instances a shared batch actually draws: a free segment's slots are zero matrices. */
@@ -464,17 +488,41 @@ function batchMaterial(mesh: InstancedMesh | undefined): Material {
   return material;
 }
 
-/** Every batch mesh the world drew for `asset`'s level and part, across every resident cell. */
+/**
+ * Every batch mesh the world drew for `asset`'s level and part, across every resident cell and
+ * every world-grid cluster that key is split into (PRD-458): one mesh per `key@x,z` now.
+ */
 function partsOf(
   world: WorldCells,
   asset: string,
   level: number,
   part: number,
 ): readonly InstancedMesh[] {
-  const name = `${asset}:${String(level)}:${String(part)}`;
+  const key = `${asset}:${String(level)}:${String(part)}`;
   const meshes: InstancedMesh[] = [];
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh && object.name === name) meshes.push(object);
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
+  });
+  return meshes;
+}
+
+/**
+ * The shadow-caster clusters of one key: the meshes alone on `VIRTUAL_SHADOW_CASTER_LAYER`, one per
+ * world-grid square of `clusterSize` (PRD-458). The main pass's mesh for the same key is
+ * {@link levelMesh}, and it casts nothing.
+ */
+function clustersOf(world: WorldCells, asset: string, level: number, part = 0): InstancedMesh[] {
+  const key = `${asset}:${String(level)}:${String(part)}@`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    // The layer, not the name: the key-wide half of the same split is `key@*` on the wide-caster
+    // layer, and it is one mesh per key rather than one per square.
+    if (
+      object instanceof InstancedMesh &&
+      object.name.startsWith(key) &&
+      object.layers.mask === 1 << 28
+    )
+      meshes.push(object);
   });
   return meshes;
 }
@@ -508,6 +556,64 @@ async function flushed(world: WorldCells): Promise<void> {
 
 function followAt(x: number, z: number): { position: { x: number; z: number } } {
   return { position: { x, z } };
+}
+
+/**
+ * An `IAssetLoader` whose model loads resolve locally and whose releases are recorded, so a test can
+ * see exactly which cache paths a world asks for and hands back. `load` returning `undefined`
+ * refuses that path, the shape a level that falls back produces.
+ */
+function cacheLoader(load: (path: string) => Object3D | undefined = () => makeModel()): {
+  assets: IAssetLoader;
+  cleared: number[];
+  loaded: string[];
+  released: string[];
+} {
+  const loaded: string[] = [];
+  const released: string[] = [];
+  const cleared: number[] = [];
+  const assets: IAssetLoader = {
+    audio: () => Promise.reject(new Error("unused")),
+    clear: () => {
+      cleared.push(1);
+    },
+    model: ((path: string) => {
+      loaded.push(path);
+      const model = load(path);
+      // `assets.model` hands back a GLTF-ish `{ scene }`, which is what `WorldCells` unwraps.
+      return model === undefined
+        ? Promise.reject(new Error(`no model for ${path}`))
+        : Promise.resolve({ scene: model });
+    }) as IAssetLoader["model"],
+    progress: { pending: [], requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 },
+    release: (kind, path) => {
+      if (kind !== "model") return false;
+      released.push(path);
+      return true;
+    },
+    resolve: (path) => Promise.resolve([path]),
+    resolved: new Map(),
+    texture: () => Promise.reject(new Error("unused")),
+  };
+  return { assets, cleared, loaded, released };
+}
+
+/**
+ * Make a {@link cacheLoader} the loader a world builds for itself, by mocking the factory. Only a
+ * world-owned loader releases its cache now, so a test proving that release calls this and omits
+ * `assets` rather than handing the loader in.
+ */
+function mockInternalLoader(loader: { assets: IAssetLoader }): void {
+  internalLoader.load = () => loader.assets;
+}
+
+/** The committed package cut to one cell and its pine run, so one asset is the whole world. */
+function pineCell(): IWorldPackage {
+  const run = manifest.cells
+    .find((cell) => cell.x === 1 && cell.z === 1)
+    ?.runs.find((one) => one.asset === "pine");
+  if (run === undefined) throw new Error("the committed package has no pine run.");
+  return { ...manifest, cells: [{ chunks: [], runs: [run], x: 1, z: 1 }] };
 }
 
 /**
@@ -593,6 +699,7 @@ const largeBudgets = {
 };
 
 afterEach(() => {
+  internalLoader.load = undefined;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -1033,7 +1140,7 @@ describe("WorldCells", () => {
 
   it("rejects a concurrency or refilter cap that could never start a load", async () => {
     stubFixtureFetch();
-    for (const option of ["concurrency", "rebuildsPerUpdate"] as const)
+    for (const option of ["concurrency", "rebuildsPerUpdate", "chunkMergeMaxTriangles"] as const)
       for (const value of [0, -1, 1.5, Number.NaN])
         await expect(
           loadWorld({
@@ -1220,7 +1327,10 @@ describe("WorldCells", () => {
     world.update();
     await flush();
     expect(world.stats().residentKeys).toEqual([cellKey(1, 1)]);
-    expect(world.stats().failures).toBe(0);
+    // Already one: the chunk's shape is released as soon as the merge has baked it into the merged
+    // buffers (PRD-458), so its teardown throws here rather than at the eviction below. Counted on
+    // the frame it happens, either way — the point is that it is never swallowed.
+    expect(world.stats().failures).toBe(1);
 
     follow.position.x = 100_000;
     follow.position.z = 100_000;
@@ -1325,16 +1435,35 @@ describe("WorldCells", () => {
     world.update();
     await flushed(world);
 
+    // The three cells ring 2 reaches each sit in their own world-grid square (PRD-458), so each one
+    // mints its own lod cluster mesh, at two fresh meshes an update. Let the ring finish admitting.
+    for (let frame = 0; frame < 60; frame += 1) {
+      world.update();
+      await flushed(world);
+      if (world.stats().residentCells === 3 && world.stats().admission.backlog === 0) {
+        if (
+          [...world.children].every(
+            (child) =>
+              !(child instanceof InstancedMesh) || child.count > 0 || child.name.includes(":"),
+          )
+        )
+          break;
+      }
+    }
+
     const before = world.stats().rebuilds;
     const meshes = world.children.filter((child) => child instanceof InstancedMesh);
-    expect(before).toBe(0);
     expect(liveCount(levelMesh(world, "pine", 1))).toBeGreaterThan(0);
-    // The three cells ring 2 reaches from the extent's corner cell share one lod mesh, and the
-    // only other mesh is a prewarmed batch for a key no placement has asked for yet — it draws
-    // nothing, and it is why its node is built during loading rather than mid-walk.
+    // One main mesh per key for the whole ring, and one caster cluster per resident cell (PRD-458):
+    // the shadow half is the per-cell one. The rest are the prewarmed square the follow point is in,
+    // one per level and part, minted empty so the walk's first shadow pass builds no node for the
+    // key the walk reaches first.
     expect(world.stats().residentCells).toBe(3);
-    expect(meshes.filter((mesh) => mesh.count > 0)).toHaveLength(1);
-    expect(meshes.length).toBeLessThanOrEqual(2);
+    const live = meshes.filter((mesh) => mesh.count > 0);
+    // Shadows are off in this world, so there is no caster half at all and the whole ring is one
+    // mesh for the key; a world that asks to cast also gets one caster cluster per resident cell.
+    expect(live.map((mesh) => mesh.name)).toEqual(["pine:1:0"]);
+    expect(meshes.length).toBeLessThanOrEqual(5);
 
     // Past the eighth of the 60 m gate the old code refiltered every resident cell, for every
     // asset, on this move alone.
@@ -1343,6 +1472,72 @@ describe("WorldCells", () => {
 
     expect(world.stats().rebuilds).toBe(before);
     expect(world.children.filter((child) => child instanceof InstancedMesh)).toEqual(meshes);
+    world.dispose();
+  });
+
+  /**
+   * The refilter pass runs every 2 m of travel, and at 20 m/s that is ten times a second over every
+   * resident cell. It gates the whole cell before it looks at one batch, so a follow point that has
+   * crossed nothing walks 256 cells and allocates nothing — the array, the set and the per-batch
+   * entry objects the pass used to build per cell are gone, and `refilterEntries` is the counter that
+   * says so.
+   *
+   * A 16 m `cellSize` over the committed extent is 16 × 16 = 256 cells, and the one asset's only gate
+   * is its `maxDistance` cull distance at 87.5 km: no cell's own distance bracket can contain it, so
+   * the honest answer is nothing stale, ten times a second, over a quarter of a thousand cells.
+   */
+  it("allocates no refilter entry for 256 cells that crossed no gate", async () => {
+    const CELL = 16;
+    const side = manifest.extent.sizeX / CELL;
+    const pine = manifest.assets.pine;
+    if (pine === undefined) throw new Error("the committed package has no pine asset.");
+    const run = manifest.cells[1]?.runs.find((one) => one.asset === "pine");
+    if (run === undefined) throw new Error("the committed package has no pine run.");
+    const cells: Array<IWorldPackage["cells"][number]> = [];
+    for (let z = 0; z < side; z += 1)
+      for (let x = 0; x < side; x += 1) cells.push({ chunks: [], runs: [run], x, z });
+    stubManifestFetch({
+      ...manifest,
+      assets: {
+        ...manifest.assets,
+        // No authored `lods`, so the cull distance is the only gate there is, and it is 87.5 km out.
+        pine: { bounds: pine.bounds, glb: pine.glb, maxDistance: 100_000 },
+      },
+      cellSize: CELL,
+      cells,
+    });
+    const follow = followAt(MIN_X + (side / 2) * CELL, MIN_Z + (side / 2) * CELL);
+    const world = await loadWorld({
+      budgets: { bytes: 1_000_000_000, instances: 1_000_000, residentCells: 256 },
+      follow,
+      freshMeshesPerUpdate: 4096,
+      loadModel: controlledLoader().load,
+      prefetchSeconds: 0,
+      ring: 8,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    for (let frame = 0; frame < 12; frame += 1) await flushed(world);
+    expect(world.stats().residentCells).toBe(256);
+
+    const before = world.stats();
+    // Ten refilter passes, the cadence a 20 m/s walk gets: each one two metres of travel.
+    for (let step = 1; step <= 20; step += 1) {
+      follow.position.x += 2;
+      world.update();
+    }
+    const after = world.stats();
+
+    // The pass ran, over the whole resident set, every time — and found nothing to rebuild, so it
+    // allocated nothing: no entry objects, no per-cell array, no per-cell set.
+    expect(after.refilters - before.refilters).toBeGreaterThanOrEqual(10);
+    expect(after.refilterEntries).toBe(before.refilterEntries);
+    expect(after.rebuilds).toBe(before.rebuilds);
+    // And nothing was queued, dropped or failed: the ring slid 40 m east, so the eastern column of
+    // 16 left the package and the ring is the 240 that is left of it.
+    expect(after.residentCells).toBe(240);
+    expect(after.failures).toBe(0);
     world.dispose();
   });
 
@@ -1486,6 +1681,241 @@ describe("WorldCells", () => {
     expect(meshes).toHaveBeenCalled();
   });
 
+  /**
+   * The world asks `assets.model` for every source level, and the loader caches by logical path. The
+   * loader it created itself owns those entries: they are handed back once the last asset naming the
+   * path is gone, so a streamed package does not pin the loader's source scenes and their textures
+   * for its whole life. A `loadModel` override reaches no cache and owns nothing, and an explicitly
+   * supplied loader is the caller's — its cache is never released here.
+   */
+  describe("model path ownership", () => {
+    it("hands back the exact model paths it asked the loader for, and only those", async () => {
+      stubManifestFetch(pineCell());
+      const loader = cacheLoader();
+      mockInternalLoader(loader);
+      const { cleared, loaded, released } = loader;
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        budgets: largeBudgets,
+        follow,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
+
+      // Both of the asset's level paths were requested, and none is handed back while it is held.
+      expect(loaded.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+      expect(released).toEqual([]);
+
+      world.dispose();
+      expect(released.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+      // The loader is never cleared: a path this world did not ask for stays cached.
+      expect(cleared).toEqual([]);
+    });
+
+    it("holds one cached source for two distinct assets naming it, releasing it only with the last", async () => {
+      const pine = manifest.assets.pine;
+      if (pine === undefined) throw new Error("the committed package has no pine asset.");
+      // One cooked path, two `maxDistance` values: the package's own aliasing keeps them separate,
+      // so both assets really do ask the loader for the same cache key.
+      const shared = {
+        bounds: pine.bounds,
+        glb: "assets/pine.glb",
+        lods: [{ distance: 60, glb: "assets/pine_lod1.glb" }],
+      };
+      stubManifestFetch({
+        ...manifest,
+        assets: {
+          pine: { ...shared, maxDistance: 120 },
+          pine_b: { ...shared, maxDistance: 200 },
+        },
+        cells: [
+          { chunks: [], runs: [{ asset: "pine", count: 1, offset: 1059 }], x: 0, z: 1 },
+          { chunks: [], runs: [{ asset: "pine_b", count: 1, offset: 1059 }], x: 2, z: 1 },
+        ],
+      });
+      const loader = cacheLoader();
+      mockInternalLoader(loader);
+      const { released } = loader;
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        budgets: largeBudgets,
+        follow,
+        ring: 1,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
+      expect(Object.keys(world.assetRefCounts()).sort()).toEqual(["pine", "pine_b"]);
+
+      // Cell (0,1) leaves the ring; (2,1) still names the same cooked path, so nothing is released.
+      follow.position.x = 96;
+      world.update();
+      expect(world.stats().residentKeys).toContain("2:1");
+      expect(released).toEqual([]);
+
+      // The last holder gone, the path is handed back exactly once.
+      world.dispose();
+      expect(released.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+    });
+
+    it("releases the actual requested path of a level the asset fell back over", async () => {
+      stubManifestFetch(pineCell());
+      const loader = cacheLoader((path) => (path.includes("pine_lod1") ? undefined : makeModel()));
+      mockInternalLoader(loader);
+      const { released } = loader;
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        budgets: largeBudgets,
+        follow,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
+
+      // Level 1 was asked for and refused, so level 0's shape draws in its place — but the refused
+      // path was requested all the same and is handed back with the asset.
+      expect(world.stats().failures).toBe(1);
+      expect(released).toEqual([]);
+      world.dispose();
+      expect(released.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+    });
+
+    it("leaves the cache untouched when loadModel overrides it", async () => {
+      stubManifestFetch(pineCell());
+      const { assets, loaded, released } = cacheLoader();
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        assets,
+        budgets: largeBudgets,
+        follow,
+        loadModel: () => Promise.resolve(makeModel()),
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
+      world.dispose();
+
+      expect(loaded).toEqual([]);
+      expect(released).toEqual([]);
+    });
+
+    /**
+     * A caller-supplied loader is the caller's cache: a second game or world holding the same
+     * model keeps it alive when this world's last cell stops naming the path. Only the loader this
+     * world created itself may have its cache released. The real `createAssetLoader` is used with
+     * the standard loader path (no `loadModel` override, which bypasses the retained paths), and
+     * the world-local refcount dropping to zero must not dispose the held original's GPU resources.
+     */
+    it("never releases an explicitly supplied loader's cached model another holder keeps", async () => {
+      const oneAsset: IWorldPackage = {
+        ...manifest,
+        assets: { tree: { bounds: { max: [4, 24, 4], min: [-4, 0, -4] }, glb: "assets/tree.glb" } },
+        cells: [{ chunks: [], runs: [{ asset: "tree", count: 1, offset: 1059 }], x: 1, z: 1 }],
+      };
+      stubManifestFetch(oneAsset);
+
+      const held = makeModel();
+      const heldMesh = held.children[0] as Mesh;
+      const modelPath = "world/assets/tree.glb";
+      const assets = createAssetLoader({
+        manifest: "/world/assets.manifest.json",
+        model: () => Promise.resolve({ scene: held }),
+      });
+      // The cached source, as the caller holds it: a game that asked the same loader for the same
+      // model before the world ever named it.
+      expect(await assets.model<{ scene: Object3D }>(modelPath)).toEqual({ scene: held });
+      const originalGeometry = heldMesh.geometry;
+      const originalMaterial = heldMesh.material;
+      const geometryDisposed = vi.spyOn(originalGeometry, "dispose");
+      const materialDisposed = vi.spyOn(originalMaterial as Material, "dispose");
+
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        assets,
+        budgets: largeBudgets,
+        follow,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      await flushed(world);
+      expect(world.stats().residentCells).toBe(1);
+
+      // The world's last cell leaves: its world-local refcount reaches zero.
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      await flush();
+      expect(world.stats().residentKeys).toEqual([]);
+      world.dispose();
+
+      // The held original is untouched: an explicitly supplied loader's cache is the caller's.
+      expect(geometryDisposed).not.toHaveBeenCalled();
+      expect(materialDisposed).not.toHaveBeenCalled();
+      expect(heldMesh.geometry).toBe(originalGeometry);
+      expect(heldMesh.material).toBe(originalMaterial);
+
+      // The caller's own release is what ends the cache entry, and it still disposes.
+      expect(assets.release("model", modelPath)).toBe(true);
+      expect(geometryDisposed).toHaveBeenCalled();
+      expect(materialDisposed).toHaveBeenCalled();
+    });
+
+    it("hands a path back safely when the world leaves before the load settles", async () => {
+      stubManifestFetch(pineCell());
+      let open: (() => void) | undefined;
+      const ready = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      const loaded: string[] = [];
+      const released: string[] = [];
+      const assets: IAssetLoader = {
+        ...cacheLoader().assets,
+        model: ((path: string) => {
+          loaded.push(path);
+          return ready.then(() => ({ scene: makeModel() }));
+        }) as IAssetLoader["model"],
+        release: (kind, path) => {
+          if (kind !== "model") return false;
+          released.push(path);
+          return true;
+        },
+      };
+      mockInternalLoader({ assets });
+      const follow = followAt(-32, -32);
+      const world = await loadWorld({
+        budgets: largeBudgets,
+        follow,
+        ring: 0,
+        surface,
+        url: "/world/world.json",
+      });
+      world.update();
+      expect(loaded.length).toBeGreaterThan(0);
+
+      // The cell leaves while both level loads are still in flight; the paths are handed back now,
+      // and the models that arrive later are torn down rather than adopted.
+      follow.position.x = 100_000;
+      follow.position.z = 100_000;
+      world.update();
+      expect(released.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+
+      open?.();
+      await flushed(world);
+      expect(released.sort()).toEqual(["world/assets/pine.glb", "world/assets/pine_lod1.glb"]);
+      world.dispose();
+    });
+  });
+
   it("falls back to the level above when a lod glb will not load", async () => {
     stubFixtureFetch();
     const follow = followAt(-64, -64);
@@ -1587,12 +2017,22 @@ describe("WorldCells", () => {
     shaded.update();
     await flushed(shaded);
     // Only the finest level casts by default: a far LOD's shadow is sub-texel and every caster is
-    // redrawn per shadow level.
-    expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(true);
-    expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).castShadow).toBe(false);
+    // redrawn per shadow level. The main mesh casts nothing — its records reach the shadow maps
+    // through the caster cluster, which is what a level culls (PRD-458).
+    expect((levelMesh(shaded, "pine", 0, 0) as InstancedMesh).castShadow).toBe(false);
     expect((levelMesh(shaded, "pine", 1, 0) as InstancedMesh).receiveShadow).toBe(true);
+    const casters = clustersOf(shaded, "pine", 0, 0);
+    expect(casters.length, "no caster cluster was minted").toBeGreaterThan(0);
+    for (const caster of casters) {
+      expect(caster.castShadow, "the finest level's caster cluster does not cast").toBe(true);
+      expect(caster.layers.mask, "a caster is not alone on the caster layer").toBe(1 << 28);
+    }
+    expect(clustersOf(shaded, "pine", 1, 0), "a far level minted a caster cluster").toEqual([]);
     const terrain: Mesh[] = [];
     shaded.traverse((object) => {
+      // A mesh alone on a caster layer is a shadow-only proxy: it casts, and by construction it
+      // receives nothing, exactly as the caster clusters the same test blesses above do.
+      if (object.layers.isEnabled(0) === false) return;
       if ((object as Mesh).isMesh && !(object as InstancedMesh).isInstancedMesh)
         terrain.push(object as Mesh);
     });
@@ -1640,11 +2080,14 @@ describe("WorldCells", () => {
     expect(needles).toBeDefined();
     expect(farBark).toBeDefined();
     expect(farNeedles).toBeDefined();
-    // Each part keeps its own geometry; neither level borrows the other's.
+    // Each part keeps its own geometry, on both levels. The far level authored its own reduced
+    // needles, so it draws them; the root LOD0 card is appended only where a level authored no alpha
+    // slot at all, never in place of one the level already carries.
     expect(bark.geometry).toBe(loader.geometryFor("pine.glb", 0));
     expect(needles.geometry).toBe(loader.geometryFor("pine.glb", 1));
     expect(farBark.geometry).toBe(loader.geometryFor("pine_lod1.glb", 0));
     expect(farNeedles.geometry).toBe(loader.geometryFor("pine_lod1.glb", 1));
+    expect(farNeedles.geometry).not.toBe(loader.geometryFor("pine.glb", 1));
     // Materials are shared by content: both levels' bark (and both levels' needles) carry the same
     // authored material, so they draw with one surface and three builds one shader for it.
     expect(farBark.material).toBe(bark.material);
@@ -1670,6 +2113,80 @@ describe("WorldCells", () => {
       for (let element = 0; element < 16; element += 1)
         expect(local.elements[element]).toBeCloseTo(expected.elements[element] as number, 4);
     }
+    world.dispose();
+  });
+
+  it("keeps an authored middle level's own reduced cutout and tears each card down once", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    // The LOD1 foliage card sits at 4 m, deliberately different from the root card's 1.5 m, so the
+    // far level's transform proves which card it draws: its own authored reduced card, kept as
+    // authored, never swapped for the root's. The reduced geometry is its own object.
+    const handed = new Map<string, Array<{ geometry: BufferGeometry; material: Material }>>();
+    const load = (url: string): Promise<Object3D> => {
+      const group = new Group();
+      const reduced = url.endsWith("pine_lod1.glb");
+      const parts = [0, 1].map((index) => {
+        const geometry = new BoxGeometry(1, 1, 1);
+        const material = new MeshBasicMaterial();
+        if (index === 1) material.transparent = true;
+        const mesh = new Mesh(geometry, material);
+        mesh.position.y = index === 1 ? (reduced ? 4 : 1.5) : 0;
+        group.add(mesh);
+        return { geometry, material };
+      });
+      handed.set(url, parts);
+      return Promise.resolve(group);
+    };
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+
+    const forUrl = (fragment: string, part: number): BufferGeometry => {
+      const entry = [...handed.entries()].find(([url]) => url.endsWith(fragment));
+      if (entry === undefined) throw new Error(`No model loaded for '${fragment}'.`);
+      return (entry[1][part] as { geometry: BufferGeometry }).geometry;
+    };
+    const rootFoliage = forUrl("pine.glb", 1);
+    const reducedFoliage = forUrl("pine_lod1.glb", 1);
+    const farBark = levelMesh(world, "pine", 1, 0) as InstancedMesh;
+    const farNeedles = levelMesh(world, "pine", 1, 1) as InstancedMesh;
+    // The far level keeps the opaque bark AND the reduced foliage card it authored: it authored an
+    // alpha slot, so no root card is appended and the root's is never drawn at this level.
+    expect(farBark.geometry).toBe(forUrl("pine_lod1.glb", 0));
+    expect(farNeedles.geometry).toBe(reducedFoliage);
+    expect(farNeedles.geometry).not.toBe(rootFoliage);
+
+    // And it draws its own card with the LOD1 transform: `placement * 4`, never the root's 1.5 m.
+    const placed = new Matrix4();
+    const raised = new Matrix4();
+    const local = new Matrix4();
+    const expected = new Matrix4().makeTranslation(0, 4, 0);
+    for (const index of liveIndices(farBark)) {
+      farBark.getMatrixAt(index, placed);
+      farNeedles.getMatrixAt(index, raised);
+      local.copy(placed).invert().multiply(raised);
+      for (let element = 0; element < 16; element += 1)
+        expect(local.elements[element]).toBeCloseTo(expected.elements[element] as number, 4);
+    }
+
+    // Both cards stay in DRAW and are owned: one teardown of the root card and one of the reduced
+    // card, exactly, when the last cell leaves.
+    const rootDispose = vi.spyOn(rootFoliage, "dispose");
+    const reducedDispose = vi.spyOn(reducedFoliage, "dispose");
+    follow.position.x = 100_000;
+    follow.position.z = 100_000;
+    world.update();
+    await flush();
+    expect(rootDispose).toHaveBeenCalledTimes(1);
+    expect(reducedDispose).toHaveBeenCalledTimes(1);
     world.dispose();
   });
 
@@ -1733,10 +2250,12 @@ describe("WorldCells", () => {
     });
     wide.update();
     await flushed(wide);
-    // Every cell of the ring draws its needles through the one shared mesh and its one cutout.
+    // Every cell of the ring draws through the one shared mesh and its one cutout. Its shadow twin
+    // is a mesh per world-grid cluster, on the caster layer; see the split in `#batchFor`.
     const near = partsOf(wide, "pine", 0, 1);
     expect(near).toHaveLength(1);
-    expect(liveCount(near[0])).toBeGreaterThan(0);
+    expect(liveCount(near[0] as InstancedMesh)).toBeGreaterThan(0);
+    expect(new Set(partsOf(wide, "pine", 0, 1).map((mesh) => mesh.material)).size).toBe(1);
     // Every asset in this package carries the same two materials, so however many GLBs loaded the
     // world draws with two surfaces: one opaque, one cutout. One shader each, not one per asset.
     const drawn = new Set<Material>();
@@ -1831,6 +2350,76 @@ describe("WorldCells", () => {
     );
     second.dispose();
     world.dispose();
+  });
+
+  it("leaves a MASK scatter part's authored surface untouched", async () => {
+    stubFixtureFetch();
+    const follow = followAt(-64, -64);
+    // A needle card with a real map size, arriving the way a GLTF MASK material does: opaque, with an
+    // authored cutoff and no `transparent`. The cutout path exists for `transparent` scatter, so a
+    // MASK part draws with the surface the package authored, never a clone.
+    const map = new Texture();
+    map.image = { width: 2048, height: 2048 };
+    const loader = treeLoader({ alphaTest: 0.42, map, transparent: false });
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: loader.load,
+      ring: 0,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update();
+    await flushed(world);
+
+    // The MASK part keeps the authored surface class: its cutoff, its map, its depth write, and no
+    // synthesized `alphaTestNode`.
+    const needles = batchMaterial(levelMesh(world, "pine", 0, 1)) as MeshBasicMaterial &
+      NodeMaterialLike;
+    const authored = loader.materialFor("pine.glb", 1) as MeshBasicMaterial & NodeMaterialLike;
+    expect(needles.constructor).toBe(authored.constructor);
+    expect(needles.transparent).toBe(false);
+    expect(needles.depthWrite).toBe(true);
+    expect(needles.map).toBe(map);
+    expect(needles.alphaTest).toBe(0.42);
+    expect(needles.alphaTestNode).toBeUndefined();
+    expect(Reflect.get(needles, "isNodeMaterial")).not.toBe(true);
+    // The package's authored MASK material is never mutated.
+    expect(authored.transparent).toBe(false);
+    expect(authored.alphaTest).toBe(0.42);
+    expect(authored.alphaTestNode).toBeUndefined();
+    // An OPAQUE part (no `transparent`, no cutoff) still draws with the authored material unchanged.
+    const bark = batchMaterial(levelMesh(world, "pine", 0, 0)) as MeshBasicMaterial &
+      NodeMaterialLike;
+    expect(bark.transparent).toBe(false);
+    expect(bark.alphaTest).toBe(0);
+    expect(bark.alphaTestNode).toBeUndefined();
+
+    // The authored surface is released exactly once, with the last batch that holds it.
+    const disposed = vi.spyOn(needles, "dispose");
+    world.dispose();
+    expect(disposed).toHaveBeenCalledTimes(1);
+
+    // `blend` keeps the authored MASK surface as well, making no clone.
+    const blended = treeLoader({ alphaTest: 0.42, map, transparent: false });
+    const old = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: blended.load,
+      ring: 0,
+      surface,
+      transparentScatter: "blend",
+      url: "/world/world.json",
+    });
+    old.update();
+    await flushed(old);
+    const kept = batchMaterial(levelMesh(old, "pine", 0, 1)) as MeshBasicMaterial &
+      NodeMaterialLike;
+    expect(kept.transparent).toBe(false);
+    expect(kept.alphaTest).toBe(0.42);
+    expect(kept.alphaTestNode).toBeUndefined();
+    expect(Reflect.get(kept, "isNodeMaterial")).not.toBe(true);
+    old.dispose();
   });
 
   it("releases every part of every level exactly once when its last cell leaves", async () => {

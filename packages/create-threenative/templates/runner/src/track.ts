@@ -11,6 +11,7 @@ import { OBSTACLE_LAYER, type RunnerPhysics } from "./physics.js";
 import {
   LANE_WIDTH,
   OBSTACLE_SIZE,
+  ground,
   obstacleShape,
   trackRails,
   trackSlab,
@@ -63,7 +64,7 @@ export class Chunk {
     material: MeshStandardMaterial,
   ) {
     this.group.name = `chunk-${index}`;
-    this.group.add(trackSlab(CHUNK_LENGTH), trackRails(CHUNK_LENGTH));
+    this.group.add(trackRails(CHUNK_LENGTH), trackSlab(CHUNK_LENGTH));
     const batch = new InstancedBatch({ geometry, material });
     for (let slot = 0; slot < MAX_OBSTACLES; slot += 1) batch.place({ position: [0, -1000, 0] });
     this.#obstacles = batch.build({ castShadow: true, name: "obstacles", parent: this.group });
@@ -135,6 +136,9 @@ export class Chunk {
  * rewrites it. The obstacle geometry and material are created here, once, and shared by every
  * chunk: they are the same box and the same surface every time, and building them per chunk was
  * both an allocation and — with no `dispose` — a leak.
+ *
+ * The ground the track runs over is added here too, under the whole stream, so the horizon reads
+ * as ground meeting sky rather than a road over a void.
  */
 export class Track {
   readonly chunks: Chunk[] = [];
@@ -143,6 +147,7 @@ export class Track {
   #built = 0;
 
   constructor(ctx: IChunkContext) {
+    ctx.add(ground());
     const shape = obstacleShape();
     this.#geometry = shape.geometry;
     this.#material = shape.material;

@@ -457,6 +457,67 @@ describe("scene warm-up", () => {
     expect(report.passPipelines).toBe(0);
   });
 
+  test("should not finish until the GPU has executed the hidden render", async () => {
+    // `render()` only submits. A driver compiles a pipeline the first time the GPU executes it, so
+    // a warm-up that returned here handed that compile to the first frame the player sees: 150 ms
+    // for the sailing template's post chain, in the p95 of every measurement that followed.
+    let executed: (() => void) | undefined;
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: {
+        backend: {
+          device: {
+            queue: {
+              onSubmittedWorkDone: () =>
+                new Promise<void>((resolve) => {
+                  executed = resolve;
+                }),
+            },
+          },
+        },
+        shadowMap: { enabled: true },
+      },
+    };
+    const scene = group("scene", [
+      mesh("ground"),
+      { children: [], isLight: true, castShadow: true, name: "sun" },
+    ]);
+    let done = false;
+    const warming = warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    }).then((report) => {
+      done = true;
+      return report;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(done).toBe(false);
+    executed?.();
+    expect(await warming).toMatchObject({ passes: ["main", "shadow"], timedOut: false });
+  });
+
+  test("should stop waiting for the GPU when the budget runs out", async () => {
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: {
+        backend: {
+          device: { queue: { onSubmittedWorkDone: () => new Promise<void>(() => undefined) } },
+        },
+        shadowMap: { enabled: true },
+      },
+    };
+    const scene = group("scene", [
+      mesh("ground"),
+      { children: [], isLight: true, castShadow: true, name: "sun" },
+    ]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      budgetMs: 60,
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main", "shadow"]);
+  }, 10_000);
+
   test("should name a reflection pass when a material carries a reflector node", async () => {
     const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
     const material = {

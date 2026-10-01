@@ -1,0 +1,24 @@
+{
+  "name": "rts-ai-attack",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "selection",
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 20, "release": true },
+    { "kind": "wait", "label": "muster", "waitTicks": 800, "release": true },
+    { "kind": "wait", "label": "contact", "waitTicks": 900, "release": true },
+    { "kind": "wait", "label": "after", "waitTicks": 800, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [{ "id": "state", "path": "kills", "gte": 1 }],
+    "renderChain": { "tier": "high", "perAdapter": { "software": { "tier": "low" } } }
+  }
+}

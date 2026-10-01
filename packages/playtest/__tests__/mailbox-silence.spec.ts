@@ -128,6 +128,21 @@ describe("native mailbox silence is named, never silent", () => {
     expect(named.message).toContain("SIGSEGV");
   });
 
+  test("a host that exited during startup carries its last output in the diagnostic", () => {
+    const exited = playtestDiagnostic(
+      "TN_PLAYTEST_STARTUP_HOST_EXITED",
+      "The application exited while the run was waiting for its startup to become readable.",
+      "Read the console tail this report carries.",
+    );
+    const named = deviceTimeoutDiagnostic(exited, false, [
+      "TN_SLOW_PHASE:{}",
+      "[Dawn] Device lost: removed",
+    ]);
+    expect(named.code).toBe("TN_PLAYTEST_STARTUP_HOST_EXITED");
+    expect(named.message).toContain("Device lost: removed");
+    expect(deviceTimeoutDiagnostic(exited, false, []).message).toContain("no further output");
+  });
+
   test("a runner timeout against a live host keeps the operation-timeout name", () => {
     const timeout = playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",

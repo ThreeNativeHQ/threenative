@@ -75,7 +75,9 @@ export class TouchControls {
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = overlayMaterial(palette.floor, 0.34);
+    // The idle rings read against grass and sand, so they take the sky's own light tone: a green
+    // ring vanishes into the island, and the pressed accent is the one colour nothing else uses.
+    this.#idleMaterial = overlayMaterial(palette.skyHigh, 0.34);
     this.#activeMaterial = overlayMaterial(palette.accent, 0.6);
     this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);
