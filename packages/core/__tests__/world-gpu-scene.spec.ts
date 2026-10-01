@@ -909,15 +909,44 @@ describe("WorldCells with the GPU-driven main pass", () => {
       world.update(renderer, camera);
     }
     const after = world.stats();
-    // The whole claim: 200 frames of a moving follow point, and not one main regroup and not one
-    // refilter. With the option off the same walk repacks every time the window moves.
+    // The whole claim: 200 frames of a moving follow point, and not one main regroup. With the
+    // option off the same walk repacks every time the window moves.
     expect(after.mainCull.repacks - settled.mainCull.repacks).toBe(0);
     expect(after.mainCull.windows - settled.mainCull.windows).toBe(0);
-    expect(after.refilters - settled.refilters).toBe(0);
     expect(after.gpuScene.dispatches - settled.gpuScene.dispatches).toBe(200);
     expect(after.gpuScene.instances).toBeGreaterThan(0);
     expect(world.stats().failures).toBe(0);
+    const gpuRebuilds = after.refilterEntries - settled.refilterEntries;
     world.dispose();
+
+    // The refilter still runs, because a build culls at `maxDistance` and the dispatch can only
+    // select a placement it was given; but only the cull gate is read, never a `lods` switch the
+    // dispatch makes itself, so the same walk rebuilds strictly less than the CPU path does.
+    stubManifestFetch();
+    const cpuFollow = { position: { ...cellCentre(0, 1), y: 0 } as { x: number; z: number } };
+    const cpu = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow: cpuFollow,
+      gpuScene: false,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    cpu.update(renderer, camera);
+    await flushed(cpu);
+    const cpuSettled = cpu.stats();
+    for (let index = 0; index < 200; index += 1) {
+      const at = cellCentre(index % 3, 1 + (index % 2));
+      cpuFollow.position.x = at.x;
+      cpuFollow.position.z = at.z;
+      cpu.update(renderer, camera);
+    }
+    const cpuRebuilds = cpu.stats().refilterEntries - cpuSettled.refilterEntries;
+    expect(gpuRebuilds).toBeLessThan(cpuRebuilds);
+    cpu.dispose();
   });
 
   it("dresses a ring the prewarm built before the scene came up", async () => {
@@ -2077,6 +2106,98 @@ describe("WorldCells whose GPU scene comes up under a built ring", () => {
     await flushed(fromFirstFrame);
     expect(on.gpuScene.instances).toBe(fromFirstFrame.stats().gpuScene.instances);
     fromFirstFrame.dispose();
+  });
+});
+
+describe("WorldCells GPU scene source records past the build-time cull", () => {
+  it("gives the dispatch a placement that was past maxDistance once the camera walks into its range", async () => {
+    // One cell, two props 42 m apart under a 40 m `maxDistance`: the build at the first culls the
+    // second. With the GPU scene on the refilter was skipped, so walking to the midpoint, where
+    // both are in range, never gave the second a source record: ground cover never appeared.
+    const centre = cellCentre(0, 0);
+    const pkg: IWorldPackage = {
+      assets: {
+        prop: { bounds: { max: [1, 1, 1], min: [-1, 0, -1] }, glb: "prop.glb", maxDistance: 40 },
+      },
+      cellSize: CELL,
+      cells: [{ runs: [{ asset: "prop", count: 2, offset: 0 }], x: 0, z: 0 }],
+      extent: manifest.extent,
+      placements: "placements.bin",
+      terrain: manifest.terrain,
+      version: 1,
+    };
+    const records = new Float32Array([
+      centre.x,
+      0,
+      centre.z,
+      0,
+      0,
+      0,
+      1,
+      1,
+      centre.x + 30,
+      0,
+      centre.z + 30,
+      0,
+      0,
+      0,
+      1,
+      1,
+    ]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown): Promise<object> => {
+        const url = String(input);
+        if (url.endsWith("world.json"))
+          return {
+            arrayBuffer: async () =>
+              new TextEncoder().encode(JSON.stringify(pkg)).buffer as ArrayBuffer,
+            headers: new Headers(),
+            json: async () => pkg,
+            ok: true,
+            status: 200,
+          };
+        if (url.endsWith("placements.bin")) return fileResponse(Buffer.from(records.buffer));
+        if (url.endsWith("heightmap.u16"))
+          return fileResponse(readFileSync(path.join(fixture, "terrain", "heightmap.u16")));
+        return {
+          arrayBuffer: async () => new ArrayBuffer(0),
+          headers: new Headers(),
+          ok: false,
+          status: 404,
+        };
+      }),
+    );
+    const follow = { position: { ...centre } };
+    const renderer = {
+      compute: (): void => {},
+      kind: "webgpu",
+      raw: { backend: { hasFeature: (): boolean => true } },
+    } as unknown as IRendererLike;
+    const world = await WorldCells.load({
+      admissionBudgetMs: Number.POSITIVE_INFINITY,
+      budgets,
+      follow,
+      gpuScene: true,
+      loadModel: async () => plainModel(),
+      prefetchSeconds: 0,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+    world.update(renderer, playerCamera([0, 0]));
+    await flushed(world);
+
+    expect(world.stats().gpuScene.on).toBe(true);
+    expect(world.stats().gpuScene.instances).toBe(1);
+    follow.position.x = centre.x + 15;
+    follow.position.z = centre.z + 15;
+    for (let frame = 0; frame < 10; frame += 1) {
+      world.update(renderer, playerCamera([0, 0]));
+      await flushed(world);
+    }
+    expect(world.stats().gpuScene.instances).toBe(2);
+    world.dispose();
   });
 });
 

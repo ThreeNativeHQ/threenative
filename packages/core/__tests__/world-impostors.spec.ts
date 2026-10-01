@@ -321,6 +321,8 @@ async function loadPine(
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets: { bytes: 64 * 1024 * 1024, instances: 50000, residentCells: 25 },
     follow: { position: { x: -32, z: -32 } },
+    // Impostors are opt-in (default false); this suite is about them.
+    impostors: true,
     loadModel: loader.load,
     prefetchSeconds: 0,
     ring: 1,
@@ -422,6 +424,20 @@ describe("WorldCells automatic impostors", () => {
     runBake(world, rendererStub());
     await flushed(world);
 
+    expect(partsOf(world, "pine", 2, 0).length).toBe(0);
+    expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
+    world.dispose();
+  });
+
+  it("bakes nothing by default: the source levels stay the forest's shadow casters", async () => {
+    stubManifestFetch(pineOnly());
+    const loader = treeLoader();
+    const world = await loadPine(loader, { impostors: undefined });
+    await flushed(world);
+    runBake(world, rendererStub());
+    await flushed(world);
+
+    expect(world.stats().impostor.atlasBytes).toBe(0);
     expect(partsOf(world, "pine", 2, 0).length).toBe(0);
     expect(partsOf(world, "pine", 0, 0).length).toBeGreaterThan(0);
     world.dispose();
@@ -1328,6 +1344,7 @@ describe("WorldCells far impostor residency", () => {
       admissionBudgetMs: Number.POSITIVE_INFINITY,
       budgets: { bytes: 64 * 1024 * 1024, instances: 50000, residentCells: 25 },
       follow,
+      impostors: true,
       prefetchSeconds: 0,
       ring: 1,
       surface: new MeshBasicMaterial(),

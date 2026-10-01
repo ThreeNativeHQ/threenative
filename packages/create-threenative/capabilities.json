@@ -3786,7 +3786,7 @@
         "budgets are hard caps that report pressure instead of over-committing",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
-        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
+        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
         "a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it",
         "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",

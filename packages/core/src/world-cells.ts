@@ -586,7 +586,11 @@ export interface IWorldCellsLoadOptions {
   readonly mainGpuShare?: number;
   /**
    * Bake a whole-asset octahedral impostor for every alpha-cutout foliage asset and append it as the
-   * asset's terminal, two-triangle LOD, default true.
+   * asset's terminal, two-triangle LOD, default false.
+   *
+   * Opt-in until the impostor casts a forest's shadow: it replaces the coarsest level the wide
+   * shadow levels draw, and its two-triangle card leaves the road and forest floor almost unshaded
+   * (PR #375 visual regression), so a default world keeps its source levels as shadow casters.
    *
    * The bake runs inside the render cadence — one of its sixteen views per `process` — so it costs a
    * slice of a frame rather than a hitch, and it starts only after the asset's own model has been
@@ -3295,7 +3299,7 @@ class AdmissionBudget implements IAdmissionBudget {
  * @constraint budgets are hard caps that report pressure instead of over-committing
  * @constraint model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell
  * @constraint refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first
- * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has
+ * @constraint admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has
  * @constraint SkinnedMesh parts are skipped; an instanced copy would draw one rest pose
  * @constraint a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it
  * @override ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance
@@ -3510,6 +3514,8 @@ export class WorldCells extends Group implements IComputeDriven {
   #visibleEpoch = 0;
   /** The follow point the last full residency pass ran for; see `#residencyStale`. */
   readonly #residencyPoint = new Vector3(Number.NaN, 0, Number.NaN);
+  /** The follow point's cell at the last residency pass; a move of more than one is a jump. */
+  #residencyCell: { readonly x: number; readonly z: number } | undefined;
   /** The follow point the last refilter pass ran for; see `#refilterStale`. */
   readonly #refilterPoint = new Vector3(Number.NaN, 0, Number.NaN);
   /** Bumped by every admission and eviction, so a residency change owes a refilter that update. */
@@ -3722,7 +3728,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#transparentScatter = init.transparentScatter ?? "cutout";
     this.#gpuWanted = init.gpuScene ?? gpuSceneRequested();
     this.#bundlesWanted = init.bundles ?? bundlesRequested();
-    this.#impostors = init.impostors ?? true;
+    this.#impostors = init.impostors ?? false;
     this.#impostorBudgetBytes = DEFAULT_IMPOSTOR_ATLAS_BUDGET_BYTES;
     this.#adaptiveLod = init.adaptiveLod ?? adaptiveLodRequested();
     this.#mainGpuShare = mainGpuShare(init.mainGpuShare);
@@ -3951,7 +3957,12 @@ export class WorldCells extends Group implements IComputeDriven {
     advanceWriteEpoch();
     const x = this.#follow.position.x;
     const z = this.#follow.position.z;
-    const budget = new AdmissionBudget(this.#budgetMs, this.#now);
+    // Terrain admits first, and a tile is one unit of several milliseconds, so after a jump (a
+    // teleport, a review camera) the 17 x 17 terrain ring spent the whole allowance every frame for
+    // seconds and the prop queue got nothing: the forest never built where the camera landed. While
+    // props are queued the terrain is held to half, and the props get whatever it left.
+    const terrainMs = this.#jobs.length > 0 ? this.#budgetMs / 2 : this.#budgetMs;
+    const budget = new AdmissionBudget(terrainMs, this.#now);
     this.#freshThisUpdate = 0;
     this.#meshStalled = false;
     // The residency pass is a function of the follow point, so a follow point that has not moved
@@ -3979,10 +3990,11 @@ export class WorldCells extends Group implements IComputeDriven {
       );
       // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
       // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-      // The GPU scene selects the level and culls per instance on the dispatch, so the pass has
-      // nothing left to decide for the main pass and is skipped outright. The casters still run
-      // theirs, on their own records.
-      if (this.#gpuScene.on === false && this.#refilterStale(x, z)) {
+      // The GPU scene selects the level per instance on the dispatch, but a build still culls at
+      // `maxDistance` from where it ran, and a placement it culled has no source record to select:
+      // with the pass skipped, ground cover built from a cell's far side never appeared as the
+      // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
+      if (this.#refilterStale(x, z)) {
         this.#refilterPoint.set(x, 0, z);
         this.#refilterEpoch = this.#residencyEpoch;
         this.#updateMaxDistance(x, z);
@@ -3996,7 +4008,11 @@ export class WorldCells extends Group implements IComputeDriven {
     ) {
       this.#terrain.process(renderer);
     }
-    this.#drain(budget);
+    const props = new AdmissionBudget(
+      this.#budgetMs - Math.min(budget.spentMs, terrainMs),
+      this.#now,
+    );
+    this.#drain(props);
     // The prewarm runs outside the admission budget on purpose — it is not residency, it is the
     // shader builds the residency is about to need, and the allowance that spreads those is
     // `PREWARM_PER_UPDATE`.
@@ -4020,7 +4036,7 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#admission = {
       backlog: this.#backlog(),
       deferred: this.#jobs.length,
-      spentMs: budget.spentMs,
+      spentMs: budget.spentMs + props.spentMs,
     };
   }
 
@@ -4760,16 +4776,41 @@ export class WorldCells extends Group implements IComputeDriven {
       )
         this.#evict(resident);
     }
+    // A follow point that crossed more than one cell in one pass jumped (a teleport, a review
+    // camera). Only then does the hysteresis ring yield. Read off the follow point itself, not the
+    // lookahead `followCell`: that leads by up to 1.5 cells, so a walk that stopped and started moved
+    // it by two, and yielding there evicted and re-admitted a whole row each time.
+    const here = {
+      x: Math.floor((this.#follow.position.x - this.#minX) / this.#cellSize),
+      z: Math.floor((this.#follow.position.z - this.#minZ) / this.#cellSize),
+    };
+    const last = this.#residencyCell;
+    const jumped =
+      last !== undefined && Math.max(Math.abs(last.x - here.x), Math.abs(last.z - here.z)) > 1;
+    this.#residencyCell = here;
 
     for (const candidate of wanted) {
       const key = cellKey(candidate.cell.x, candidate.cell.z);
       if (this.#resident.has(key)) continue;
+      const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
+      const bytes = instances * PLACEMENT_RECORD_BYTES;
+      // After a jump, a cell the one-ring hysteresis above kept is not wanted, so it yields its share
+      // of the budgets to one that is. Without this the budgets stayed full of the ring the camera
+      // jumped from and the cells around it were refused until it moved again.
+      while (
+        jumped &&
+        (this.#resident.size >= this.#budgets.residentCells ||
+          this.#instances + this.#farInstances + instances > this.#budgets.instances ||
+          this.#bytes + this.#farBytes + bytes > this.#budgets.bytes)
+      ) {
+        const spare = this.#farthestUnwanted(followCell);
+        if (spare === undefined) break;
+        this.#evict(spare);
+      }
       if (this.#resident.size >= this.#budgets.residentCells) {
         this.#pressure.cells += 1;
         continue;
       }
-      const instances = candidate.cell.runs.reduce((total, run) => total + run.count, 0);
-      const bytes = instances * PLACEMENT_RECORD_BYTES;
       // The retained far aggregates are physical allocations the renderer holds too, so they are
       // charged against the same declared limits as the near ring: admitting a cell over the top of
       // them would put the world past `budgets.instances`/`budgets.bytes` with the far half invisible
@@ -4784,6 +4825,23 @@ export class WorldCells extends Group implements IComputeDriven {
       }
       this.#admit(candidate.cell, instances, bytes);
     }
+  }
+
+  /** The resident cell farthest outside the wanted ring, or none when every resident is wanted. */
+  #farthestUnwanted(followCell: { x: number; z: number }): IResidentCell | undefined {
+    let farthest: IResidentCell | undefined;
+    let reach = this.#ring;
+    for (const resident of this.#resident.values()) {
+      const away = Math.max(
+        Math.abs(resident.x - followCell.x),
+        Math.abs(resident.z - followCell.z),
+      );
+      if (away > reach) {
+        reach = away;
+        farthest = resident;
+      }
+    }
+    return farthest;
   }
 
   #admit(cell: IWorldCell, instances: number, bytes: number): void {
@@ -7492,11 +7550,15 @@ export class WorldCells extends Group implements IComputeDriven {
       if (Math.hypot(x - entry.lastFilterX, z - entry.lastFilterZ) <= entry.threshold / 8) continue;
       const asset = this.#assets.get(entry.asset);
       if (asset === undefined) continue;
+      // With the GPU scene on the dispatch switches levels itself, so only the cull gate changes
+      // which placements a build hands it; an asset with no cull has nothing to rebuild for.
+      const cull = cullDistance(asset.definition.maxDistance);
+      const gates = this.#gpuScene.on ? (cull === undefined ? [] : [cull]) : asset.gates;
       const [builtNear, builtFar] = this.#span(cell, entry.lastFilterX, entry.lastFilterZ);
       const low = Math.min(near, builtNear);
       // Ends included, so a placement exactly on a gate is one of the reasons to rebuild.
       const high = Math.max(far, builtFar);
-      if (!asset.gates.some((gate) => gate >= low && gate <= high)) continue;
+      if (!gates.some((gate) => gate >= low && gate <= high)) continue;
       this.#stale.push({ cell, distance: near, id: entry.asset });
       this.#staleEntries += 1;
     }
