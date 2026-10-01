@@ -156,6 +156,11 @@ function RainInterface() {
   // Nothing yet from the game, so nothing is claimed: the engine's own loading screen is still up.
   if (state === undefined) return null;
 
+  // Until the storm is ready, the curtain is all there is, as in the study: no controls over a
+  // world that is not on screen yet.
+  if (!state.loading.ready)
+    return <LoadingOverlay progress={state.loading.progress} ready={false} />;
+
   return (
     <>
       <Hud

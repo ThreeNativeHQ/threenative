@@ -22,7 +22,9 @@ export const loading = {
   progressColor: palette.accent,
   showStatus: false,
   trackColor: palette.zenith,
-  bar: { anchorX: 0.5, anchorY: 0.7, height: 9, maxWidth: 560, minWidth: 1, width: 0.64 },
+  // The study's one-pixel line through the middle of the screen; `src/ui/LoadingOverlay.tsx`
+  // writes the title and the stage above it and the photosensitivity note below it.
+  bar: { anchorX: 0.5, anchorY: 0.5, height: 1, maxWidth: 290, minWidth: 1, width: 0.64 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */
 
@@ -47,13 +49,15 @@ interface ILoadingHost {
 }
 
 interface ILoadingController {
+  /** True once the cover has lifted and the world is on screen. */
+  readonly done: boolean;
   update(): void;
   finish(): void;
 }
 
 function noOp(layer: ILoadingHost["canvasLayer"]): ILoadingController {
   layer.opaque = false;
-  return { finish: () => undefined, update: () => undefined };
+  return { done: true, finish: () => undefined, update: () => undefined };
 }
 
 function meshFor(
@@ -317,6 +321,9 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
   })();
 
   return {
+    get done() {
+      return done;
+    },
     finish,
     update(): void {
       if (!done) updateProgress(host.startup.progress);

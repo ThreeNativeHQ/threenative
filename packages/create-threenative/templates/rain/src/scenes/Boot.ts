@@ -50,6 +50,7 @@ export class Coast extends Scene<GameState> {
   #post: IStormPost | undefined;
   #lightning: IStormLightning | undefined;
   #measureClouds: (() => GameState["cloudPass"]) | undefined;
+  #curtainLifted: (() => boolean) | undefined;
 
   static override readonly initialState: GameState = {
     audioEnabled: false,
@@ -113,6 +114,7 @@ export class Coast extends Scene<GameState> {
     this.#post = post;
     this.#lightning = lightning;
     this.#measureClouds = world.clouds;
+    this.#curtainLifted = () => loading.done;
     // Registered, so the engine's registry disposes it with the game and `game.ts` can reach it by
     // name for the two holds that arrive outside a frame (the pause intent and tab visibility).
     const audio = ctx.entities.add(STORM_AUDIO_ENTITY, createStormAudio(ctx));
@@ -251,6 +253,7 @@ export class Coast extends Scene<GameState> {
       frameCtx.state.set({
         cameraReset: false,
         cinematic,
+        cloudPass: { ...frameCtx.state.getState().cloudPass, steps: world.clouds().steps },
         dropCount: rain.instanceCount,
         elapsed,
         flash,
@@ -279,24 +282,27 @@ export class Coast extends Scene<GameState> {
    * The launch and the cloud target, published from the render hook rather than the simulation
    * frame: a frame is drawn whether or not the clock moved (a paused or tick-driven run draws
    * without simulating), the loading curtain must lift on the frame that shows the storm, and the
-   * cloud target is only resized by the render itself. First-use compilation settling is the
-   * moment the storm is on screen; the stricter `phase === "ready"` also waits for a frame-time
-   * window a slow GPU may never meet.
+   * cloud target is only resized by the render itself. "Ready" is the canvas loading screen in
+   * `src/render/loading.ts` having lifted, so the interface and the world appear together.
    */
   override render(ctx: WeatherCtx): void {
     const progress = ctx.startup.progress;
-    const ready = ctx.startup.compileSettled || ctx.startup.phase === "ready";
+    // The interface's curtain lifts with the engine's own loading screen, on the same frame.
+    const ready = this.#curtainLifted?.() ?? false;
     const current = ctx.state.getState();
     // Read after the frame was drawn, so it is the target the cloud pass really rendered into.
     const clouds = this.#measureClouds?.() ?? current.cloudPass;
+    // Steps are the frame's own (set by the tier this frame simulated); the size is the render's.
     const same =
       current.loading.ready === ready &&
       current.loading.progress === progress &&
       current.cloudPass.width === clouds.width &&
-      current.cloudPass.height === clouds.height &&
-      current.cloudPass.steps === clouds.steps;
+      current.cloudPass.height === clouds.height;
     if (same) return;
-    ctx.state.set({ cloudPass: clouds, loading: { progress, ready } });
+    ctx.state.set({
+      cloudPass: { ...current.cloudPass, height: clouds.height, width: clouds.width },
+      loading: { progress, ready },
+    });
     ctx.state.flush();
   }
 

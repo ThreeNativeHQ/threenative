@@ -705,9 +705,9 @@ kbd {
   position: absolute;
   inset: 0;
   z-index: 20;
-  display: grid;
-  place-items: center;
-  background: #101c24;
+  /* No background of its own: the engine's canvas loading screen (src/render/loading.ts) is the
+     opaque night behind this text. A window-sized painted layer over the WebGPU canvas has to be
+     composited every frame — measured at 1920x1080 under Xvfb, 127 ms a frame against 1.5 ms. */
   transition: opacity 0.8s;
   /* A curtain, not a control: a press during the fade reaches the storm underneath. */
   pointer-events: none;
@@ -717,9 +717,17 @@ kbd {
   opacity: 0;
 }
 
-.loading-inner {
-  width: 290px;
+.loading-head,
+.loading-note {
+  position: absolute;
+  left: 50%;
+  width: 320px;
+  transform: translateX(-50%);
   text-align: center;
+}
+
+.loading-head {
+  bottom: calc(50% + 22px);
 }
 
 .loading-title {
@@ -736,25 +744,11 @@ kbd {
   line-height: 1.7;
 }
 
-.loading-line {
-  width: 100%;
-  height: 1px;
-  background: #314247;
-  margin: 22px 0;
-}
-
-.loading-line span {
-  display: block;
-  height: 100%;
-  background: var(--mint);
-  transition: width 0.4s;
-}
-
 .loading-note {
+  top: calc(50% + 22px);
   font-size: 10px;
   line-height: 1.8;
   color: #7f969a;
-  margin: 22px -15px;
 }
 
 .panel-toggle {
