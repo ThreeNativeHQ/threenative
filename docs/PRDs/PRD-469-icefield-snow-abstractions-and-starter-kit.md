@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
-**Progress:** 5/8 required boxes verified
+**Progress:** 7/8 required boxes verified
 
 ## Context
 
@@ -120,18 +120,25 @@ Proposed file paths become actual entry-point references when their owning phase
 - 2026-09-30 (João): extract the HTML's existing raw snow code into abstractions and include them in engine capability discovery; write the PRD now.
 - 2026-09-30 (planning): physics acceptance explicitly includes spheres, not just character steps. Reuse the existing terrain, bodies, particles and scaffold mechanisms; the snow starter owns its look.
 - 2026-10-01 (implementation, measured): native snow surfaces are Rapier heightfields, not the planned canonical-sample trimesh. The trimesh adapter worked (web/native surfaces agreed within 1e-4 m) but rebuilding it on native took 101 ms at 321 samples and 179 ms at 401 (cargo micro-benchmark), so every footstep hitched the desktop host; a heightfield rebuild copies samples only (0.24 ms / 0.38 ms). Native now receives the same column-major samples the web backend hands Rapier, so both runtimes build one surface by construction.
+- 2026-10-01 (implementation, measured, withdrawn): powder takes no energy from what moves through it. Building the sandbox demo showed a 10 kg ball at rest on the kit's 7% glade slope rolls about 4 m off its tee, and a pushed ball is still moving at 0.7 m/s four seconds later. Three rolling-resistance models were added to `attachSnowPhysics` and measured on real Rapier (soft-ground `sqrt(sinkage/width)` drag at the centre, the same at the rolling lever, compaction work), plus a force-couple torque swept headless; none held on both backends (native desktop over-spun, roll ratio 5.9, reach 0.47, so the kit's native scenario failed 3/3), so the feature was reverted rather than shipped half-right. The binding deforms snow without taking energy; snow rolling resistance is open engine work. The attempt surfaced a real seam bug, now fixed on web and native with tests: `applyForceAtPoint`'s torque was never cleared, so it kept spinning a body up after its step.
 - 2026-10-01 (implementation, unexplained engine issue): in the snow kit a bloom threshold of 0.92 left the native Linux desktop frame blank behind the HUD (Dawn/Vulkan, RTX 2080) while the web rendered it correctly; thresholds 0.2 and 0.7 rendered on native. Not root-caused. The kit ships with bloom off (its glints come from the snow material), recorded in `templates/snow/src/render/quality.ts`; the coordinator shared the finding with the rain lane, which also uses bloom natively.
 
 ## Current state (this branch)
 
 Phases 1 and 2 are complete and verified. Phase 2 landed the persistent-contact and in-place
 collider-refresh operations on both backends (`readContacts`, `setColliderShape`; Rust
-`tn_physics_read_contacts`/`tn_physics_set_trimesh_shape`, native heightfields as the trimesh of
-their canonical samples), `attachSnowPhysics` with `observe()`/`loadOf()`, and the generated snow
-game's `snow-physics.playtest.json` passing on browser WebGPU and on the native Linux desktop host.
-Phase 3 has a playable, registered `templates/snow/` kit whose six web scenarios pass in the packed
-template harness; capability discovery (AC-7), the repository gates (AC-8) and the visual record
-are still open.
+`tn_physics_read_contacts`/`tn_physics_set_heightfield_shape`), `attachSnowPhysics` with
+`observe()`/`loadOf()`, and the generated snow game's `snow-physics.playtest.json` passing on
+browser WebGPU and on the native Linux desktop host. Phase 3's kit passes all seven packed web
+scenarios and capability discovery is verified through the shipped MCP server; the repository
+gates (AC-8) are the last open box. The rain kit (PRD-473) is merged into this branch.
+
+Visual record, `docs/verification/PRD-469/` (JPEG, about 0.7 MB for the kit set): the kit at
+`snow-kit-webgpu-1440x900.jpg`, `-1024x768.jpg`, `-390x844-touch.jpg`, `-blizzard-1440x900.jpg`
+and `-surface-view-1440x900.jpg`; physics proof at
+`physics-sphere-track-box-capsule-dents-webgpu.jpg`, `physics-compaction-view-webgpu.jpg` and
+`physics-sphere-track-native-desktop-1280x720.jpg`; the supplied ICEFIELD document at the same
+three viewports as `reference-icefield-*.jpg`.
 
 ## Execution Phases
 
@@ -164,14 +171,14 @@ are still open.
 
 ### Phase 3: Discoverable, packed snow starter kit
 
-**Status:** IN PROGRESS — kit playable and registered; AC-6 to be re-run on the final kit, AC-7 and AC-8 open
+**Status:** IN PROGRESS — AC-6 and AC-7 verified; AC-8 gates running
 
 **Files:** `packages/create-threenative/templates/snow/` with portable scene/entities, editable `src/render/`, controls, instructions and playtests; existing scaffold/playtest/look/convention tests and `scripts/visual-gate.ts` template inventory; manifest/reference generators, existing MCP search/server tests and recall corpus. Generated mirrors/manifests follow their generators.
 
 **Implementation:** Recover the supplied scene/effects into the smallest useful kit, reusing the new public snow APIs rather than copying their implementation back into the template. Install local tarballs through the existing template harness. Extend capability situations and constraints, synchronize instructions/MCP files, and inspect browser/native captures against the supplied snow appearance. Keep weather transitions and sound/game feel editable in source.
 
-- [ ] AC-6 [local, actor: implementation agent]: A packed `--template snow` game boots and plays on browser WebGPU with source-derived footsteps/weather/powder controls and the sphere physics scenario. proof: `TN_TEMPLATE_ONLY=snow pnpm test:templates` — Evidence: pending; extend the existing harness to include the kit's nonempty snow scenarios and inspect its captures.
-- [ ] AC-7 [local, actor: implementation agent]: Snow mechanic queries discover the public field/binding through actual MCP search/detail, and returned examples compile against packed exports. proof: `pnpm build && pnpm capabilities:check && pnpm caps:recall` and `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/server.spec.ts packages/engine-mcp/__tests__/capability-examples.spec.ts` — Evidence: pending; exercise the shipped manifest from the generated project as well.
+- [x] AC-6 [local, actor: implementation agent]: A packed `--template snow` game boots and plays on browser WebGPU with source-derived footsteps/weather/powder controls and the sphere physics scenario. proof: `TN_TEMPLATE_ONLY=snow pnpm test:templates` — Evidence: exit 0 (2026-10-01, on the rain + snow merge; the kit is byte-identical to the final branch), NVIDIA Turing adapter on every scenario: `snow-real-frame-boot`, `survives`, `snow-footsteps`, `snow-weather`, `snow-touch-controls`, `snow-physics` and `production-performance` all pass. Native re-run on the merged tree: `native-playtests/snow-physics` 4/4 and `survives` exit 0 from a freshly packed `snow-proof`. Captures inspected: see the visual record above.
+- [x] AC-7 [local, actor: implementation agent]: Snow mechanic queries discover the public field/binding through actual MCP search/detail, and returned examples compile against packed exports. proof: `pnpm build && pnpm capabilities:check && pnpm caps:recall` and `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/server.spec.ts packages/engine-mcp/__tests__/capability-examples.spec.ts` — Evidence: `pnpm build` 0; `pnpm capabilities:check` fresh (374 entries, 362/362 package-backed entries resolvable from scaffolds); `pnpm caps:recall` 0 (83 rows, recall 0.916, 9 snow rows); engine-mcp search/server/capability-examples 71/71. In the packed `snow-proof`, the shipped server (`node_modules/@threenative/core/mcp/engine.mjs` over stdio, as its `.mcp.json` launches it) answers "leave footprints in deep snow that stay where the player walked" with `attachSnowPhysics`, `SnowField` first and "drop a heavy ball into powder snow so it sinks and carves a track" with `attachSnowPhysics`, `SnowField`, `GPUParticles3D`, `snowDiscFootprint`; `engine_capability_detail` returns both with their `@threenative/core/world` / `@threenative/physics` imports, and the kit that calls both type-checks and builds against the packed exports.
 - [ ] AC-8 [local, actor: implementation agent]: The completed implementation passes repository checks without changing unrelated games or weakening native/assertion guards. proof: `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets && pnpm check:docs` — Evidence: pending.
 
 **Verification:** Before runtime claims, scaffold `snow-proof` with the existing local-package overrides and run its browser/native scripts. Check source-independent installation and default-exported native game entry. Run `pnpm sync:agents` and `pnpm sync:mcp` for changed generated instructions/configs. Keep routine results beside these boxes; create no separate verification report. Run `pnpm prd:progress` after each phase; finish the implementation in one PR targeting `develop`, and move this PRD to `done/` only when every required result is verified.

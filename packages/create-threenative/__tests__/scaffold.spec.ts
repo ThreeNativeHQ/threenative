@@ -490,6 +490,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-27 after merging the PRD-400 three.js velocity patch with develop's
   // PRD-112/365 scaffold changes; the value comes from the committed merged scaffold tree.
   sailing: "348125d2b8e60b766c0fbaa455e3004d9cc262615bfb2c4a9d18fc05e72a8f44",
+  // Added 2026-10-01 for PRD-469: the snow kit's no-install tree on the rain + snow merge.
+  snow: "4c8893762d42fc53a2773a052e2726e7a5029c54acd63d3ba264062b05a12082",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
