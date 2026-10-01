@@ -24,8 +24,24 @@ export interface IAdapterClassification {
 export function classifyAdapter(report: IPlaytestReport): IAdapterClassification {
   const capture = report.capture;
   if (capture === undefined || capture.rendererKind !== "webgpu") return {};
+  // `capture.rendererKind` is a fact about the canvas, not about the device behind it: a run can
+  // carry a webgpu marker and an adapter object that named nothing — absent, `{}`, or every field
+  // an empty string. Reading that as hardware would hand the run a hardware verdict from a
+  // provenance that observed no adapter at all, which is the one answer this classifier exists to
+  // refuse. A named identity is required first; only then does the existing software classifier
+  // decide which class that identity is.
+  if (adapterIdentity(capture.adapter) === undefined) return {};
   const software = softwareAdapterName(capture.adapter);
   return software === undefined
     ? { adapterClass: "hardware" }
     : { adapterClass: "software", softwareAdapter: software };
+}
+
+/** One independently observed `adapter.info` field, or none when the run named nothing. */
+function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined): string | undefined {
+  if (adapter === undefined) return undefined;
+  for (const value of Object.values(adapter)) {
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
 }

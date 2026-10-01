@@ -206,6 +206,34 @@ describe("renderChain perAdapter selection", () => {
     );
   });
 
+  // `capture.rendererKind` is a fact about the canvas. Three provenance shapes carry that marker
+  // without carrying an adapter, and all three used to classify `hardware`.
+  it.each([
+    ["no adapter object", undefined],
+    ["an empty adapter object", {}],
+    ["an adapter that named nothing", { architecture: "", description: "", device: "", vendor: "" }],
+  ])("refuses to call hardware a run whose capture reports %s", async (_name, adapter) => {
+    const scenario = await load(SCENARIO(ASSERTION));
+    const result = evaluateRichPlaytestAssertions({
+      report: report(HIGH, {
+        ...capture(TURING),
+        adapter: adapter as IPlaytestCaptureProvenance["adapter"],
+      }),
+      scenario,
+    });
+
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({ id: "renderChain.adapterClass", pass: false }),
+    );
+    // No row may carry a hardware verdict from a provenance that observed nothing.
+    expect(
+      result.assertions.flatMap((row) => [row.details?.adapterClass]),
+    ).not.toContain("hardware");
+    expect(result.diagnostics.map((entry) => entry.code)).toContain(
+      "TN_PLAYTEST_RENDER_CHAIN_ADAPTER_UNCLASSIFIED",
+    );
+  });
+
   it("does not let an unclassified adapter satisfy the software branch", async () => {
     const scenario = await load(SCENARIO(ASSERTION));
     const result = evaluateRichPlaytestAssertions({ report: report(LOW, capture(TURING)), scenario });
@@ -234,6 +262,35 @@ describe("renderChain perAdapter selection", () => {
     // No perAdapter means no adapter question was asked, so no adapterClass row is invented.
     expect(result.assertions.map((row) => row.id)).not.toContain("renderChain.adapterClass");
     expect(result.assertions).toContainEqual(expect.objectContaining({ id: "renderChain.tier", pass: true }));
+  });
+
+  // A typo one level down is the same defect as a typo at the top: it names no stage, no
+  // contribution and no ceiling, while reading as an assertion that did. Every nested type is
+  // checked on both the flat form and the branch, through the one shared check.
+  it.each([
+    ["stages", { includes: ["bloom"] }, "includess"],
+    ["contributions", { graphOutputChanged: ["bloom"] }, "graphOutputchange"],
+    ["velocity", { maxRejectionFraction: 0.5 }, "maxRejectionfraction"],
+  ])("rejects a typo in nested %s on both the flat form and a branch", async (_name, nested, typo) => {
+    await expect(load(SCENARIO({ stages: { [typo]: ["bloom"] } }))).rejects.toThrow(
+      new RegExp(`stages\\.${typo}`, "u"),
+    );
+    await expect(load(SCENARIO({ contributions: { [typo]: ["bloom"] } }))).rejects.toThrow(
+      new RegExp(`contributions\\.${typo}`, "u"),
+    );
+    await expect(load(SCENARIO({ velocity: { [typo]: 0.5 } }))).rejects.toThrow(
+      new RegExp(`velocity\\.${typo}`, "u"),
+    );
+    await expect(
+      load(SCENARIO({ perAdapter: { software: { stages: { [typo]: ["bloom"] } } } })),
+    ).rejects.toThrow(new RegExp(`perAdapter\\.software\\.stages\\.${typo}`, "u"));
+    await expect(
+      load(SCENARIO({ perAdapter: { hardware: { contributions: { [typo]: ["bloom"] } } } })),
+    ).rejects.toThrow(new RegExp(`perAdapter\\.hardware\\.contributions\\.${typo}`, "u"));
+    await expect(
+      load(SCENARIO({ perAdapter: { software: { velocity: { [typo]: 0.5 } } } })),
+    ).rejects.toThrow(new RegExp(`perAdapter\\.software\\.velocity\\.${typo}`, "u"));
+    expect(nested).toBeTruthy();
   });
 
   it("rejects an empty, unknown, nested, or mistyped per-adapter branch at load", async () => {

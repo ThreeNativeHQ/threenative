@@ -2,7 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PerspectiveCamera, Scene } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   QUALITY_TIERS,
   costCommentGaps,
@@ -118,6 +118,61 @@ describe("template quality tiers", () => {
         () => resolveQualityTier({ tier: "ultra", software: true }),
         `${name}: unknown name`,
       ).toThrow(/"ultra"/u);
+    }
+  });
+
+  // The actual flow, not the resolver: `setupPost` is where the environment reaches
+  // `resolveQualityTier`, and ten of eleven call sites read `mobile` and `tier` while dropping
+  // `software`. Every assertion above calls the resolver directly and every one of them stayed
+  // green with the fact discarded, so this drives each template's own `setupPost` and reads the
+  // tier it reported for itself. On the old call sites these report `high`.
+  it("should take the cheap tier through each template's own setupPost on a software adapter", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      for (const name of names) {
+        const post = (await import(
+          path.join(templatesDir, name, "src", "render", "postprocessing.ts")
+        )) as {
+          setupPost: (
+            renderer: unknown,
+            scene: unknown,
+            camera: unknown,
+            environment?: { mobile?: boolean; software?: boolean; tier?: string },
+          ) => { dispose?: () => void };
+        };
+        const renderer = {
+          kind: "webgpu",
+          raw: {},
+          createRenderChain: () => ({ applied: { dropped: [], stages: [] }, dispose() {} }),
+        };
+        const reported = (environment: Parameters<typeof post.setupPost>[3]): string => {
+          info.mockClear();
+          post.setupPost(renderer, new Scene(), new PerspectiveCamera(), environment);
+          // The chain prints its own report after the tier line, so pick that line out.
+          return (
+            info.mock.calls
+              .map((call) => String(call[0]))
+              .find((line) => line.startsWith("TN_QUALITY_TIER")) ?? ""
+          );
+        };
+
+        expect(reported({ mobile: false, software: true }), `${name}: software adapter`).toContain(
+          "TN_QUALITY_TIER low",
+        );
+        // The tier the game pinned still wins over the adapter fact, or the pin is not a pin.
+        expect(
+          reported({ mobile: false, software: true, tier: "high" }),
+          `${name}: override`,
+        ).toContain("TN_QUALITY_TIER high");
+        expect(reported({ mobile: false, software: false }), `${name}: hardware`).toContain(
+          "TN_QUALITY_TIER high",
+        );
+        expect(reported({ mobile: true, software: false }), `${name}: phone`).toContain(
+          "TN_QUALITY_TIER low",
+        );
+      }
+    } finally {
+      info.mockRestore();
     }
   });
 

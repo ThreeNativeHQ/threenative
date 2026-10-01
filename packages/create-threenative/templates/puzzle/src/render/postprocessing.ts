@@ -28,7 +28,11 @@ export function setupPost(
     tier?: QualityTier;
   } = {},
 ): void {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
+  const tier = resolveQualityTier({
+    mobile: environment.mobile,
+    software: environment.software,
+    tier: environment.tier,
+  });
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
     `TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} software=${

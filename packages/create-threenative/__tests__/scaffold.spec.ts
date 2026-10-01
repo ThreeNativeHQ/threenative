@@ -164,22 +164,22 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01: every template's own render source changed for the software-adapter
-  // quality tier — quality.ts maps a named software adapter onto its existing `low` policy,
-  // postprocessing.ts prints it, and each scene passes the engine's adapter fact through — so all
-  // eleven trees move together by their own bytes. Values measured through createProject by the
-  // spec that asserts them, not by hand.
-  "action-rpg": "b1e5a5476f1d190e489b10a5a63e29f560bae0b8689c6f28706aaeb0112aee78",
-  minimal: "e652f4058da4f3bbc13d7c56e4be3c81306abd344f9529ab738e1ee9b329e4bd",
-  platformer: "adf61c03d6dcd1ea6a381e1222d48993488a86f46cfdb3a34b99a68bf07b37ab",
-  puzzle: "9c26add8365271fc142e10d5f843caef395c01bfc7d713914f83d4e4fc31cc7e",
-  racing: "8c496539d29087357a5a8ca774f9999f59684a558567a1a0d3f9e32672f4d379",
-  rts: "6adbe59e83417bcd778ff614d7dd9fe1461b95105df53bd231e8a438adff11f5",
-  runner: "e336303d702d7b5c27f7e1c63fe2fe08566b9313b6d81834fa36064d09f18a05",
-  sailing: "259b007a71e139117d5fe51459d118a0fba37eebf51927926a7a651657631477",
-  shooter: "c922756726067a821dd4c38c996b5e6b9f4afe25f858e782a0e5fb31b49ad13b",
+  // Recomputed 2026-10-01, twice: the first pass gave each template's quality.ts a software
+  // adapter policy; the second found that ten of eleven setupPost callers never forwarded the
+  // adapter fact to it, so those same ten trees moved again by their own bytes. `starter` is
+  // unchanged in both, because its setupPost hands the whole environment to createAdaptiveQuality.
+  // Values measured through createProject by the spec that asserts them, not by hand.
+  "action-rpg": "81a8e56dc5c17d4a4c9fd25307add84a44ec667258bea9c43f96aaefaa64e4bb",
+  minimal: "4219e35319c4783787d80331e1268d0ff8cbf8cc96bc13c26f707a897fcf0361",
+  platformer: "7b4bb63e6295bb48970950a2563dbd92a9b1751dcb257d002eb35bdf87443b92",
+  puzzle: "85e4db3716adaa633e2989ceb4b63815ab2cbd4277705ba958d0767d1c364cd1",
+  racing: "5859455e03d37f8d20e4e3a6846825fbd0ca007d271257d5477111bba4a38e6d",
+  rts: "84fc8eec66f3ef4cd470610b75c4a4f4d2331aa1014faf46311fc170b3937ea5",
+  runner: "d3757048af1bd494c436d94771576aa3659e4d81ab568f49bbda43ae222fcc5d",
+  sailing: "59720b73556c0bef0f468c472631cf14fb3c34d5fa8918c7db45d3babfa75e27",
+  shooter: "279e4fe703c242ec52137220c34e2f9b04a729a92b0028e15ab14d6b630fbec7",
   starter: "47f40062a7a7dea1c0c461401c3831585302e7bd7249daf043fb208a42a006cd",
-  "tower-defense": "6cd89d3760daa69be5ebd8e6cf541946848337c3949b6cd3897fbae84649d42a",
+  "tower-defense": "dfe363fafb84bb16f05b9e8ee1baeb5ce1890b9fd716daa83508d6d52ed21291",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

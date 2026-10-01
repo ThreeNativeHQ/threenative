@@ -39,7 +39,11 @@ export function setupPost(
     (globalThis as ProfileGlobals).__THREENATIVE_PROFILE__?.hostedSoftware === true;
   const requestedTier: QualityTier | undefined =
     environment.tier ?? (hostedSoftware ? "low" : undefined);
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: requestedTier });
+  const tier = resolveQualityTier({
+    mobile: environment.mobile,
+    software: environment.software,
+    tier: requestedTier,
+  });
   const source =
     environment.tier !== undefined ? "override" : hostedSoftware ? "hosted-software" : "platform";
   console.info(

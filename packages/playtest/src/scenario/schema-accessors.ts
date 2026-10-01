@@ -1110,39 +1110,41 @@ export function validateNestedAssertionKeys(
       `assert.${kind}${suffix}.runtime`,
     );
   }
-  if (kind === "renderChain" && isRecord(value.perAdapter)) {
-    const branchPath = `assert.renderChain${suffix}.perAdapter`;
-    rejectUnknownKeys(value.perAdapter, ["hardware", "software"], scenarioPath, branchPath);
-    for (const [adapterKind, branch] of Object.entries(value.perAdapter)) {
-      // A branch is the same shape as the flat assertion, so it takes the same key list — and
-      // `perAdapter` is not in it, which is what makes a second level of branching a load error.
-      if (isRecord(branch)) {
-        rejectUnknownKeys(branch, ["contributions", "stages", "tier", "velocity"], scenarioPath, `${branchPath}.${adapterKind}`);
+  if (kind === "renderChain") {
+    rejectRenderChainExpectationKeys(value, scenarioPath, `assert.${kind}${suffix}`);
+    if (isRecord(value.perAdapter)) {
+      const branchPath = `assert.renderChain${suffix}.perAdapter`;
+      rejectUnknownKeys(value.perAdapter, ["hardware", "software"], scenarioPath, branchPath);
+      for (const [adapterKind, branch] of Object.entries(value.perAdapter)) {
+        // A branch is the same shape as the flat assertion, so it runs the same key check at both
+        // levels — and `perAdapter` is not one of its keys, which is what makes a second level a
+        // load error. Without the nested pass, `perAdapter.software.stages.includess` validated
+        // where the flat `stages.includess` was rejected: a typo named no stage while reading as
+        // an assertion that did.
+        if (isRecord(branch)) {
+          rejectUnknownKeys(branch, ["contributions", "stages", "tier", "velocity"], scenarioPath, `${branchPath}.${adapterKind}`);
+          rejectRenderChainExpectationKeys(branch, scenarioPath, `${branchPath}.${adapterKind}`);
+        }
       }
     }
   }
-  if (kind === "renderChain" && isRecord(value.velocity)) {
-    rejectUnknownKeys(
-      value.velocity,
-      ["maxRejectionFraction"],
-      scenarioPath,
-      `assert.${kind}${suffix}.velocity`,
-    );
-  }
-  if (kind === "renderChain" && isRecord(value.contributions)) {
-    rejectUnknownKeys(
-      value.contributions,
-      ["graphOutputChanged"],
-      scenarioPath,
-      `assert.${kind}${suffix}.contributions`,
-    );
-  }
-  if (kind === "renderChain" && isRecord(value.stages)) {
-    rejectUnknownKeys(
-      value.stages,
-      ["excludes", "includes", "order"],
-      scenarioPath,
-      `assert.${kind}${suffix}.stages`,
-    );
+}
+
+const RENDER_CHAIN_NESTED_KEYS = {
+  contributions: ["graphOutputChanged"],
+  stages: ["excludes", "includes", "order"],
+  velocity: ["maxRejectionFraction"],
+} as const;
+
+/** The nested `stages` / `contributions` / `velocity` of one expectation, flat form or branch. */
+function rejectRenderChainExpectationKeys(
+  value: Record<string, unknown>,
+  scenarioPath: string,
+  objectPath: string,
+): void {
+  for (const [field, keys] of Object.entries(RENDER_CHAIN_NESTED_KEYS)) {
+    if (isRecord(value[field])) {
+      rejectUnknownKeys(value[field], keys, scenarioPath, `${objectPath}.${field}`);
+    }
   }
 }
