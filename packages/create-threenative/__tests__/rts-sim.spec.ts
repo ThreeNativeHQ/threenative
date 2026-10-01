@@ -338,6 +338,11 @@ describe("rts determinism", () => {
   // allocation-free — the army took its defender and then attacked the nearest shed. These are the
   // pre-rewrite states, so any semantic change to the rules shows up here as a different hash
   // rather than as a slower, differently-shaped game nobody notices.
+  //
+  // What `serialize()` covers is the played state: every entity's order, queue, path and supplies,
+  // the resource totals and the built flags. It does not cover the RNG's internal position, a
+  // commander's private state, or the event stream, so this is a fence on the match the player saw,
+  // not a claim that the two sources execute identical machine instructions.
   describe("the match is the one that was played before the rewrite", () => {
     const digest = (game: Game) =>
       createHash("sha256").update(game.serialize()).digest("hex").slice(0, 16);
@@ -366,20 +371,20 @@ describe("rts determinism", () => {
     it("replays seed 19 to the same match, step for step", () => {
       // The other seed is the one that must still differ, so its checkpoints prove the fence is
       // pinned to this match and not to "every match hashes the same".
+      const other = [
+        [1000, "250e71a712596ee0"],
+        [2000, "a3afc3fb6841ca19"],
+        [3000, "432fa5f7732ff6fc"],
+        [6000, "ee270f78dd8e9059"],
+      ] as const;
       const game = new Game({ ai: true, seed: 19 });
       const seen = new Map<number, string>();
       for (let i = 0; i < 6000; i++) {
         game.step();
-        for (const [step, hash] of [
-          [1000, "250e71a712596ee0"],
-          [2000, "a3afc3fb6841ca19"],
-          [3000, "432fa5f7732ff6fc"],
-          [6000, "ee270f78dd8e9059"],
-        ] as const)
-          if (step === i + 1) seen.set(step, digest(game));
+        for (const [step, hash] of other) if (step === i + 1) seen.set(step, digest(game));
       }
-      expect(seen.get(1000)).toBe("250e71a712596ee0");
-      expect(seen.get(6000)).toBe("ee270f78dd8e9059");
+      for (const [step, expected] of other)
+        expect(seen.get(step), `seed 19 at step ${step}`).toBe(expected);
     }, 300_000);
   });
 });
