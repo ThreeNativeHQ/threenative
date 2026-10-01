@@ -86,12 +86,13 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
   // James Ray Cock, Rico Cilliers, Nicolò Zubbini); see `props.ts`.
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const shipModel = getShipModel();
-    setupSky(ctx.scene);
+    const software = ctx.renderer.softwareAdapter !== undefined;
+    setupSky(ctx.scene, { software });
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
     setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: sun,
       mobile: isMobile(),
-      software: ctx.renderer.softwareAdapter !== undefined,
+      software,
     });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
@@ -109,7 +110,7 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     // The mirror is constructed here and handed to the material: `src/render/` reaches the engine
     // for the wave field it draws and nothing else, so the pass that draws the world a second time
     // is built in game code from the options that file authored.
-    const sea = createWaterMesh(ocean, new WaterSurface3D(SEA_MIRROR));
+    const sea = createWaterMesh(ocean, new WaterSurface3D(SEA_MIRROR), { software });
     this.#sea = sea;
     ctx.add(sea.mesh);
 

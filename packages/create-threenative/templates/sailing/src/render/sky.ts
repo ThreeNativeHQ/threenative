@@ -76,7 +76,7 @@ export async function loadSky(assets: { texture(path: string): Promise<Texture> 
   sky = await assets.texture("sky.jpg");
 }
 
-export function setupSky(scene: Scene): void {
+export function setupSky(scene: Scene, options: { readonly software?: boolean } = {}): void {
   if (sky === undefined) throw new Error("setupSky must run after loadSky.");
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
@@ -112,9 +112,17 @@ export function setupSky(scene: Scene): void {
   // It is what makes a standard material read as a material: sky-blue fill on every face the sun
   // misses, a sky to reflect — sharper as roughness drops — and, for the sea, the rough blurred
   // reflection the dome cannot provide.
-  scene.environment = sky;
-  scene.environmentIntensity = FILL_RANGE;
-  scene.environmentRotation = new Euler(0, SKY_YAW, 0);
+  //
+  // Not on a software adapter. PMREM-filtering this photograph keeps a CPU rasteriser's GPU process
+  // busy past its watchdog, the sea's pipeline compile queues behind it, and the device is lost
+  // before the first frame (measured on four cores: 29 pipelines compile and the run passes with
+  // it off, the sea pipeline dies after 25 s with it on). That lane is not render evidence, so it
+  // gives up the fill light and keeps every assertion.
+  if (options.software !== true) {
+    scene.environment = sky;
+    scene.environmentIntensity = FILL_RANGE;
+    scene.environmentRotation = new Euler(0, SKY_YAW, 0);
+  }
   // Open sea, so the far water is nearly all haze. At 0.003 the sea is half gone by 300 m and gone
   // by a kilometre, and the colour it goes to is the photograph's own horizon measured off this
   // file — which is why the water and the sky meet in one line instead of in a seam.
