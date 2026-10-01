@@ -4,7 +4,7 @@
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Progress:** 4/9 required boxes verified
+**Progress:** 5/9 required boxes verified
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
@@ -469,7 +469,7 @@ the supplied HTML alone is not proof of a third-party code license.
 
 ### Phase 2: ThreeNative rendering and matching collision
 
-**Status:** PARTIAL
+**Status:** VERIFIED
 
 **Files:** `examples/strata-terrain-preview/package.json`, existing-template-derived
 build config, `src/game.ts`, `src/world/terrain.ts`, `src/render/terrain.ts`,
@@ -487,25 +487,21 @@ Adapt the existing sailing ocean source; use game-owned atmosphere/lighting and
 material source. Ocean compute advances every frame without reevaluating terrain.
 
 - [x] AC-3 [local, actor: implementing agent]: Browser WebGPU play exercises the generated hill/road with matching rendered and physical ground. proof: `pnpm --filter strata-terrain-preview test:terrain:web` — Evidence: PASS 2026-09-30 — existing runner with `--browser-recipe webgpu --headed`, NVIDIA/turing RTX 2080, 903 scenario ticks; the resource wait observes at least 50 m of walking (62.94 m in the isolated walk), grounded character, 371 coastal contact samples and maximum error 0.000043 m (isolated walk 609 samples, 0.000057 m). The 17×17 asymmetric fixture includes both cell interiors/diagonal sides and exact edge/corner probes, with measured bilinear-vs-triangle difference 1.5 m. No console, runtime or asset errors; inspected nonblank screenshots are attached on the PR. Walking probes compare identical oblique rays through the rendered and physical surfaces; this is not a claim that Rapier’s near-boundary vertical ray miss is fixed.
-- [x] AC-4 [local, actor: implementing agent]: The same baked terrain scenario runs in the Linux native desktop host. proof: `pnpm --filter strata-terrain-preview test:terrain:desktop` — Evidence: PASS 2026-09-30 — existing native bundler plus `--target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral` and `run dist/strata-terrain-native.js`; 903 scenario ticks, observed 50 m travel wait, grounded character, 371 final ground samples and maximum mesh/physics error 0.000043 m. NVIDIA RTX 2080 host, inspected nonblank terrain/coastal captures, no runtime/console errors. Ocean compute/readback observes changing values after moving its clock update into Scene.update; this does not claim rendered-normal/coast qualification, FPS or mobile results.
-- [ ] AC-9 [local, actor: implementing agent]: The coastal ocean mesh visibly consumes the installed spectral simulation in the game scene. proof: AC-3 and AC-4 scenario runs — Evidence: pending; observe changing wave displacement and normals across recorded times, lit material response, and coast masking on browser and desktop, with no silent substitute or missing compute observations.
+- [x] AC-4 [local, actor: implementing agent]: The same baked terrain scenario runs in the Linux native desktop host. proof: `pnpm --filter strata-terrain-preview test:terrain:desktop` — Evidence: PASS 2026-09-30 — existing native bundler plus `--target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral` and `run dist/strata-terrain-native.js`; 903 scenario ticks, observed 50 m travel wait, grounded character, 371 final ground samples and maximum mesh/physics error 0.000043 m. NVIDIA RTX 2080 host, inspected nonblank terrain/coastal captures, no runtime/console errors. A separate host run completes 300 render frames in 7,655 ms and captures nonblank terrain (226 presentations; not a steady-state FPS result). Ocean compute/readback and actual displaced/lit water captures pass; mobile results are not claimed.
+- [x] AC-9 [local, actor: implementing agent]: The coastal ocean mesh visibly consumes the installed spectral simulation in the game scene. proof: AC-3 and AC-4 scenario runs — Evidence: PASS 2026-10-01 — both target scripts pass the shared scenario and the installed PNG inspection check. Camera-matched early/later water captures change 71.2% of qualified water pixels; after moving the actual directional light, 54.2% change. Directly inspected browser/native captures show displaced wave shading, depth-colour transition and foam/masking from the baked coast. The lit standard node material consumes both spectral cascade buffers and central-difference normals. CPU sample slopes are reported separately as stale readback, not a numerical rendered-normal measurement. Both targets observe compute/readback activity; no runtime/asset errors. Final starter art/atmosphere quality remains AC-5.
 
-Phase 2 work in progress: the preview bakes seeded 512 m / 257-vertex forest
-and coastal worlds before startup and consumes only baked arrays in its game
-graph. The browser scenario now passes through the installed scene picker on
-NVIDIA/turing; headed capture is required because headless Chromium selected
-SwiftShader and lost its WebGPU instance. A data-URL favicon avoids the unrelated
-browser request error. Browser and desktop artifacts have separate directories.
-Desktop bundling and the shared native scenario pass after moving ocean.advance
-from the render callback into Scene.update, before fixed compute dispatch. The
-first native failure was a game clock-wiring error: deterministic ticks do not
-run beforeRender. The corrected scenario observes 361 spectral compute steps,
-360 readback samples, wave-height range 0.02448 m and CPU sample-slope range
-0.01180, with no runtime errors. Two recorded ocean times allow asynchronous
-readback between tick batches. CPU sample slope variation remains a stale
-readback proxy, not rendered-normal qualification. Coast masking/foam and visible
-normal/sun-response comparisons remain pending; AC-9 stays open.
-
+Phase 2 verified: the preview bakes seeded 512 m / 257-vertex forest and
+coastal worlds before startup and consumes only baked arrays in its game graph.
+Headed browser capture names NVIDIA/turing; headless Chromium selected SwiftShader
+and lost its WebGPU instance. Browser/native artifacts have separate directories.
+The first native ocean failure was game clock wiring: deterministic ticks do not
+run beforeRender. Ocean.advance now runs in Scene.update before compute dispatch.
+The scenario observes 361 spectral steps and 360 samples. Two recorded ocean times
+and an actual sunlight change qualify visible displaced/normal-lit water on both
+targets; the game-owned shader samples canonical baked heights for depth colour,
+shore foam and opacity. CPU slope variation remains a stale readback proxy.
+The separate native host run renders 300 frames and captures the terrain; its
+226 presentations and wall time are not a steady-state frame-rate claim.
 
 Raw Rapier reproduces a vertical-ray miss at z=159.99998474121094 near a
 heightfield grid boundary. Walking probes compare identical oblique rays in mesh
@@ -568,8 +564,8 @@ coefficient; those integration fixes pass 15 targeted tests and retain compatibi
 The PR branch subsequently received develop commit `7d8367a58`; the terrain
 consumer suite (7 tests), package integration suites (15 tests), strict publint
 and capability regeneration pass again on the preserved merged baseline. Full
-repository checks will be refreshed with the next behavior phase. No Strata
-browser, desktop, editor, starter-art or full-world export result is claimed yet.
+repository checks will be refreshed with the next behavior phase. The subsequently rerun browser/native scenarios verify rendering/contact and
+coastal wave/lighting behavior. Editor, starter-art and full-world export remain open.
 
 
 Commands naming the new package, example, tests, and `test:terrain:*` /
@@ -609,3 +605,13 @@ size limit. Full refresh on the integrated develop baseline passes 520 unit file
 tests (3 files / 12 existing skips), plus workspace builds and package checks.
 The subsequent game clock wiring is covered by the rerun example typecheck and
 shared runtime scenario; no new full-suite verdict is claimed for that edit.
+
+Phase 2 visual refresh (2026-10-01): both target scripts include the runnable
+`verify-ocean.mjs` check, reusing the native conformance PNG inspector. Browser
+and native shoreline/wave/sun captures are inspected and attached to PR #381.
+The shoreline refresh passes root typecheck, lint, budgets and doc links; six
+documentation suites pass 180 tests. Root `pnpm test` completes workspace/package
+checks and 6,475 unit tests, with one source-hygiene failure because a removed
+tracked palette file had not yet been staged. Staging that deletion fixes the
+index-based scan; its one test then passes. This reports the actual full-command
+failure and targeted repair, not a cached or invented full-command success.

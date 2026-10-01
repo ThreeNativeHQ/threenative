@@ -1,17 +1,9 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
+import { terrainPalette } from "../src/render/palette.js";
 
 // Authoring runs before either runtime is bundled. The game imports only the baked JSON.
-const palette = [
-  [0.38, 0.46, 0.26],
-  [0.46, 0.36, 0.25],
-  [0.47, 0.47, 0.44],
-  [0.91, 0.94, 0.95],
-  [0.73, 0.63, 0.46],
-  [0.37, 0.32, 0.24],
-  [0.48, 0.44, 0.36],
-  [0.32, 0.4, 0.28],
-];
+
 const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({ id: "hills", base: 18, amplitude: 16, scale: 180, warp: 35, octaves: 5 })
   .stamp({
@@ -87,13 +79,14 @@ const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
 const worlds = {};
 for (const [name, terrain] of Object.entries({ forest, coastal })) {
   const state = terrain.evaluate();
-  const mesh = bakeMesh(state, { palette });
+  const mesh = bakeMesh(state, { palette: terrainPalette });
   worlds[name] = {
     size: state.size,
     resolution: state.resolution,
     heights: Array.from(state.height),
     colors: Array.from(mesh.colors),
     rivers: state.rivers,
+    waterLevel: state.waters.find((water) => water.kind === "ocean")?.level ?? null,
   };
 }
 await mkdir(new URL("../src/world/", import.meta.url), { recursive: true });

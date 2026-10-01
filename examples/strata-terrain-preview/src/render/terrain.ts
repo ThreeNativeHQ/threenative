@@ -6,6 +6,7 @@ export interface IBakedWorld {
   resolution: number;
   heights: number[];
   colors: number[];
+  waterLevel: number | null;
 }
 
 export function createTerrain(data: IBakedWorld): { field: Heightfield; mesh: Mesh } {

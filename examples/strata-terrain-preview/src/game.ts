@@ -34,6 +34,7 @@ const initialState = {
   waveSamples: 0,
   waveRange: 0,
   sampleSlopeRange: 0,
+  sunX: -180,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
@@ -43,6 +44,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
     static override readonly initialState = initialState;
     #player: CharacterBody3D | undefined;
     #elapsed = 0;
+    #sun: DirectionalLight | undefined;
     #ocean: ReturnType<typeof createOcean> | undefined;
 
     override enter(ctx: TerrainCtx): void {
@@ -75,13 +77,15 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const sun = new DirectionalLight(0xffeed0, 2.8);
       sun.position.set(-180, 240, 120);
       ctx.add(sun);
+      this.#sun = sun;
+      ctx.entities.add("sun", { object: sun, debug: () => ({ x: sun.position.x }) });
       ctx.add(new HemisphereLight(0xbcd4ed, 0x5e6548, 1.2));
 
       const actor = new Mesh(
         new CapsuleGeometry(0.35, 1.0, 6, 12),
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
-      const start = world === "forest" ? [-190, 160] : [100, 110];
+      const start = world === "forest" ? [-190, 160] : [180, 100];
       actor.position.set(
         start[0] as number,
         field.heightAt(start[0] as number, start[1] as number) + 2,
@@ -150,8 +154,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const ocean = world === "coastal" ? ctx.add(createOcean()) : undefined;
       this.#ocean = ocean;
       if (ocean) {
-        const water = createWaterMesh(ocean);
-        water.position.y = 1.5;
+        const water = createWaterMesh(ocean, data);
         ctx.add(water);
         ctx.entities.add("sea", {
           object: ocean,
@@ -245,6 +248,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         frames++;
         ctx.state.set({
           world,
+          sunX: sun.position.x,
           frames,
           travel,
           grounded: player.grounded,
@@ -257,8 +261,9 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           sampleSlopeRange: waveSamples ? maxSlope - minSlope : 0,
         });
       });
+      const cameraOffset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
       ctx.beforeRender(() => {
-        ctx.camera.position.copy(actor.position).add(new Vector3(28, 24, 42));
+        ctx.camera.position.copy(actor.position).add(cameraOffset);
         ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
       });
     }
@@ -266,6 +271,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
     override update(ctx: TerrainCtx, dt: number): void {
       this.#elapsed += dt;
       this.#ocean?.advance(this.#elapsed);
+      if (ctx.input.justPressed("light") && this.#sun) {
+        const sun = this.#sun;
+        sun.position.set(sun.position.x < 0 ? 180 : -180, 240, 120);
+      }
       const player = this.#player;
       if (!player) return;
       const move = ctx.input.vector("move");
@@ -290,6 +299,7 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     },
     jump: { keys: ["Space"] },
     coast: { keys: ["KeyC"] },
+    light: { keys: ["KeyL"] },
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
   render: { preferWebGPU: true },

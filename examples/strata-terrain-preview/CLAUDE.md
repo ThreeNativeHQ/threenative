@@ -9,7 +9,7 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - Game appearance lives in `src/render/`; the ocean uses installed `SpectralOcean`.
 - Use one `Heightfield` buffer for geometry and existing heightfield collision; do not resample.
 - Ground contacts use actual mesh and physics queries. Bilinear heights are not triangle contacts.
-- WASD/arrows move, Space jumps, C switches forest/coast. The player owns its camera.
+- WASD/arrows move, Space jumps, C switches forest/coast, L changes sunlight. The player owns its camera.
 - Starter art, editor controls and portable world export are subsequent PRD phases.
 
 Run `pnpm --filter strata-terrain-preview test:terrain:web` and

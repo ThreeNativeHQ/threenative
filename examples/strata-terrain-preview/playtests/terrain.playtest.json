@@ -57,6 +57,14 @@
       "waitTicks": 180,
       "release": true,
       "screenshot": "coastal-ocean"
+    },
+    {
+      "kind": "input",
+      "label": "sun-change",
+      "press": "KeyL",
+      "holdTicks": 2,
+      "release": true,
+      "screenshot": "coastal-sun-alt"
     }
   ],
   "assert": {
@@ -113,6 +121,12 @@
         "id": "GameState",
         "path": "sampleSlopeRange",
         "gte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "sunX",
+        "equals": 180,
+        "changed": true
       }
     ]
   }

@@ -13,7 +13,15 @@
 // A spectral ocean is cascaded wave spectra inverse-transformed on the GPU every frame, which is
 // what real water is, and a standard node material puts it back under the scene's own lights.
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
-import { Mesh, PlaneGeometry } from "three";
+import {
+  DataTexture,
+  DataUtils,
+  HalfFloatType,
+  LinearFilter,
+  Mesh,
+  PlaneGeometry,
+  RedFormat,
+} from "three";
 import {
   color,
   float,
@@ -21,12 +29,14 @@ import {
   positionLocal,
   positionWorld,
   smoothstep,
+  texture,
   transformNormalToView,
+  vec2,
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { palette } from "./palette.js";
+import type { IBakedWorld } from "./terrain.js";
 
 /**
  * The sea state. Every number is this game's.
@@ -119,7 +129,20 @@ function displacementAt(ocean: SpectralOcean, x: Node<"float">, z: Node<"float">
  * height query is copied from. If the two disagreed the ship would ride water nothing renders and
  * every assertion in this template would still be green.
  */
-export function createWaterMesh(ocean: SpectralOcean): Mesh {
+export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
+  const level = data.waterLevel;
+  if (level === null || !Number.isFinite(level))
+    throw new Error("Coastal bake has no finite sea level");
+  const heightTexture = new DataTexture(
+    Uint16Array.from(data.heights, DataUtils.toHalfFloat),
+    data.resolution,
+    data.resolution,
+    RedFormat,
+    HalfFloatType,
+  );
+  heightTexture.minFilter = LinearFilter;
+  heightTexture.magFilter = LinearFilter;
+  heightTexture.needsUpdate = true;
   const geometry = new PlaneGeometry(
     SURFACE.size,
     SURFACE.size,
@@ -133,6 +156,8 @@ export function createWaterMesh(ocean: SpectralOcean): Mesh {
   // its specular response for free, and gets them consistent with the hull floating on it.
   const material = new MeshStandardNodeMaterial({
     metalness: 0.02,
+    transparent: true,
+    depthWrite: false,
     // Not glass. At 0.08 the key light landed as one blown white disc on the swell in front of the
     // camera; water this side of a dead calm scatters enough to spread that into a glitter path.
     roughness: 0.29,
@@ -161,17 +186,27 @@ export function createWaterMesh(ocean: SpectralOcean): Mesh {
     vec3(west.y.sub(east.y).div(twice), float(1), south.y.sub(north.y).div(twice)).normalize(),
   );
 
-  // Colour by height: deep in the troughs, lit water on the shoulders, foam on the crests. The
-  // band is narrower than the wave amplitude on purpose, so the tops read as foam-lit rather than
-  // as a gentle gradient.
-  const shade = smoothstep(float(-2.4), float(1.8), positionWorld.y);
-  const water = mix(color(palette.floor), color(palette.accent), shade);
-  const crest = smoothstep(float(1.6), float(3), positionWorld.y);
-  material.colorNode = mix(water, color(FOAM), crest);
-  // Foam is not a mirror. Roughening the crests is what stops them reading as chrome.
-  material.roughnessNode = mix(float(0.29), float(0.82), crest);
+  // Both coast masking and shallow foam use the same authored heightfield as the land.
+  // Half-float is sufficient for a metre-wide visual foam band and is filterable on WebGPU.
+  const shoreUV = vec2(
+    positionWorld.x.div(float(data.size)).add(0.5),
+    positionWorld.z.div(float(data.size)).add(0.5),
+  );
+  const landHeight = texture(heightTexture, shoreUV).r;
+  const depth = positionWorld.y.sub(landHeight);
+  const relativeHeight = positionWorld.y.sub(float(level));
+  const shallow = smoothstep(float(0.5), float(12), depth);
+  const water = mix(color(0x5ea7a9), color(0x153e54), shallow);
+  const crest = smoothstep(float(1.6), float(3), relativeHeight);
+  const shoreFoam = float(1).sub(smoothstep(float(0.3), float(2.4), depth));
+  const foam = crest.max(shoreFoam);
+  material.colorNode = mix(water, color(FOAM), foam);
+  material.opacityNode = smoothstep(float(-0.15), float(0.35), depth);
+  material.roughnessNode = mix(float(0.29), float(0.82), foam);
+  material.addEventListener("dispose", () => heightTexture.dispose());
 
   const mesh = new Mesh(geometry, material);
+  mesh.position.y = level;
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
   mesh.name = "sea-surface";
