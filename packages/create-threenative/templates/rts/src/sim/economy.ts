@@ -2,7 +2,14 @@
 
 import type { Game } from "./game.js";
 import { approachInteraction } from "./movement.js";
-import { type EntityType, type IEntity, type ISupply, TYPES, dist } from "./types.js";
+import {
+  type EntityType,
+  type IEntity,
+  type IResourceNode,
+  type ISupply,
+  TYPES,
+  dist,
+} from "./types.js";
 
 export function canAfford(game: Game, type: EntityType, team = 0): boolean {
   const d = TYPES[type];
@@ -24,7 +31,12 @@ export function pay(game: Game, type: EntityType, team = 0): void {
 export function supply(game: Game, team = 0): ISupply {
   let used = 0;
   let cap = 0;
-  for (const e of game.own(team)) {
+  // Over the live list, not `own()`: this is asked every step by every producing structure, and
+  // `own()` hands back a fresh array to answer it.
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e === undefined || e.team !== team || e.hp <= 0) continue;
     const d = TYPES[e.type];
     used += d.supply || 0;
     if (e.built) cap += d.cap || 0;
@@ -33,15 +45,69 @@ export function supply(game: Game, team = 0): ISupply {
   return { used, cap: Math.min(120, cap) };
 }
 
+/** The nearest live node of a kind, found in place: `filter().sort()[0]` was two arrays a call. */
+function nearestNode(
+  game: Game,
+  entity: IEntity,
+  kind: "ore" | "gas",
+  requireAmount: boolean,
+): IResourceNode | null {
+  let best: IResourceNode | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const n of game.nodes) {
+    if (n.kind !== kind || (requireAmount && n.amount <= 0)) continue;
+    const away = dist(n, entity);
+    if (away < bestDistance) {
+      bestDistance = away;
+      best = n;
+    }
+  }
+  return best;
+}
+
+/** The nearest standing drop-off, found in place, for the same reason. */
+function nearestCore(game: Game, entity: IEntity): IEntity | null {
+  const entities = game.entities;
+  let best: IEntity | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e === undefined || e.type !== "core" || e.team !== entity.team || e.hp <= 0 || !e.built)
+      continue;
+    const away = dist(e, entity);
+    if (away < bestDistance) {
+      bestDistance = away;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** Is this team's refinery standing close enough to run the node? */
+function refineryNear(game: Game, entity: IEntity, node: IResourceNode): boolean {
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (
+      e !== undefined &&
+      e.type === "refinery" &&
+      e.team === entity.team &&
+      e.built &&
+      e.hp > 0 &&
+      dist(e, node) < 3
+    )
+      return true;
+  }
+  return false;
+}
+
 /** Walks the node, fills up over 1.8 s, then carries the load back to a drop-off. */
 export function harvest(game: Game, entity: IEntity, dt: number): void {
   if (entity.order.kind !== "gather") return;
   const order = entity.order;
   const node = game.node(order.id);
   if (!node || (node.amount <= 0 && order.phase !== "return")) {
-    const next = game.nodes
-      .filter((n) => n.kind === "ore" && n.amount > 0)
-      .sort((a, b) => dist(a, entity) - dist(b, entity))[0];
+    const next = nearestNode(game, entity, "ore", true);
     if (next) {
       order.id = next.id;
       order.phase = "out";
@@ -50,21 +116,12 @@ export function harvest(game: Game, entity: IEntity, dt: number): void {
     }
     return;
   }
-  if (
-    node.kind === "gas" &&
-    order.phase !== "return" &&
-    !game.entities.some(
-      (b) =>
-        b.type === "refinery" && b.team === entity.team && b.built && b.hp > 0 && dist(b, node) < 3,
-    )
-  ) {
+  if (node.kind === "gas" && order.phase !== "return" && !refineryNear(game, entity, node)) {
     entity.order = { kind: "idle" };
     return;
   }
   if (order.phase === "return") {
-    const base = game.entities
-      .filter((b) => b.type === "core" && b.team === entity.team && b.hp > 0 && b.built)
-      .sort((a, b) => dist(a, entity) - dist(b, entity))[0];
+    const base = nearestCore(game, entity);
     if (!base) {
       entity.order = { kind: "idle" };
       return;

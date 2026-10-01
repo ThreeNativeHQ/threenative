@@ -400,9 +400,11 @@ export interface IPlayer {
 }
 
 export interface IInteractionGoal {
-  key: string;
   point: IPoint | null;
+  range: number;
   retryAt: number;
+  revision: number;
+  targetId: number;
 }
 
 /** A unit, a building or an unbuilt construction site — the same record, as in every faction. */
@@ -484,7 +486,16 @@ export interface IOrderResult {
 
 export const clamp = (v: number, a: number, b: number): number => Math.max(a, Math.min(b, v));
 
-export const dist = (a: IPoint, b: IPoint): number => Math.hypot(a.x - b.x, a.z - b.z);
+/** `sqrt` rather than `Math.hypot`: on the XZ plane the two agree to well under a micrometre, and
+ *  `hypot` hands back a fresh boxed double on every call — which is the hottest path in the match. */
+export const dist = (a: IPoint, b: IPoint): number => planeDistance(a.x, a.z, b.x, b.z);
+
+/** The same distance from four numbers, for the callers that hold coordinates and not a point. */
+export const planeDistance = (ax: number, az: number, bx: number, bz: number): number => {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+};
 
 /** mulberry32: the world's one seeded stream. Injected as `() => number` so a match is replayable. */
 export function seeded(seed = 17): () => number {

@@ -5,6 +5,7 @@ import { HALF, waterBlocked } from "./terrain.js";
 import {
   type EntityType,
   type IEntity,
+  type IObstacle,
   type IPoint,
   type IResourceNode,
   TYPES,
@@ -30,21 +31,25 @@ export function travelEntity(
   stop = 0.5,
 ): boolean {
   if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(dt) || dt <= 0) return false;
-  const distance = Math.hypot(x - entity.x, z - entity.z);
+  const toX = x - entity.x;
+  const toZ = z - entity.z;
+  const distance = Math.sqrt(toX * toX + toZ * toZ);
   if (distance <= stop + 0.2) {
     entity.moving = false;
     return true;
   }
   const speed = TYPES[entity.type].speed ?? 0;
   if (entity.air) {
-    const dx = x - entity.x;
-    const dz = z - entity.z;
+    const dx = toX;
+    const dz = toZ;
     const step = Math.min(speed * dt, Math.max(0, distance - stop));
     entity.x = clamp(entity.x + (dx / distance) * step, -HALF + entity.r + 1, HALF - entity.r - 1);
     entity.z = clamp(entity.z + (dz / distance) * step, -HALF + entity.r + 1, HALF - entity.r - 1);
     entity.angle = Math.atan2(dx, dz);
     entity.moving = step > 0;
-    return Math.hypot(x - entity.x, z - entity.z) <= stop + 0.2;
+    const left = x - entity.x;
+    const near = z - entity.z;
+    return Math.sqrt(left * left + near * near) <= stop + 0.2;
   }
   let dest: IPoint = { x, z };
   if (stop > 1) {
@@ -89,7 +94,7 @@ export function travelEntity(
   if (!p) return false;
   const dx = p.x - entity.x;
   const dz = p.z - entity.z;
-  const dd = Math.hypot(dx, dz);
+  const dd = Math.sqrt(dx * dx + dz * dz);
   if (dd < 0.3) {
     entity.path.shift();
     return entity.pathAdjusted || distance <= stop + 0.4;
@@ -144,20 +149,43 @@ export function spawnExit(
   return null;
 }
 
+/** The perimeter candidate `approachInteraction` is testing, reused so the ring costs no objects. */
+const _candidate: IPoint = { x: 0, z: 0 };
+
+/** Reused by `separateEntities`, which runs every step: the buffers are the whole reason it is free. */
+const _units: IEntity[] = [];
+const _solids: (IEntity | IObstacle)[] = [];
+
 export function separateEntities(game: Game, dt: number): void {
-  const units = game.entities.filter((e) => !e.building && !e.garrisonId && e.hp > 0);
-  const solids = [...game.obstacles, ...game.entities.filter((e) => e.building && e.hp > 0)];
+  _units.length = 0;
+  _solids.length = 0;
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const entity = entities[i];
+    if (entity === undefined || entity.hp <= 0) continue;
+    if (entity.building) _solids.push(entity);
+    else if (!entity.garrisonId) _units.push(entity);
+  }
+  for (let i = 0; i < game.obstacles.length; i++) {
+    const o = game.obstacles[i];
+    if (o !== undefined) _solids.push(o);
+  }
+  const units = _units;
+  const solids = _solids;
   for (let i = 0; i < units.length; i++) {
     const a = units[i];
     if (!a) continue;
-    const old = { x: a.x, z: a.z };
+    // The pre-push position, as two numbers: the water rollback below is the only reader, and a
+    // point object per unit per step is sixty objects a frame for a value read once.
+    const oldX = a.x;
+    const oldZ = a.z;
     for (let j = i + 1; j < units.length; j++) {
       const b = units[j];
       if (!b) continue;
       if (!!a.air !== !!b.air) continue;
       let dx = a.x - b.x;
       let dz = a.z - b.z;
-      let d = Math.hypot(dx, dz);
+      let d = Math.sqrt(dx * dx + dz * dz);
       const min = (a.r + b.r) * 0.83;
       if (d >= min) continue;
       if (d < 0.0001) {
@@ -173,10 +201,12 @@ export function separateEntities(game: Game, dt: number): void {
       b.z -= (dz / d) * push;
     }
     if (!a.air) {
-      for (const o of solids) {
+      for (let s = 0; s < solids.length; s++) {
+        const o = solids[s];
+        if (o === undefined) continue;
         let dx = a.x - o.x;
         let dz = a.z - o.z;
-        let d = Math.hypot(dx, dz);
+        let d = Math.sqrt(dx * dx + dz * dz);
         const min = o.r + a.r + 0.035;
         if (d >= min) continue;
         if (d < 0.0001) {
@@ -190,10 +220,10 @@ export function separateEntities(game: Game, dt: number): void {
       }
       if (
         waterBlocked(a.x, a.z, game.pools, a.r * 0.7) &&
-        !waterBlocked(old.x, old.z, game.pools, a.r * 0.7)
+        !waterBlocked(oldX, oldZ, game.pools, a.r * 0.7)
       ) {
-        a.x = old.x;
-        a.z = old.z;
+        a.x = oldX;
+        a.z = oldZ;
       }
     }
     a.x = clamp(a.x, -HALF + a.r + 1, HALF - a.r - 1);
@@ -215,22 +245,32 @@ export function approachInteraction(
     unit.moving = false;
     return true;
   }
-  const key = `${target.id}:${range}:${game.navRevision}`;
+  // The cache key is three numbers compared in place, not a template string: this runs for every
+  // harvesting worker, every step, and a key is a fresh string each time.
   let cached = unit.interactionGoal;
-  if (!cached || cached.key !== key || (!cached.point && game.time >= cached.retryAt)) {
+  if (
+    !cached ||
+    cached.targetId !== target.id ||
+    cached.range !== range ||
+    cached.revision !== game.navRevision ||
+    (!cached.point && game.time >= cached.retryAt)
+  ) {
     const angle = Math.atan2(unit.z - target.z, unit.x - target.x);
     const radius = range - 0.35;
-    const points = Array.from({ length: 24 }, (_, i) => {
-      const a = angle + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
-      return { x: target.x + Math.cos(a) * radius, z: target.z + Math.sin(a) * radius };
-    }).filter((p) => !game.blocked(p.x, p.z, unit.r));
+    // The candidate ring, in place: `Array.from(...).filter()` was 25 objects and an array per
+    // worker per step to walk a ring this loop walks anyway. An unreachable site still caches as
+    // no point, exactly as the filtered ring did.
     let point: IPoint | null = null;
-    for (const p of points) {
-      if (game.lineClear(unit, p, unit.r)) {
-        point = p;
+    for (let i = 0; i < 24 && point === null; i++) {
+      const a = angle + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * (Math.PI / 12);
+      _candidate.x = target.x + Math.cos(a) * radius;
+      _candidate.z = target.z + Math.sin(a) * radius;
+      if (game.blocked(_candidate.x, _candidate.z, unit.r)) continue;
+      if (game.lineClear(unit, _candidate, unit.r)) {
+        point = { x: _candidate.x, z: _candidate.z };
         break;
       }
-      const route = game.pathfind(unit, p, unit.r);
+      const route = game.pathfind(unit, _candidate, unit.r);
       const end = route[route.length - 1];
       let walked = true;
       let previous: IPoint = unit;
@@ -241,12 +281,18 @@ export function approachInteraction(
         }
         previous = step;
       }
-      if (end && dist(end, p) < 0.35 && walked) {
-        point = p;
+      if (end && dist(end, _candidate) < 0.35 && walked) {
+        point = { x: _candidate.x, z: _candidate.z };
         break;
       }
     }
-    cached = { key, point, retryAt: game.time + 1.5 };
+    cached = {
+      point,
+      range,
+      retryAt: game.time + 1.5,
+      revision: game.navRevision,
+      targetId: target.id,
+    };
     unit.interactionGoal = cached;
     clearMovement(unit);
   }

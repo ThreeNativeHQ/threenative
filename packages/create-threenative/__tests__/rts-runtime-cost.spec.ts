@@ -10,12 +10,34 @@ import { Game } from "../templates/rts/src/sim/game.js";
  * failure. The count is the claim, so it is a sentinel on the constructors and on `clone()` — a
  * path that copies its result instead of writing into a scratch vector is the exact defect this
  * catches, and the render modules already hold one `_dummy` and one `_ndc` for that reason.
+ *
+ * Vectors are not the whole story. `filter`, `map`, `slice` and friends each hand back a new
+ * array, so a steady frame that calls one of them is allocating at sixty units — which is what a
+ * `V2` sentinel alone would report as clean. Every array-producing call in the measured window is
+ * counted too, across the simulation step, the render sync and the scene frame.
  */
 const probeState = vi.hoisted(() => ({
+  arrayAllocations: 0,
   vector2Allocations: 0,
   vector3Allocations: 0,
   vector3Clones: 0,
 }));
+
+/** The array-returning builtins: each call is one fresh array plus its callback closure. */
+const ARRAY_ALLOCATORS = [
+  "concat",
+  "entries",
+  "filter",
+  "flat",
+  "flatMap",
+  "keys",
+  "map",
+  "slice",
+  "splice",
+  "toReversed",
+  "toSorted",
+  "values",
+] as const;
 
 vi.mock("three", async (importOriginal) => {
   const actual = await importOriginal<typeof import("three")>();
@@ -58,6 +80,47 @@ function measureVectorAllocations(step: () => void): { clones: number; construct
   probeState.vector3Clones = 0;
   for (let frame = 0; frame < MEASURED_FRAMES; frame += 1) step();
   return { clones: probeState.vector3Clones, constructors: probeState.vector3Allocations };
+}
+
+/**
+ * Counts every array the measured window allocates, and names the ones it saw. Wrapping the
+ * builtins rather than sampling the heap keeps the gate deterministic: no profiler, no threshold,
+ * and a regression names the call that came back.
+ */
+function countArrayAllocations<T>(step: () => T): { calls: number; where: string[] } {
+  const proto = Array.prototype as unknown as Record<string, unknown>;
+  const original = new Map<string, (...args: never[]) => unknown>();
+  for (const name of ARRAY_ALLOCATORS) original.set(name as string, proto[name as string] as never);
+  const where: string[] = [];
+  // Formatting a stack walks `split` and `slice`, which are themselves wrapped, so the capture
+  // happens before anything is wrapped and the wrappers stay one frame deep.
+  let capturing = false;
+  const count = (): void => {
+    if (where.length >= 8 || capturing) return;
+    capturing = true;
+    try {
+      Error.stackTraceLimit = 6;
+      where.push((new Error().stack ?? "").split("\n").slice(3).join(" | "));
+      Error.stackTraceLimit = 10;
+    } finally {
+      capturing = false;
+    }
+  };
+  try {
+    for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) step();
+    where.length = 0;
+    for (const name of ARRAY_ALLOCATORS) {
+      const built = original.get(name as string) as (...args: never[]) => unknown;
+      proto[name as string] = function guarded(this: unknown[], ...args: never[]): unknown {
+        count();
+        return built.apply(this, args);
+      };
+    }
+    for (let frame = 0; frame < MEASURED_FRAMES; frame += 1) step();
+  } finally {
+    for (const [key, built] of original) proto[key] = built;
+  }
+  return { calls: where.length, where };
 }
 
 function simFiles(directory: string): string[] {
@@ -114,6 +177,14 @@ describe("rts kit ordinary-frame runtime cost", () => {
     });
   });
 
+  it("steps 600 frames of a sixty-unit match without allocating an array", () => {
+    const game = sixtyUnitMatch();
+
+    const arrays = countArrayAllocations(() => game.step());
+
+    expect(arrays.calls, `rts sim array allocation sentinel: ${arrays.where.join("\n")}`).toBe(0);
+  });
+
   it("syncs sixty units of render state for 600 frames without a fresh vector", async () => {
     const { createArmy } = await import("../templates/rts/src/render/army.js");
     const { createUnitModels } = await import("../templates/rts/src/render/models.js");
@@ -140,12 +211,22 @@ describe("rts kit ordinary-frame runtime cost", () => {
       resources.sync(game);
       army.sync(game, selected, time, DT, camera);
     });
+    const arrays = countArrayAllocations(() => {
+      time += DT;
+      game.step();
+      terrain.updateFog(game);
+      resources.sync(game);
+      army.sync(game, selected, time, DT, camera);
+    });
 
     expect(selected.size).toBeGreaterThanOrEqual(OWN_UNITS);
     expect(allocations, "rts render vector allocation sentinel").toEqual({
       clones: 0,
       constructors: 0,
     });
+    expect(arrays.calls, `rts render array allocation sentinel: ${arrays.where.join("\n")}`).toBe(
+      0,
+    );
     terrain.root.removeFromParent();
     resources.root.removeFromParent();
     army.root.removeFromParent();

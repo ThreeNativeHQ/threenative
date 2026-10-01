@@ -6,11 +6,14 @@ import { TYPES, clamp } from "./types.js";
 
 export function updateVision(game: Game): void {
   const size = game.gridSize;
+  const entities = game.entities;
   for (const player of game.players) {
     player.visible.fill(0);
     if (player.eliminated) continue;
-    for (const e of game.own(player.team)) {
-      if (e.garrisonId) continue;
+    // Over the live list rather than `own()`, which would filter a fresh array per player per tick.
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e === undefined || e.team !== player.team || e.hp <= 0 || e.garrisonId) continue;
       const radius = TYPES[e.type].sight;
       const cx = Math.floor((e.x + HALF) / game.cell);
       const cz = Math.floor((e.z + HALF) / game.cell);

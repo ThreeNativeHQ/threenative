@@ -95,6 +95,9 @@ export function createArmy(models: IUnitModels): IArmy {
     ring.renderOrder = 2;
     root.add(ring);
   }
+  // Read back per frame instead of destructuring `rings.entries()`, which hands back a two-element
+  // array for every ring, every frame.
+  const ringTeams = STARTS.map((start, index) => start.team ?? index);
 
   // Two quads per readout — a coloured fill over the dark backdrop ring that frames it — so a bar
   // reads against any ground. `toneMapped: false` keeps them at the colour they were authored.
@@ -190,7 +193,10 @@ export function createArmy(models: IUnitModels): IArmy {
         batch(entity.type, entity.team).list.push(entity);
       }
       for (const entry of batches.values()) {
-        entry.list.forEach((entity, index) => {
+        const list = entry.list;
+        for (let index = 0; index < list.length; index++) {
+          const entity = list[index];
+          if (entity === undefined) continue;
           _dummy.position.set(
             entity.x,
             terrainHeight(entity.x, entity.z) + (entity.altitude || 0) + bob(entity, time),
@@ -207,9 +213,9 @@ export function createArmy(models: IUnitModels): IArmy {
           _dummy.scale.set(1, rise, 1);
           _dummy.updateMatrix();
           for (const part of entry.parts) part.setMatrixAt(index, _dummy.matrix);
-        });
+        }
         for (const part of entry.parts) {
-          part.count = entry.list.length;
+          part.count = list.length;
           if (part.count === 0) continue;
           upload(part.instanceMatrix, part.count);
           // The instance-aware bound, or the batch is culled by its own geometry's origin-sized
@@ -218,7 +224,10 @@ export function createArmy(models: IUnitModels): IArmy {
         }
       }
 
-      for (const [team, ring] of rings.entries()) {
+      for (let teamIndex = 0; teamIndex < rings.length; teamIndex++) {
+        const ring = rings[teamIndex];
+        const team = ringTeams[teamIndex] ?? 0;
+        if (ring === undefined) continue;
         let count = 0;
         for (const entity of game.entities) {
           if (entity.garrisonId !== null || entity.team !== team) continue;

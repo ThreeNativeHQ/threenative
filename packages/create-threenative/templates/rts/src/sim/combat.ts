@@ -3,7 +3,14 @@
 import { abandonConstruction, releaseBuilder } from "./construction.js";
 import type { Game } from "./game.js";
 import { clearMovement } from "./movement.js";
-import { type IEntity, type IOrderResult, type IUnitDef, TYPES, dist } from "./types.js";
+import {
+  type IEntity,
+  type IOrderResult,
+  type IUnitDef,
+  TYPES,
+  dist,
+  planeDistance,
+} from "./types.js";
 
 export function garrisonCheck(game: Game, unit: IEntity, bunker: IEntity | undefined): boolean {
   if (
@@ -17,12 +24,14 @@ export function garrisonCheck(game: Game, unit: IEntity, bunker: IEntity | undef
   ) {
     return false;
   }
-  const assigned = game.entities.filter(
-    (u) =>
-      u.hp > 0 &&
-      u.id !== unit.id &&
-      (u.garrisonId === bunker.id || (u.order.kind === "garrison" && u.order.id === bunker.id)),
-  ).length;
+  const entities = game.entities;
+  let assigned = 0;
+  for (let i = 0; i < entities.length; i++) {
+    const u = entities[i];
+    if (u === undefined || u.hp <= 0 || u.id === unit.id) continue;
+    if (u.garrisonId === bunker.id || (u.order.kind === "garrison" && u.order.id === bunker.id))
+      assigned += 1;
+  }
   return assigned < (TYPES.bunker.capacity ?? 0);
 }
 
@@ -108,11 +117,18 @@ export function removeGarrisonOccupant(game: Game, unit: IEntity): void {
 export function weaponProfile(game: Game, unit: IEntity): IUnitDef {
   const d = TYPES[unit.type];
   if (unit.type !== "bunker") return d;
-  const occupants = unit.garrison
-    .map((id) => game.get(id))
-    .filter((u) => u && u.garrisonId === unit.id);
-  return { ...d, damage: occupants.length * (TYPES.ranger.damage ?? 0) };
+  // Counted in place over the bunker's own roster: `map().filter()` was two arrays per bunker per
+  // frame to learn a length, and the roster is the shorter of the two lists anyway.
+  let occupants = 0;
+  for (let i = 0; i < unit.garrison.length; i++) {
+    const occupant = game.get(unit.garrison[i] ?? -1);
+    if (occupant && occupant.garrisonId === unit.id) occupants += 1;
+  }
+  return { ...d, damage: occupants * (TYPES.ranger.damage ?? 0) };
 }
+
+/** Hoisted: `canAttackTarget` runs once per unit per candidate, and a literal mask is an array. */
+const GROUND_ONLY: readonly string[] = ["ground"];
 
 export function canAttackTarget(
   game: Game,
@@ -132,7 +148,7 @@ export function canAttackTarget(
     return false;
   }
   const d = weaponProfile(game, attacker);
-  return !!d.damage && (d.targets || ["ground"]).includes(target.air ? "air" : "ground");
+  return !!d.damage && (d.targets ?? GROUND_ONLY).includes(target.air ? "air" : "ground");
 }
 
 /** Picks a target, shoots it, and closes on anything in range it cannot reach. */
@@ -205,18 +221,27 @@ export function engage(game: Game, unit: IEntity, dt: number, hold = false): boo
         targetId: target.id,
         style: d.shot || "tracer",
       });
-      const impact = { x: target.x, z: target.z };
+      const impactX = target.x;
+      const impactZ = target.z;
+      const impactAir = !!target.air;
       game.damage(target, target.air && d.airDamage ? d.airDamage : d.damage, unit.team);
       if (d.splash) {
-        for (const other of [...game.entities]) {
+        // Over the length captured now: a splash kill only marks an entity dead, and the dead are
+        // pruned after the step, so the list is the same one the copied array used to be.
+        const entities = game.entities;
+        const visited = entities.length;
+        for (let i = 0; i < visited; i++) {
+          const other = entities[i];
           if (
-            other.id !== target.id &&
-            canAttackTarget(game, unit, other) &&
-            !!other.air === !!target.air &&
-            dist(other, impact) < d.splash
+            other === undefined ||
+            other.id === target.id ||
+            !canAttackTarget(game, unit, other) ||
+            !!other.air !== impactAir
           ) {
-            game.damage(other, d.damage * 0.45, unit.team);
+            continue;
           }
+          if (planeDistance(other.x, other.z, impactX, impactZ) < d.splash)
+            game.damage(other, d.damage * 0.45, unit.team);
         }
       }
     }
@@ -249,13 +274,30 @@ export function updateSupport(game: Game, unit: IEntity, dt: number, hold = fals
     !!ordered && ordered.team === unit.team && !ordered.garrisonId && !ordered.building;
   let target = eligible(ordered) ? ordered : null;
   if (!target) {
-    target =
-      game
-        .own(unit.team)
-        .filter(eligible)
-        .filter((e) => dist(e, unit) < (hold ? healRange : d.sight))
-        .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp || dist(unit, a) - dist(unit, b))[0] ??
-      null;
+    // The same pick the sort made — lowest health fraction, then nearest — found in one pass, so a
+    // medic costs no arrays. `own()` deliberately is not used: it filters the dead out first.
+    const reach = hold ? healRange : (d.sight ?? 0);
+    const entities = game.entities;
+    let best = Number.POSITIVE_INFINITY;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e === undefined || !eligible(e)) continue;
+      const away = dist(e, unit);
+      if (away >= reach) continue;
+      const hurt = e.hp / e.maxHp;
+      if (hurt > best) continue;
+      if (hurt < best) {
+        best = hurt;
+        bestDistance = away;
+        target = e;
+        continue;
+      }
+      if (away < bestDistance) {
+        bestDistance = away;
+        target = e;
+      }
+    }
   }
   unit.healTargetId = target?.id ?? null;
   unit.targetId = null;

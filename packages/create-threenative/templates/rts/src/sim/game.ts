@@ -54,9 +54,47 @@ import {
   clamp,
   dist,
   formation,
+  planeDistance,
   seeded,
 } from "./types.js";
 import { updateVision, visibleAt } from "./vision.js";
+
+/** One allocation-free answer to "is a standing core near this unit?", asked once per unit per step. */
+function coreNear(game: Game, unit: IEntity): boolean {
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const b = entities[i];
+    if (
+      b !== undefined &&
+      b.type === "core" &&
+      b.built &&
+      b.hp > 0 &&
+      b.team === unit.team &&
+      dist(b, unit) < 15
+    )
+      return true;
+  }
+  return false;
+}
+
+/** Does this faction still have a core standing? Asked three times a step, so no closure per call. */
+function coreAlive(game: Game, team: number): boolean {
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e !== undefined && e.team === team && e.type === "core" && e.hp > 0) return true;
+  }
+  return false;
+}
+
+function anyEnemyCoreAlive(game: Game): boolean {
+  const entities = game.entities;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e !== undefined && e.team > 0 && e.type === "core" && e.hp > 0) return true;
+  }
+  return false;
+}
 
 export interface IGameOptions {
   ai?: boolean;
@@ -203,11 +241,23 @@ export class Game {
   }
 
   get(id: number): IEntity | undefined {
-    return this.entities.find((e) => e.id === id && e.hp > 0);
+    // A loop, not `find`: this is asked for every ordered unit, every step, and `find` builds a
+    // closure and an iterator to answer it.
+    const entities = this.entities;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e !== undefined && e.id === id && e.hp > 0) return e;
+    }
+    return undefined;
   }
 
   node(id: number): IResourceNode | undefined {
-    return this.nodes.find((n) => n.id === id);
+    const nodes = this.nodes;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (n !== undefined && n.id === id) return n;
+    }
+    return undefined;
   }
 
   spawn(type: EntityType, team: number, x: number, z: number, built = true): IEntity {
@@ -458,7 +508,14 @@ export class Game {
     const step = Math.min(dt, 0.1);
     this.time += step;
     this.visionClock += step;
-    for (const e of [...this.entities]) {
+    // Indexed over the length captured up front, not a copy of the array: a unit trained mid-step
+    // is picked up on the next step, exactly as the copied array did, and the step no longer
+    // copies sixty records to iterate them.
+    const entities = this.entities;
+    const visited = entities.length;
+    for (let index = 0; index < visited; index++) {
+      const e = entities[index];
+      if (e === undefined || e.hp <= 0 || e.garrisonId) continue;
       if (e.hp <= 0 || e.garrisonId) continue;
       e.moving = false;
       e.healTargetId = null;
@@ -494,9 +551,7 @@ export class Game {
         e.hp < e.maxHp &&
         this.time - e.lastDamaged > 8 &&
         e.order.kind !== "attack" &&
-        this.entities.some(
-          (b) => b.type === "core" && b.built && b.hp > 0 && b.team === e.team && dist(b, e) < 15,
-        )
+        coreNear(this, e)
       ) {
         e.hp = Math.min(e.maxHp, e.hp + step * 4);
       }
@@ -516,31 +571,49 @@ export class Game {
       }
     }
     this.separate(step);
-    this.entities = this.entities.filter((e) => e.hp > 0);
+    this.pruneDead();
     if (this.visionClock > 0.3) {
       this.updateVision();
       this.visionClock = 0;
     }
     if (this.ai) for (const commander of this.commanders) commander.update(this, step);
+    let anyEliminated = false;
     for (const player of this.players) {
-      if (player.eliminated) continue;
-      if (!this.entities.some((e) => e.team === player.team && e.type === "core" && e.hp > 0)) {
-        player.eliminated = true;
-        this.emit("eliminated", { team: player.team, name: player.name });
-        for (const e of this.own(player.team)) {
-          this.damage(e, e.hp, player.team === 0 ? 1 : 0);
-        }
+      if (player.eliminated || coreAlive(this, player.team)) continue;
+      player.eliminated = true;
+      this.emit("eliminated", { team: player.team, name: player.name });
+      for (const e of this.own(player.team)) {
+        this.damage(e, e.hp, player.team === 0 ? 1 : 0);
       }
     }
-    this.entities = this.entities.filter((e) => e.hp > 0);
-    if (this.players.some((p) => p.eliminated)) this.updateVision();
-    if (!this.entities.some((e) => e.team === 0 && e.type === "core")) {
+    for (const player of this.players) {
+      if (player.eliminated) {
+        anyEliminated = true;
+        break;
+      }
+    }
+    this.pruneDead();
+    if (anyEliminated) this.updateVision();
+    if (!coreAlive(this, 0)) {
       this.result = "defeat";
       this.emit("end", { result: "defeat" });
-    } else if (!this.entities.some((e) => e.team > 0 && e.type === "core" && e.hp > 0)) {
+    } else if (!anyEnemyCoreAlive(this)) {
       this.result = "victory";
       this.emit("end", { result: "victory" });
     }
+  }
+
+  /** Drops the dead in place, order kept: the same survivors the filtered copy left, without it. */
+  pruneDead(): void {
+    const entities = this.entities;
+    let kept = 0;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e === undefined || e.hp <= 0) continue;
+      entities[kept] = e;
+      kept += 1;
+    }
+    entities.length = kept;
   }
 
   spawnPoint(building: IEntity, type: EntityType = "worker"): IPoint | null {
@@ -562,9 +635,9 @@ export class Game {
   blocked(x: number, z: number, r = 0.7): boolean {
     if (Math.abs(x) > HALF - r - 1 || Math.abs(z) > HALF - r - 1) return true;
     if (waterBlocked(x, z, this.pools, r)) return true;
-    for (const o of this.obstacles) if (Math.hypot(x - o.x, z - o.z) < o.r + r) return true;
+    for (const o of this.obstacles) if (planeDistance(x, z, o.x, o.z) < o.r + r) return true;
     for (const b of this.entities) {
-      if (b.building && b.hp > 0 && Math.hypot(x - b.x, z - b.z) < b.r + r) return true;
+      if (b.building && b.hp > 0 && planeDistance(x, z, b.x, b.z) < b.r + r) return true;
     }
     return false;
   }
