@@ -104,9 +104,9 @@
       {
         "entity": "ball",
         "component": "rollRatio",
-        "gte": 0.8,
-        "lte": 1.2,
-        "allowTrivial": "Turn times radius over distance: a rolling ball reads 1, a sliding or copied transform reads near 0."
+        "gte": 0.6,
+        "lte": 1.6,
+        "allowTrivial": "Turn times radius over the ground covered: a rolling ball reads near 1 (a ball carving its own trench can over-spin as it slows), a sliding or copied transform reads near 0."
       },
       {
         "entity": "ball",

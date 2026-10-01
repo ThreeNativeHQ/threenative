@@ -177,6 +177,21 @@ describe("sphere on deformable snow under real physics", () => {
     expect(snow.sample(BALL_RADIUS * 1.6, -1).indent).toBeLessThan(0.0005);
   });
 
+  it("presses with the vertical part of a contact, so a sideways shove does not dig a pit", async () => {
+    const { binding, ctx, snow } = await scene();
+    const body = ball(ctx.physics, 0, 0.6, 0);
+    binding.add(body);
+    run(ctx, binding, 120);
+    const resting = snow.sample(0, 0).indent;
+    // A hard horizontal shove drives the ball into the wall of its own crater for a step or two.
+    body.applyImpulse({ x: 0, y: 0, z: 18 });
+    let deepest = 0;
+    run(ctx, binding, 6, () => {
+      for (let z = -0.3; z <= 0.6; z += 0.05) deepest = Math.max(deepest, snow.sample(0, z).indent);
+    });
+    expect(deepest).toBeLessThan(resting + 0.01);
+  });
+
   it("keeps the collider on the canonical surface with at most one step of lag", async () => {
     const { binding, ctx, snow } = await scene();
     const body = ball(ctx.physics, 0.3, 0.8, 0.2);

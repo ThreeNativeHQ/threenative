@@ -35,8 +35,8 @@ export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 const BALL_RADIUS = 0.25;
 const BALL_MASS = 10;
-/** Newton-seconds a push gives the ball: 1.8 m/s on a 10 kg ball. */
-const KICK = 18;
+/** Newton-seconds a push gives the ball: 2.4 m/s on a 10 kg ball, enough to carve on uphill. */
+const KICK = 24;
 const CRATE = { x: 0.5, y: 0.3, z: 0.4 } as const;
 const LOG = { halfHeight: 0.35, radius: 0.14 } as const;
 /** Where the explorer walks while auto-explore is on. */
@@ -232,13 +232,40 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       kickedAt: undefined as { x: number; z: number } | undefined,
       path: [] as Array<{ x: number; z: number }>,
       turned: 0,
+      /** Ground the ball's centre covered since the kick, step by step. */
+      rolled: 0,
+      /** Farthest the ball got from where it was kicked. */
+      reach: 0,
       lastRotation: { w: 1, x: 0, y: 0, z: 0 },
+      lastPosition: { x: 0, y: 0, z: 0 },
+      lastClearance: 0,
     };
+    // Read the solver's own pose: the drawn ball is synced from it later in the frame, and one
+    // step stale is ten centimetres at the speed a dropped ball lands.
+    const solvedBall = () =>
+      ctx.physics.simulation.readBodyTransform?.(ball.body.id) ?? {
+        position: ballObject.position,
+        rotation: ballObject.quaternion,
+      };
     const ballState = () => {
-      const p = ballObject.position;
+      const p = solvedBall().position;
       const inside = Math.abs(p.x) < half && Math.abs(p.z) < half;
       const ground = inside ? snow.heightAt(p.x, p.z) : 0;
+      // Clearance is the closest the sphere's underside comes to the snow anywhere beneath it,
+      // not just under its centre: a ball rolling over the lip of its crater is touching the rim
+      // while its centre stands well above the crater floor.
+      let clearance = Number.POSITIVE_INFINITY;
+      for (const ring of [0, 0.5, 0.85]) {
+        for (let step = 0; step < (ring === 0 ? 1 : 8); step += 1) {
+          const angle = (step / 8) * Math.PI * 2;
+          const x = clampToField(p.x + Math.cos(angle) * ring * BALL_RADIUS);
+          const z = clampToField(p.z + Math.sin(angle) * ring * BALL_RADIUS);
+          const underside = p.y - Math.sqrt(1 - ring * ring) * BALL_RADIUS;
+          clearance = Math.min(clearance, underside - snow.heightAt(x, z));
+        }
+      }
       return {
+        clearance,
         gap: p.y - BALL_RADIUS - ground,
         sink: inside ? snow.sample(p.x, p.z).indent : 0,
       };
@@ -246,7 +273,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("ball", {
       object: ballObject,
       debug: () => {
-        const { gap, sink } = ballState();
+        const { clearance, gap, sink } = ballState();
         const kick = telemetry.kickedAt;
         const p = ballObject.position;
         const travelled = kick === undefined ? 0 : Math.hypot(p.x - kick.x, p.z - kick.z);
@@ -255,14 +282,18 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         for (const point of telemetry.path)
           if (snow.sample(point.x, point.z).indent < 0.004) trackGaps += 1;
         return {
-          airborne: gap > 0.05,
+          airborne: clearance > 0.05,
+          clearance,
           airborneLoads: telemetry.airborneLoads,
           dropped: telemetry.dropped,
           gap,
           kicked: kick !== undefined,
           load: snowPhysics.loadOf(ball),
           position: [p.x, p.y, p.z],
-          rollRatio: travelled > 0.05 ? (telemetry.turned * BALL_RADIUS) / travelled : 0,
+          // Turn times radius over the distance actually covered: 1 is rolling without slipping.
+          reach: telemetry.reach,
+          rollRatio:
+            telemetry.rolled > 0.05 ? (telemetry.turned * BALL_RADIUS) / telemetry.rolled : 0,
           settled: Math.abs(gap) <= 0.02 && sink > 0.02,
           sink,
           trackGaps,
@@ -339,11 +370,14 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         const length = Math.hypot(dx, dz) || 1;
         dx /= length;
         dz /= length;
-        // Hard enough to climb out of the crater it rests in and carve on through fresh powder.
-        ball.applyImpulse({ x: dx * KICK, y: 0, z: dz * KICK });
+        // A kick lifts as well as pushes: a dropped ball can sit ten centimetres down in its own
+        // crater, and a purely sideways shove only rolls it up the wall and back in.
+        ball.applyImpulse({ x: dx * KICK, y: KICK * 0.4, z: dz * KICK });
         telemetry.kickedAt = { x: p.x, z: p.z };
         telemetry.path.length = 0;
         telemetry.turned = 0;
+        telemetry.rolled = 0;
+        telemetry.reach = 0;
         say("Ball pushed. It rolls through the powder and carves its own track.");
       } else if (command === "view") {
         view = (view + 1) % VIEWS.length;
@@ -378,10 +412,15 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         surface.collect();
       }
       snowPhysics.step(dt);
-      // Ball telemetry: a load while clearly above the snow would be a contact nothing touched.
-      const { gap } = ballState();
-      if (gap > 0.05 && snowPhysics.loadOf(ball) > 0) telemetry.airborneLoads += 1;
-      const rotation = ballObject.quaternion;
+      // Ball telemetry: a load while the ball was clearly above the snow for the whole step — at
+      // its start and at its end — would be a contact nothing touched. A step that lands or
+      // kicks off legitimately touches at one end of it.
+      const clearance = ballState().clearance;
+      if (Math.min(clearance, telemetry.lastClearance) > 0.05 && snowPhysics.loadOf(ball) > 0)
+        telemetry.airborneLoads += 1;
+      telemetry.lastClearance = clearance;
+      const solved = solvedBall();
+      const rotation = solved.rotation;
       const previous = telemetry.lastRotation;
       const dot = Math.min(
         1,
@@ -392,14 +431,21 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
             previous.w * rotation.w,
         ),
       );
+      const p = solved.position;
+      const moved = telemetry.lastPosition;
       if (telemetry.kickedAt !== undefined) {
         telemetry.turned += 2 * Math.acos(dot);
+        telemetry.rolled += Math.hypot(p.x - moved.x, p.z - moved.z);
+        telemetry.reach = Math.max(
+          telemetry.reach,
+          Math.hypot(p.x - telemetry.kickedAt.x, p.z - telemetry.kickedAt.z),
+        );
         const last = telemetry.path[telemetry.path.length - 1];
-        const p = ballObject.position;
         if (last === undefined || Math.hypot(p.x - last.x, p.z - last.z) > 0.1)
           telemetry.path.push({ x: p.x, z: p.z });
       }
       telemetry.lastRotation = { w: rotation.w, x: rotation.x, y: rotation.y, z: rotation.z };
+      telemetry.lastPosition = { x: p.x, y: p.y, z: p.z };
     });
     ctx.beforeRender(() => surface.refresh());
 
