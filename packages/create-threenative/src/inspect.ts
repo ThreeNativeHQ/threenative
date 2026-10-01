@@ -202,7 +202,14 @@ async function localResourceResolver(file: string, data: Buffer): Promise<(url: 
   };
 }
 
-async function parseGltf(
+/**
+ * Parse a glTF/GLB into a scene and its clips, in node.
+ *
+ * Exported so a spec can hold a real shipped rig against the engine's own clip audit rather than
+ * a synthetic one: `clipTrackBindings` and `clipBoneCoverage` answer "does this clip bind, and
+ * which bones does it leave behind", and only a real asset has the real answer.
+ */
+export async function parseGltfAsset(
   file: string,
   data: Buffer,
 ): Promise<{
@@ -367,7 +374,7 @@ export async function inspectAsset(file: string): Promise<IAssetInspection> {
     throw inspectionFailure(file, error);
   }
   try {
-    const parsed = await parseGltf(file, data);
+    const parsed = await parseGltfAsset(file, data);
     return inspectScene(file, parsed.scene, parsed.animations, parsed.resourceCounts);
   } catch (error) {
     throw inspectionFailure(file, error);

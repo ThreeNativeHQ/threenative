@@ -17,7 +17,6 @@ import {
   createAdaptiveQuality,
   formatQualityAdaptation,
 } from "./adaptiveQuality.js";
-import { painterlyStageNames, painterlyStages } from "./painterly.js";
 import { type QualityTier, qualityPreset } from "./quality.js";
 import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
@@ -41,6 +40,8 @@ export function setupPost(
   environment: IAdaptiveQualityOptions & {
     godraysLight?: DirectionalLight;
     mobile?: boolean;
+    /** The renderer named a software adapter; this game's answer is its `low` tier. */
+    software?: boolean;
     /** Forces a tier while keeping its costs observed. Unknown names throw. */
     tier?: QualityTier;
   } = {},
@@ -57,11 +58,7 @@ export function setupPost(
     // Replacement is serialized: no old graph or subscription remains alive beside the new one.
     disposeGraph?.();
     const settings = qualityPreset(policy.tier);
-    const world = new WorldEnvironment({
-      ...settings,
-      authoredStageNames: painterlyStageNames(settings),
-      authoredStages: painterlyStages(settings),
-    });
+    const world = new WorldEnvironment(settings);
     const applied = world.apply(renderer, scene, camera, {
       godraysLight: environment.godraysLight,
     });
@@ -71,7 +68,9 @@ export function setupPost(
   apply();
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
-    `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} source=${source}`,
+    `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
+      environment.software === true
+    } source=${source}`,
   );
   const controller = {
     debug: () => observation,

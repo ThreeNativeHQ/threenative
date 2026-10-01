@@ -4,14 +4,15 @@
 @source "./";
 
 @theme {
-  --color-ink: #04080d;
-  --color-panel: #0d1c26;
-  --color-line: #14313f;
-  --color-lume: #6fe8ff;
-  --color-warn: #ffd27a;
-  --color-text: #a8ccd8;
-  --color-dim: #4e7686;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-ink: #1d3a5c;
+  --color-panel: #2a1a0e;
+  --color-line: #ffffff40;
+  --color-lume: #ffb35c;
+  --color-warn: #f2b01e;
+  --color-heart: #e5484d;
+  --color-text: #fff4dc;
+  --color-dim: #e9c98a;
+  --font-mono: ui-rounded, "Nunito", "Trebuchet MS", system-ui, sans-serif;
 }
 
 html,

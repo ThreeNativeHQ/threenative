@@ -172,6 +172,9 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
   private closed = false;
   private nextId = 1;
   private nextOrder = 1;
+  // Calls that gave up before the host answered. The host still answers them, late, and that
+  // answer is theirs, not an error in whichever call is waiting when it lands.
+  private readonly abandonedIds = new Set<string>();
   private responseObserver?: (observation: IDeviceResponseObservation) => void;
 
   constructor(
@@ -189,6 +192,7 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
     this.connected = false;
     this.nextId = 1;
     this.nextOrder = 1;
+    this.abandonedIds.clear();
     await this.mailbox.remove(this.paths.request);
     await this.mailbox.remove(this.paths.response);
   }
@@ -246,11 +250,13 @@ export class DeviceMailboxTransport implements IDevicePlaytestTransport {
         const response = parseResponse(raw);
         this.responseObserver?.({ body: raw, method, order, requestId: response.id });
         await this.mailbox.remove(this.paths.response);
-        if (response.id !== id) throw new Error(`Unexpected device response id '${response.id}'.`);
-        return response;
+        if (response.id === id) return response;
+        if (this.abandonedIds.has(response.id)) continue;
+        throw new Error(`Unexpected device response id '${response.id}'.`);
       }
       await delayUntil(deadline);
     }
+    this.abandonedIds.add(id);
     throw new PlaytestBridgeError(playtestDiagnostic(
       "TN_PLAYTEST_OPERATION_TIMEOUT",
       `Device mailbox operation '${id}' exceeded ${timeoutMs}ms.`,
@@ -284,11 +290,16 @@ export function deviceTimeoutDiagnostic(
   hostAlive: boolean | undefined,
   lastConsoleLines: readonly string[],
 ): IPlaytestProtocolDiagnostic {
-  if (diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT") return diagnostic;
   if (hostAlive !== false) return diagnostic;
   const tail = lastConsoleLines.length === 0
     ? "the host produced no further output"
     : `last host output: ${lastConsoleLines.map((line) => line.slice(0, 160)).join(" | ").slice(0, 1_000)}`;
+  // A host that died while the run waited for its startup already knows it is gone; what it lacked
+  // was the evidence, which the report used to promise and not carry.
+  if (diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED") {
+    return playtestDiagnostic(diagnostic.code, `${diagnostic.message} — ${tail}`, diagnostic.fix.instruction);
+  }
+  if (diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT") return diagnostic;
   return playtestDiagnostic(
     "TN_PLAYTEST_HOST_EXITED",
     `${diagnostic.message}; the host process has exited — ${tail}`,

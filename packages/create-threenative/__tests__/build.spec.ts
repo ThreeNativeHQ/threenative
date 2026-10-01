@@ -134,25 +134,47 @@ describe("threenative build", () => {
     await installDeterministicVite(target);
     const cli = path.resolve("packages/create-threenative/dist/threenative.js");
 
-    const result = await new Promise<{ code: number | null; timedOut: boolean }>((resolve) => {
-      const child = spawn(process.execPath, [cli, "build"], {
-        cwd: target,
-        stdio: "ignore",
-      });
-      // Deliberately generous, and not a performance budget. What separates the defect from a
-      // healthy build is exit versus never-exit: a live worker pool holds the event loop open
-      // forever, so any ceiling catches it, while a slow runner is still a build that finishes.
-      const timeout = setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve({ code: null, timedOut: true });
-      }, 60_000);
-      child.once("exit", (code) => {
-        clearTimeout(timeout);
-        resolve({ code, timedOut: false });
-      });
-    });
+    const result = await new Promise<{ code: number | null; timedOut: boolean; output: string }>(
+      (resolve) => {
+        // The build's own output is kept, because the failure this test guards against and a runner
+        // that is merely slow produce the identical `{ code: null, timedOut: true }`. With `stdio:
+        // "ignore"` a hosted kill left the job log saying only that — no stage, no last line, no
+        // evidence to diagnose from, which is exactly the report that cannot be acted on.
+        const child = spawn(process.execPath, [cli, "build"], {
+          cwd: target,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let output = "";
+        child.stdout?.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+        child.stderr?.on("data", (chunk: Buffer) => {
+          output += chunk.toString();
+        });
+        // Deliberately generous, and not a performance budget. What separates the defect from a
+        // healthy build is exit versus never-exit: a live worker pool holds the event loop open
+        // forever, so any ceiling catches it, while a slow runner is still a build that finishes.
+        const timeout = setTimeout(() => {
+          child.kill("SIGKILL");
+          resolve({ code: null, output, timedOut: true });
+        }, 60_000);
+        child.once("exit", (code) => {
+          clearTimeout(timeout);
+          resolve({ code, output, timedOut: false });
+        });
+      },
+    );
 
-    expect(result).toEqual({ code: 0, timedOut: false });
+    // The message rides the matcher rather than a throw after it: `expect` throws first, so a
+    // `throw` on the line below only ever ran on the passing path and the build's own last words
+    // stayed hidden on the one failure they were captured for.
+    expect(
+      { code: result.code, timedOut: result.timedOut },
+      `threenative build ended with code ${String(result.code)}${result.timedOut ? " at the 60s ceiling" : ""}.\n${result.output.slice(-2000)}`,
+    ).toEqual({
+      code: 0,
+      timedOut: false,
+    });
   }, 90_000);
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
@@ -292,7 +314,8 @@ describe("threenative build", () => {
         await tree(path.join(target, "vite-dist")),
       );
     }
-  });
+    // Each template ships assets/sky.jpg, so each buildWeb pays a real texture cook (~84 s total).
+  }, 240_000);
 
   // PRD-448. The web build publishes the way a native artifact already does, so the last working
   // `dist` is what a player is served until a build that finished replaces it. A Vite run that

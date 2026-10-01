@@ -1,5 +1,5 @@
 import { GroundSnap, normaliseToMetres } from "@threenative/core";
-import type { Mesh } from "three";
+import type { Object3D } from "three";
 
 export interface IStarterConventions {
   readonly applyGrounding: (surfaceY: number, dt: number) => void;
@@ -7,8 +7,11 @@ export interface IStarterConventions {
   readonly normaliseFactor: number;
 }
 
-export function preparePlayerConventions(model: Mesh): IStarterConventions {
-  const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.1 });
+export function preparePlayerConventions(model: Object3D): IStarterConventions {
+  // A skinned figure is measured from its origin to its crown joint, and on this Unreal-style
+  // skeleton that is `Head` — the base of the skull, not its top. 1.545 m at that joint puts the
+  // top of the head at 1.8 m, the height the capsule in `Player.ts` is built for.
+  const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.545 });
   const groundSnap = new GroundSnap(model);
   return {
     applyGrounding: (surfaceY, dt) => groundSnap.apply(model, surfaceY, dt),

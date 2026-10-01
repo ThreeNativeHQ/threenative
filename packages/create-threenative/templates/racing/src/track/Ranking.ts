@@ -1,5 +1,5 @@
-import type { IPathFollow3DProjection, PathFollow3D } from "@threenative/core";
 import { Vector3 } from "three";
+import { CIRCUIT, type CircuitLine } from "./circuit.js";
 
 export interface IRacerProgress {
   readonly id: string;
@@ -20,11 +20,11 @@ export interface IRankedRacerScratch {
   routeProgress: number;
 }
 
-const projectionScratch: IPathFollow3DProjection = {
-  distanceFromStart: 0,
-  lateralDistance: 0,
+const projectionScratch = {
+  curvature: 0,
+  distance: 0,
+  lateral: 0,
   point: new Vector3(0, 0, 0),
-  segment: 0,
   tangent: new Vector3(0, 0, 1),
 };
 
@@ -32,26 +32,33 @@ function compareRankedRacers(left: IRankedRacerScratch, right: IRankedRacerScrat
   return right.routeProgress - left.routeProgress || left.id.localeCompare(right.id);
 }
 
+/**
+ * How far around the circuit a car has come, in metres, counting whole laps.
+ *
+ * A projection is 0…one lap, so a lap count read straight off it can never leave 0…1 — which is
+ * how a car a lap ahead and a car on the same metre once ranked as level. The lap number is added
+ * on, and it is the **lap**, not the metre, that separates the two.
+ */
 export function routeProgress(
-  route: PathFollow3D,
+  route: CircuitLine,
   position: Vector3,
   lap: number,
-  target: IPathFollow3DProjection = projectionScratch,
+  target = projectionScratch,
 ): number {
   if (!Number.isInteger(lap) || lap < 0)
     throw new Error("Racing route lap must be a non-negative integer.");
-  return lap * route.totalLength + route.project(position, target).distanceFromStart;
+  return lap * route.totalLength + route.project(position, target).distance;
 }
 
 export function rankRacers(
-  route: PathFollow3D,
+  route: CircuitLine,
   racers: readonly IRacerProgress[],
-  target: IPathFollow3DProjection = projectionScratch,
+  target = projectionScratch,
   buffer: IRankedRacerScratch[] = [],
 ): readonly IRankedRacer[] {
   if (buffer.length > racers.length) buffer.length = racers.length;
   for (let index = buffer.length; index < racers.length; index += 1) {
-    buffer.push({ id: "", lap: 0, position: projectionScratch.point, place: 0, routeProgress: 0 });
+    buffer.push({ id: "", lap: 0, position: new Vector3(), place: 0, routeProgress: 0 });
   }
   for (let index = 0; index < racers.length; index += 1) {
     const racer = racers[index];
@@ -72,3 +79,5 @@ export function rankRacers(
   }
   return buffer;
 }
+
+export { CIRCUIT };

@@ -4,9 +4,9 @@ Three lanes and a track that builds itself ahead of you. Obstacles end the run; 
 close shakes the camera. The track is a ring of six chunks that get moved and rebuilt, so a
 ten-minute run costs what a ten-second one does.
 
-Nothing here is downloaded. Every shape is a box, capsule or cylinder built in
-`src/render/shapes.ts`, and the dust is a TSL particle surface in `src/render/dust.ts` — no
-texture, no asset licence, nothing to fetch.
+The sky (`assets/sky.jpg`, Poly Haven, CC0) and the runner (`assets/mannequin.glb`, Quaternius,
+CC0) are the same two files the `minimal` arena opens on. The track is a box and rail built in
+`src/render/shapes.ts`, and the dust is a TSL particle surface in `src/render/dust.ts`.
 
 ```sh
 pnpm dev            # play it

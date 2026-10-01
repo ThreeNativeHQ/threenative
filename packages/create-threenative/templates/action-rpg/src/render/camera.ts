@@ -1,5 +1,16 @@
-import type { PerspectiveCamera, Vector3 } from "three";
-import { Vector3 as Vec3 } from "three";
+// Generated for you. Camera framing is yours to edit.
+//
+// The action-RPG three-quarter view: high and behind, far enough back that the room reads as a
+// room. It has to clear the **south wall**, which stands at z = +6 and is low so the camera can
+// see over it — the oldest trick in an isometric dungeon, and it costs one row of wall table.
+import { type PerspectiveCamera, Vector3 } from "three";
+
+/** Where the camera sits relative to the player's body centre. */
+const OFFSET = new Vector3(0, 10.2, 9.2);
+/** What it looks at relative to the same centre: past the player, into the room ahead. */
+const AIM = new Vector3(0, 0.4, -1.8);
+const _desired = new Vector3();
+const _aim = new Vector3();
 
 export interface ICameraRig {
   readonly follow: (target: Vector3, dt: number) => void;
@@ -7,24 +18,15 @@ export interface ICameraRig {
 }
 
 export function createDungeonCamera(camera: PerspectiveCamera): ICameraRig {
-  // The rig has to clear the **south wall**, which stands at z = +6 and is now 5.2 m tall with a
-  // cap on it. At 6.6/7.4 the eye sat outside that wall and below its top, so the lower half of
-  // the frame was the wall's outer face and the room was hidden behind it. From 10.2/9.2 the
-  // sightline passes over the cap with room to spare, and the far wall closes the top of the shot
-  // instead of the empty sky the old 2.8 m walls left there.
-  const offset = new Vec3(0, 10.2, 9.2);
-  const lookAhead = new Vec3(0, 0.4, -1.8);
-  const desired = new Vec3();
-  const aim = new Vec3();
   const pose = (target: Vector3): void => {
-    camera.position.copy(target).add(offset);
-    camera.lookAt(aim.copy(target).add(lookAhead));
+    camera.position.copy(target).add(OFFSET);
+    camera.lookAt(_aim.copy(target).add(AIM));
   };
   return {
     follow: (target, dt) => {
-      desired.copy(target).add(offset);
-      camera.position.lerp(desired, 1 - Math.exp(-dt / 0.2));
-      camera.lookAt(aim.copy(target).add(lookAhead));
+      _desired.copy(target).add(OFFSET);
+      camera.position.lerp(_desired, 1 - Math.exp(-dt / 0.2));
+      camera.lookAt(_aim.copy(target).add(AIM));
     },
     snap: pose,
   };

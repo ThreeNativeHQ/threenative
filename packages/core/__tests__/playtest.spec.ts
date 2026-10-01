@@ -836,6 +836,65 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("describes the world of the scene entered after the start scene", async () => {
+    // Every `boot` template navigates out of its start scene inside `enter()`, and the scene it
+    // lands in owns the entities. When that scene's `load()` awaits an asset, the handshake used to
+    // return the moment the *start* scene entered: the registry was empty, so `runtime.components`
+    // was never advertised and every scenario needing it failed TN_PLAYTEST_CAPABILITY_MISSING.
+    const events: string[] = [];
+    let releaseSky: (() => void) | undefined;
+    const sky = new Promise<void>((resolve) => {
+      releaseSky = resolve;
+    });
+    class Boot extends Scene {
+      override enter(ctx: ICtx): void {
+        events.push("boot enter");
+        void ctx.goto("race");
+      }
+    }
+    class Race extends Scene {
+      override async load(): Promise<void> {
+        events.push("race load");
+        await sky;
+      }
+
+      override enter(ctx: ICtx): void {
+        ctx.entities.add("player", {
+          health: 100,
+          mesh: new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()),
+        });
+        events.push("race enter");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { boot: Boot, race: Race },
+      start: "boot",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const described = bridge().describe();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // The race scene is still loading, so a description taken now has nothing to describe.
+      expect(events).toEqual(["boot enter", "race load"]);
+      expect(await Promise.race([described, Promise.resolve("pending")])).toBe("pending");
+
+      releaseSky?.();
+      const description = await described;
+      events.push("describe returned");
+      await started;
+
+      expect(events).toEqual(["boot enter", "race load", "race enter", "describe returned"]);
+      expect(description.capabilities).toContain("runtime.components");
+    } finally {
+      game.stop();
+    }
+  });
+
   it("collects per-frame render samples for a native endpoint run", async () => {
     // The device and desktop lanes never set the browser's runner-expected global: a native host
     // announces itself through `TN_PLAYTEST_ENDPOINT`, which is why this run carries one and not

@@ -306,7 +306,8 @@ async function main(): Promise<void> {
     const packageSources = await packageLocalFramework(root);
     await verifyTemplatePlaytests(only ?? TEMPLATE_PLAYTEST_NAMES, root, packageSources);
   } finally {
-    await rm(root, { force: true, recursive: true });
+    if (process.env.TN_TEMPLATE_KEEP === "1") console.info(`TN_TEMPLATE_KEEP root: ${root}`);
+    else await rm(root, { force: true, recursive: true });
   }
 }
 

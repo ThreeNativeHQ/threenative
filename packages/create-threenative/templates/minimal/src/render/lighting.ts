@@ -1,67 +1,43 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// Key, bounce, rim, ambient. The rim is the one people forget: without a cool
-// back light, silhouettes read as flat cut-outs against the background.
-import {
-  AmbientLight,
-  Color,
-  DirectionalLight,
-  HemisphereLight,
-  PCFSoftShadowMap,
-  type Scene,
-  Vector3,
-} from "three";
-import { palette } from "./palette.js";
+// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
+import { DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
+import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
-type AtmosphereLike = {
-  getSunDirection(target?: Vector3): Vector3;
-  sunTransmittance(direction: Vector3): unknown;
-};
 
 export function setupLighting(
   scene: Scene,
   renderer: ShadowRenderer,
-  atmosphere?: AtmosphereLike,
-): { key: DirectionalLight; updateSun(direction: Vector3): void } {
+  mobile = false,
+): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  scene.add(new HemisphereLight(palette.skyHigh, palette.shadow, 1.6));
-
-  const key = new DirectionalLight(palette.accent, 3);
-  const updateSun = (direction: Vector3): void => {
-    key.position.copy(direction).multiplyScalar(7);
-    const transmittance = atmosphere?.sunTransmittance(direction);
-    if (transmittance instanceof Vector3) {
-      key.color.copy(new Color().setRGB(transmittance.x, transmittance.y, transmittance.z));
-    }
-  };
-  updateSun(atmosphere?.getSunDirection() ?? new Vector3(4, 7, 3).normalize());
+  // Warm white, matched by eye to the photographed midday sun against its own sky.
+  const key = new DirectionalLight(0xfff1e0, 4.5);
+  key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
-  // 1024² keeps the default shadow pass at one quarter of a 2048² map's
-  // texel storage and fill work. The small generated scene fits this 12-unit
-  // extent; widen it when the playable area grows, accepting softer shadows.
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 60;
-  const extent = 12;
+  // One map fitted to the 36 m arena: 4096² is under a centimetre a texel, so every shadow has the
+  // same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here their
+  // level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 80;
+  const extent = 18;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;
   key.shadow.camera.bottom = -extent;
-  key.shadow.bias = -0.0008;
-  key.shadow.normalBias = 0.03;
+  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.005;
   scene.add(key);
-
-  const rim = new DirectionalLight(palette.player, 0.75);
-  rim.position.set(-5, 3, -6);
-  scene.add(rim);
-
-  scene.add(new AmbientLight(palette.shadow, 0.28));
-  // The key light travels with the sun updater: `WorldEnvironment`'s godrays stage raymarches
-  // against its shadow map, so `setupPost` needs the light itself and refuses a shadowless one
-  // by name instead of rendering a black pass.
-  return { key, updateSun };
+  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
+  // shadow map, so `setupPost` needs the light itself.
+  return { key };
 }

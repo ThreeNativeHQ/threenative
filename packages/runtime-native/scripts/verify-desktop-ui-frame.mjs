@@ -454,6 +454,11 @@ async function runUiFramePlaytest({ contract, expectedFrame, hostArgs, uiRoot })
     OPERATION_TIMEOUT_MS,
   );
   const config = {
+    // The same declared acceptance `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1` already
+    // expresses on the CLI, read here because this proof calls the runner API directly. The hosted
+    // Linux runner binds Mesa llvmpipe; a local desktop run leaves the variable unset and still
+    // fails closed.
+    allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === "1",
     artifactDirectory,
     desktop: { executable: binary },
     endpoint: "http://127.0.0.1:41777/playtest",

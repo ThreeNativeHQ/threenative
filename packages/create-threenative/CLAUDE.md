@@ -30,7 +30,7 @@ output look worse than vanilla.
 
 ## Templates
 
-- `minimal` — no React, no UI folder. Core + physics, and a camera-parented geometry HUD in `src/render/hud.ts` (no DOM readout, so it survives on native).
+- `minimal` — no React, no UI folder. Core + physics: a test arena, a photographed sky and a rigged mannequin, with no HUD.
 - `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
 - `platformer` — adds `PathFollow3D` steering with avoidance. Nothing in `templates/` imports
   `@threenative/physics/navigation`: its Recast WASM is web/desktop only, and every kit is

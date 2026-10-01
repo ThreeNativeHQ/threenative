@@ -2,12 +2,26 @@
   "name": "survives",
   "target": "web",
   "schemaVersion": 1,
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "move", "press": "ArrowUp", "holdTicks": 60, "release": true },
-    { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
   ],
   "assert": {
     "diagnostics": {
@@ -24,19 +38,22 @@
         "lte": 0.01
       },
       {
-        "allowTrivial": "The action RPG blade has an authored non-unit size; this retained factor proves normaliseToMetres ran in the generated player.",
+        "allowTrivial": "The combat mannequin is authored 1.57 m to its Head joint, so normalising that joint to 1.545 m scales it just under one; either side of one proves normaliseToMetres ran in generated source.",
         "component": "normaliseFactor",
         "entity": "player",
-        "gte": 1.01
+        "lte": 0.99
       },
       {
-        "allowTrivial": "Weapon attachment is construction-time; the resolved RightHand parent proves attachToBone ran in the generated player.",
+        "allowTrivial": "Weapon attachment is construction-time; the resolved hand_r parent proves attachToBone ran in the generated player.",
         "component": "weaponBone",
         "entity": "player",
-        "equals": "RightHand"
+        "equals": "hand_r"
       }
     ],
-    "movement": { "entity": "player", "minDistance": 0.5 },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
     "visibility": [
       {
         "entity": "touch-controls",

@@ -1,89 +1,93 @@
-// Generated for you. Camera framing is game-owned source; edit it to change the feel.
-import { type PerspectiveCamera, Vector3 as Vec3, type Vector3 } from "three";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// First-person framing, in one place, because it is the loudest thing in a
+// screenshot and the one thing every change to the fight touches: where the eye
+// sits, how wide it sees, and how far it shakes when a round lands.
+//
+// A spring arm is the obvious thing to reach for and it is wrong here — the eye
+// is welded to a head that physics already solved, so smoothing it only ever
+// puts the crosshair somewhere the body is not. The rule this file exists to
+// state is the opposite one: compose the camera from the body's *solved* pose,
+// every frame, with no interpolation of its own.
+import { MathUtils, type PerspectiveCamera, type Vector3Like } from "three";
 
-export interface ICameraShakeOffset {
-  readonly position: Vector3;
-  readonly rotation: Vector3;
-}
+/** The numbers a first-person camera is built from, in one table. */
+export const FIRST_PERSON = {
+  /** Hip-fire field of view, in degrees. Wide enough to see a soldier flanking. */
+  hipFov: 70,
+  /** Aimed field of view. A 22° sight picture is about 1.3× a real red dot. */
+  aimFov: 22,
+  /** Near plane: the viewmodel's own hands are 40 cm from the eye. */
+  near: 0.02,
+  /** Far plane: the town is 84 m and the sky behind it is further. */
+  far: 240,
+  /** How fast the field of view slides between hip and aimed. */
+  fovRate: 14,
+  pitchMin: MathUtils.degToRad(-66),
+  pitchMax: MathUtils.degToRad(72),
+} as const;
 
-export interface ICameraShakeLike {
-  readonly update: (dt: number) => ICameraShakeOffset;
-}
-
-export interface ICameraShakeOptions {
-  readonly amplitude: Vector3;
-  readonly rotationAmplitude: Vector3;
-  readonly frequency: number;
-  readonly decay: number;
-  readonly curve: (phase: number) => number;
-}
-
-/** Anything that can put the camera at its own eye. `Player` is the one that does. */
-export interface IEyeSource {
-  readonly syncCamera: () => void;
-}
-
-export interface ICameraRig {
-  /** Place the eye for this frame, then add whatever the shake is currently worth. */
-  readonly follow: (eye: IEyeSource, dt: number) => void;
-  /** Place the eye with no smoothing and no shake — use on spawn and respawn. */
-  readonly snap: (eye: IEyeSource) => void;
-}
-
-/**
- * These are game-owned feel decisions. `CameraShake` only applies the values and never chooses
- * them. First-person amplitudes are much smaller than a third-person rig's: the whole frame is
- * the shake, so a centimetre reads as a punch where a third-person camera needs ten.
- */
-export function createArenaShakeOptions(): ICameraShakeOptions {
-  return {
-    amplitude: new Vec3(0.022, 0.016, 0.01),
-    rotationAmplitude: new Vec3(0.012, 0.016, 0.02),
-    frequency: 21,
-    decay: 8.5,
-    curve: (phase) => Math.sin(phase) * 0.72 + Math.sin(phase * 0.43) * 0.28,
-  };
+export interface IEyeFrame {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+  readonly pitch: number;
+  /** 0..1 hit shake, eased by the caller. Zero when nothing has hit you. */
+  readonly shake: number;
+  /** Seconds since the scene started; the shake's phase, not a clock of its own. */
+  readonly phase: number;
 }
 
 /**
- * Both halves of a shake, in one place.
+ * Place the camera for this frame.
  *
- * Position and rotation are applied together because applying only the first is the shake bug
- * that reads as the camera sliding rather than being hit.
+ * `rotation.order` is `"YXZ"` so yaw is applied before pitch: with the default
+ * order, looking up and turning at the same time rolls the horizon, which is the
+ * single most common way a first-person camera goes wrong.
  */
-function composeCameraShake(camera: PerspectiveCamera, offset: ICameraShakeOffset): void {
-  camera.position.add(offset.position);
+export function applyFirstPerson(camera: PerspectiveCamera, frame: IEyeFrame): void {
+  // A hit shoves the view; the caller decays it back to the aim, so the shake
+  // never fights the player for control.
+  const kick = frame.shake * frame.shake;
+  camera.position.set(frame.x, frame.y, frame.z);
   camera.rotation.set(
-    camera.rotation.x + offset.rotation.x,
-    camera.rotation.y + offset.rotation.y,
-    camera.rotation.z + offset.rotation.z,
-    camera.rotation.order,
+    frame.pitch + Math.sin(frame.phase * 37) * 0.05 * kick,
+    frame.yaw + Math.sin(frame.phase * 23) * 0.05 * kick,
+    Math.sin(frame.phase * 17) * 0.04 * kick,
+    "YXZ",
   );
 }
 
 /**
- * The first-person rig.
- *
- * There is no smoothing here on purpose. A third-person camera lerps towards its target because
- * the target is something it is watching; the eye *is* the player, and easing it turns every step
- * into a swim. What does get added is the hit shake, composed on top of the pose the player just
- * wrote, so the shake decays back to exactly where the player is aiming.
+ * Set the projection once, at construction. Changing it per frame forces a
+ * matrix rebuild for a value that never changes after the first call.
  */
-export function createFirstPersonRig(
-  camera: PerspectiveCamera,
-  shake?: ICameraShakeLike,
-): ICameraRig {
-  const pose = (eye: IEyeSource, dt: number): void => {
-    eye.syncCamera();
-    // A snap is a respawn, and a respawn should not arrive pre-shaken.
-    if (dt === 0) return;
-    const shakeOffset = shake?.update(dt);
-    if (shakeOffset === undefined) return;
-    composeCameraShake(camera, shakeOffset);
-  };
+export function configureFirstPerson(camera: PerspectiveCamera): void {
+  camera.fov = FIRST_PERSON.hipFov;
+  camera.near = FIRST_PERSON.near;
+  camera.far = FIRST_PERSON.far;
+  camera.updateProjectionMatrix();
+}
 
-  return {
-    follow: (eye, dt) => pose(eye, dt),
-    snap: (eye) => pose(eye, 0),
-  };
+/** The smoothed field of view for this frame, hip or aimed. */
+export function firstPersonFov(current: number, aiming: boolean, dt: number): number {
+  return MathUtils.damp(
+    current,
+    aiming ? FIRST_PERSON.aimFov : FIRST_PERSON.hipFov,
+    FIRST_PERSON.fovRate,
+    dt,
+  );
+}
+
+/** Where a shot leaves from: the camera basis, never the body transform. */
+export function aimBasis(camera: PerspectiveCamera): {
+  origin: Vector3Like;
+  direction: Vector3Like;
+} {
+  camera.updateMatrixWorld(true);
+  const origin = camera.position;
+  const direction = camera.getWorldDirection(camera.position.clone());
+  return { origin, direction: direction.normalize() };
 }

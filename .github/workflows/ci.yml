@@ -470,7 +470,14 @@ jobs:
         run: |
           mkdir -p artifacts/native-performance/native-linux-contract
           set +e
-          timeout 90s node packages/runtime-native/scripts/profile-production.mjs \
+          # 180 s, not 90: this collector packs every workspace package, scaffolds and installs a
+          # game, builds it, then runs startup and the workload. Measured phase by phase on a
+          # 24-core machine that is already faster than a hosted runner: 15.7 s stage, 36.1 s
+          # build, 21.9 s startup, 23.5 s workload, 103 s in all; an unbounded CI run took 90.55 s.
+          # The old 90 s cap sat under the floor and killed a healthy run at exactly 90 s (exit
+          # 124). Only this outer watchdog moves: every runtime, assertion, sample and duration
+          # budget inside the collector is unchanged, so a hang still dies, just not a slow run.
+          timeout 180s node packages/runtime-native/scripts/profile-production.mjs \
             --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
             --hosted-software \
             --prebuilt-artifact "$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral" \
@@ -723,7 +730,6 @@ jobs:
       matrix:
         include:
           - { template: action-rpg, shard: "1/1" }
-          - { template: defense, shard: "1/1" }
           - { template: minimal, shard: "1/1" }
           - { template: platformer, shard: "1/3" }
           - { template: platformer, shard: "2/3" }
@@ -731,12 +737,14 @@ jobs:
           - { template: puzzle, shard: "1/2" }
           - { template: puzzle, shard: "2/2" }
           - { template: racing, shard: "1/1" }
+          - { template: rts, shard: "1/1" }
           - { template: runner, shard: "1/1" }
           - { template: sailing, shard: "1/1" }
           - { template: shooter, shard: "1/1" }
           - { template: starter, shard: "1/3" }
           - { template: starter, shard: "2/3" }
           - { template: starter, shard: "3/3" }
+          - { template: tower-defense, shard: "1/1" }
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -804,8 +812,13 @@ jobs:
           echo "shard $SHARD of ${{ matrix.template }}: ${#mine[@]} of ${#scenarios[@]} scenarios"
           scenario_args=()
           for scenario in "${mine[@]}"; do scenario_args+=(--scenario "$scenario"); done
+          # `--server-timeout` is the offline asset cook, not the game: a fresh scaffold's `pnpm dev`
+          # now holds its port until the first cook settles (the templates await `handle.ready`), and
+          # that cook is 19 s of KTX2 on a cold 4096x2048 equirect here. The runner's 15 s default is
+          # sized for a server that is listening, so it is raised for this lane only — every scenario
+          # assertion, frame bound and budget is unchanged, and an ordinary CLI run keeps 15 s.
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
-            --browser-recipe webgpu --headed --no-screenshots \
+            --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
         env:
           SHARD: ${{ matrix.shard }}

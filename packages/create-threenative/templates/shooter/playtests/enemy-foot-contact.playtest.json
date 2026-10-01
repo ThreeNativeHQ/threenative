@@ -1,0 +1,41 @@
+{
+  "name": "enemy-foot-contact",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "patrol",
+      "waitTicks": 200,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "footClearance",
+        "lte": 0.03,
+        "allowTrivial": "grounded soldier contact is a standing invariant of the patrol loop"
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "blips.0.x",
+        "changed": true
+      }
+    ]
+  }
+}

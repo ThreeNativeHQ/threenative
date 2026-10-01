@@ -496,6 +496,28 @@ function nativeAssertions(assertions, timeoutMs, hostedSoftware) {
     : { maxReadyMs: timeoutMs }) };
 }
 
+/**
+ * What the collector ITSELF pinned, restated as the tier the run may be held to.
+ *
+ * `--hosted-software` is explicit policy configuration, not a claim about the machine: it writes
+ * `__THREENATIVE_PROFILE__.hostedSoftware`, and the template's own render source answers that by
+ * choosing the low preset. A hardware adapter that honours a pinned-low profile is the run working
+ * as configured, so the expectation the collector writes has to be the tier it asked for.
+ *
+ * It removes `perAdapter` outright rather than leaving the branches beside the pinned tier. The
+ * branches assert the tier an adapter *class* implies, and the collector's pin overrides the class's
+ * preference on this run: a hardware adapter held to `low` would take the software branch's stages
+ * and contributions and fail a workload that did exactly what it was configured to do. What stays
+ * is the flat expectation at the pinned tier, and classification is untouched either way — the run
+ * is still classified from its own `adapter.info` reading, and a hardware run with no profile input
+ * is still held to the template's flat `high`.
+ */
+function hostedSoftwareAssertions(assertions, hostedSoftware) {
+  if (!hostedSoftware || assertions?.renderChain === undefined) return assertions;
+  const { perAdapter: _perAdapter, ...renderChain } = assertions.renderChain;
+  return { ...assertions, renderChain: { ...renderChain, tier: 'low' } };
+}
+
 export async function writeRunScenarios(project, options) {
   const scenarioPath = options.scenario ?? join(project, platformerScenario);
   const source = JSON.parse(await readFile(scenarioPath, 'utf8').catch(() => {
@@ -568,7 +590,7 @@ export async function writeRunScenarios(project, options) {
   const timeoutMs = playtestTimeoutMs(workload);
   const nativeWorkload = {
     ...workload,
-    assert: nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware),
+    assert: hostedSoftwareAssertions(nativeAssertions(workload.assert, timeoutMs, options.hostedSoftware), options.hostedSoftware),
     artifacts: {
       screenshots: options.profile === REGRESSION_PROFILE || nativeTarget === 'desktop'
         ? 'after'

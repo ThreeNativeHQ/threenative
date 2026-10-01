@@ -19,23 +19,15 @@
 // probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
 // in `sky.ts`, not in this file.
 //
-import type { IPainterlyOptions } from "./painterly.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
-
-/**
- * A preset is the framework's chain options plus this kit's own painterly knobs. The two are
- * separate types because they belong to different layers: `worldEnvironment.ts` is shared with
- * every other kit and must not know what a watercolour is.
- */
-type QualitySettings = IWorldEnvironmentOptions & IPainterlyOptions;
 
 /**
  * The three names this game's look comes in.
  *
  * `low` is what a phone gets and `high` what a desktop gets — those two are this template's
- * shipped looks, unchanged. `medium` is the rung in between for a machine that is neither: a
- * laptop iGPU, a handheld, a desktop that is dropping frames. Nothing outside this file decides
- * what any of them mean.
+ * shipped looks. `medium` is the rung in between for a machine that is neither: a laptop iGPU, a
+ * handheld, a desktop that is dropping frames. Nothing outside this file decides what any of them
+ * mean.
  */
 export type QualityTier = "low" | "medium" | "high";
 
@@ -57,7 +49,7 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -68,113 +60,63 @@ export function resolveQualityTier(
     }
     return requested;
   }
+  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
+  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
+  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
+  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
+  // `tier` above still wins over it.
+  if (request.software === true) return "low";
   return request.mobile === true ? "low" : "high";
 }
 
 /**
- * What a desktop gets: a clean coastal look with restrained painterly treatment. The expensive
- * screen-space gathers are deliberately off here: on a small water scene they muddy the grass and
- * turn the water glint into a halo instead of adding useful depth.
+ * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the
+ * sun disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey
+ * platforms and flattens contrast), a corner falloff, and the shared chain's SMAA. Antialiasing is
+ * on in every tier that installs a chain; see `screenSpaceAA` in `worldEnvironment.ts`.
+ *
+ * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
+ * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
+ * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
-const high: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; the low strength keeps water glints alive
-  // without washing the scene in orange.
+const shared: IWorldEnvironmentOptions = {
+  // Bloom cost: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
-  bloomRadius: 0.34,
-  bloomStrength: 0.26,
-  bloomThreshold: 0.64,
-  denoiseEnabled: false,
-  exposure: 1.04,
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  sharpenEnabled: false,
-  // Outline cost: unmeasured; it is intentionally a soft blue-green edge, not a black
-  // comic-book stroke.
-  outlineEnabled: true,
-  outlineDepthWeight: 0.32,
-  outlineInkColor: 0x173c4a,
-  outlineSoftness: 0.08,
-  outlineStrength: 0.3,
-  outlineThreshold: 0.2,
-  // Kuwahara cost: unmeasured; the half-resolution scratch and restrained strength preserve
-  // readable grass silhouettes.
-  kuwaharaEnabled: true,
-  kuwaharaRadius: 5,
-  kuwaharaResolutionScale: 0.5,
-  kuwaharaStrength: 0.2,
-  // Watercolour cost: unmeasured; the low mix keeps the paper grouping from flattening the coast.
-  watercolorEnabled: true,
-  watercolorPaperStrength: 0.05,
-  watercolorShadowStrength: 0.04,
-  watercolorShadowTint: 0x7d6b62,
-  watercolorStrength: 0.26,
-  renderChainTier: "high",
-  tonemapMode: "aces",
-};
-
-/**
- * Medium keeps the same readable coast, with a smaller paint radius and a little less colour
- * grouping for machines that need a cheaper frame.
- */
-const medium: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; keep only a small highlight lift.
-  bloomEnabled: true,
-  bloomRadius: 0.3,
+  bloomRadius: 0.6,
   bloomStrength: 0.22,
-  bloomThreshold: 0.68,
-  denoiseEnabled: false,
-  exposure: 1.03,
-  ssgiEnabled: false,
-  ssrEnabled: false,
-  sharpenEnabled: false,
-  // Outline cost: unmeasured; keep its edge narrow on the cheaper tier.
-  outlineEnabled: true,
-  outlineDepthWeight: 0.28,
-  outlineInkColor: 0x173c4a,
-  outlineSoftness: 0.08,
-  outlineStrength: 0.26,
-  outlineThreshold: 0.22,
-  // Kuwahara cost: unmeasured; radius three keeps the water and grass readable.
-  kuwaharaEnabled: true,
-  kuwaharaRadius: 3,
-  kuwaharaResolutionScale: 0.5,
-  kuwaharaStrength: 0.16,
-  // Watercolour cost: unmeasured; fewer bands and a low mix preserve the coast's value steps.
-  watercolorEnabled: true,
-  watercolorLevels: 6,
-  watercolorPaperStrength: 0.04,
-  watercolorShadowStrength: 0.03,
-  watercolorShadowTint: 0x7d6b62,
-  watercolorStrength: 0.22,
-  renderChainTier: "medium",
+  bloomThreshold: 1,
+  exposure: 0.62,
   tonemapMode: "aces",
+  vignetteAmount: 0.22,
 };
 
 /**
- * What a phone gets: the cleanest version of the coastal look. Authored paint is omitted to keep
- * the water mesh and touch controls responsive.
+ * What a desktop gets: contact occlusion on top — the dark line where a foot meets the platform
+ * and a wall meets the ground, most of what separates "objects in a world" from "objects pasted on
+ * a background". Gathered at full resolution and denoised: at half, the upsample left a grain
+ * around every foot.
  */
-const low: QualitySettings = {
-  // Bloom cost: unmeasured for this authored scene; this is the phone-safe highlight lift.
-  bloomEnabled: true,
-  bloomRadius: 0.28,
-  bloomStrength: 0.18,
-  bloomThreshold: 0.72,
-  exposure: 1.02,
-  sharpenEnabled: false,
-  // The low tier omits authored paint by name: no outline, scratch target, or paper graph is
-  // built on the phone path.
-  outlineEnabled: false,
-  kuwaharaEnabled: false,
-  watercolorEnabled: false,
-  renderChainTier: "low",
-  tonemapMode: "aces",
+const high: IWorldEnvironmentOptions = {
+  ...shared,
+  // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
+  gtaoEnabled: true,
+  gtaoRadius: 0.35,
+  renderChainTier: "high",
 };
 
-const QUALITY_PRESETS: Record<QualityTier, QualitySettings> = { high, low, medium };
+/**
+ * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
+ * chain's own antialiasing one notch cheaper.
+ */
+const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+
+/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
+
+const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
-export function qualityPreset(tier: string): QualitySettings {
+export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   const preset = QUALITY_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(

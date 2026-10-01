@@ -650,16 +650,29 @@ export function verifyStarterConsumerGameplay(options = {}) {
         `the '${target}' process did not complete: ${result.error?.message ?? result.signal ?? result.status}.`,
       );
     }
-    // A runner that never reached assertions writes its failure report to stderr and leaves stdout
-    // empty, so reading stdout first reported "emitted no JSON report" and threw the real cause
-    // away — the exit status is a verdict about the run, and it is checked before the report.
-    if (result.status !== 0) {
+    // Exit 1 is "the run evaluated assertions and some failed" and the report naming which ones is
+    // on STDOUT; exit 2 (and 75) is "it never reached assertions" and that reason is on STDERR.
+    // Checking the status first and reading only stderr therefore reported `stderr: (empty)` for
+    // every failing assertion — both scaffolded-starter lanes failed on an assertion with nothing
+    // naming it. Read the report when there is one; fall back to stderr only when there is not.
+    let report;
+    try {
+      report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
+    } catch (error) {
+      if (result.status === 0) throw error;
       throw consumerError(
         'RUNNER_FAILED',
         `the '${target}' runner exited ${result.status}: ${consumerRunnerFailureDetail(result.stderr ?? '')}`,
       );
     }
-    const report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
+    // A nonzero exit outranks its own report: a process that ended 1 with a green report has not
+    // passed, whatever the JSON claims. The report is read for the diagnosis, never for the verdict.
+    if (result.status !== 0 && report.pass) {
+      throw consumerError(
+        'RUNNER_FAILED',
+        `the '${target}' runner exited ${result.status} although its report claims ${report.assertions} passing assertion(s); the process verdict outranks a report it did not exit 0 on.`,
+      );
+    }
     Object.assign(row, {
       assertionIds: report.assertionIds,
       assertions: report.assertions,

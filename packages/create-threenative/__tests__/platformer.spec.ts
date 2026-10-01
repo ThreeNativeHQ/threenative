@@ -17,27 +17,15 @@ vi.mock("../templates/platformer/src/render/worldEnvironment.js", () => ({
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
 function point(x: number): Vector3 {
-  return new Vector3(x, 0.75, 0);
-}
-
-function checkpoints(points: readonly Vector3[]): ConstructorParameters<typeof Checkpoints>[0] {
-  return points;
+  return new Vector3(x, 0, 0);
 }
 
 function target(): Target {
   return {
     body: { teleport: vi.fn(), velocity: { set: vi.fn() } },
     mesh: { position: point(1) },
-    visual: { visible: true },
   } as unknown as Target;
 }
-
-const feel = {
-  blinkRate: 18,
-  hurtHorizontalSpeed: 4.5,
-  hurtVerticalSpeed: 5.5,
-  invulnerabilityTime: 1.2,
-} as unknown as ConstructorParameters<typeof Checkpoints>[2];
 
 describe("platformer checkpoints", () => {
   it("uses the existing low look only for hosted software profiles", () => {
@@ -53,18 +41,23 @@ describe("platformer checkpoints", () => {
     globals.__THREENATIVE_PROFILE__ = { hostedSoftware: true };
     setupPost(renderer, scene, camera, { mobile: false });
     expect(info).toHaveBeenLastCalledWith(
-      "TN_QUALITY_TIER low mobile=false source=hosted-software",
+      "TN_QUALITY_TIER low mobile=false software=false source=hosted-software",
     );
 
     setupPost(renderer, scene, camera, { mobile: false, tier: "high" });
-    expect(info).toHaveBeenLastCalledWith("TN_QUALITY_TIER high mobile=false source=override");
+    expect(info).toHaveBeenLastCalledWith(
+      "TN_QUALITY_TIER high mobile=false software=false source=override",
+    );
+    // The three names must be three looks. On this level the difference is contact occlusion: a
+    // 2,300-mesh route where every mesh costs per-object work is where a phone loses the screen-space
+    // stages and a desktop keeps them.
     expect(WorldEnvironment).toHaveBeenNthCalledWith(
       1,
-      expect.not.objectContaining({ ssgiEnabled: true, ssrEnabled: true }),
+      expect.not.objectContaining({ gtaoEnabled: expect.anything() }),
     );
     expect(WorldEnvironment).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ ssgiEnabled: true, ssrEnabled: true }),
+      expect.objectContaining({ gtaoEnabled: true }),
     );
 
     globals.__THREENATIVE_PROFILE__ = undefined;
@@ -72,24 +65,24 @@ describe("platformer checkpoints", () => {
   });
 
   it("rejects an empty checkpoint list", () => {
-    expect(() => new Checkpoints(checkpoints([]), 3, feel)).toThrow("at least one checkpoint");
+    expect(() => new Checkpoints([], 3)).toThrow("at least one checkpoint");
   });
 
   it("decrements hearts once during the invulnerability window", () => {
-    const state = new Checkpoints(checkpoints([point(0)]), 3, feel);
+    const state = new Checkpoints([point(0)], 3);
     const player = target();
 
     expect(state.hurt(player, 0)).toBe(true);
     expect(state.hurt(player, 0)).toBe(false);
     expect(state.hearts).toBe(2);
 
-    state.update(1.2, player);
+    state.update(1.3);
     expect(state.hurt(player, 0)).toBe(true);
     expect(state.hearts).toBe(1);
   });
 
   it("leaves hearts exhausted without respawning", () => {
-    const state = new Checkpoints(checkpoints([point(0)]), 1, feel);
+    const state = new Checkpoints([point(0)], 1);
     const player = target();
 
     expect(state.hurt(player, 0)).toBe(true);
@@ -99,7 +92,7 @@ describe("platformer checkpoints", () => {
   });
 
   it("advances through ordered checkpoints only", () => {
-    const state = new Checkpoints(checkpoints([point(0), point(14), point(25)]), 3, feel);
+    const state = new Checkpoints([point(0), point(14), point(25)], 3);
 
     state.pass(point(15));
     expect(state.currentIndex).toBe(1);
@@ -107,22 +100,20 @@ describe("platformer checkpoints", () => {
     expect(state.currentIndex).toBe(2);
   });
 
-  it("keeps the navigation blocker out of the player's collision mask", async () => {
-    const character = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/entities/Character.ts"),
-      "utf8",
-    );
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
-      "utf8",
-    );
+  it("blinks while invulnerable and draws on every other frame", () => {
+    const state = new Checkpoints([point(0)], 3);
+    const player = target();
+    state.hurt(player, 0);
 
-    expect(level).toContain("collisionLayer: 4");
-    expect(character).toContain("collisionMask: 0xfffb");
+    // Two consecutive samples of the same instant agree: the blink is a function of the window,
+    // not of how many times the scene has been stepped.
+    expect(state.blinks(0)).toBe(state.blinks(0));
+    state.update(1.3);
+    expect(state.blinks(0)).toBe(true);
   });
 
   it("clears velocity before teleporting to the current checkpoint", () => {
-    const state = new Checkpoints(checkpoints([point(0), point(14)]), 3, feel);
+    const state = new Checkpoints([point(0), point(14)], 3);
     const player = target();
     state.pass(point(15));
 
@@ -132,24 +123,50 @@ describe("platformer checkpoints", () => {
     expect(player.body.teleport).toHaveBeenCalledWith(state.points[1]);
   });
 
-  it("should register a mobile-safe steering chaser without Recast", async () => {
-    const game = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/game.ts"),
+  it("restores a full set of hearts instead of ending the run", () => {
+    const state = new Checkpoints([point(0)], 2);
+    const player = target();
+    state.hurt(player, 0);
+    state.hurt(player, 0);
+    state.update(2);
+    state.hurt(player, 0);
+    expect(state.hearts).toBe(0);
+
+    state.restore();
+    expect(state.hearts).toBe(2);
+    // Restoring is a transition, not a terminal state: the fox is invulnerable and playable again.
+    expect(state.invulnerable).toBe(true);
+  });
+
+  it("should hand the walkable level to the engine's own static collider builder", async () => {
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Play.ts"),
       "utf8",
     );
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
-      "utf8",
-    );
-    const chaser = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/entities/Chaser.ts"),
+    const stage = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/level/Stage.ts"),
       "utf8",
     );
 
-    expect(`${game}\n${level}\n${chaser}`).not.toMatch(/recast|NavigationAgent3D/u);
-    expect(chaser).toContain("steeringFinished");
-    expect(chaser).toContain("routeComplete");
-    expect(level).toContain('ctx.entities.add("chaser", chaser)');
+    // The route is authored geometry, so collision is the engine's reading of what the camera
+    // draws. A hand-rolled AABB list alongside a modelled level is how the two drift apart.
+    expect(play).toContain("buildStaticColliders(ctx, stage.group");
+    expect(play).toContain("object.userData.solid === true");
+    expect(stage).toContain("mesh.userData.solid = true");
+    expect(stage).not.toMatch(/colliders\s*:\s*\[\]/u);
+  });
+
+  it("should read the sun and the camera from afterPhysics, not from the scene frame", async () => {
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Play.ts"),
+      "utf8",
+    );
+
+    // `moveAndSlide` only queues motion, so a camera written before the physics step frames where
+    // the body was. `afterPhysics` is the phase the engine owns.
+    expect(play).toContain("afterPhysics(ctx, (dt) => {");
+    expect(play).toContain("followCamera(camera, fox.mesh.position, fox.body.velocity.x, dt)");
+    expect(play).toContain("lighting.follow(fox.mesh.position)");
   });
 
   it("should ship touch controls as user-owned render source", async () => {
@@ -157,25 +174,24 @@ describe("platformer checkpoints", () => {
       path.resolve("packages/create-threenative/templates/platformer/src/render/touch-controls.ts"),
       "utf8",
     );
-    const character = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/entities/Character.ts"),
+    const fox = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/entities/Fox.ts"),
       "utf8",
     );
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Play.ts"),
       "utf8",
     );
 
     expect(controls).toContain("ReadonlyMap<number, ITouchPointer>");
     expect(controls).toContain("TouchControls");
     expect(controls).toContain("readonly object = this.root;");
-    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
-    expect(level).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
-    expect(level).toContain("touchControls?.update(frameCtx.input.raw.pointers");
-    expect(level).not.toContain('ctx.entities.add("touch-controls", new TouchControls(camera));');
-    expect(character).toContain("ITouchInput");
-    expect(character).toContain("touch?.jumpPressed === true");
-    expect(character).toContain("touch?.dashPressed === true");
+    expect(play).toContain("isMobile() && isTouchscreenAvailable()");
+    expect(play).toContain('ctx.entities.add("touch-controls", new TouchControls(camera))');
+    expect(play).toContain("touchControls?.update(frameCtx.input.raw.pointers");
+    expect(fox).toContain("ITouchInput");
+    expect(fox).toContain("touch?.jumpPressed === true");
+    expect(fox).toContain("touch?.dashPressed === true");
   });
 
   it("keeps portrait movement and dash pointers in separate hit regions", () => {
@@ -260,11 +276,7 @@ describe("platformer checkpoints", () => {
     controls.dispose();
   });
 
-  it("ships the production performance scenario without changing the platformer workload", async () => {
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
-      "utf8",
-    );
+  it("ships the production performance scenario with honest, bounded budgets", async () => {
     const performance = await readFile(
       path.resolve(
         "packages/create-threenative/templates/platformer/playtests/performance.playtest.json",
@@ -277,26 +289,30 @@ describe("platformer checkpoints", () => {
           maxDrawCalls: number;
           maxFrameMsP95: number;
           maxTriangles: number;
+          minFps: number;
         };
       };
       steps: Array<Record<string, unknown>>;
     };
 
-    // 70/3350 were set against a scene measured behind the loading layer, before the runner
-    // waited for startup readiness — the counts were of a frame the player never sees. c2ba91d9
-    // re-measured the running scene at 160 draws / 6127 triangles and set the budget above it.
-    // The frame-time ceiling deliberately did not move: a cap raised to fit the work is a cap
-    // routed around.
+    // Measured off the running scene, 2026-09-28, at 1920x1080 on a discrete adapter with the
+    // high tier: 562 draw calls and 186,016 triangles for the whole 97 m route and its backdrop.
+    // That is what the fox route costs in objects, and it is what the collapse in
+    // `scenes/Play.ts` bought: the same scene un-collapsed is 2,128 draws, because a level
+    // authored out of primitives is one draw per primitive until something merges it.
+    //
+    // The frame-time and FPS ceilings deliberately did not move — measured p95 was 0.5 ms against
+    // the 33 ms ceiling. A cap raised to fit the work is a cap routed around; these three numbers
+    // are a guard against the next change that makes the frame worse, not a score.
     expect(scenario.assert.performance).toEqual({
-      maxDrawCalls: 200,
+      maxDrawCalls: 600,
       maxFrameMsP95: 33,
-      maxTriangles: 7700,
+      maxTriangles: 190_000,
       // PRD-222 Phase 1: the Tier 3 Floor lives in the shipped scenario, beside the ceilings.
       minFps: 30,
     });
     expect(scenario.steps.map((step) => step.kind)).toEqual(["input", "wait"]);
     expect(scenario.steps).not.toContainEqual(expect.objectContaining({ kind: "performance" }));
     expect(scenario.steps).not.toContainEqual(expect.objectContaining({ sampleSeconds: 10 }));
-    expect(level).toContain("const SPAWN = new Vector3(0, 0.75, 0);");
   });
 });

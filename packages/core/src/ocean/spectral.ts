@@ -445,13 +445,14 @@ export class SpectralOcean extends Object3D implements IComputeDriven {
   process(renderer = this.#renderer): void {
     if (this.#released) return;
     if (renderer === undefined) throw new Error("SpectralOcean is not attached to a renderer.");
-    for (const state of this.#cascadeStates) {
-      for (const pass of state.passes) renderer.compute(pass);
-    }
-    if (this.#heightPass !== undefined) {
-      renderer.compute(this.#heightPass);
-      this.#readback?.request(renderer);
-    }
+    // One `compute()` for the whole transform. Three submits a command buffer per call, so a call
+    // per pass was ~20 submits a frame for two cascades, and a submit is where the GPU process
+    // makes the renderer wait: 60 submits a frame with a 70 ms stall every few dozen of them.
+    // An array runs in one compute pass in order, which is all a ping-pong transform needs.
+    const passes = this.#cascadeStates.flatMap((state) => state.passes);
+    if (this.#heightPass !== undefined) passes.push(this.#heightPass);
+    renderer.compute(passes);
+    if (this.#heightPass !== undefined) this.#readback?.request(renderer);
     this.#steps += 1;
   }
 

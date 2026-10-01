@@ -1,8 +1,8 @@
 import {
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Group,
-  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
@@ -16,6 +16,35 @@ import { describe, expect, it, vi } from "vitest";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
+import { templatedRig } from "./templated-rig.js";
+
+/** The clips the packaged `mannequin.glb` ships, by the name `Player.ts` plays them under. */
+const MANNEQUIN_CLIPS = [
+  "Idle_Loop",
+  "Jog_Fwd_Loop",
+  "Jump_Start",
+  "Jump_Loop",
+  "Jump_Land",
+] as const;
+
+/**
+ * Every clip `assets/mannequin-combat.glb` ships that the action RPG plays, read off the packaged
+ * glTF's own animation list. `SkeletalMesh3D` fails the load by name when one is missing, so this
+ * list is the contract between the template's clip tables and the file the scaffolder copies.
+ */
+const COMBAT_CLIPS = [
+  "Death01",
+  "Hit_Chest",
+  "Idle_Loop",
+  "Jog_Fwd_Loop",
+  "PickUp_Table",
+  "Punch_Jab",
+  "Roll",
+  "Spell_Simple_Shoot",
+  "Sword_Attack",
+  "Sword_Idle",
+  "Walk_Loop",
+] as const;
 
 const probeState = vi.hoisted(() => ({
   vector2Allocations: 0,
@@ -61,6 +90,16 @@ const WARMUP_FRAMES = 30;
 const MEASURED_FRAMES = 600;
 const DT = 1 / 60;
 
+/**
+ * Every other template's car here is kinematic, so the zero-gravity default below costs it
+ * nothing. Racing's is a real `VehicleBody3D`: its suspension is a spring pre-loaded against the
+ * car's own weight, and with no gravity to load it, the strut fully extends and launches the
+ * chassis — wheels losing contact one at a time — within a few frames of spawning. `-24` matches
+ * `src/game.ts`'s own plugin gravity, the value the suspension's `SAG` and `stiffness` are tuned
+ * against.
+ */
+const RACING_GRAVITY = { x: 0, y: -24, z: 0 };
+
 interface IPhysicsFixture {
   readonly physics: IPhysicsContext;
   dispose(): void;
@@ -87,9 +126,11 @@ function measureVector2Allocations(step: () => void): number {
   return probeState.vector2Allocations;
 }
 
-async function physicsFixture(): Promise<IPhysicsFixture> {
+async function physicsFixture(
+  gravity: { readonly x: number; readonly y: number; readonly z: number } = { x: 0, y: 0, z: 0 },
+): Promise<IPhysicsFixture> {
   const owner = { add: () => undefined } as never;
-  const plugin = rapier({ gravity: { x: 0, y: 0, z: 0 } });
+  const plugin = rapier({ gravity });
   await plugin.setup?.(owner);
   const physics = (owner as { physics?: IPhysicsFixture["physics"] }).physics;
   if (physics === undefined) throw new Error("Allocation fixture did not install physics.");
@@ -151,7 +192,11 @@ function sceneContext(
   );
   const assets = {
     audio: (name: string) => Promise.resolve({ name }),
-    model: async <T>(): Promise<T> => ({ scene: proofScene }) as T,
+    // PRD-470: `starter` and `minimal` both load the packaged mannequin, and `Player` refuses a rig
+    // missing one of its five named clips, so the stub hands back a rig for that name and the
+    // proof scene for everything else.
+    model: async <T>(name: string): Promise<T> =>
+      (name === "mannequin.glb" ? templatedRig(MANNEQUIN_CLIPS) : { scene: proofScene }) as T,
     texture: async () => new Texture(),
   };
   return {
@@ -181,7 +226,7 @@ function sceneContext(
       justPressed: () => false,
       justReleased: () => false,
       pressed: () => false,
-      raw: { pointers: new Map() },
+      raw: { keys: new Set<string>(), pointer: { position: new Vector2() }, pointers: new Map() },
       vector: (name: string) => (name === "look" ? lookVector : inputVector),
     },
     physics,
@@ -232,28 +277,24 @@ function runSceneFrames(frame: unknown, context: unknown, beforeMeasure?: () => 
 
 describe("generated template ordinary-frame runtime cost", () => {
   it("executes 600 steady frames per template without fresh vector work", async () => {
-    const minimal = await import("../templates/minimal/src/render/hud.js");
+    const minimal = await import("../templates/minimal/src/render/camera.js");
     const starter = await import("../templates/starter/src/entities/Player.js");
-    const platformer = await import("../templates/platformer/src/entities/Character.js");
+    const platformer = await import("../templates/platformer/src/entities/Fox.js");
     const racing = await import("../templates/racing/src/track/Ranking.js");
     const racingLap = await import("../templates/racing/src/track/Lap.js");
     const racingSector = await import("../templates/racing/src/track/TrackSector.js");
-    const shooter = await import("../templates/shooter/src/weapons/Projectile.js");
-    const shooterMaterials = await import("../templates/shooter/src/render/materials.js");
     const actionRpg = await import("../templates/action-rpg/src/entities/Enemy.js");
-    const actionRpgMaterials = await import("../templates/action-rpg/src/render/materials.js");
-    const defense = await import("../templates/defense/src/attackers/Attacker.js");
+    const defense = await import("../templates/tower-defense/src/enemies/Enemy.js");
     const core = await import("../../core/src/index.js");
 
     for (const [name, value] of Object.entries({
-      "minimal HUD": minimal.createHud,
+      "minimal followCamera": minimal.followCamera,
       "starter Player": starter.Player,
-      "platformer Character": platformer.Character,
+      "platformer Fox": platformer.Fox,
       "racing rankRacers": racing.rankRacers,
       "racing TrackSector": racingSector.TrackSector,
-      "shooter Projectile": shooter.Projectile,
       "action-RPG Enemy": actionRpg.Enemy,
-      "defense Attacker": defense.Attacker,
+      "tower-defense Enemy": defense.Enemy,
       "core PathFollow3D": core.PathFollow3D,
     })) {
       if (value === undefined) throw new Error(`Malformed ${name} fixture: export is missing.`);
@@ -262,29 +303,19 @@ describe("generated template ordinary-frame runtime cost", () => {
     const physics = await physicsFixture();
     try {
       const camera = new PerspectiveCamera(60, 16 / 9);
-      const hud = minimal.createHud(camera, "SCORE");
-      hud.update({ primary: 1, seconds: 3 });
-      const hudWrites = vi.spyOn(InstancedMesh.prototype, "setMatrixAt");
-      const glyphWritesBefore = hud.glyphs;
-      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) hud.update({ primary: 1, seconds: 3 });
-      const stableGlyphs = hud.glyphs;
-      for (let frame = 0; frame < MEASURED_FRAMES; frame += 1)
-        hud.update({ primary: 1, seconds: 3 });
-      expect(hud.glyphs, "minimal HUD high-water glyph count").toBe(stableGlyphs);
-      expect(hudWrites.mock.calls.length, "minimal HUD instance allocation sentinel").toBe(0);
-      expect(glyphWritesBefore).toBe(stableGlyphs);
-      hudWrites.mockRestore();
-      hud.dispose();
+      const target = new Vector3(-2, 0.9, 0);
+      for (let frame = 0; frame < WARMUP_FRAMES; frame += 1)
+        minimal.followCamera(camera, target, DT);
+      expect(
+        measureVectorAllocations(() => minimal.followCamera(camera, target, DT)),
+        "minimal followCamera vector allocation sentinel",
+      ).toEqual({ clones: 0, constructors: 0 });
 
       const ctx = gameContext(physics.physics);
       const player = new starter.Player(
         ctx as never,
-        {
-          accent: new MeshBasicMaterial(),
-          body: new MeshBasicMaterial(),
-          dark: new MeshBasicMaterial(),
-        },
-        new Vector3(-2, 0.5, 0),
+        templatedRig(MANNEQUIN_CLIPS),
+        new Vector3(-2, 0.9, 0),
       );
       expect(
         measureVectorAllocations(() => player.update(ctx as never, DT)),
@@ -292,23 +323,23 @@ describe("generated template ordinary-frame runtime cost", () => {
       ).toEqual({ clones: 0, constructors: 0 });
       player.dispose();
 
-      const character = new platformer.Character(ctx as never, new Vector3(0, 0.75, 0));
+      const fox = new platformer.Fox(ctx as never, new Vector3(0, 0.75, 0));
       expect(
-        measureVectorAllocations(() => character.update(ctx as never, DT)),
-        "platformer Character.update vector allocation sentinel",
+        measureVectorAllocations(() => fox.update(ctx as never, DT)),
+        "platformer Fox.update vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      character.dispose();
+      fox.dispose();
 
       const dashCtx = gameContext(physics.physics, {
         justPressed: (action) => action === "dash",
         move: new Vector2(),
       });
-      const dashCharacter = new platformer.Character(dashCtx as never, new Vector3(0, 0.75, 0));
+      const dashingFox = new platformer.Fox(dashCtx as never, new Vector3(0, 0.75, 0));
       expect(
-        measureVectorAllocations(() => dashCharacter.update(dashCtx as never, DT)),
+        measureVectorAllocations(() => dashingFox.update(dashCtx as never, DT)),
         "platformer dash fallback vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      dashCharacter.dispose();
+      dashingFox.dispose();
 
       const touchModule = await import("../templates/platformer/src/render/touch-controls.js");
       const touch = new touchModule.TouchControls(camera);
@@ -347,10 +378,10 @@ describe("generated template ordinary-frame runtime cost", () => {
         routeProgress: number;
       }> = [];
       const projectionTarget = {
-        distanceFromStart: 0,
-        lateralDistance: 0,
+        curvature: 0,
+        distance: 0,
+        lateral: 0,
         point: new Vector3(),
-        segment: 0,
         tangent: new Vector3(),
       };
       const sampleTarget = { point: new Vector3(), progress: 0, tangent: new Vector3() };
@@ -408,28 +439,9 @@ describe("generated template ordinary-frame runtime cost", () => {
       expect(tiedRanked[0]?.id, "racing deterministic tie order").toBe("alpha");
       expect(tiedRanked[1]?.id, "racing deterministic tie order").toBe("zulu");
 
-      const projectile = new shooter.Projectile(
-        ctx as never,
-        shooterMaterials.createMaterials(),
-        new Vector3(0, 0.85, 0),
-        new Vector3(1, 0, 0),
-        1,
-        () => undefined,
-      );
-      const queryPhysics = {
-        ...physics.physics,
-        directSpaceState: { intersectRay: () => undefined },
-      };
-      const queryCtx = { ...ctx, physics: queryPhysics } as never;
-      expect(
-        measureVectorAllocations(() => projectile.update(queryCtx, DT)),
-        "shooter Projectile.update vector allocation sentinel",
-      ).toEqual({ clones: 0, constructors: 0 });
-      projectile.dispose();
-
       const enemy = new actionRpg.Enemy(
         ctx as never,
-        actionRpgMaterials.createMaterials(),
+        templatedRig(COMBAT_CLIPS),
         new Vector3(0, 0.78, 0),
         { id: 777 } as never,
         { onAttack: () => undefined, onDeath: () => undefined },
@@ -449,19 +461,20 @@ describe("generated template ordinary-frame runtime cost", () => {
       ).toEqual({ clones: 0, constructors: 0 });
       enemy.dispose();
 
-      const attacker = new defense.Attacker({
-        id: "attacker.pool.0",
-        lateralOffset: 0.17,
+      const walker = new defense.Enemy({
+        id: "enemy.skitter.0",
+        kind: "skitter",
         onDefeated: () => undefined,
         onLeak: () => undefined,
-        pathPoints: [new Vector3(0, 0, 0), new Vector3(100, 0, 0), new Vector3(200, 0, 100)],
         physics: physics.physics as never,
+        points: [new Vector3(0, 0, 0), new Vector3(100, 0, 0), new Vector3(200, 0, 100)],
       });
+      walker.reset("enemy.skitter.0.w1", 58);
       expect(
-        measureVectorAllocations(() => attacker.update(DT)),
-        "defense Attacker.update vector allocation sentinel",
+        measureVectorAllocations(() => walker.update(DT)),
+        "tower-defense Enemy.update vector allocation sentinel",
       ).toEqual({ clones: 0, constructors: 0 });
-      attacker.dispose();
+      walker.dispose();
     } finally {
       physics.dispose();
     }
@@ -470,11 +483,10 @@ describe("generated template ordinary-frame runtime cost", () => {
   it("executes scene-owned collection and formatted-state paths for 600 frames", async () => {
     const minimal = await import("../templates/minimal/src/scenes/Play.js");
     const starter = await import("../templates/starter/src/scenes/Play.js");
-    const platformer = await import("../templates/platformer/src/scenes/Level.js");
+    const platformer = await import("../templates/platformer/src/scenes/Play.js");
     const racing = await import("../templates/racing/src/scenes/Race.js");
-    const shooter = await import("../templates/shooter/src/scenes/Play.js");
     const actionRpg = await import("../templates/action-rpg/src/scenes/Play.js");
-    const defense = await import("../templates/defense/src/scenes/Defense.js");
+    const defense = await import("../templates/tower-defense/src/scenes/Battle.js");
     // The mocked specifier, not the original module: templates resolve solarPosition
     // through the mock factory's namespace copy, so the spy has to target that copy.
     const core = await import("@threenative/core");
@@ -482,34 +494,33 @@ describe("generated template ordinary-frame runtime cost", () => {
     for (const [name, value] of Object.entries({
       "minimal Play": minimal.Play,
       "starter Play": starter.Play,
-      "platformer Level": platformer.Level,
+      "platformer Play": platformer.Play,
       "racing Race": racing.Race,
-      "shooter Play": shooter.Play,
       "action-RPG Play": actionRpg.Play,
-      "defense Defense": defense.Defense,
+      "tower-defense Battle": defense.Battle,
     })) {
       if (value === undefined) throw new Error(`Malformed ${name} fixture: export is missing.`);
     }
 
     const minimalPhysics = await physicsFixture();
-    const solarPositionSpy = vi.spyOn(core, "solarPosition");
     try {
       const context = sceneContext(minimalPhysics.physics, minimal.Play.initialState);
-      const frame = new minimal.Play().enter(context as never);
+      const rig = templatedRig([
+        "Idle_Loop",
+        "Jog_Fwd_Loop",
+        "Jump_Start",
+        "Jump_Loop",
+        "Jump_Land",
+      ]);
+      const play = new minimal.Play();
+      await play.load({
+        ...context,
+        assets: { ...context.assets, model: async <T>(): Promise<T> => rig as T },
+      } as never);
+      const frame = play.enter(context as never);
       runSceneFrames(frame, context);
-      expect(solarPositionSpy).toHaveBeenCalledTimes(1 + WARMUP_FRAMES + MEASURED_FRAMES);
-      expect(
-        new Set(solarPositionSpy.mock.calls.slice(-MEASURED_FRAMES).map(([input]) => input)).size,
-        "minimal solar-position input high-water sentinel",
-      ).toBe(1);
-      expect(
-        new Set(solarPositionSpy.mock.results.slice(-MEASURED_FRAMES).map(({ value }) => value))
-          .size,
-        "minimal solar-position output high-water sentinel",
-      ).toBe(1);
       expect(context.patchIdentities.size, "minimal Play state-patch high-water sentinel").toBe(1);
     } finally {
-      solarPositionSpy.mockRestore();
       minimalPhysics.dispose();
     }
 
@@ -549,51 +560,40 @@ describe("generated template ordinary-frame runtime cost", () => {
 
     const platformerPhysics = await physicsFixture();
     try {
-      const context = sceneContext(platformerPhysics.physics, platformer.Level.initialState);
-      const frame = new platformer.Level().enter(context as never);
+      const context = sceneContext(platformerPhysics.physics, platformer.Play.initialState);
+      const play = new platformer.Play();
+      // The fox run loads the sky photograph in `load()`, exactly like every other template that
+      // ships one, so the scene under measurement is the one a player sees.
+      await play.load(context as never);
+      const frame = play.enter(context as never);
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {
         patchHighWater = context.patchIdentities.size;
       });
-      expect(patchHighWater, "platformer Level state-patch warm high-water sentinel").toBe(1);
-      expect(context.patchIdentities.size, "platformer Level state-patch high-water sentinel").toBe(
+      expect(patchHighWater, "platformer Play state-patch warm high-water sentinel").toBe(1);
+      expect(context.patchIdentities.size, "platformer Play state-patch high-water sentinel").toBe(
         patchHighWater,
       );
     } finally {
       platformerPhysics.dispose();
     }
 
-    const shooterPhysics = await physicsFixture();
-    try {
-      const context = sceneContext(shooterPhysics.physics, shooter.Play.initialState, {
-        look: new Vector2(1, 0),
-      });
-      const frame = new shooter.Play().enter(context as never);
-      const filterSpy = vi.spyOn(Array.prototype, "filter");
-      const reduceSpy = vi.spyOn(Array.prototype, "reduce");
-      let patchHighWater = 0;
-      runSceneFrames(frame, context, () => {
-        patchHighWater = context.patchIdentities.size;
-        filterSpy.mockClear();
-        reduceSpy.mockClear();
-      });
-      const filterCalls = filterSpy.mock.calls.length;
-      const reduceCalls = reduceSpy.mock.calls.length;
-      filterSpy.mockRestore();
-      reduceSpy.mockRestore();
-      expect(filterCalls, "shooter live-target filter allocation sentinel").toBe(0);
-      expect(reduceCalls, "shooter live-target reduce allocation sentinel").toBe(0);
-      expect(context.patchIdentities.size, "shooter state-patch high-water sentinel").toBe(
-        patchHighWater,
-      );
-    } finally {
-      shooterPhysics.dispose();
-    }
+    // The shooter ships no scene-owned collection hot path any more: its town's solids are
+    // merged per material at construction and its frame is a firefight, not a per-frame scan.
+    // `enemy-stops-without-snapping` and `performance` are what prove its steady frame.
 
     const actionRpgPhysics = await physicsFixture();
     try {
       const context = sceneContext(actionRpgPhysics.physics, actionRpg.Play.initialState);
-      const frame = new actionRpg.Play().enter(context as never);
+      const play = new actionRpg.Play();
+      await play.load({
+        ...context,
+        assets: {
+          ...context.assets,
+          model: async <T>(): Promise<T> => templatedRig(COMBAT_CLIPS) as T,
+        },
+      } as never);
+      const frame = play.enter(context as never);
       const toFixedSpy = vi.spyOn(Number.prototype, "toFixed");
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {
@@ -612,8 +612,10 @@ describe("generated template ordinary-frame runtime cost", () => {
 
     const defensePhysics = await physicsFixture();
     try {
-      const context = sceneContext(defensePhysics.physics, defense.Defense.initialState);
-      const frame = new defense.Defense().enter(context as never);
+      const context = sceneContext(defensePhysics.physics, defense.Battle.initialState);
+      const scene = new defense.Battle();
+      await scene.load(context as never);
+      const frame = scene.enter(context as never);
       const reduceSpy = vi.spyOn(Array.prototype, "reduce");
       let patchHighWater = 0;
       runSceneFrames(frame, context, () => {
@@ -622,8 +624,8 @@ describe("generated template ordinary-frame runtime cost", () => {
       });
       const reduceCalls = reduceSpy.mock.calls.length;
       reduceSpy.mockRestore();
-      expect(reduceCalls, "defense tower spread/reduce allocation sentinel").toBe(0);
-      expect(context.patchIdentities.size, "defense state-patch high-water sentinel").toBe(
+      expect(reduceCalls, "tower-defense scene spread/reduce allocation sentinel").toBe(0);
+      expect(context.patchIdentities.size, "tower-defense state-patch high-water sentinel").toBe(
         patchHighWater,
       );
     } finally {
@@ -633,10 +635,15 @@ describe("generated template ordinary-frame runtime cost", () => {
 
   it("executes the racing scene player scan for 600 measured frames", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       const update = frame as (ctx: unknown, dt: number) => void;
       if (typeof update !== "function")
         throw new Error("Allocation fixture returned no race frame.");
@@ -669,12 +676,66 @@ describe("generated template ordinary-frame runtime cost", () => {
       racingPhysics.dispose();
     }
   });
-  it("executes the racing scene player scan without an iterator", async () => {
+  it("publishes a JSON-safe component snapshot for the racing scene, as `survives` requires", async () => {
     const { Race } = await import("../templates/racing/src/scenes/Race.js");
-    const racingPhysics = await physicsFixture();
+    const { snapshotEntities } = await import("../../core/src/entity-snapshot.js");
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
     try {
       const context = sceneContext(racingPhysics.physics, Race.initialState);
-      const frame = new Race().enter(context as never);
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never) as (ctx: unknown, dt: number) => void;
+      // The capability query lands between `enter()` and the first update, so the snapshot has to
+      // be honest before anything has moved.
+      const probe = (): Record<string, Record<string, unknown>> => {
+        const registry = context.entities;
+        const named = new Map<string, object>();
+        for (const id of ["camera.main", "player", "rival"]) {
+          const entity = registry.get(id) as object | undefined;
+          if (entity !== undefined) named.set(id, entity);
+        }
+        return snapshotEntities(named as ReadonlyMap<string, object>);
+      };
+      const atEnter = probe();
+      for (const [id, fields] of Object.entries(atEnter)) {
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number")
+            expect(Number.isFinite(value), `racing ${id}.${key} finite at enter`).toBe(true);
+        }
+      }
+      racingPhysics.step(DT);
+      frame(context, DT);
+      // The `runtime.components` capability is offered only when at least one named entity
+      // publishes a JSON-safe field, and `survives` fails closed without it. A car that owns only
+      // nested objects and no scalar of its own silently withdraws the whole capability.
+      const snapshot = probe();
+      const observed = Object.entries(snapshot).filter(
+        ([, fields]) => Object.keys(fields).length > 0,
+      );
+      expect(observed.length, "racing entities publishing component fields").toBeGreaterThan(0);
+      for (const [id, fields] of observed) {
+        expect(() => JSON.stringify(fields), `racing component fields for ${id}`).not.toThrow();
+        for (const [key, value] of Object.entries(fields)) {
+          if (typeof value === "number") {
+            expect(Number.isFinite(value), `racing component ${id}.${key} is finite`).toBe(true);
+          }
+        }
+      }
+    } finally {
+      racingPhysics.dispose();
+    }
+  });
+  it("executes the racing scene player scan without an iterator", async () => {
+    const { Race } = await import("../templates/racing/src/scenes/Race.js");
+    const racingPhysics = await physicsFixture(RACING_GRAVITY);
+    try {
+      const context = sceneContext(racingPhysics.physics, Race.initialState);
+      // `Race.load()` fetches the sky photograph the first frame is lit by, and `enter` refuses to
+      // run without it: a scene that quietly fell back to a flat sky would render a plausible frame
+      // and prove nothing about the look this template ships.
+      const race = new Race();
+      await race.load(context as never);
+      const frame = race.enter(context as never);
       if (typeof frame !== "function")
         throw new Error("Allocation fixture returned no race frame.");
       const originalIterator = Array.prototype[Symbol.iterator];

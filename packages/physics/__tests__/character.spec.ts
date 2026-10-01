@@ -398,6 +398,45 @@ describe("CharacterBody3D", () => {
     expect(() => CollisionShape3D.fromMesh(mesh)).not.toThrow();
   });
 
+  // A primitive collider is centred on the body, so geometry whose bounds are not centred on its
+  // own origin (translated or merged in place) used to get a displaced collider silently — it
+  // floated a 1.8 m figure 0.4 m above the floor it stood on. Refuse by name instead.
+  it("should refuse a primitive collider for off-centre geometry, naming the fix", () => {
+    const offCentre = new Mesh(new BoxGeometry(1, 1, 1).translate(3, 0.5, 0));
+    expect(() => CollisionShape3D.fromMesh(offCentre)).toThrow(/TN_COLLISION_SHAPE_OFF_CENTRE/u);
+    expect(() => CollisionShape3D.fromMesh(offCentre, "trimesh")).not.toThrow();
+  });
+
+  // The centre check is in metres, so scale each axis by its own factor before comparing it with
+  // the scaled dimensions. A 0.001 unit offset under scale 100 is 0.1 m of collider drift — a
+  // tenth of the 1 m body — and must be refused; a 1 unit offset under scale 1e-6 is one
+  // micrometre and must not be. Both passed unscaled, in opposite directions.
+  it("should measure the off-centre offset in scaled metres", () => {
+    const tenthOfTheBody = new Mesh(new BoxGeometry(0.01, 0.01, 0.01).translate(0.001, 0, 0));
+    tenthOfTheBody.scale.setScalar(100);
+    expect(() => CollisionShape3D.fromMesh(tenthOfTheBody)).toThrow(
+      /TN_COLLISION_SHAPE_OFF_CENTRE/u,
+    );
+
+    const micrometre = new Mesh(new BoxGeometry(1, 1, 1).translate(1, 0, 0));
+    micrometre.scale.setScalar(0.000001);
+    expect(() => CollisionShape3D.fromMesh(micrometre)).not.toThrow();
+  });
+
+  // Anisotropic: each axis carries its own factor, so a wide flat body is judged on the axis that
+  // actually moved, and a figure stretched only upward is still caught.
+  it("should scale each off-centre axis by its own factor, not the largest", () => {
+    const flat = new Mesh(new BoxGeometry(1, 1, 1).translate(0, 0, 0.5));
+    flat.scale.set(100, 100, 0.0001);
+    expect(() => CollisionShape3D.fromMesh(flat)).not.toThrow();
+
+    const stretchedUpward = new Mesh(new BoxGeometry(1, 1, 1).translate(0, 0.5, 0));
+    stretchedUpward.scale.set(0.0001, 100, 0.0001);
+    expect(() => CollisionShape3D.fromMesh(stretchedUpward)).toThrow(
+      /TN_COLLISION_SHAPE_OFF_CENTRE/u,
+    );
+  });
+
   it("should place the body and zero its velocity when teleported", async () => {
     const { ctx } = await setup();
     const object = new Mesh(new BoxGeometry(0.6, 1, 0.6));

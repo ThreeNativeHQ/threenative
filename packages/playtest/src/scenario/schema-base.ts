@@ -404,7 +404,8 @@ export interface IPlaytestPerformanceAssertion {
   maxPassTriangles?: Readonly<Partial<Record<PlaytestFramePassKind, number>>>;
 }
 
-export interface IPlaytestRenderChainAssertion {
+/** The stage expectations a render-chain assertion can hold, without its own per-adapter branches. */
+export interface IPlaytestRenderChainExpectation {
   contributions?: {
     graphOutputChanged: string[];
   };
@@ -419,6 +420,19 @@ export interface IPlaytestRenderChainAssertion {
     maxRejectionFraction: number;
   };
 }
+
+export interface IPlaytestRenderChainAssertion extends IPlaytestRenderChainExpectation {
+  /**
+   * What the chain must look like on each adapter the run's own `adapter.info` classified, chosen
+   * by the harness's software-adapter detector rather than by anything the game reported. A lane
+   * whose adapter cannot be classified is a failed observation, not a hardware one: a missing
+   * branch is not a licence to pass.
+   */
+  perAdapter?: Partial<Record<PlaytestAdapterClass, IPlaytestRenderChainExpectation>>;
+}
+
+/** What the harness read out of `adapter.info` for this run, before any game code answered. */
+export type PlaytestAdapterClass = "hardware" | "software";
 
 /** Ceilings on the application's startup milestones, in milliseconds since navigation. */
 export interface IPlaytestStartupAssertion {
