@@ -115,7 +115,11 @@ function normalKeys(geometry: BufferGeometry, offsetX: number, offsetZ: number):
 }
 
 /** Every triangle as its three world positions, so a merge can be compared without vertex order. */
-function triangleKeys(geometry: BufferGeometry, offsetX: number, offsetZ: number): Map<string, number> {
+function triangleKeys(
+  geometry: BufferGeometry,
+  offsetX: number,
+  offsetZ: number,
+): Map<string, number> {
   const position = geometry.getAttribute("position");
   const index = geometry.getIndex();
   if (index === null) throw new Error("Expected an indexed terrain geometry.");
