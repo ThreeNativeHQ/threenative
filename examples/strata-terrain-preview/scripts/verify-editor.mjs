@@ -205,6 +205,20 @@ try {
     assert.equal(reactivation.projectId, activation.projectId);
     assert.equal(reactivation.sessionId, activation.sessionId);
     assert.equal(reactivation.revision, saved.revision);
+    // AC-9: the GUI probe and the headless endpoint must agree on one rendered revision.
+    const probe = { kind: "profile", from: [-40, 20], to: [30, -25] };
+    await session.page.waitForFunction(
+      (revision) => window.strata?.renderedRevision === revision,
+      saved.revision,
+      { timeout: 5000 },
+    );
+    const guiProfile = await session.page.evaluate((query) => window.strata.inspect(query), probe);
+    const headlessProfile = (await controller.inspect(probe, saved.revision)).result;
+    assert.deepEqual(
+      guiProfile,
+      headlessProfile,
+      "GUI and headless spatial inspection must agree on the same revision",
+    );
     const prior = await session.page.evaluate(() => window.strata.view.inspect());
     const current = await controller.snapshot();
     await controller.commit({

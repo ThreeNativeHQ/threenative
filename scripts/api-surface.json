@@ -379,8 +379,11 @@
       "symbols": {
         "@threenative/terrain/editor/server#terrainEditor": "export function terrainEditor(options: { … }",
         "@threenative/terrain/editor/server#TerrainEditorDocument": "export class TerrainEditorDocument { … }",
+        "@threenative/terrain/editor#inspectSpatial": "export function inspectSpatial( state: ITerrainState, revision: string, query: ISpatialQuery, ): ISpatialObservation { … }",
         "@threenative/terrain/editor#mountTerrainEditor": "export async function mountTerrainEditor(options: { … }",
+        "@threenative/terrain/editor#probeTerrain": "export function probeTerrain( state: ITerrainState, revision: string, at: readonly number[], ): IPointObservation { … }",
         "@threenative/terrain/editor#TerrainEditorController": "export class TerrainEditorController { … }",
+        "@threenative/terrain/editor#validateSpatialReference": "export function validateSpatialReference(input: unknown): ISavedSpatialReference { … }",
         "@threenative/terrain/export#exportWorldGLB": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
         "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",

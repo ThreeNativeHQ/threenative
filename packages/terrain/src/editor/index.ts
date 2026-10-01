@@ -3,6 +3,25 @@ import type { ITerrainState } from "../core/types.js";
 import { mountRecoveredEditor } from "./app.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
 import { editorShell } from "./shell.js";
+import type { ISpatialObservation, ISpatialQuery } from "./spatialInspector.js";
+
+export {
+  inspectSpatial,
+  probeTerrain,
+  validateSpatialReference,
+} from "./spatialInspector.js";
+export type {
+  IPointObservation,
+  IProfileObservation,
+  IProfileSample,
+  IReferenceObservation,
+  ISavedSpatialReference,
+  ISpatialControlPoint,
+  ISpatialObservation,
+  ISpatialQuery,
+  ISpatialReference,
+  ISurfaceReading,
+} from "./spatialInspector.js";
 
 export interface IEditorView {
   readonly backend: string;
@@ -59,6 +78,13 @@ export class TerrainEditorController {
   }
   snapshot(): Promise<IEditorSnapshot> {
     return this.#request("document");
+  }
+  /**
+   * Answer a read-only spatial query against one exact revision, GUI or headless.
+   * @param query a `point`, `profile` or `reference` query from the saved document revision
+   */
+  inspect(query: ISpatialQuery, baseRevision: string): Promise<{ result: ISpatialObservation }> {
+    return this.#request("inspect", { baseRevision, query });
   }
   commit(
     transaction:

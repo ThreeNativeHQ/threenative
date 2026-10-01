@@ -4,17 +4,26 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { validatePlacementOverrides } from "../core/placements.js";
-import { type PatchCommand, Terrain } from "../core/terrain.js";
+import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
+import {
+  type ISpatialObservation,
+  type ISpatialQuery,
+  inspectSpatial,
+  validateSpatialReference,
+} from "./spatialInspector.js";
 
 const PREFIX = "/terrain-editor/";
 const MAX_BYTES = 64 * 1024 * 1024;
+const MAX_REFERENCES = 16;
 
 export interface IAuthoringDocument {
   version: 1;
   recipe: ITerrainDocument;
   placementOverrides?: Record<string, IPlacementOverride>;
+  /** Saved reference registrations. Authoring metadata: never evaluated, never exported. */
+  references?: ReturnType<typeof validateSpatialReference>[];
 }
 export interface IEditorSnapshot {
   revision: string;
@@ -34,13 +43,20 @@ function validate(value: unknown): IAuthoringDocument {
   const input = value as Record<string, unknown>;
   if (
     input.version !== 1 ||
-    Object.keys(input).some((key) => !["version", "recipe", "placementOverrides"].includes(key))
+    Object.keys(input).some(
+      (key) => !["version", "recipe", "placementOverrides", "references"].includes(key),
+    )
   )
     throw new Error("Unsupported authoring document fields/version");
   const recipe = Terrain.fromJSON(input.recipe as ITerrainDocument).toJSON();
   const document: IAuthoringDocument = { version: 1, recipe };
   if (input.placementOverrides !== undefined)
     document.placementOverrides = validatePlacementOverrides(input.placementOverrides);
+  if (input.references !== undefined) {
+    if (!Array.isArray(input.references) || input.references.length > MAX_REFERENCES)
+      throw new Error(`A document holds at most ${MAX_REFERENCES} saved references`);
+    document.references = input.references.map((entry) => validateSpatialReference(entry));
+  }
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
     throw new Error("Authoring document exceeds 64 MiB");
   return document;
@@ -200,6 +216,7 @@ export function terrainEditor(options: { documentPath: string; viewerUrl?: strin
   )
     throw new Error("Viewer URL must be an explicit HTTP(S) forwarded terrain-editor URL");
   const document = new TerrainEditorDocument(options.documentPath);
+  const evaluator = new TerrainEvaluator();
   const projectId = createHash("sha256").update(document.path).digest("hex");
   const sessionId = randomUUID();
   let origin: string | undefined;
@@ -305,6 +322,29 @@ export function terrainEditor(options: { documentPath: string; viewerUrl?: strin
             }
             if (request.method === "POST" && path === `${PREFIX}api/document`) {
               json(response, 200, document.commit(await body(request)));
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/inspect`) {
+              const transaction = await body(request);
+              if (
+                !transaction ||
+                typeof transaction !== "object" ||
+                Array.isArray(transaction) ||
+                Object.keys(transaction).some((key) => !["baseRevision", "query"].includes(key))
+              )
+                throw new Error("Expected { baseRevision, query }");
+              const snapshot = document.snapshot();
+              const inspection = transaction as { baseRevision?: unknown; query?: unknown };
+              if (inspection.baseRevision !== snapshot.revision)
+                throw new EditorError(409, "Stale base revision");
+              // The headless evaluator is the same one the GUI renders from, so both agree.
+              const state = evaluator.evaluate(snapshot.document.recipe);
+              const result: ISpatialObservation = inspectSpatial(
+                state,
+                snapshot.revision,
+                inspection.query as ISpatialQuery,
+              );
+              json(response, 200, { result });
               return;
             }
             throw new EditorError(405, "Unsupported terrain editor route/method");

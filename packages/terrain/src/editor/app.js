@@ -10,6 +10,7 @@ import {
 } from "../index.js";
 import { fillIcons, icon } from "./icons.js";
 import { PRESETS, createPreset } from "./presets.js";
+import { inspectSpatial } from "./spatialInspector.js";
 export function mountRecoveredEditor({
   initial,
   providedView,
@@ -1006,6 +1007,11 @@ export function mountRecoveredEditor({
     },
     rebuild: build,
     cancel: cancelBuild,
+    // Same read-only dispatch the headless API serves, bound to the revision actually rendered.
+    inspect: (query) => {
+      if (!state) throw Error("Wait for initial build");
+      return inspectSpatial(state, renderedRevision ?? revision, query);
+    },
     dispose: () => {
       disposed = true;
       abort.abort();

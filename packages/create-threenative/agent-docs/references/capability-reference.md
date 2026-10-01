@@ -5508,6 +5508,23 @@ const transforms = validatePlacementOverrides(document.placementOverrides);
 
 ## `@threenative/terrain/editor`
 
+### `inspectSpatial`
+
+`function` — Read-only spatial inspection of one evaluated terrain revision.
+
+```ts
+export function inspectSpatial( state: ITerrainState, revision: string, query: ISpatialQuery, ): ISpatialObservation { … }
+```
+
+- **Use when:** measure a point, profile a transect or score a saved reference against the world
+- **Constraints:** authoring data only; queries outside the extent or without observations throw
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the revision identity and the evaluated state being inspected
+
+```ts
+const observation = inspectSpatial(state, revision, { kind: "point", at: [0, 0] });
+```
+
 ### `mountTerrainEditor`
 
 `function` — Mount recovered terrain controls around the project-owned ThreeNative view.
@@ -5525,6 +5542,23 @@ export async function mountTerrainEditor(options: { … }
 await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
 ```
 
+### `probeTerrain`
+
+`function` — Probe the evaluated surface at one world point, separating bilinear from triangle values.
+
+```ts
+export function probeTerrain( state: ITerrainState, revision: string, at: readonly number[], ): IPointObservation { … }
+```
+
+- **Use when:** measure an authored terrain point with provenance and a revision identity
+- **Constraints:** authoring data only; non-finite, malformed and out-of-extent queries throw
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller owns the revision identity and the evaluated state being inspected
+
+```ts
+const probe = probeTerrain(state, revision, [12, -4]);
+```
+
 ### `TerrainEditorController`
 
 `class` — HTTP controller for the project-local terrain editor.
@@ -5540,6 +5574,23 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `validateSpatialReference`
+
+`function` — Normalise and validate one saved reference, exactly as a document commit would store it.
+
+```ts
+export function validateSpatialReference(input: unknown): ISavedSpatialReference { … }
+```
+
+- **Use when:** accept a bounded local reference image registration into the shared document
+- **Constraints:** authoring metadata only; rejects unknown fields, malformed points and unknown scale
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** a project owns the image file; only its hash and provenance travel in the document
+
+```ts
+const reference = validateSpatialReference(JSON.parse(saved));
 ```
 
 ## `@threenative/terrain/editor/server`

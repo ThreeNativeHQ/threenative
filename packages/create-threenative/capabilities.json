@@ -6618,6 +6618,27 @@
     {
       "aliases": [],
       "constraints": [
+        "authoring data only; queries outside the extent or without observations throw"
+      ],
+      "example": "const observation = inspectSpatial(state, revision, { kind: \"point\", at: [0, 0] });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the caller owns the revision identity and the evaluated state being inspected"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function inspectSpatial( state: ITerrainState, revision: string, query: ISpatialQuery, ): ISpatialObservation { … }",
+      "situations": [
+        "measure a point, profile a transect or score a saved reference against the world"
+      ],
+      "summary": "Read-only spatial inspection of one evaluated terrain revision.",
+      "supersedes": [],
+      "symbol": "inspectSpatial"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "browser authoring only; createView and materialColours are required game choices"
       ],
       "example": "await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });",
@@ -6631,6 +6652,23 @@
       "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
       "supersedes": [],
       "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": ["authoring data only; non-finite, malformed and out-of-extent queries throw"],
+      "example": "const probe = probeTerrain(state, revision, [12, -4]);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the caller owns the revision identity and the evaluated state being inspected"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function probeTerrain( state: ITerrainState, revision: string, at: readonly number[], ): IPointObservation { … }",
+      "situations": ["measure an authored terrain point with provenance and a revision identity"],
+      "summary": "Probe the evaluated surface at one world point, separating bilinear from triangle values.",
+      "supersedes": [],
+      "symbol": "probeTerrain"
     },
     {
       "aliases": [],
@@ -6648,6 +6686,27 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "authoring metadata only; rejects unknown fields, malformed points and unknown scale"
+      ],
+      "example": "const reference = validateSpatialReference(JSON.parse(saved));",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "a project owns the image file; only its hash and provenance travel in the document"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateSpatialReference(input: unknown): ISavedSpatialReference { … }",
+      "situations": [
+        "accept a bounded local reference image registration into the shared document"
+      ],
+      "summary": "Normalise and validate one saved reference, exactly as a document commit would store it.",
+      "supersedes": [],
+      "symbol": "validateSpatialReference"
     },
     {
       "aliases": [],
