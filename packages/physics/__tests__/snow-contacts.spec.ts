@@ -377,11 +377,21 @@ describe("powder resists what ploughs through it", () => {
     run(ctx, binding, 30);
     const start = { ...solved(ctx, body).position };
     if (options.push !== undefined) body.applyImpulse({ x: options.push, y: 0, z: 0 });
-    run(ctx, binding, 240);
+    let spin = 0;
+    let path = 0;
+    let last = solved(ctx, body);
+    let pose = { position: { ...last.position }, rotation: { ...last.rotation } };
+    run(ctx, binding, 240, () => {
+      last = solved(ctx, body);
+      spin += turned(pose.rotation, last.rotation);
+      path += Math.hypot(last.position.x - pose.position.x, last.position.z - pose.position.z);
+      pose = { position: { ...last.position }, rotation: { ...last.rotation } };
+    });
     const end = solved(ctx, body).position;
     const velocity = body.linearVelocity;
     return {
       distance: Math.hypot(end.x - start.x, end.z - start.z),
+      rollRatio: path > 0 ? (spin * BALL_RADIUS) / path : 0,
       speed: Math.hypot(velocity.x, velocity.z),
     };
   }
@@ -400,6 +410,9 @@ describe("powder resists what ploughs through it", () => {
     expect(held.distance).toBeGreaterThan(0.2);
     expect(held.speed).toBeLessThan(0.05);
     expect(held.distance).toBeLessThan(free.distance * 0.8);
+    // It slows by rolling slower, not by skidding or spinning in place.
+    expect(held.rollRatio).toBeGreaterThan(0.6);
+    expect(held.rollRatio).toBeLessThan(1.25);
   });
 
   it("rejects a negative or non-finite resistance", async () => {

@@ -1129,9 +1129,13 @@ export function createWebPhysicsSimulation(
       }
       options.world.timestep = deltaTime;
       options.world.step(options.eventQueue);
-      // Rapier retains accumulated forces unless the caller clears them. The public seam is a
-      // fixed-step force, so clear it after every step to keep web and native actuation aligned.
-      for (const entry of bodies.values()) entry.body.resetForces(true);
+      // Rapier retains accumulated forces and torques unless the caller clears them. The public
+      // seam is a fixed-step force — an off-centre one adds a torque — so clear both after every
+      // step to keep web and native actuation aligned.
+      for (const entry of bodies.values()) {
+        entry.body.resetForces(true);
+        entry.body.resetTorques(true);
+      }
       dirtyBodies.clear();
     },
     readVisibleTransforms: (renderBuffer) => {

@@ -929,10 +929,12 @@ impl Simulation {
             &(),
             &self.collision_events,
         );
-        // Rapier retains accumulated forces unless the caller clears them. The JavaScript seam
-        // promises a force for one fixed step, so keep the native backend identical to web.
+        // Rapier retains accumulated forces and torques unless the caller clears them. The
+        // JavaScript seam promises a force for one fixed step (an off-centre one adds a torque),
+        // so keep the native backend identical to web.
         for entry in self.entries.values() {
             self.bodies[entry.body].reset_forces(true);
+            self.bodies[entry.body].reset_torques(true);
         }
         // Rapier delivered the started/stopped transitions while the step ran; translate
         // collider handles back to body ids exactly the way the web path does

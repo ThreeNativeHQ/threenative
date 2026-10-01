@@ -510,7 +510,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       load += bodyLoad;
       entry.load = bodyLoad;
       entry.impulse = 0;
-      if (resistance > 0) resist(entry.body, oriented, area, bodyLoad, deltaTime);
+      if (resistance > 0) resist(entry, transform.position, oriented, area, bodyLoad, deltaTime);
     }
   }
 
@@ -518,15 +518,22 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
    * Take back the horizontal momentum the powder absorbs: soft-ground rolling resistance,
    * `sqrt(sinkage / width)` of the load, from what the snow measures under the body. Never more
    * than the body has, so a resting body stops rather than being pushed back uphill.
+   *
+   * It acts over the next step at the height where a rolling body loses spin and speed together
+   * (`I / (m r)` above the centre: 0.4 r for a ball, 0.5 r for a capsule rolling on its side), so a
+   * slowing ball keeps rolling rather than spinning in place; a box slides and takes it at its
+   * centre.
    */
   function resist(
-    body: PhysicsBody3D,
+    entry: IWatchedBody,
+    centre: { readonly x: number; readonly y: number; readonly z: number },
     at: { readonly x: number; readonly z: number },
     area: number,
     bodyLoad: number,
     deltaTime: number,
   ): void {
-    if (!("applyImpulse" in body) || body.type !== "dynamic") return;
+    const body = entry.body;
+    if (!("applyForceAtPoint" in body) || body.type !== "dynamic") return;
     const velocity = body.linearVelocity;
     const speed = Math.hypot(velocity.x, velocity.z);
     if (speed === 0) return;
@@ -537,11 +544,14 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       body.mass * speed,
     );
     if (impulse <= 0) return;
-    body.applyImpulse({
-      x: (-velocity.x / speed) * impulse,
-      y: 0,
-      z: (-velocity.z / speed) * impulse,
-    });
+    const shape = entry.shape;
+    const lever =
+      shape?.kind === "sphere" ? 0.4 * shape.x : shape?.kind === "capsule" ? 0.5 * shape.y : 0;
+    const force = impulse / deltaTime;
+    body.applyForceAtPoint(
+      { x: (-velocity.x / speed) * force, y: 0, z: (-velocity.z / speed) * force },
+      { x: centre.x, y: centre.y + lever, z: centre.z },
+    );
     resisted += impulse;
   }
 
