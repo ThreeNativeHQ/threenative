@@ -1,6 +1,6 @@
 # PRD-474 — a `tower-defense` template from Bastion, replacing `defense`
 
-**Status: PARTIAL — phases 1–4 landed on web 2026-09-29; victory playtest, target-priority scenario, end-to-end budgets and native open** · filed 2026-09-29 · owner: "integrate bastion, call it tower defense … change the
+**Status: done 2026-09-30 — every phase and box landed and verified on web and native** · filed 2026-09-29 · owner: "integrate bastion, call it tower defense … change the
 style a little bit, polish it, it looks dull right now … just delete [defense], no one is going to use it".
 
 ## Why
@@ -48,9 +48,9 @@ name it are renamed to `tower-defense` in the same change. The old template stay
 
 - [x] Route (rounded polyline), 16 pads and the reactor; enemies pooled on `PathFollow3D`, four kinds, chill, leak and kill rewards. proof: scaffolded playtests `survives` (a wave is fought while a held key pans the camera) and `defeat` (a lone Sentry loses: `status` LOST, `lives` 0, `leaks` ≥ 25 at 3× with auto-send) pass — `verify-one-template.ts tower-defense`, 2026-09-29
 - [x] Hitscan, splash shell, chain and chill towers fire; place, upgrade, recycle and the orbital strike work by key and by pointer. proof: scenarios `arsenal` (Mortar, Arc coil and Cryo each `shots ≥ 1`, built by pointer taps after a tap-select-and-recycle of the free Sentry), `placement` (`spent` 260, a refused Arc coil counted in `fundsRejects`), `upgrade-recycle` (credits 260 → 175 → 295), `pointer-placement` (hover reads pad 6; the tap builds on release), `strike` (`kills` ≥ 2, cooldown ≥ 20) — 2026-09-29
-- [ ] The HUD's target-priority buttons change what a tower shoots. proof: a scenario that sends the `target` intent and asserts `selMode` and the tower's pick — **open**: `pickTarget` is unit-proven for first / strongest / nearest and the intent path is wired, but no scenario sends it.
+- [x] The HUD's target-priority buttons change what a tower shoots. proof: `playtests/target-priority.playtest.json` reaches wave 3, selects the starting Sentry, and clicks the HUD's *strongest* button while a Skitter (`enemy.skitter.2.w3`) and the Bulwark are both in range and alive: `selMode` and `tower.0.mode` read `first` at `engaged` and `strongest` at `switched`, `tower.0.target` moves from `enemy.skitter.2.w3` to `enemy.bulwark.0.w3`, and the old target still has `hp` 87 at the end, so the swap is the priority and not the old target dying — green in the full 11-scenario browser run, 2026-09-30.
 - [x] Manual launch, auto-send, 1×/2×/3× speed, lose at 0 lives. proof: `defeat`, `look`, `arsenal`; win-at-12 and the seven-second auto-send are unit-proven on `WaveDirector` — 2026-09-29
-- [ ] A full twelve-wave victory played through the real scene. proof: a `victory` scenario asserting `status` WON and `wave` 12 — **open**: nothing scripts a defence that clears all twelve waves, so `WON` is proven only on the director, never in a browser.
+- [x] A full twelve-wave victory played through the real scene. proof: `playtests/victory.playtest.json` plays a finite mortar/arc defence — 24 safe-build purchases spaced 250 fixed-step ticks apart, so kills and wave bonuses fund the next purchase — and asserts `status` WON, `wave` 12, `kills` ≥ 200 and `towers` ≥ 8: green in the full browser run at 9316 frames, 2026-09-30 (WON, wave 12, 241 kills, 10 towers, 17/25 lives).
 
 - [x] A polished diorama, not a grey grid: layered moss slab, sand road with inlay, warm pads, a forest ring, coloured towers and walkers with emissive accents, sun, hemisphere and rim light, teal void, photo sky as environment only, bloom on glow. proof: `docs/verification/visuals/tower-defense.png` (the `look` scenario's mid-fight frame) and a fresh judge subagent, 2026-09-29: new 7.5/10 for polish and 7/10 for readability against 3/10 and 4/10 for the old `defense` frame, "clearly better, not marginally". It named three defects and the walkers (now twice Bastion's size, fatter health bars), the pads (lighter) and the armory (narrower) were fixed; still open by the judge's reading: the board sits a little left of centre, and shots leave no travelling trail.
 - [x] React HUD: top bar, wave bar with progress ticks, armory cards, selection panel, strike button, toasts, help and result modals; orbit, zoom and pan. proof: the captures above and every scenario passing against the built page.
@@ -58,9 +58,16 @@ name it are renamed to `tower-defense` in the same change. The old template stay
 ### Phase 3 — gates
 
 - [x] Scaffold hash, the 100-line instruction cap, the palette rule (six roles, one accent), the capability-recall corpus and the render-file gate pass. proof: `scaffold.spec.ts`, `template.spec.ts`, `visual-gate.spec.ts`, `pnpm caps:recall`, `check-template-quality`, `sync-mcp-configs --check` — 2026-09-29
-- [ ] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — **open**: it stops at `check-core-boundary` on `templates/adventure/src/render/tools.ts` (another lane), before reaching the checks this template touches; those were run one by one instead.
+- [x] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — `budgets ok: 12 framework packages, 20 example workspaces, … 11 templates ship src/render/quality.ts …` after the adventure removal and the shooter `AnimationPlayer` table-line fix, 2026-09-30.
 - [x] The look gallery is current. proof: `/home/joao/Pictures/threenative-aaa-look/` holds a fresh `tower-defense.png` and the stale `defense.png` is gone; sailing, shooter and starter were retaken by hand after the delegated arm timed out on queue contention, the others by the arm — 2026-09-29
-- [ ] Native. proof: a `--target desktop` playtest of this template — **open**: none was run; the game adds no helper that needs one (route, pooling and queries are existing installed systems), but nothing here claims a platform it did not run on.
+- [x] Native. proof: a scaffolded tower-defense built for desktop (`pnpm build:desktop` with `THREENATIVE_RUNTIME_BINARY` at the locally built Linux host) and run with `--target desktop --executable dist-native/tower-defense` reports `runtime: native`, `status` PLAYING, `kills` 6, `wave` 1 and `tower.0.shots` 24 at 901 frames with a non-blank `after.png`, 2026-09-30.
+
+### Acceptance criteria
+
+- [x] A1 — `defense` is gone and `tower-defense` is the shipped kit, named consistently. proof: `rg "templates/defense"` outside done PRDs and frozen evidence is empty; the CI matrix, READMEs, `scaffold.spec.ts` and the look gallery all name `tower-defense`, 2026-09-30.
+- [x] A2 — the twelve-wave game is winnable and losable through the real scene by real input. proof: `playtests/victory.playtest.json` clears all twelve waves (`status` WON, wave 12, 241 kills, 10 towers) and `playtests/defeat.playtest.json` reports `status` LOST; both green in the full 11-scenario browser run at 9316 and 9004 frames, 2026-09-30.
+- [x] A3 — it reads as a finished diorama and the HUD controls drive the game. proof: `docs/verification/visuals/tower-defense.png` (the `look` scenario's mid-fight frame) with the fresh judge's 7.5/10 polish and 7/10 readability against 3/10 and 4/10 for the old `defense` frame, and `playtests/target-priority.playtest.json` swaps the sentry from the first Skitter to the Bulwark while that Skitter is still alive, 2026-09-30.
+- [x] A4 — it runs on the native desktop host, not web only. proof: `--target desktop --executable dist-native/tower-defense` reports `runtime: native`, `kills` 6 and `tower.0.shots` 24 at 901 frames with a non-blank `after.png`, 2026-09-30.
 
 ## Decisions
 
