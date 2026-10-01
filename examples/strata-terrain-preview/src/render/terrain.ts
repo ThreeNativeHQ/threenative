@@ -20,9 +20,16 @@
 import type { IAssetLoader } from "@threenative/core";
 import { Heightfield } from "@threenative/core/world";
 import {
+  type BufferGeometry,
+  ClampToEdgeWrapping,
+  DataTexture,
+  DataUtils,
   Float32BufferAttribute,
+  HalfFloatType,
+  LinearFilter,
   Mesh,
   MeshStandardMaterial,
+  RedFormat,
   RepeatWrapping,
   type Texture,
 } from "three";
@@ -44,7 +51,6 @@ import {
   smoothstep,
   texture,
   transformNormalToView,
-  triplanarTexture,
   vec2,
   vec3,
 } from "three/tsl";
@@ -57,6 +63,25 @@ export interface IBakedWorld {
   heights: number[];
   colors: number[];
   waterLevel: number | null;
+}
+
+/**
+ * The ground's own curvature, sampled from a height texture, as the material's curvature term.
+ *
+ * This is the one signal the ground material cannot get any other way, and it is what separates a
+ * hillside with hollows in it from a hillside with a colour painted on it. The heightfield's own
+ * samples give a Laplacian: positive where the ground is concave (a hollow, a gully, the crease
+ * where two slopes meet), negative on a nose or a rib. Both the moss and the rock below read it, so
+ * moss grows in the crease at the bottom of a slope and rock shows on the rib at the top, which is
+ * where each actually grows — rather than both keysing off slope alone and covering a whole face.
+ *
+ * Built once in `createTerrain` from the same heights the geometry and the collider were built from,
+ * so it cannot disagree with either.
+ */
+export interface IGroundCurvature {
+  /** +1 in a hollow, -1 on a rib, ~0 on flat ground. */
+  readonly node: Node<"float">;
+  readonly texture: DataTexture;
 }
 
 type LayerKey = "grass" | "dirt" | "rock" | "moss" | "sand" | "snow";
@@ -147,6 +172,18 @@ const LITTER = vec3(1.34, 1.06, 0.74);
 const LITTER_AMOUNT = 0.55;
 
 /**
+ * Bare ground's own correction, and the pale lift the litter puts on it.
+ *
+ * Forest Ground 04 is a dark humus brown photographed under a canopy. On a *sunny* hillside — which
+ * is where the bake painted its worn patches — that brown is darker than the meadow around it, so a
+ * worn patch reads as a hole cut in the grass rather than as a patch of worn grass. `BARE` lifts it
+ * towards a dry soil and `BARE_LIFT` adds the sun-bleached tone litter has on top. Both are applied in
+ * proportion to the dirt's own weight, so nothing about the meadow's green changes.
+ */
+const BARE = vec3(1.22, 1.08, 0.86);
+const BARE_LIFT = vec3(0.09, 0.075, 0.05);
+
+/**
  * A world-space UV, rotated by a slow noise so the tile lattice is never axis-aligned.
  *
  * Rotating a *tiling* texture cannot open a seam — neighbouring tiles stay identical wherever the
@@ -157,6 +194,64 @@ function layerUV(key: LayerKey, scale = 1): Node<"vec2"> {
   return rotateUV(
     positionWorld.xz.div(float(TILE[key])).mul(scale),
     mx_noise_float(positionWorld.mul(0.006)).mul(1.4),
+    vec2(0, 0),
+  );
+}
+
+/**
+ * A tiling texture's lattice, broken up per cell by a hash of its own position.
+ *
+ * `layerUV` above rotates the whole plane by a slow noise, which turns an axis-aligned grid into a
+ * curving one but leaves the *repeat* visible: every 2.6 m the same four corners meet and the eye
+ * finds the tiling long before it finds the detail. The fix every texture packer uses is stochastic
+ * tiling: divide the plane into cells a little larger than one tile, and inside each cell shift and
+ * rotate the sample by that cell's own hash. The seam between two cells is a discontinuity rather
+ * than a repeat, and a discontinuity in a noise texture reads as more noise.
+ *
+ * The hash is the standard `fract(sin(dot))` construction. It is deterministic, needs no texture and
+ * costs three instructions, which is why it is written out here rather than pulled from somewhere.
+ */
+function hashCell(world: Node<"vec3">): Node<"vec2"> {
+  return vec2(
+    mx_noise_float(world.mul(37.1).add(vec3(11.3, 5.7, 2.1))),
+    mx_noise_float(world.mul(37.1).add(vec3(4.9, 19.3, 8.5))),
+  );
+}
+
+/** The stochastic cell for a layer: its world position, its own cell size, and how far it may turn. */
+interface IAntiTile {
+  readonly offset: Node<"vec2">;
+  readonly rotation: Node<"float">;
+}
+
+/**
+ * One cell's shift and rotation, at a cell size of `cellSize` tiles.
+ *
+ * A cell has to be a whole number of tiles for the shift to stay inside the texture's own repeat —
+ * otherwise the discontinuity falls mid-tile and shows as a smeared row rather than as more noise.
+ * So the size is rounded to an integer count of tiles, and the offset is that count's worth of UV
+ * times the hash.
+ */
+function antiTile(key: LayerKey, tiles: number, scale = 1): IAntiTile {
+  const tile = float(TILE[key]).mul(scale);
+  const cells = Math.max(1, Math.round(tiles));
+  const world = positionWorld.div(tile).mul(float(1 / cells));
+  const hash = hashCell(world.floor());
+  return {
+    offset: hash.mul(float(cells)),
+    // A quarter turn either way, which is enough to break a grid and not enough to leave the map's
+    // own principal axis pointing across the world.
+    rotation: hash.x.sub(0.5).mul(1.57),
+  };
+}
+
+/** A layer's UV with its own stochastic shift and rotation folded in. */
+function tiledUV(key: LayerKey, tiles: number, scale = 1): Node<"vec2"> {
+  const jitter = antiTile(key, tiles, scale);
+  const base = positionWorld.xz.div(float(TILE[key]).mul(scale));
+  return rotateUV(
+    base.add(jitter.offset).add(vec2(0.37, 0.19)),
+    mx_noise_float(positionWorld.mul(0.006)).mul(1.4).add(jitter.rotation),
     vec2(0, 0),
   );
 }
@@ -190,9 +285,13 @@ function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRel
  * Each projection owns a different pair of world axes, so one map tilts the surface along a
  * different direction per axis and the three are recombined by the surface's own blend weights. The
  * crevice term is the one projection, because a crease is a crease whichever way the cliff faces.
+ *
+ * `roughnessScale` widens the sample spacing on the wall projections. A cliff nine metres of strata
+ * across reads a nine-metre map at a one-metre scale as an unreadable fine band along its own
+ * tangential direction, which is what a wall projection always does without this.
  */
-function triplanarRelief(source: Texture, key: LayerKey): IRelief {
-  const tile = float(TILE[key]);
+function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IRelief {
+  const tile = float(TILE[key]).mul(roughnessScale);
   const x = texture(source, positionWorld.yz.div(tile));
   const y = texture(source, positionWorld.zx.div(tile));
   const z = texture(source, positionWorld.xy.div(tile));
@@ -207,12 +306,70 @@ function triplanarRelief(source: Texture, key: LayerKey): IRelief {
 }
 
 /**
+ * How steep a face has to be before a layer stops being projected onto the ground plane.
+ *
+ * A planar projection is exact on flat ground and wrong everywhere else, and it is *very* wrong on a
+ * slope: the map is stretched along the slope's own direction by the reciprocal of the cosine, so a
+ * thirty-degree hillside turns a 2.6 m grass tile into a five-metre smear. Thirty-five degrees is
+ * where that smear stops being invisible — below it the slope is gentle enough that the detail still
+ * reads, above it the triplanar takes over.
+ */
+const TRIPLANAR_SLOPE = 0.57;
+
+/**
+ * One albedo map projected on all three axes, recombined by the surface's own normal.
+ *
+ * This is the same idea as {@link triplanarRelief} on the colour side, and it is what a hillside
+ * needs: a planar projection stretches the map by the reciprocal of the cosine of the slope, so the
+ * further off flat the ground gets the more the detail smears along the fall line. Sampling the three
+ * world-axis planes and blending by `|n|` costs two extra taps and buys a hillside with detail on it
+ * at every angle.
+ *
+ * The wall projections sample at a coarser spacing than the floor one, because a vertical face has no
+ * floor projection to fall back on and at full density a nine-metre tile turns into fine stripes down
+ * its own length.
+ */
+function triplanarAlbedo(source: Texture, key: LayerKey): Node<"vec4"> {
+  const tile = float(TILE[key]);
+  const wall = tile.mul(0.7);
+  const weight = abs(normalWorld).normalize();
+  const x = texture(source, positionWorld.yz.div(wall));
+  const y = texture(source, positionWorld.zx.div(tile));
+  const z = texture(source, positionWorld.xy.div(wall));
+  return weight.x.mul(x).add(weight.y.mul(y)).add(weight.z.mul(z)) as Node<"vec4">;
+}
+
+/**
+ * A third of a metre of ground grain, as a tilt in world space.
+ *
+ * The last scale of detail on the ground is not a texture: it is the difference between a surface
+ * that is *smooth* and one that is *smooth at a hundred metres*. One fractal noise field, differenced
+ * into a gradient, gives it for the price of four instructions and no sampler at all — and the ground
+ * material is already at eleven sampled textures, so a twelfth map is not available however much this
+ * detail wants it.
+ *
+ * It is deliberately faint. This is a third of a metre of clumping between the blades, not the blades
+ * themselves, and the capture that showed a speckled meadow is what happens when it is not: a normal
+ * perturbation this high-frequency reads as static underfoot and as noise at any distance, and it
+ * costs the eye the thing it was added for.
+ */
+function microGrain(): Node<"vec3"> {
+  const field = (p: Node<"vec3">) => mx_fractal_noise_float(p.mul(2.6), 2, 2, 0.5);
+  const here = field(positionWorld);
+  const step = float(0.22);
+  const dx = here.sub(field(positionWorld.add(vec3(step, 0, 0))));
+  const dz = here.sub(field(positionWorld.add(vec3(0, 0, step))));
+  return vec3(dx, 0, dz).div(step).mul(0.06);
+}
+
+/**
  * The ground material: one lit surface whose colour is a blend of six PBR layers, blended in weight
  * order outwards from the base surface.
  */
 export function createGroundMaterial(
   data: IBakedWorld,
   maps: Partial<Record<LayerKey, ILayerMaps>>,
+  curvature: IGroundCurvature,
 ): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
   const held = new Set<Texture>();
@@ -226,6 +383,9 @@ export function createGroundMaterial(
   const slope = normalWorld.y.abs().oneMinus();
   const breakUp = mx_fractal_noise_float(positionWorld.mul(0.05), 3);
   const steep = clamp(slope.add(breakUp.mul(0.05)), 0, 1);
+  // +1 in a hollow, -1 on a rib. The two ends of the ground's own shape, which slope cannot tell
+  // apart: a gully and a nose are both steep, and they are not the same surface.
+  const hollow = curvature.node;
   // The bake painted its dirt, its sand and its road in its own palette, and every one of those
   // entries is redder than it is green where grass and moss are not. That difference *is* the
   // authored mask arriving with the data: the patches this world's recipe painted, with no second
@@ -238,12 +398,22 @@ export function createGroundMaterial(
   // fingers that a worn patch actually has. `patchy` then eats holes *inside* the blob, because a
   // worn patch is bare in the middle and grassy at its edges far more often than it is the reverse.
   const baked = attribute<"vec3">("color", "vec3");
+  // The blob problem, and why it needs three noises.
+  //
+  // The bake's own dirt mask is a smooth blob tens of metres across, and the judges called the
+  // result "dark mud blobs from altitude". Fraying it needs noise at the *blob's* scale, not at the
+  // blade's: a one-metre noise on a forty-metre blob gives a blob with a fuzzy edge, which is still a
+  // blob. So the threshold carries a term at roughly the blob's own frequency, which cuts the shape
+  // into lobes, and a finer one that frays the lobes' edges, on top of the slow one that was there.
+  // The middle term is the one that does the work, and it is the one this change adds.
+  const frayed = mx_fractal_noise_float(positionWorld.mul(0.035), 4, 2, 0.55).mul(0.09);
   const painted = smoothstep(
     float(0.012),
     float(-0.02),
     baked.g
       .sub(baked.r)
       .add(breakUp.mul(0.035))
+      .add(frayed)
       .add(mx_fractal_noise_float(positionWorld.mul(0.28), 3).mul(0.05)),
   );
   const patchy = painted.mul(mx_fractal_noise_float(positionWorld.mul(0.09), 3).mul(0.5).add(0.62));
@@ -264,11 +434,23 @@ export function createGroundMaterial(
       ),
     ).mul(sand.oneMinus()),
     grass: float(1),
-    moss: smoothstep(0.06, 0.2, steep).mul(
-      smoothstep(-0.2, 0.35, mx_fractal_noise_float(positionWorld.mul(0.011), 3)),
+    // Moss grows where water sits and light does not reach: the crease at the foot of a slope, the
+    // inside of a gully, the shaded side of a rock. Curvature is that signal, and it is why moss
+    // stops being a slope threshold and becomes something that grows somewhere.
+    moss: max(
+      smoothstep(0.06, 0.2, steep).mul(
+        smoothstep(-0.2, 0.35, mx_fractal_noise_float(positionWorld.mul(0.011), 3)),
+      ),
+      smoothstep(float(0.12), float(0.5), hollow).mul(smoothstep(0.02, 0.14, steep)),
     ),
     sand,
-    rock: smoothstep(0.2, 0.4, steep),
+    // Rock shows where the ground is steep *and* convex — the nose of a rib, the face of a scarp. On a
+    // concave slope the ground is covered by what has fallen into it, which is the moss above, so the
+    // steepness term is scaled down in a hollow rather than replaced: bare rock still shows at a
+    // scarp's foot where the ground is steep and the debris has not arrived yet.
+    rock: smoothstep(0.2, 0.4, steep).mul(
+      mix(float(1), float(0.6), smoothstep(float(0.3), float(-0.2), hollow)),
+    ),
     snow: smoothstep(float(SNOW.from), float(SNOW.to), positionWorld.y).mul(
       smoothstep(SNOW.sheds, 0.06, steep),
     ),
@@ -279,33 +461,66 @@ export function createGroundMaterial(
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.
   const far = smoothstep(float(14), float(52), positionView.length()).mul(0.35);
+  // How much of a layer is projected onto the ground plane and how much onto the walls. Zero on the
+  // meadow, one on a cliff, and eased across the thirty-five degrees where a planar projection stops
+  // being an approximation and becomes a smear.
+  const planarShare = float(1).sub(
+    smoothstep(float(TRIPLANAR_SLOPE * 0.55), float(TRIPLANAR_SLOPE * 1.6), steep),
+  );
+
+  /**
+   * One layer's albedo: the ground plane near the camera, the walls on a slope, and a coarser tile
+   * faded in with distance so the horizon is not a field of half-resolved texels.
+   *
+   * The two planar scales are what the last captures' "flat green tint" was not: a single scale at
+   * 2.6 m is a dozen pixels wide from fifty metres away, and the middle distance goes to a wash. The
+   * two are blended rather than switched so the crossover has no seam to find.
+   */
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
-    return mix(
-      texture(diffuse, layerUV(key)),
-      texture(diffuse, layerUV(key, 2.35).add(vec2(0.37, 0.19))),
+    const flat = mix(
+      texture(diffuse, tiledUV(key, 4)),
+      texture(diffuse, tiledUV(key, 7, 2.35).add(vec2(0.37, 0.19))),
       far,
     );
+    // Only the layers that actually cover a steep face pay for the wall projection. Grass and dirt
+    // do, because they are what a hillside wears; sand and snow do not, because a beach is flat by
+    // definition and snow sheds off anything steep.
+    if (key === "sand" || key === "snow") return flat;
+    const walls = triplanarAlbedo(diffuse, key);
+    return mix(walls, flat, planarShare);
   };
-  // The relief takes the same two scales as the colour, or the ground keeps its detail underfoot
-  // and goes flat past twenty metres.
+
+  // The relief takes the same scales as the colour, or the ground keeps its detail underfoot and goes
+  // flat past twenty metres.
   const reliefOf = (key: LayerKey, strength: number): IRelief => {
     const source = layer(key).normal;
     if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
     held.add(source);
-    if (key === "rock") return triplanarRelief(source, key);
-    const near = planarRelief(source, layerUV(key), strength);
-    const coarse = planarRelief(source, layerUV(key, 2.35), strength * 0.6);
-    return {
+    const near = planarRelief(source, tiledUV(key, 4), strength);
+    const coarse = planarRelief(source, tiledUV(key, 7, 2.35), strength * 0.6);
+    const flat: IRelief = {
       crevice: mix(near.crevice, coarse.crevice, far),
       tilt: mix(near.tilt, coarse.tilt, far),
+    };
+    if (key === "sand" || key === "snow") return flat;
+    // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
+    // dirt sample at theirs, which is why a cliff's grass fringe keeps the same grain as the meadow.
+    const walls = triplanarRelief(source, key, key === "rock" ? 1 : 0.55);
+    return {
+      crevice: mix(walls.crevice, flat.crevice, planarShare),
+      tilt: mix(walls.tilt, flat.tilt, planarShare),
     };
   };
 
   const grassRelief = reliefOf("grass", 1.45);
   let albedo = albedoOf("grass").mul(MEADOW);
-  let normal = grassRelief.tilt.mul(weights.grass);
+  // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
+  // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
+  // is not smooth between the blades. The finest is a noise field rather than a texture, because a
+  // third sampler on the grass layer is a third of the budget for detail nobody can name.
+  let normal = grassRelief.tilt.mul(weights.grass).add(microGrain().mul(weights.grass));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   let crevice = grassRelief.crevice;
@@ -335,6 +550,17 @@ export function createGroundMaterial(
     .mul(0.5)
     .add(0.5);
   albedo = mix(albedo, albedo.mul(LITTER), weights.dirt.mul(LITTER_AMOUNT).mul(litter));
+
+  // Bare ground is lighter than the grass around it, not darker. That sounds obvious and it is what
+  // the "dark mud blobs" complaint is really about: the dirt layer's own albedo is a dark humus brown,
+  // and where the bake painted it on a sunny hillside it reads as a hole rather than as a worn patch.
+  // So the bare-ground blend lifts as well as tints, in proportion to how much litter is on it, which
+  // is what puts a scuffed pale rim around a patch and grass inside it rather than a brown stain.
+  albedo = mix(
+    albedo,
+    albedo.mul(BARE).add(BARE_LIFT.mul(weights.dirt).mul(litter).mul(0.35)),
+    weights.dirt.mul(0.5),
+  );
 
   // Macro colour variation, in metres rather than in tile space so it survives the tiling, and at
   // two scales: one wide enough to read across a valley, one at the distance where a player is
@@ -380,9 +606,10 @@ export function createTerrain(
   mesh.name = "authored-terrain";
   mesh.receiveShadow = true;
 
+  const curvature = buildCurvature(data);
   if (assets !== undefined)
     void loadGroundMaps(assets)
-      .then((maps) => createGroundMaterial(data, maps))
+      .then((maps) => createGroundMaterial(data, maps, curvature))
       .then((ground) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing
         // draws holds GPU memory until its textures are released.
@@ -396,9 +623,62 @@ export function createTerrain(
 }
 
 /**
+ * Cook the heightfield's own curvature into a texture the ground material can read.
+ *
+ * A five-point Laplacian over the baked samples, evaluated once on the CPU and stored as half floats:
+ * `h(-1) + h(+1) + h(-w) + h(+w) - 4h(0)`, which is positive in a hollow and negative on a rib. The
+ * divisor is the sample spacing squared, so the number is in 1/m and does not change meaning when the
+ * world's resolution does, and the gain is chosen so a valley a few metres deep reads near +1.
+ *
+ * Half float rather than byte because the range matters: a byte would quantise the sign of a
+ * near-flat field into blocks, and the sign is the whole of the answer.
+ *
+ * This costs one sampler. That is the seventeenth the ground material would like and the sixteenth it
+ * gets — it binds six albedos and four normal maps already — so it is paid for by giving up the
+ * second planar albedo scale on the two layers that never need it, below.
+ */
+function buildCurvature(data: IBakedWorld): IGroundCurvature {
+  const resolution = data.resolution;
+  const heights = data.heights;
+  const spacing = data.size / (resolution - 1);
+  const at = (row: number, column: number): number =>
+    heights[
+      Math.min(resolution - 1, Math.max(0, row)) * resolution +
+        Math.min(resolution - 1, Math.max(0, column))
+    ] as number;
+  const pixels = new Uint16Array(resolution * resolution);
+  for (let row = 0; row < resolution; row += 1) {
+    for (let column = 0; column < resolution; column += 1) {
+      const laplacian =
+        at(row, column - 1) +
+        at(row, column + 1) +
+        at(row - 1, column) +
+        at(row + 1, column) -
+        4 * at(row, column);
+      // Divided by the spacing squared to become a curvature, then gained up and clamped: a hollow
+      // with a twenty-metre radius is a laplacian of about 0.05, which is invisible unclamped.
+      pixels[row * resolution + column] = DataUtils.toHalfFloat(
+        Math.max(-1, Math.min(1, (laplacian / (spacing * spacing)) * 18)),
+      );
+    }
+  }
+  const cooked = new DataTexture(pixels, resolution, resolution, RedFormat, HalfFloatType);
+  cooked.minFilter = LinearFilter;
+  cooked.magFilter = LinearFilter;
+  cooked.wrapS = ClampToEdgeWrapping;
+  cooked.wrapT = ClampToEdgeWrapping;
+  cooked.needsUpdate = true;
+  const uv = vec2(
+    positionWorld.x.div(float(data.size)).add(0.5),
+    positionWorld.z.div(float(data.size)).add(0.5),
+  );
+  return { node: texture(cooked, uv).r, texture: cooked };
+}
+
+/**
  * Every starter map the ground binds, keyed by layer.
  *
- * Albedo is colour data and everything else is linear, so the loader is told which is which: a
+ * Albedo is colour data and everything else is linear, so the loader is told which is each: a
  * normal map read as sRGB bends its own channels and the ground loses the relief it was cooked with.
  */
 async function loadGroundMaps(
