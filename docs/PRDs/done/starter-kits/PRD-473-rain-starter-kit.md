@@ -151,7 +151,9 @@ capability-recall corpus, the CI matrices, a README row, `playtests/survives.pla
 ### AC-4 — the inventory, row by row (paste into the PR body)
 
 All browser runs: headed `--browser-recipe webgpu`, adapter NVIDIA Turing, zero console/network/runtime
-diagnostics. Native: the built `mystral` host on `--target desktop` (Vulkan, RTX 2080, private Xvfb).
+diagnostics. The repo's own template gate, `TN_TEMPLATE_ONLY=rain pnpm test:templates` (packed tarballs,
+fresh scaffold, `pnpm test` over the production preview plus the boot smoke), exits 0: "rain: scaffolded
+playtests passed". Native: the built `mystral` host on `--target desktop` (Vulkan, RTX 2080, private Xvfb).
 
 - **A. Simulation** — `src/state.ts` (presets, `sanitizeWeather`, easing τ 0.67 s, `flashAt`, `thunderDelay`), `src/scenes/Boot.ts` (clock clamped to 0.08 s, scheduler `t + 8 + rand·16` gated on cloud > 0.35), seed 607. Observed: `weather.playtest.json` Drizzle target 0.24, rendered rain eases to ≤ 0.32 (65.9% of pixels change); `auto-lightning.playtest.json` first automatic strike at t = 37.017 (28 + 9); `auto-lightning-clear.playtest.json` with cloud 0.09 no strike through t = 44.2; the API probe's `setWeather({ wind: 2 })` clamps to 1; 10 weather unit tests.
 - **B. Camera** — `src/render/camera.ts`, input map in `src/game.ts`. Observed: `fly.playtest.json` W+Shift z 18 → −4.9 (23 m/s), E y 2.85 → 5.85, drag heading 355° → 308°; `cinematic.playtest.json` orbit moves x 1.8 → 2.85 and W hands it back (`cinematic` true → false); `survives.playtest.json` ArrowUp moves the player 6.0 m.
