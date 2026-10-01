@@ -242,7 +242,7 @@ export async function verifyLandforms(session, controller) {
         layer: {
           id: "landform",
           type: "scatter",
-          params: { asset: "pine", count: 1, avoidWater: false },
+          params: { asset: "spruce", count: 1, avoidWater: false },
         },
       },
     ],

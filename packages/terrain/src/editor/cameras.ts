@@ -2,6 +2,8 @@ const MAX_CAMERAS = 32;
 const DEFAULT_MARGIN = 1.15;
 /** Below this the target has no size and the framing distance would be zero. */
 const MIN_RADIUS = 1e-3;
+/** A point still frames from a readable metre, never from inside its own near plane. */
+const MIN_FRAME_DISTANCE = 1;
 const MIN_NEAR = 0.01;
 /** Shorter than this and a position and target are the same point, not a view. */
 const MIN_VIEW_DISTANCE = 1e-6;
@@ -394,19 +396,20 @@ export function focusCamera(
   const heading =
     target.direction === undefined ? DEFAULT_HEADING : vector(target.direction, "Focus direction");
   const direction = normalise(unit(heading) < MIN_VIEW_DISTANCE ? DEFAULT_HEADING : heading);
-  let distanceMetres: number;
   let extent: number | null = null;
+  let distance: number;
   if (camera.projection === "perspective") {
     const halfVertical = (camera.fov * Math.PI) / 360;
     // The narrower of the two half-angles decides the distance; a wide viewport fits more.
     const limiting = Math.min(halfVertical, Math.atan(Math.tan(halfVertical) * aspect));
-    distanceMetres = framed / Math.sin(limiting);
+    distance = framed / Math.sin(limiting);
   } else {
     // Orthographic scale is the frustum height, so the wider viewport needs no extra world size.
     const halfHeight = framed / Math.min(1, aspect);
     extent = halfHeight / camera.zoom;
-    distanceMetres = framed * 2 + halfHeight;
+    distance = framed * 2 + halfHeight;
   }
+  const distanceMetres = Math.max(MIN_FRAME_DISTANCE, distance);
   const near = Math.max(MIN_NEAR, distanceMetres - framed);
   const far = Math.max(near + MIN_NEAR, distanceMetres + framed);
   const framing: IFocusFraming = {

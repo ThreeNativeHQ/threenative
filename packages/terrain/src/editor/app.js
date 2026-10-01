@@ -16,6 +16,7 @@ export function mountRecoveredEditor({
   providedView,
   commit,
   getSnapshot,
+  cameraOperation,
   subscribe,
   onEvaluated,
   materialColours,
@@ -299,6 +300,7 @@ export function mountRecoveredEditor({
       return;
     }
     revision = snapshot.revision;
+    renderCameras(snapshot.document);
     if (!recipeChanged) {
       const matchesPreview = renderedRecipe === JSON.stringify(snapshot.document.recipe);
       if (state && matchesPreview)
@@ -977,6 +979,131 @@ export function mountRecoveredEditor({
       showPoints();
     }
   };
+  // Camera bookmarks: the same operations an agent calls, over the same document.
+  const cameraPanel = document.createElement("div");
+  cameraPanel.id = "camera-inspector";
+  cameraPanel.className = "inspector";
+  cameraPanel.innerHTML =
+    '<div class="inspector-header"><span>OBSERVATION CAMERAS</span><span id="camera-count" class="count-tag">0</span></div>' +
+    '<div id="camera-list"></div>' +
+    '<label class="field-label">Name<input id="camera-name" placeholder="Camera name"></label>' +
+    '<label class="field-label">Projection<select id="camera-projection"><option value="perspective">Perspective</option><option value="orthographic">Orthographic map</option></select></label>' +
+    '<div class="two-fields"><label class="field-label">Fov<input id="camera-fov" type="number" value="60" min="1" max="170"></label><label class="field-label">Margin<input id="camera-margin" type="number" value="1.15" min="1" step="0.05"></label></div>' +
+    '<label class="field-label">Focus target<input id="camera-target" placeholder="prop id, landmark id, region id or x y z"></label>' +
+    '<div class="two-fields"><button id="camera-save" class="secondary">Save current</button><button id="camera-activate" class="secondary">Activate</button></div>' +
+    '<button id="camera-focus" class="secondary full">Focus target</button>' +
+    '<button id="camera-delete" class="ghost full">Delete camera</button>' +
+    '<div id="camera-error" class="inline-error"></div>';
+  const style = document.createElement("style");
+  style.textContent =
+    "#camera-inspector{overflow-y:auto;min-height:0}#camera-list{margin-bottom:9px;max-height:120px;overflow-y:auto}" +
+    "#camera-row{display:flex;gap:6px;align-items:center;width:100%;justify-content:flex-start;margin-bottom:5px;font-size:10px}" +
+    "#camera-row.active{border-color:var(--accent);color:var(--accent)}#camera-row small{margin-left:auto;opacity:.7}";
+  document.head.append(style);
+  const sidebar = document.querySelector(".right-sidebar");
+  if (!sidebar) throw new Error("Camera inspector has no sidebar");
+  sidebar.insertBefore(cameraPanel, sidebar.querySelector(".inspector"));
+  let cameraRows = [];
+  function selectedCameraId() {
+    return $("camera-name").value.trim();
+  }
+  function renderCameras(document_) {
+    // The panel is created after the first snapshot subscription; ignore anything earlier.
+    if (!$("camera-count")) return;
+    const cameras = document_.cameras ?? [];
+    const active = document_.activeCamera ?? null;
+    $("camera-count").textContent = String(cameras.length);
+    const list = $("camera-list");
+    list.replaceChildren();
+    cameraRows = cameras;
+    for (const camera of cameras) {
+      const row = document.createElement("button");
+      row.id = `camera-row-${camera.id}`;
+      row.className = `camera-row${camera.id === active ? " active" : ""}`;
+      row.textContent = camera.name;
+      const kind = document.createElement("small");
+      kind.textContent =
+        camera.projection === "orthographic" ? "ortho" : `${Math.round(camera.fov)}°`;
+      row.append(kind);
+      row.onclick = () => attemptCamera({ op: "activate", id: camera.id });
+      list.append(row);
+    }
+    const live = cameras.find((camera) => camera.id === active);
+    // The projection picker follows the live camera, so a save never contradicts what is drawn.
+    if (live) $("camera-projection").value = live.projection;
+    $("camera-error").textContent = "";
+  }
+  async function attemptCamera(operation, target) {
+    try {
+      if (operation.op === "focus") {
+        const result = view.cameras?.().focus(target);
+        $("camera-error").textContent = result?.diagnostic ?? "";
+        if (result?.diagnostic) toast(result.diagnostic);
+        return result;
+      }
+      const result = await cameraOperation(operation, revision);
+      revision = result.revision;
+      saved = { ...saved, revision: result.revision };
+      if (result.fallback) toast("Active camera deleted · back to the editor camera");
+      renderCameras({
+        ...saved.document,
+        cameras: result.cameras,
+        activeCamera: result.activeCamera,
+      });
+      $("camera-error").textContent = "";
+      return result;
+    } catch (error) {
+      $("camera-error").textContent = error.message;
+      toast(error.message);
+      return undefined;
+    }
+  }
+  function focusTarget() {
+    const raw = $("camera-target").value.trim();
+    if (!raw) return undefined;
+    const numbers = raw.split(/\s+/u).map(Number);
+    if (numbers.length === 3 && numbers.every((value) => Number.isFinite(value)))
+      return { kind: "point", at: numbers };
+    // One id names a prop, a landmark or a region; the view resolves whichever it knows.
+    return {
+      kind: raw.startsWith("region:") ? "region" : "prop",
+      id: raw.replace(/^(region|landmark|prop):/u, ""),
+    };
+  }
+  $("camera-save").onclick = () => {
+    const pose = view.cameras?.().read();
+    if (!pose) throw Error("This view has no camera surface");
+    const projection = $("camera-projection").value;
+    attemptCamera({
+      op: "create",
+      camera: {
+        id: `camera-${Date.now().toString(36)}`,
+        name: $("camera-name").value.trim() || "Observation",
+        position: pose.position,
+        target: pose.target,
+        up: pose.up,
+        near: pose.near,
+        far: pose.far,
+        projection,
+        ...(projection === "perspective"
+          ? { fov: Number($("camera-fov").value) }
+          : {
+              extent: Math.max(
+                1,
+                Math.hypot(...pose.position.map((value) => value - pose.target[0])),
+              ),
+              zoom: 1,
+            }),
+      },
+    });
+  };
+  $("camera-activate").onclick = () => attemptCamera({ op: "activate", id: selectedCameraId() });
+  $("camera-delete").onclick = () => attemptCamera({ op: "delete", id: selectedCameraId() });
+  $("camera-focus").onclick = () => {
+    const target = focusTarget();
+    if (!target) return toast("Name a prop, landmark, region or x y z point");
+    return attemptCamera({ op: "focus" }, { target, margin: Number($("camera-margin").value) });
+  };
   window.addEventListener("keydown", keydown, { signal: abort.signal });
   window.strata = {
     Terrain,
@@ -1007,6 +1134,16 @@ export function mountRecoveredEditor({
     },
     rebuild: build,
     cancel: cancelBuild,
+    // The same camera operations the GUI list and the controller endpoint use.
+    cameras: {
+      list: () => saved.document.cameras ?? [],
+      active: () => saved.document.activeCamera ?? null,
+      read: () => view.cameras?.().read(),
+      operate: (operation) => attemptCamera(operation),
+      focus: (target, options) => view.cameras?.().focus({ ...options, target }),
+      resolve: (target) => view.cameras?.().resolve(target),
+      measure: (bounds) => view.cameras?.().measure(bounds),
+    },
     // Same read-only dispatch the headless API serves, bound to the revision actually rendered.
     inspect: (query) => {
       if (!state) throw Error("Wait for initial build");
@@ -1045,6 +1182,7 @@ export function mountRecoveredEditor({
   $("landscape-tag").textContent = "LANDSCAPE / PROJECT";
   selectTool("sculpt");
   renderLayers();
+  renderCameras(initial.document);
   view.setDocument(initial.document, initial.revision);
   build();
   $("renderer-badge").textContent = view.backend;

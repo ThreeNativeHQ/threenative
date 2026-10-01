@@ -221,8 +221,8 @@ const corners = Array.from(
     ),
 );
 /** Screen extent of the framed target in the [-1, 1] clip square; the safe frame is inside 1. */
-function clipExtent(camera: Camera) {
-  const projected = corners.map((corner) => corner.clone().project(camera));
+function clipExtent(camera: Camera, points: readonly Vector3[] = corners) {
+  const projected = points.map((corner) => corner.clone().project(camera));
   return {
     x: Math.max(...projected.map((point) => Math.abs(point.x))),
     y: Math.max(...projected.map((point) => Math.abs(point.y))),
@@ -243,6 +243,7 @@ describe("editor camera focus framing", () => {
       const framing = outcome.framing;
       if (!camera || !framing) throw new Error("Expected a framed camera");
       expect(camera.projection).toBe("perspective");
+      if (camera.projection !== "perspective") throw new Error("Expected a perspective framing");
       expect(camera.fov).toBe(survey.fov);
       expect(camera.target).toEqual([1, 18, 1]);
       const heading = new Vector3(0.6, 0.5, 1).normalize().multiplyScalar(framing.distanceMetres);
@@ -310,5 +311,12 @@ describe("editor camera focus framing", () => {
     );
     expect(point.diagnostic).toBeNull();
     expect(point.framing?.centre).toEqual([7, 11, -3]);
+    // A point has no size, and the framing still has to sit between the clipping planes.
+    if (!point.camera) throw new Error("Expected a framed camera");
+    const at = new Vector3(7, 11, -3);
+    const clip = clipExtent(liveCamera(point.camera, 1.5), [at]);
+    expect(clip.z, "a framed point must be between the near and far planes").toBe(true);
+    expect(clip.x).toBeLessThan(0.01);
+    expect(point.camera.near).toBeLessThan(point.framing?.distanceMetres as number);
   });
 });

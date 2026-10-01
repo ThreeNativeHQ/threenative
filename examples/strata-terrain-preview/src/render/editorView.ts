@@ -6,7 +6,17 @@ import {
   bakeMesh,
   sampleHeight,
 } from "@threenative/terrain";
-import type { IEditorView, TerrainEditorController } from "@threenative/terrain/editor";
+import {
+  type IEditorView,
+  type IFocusBounds,
+  type IFocusOutcome,
+  type IFocusRequest,
+  type ISavedCamera,
+  type IViewCamera,
+  type IViewerPose,
+  type TerrainEditorController,
+  focusCamera,
+} from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
 import {
   type IWorldGLBExport,
@@ -14,6 +24,7 @@ import {
   exportWorldGLB,
 } from "@threenative/terrain/export";
 import {
+  Box3,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -31,6 +42,7 @@ import {
   Vector3,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { landformPose } from "./landforms.js";
 import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPropSurfaces } from "./propMaterials.js";
@@ -44,6 +56,9 @@ import {
 } from "./props.js";
 import { createPropSelection } from "./selection.js";
 import { createTerrain } from "./terrain.js";
+
+/** A landmark frames the ground it sits on, not the height of a building. */
+const LANDMARK_RADIUS = 0.5;
 
 const initialState = {
   renderedRevision: "",
@@ -85,6 +100,9 @@ export async function createEditorView(
   let sea: ReturnType<typeof createOcean> | undefined;
   let water: Mesh | undefined;
   let props: ReturnType<typeof createProps> | undefined;
+  // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
+  // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
+  let propSurfaces: Awaited<ReturnType<typeof createPropSurfaces>> | undefined;
   let authoring: IAuthoringDocument | undefined;
   let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
@@ -94,6 +112,13 @@ export async function createEditorView(
   let requestedRevision = "";
   let evaluationMs = 0;
   let seen = "";
+  // Live observation-camera state. The engine owns one PerspectiveCamera, so an orthographic
+  // bookmark is written into it as an orthographic projection matrix each frame.
+  let cameraSignature = "";
+  let activeCamera: string | null = null;
+  let orthographic = false;
+  let orthoExtent = 0;
+  let orthoZoom = 1;
   const brush = new Line(
     new BufferGeometry().setFromPoints(
       Array.from(
@@ -117,6 +142,203 @@ export async function createEditorView(
     for (const material of materials) material.dispose();
     water = undefined;
   }
+  function readPose(): IViewerPose {
+    // The engine camera is configured perspective at start; its planes are the live ones.
+    const live = ctx.camera as PerspectiveCamera;
+    return {
+      position: ctx.camera.position.toArray() as [number, number, number],
+      target: controls.target.toArray() as [number, number, number],
+      up: ctx.camera.up.toArray() as [number, number, number],
+      projection: orthographic ? "orthographic" : "perspective",
+      fov: orthographic ? null : (ctx.camera as PerspectiveCamera).fov,
+      extent: orthographic ? orthoExtent : null,
+      zoom: orthographic ? orthoZoom : null,
+      near: live.near,
+      far: live.far,
+      aspect: ctx.viewport.size.aspect,
+      activeCamera,
+    };
+  }
+  function applySaved(next: ISavedCamera | null): void {
+    if (!next) {
+      // The ordinary editor camera is not a bookmark: framing the terrain is what it does.
+      orthographic = false;
+      frame();
+      return;
+    }
+    controls.target.fromArray(next.target);
+    ctx.camera.position.fromArray(next.position);
+    ctx.camera.up.fromArray(next.up);
+    const live = ctx.camera as PerspectiveCamera;
+    live.near = next.near;
+    live.far = next.far;
+    if (next.projection === "orthographic") {
+      orthographic = true;
+      orthoExtent = next.extent;
+      orthoZoom = next.zoom;
+    } else {
+      orthographic = false;
+      live.fov = next.fov;
+      live.updateProjectionMatrix();
+    }
+    controls.update();
+  }
+  /** The real world bounds of one prop placement, never of the batch that shares its mesh. */
+  function propBounds(id: string): IFocusBounds | undefined {
+    const instance = props?.byId.get(id);
+    if (!instance) return undefined;
+    const box = new Box3();
+    const world = new Matrix4();
+    for (const part of instance.parts) {
+      part.mesh.updateWorldMatrix(true, false);
+      part.mesh.geometry.computeBoundingBox();
+      const local = part.mesh.geometry.boundingBox;
+      if (!local) continue;
+      // One instance matrix, so a nonuniformly scaled prop frames its own geometry.
+      world.multiplyMatrices(
+        part.mesh.matrixWorld,
+        new Matrix4().fromArray(part.mesh.instanceMatrix.array, part.index * 16),
+      );
+      box.union(local.clone().applyMatrix4(world));
+    }
+    return box.isEmpty()
+      ? undefined
+      : {
+          min: box.min.toArray() as [number, number, number],
+          max: box.max.toArray() as [number, number, number],
+        };
+  }
+  /** A registered landmark is a saved spatial control point; its elevation comes from the terrain
+   * already in memory, never from a fresh evaluation. */
+  function landmarkBounds(id: string): IFocusBounds | undefined {
+    const control = (authoring?.references ?? [])
+      .flatMap((reference) => reference.controls)
+      .find((entry) => entry.id === id);
+    if (!control || !terrain) return undefined;
+    const [x, z] = control.world;
+    const y = sampleHeight(terrain, x, z);
+    return {
+      min: [x - LANDMARK_RADIUS, y - LANDMARK_RADIUS, z - LANDMARK_RADIUS],
+      max: [x + LANDMARK_RADIUS, y + LANDMARK_RADIUS, z + LANDMARK_RADIUS],
+    };
+  }
+  /** A region is the whole evaluated extent, the placements of one layer, or a landform footprint. */
+  function regionBounds(id: string): IFocusBounds | undefined {
+    if (!terrain) return undefined;
+    if (id !== "terrain") {
+      const placed = [...(props?.byId.values() ?? [])].filter(
+        (instance) => instance.placement.layer === id,
+      );
+      if (!placed.length) {
+        const layer = authoring?.recipe.layers.find((entry) => entry.id === id);
+        const pose = layer ? landformPose(layer, terrain.size) : undefined;
+        if (!pose) return undefined;
+        const size = new Vector3(...pose.scale);
+        const centre = new Vector3(...pose.position);
+        return {
+          min: centre.clone().sub(size).toArray() as [number, number, number],
+          max: centre.clone().add(size).toArray() as [number, number, number],
+        };
+      }
+      const box = new Box3();
+      for (const instance of placed) {
+        const bounds = propBounds(instance.placement.id);
+        if (bounds) box.union(new Box3(new Vector3(...bounds.min), new Vector3(...bounds.max)));
+      }
+      return box.isEmpty()
+        ? undefined
+        : {
+            min: box.min.toArray() as [number, number, number],
+            max: box.max.toArray() as [number, number, number],
+          };
+    }
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    for (const height of terrain.height) {
+      low = Math.min(low, height);
+      high = Math.max(high, height);
+    }
+    if (!Number.isFinite(low)) return undefined;
+    const half = terrain.size / 2;
+    return { min: [-half, low, -half], max: [half, high, half] };
+  }
+  function resolveTarget(target: {
+    kind: "prop" | "landmark" | "region";
+    id: string;
+  }): IFocusBounds | undefined {
+    if (target.kind === "prop") return propBounds(target.id);
+    if (target.kind === "landmark") return landmarkBounds(target.id);
+    return regionBounds(target.id);
+  }
+  function measure(bounds: IFocusBounds): { x: number; y: number; z: boolean } {
+    ctx.camera.updateMatrixWorld(true);
+    const box = new Box3(new Vector3(...bounds.min), new Vector3(...bounds.max));
+    let x = 0;
+    let y = 0;
+    let inside = true;
+    for (let index = 0; index < 8; index++) {
+      const corner = new Vector3(
+        box.min.x + (index & 1 ? box.max.x - box.min.x : 0),
+        box.min.y + ((index >> 1) & 1 ? box.max.y - box.min.y : 0),
+        box.min.z + ((index >> 2) & 1 ? box.max.z - box.min.z : 0),
+      );
+      const clip = corner.project(ctx.camera);
+      x = Math.max(x, Math.abs(clip.x));
+      y = Math.max(y, Math.abs(clip.y));
+      inside &&= clip.z > -1 && clip.z < 1;
+    }
+    return { x, y, z: inside };
+  }
+  const cameras: IViewCamera = {
+    read: readPose,
+    apply: applySaved,
+    resolve: resolveTarget,
+    measure,
+    focus(request: Omit<IFocusRequest, "aspect">): IFocusOutcome {
+      const pose = readPose();
+      const current: ISavedCamera =
+        pose.projection === "orthographic"
+          ? {
+              id: pose.activeCamera ?? "viewer",
+              name: "Viewer",
+              position: pose.position,
+              target: pose.target,
+              up: pose.up,
+              near: pose.near,
+              far: pose.far,
+              projection: "orthographic",
+              extent: pose.extent ?? 1,
+              zoom: pose.zoom ?? 1,
+            }
+          : {
+              id: pose.activeCamera ?? "viewer",
+              name: "Viewer",
+              position: pose.position,
+              target: pose.target,
+              up: pose.up,
+              near: pose.near,
+              far: pose.far,
+              projection: "perspective",
+              fov: pose.fov ?? 60,
+            };
+      const outcome = focusCamera(
+        current,
+        {
+          ...request,
+          aspect: ctx.viewport.size.aspect,
+          direction: [
+            pose.position[0] - pose.target[0],
+            pose.position[1] - pose.target[1],
+            pose.position[2] - pose.target[2],
+          ],
+        },
+        resolveTarget,
+      );
+      // A failed focus keeps the last valid camera; only a real framing moves the view.
+      if (outcome.camera) applySaved(outcome.camera);
+      return outcome;
+    },
+  };
   function frame(): void {
     if (!mesh) return;
     mesh.geometry.computeBoundingSphere();
@@ -179,7 +401,7 @@ export async function createEditorView(
     }
     override update(_context: ICtx<EditorState>, dt: number): void {
       elapsed += dt;
-      propSurfaces.advance(elapsed);
+      propSurfaces?.advance(elapsed);
       sea?.advance(elapsed);
       controls.update();
     }
@@ -198,7 +420,7 @@ export async function createEditorView(
   // change when the terrain is edited, and rebuilding them per revision would recompile every
   // material on every brush stroke.
   const propParts = buildPropVariants();
-  const propSurfaces = await createPropSurfaces(ctx.assets);
+  propSurfaces = await createPropSurfaces(ctx.assets);
   const selection = createPropSelection(
     ctx,
     controls,
@@ -227,12 +449,20 @@ export async function createEditorView(
         targets: [mesh],
       })?.point.y;
     },
+    (target) => cameras.focus({ target }),
   );
   return {
     get backend(): string {
       return `ThreeNative · ${ctx.renderer.kind}`;
     },
     setDocument(next, revision): void {
+      // Only a changed camera definition moves the view: a terrain rebake must not reset an orbit.
+      const signature = JSON.stringify([next.cameras ?? [], next.activeCamera ?? null]);
+      if (signature !== cameraSignature) {
+        cameraSignature = signature;
+        activeCamera = next.activeCamera ?? null;
+        applySaved(next.cameras?.find((camera) => camera.id === activeCamera) ?? null);
+      }
       const sameRecipe = renderedRecipe === JSON.stringify(next.recipe);
       if (sameRecipe && props && groundAt) {
         const keys = new Set([
@@ -294,6 +524,7 @@ export async function createEditorView(
             offset: originalY - sampleHeight(state, originalX, originalZ),
           };
         };
+        if (!propSurfaces) throw new Error("Prop surfaces are not loaded yet");
         nextProps = createProps(resolved.instances, nextGround, propParts, propSurfaces.materials);
         groundAt = nextGround;
       } catch (error) {
@@ -389,6 +620,7 @@ export async function createEditorView(
       controls.update();
     },
     frame,
+    cameras: () => cameras,
     inspect(): EditorState {
       return { ...ctx.state.getState() };
     },
@@ -456,7 +688,7 @@ export async function createEditorView(
     },
     dispose(): void {
       selection.dispose();
-      propSurfaces.dispose();
+      propSurfaces?.dispose();
       for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
       clearWater();
       props?.dispose();

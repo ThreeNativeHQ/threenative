@@ -125,9 +125,9 @@
       {
         "id": "preview-pines",
         "type": "scatter",
-        "name": "100 editable pine placements",
+        "name": "100 editable spruce placements",
         "params": {
-          "asset": "pine",
+          "asset": "spruce",
           "count": 100,
           "minDistance": 8,
           "minSlope": 0,

@@ -7,7 +7,6 @@ import type {
   IFocusBounds,
   IFocusOutcome,
   IFocusRequest,
-  IFocusTarget,
   ISavedCamera,
 } from "./cameras.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
@@ -57,8 +56,11 @@ export interface IViewCamera {
   read(): IViewerPose;
   /** Apply a saved pose to the real camera, or the ordinary editor camera when given null. */
   apply(camera: ISavedCamera | null): void;
-  /** Frame a target; an unknown target keeps the last valid camera and reports why. */
-  focus(request: IFocusRequest): IFocusOutcome;
+  /**
+   * Frame a target for the live viewport; an unknown target keeps the last valid camera and
+   * reports why. The view measures the aspect itself, so a caller cannot save a stale one.
+   */
+  focus(request: Omit<IFocusRequest, "aspect">): IFocusOutcome;
   /** Resolves a non-point target against the live world; the view owns the world matrices. */
   resolve(target: { kind: "prop" | "landmark" | "region"; id: string }): IFocusBounds | undefined;
   /** Clip-square extent of bounds under the live camera, so a framing can be measured, not assumed. */
@@ -206,6 +208,8 @@ export async function mountTerrainEditor(options: {
     commit: (transaction: Parameters<typeof controller.commit>[0]) =>
       controller.commit(transaction),
     getSnapshot: () => controller.snapshot(),
+    cameraOperation: (operation: unknown, baseRevision: string) =>
+      controller.camera(operation as ICameraOperation, baseRevision),
     subscribe: (listener: (snapshot: IEditorSnapshot) => void) => {
       unsubscribe = controller.subscribe(listener, () => {
         const status = document.getElementById("save-status");

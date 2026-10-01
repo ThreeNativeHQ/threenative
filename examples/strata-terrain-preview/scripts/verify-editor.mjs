@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { TerrainEditorController } from "@threenative/terrain/editor";
@@ -12,6 +12,7 @@ import {
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
 
+import { verifyEditorCameras } from "./verify-cameras.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
 
@@ -76,7 +77,12 @@ try {
       const actual = await session.page.evaluate(() => window.strata.view.inspect());
       assert.equal(actual.renderedRevision, accepted.revision);
       assert(actual.vertexCount === 16641);
-      assert.equal(actual.propCount, 100, "The latency fixture must render 100 prop instances");
+      // One placement can draw several instanced parts, so the placement count is the fixture.
+      const placements = await session.page.evaluate(
+        () => window.strata.view.inspectProps().length,
+      );
+      assert.equal(placements, 100, "The latency fixture must scatter 100 prop placements");
+      assert(actual.propCount >= 100, "Every placement must reach the renderer");
       assert(actual.propTriangles > 0, "The observed instances must contain real triangles");
       const latencyMs = performance.now() - start;
       assert(latencyMs < 2000);
@@ -98,6 +104,13 @@ try {
     assert.equal(new Set(observed.map((item) => item.revision)).size, 3);
     await verifyPropTransforms(session, controller, config);
     await verifyLandforms(session, controller);
+    // Every capture the PRD tracks is copied out of the artifact tree as it is taken.
+    const captures = async (captureSession, name) => {
+      const taken = await captureSession.screenshot(name);
+      const directory = resolve("../../docs/verification/visuals/strata");
+      mkdirSync(directory, { recursive: true });
+      copyFileSync(taken, `${directory}/${name}.png`);
+    };
     const validPreview = await session.page.evaluate(() => window.strata.view.inspect());
     const beforeMissing = await controller.snapshot();
     await controller.commit({
@@ -120,11 +133,17 @@ try {
     );
     assert.equal(await session.page.evaluate(() => window.strata.busy), false);
     assert.match(await session.page.locator("#toast").textContent(), /missing-fixture/);
+    const afterFailure = await session.page.evaluate(() => window.strata.view.inspect());
     assert.equal(
-      (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
+      afterFailure.renderedRevision,
       validPreview.renderedRevision,
+      `a failed preview must retain its last valid geometry: ${JSON.stringify({ validPreview, afterFailure })} ${JSON.stringify(await session.page.evaluate(() => (window.__trace ?? []).slice(-14)))}`,
     );
-    assert.equal((await session.page.evaluate(() => window.strata.view.inspect())).propCount, 100);
+    assert.equal(
+      (await session.page.evaluate(() => window.strata.view.inspectProps())).length,
+      100,
+      "The retained preview must keep every scattered placement",
+    );
     const broken = await controller.snapshot();
     const retainedProps = await session.page.evaluate(() => window.strata.view.inspectProps());
     const overrideKey = Object.keys(broken.document.placementOverrides)[0];
@@ -315,6 +334,8 @@ try {
       150,
       "Recovery must retain the accepted metadata from the cancelled evaluation",
     );
+    // Last: the camera block owns its document edits and needs nothing from the sections above.
+    await verifyEditorCameras(session, controller, captures);
     assert.deepEqual(
       errors,
       ["Failed to load resource: the server responded with a status of 409 (Conflict)"],

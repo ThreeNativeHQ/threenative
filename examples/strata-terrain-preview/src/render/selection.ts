@@ -37,6 +37,7 @@ export function createPropSelection(
   ground: () => PropGroundQuery | undefined,
   pick: (x: number, y: number) => string | undefined,
   surface: (x: number, z: number) => number | undefined,
+  focusTarget: (target: { kind: "prop" | "region"; id: string }) => { diagnostic: string | null },
 ) {
   const proxy = ctx.add(new Object3D());
   const footprint = ctx.add(
@@ -119,17 +120,9 @@ export function createPropSelection(
     );
     return [value.x, value.y];
   }
-  function focus(): void {
-    if (!selected || !(ctx.camera instanceof PerspectiveCamera)) return;
-    const instance = instances()?.get(selected);
-    const at = center(selected);
-    if (!instance || !at) return;
-    const pose = readPropTransform(instance);
-    const radius = (instance.mesh.geometry.boundingSphere?.radius ?? 1) * Math.max(...pose.scale);
-    const distance = (radius / Math.sin((ctx.camera.fov * Math.PI) / 360)) * 1.6;
-    ctx.camera.position.sub(orbit.target).normalize().multiplyScalar(distance).add(at);
-    orbit.target.copy(at);
-    orbit.update();
+  /** One framing path: the validated focus operation the camera panel and a controller share. */
+  function focus(target: { kind: "prop" | "region"; id: string }): { diagnostic: string | null } {
+    return focusTarget(target);
   }
   function message(text: string): void {
     status.textContent = text;
@@ -405,13 +398,8 @@ export function createPropSelection(
       }
       if (target?.id === "placement-reset" && selected) void save(selected, undefined);
       if (target?.id === "placement-focus") {
-        if (selectedLayer && ctx.camera instanceof PerspectiveCamera) {
-          const at = proxy.position.clone();
-          const distance = Math.max(proxy.scale.x, proxy.scale.z) * 3;
-          ctx.camera.position.sub(orbit.target).normalize().multiplyScalar(distance).add(at);
-          orbit.target.copy(at);
-          orbit.update();
-        } else focus();
+        if (selectedLayer) message(focus({ kind: "region", id: selectedLayer }).diagnostic ?? "");
+        else if (selected) message(focus({ kind: "prop", id: selected }).diagnostic ?? "");
       }
       if (target?.id === "placement-undo") void undo().catch((error) => message(String(error)));
     },
