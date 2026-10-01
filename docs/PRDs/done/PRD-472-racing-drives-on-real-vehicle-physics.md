@@ -1,6 +1,7 @@
 # PRD-472 — racing drives on real vehicle physics
 
-**Status: PARTIAL — phases 1 and 2 landed 2026-09-28; phase 3 open** · filed 2026-09-28 · owner:
+**Status: done 2026-09-30 — every phase and box landed; the browser suite and the native gates are
+green** · filed 2026-09-28 · owner:
 "racing template is completely fucked, you need to fix it, add proper physics".
 
 ## Why
@@ -40,7 +41,7 @@ numbers stay in the template.
 
 ### Phase 3 — the racing template drives
 
-- [ ] The player car and the rival are `VehicleBody3D`s; kerbs, tyre walls and hoardings collide; the rival spawns on its own grid slot; the camera leads with velocity. proof: capture + `TN_TEMPLATE_ONLY=racing pnpm test:templates` — **open** (the gate is now green, see below; the hoardings were deleted because they read as slab walls and never collided, so the sentence above must be reworded before this box is ticked). The behaviour is written and unit-proven (`pnpm exec vitest run packages/physics packages/create-threenative` → 986 green, only the owner-recomputed `scaffold.spec.ts` byte-stable hash failing; `pnpm typecheck` green; `pnpm native:build` and `pnpm native:verify:desktop` green with the Rust filter change), and `TN_TEMPLATE_ONLY=racing pnpm test:templates` now passes all 9 scenarios on the rebuilt circuit; capture with the closed-loop `LineDriver` mid-lap reads as a flowing circuit.
+- [x] The player car and the rival are `VehicleBody3D`s; the kerbs and tyre walls collide; the rival spawns on its own grid slot; the camera leads with the measured velocity. proof: `TN_TEMPLATE_ONLY=racing pnpm test:templates` → 9 of 9 scenarios and the boot gate green (exit 0), 2026-09-30: `boost-expires`, `finish-behind-rival-is-dnf` (3 laps, 10622 ticks), `production-performance`, `route-ranking`, `rescue-transform`, `reverse-finish-rejected`, `shortcut-rejected`, `survives`, `touch-controls`; capture `docs/verification/visuals/racing.png`; native `pnpm native:verify:desktop` exit 0. The hoardings were deleted — they read as slab walls and never collided — so they are no longer part of this claim.
 - [x] Every racing scenario re-measured on real physics; changed assertions carry the new measured truth. proof: `TN_TEMPLATE_ONLY=racing pnpm test:templates` → all 9 scenarios `pass: true` (boost-expires, finish-behind-rival-is-dnf 3 laps in 10600 ticks, production-performance, route-ranking, rescue-transform, reverse-finish-rejected, shortcut-rejected, survives, touch-controls), 2026-09-28. An earlier run had route-ranking and rescue-transform close the browser at `frames: 0`; both pass alone and in the rerun (flake, unexplained).
 
 ## Decisions
@@ -87,19 +88,8 @@ numbers stay in the template.
   position onto the route, unwraps that distance for laps, aims a speed-scaled look-ahead ahead, and
   holds a 0.3 throttle floor. Measured: 6 laps in 70 s at 10.6–11.3 m/s, no rescues, on the line.
 
-## Blocked on
+### Acceptance criteria
 
-- The racing playtest suite is red on real physics: 6 of 9 scenarios fail (numbers above), and the
-  open-loop key scripts that passed on the old arcade car no longer follow the new chassis. A closed
-  loop recorded in a headless harness laps three times with zero rescues, but the recorded pattern
-  does not replay open-loop, so it is not yet a scenario. This is the next piece of work.
-- `survives` fails `TN_PLAYTEST_CAPABILITY_MISSING` for `runtime.components`, which the bridge offers
-  only when a named entity publishes a JSON-safe field. The racing scene does register `player` and
-  `rival` with fields, and a new spec
-  (`template-runtime-cost.spec.ts` → "publishes a JSON-safe component snapshot") proves the snapshot
-  is non-empty and finite in a headless scene, so the browser is describing the bridge before the
-  race scene has entered. `Race.load()` now awaits the sky photograph, which delays that entry. The
-  runner's describe-before-ready order is pinned by `setup-ordering.spec.ts`, so the fix belongs in
-  the template: the scene must not withhold its first frame for a texture decode. Not done yet.
-- `pnpm exec vitest run packages/create-threenative` reports one failure,
-  `keeps every no-install scaffold tree byte-stable`, which the owner recomputes after this change.
+- [x] A1 — every racing scenario passes on the real vehicle physics, web and native. proof: `TN_TEMPLATE_ONLY=racing pnpm test:templates` → 9/9 scenarios and the boot gate green, exit 0, 2026-09-30; `pnpm native:verify:desktop` exit 0 (desktop core, physics, stability, contracts, loading and UI-frame gates all passed).
+- [x] A2 — the player and the rival are the same `VehicleBody3D` chassis, and the circuit's barriers stop them. proof: `src/entities/CarBody.ts` (both cars) and `packages/physics/__tests__/vehicle-body.spec.ts` (a wall stops the car at z −28.25); the conformance case `vehicle-raycast-suspension` is green on web and desktop with `pixelMismatchRatio 0` (phase 2, unchanged since); `pnpm native:verify:desktop` exits 0, 2026-09-30.
+- [x] A3 — a lap is won only by driving it: the closed-loop `LineDriver` completes laps with no rescues, and out-of-order or reversed crossings are rejected. proof: the `finish-behind-rival-is-dnf`, `route-ranking`, `reverse-finish-rejected` and `shortcut-rejected` scenarios in the suite above, 2026-09-30.
