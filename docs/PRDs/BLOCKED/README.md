@@ -31,5 +31,19 @@ not: `docs/PRDs/production-readiness/critical/` holds what still blocks a releas
 the 2026-09-23 rule that kept blocked PRDs in `critical/`. PRD-080, PRD-112 and PRD-196 moved the
 other way, from this folder to `critical/`.
 
+**Every entry above carries a tier, and the tiers are not the same promise.**
+[`ROADMAP.md`](../../strategy/ROADMAP.md) states the split and this folder inherits it: **Tier 1** is
+the shipping bar — it renders-the-same, controls and UI green on browser, Linux desktop and the
+Android emulator, with performance and soak green on web and native desktop — and **Tier 2** is
+deferred, not dropped: physical Android and iOS, real GPU drivers, arm64, frame-rate parity, device
+soak and signed distribution. **An emulator result is never a device result**, and no entry here
+licenses a mobile-readiness claim by being unblocked into Tier 1. The reason a PRD sits in this
+folder is its unlock condition in the table above; the tier says which promise that unlock serves.
+
+**Tier 2 reopens on one thing: a stranger.** The first external user who installs the framework and
+asks for a device build starts Tier 2 — concretely, the five-minute stranger test, not a calendar
+date. A physical Android device arriving earlier reopens the Android half alone; it does not reopen
+iOS.
+
 Moved on 2026-08-15. The old `docs/PRDs/native/blocked/README.md` remains as a native-lane
 compatibility pointer; no PRD files remain there.

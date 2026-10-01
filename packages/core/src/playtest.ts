@@ -10,6 +10,7 @@ import {
   type JsonPrimitive,
   type JsonValue,
   PLAYTEST_PROTOCOL_LIMITS,
+  type PlaytestClockMode,
   assertJsonSafe,
 } from "@threenative/playtest/protocol";
 import { type IThreePlaytestEntity, installThreePlaytestBridge } from "@threenative/playtest/three";
@@ -63,6 +64,8 @@ export function playtest<
     setup: async (ctx, runtime) => {
       readTick = runtime?.tick;
       const seed = runtime?.seed ?? null;
+      const clockMode = requestedClockMode();
+      const wallClock = clockMode === "wall-clock";
       const replayRuntime: IPlaytestWorldObservation["runtime"] =
         runtime?.seed === null || runtime?.seed === undefined
           ? undefined
@@ -75,9 +78,17 @@ export function playtest<
             };
       const installation = installThreePlaytestBridge({
         camera: ctx.camera,
+        ...(clockMode === undefined ? {} : { clockMode }),
         entities: () => bridgeEntities(ctx),
         components: () => componentObservations(ctx.entities.snapshot()),
-        ...(runtime === undefined ? {} : { fixedStep: runtime.fixedStep, tick: runtime.tick }),
+        // The live clock has to be driven by the host's own frame pump, so a live run's `advance`
+        // waits the span of wall time the count names and reports the ticks that pump ran.
+        ...(runtime === undefined
+          ? {}
+          : {
+              fixedStep: wallClock ? wallClockAdvance(runtime) : runtime.fixedStep,
+              tick: runtime.tick,
+            }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined
           ? {}
           : { runtimeDiagnosticsSeries: runtime.runtimeDiagnosticsSeries }),
@@ -154,7 +165,12 @@ export function playtest<
         // tick-counting scenario sees before its own first tick was a function of how fast the
         // machine booted. The loop is frozen here instead: from the first frame of the run, ticks
         // are the only clock, which is what the run is already counting.
-        runtime?.freezeClock?.();
+        //
+        // A run that asked for the wall clock is the one consumer that wants the opposite: it
+        // measures a frame rate for a game, and the frozen loop's presented frames repeat a
+        // standing state while the scenario's ticks arrive in bursts — a profile of a game that is
+        // not playing. It asked by name, so it is not frozen.
+        if (!wallClock) runtime?.freezeClock?.();
       }
       dispose = installation.dispose;
       attached = holdUntilAttached(installation.bridge, options, () => startSceneEntered);
@@ -210,6 +226,68 @@ export const PLAYTEST_ATTACH_TIMEOUT_MS = 30_000;
  */
 /** The global a playtest runner sets before the page loads, so a game can tell one is coming. */
 export const PLAYTEST_RUNNER_EXPECTED_GLOBAL = "__THREENATIVE_PLAYTEST_RUNNER_EXPECTED__";
+
+/**
+ * The clock a consumer asks this game to run on, named in the protocol's own vocabulary. Set before
+ * the game module evaluates — a production profile does it in the instrumentation it injects ahead
+ * of the bundle, on the browser and on native alike.
+ */
+export const PLAYTEST_CLOCK_GLOBAL = "__THREENATIVE_PLAYTEST_CLOCK__";
+
+/**
+ * The clock the host asked for, or `undefined` for the default deterministic run.
+ *
+ * `wall-clock` is the production profile's opt-in and the only one this protocol has. An
+ * unrecognised value throws instead of falling back, because a misspelling that quietly left the
+ * loop frozen would publish a frame rate for a game that was not playing.
+ */
+function requestedClockMode(): PlaytestClockMode | undefined {
+  const requested = (globalThis as Record<string, unknown>)[PLAYTEST_CLOCK_GLOBAL];
+  if (requested === undefined) return undefined;
+  if (requested === "wall-clock") return "wall-clock";
+  throw new Error(
+    `TN_PLAYTEST_CLOCK_UNSUPPORTED: '${PLAYTEST_CLOCK_GLOBAL}' is ${JSON.stringify(requested)}; this protocol knows 'wall-clock' and nothing else.`,
+  );
+}
+
+/**
+ * The fixed steps of extra wall time a live advance may wait past the span its own ticks name.
+ *
+ * A one-tick request names exactly one frame interval, so a wait that ended on that boundary ran
+ * just before the host's next frame and observed nothing: the 2026-09-28 desktop pair failed on
+ * that at 58 mean fps. Four steps is enough room for a host presenting at 15 fps, and it is a
+ * bound — a host that really stopped presenting returns the zero the bridge reports as a dead
+ * frame pump rather than hanging the run.
+ */
+const WALL_CLOCK_PUMP_STEPS = 4;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The live-clock stand-in for `runtime.fixedStep`: deliver the span of wall time `ticks` fixed steps
+ * would cover, and report the ticks the host's own frame pump ran in it.
+ *
+ * Waiting rather than stepping is the whole point. The loop is not frozen on this path, so the host
+ * keeps presenting frames for the whole span and every one of them advances the game at the fixed
+ * step's own rate — a run whose simulation rate is the machine's frame rate, which is what a
+ * profile is for. It also means the runner needs nothing new: it still asks for tick counts and
+ * still batches them, and a burst costs the wall time it always claimed to cost.
+ */
+function wallClockAdvance(runtime: IGamePluginRuntime): (ticks: number) => Promise<number> {
+  const stepMs = runtime.step * 1_000;
+  return async (ticks) => {
+    const before = runtime.tick();
+    await sleep(ticks * stepMs);
+    // The span is the floor, not the end: a host whose next frame lands just after it has still
+    // presented nothing to report. Keep waiting for the pump's own tick, in half-step slices, and
+    // never take one here — the loop is the host's, and a tick invented here would be the profile
+    // measuring itself. The slice count is the bound, so a pump that has stopped is a fast failure
+    // carrying zero rather than a wait that never ends.
+    for (let waited = 0; waited < WALL_CLOCK_PUMP_STEPS && runtime.tick() === before; waited += 1)
+      await sleep(stepMs / 2);
+    return runtime.tick() - before;
+  };
+}
 
 /**
  * Hold when told to, and by default whenever a browser or native runner announced itself.

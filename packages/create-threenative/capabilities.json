@@ -4815,6 +4815,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["a private Xvfb is software, so a rate read there measures the X server"],
+      "example": "import { decideDisplayStrategy } from \"@threenative/playtest/runner\";\nconst lane = decideDisplayStrategy({ env: process.env, platform: \"linux\" });\nif (lane.kind === \"private-xvfb\") throw new Error(\"refuse to judge this frame rate\");",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy { … }",
+      "situations": ["judge whether a measured frame rate came from a display that can carry one"],
+      "summary": "Decide which display a pixel-producing run paints on, the same decision the runner makes.",
+      "supersedes": [],
+      "symbol": "decideDisplayStrategy"
+    },
+    {
+      "aliases": [],
       "constraints": ["the mailbox lifecycle must be disposed after the run"],
       "example": "const driver = new DesktopPlaytestDriver(options);",
       "importPath": "@threenative/playtest/runner",
