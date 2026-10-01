@@ -165,17 +165,16 @@ describe("threenative build", () => {
       },
     );
 
-    expect({ code: result.code, timedOut: result.timedOut }).toEqual({
+    // The message rides the matcher rather than a throw after it: `expect` throws first, so a
+    // `throw` on the line below only ever ran on the passing path and the build's own last words
+    // stayed hidden on the one failure they were captured for.
+    expect(
+      { code: result.code, timedOut: result.timedOut },
+      `threenative build ended with code ${String(result.code)}${result.timedOut ? " at the 60s ceiling" : ""}.\n${result.output.slice(-2000)}`,
+    ).toEqual({
       code: 0,
       timedOut: false,
     });
-    if (result.timedOut || result.code !== 0) {
-      // Named here rather than inside the matcher, so the assertion diff stays the two facts it is
-      // about and the build's own last words travel with the failure.
-      throw new Error(
-        `threenative build ended with code ${String(result.code)} after ${result.timedOut ? "the 60s ceiling" : "exiting"}.\n${result.output.slice(-2000)}`,
-      );
-    }
   }, 90_000);
 
   it("resolves every declared brand input through the live packaging-config caller", async () => {
