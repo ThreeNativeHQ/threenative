@@ -121,6 +121,20 @@
           "shoulder": 8,
           "enforceDownhill": true
         }
+      },
+      {
+        "id": "preview-pines",
+        "type": "scatter",
+        "name": "100 editable pine placements",
+        "params": {
+          "asset": "pine",
+          "count": 100,
+          "minDistance": 8,
+          "minSlope": 0,
+          "maxSlope": 50,
+          "avoidWater": true,
+          "scale": [0.9, 1.5]
+        }
       }
     ]
   }

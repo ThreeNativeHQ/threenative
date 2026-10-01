@@ -1,6 +1,6 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { type ITerrainState, bakeMesh } from "@threenative/terrain";
+import { type ITerrainState, bakeMesh, sampleHeight } from "@threenative/terrain";
 import type { IEditorView } from "@threenative/terrain/editor";
 import {
   BufferGeometry,
@@ -20,6 +20,7 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
+import { createProps } from "./props.js";
 import { createTerrain } from "./terrain.js";
 
 const initialState = {
@@ -29,6 +30,8 @@ const initialState = {
   vertexCount: 0,
   heightSum: 0,
   evaluationMs: 0,
+  propCount: 0,
+  propTriangles: 0,
 };
 type EditorState = typeof initialState;
 
@@ -43,6 +46,7 @@ export async function createEditorView(
   let terrain: ITerrainState | undefined;
   let sea: ReturnType<typeof createOcean> | undefined;
   let water: Mesh | undefined;
+  let props: ReturnType<typeof createProps> | undefined;
   let elapsed = 0;
   let first = true;
   let mode = "lit";
@@ -105,6 +109,18 @@ export async function createEditorView(
       controls.mouseButtons.LEFT = null; // Left drag authors terrain; right drag navigates.
       ctx.beforeRender(() => {
         if (!mesh) return;
+        ctx.state.set({
+          propCount: props?.meshes.reduce((count, prop) => count + prop.count, 0) ?? 0,
+          propTriangles:
+            props?.meshes.reduce(
+              (count, prop) =>
+                count +
+                (prop.count *
+                  (prop.geometry.index?.count ?? prop.geometry.getAttribute("position").count)) /
+                  3,
+              0,
+            ) ?? 0,
+        });
         ctx.state.set({ renderedFrames: ctx.state.getState().renderedFrames + 1 });
         if (!requestedRevision || seen === requestedRevision) return;
         seen = requestedRevision;
@@ -137,7 +153,9 @@ export async function createEditorView(
   });
   await game.start();
   return {
-    backend: "ThreeNative · WebGPU",
+    get backend(): string {
+      return `ThreeNative · ${ctx.renderer.kind}`;
+    },
     update(state): void {
       const baked = bakeMesh(state, { palette: terrainPalette });
       if (!baked.colors) throw new Error("Editor surface colours missing");
@@ -150,6 +168,27 @@ export async function createEditorView(
       };
       const next = createTerrain(data).mesh as Mesh<BufferGeometry, MeshStandardMaterial>;
       next.material.wireframe = mode === "wire";
+      next.updateMatrixWorld(true);
+      next.geometry.computeBoundingBox();
+      const top = next.geometry.boundingBox?.max.y;
+      if (top === undefined) throw new Error("Terrain bounds unavailable for prop grounding");
+      let nextProps: ReturnType<typeof createProps>;
+      try {
+        nextProps = createProps(state.instances, (placement) => {
+          const [x, y, z] = placement.position;
+          const hit = ctx.raycast({
+            origin: new Vector3(x, top + 1, z),
+            direction: new Vector3(0, -1, 0),
+            targets: [next],
+          });
+          if (!hit) throw new Error(`Missing terrain triangle for '${placement.id}'`);
+          return hit.point.y + y - sampleHeight(state, x, z);
+        });
+      } catch (error) {
+        next.geometry.dispose();
+        next.material.dispose();
+        throw error;
+      }
       if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
       const nextWater = data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
       if (mesh) {
@@ -158,6 +197,12 @@ export async function createEditorView(
         mesh.material.dispose();
       }
       clearWater();
+      if (props) {
+        ctx.scene.remove(props.object);
+        props.dispose();
+      }
+      props = nextProps;
+      ctx.add(props.object);
       mesh = next;
       ctx.add(mesh);
       terrain = state;
@@ -232,6 +277,7 @@ export async function createEditorView(
     },
     dispose(): void {
       clearWater();
+      props?.dispose();
       mesh?.geometry.dispose();
       mesh?.material.dispose();
       brush.geometry.dispose();

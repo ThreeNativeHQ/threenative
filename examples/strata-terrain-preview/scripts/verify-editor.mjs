@@ -71,12 +71,16 @@ try {
       const actual = await session.page.evaluate(() => window.strata.view.inspect());
       assert.equal(actual.renderedRevision, accepted.revision);
       assert(actual.vertexCount === 16641);
+      assert.equal(actual.propCount, 100, "The latency fixture must render 100 prop instances");
+      assert(actual.propTriangles > 0, "The observed instances must contain real triangles");
       const latencyMs = performance.now() - start;
       assert(latencyMs < 2000);
       observed.push({
         amplitude,
         revision: accepted.revision,
         heightSum: actual.heightSum,
+        propCount: actual.propCount,
+        propTriangles: actual.propTriangles,
         latencyMs,
       });
       await session.screenshot(`editor-hill-${amplitude}`);
@@ -87,12 +91,57 @@ try {
       "Three accepted revisions must change rendered geometry",
     );
     assert.equal(new Set(observed.map((item) => item.revision)).size, 3);
+    const validPreview = await session.page.evaluate(() => window.strata.view.inspect());
+    const beforeMissing = await controller.snapshot();
+    await controller.commit({
+      baseRevision: beforeMissing.revision,
+      commands: [
+        {
+          op: "upsert",
+          layer: {
+            id: "missing-model",
+            type: "scatter",
+            params: { asset: "missing-fixture", count: 1, avoidWater: false },
+          },
+        },
+      ],
+    });
+    await session.page.waitForFunction(
+      () => document.getElementById("save-status")?.textContent.includes("Preview failed"),
+      {},
+      { timeout: 2000 },
+    );
+    assert.equal(await session.page.evaluate(() => window.strata.busy), false);
+    assert.match(await session.page.locator("#toast").textContent(), /missing-fixture/);
+    assert.equal(
+      (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
+      validPreview.renderedRevision,
+    );
+    assert.equal((await session.page.evaluate(() => window.strata.view.inspect())).propCount, 100);
+    const broken = await controller.snapshot();
+    const modelRecovery = await controller.commit({
+      baseRevision: broken.revision,
+      commands: [{ op: "remove", id: "missing-model" }],
+    });
+    await session.page.waitForFunction(
+      (revision) =>
+        window.strata.renderedRevision === revision &&
+        !window.strata.busy &&
+        !window.strata.workerBusy,
+      modelRecovery.revision,
+      { timeout: 2000 },
+    );
+    await advanceFixedStep(session.page, session.bridge, 2);
     await session.page.locator("#selected-name").fill("Human-polished hill");
     await session.page.locator("#selected-name").press("Tab");
     await session.page.waitForFunction(() => !document.body.dataset.saving, {}, { timeout: 2000 });
     const saved = await controller.snapshot();
     assert(saved.document.recipe.layers.some((layer) => layer.name === "Human-polished hill"));
     await session.screenshot("editor-gui-edit");
+    const reactivation = await controller.activate();
+    assert.equal(reactivation.projectId, activation.projectId);
+    assert.equal(reactivation.sessionId, activation.sessionId);
+    assert.equal(reactivation.revision, saved.revision);
     const prior = await session.page.evaluate(() => window.strata.view.inspect());
     const current = await controller.snapshot();
     await controller.commit({
@@ -123,7 +172,10 @@ try {
       commands: [{ op: "remove", id: "long-erosion" }],
     });
     await session.page.waitForFunction(
-      (revision) => window.strata.renderedRevision === revision,
+      (revision) =>
+        window.strata.renderedRevision === revision &&
+        !window.strata.busy &&
+        !window.strata.workerBusy,
       recovered.revision,
       { timeout: 2000 },
     );

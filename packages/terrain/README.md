@@ -39,3 +39,8 @@ scene. `TerrainEditorController(editorUrl)` exposes `activate`, `snapshot` and
 atomic `commit`; the activation result names the actually bound URL, project,
 session and revision. Use a configured forwarded viewer URL for remote access;
 the loopback API does not become a public write service.
+
+Scatter placement `id` identifies the layer, unsigned seed and candidate attempt,
+not the accepted array index. Mask/spacing changes can remove candidates without
+retargeting surviving keys or their seeded scale/yaw. Changing a seed creates new
+identities. Save keys rather than mesh instance indices for later authoring edits.

@@ -106,16 +106,24 @@ export function mountRecoveredEditor({
           toast(data.error);
           $("save-status").textContent = "Build failed · last preview retained";
         } else if (data.type === "evaluated") {
-          state = data.state;
-          view.update(state);
-          renderedRevision = revision;
-          onEvaluated?.({ revision, state, ms: data.ms });
-          $("mesh-stats").textContent =
-            `${(2 * (state.resolution - 1) ** 2).toLocaleString()} tris · ${state.instances.length.toLocaleString()} instances`;
-          $("eval-time").textContent = `${Math.round(data.ms)} ms · CPU worker`;
-          $("diagnostic-count").textContent = state.diagnostics.length;
-          $("diagnostic-list").textContent = state.diagnostics.join("\n") || "No diagnostics.";
-          $("save-status").textContent = `Rendered ${renderedRevision.slice(0, 8)} · saved on disk`;
+          const ready = attempt(() => {
+            view.update(data.state);
+            return true;
+          });
+          if (!ready) {
+            $("save-status").textContent = "Preview failed · last preview retained";
+          } else {
+            state = data.state;
+            renderedRevision = revision;
+            onEvaluated?.({ revision, state, ms: data.ms });
+            $("mesh-stats").textContent =
+              `${(2 * (state.resolution - 1) ** 2).toLocaleString()} tris · ${state.instances.length.toLocaleString()} instances`;
+            $("eval-time").textContent = `${Math.round(data.ms)} ms · CPU worker`;
+            $("diagnostic-count").textContent = state.diagnostics.length;
+            $("diagnostic-list").textContent = state.diagnostics.join("\n") || "No diagnostics.";
+            $("save-status").textContent =
+              `Rendered ${renderedRevision.slice(0, 8)} · saved on disk`;
+          }
         }
       }
       if (pending) dispatch();

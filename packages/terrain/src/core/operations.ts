@@ -594,7 +594,8 @@ export function finalizeState(s: ITerrainState): ITerrainState {
   };
   for (const rule of s.scatterRules) {
     const count = Math.round((rule.count ?? 300) * (rule.opacity ?? 1));
-    const rnd = random(rule.seed ?? s.seed ^ hashString(rule.id));
+    const seed = (rule.seed ?? s.seed ^ hashString(rule.id)) >>> 0;
+    const rnd = random(seed);
     const accept = compileMask(rule.mask, s);
     const clears = rule.clear.map((entry: ScatterClear) => ({
       fn: compileMask(entry.mask, s),
@@ -609,12 +610,17 @@ export function finalizeState(s: ITerrainState): ITerrainState {
     for (let attempt = 0; attempt < maxAttempts && accepted.length < count; attempt += 1) {
       const x = (rnd() - 0.5) * s.size;
       const z = (rnd() - 0.5) * s.size;
+      // Every candidate consumes the same draws, including candidates rejected below.
+      // Otherwise a mask edit changes later coordinates, scale/yaw and saved identities.
+      const acceptance = rnd();
+      const scaleRandom = rnd();
+      const yaw = rnd() * Math.PI * 2;
       const ix = clamp(Math.round((x / s.size + 0.5) * (n - 1)), 0, n - 1);
       const iz = clamp(Math.round((z / s.size + 0.5) * (n - 1)), 0, n - 1);
       const i = iz * n + ix;
       let w = accept(i, x, z);
       for (const clear of clears) w *= 1 - clear.fn(i, x, z) * clear.opacity;
-      if (rnd() > w) continue;
+      if (acceptance > w) continue;
       const h = sampleHeight(s, x, z);
       if (rule.avoidWater !== false && wet(i, x, z, h)) continue;
       if (h < (rule.minHeight ?? -1e9) || h > (rule.maxHeight ?? 1e9)) continue;
@@ -642,16 +648,16 @@ export function finalizeState(s: ITerrainState): ITerrainState {
       if (blocked) continue;
       const index = accepted.length;
       const itemScale = Array.isArray(scale)
-        ? lerp(scale[0] as number, scale[1] as number, rnd())
+        ? lerp(scale[0] as number, scale[1] as number, scaleRandom)
         : (scale as number);
       const normal: [number, number, number] = [-g[0], 1, -g[1]];
       const length = Math.hypot(normal[0], normal[1], normal[2]);
       accepted.push({
-        id: `${rule.id}:${index}`,
+        id: `${rule.id}:candidate:${seed}:${attempt}`,
         layer: rule.id,
         asset: rule.asset ?? "pine",
         position: [x, h + (rule.offsetY ?? 0), z],
-        rotation: rnd() * Math.PI * 2,
+        rotation: yaw,
         scale: itemScale,
         normal: [normal[0] / length, normal[1] / length, normal[2] / length],
         alignToNormal: rule.alignToNormal ?? false,

@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 1/9 required boxes verified
+**Progress:** 2/9 required boxes verified
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
@@ -308,14 +308,14 @@ do not invent future line numbers.
 
 ### Phase 1: Shared document and live editor URL
 
-**Status:** PARTIAL
+**Status:** VERIFIED
 **Files:** recovered `packages/terrain/src/editor/app.js`/worker, `src/editor/server.ts`,
 preview Vite config/editor entry/document, `__tests__/editor-document.spec.ts`.
 **Implementation:** Recover UI/worker; attach to the shared document and preview.
 Reuse middleware, file watching, SSE, atomic validation and revision ownership.
 
-- [ ] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — the public controller follows the plugin-returned bound URL and same project/session. The runner-owned WebGPU browser renders three successive amplitude revisions (30/80/50) without refresh; actual mesh-height sums differ and first draw follows acceptance in 100–134 ms on NVIDIA/turing RTX 2080. Real screenshots and a GUI name edit demonstrate the shared document. This 512 m / 129-vertex fixture currently has zero rendered props; the required 100-prop latency fixture stays open until placement art lands. Startup/missing-route rejection and an explicitly configured real private HTTP forward are tested, including failed-forward readiness rejection. No public deployment is involved.
-- [x] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: PASS 2026-10-01 — seven public-import document tests use real loopback Vite middleware: multi-command rollback, stale 409, invalid external-save retention/recovery, hostile host/origin and client path rejection, malformed/media-type/64 MiB boundary errors, actual-port readiness and same-session reuse, live SSE/file-watch updates, and trusted private-forward writes/readiness with foreign-origin rejection and failure recovery. The browser integration terminates an active 200,000-droplet worker through the recovered Cancel button, retains the prior mesh, then renders the latest accepted recovery revision; older results cannot replace it. The original seven numerical/Three consumer tests still pass.
+- [x] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS 2026-10-01 — the public controller follows the plugin-returned bound URL and same project/session, including reactivation at the latest GUI revision. The runner-owned WebGPU browser renders three successive amplitude revisions (30/80/50) without refresh on a 512 m / 129-vertex grid with 100 actual instanced pine props (38,800 prop triangles). Measured mesh-height sums differ; first draw follows acceptance in 106–137 ms on NVIDIA/turing RTX 2080. The real GUI name edit saves to the shared document and a fresh scene run reads the latest recipe. Startup/missing-route rejection and a configured private HTTP forward are tested, including failed-forward rejection. This proves the measured latency fixture, not final starter art or mobile performance.
+- [x] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: PASS 2026-10-01 — seven public-import document tests use real loopback Vite middleware: multi-command rollback, stale 409, invalid external-save retention/recovery, hostile host/origin and client path rejection, malformed/media-type/64 MiB boundary errors, actual-port readiness and same-session reuse, live SSE/file-watch updates, and trusted private-forward writes/readiness with foreign-origin rejection and failure recovery. The browser integration terminates an active 200,000-droplet worker through the recovered Cancel button, retains the prior mesh, then renders the latest accepted recovery revision; older results cannot replace it. The original seven numerical/Three consumer tests still pass. An unregistered model now reports its asset ID, releases the busy state and retains the last valid scene; removing it recovers successfully without a page error.
 
 Actual entry points: `packages/terrain/src/editor/server.ts` owns the fixed-file
 revision authority and optional Vite middleware; `src/editor/index.ts` owns the
@@ -334,7 +334,7 @@ by selecting the saved recipe resolution. No synthetic failed state is created.
 All supplied controls are retained; selection/gizmos, calibrated spatial modes,
 complete exports and shared undo/conflict polish remain their later phase boxes.
 
-Milestone checks (2026-10-01): root typecheck/lint/budgets and documentation links pass.
+Initial shared-editor milestone checks (2026-10-01, commit `9cf0daa07`): root typecheck/lint/budgets and documentation links pass.
 The full `pnpm test` command passes workspace package builds/checks and 521 root
 test files / 6,483 tests (12 skips); the suite temporary directory count does not
 grow. Public terrain imports pass 14 tests, including the real private forward.
@@ -344,6 +344,24 @@ The existing browser and Linux desktop terrain/ocean regression scenarios pass
 with this editor Vite config. The native host renders 300 frames with 226
 presentations. Actual editor screenshots are tracked for draft PR #381; no mobile,
 steady-state FPS, 100-prop latency or complete-editor claim is made.
+
+The 100-prop milestone uses the supplied pine/boulder/grass shapes in editable
+`src/render/props.ts`, with installed `mergeParts` and `InstancedBatch`. Ground
+positions come from actual terrain-triangle picks, with transformed model bounds
+and authored offsets preserved. Scene observations count actual instance buffers
+and geometry triangles; these are not GPU timing measurements. The editor badge
+reads the actual renderer kind. The missing-model and cancellation checks both
+wait for completed worker recovery, including content-hash reuse.
+
+100-prop/scatter milestone checks (2026-10-01): root typecheck, lint, budgets,
+documentation links and 180 documentation tests pass. The full `pnpm test`
+command passes workspace package builds/checks and 522 root test files / 6,485
+tests (12 skips), with no suite temporary-directory growth. The final real
+WebGPU editor run passes the 100-instance/38,800-triangle observations and
+three distinct rendered terrain revisions in 106–137 ms, GUI persistence,
+latest-revision reactivation, missing-model failure/recovery and cancellation.
+The scene scenario also counts the actual 100 instances. This milestone does
+not claim native editor props, final PBR starter art or steady-state FPS.
 
 ### Phase 2: Individual selection and persistent gizmos
 
@@ -355,7 +373,7 @@ transaction per drag, and consume overrides in bake/export. Preserve recipe
 intent for landforms. Invalidate only affected static/instance data during drag.
 
 - [ ] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; chosen stable key/matrix changes, sibling matrices unchanged, numeric inputs select the same object, and unsupported landform axes are explicit.
-- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: planned `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` — Evidence: pending; change rejection order, assert no retargeting, retained unmatched diagnostics, round-trip transforms, and invalid-input rejection.
+- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: planned `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` — Evidence: PARTIAL — two public scatter tests reproduce and fix identity retargeting: every candidate consumes five seeded draws even if rejected; keys include layer, unsigned seed and candidate attempt. Mask rejection retains shared candidate coordinates/scale/yaw, a seed change creates new keys, and JSON/count-growth round trips preserve them. All 16 public terrain tests pass. Manual overrides remain pending; change rejection order, assert no retargeting, retained unmatched diagnostics, round-trip transforms, and invalid-input rejection.
 
 ### Phase 3: GUI polish and GLB handoff
 

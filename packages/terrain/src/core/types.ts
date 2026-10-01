@@ -363,8 +363,9 @@ export interface IRiver {
   readonly opacity: number;
 }
 
-/** One accepted scatter placement. `rotation` is yaw in radians. */
+/** One accepted scatter candidate. `rotation` is yaw in radians. */
 export interface IPlacement {
+  /** Layer/seed/candidate key, independent of acceptance order; changing the seed changes identity. */
   readonly id: string;
   readonly layer: string;
   readonly asset: string;

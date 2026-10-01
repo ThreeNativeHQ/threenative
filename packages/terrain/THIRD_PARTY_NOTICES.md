@@ -21,3 +21,11 @@ Three.js viewer are replaced by a revisioned project document and a required
 project-owned view. Formatting changes preserve the recovered controls; GUI
 swatches receive the game's explicit colours. Root and `/three` imports do not
 load this tooling.
+
+Maintained behavior difference: scatter candidates use layer/unsigned-seed/attempt
+keys and consume the same five seeded draws even when rejected. This fixes the
+supplied accepted-index identity and conditional-RNG defect. Placement lists
+intentionally differ from the supplied source; the supplied noise/erosion
+regression remains unchanged. The adapter's pine, boulder and grass shapes are
+adapted in the example's editable `src/render/props.ts`, using installed merge and
+instance mechanisms; no addon material or renderer is introduced.

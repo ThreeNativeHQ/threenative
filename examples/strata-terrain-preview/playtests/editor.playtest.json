@@ -46,6 +46,12 @@
       },
       {
         "id": "GameState",
+        "path": "propCount",
+        "gte": 100,
+        "allowTrivial": "The initial worker can finish during warmup; this counts actual instanced meshes in the rendered scene."
+      },
+      {
+        "id": "GameState",
         "path": "renderedFrames",
         "changed": true
       }
