@@ -25,3 +25,17 @@ world export including props, portable PBR images and water is not yet delivered
 No browser/native terrain-game acceptance result is claimed by these library tests.
 
 See [agent guide](AGENT_GUIDE.md) and [source provenance](THIRD_PARTY_NOTICES.md).
+
+Optional live authoring uses `@threenative/terrain/editor/server` in the project's
+Vite configuration and `@threenative/terrain/editor` in its browser authoring entry.
+`terrainEditor({ documentPath })` mounts revisioned JSON/SSE endpoints on the
+existing loopback server. The configured file contains `{ version: 1, recipe }`;
+agent patches and GUI changes share that authority. Invalid external saves retain
+the last valid document with a diagnostic, and stale writes return conflict.
+
+The project provides `/terrain-editor/index.html` and calls `mountTerrainEditor`
+with its own `IEditorView` and material colours. The addon creates no renderer or
+scene. `TerrainEditorController(editorUrl)` exposes `activate`, `snapshot` and
+atomic `commit`; the activation result names the actually bound URL, project,
+session and revision. Use a configured forwarded viewer URL for remote access;
+the loopback API does not become a public write service.

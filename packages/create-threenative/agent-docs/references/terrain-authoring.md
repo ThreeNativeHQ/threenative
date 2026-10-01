@@ -49,3 +49,58 @@ Keep terrain evaluation, erosion and editor tooling out of the shipped game grap
 The runtime consumes baked arrays and assets. The legacy `encodeGLB`/`makeExport`
 terrain export contains the terrain mesh only; it is not a full-world export of
 vegetation, rocks, water and imported assets.
+
+## Optional live terrain editor
+
+Install the authoring dependency above; Vite remains the project's development
+server. Save `terrain/world.json` as `{ "version": 1, "recipe": terrain.toJSON() }`.
+Add the optional plugin to this project's Vite configuration:
+
+```ts
+import { resolve } from "node:path";
+import { terrainEditor } from "@threenative/terrain/editor/server";
+
+const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
+// Add editor to the existing Vite plugins. Bind the server to 127.0.0.1/localhost.
+// Add "@threenative/terrain/editor" to optimizeDeps.exclude so its adjacent
+// evaluator worker remains a separate module.
+```
+
+The project supplies `/terrain-editor/index.html`. Its browser entry calls
+`mountTerrainEditor` from `@threenative/terrain/editor` with `createView(host)` and
+an explicit eight-channel material colour palette. Implement the exported
+`IEditorView` around this game's ThreeNative scene and `src/render/` helpers; keep
+that authoring entry separate from `src/game.ts`. The addon reuses the recovered
+brush, layer, recipe, cancellation and data-export controls around that view.
+It does not create a second renderer or silently choose the game's appearance.
+
+After the server listens and the route is ready, `await editor.activate()` returns
+`editorUrl`, `projectId`, `sessionId` and the current content-hashed `revision`.
+The development server also prints the bound editor URL. Present that returned
+link; do not invent a port or give a user `0.0.0.0`. On a remote machine, configure
+`viewerUrl` with the existing port-forwarded editor URL; without forwarding the
+loopback link is local to that machine. Activation probes the advertised route;
+an unreachable or failed private forward returns an error. Only the explicitly
+configured viewer host/origin is additionally trusted; the server still binds to
+loopback.
+
+An agent can edit the same document without clicking the GUI:
+
+```ts
+import { TerrainEditorController } from "@threenative/terrain/editor";
+
+const controller = new TerrainEditorController(activation.editorUrl);
+const current = await controller.snapshot();
+await controller.commit({
+  baseRevision: current.revision,
+  commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 35 } } }],
+});
+```
+
+Stale bases conflict. Read the latest snapshot and merge the intended semantic
+edit; do not overwrite another agent/human's work with an old document. Complete
+atomic JSON saves also update the shared view. Invalid disk saves retain the last
+valid preview and show a diagnostic; restore a valid save before submitting more
+patches. Editor imports, workers, watchers and the document stay out of the game
+runtime. Bake committed data before handing it to the game. The currently shipped
+GLB action remains terrain-only; complete portable world export is in development.

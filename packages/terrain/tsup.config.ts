@@ -3,7 +3,13 @@ import { defineConfig } from "tsup";
 // `three` stays external so the baked geometry belongs to the consumer's installed Three.js
 // instance (the subpath is a peer dependency), never a second copy bundled into this addon.
 export default defineConfig({
-  entry: ["src/index.ts", "src/three.ts"],
+  entry: {
+    index: "src/index.ts",
+    three: "src/three.ts",
+    "editor/server": "src/editor/server.ts",
+    "editor/index": "src/editor/index.ts",
+    "editor/worker": "src/editor/worker.js",
+  },
   format: ["esm"],
   target: "node20",
   dts: true,

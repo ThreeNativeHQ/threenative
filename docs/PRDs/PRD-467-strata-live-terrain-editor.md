@@ -1,10 +1,10 @@
 # PRD-467 — Live terrain editor, shape editing, and spatial surface diagnostics
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 0/9 required boxes verified
+**Progress:** 1/9 required boxes verified
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
@@ -22,7 +22,7 @@ part of the editor and headless inspection path, not a separate verification app
 This is a required companion to [PRD-466](PRD-466-strata-terrain-threejs-integration.md),
 not an optional later feature. Both plans must be verified before claiming the
 whole requested integration is delivered, including PRD-468's world controls and
-on-demand imports. This request authorizes planning only.
+on-demand imports. The execution request authorizes implementing all three PRDs in the shared worktree and draft PR #381.
 Complexity: 3 for 11+ implementation files (mostly recovered editor modules),
 2 for the authoring tool, 2 for worker/revision concurrency, and 2 for the
 addon/consumer build boundary.
@@ -308,14 +308,42 @@ do not invent future line numbers.
 
 ### Phase 1: Shared document and live editor URL
 
-**Status:** NOT STARTED
-**Files:** recovered `packages/terrain/editor/app.*`/worker, `editor/server.ts`,
+**Status:** PARTIAL
+**Files:** recovered `packages/terrain/src/editor/app.js`/worker, `src/editor/server.ts`,
 preview Vite config/editor entry/document, `__tests__/editor-document.spec.ts`.
 **Implementation:** Recover UI/worker; attach to the shared document and preview.
 Reuse middleware, file watching, SSE, atomic validation and revision ownership.
 
-- [ ] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; follow the returned `editorUrl` rather than constructing a test URL, verify bound-port/readiness and same-project reuse, observe three distinct geometry revisions, and measure simple-edit latency within 2 seconds on the named fixture. Startup/forwarding failures must not advertise a ready unreachable URL.
-- [ ] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: planned `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: pending; conflict/error response, unchanged disk data, path/origin restrictions, valid subsequent recovery, and canceled/stale job rejection.
+- [ ] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — the public controller follows the plugin-returned bound URL and same project/session. The runner-owned WebGPU browser renders three successive amplitude revisions (30/80/50) without refresh; actual mesh-height sums differ and first draw follows acceptance in 100–134 ms on NVIDIA/turing RTX 2080. Real screenshots and a GUI name edit demonstrate the shared document. This 512 m / 129-vertex fixture currently has zero rendered props; the required 100-prop latency fixture stays open until placement art lands. Startup/missing-route rejection and an explicitly configured real private HTTP forward are tested, including failed-forward readiness rejection. No public deployment is involved.
+- [x] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: PASS 2026-10-01 — seven public-import document tests use real loopback Vite middleware: multi-command rollback, stale 409, invalid external-save retention/recovery, hostile host/origin and client path rejection, malformed/media-type/64 MiB boundary errors, actual-port readiness and same-session reuse, live SSE/file-watch updates, and trusted private-forward writes/readiness with foreign-origin rejection and failure recovery. The browser integration terminates an active 200,000-droplet worker through the recovered Cancel button, retains the prior mesh, then renders the latest accepted recovery revision; older results cannot replace it. The original seven numerical/Three consumer tests still pass.
+
+Actual entry points: `packages/terrain/src/editor/server.ts` owns the fixed-file
+revision authority and optional Vite middleware; `src/editor/index.ts` owns the
+HTTP controller and recovered GUI mount. The original app/icons/presets/worker
+and static shell are recovered under `src/editor/` to match normal capability
+export discovery. Browser/headless root and geometry imports remain separate.
+The preview uses `src/editor.ts`, project-owned `src/render/editorView.ts`,
+`terrain/world.json`, and `/terrain-editor/index.html`. The authoring scene uses
+the same terrain/ocean render helpers and normal ThreeNative game loop.
+
+`test:terrain:editor` reuses withBrowserCapture for real agent/API/GUI/cancel
+checks, then runStandalonePlaytest for the executable scene scenario. Its
+changed-only frame observation avoids declaring already-rendered warmup geometry
+an independent transition. The initial preview-resolution mismatch is corrected
+by selecting the saved recipe resolution. No synthetic failed state is created.
+All supplied controls are retained; selection/gizmos, calibrated spatial modes,
+complete exports and shared undo/conflict polish remain their later phase boxes.
+
+Milestone checks (2026-10-01): root typecheck/lint/budgets and documentation links pass.
+The full `pnpm test` command passes workspace package builds/checks and 521 root
+test files / 6,483 tests (12 skips); the suite temporary directory count does not
+grow. Public terrain imports pass 14 tests, including the real private forward.
+`test:terrain:editor` passes on WebGPU NVIDIA/turing with actual GUI save, three
+rendered agent revisions, cancellation/recovery and the executable scene scenario.
+The existing browser and Linux desktop terrain/ocean regression scenarios pass
+with this editor Vite config. The native host renders 300 frames with 226
+presentations. Actual editor screenshots are tracked for draft PR #381; no mobile,
+steady-state FPS, 100-prop latency or complete-editor claim is made.
 
 ### Phase 2: Individual selection and persistent gizmos
 

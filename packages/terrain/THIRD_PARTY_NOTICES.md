@@ -14,3 +14,10 @@ Recovery used the HTML's named `sources` module map, rather than its duplicated
 worker blob or minified viewer. The algorithms, validation and transactions are
 maintained as TypeScript source. Viewer appearance/renderer code is excluded;
 baking takes optional caller-owned colours and exports no chosen material.
+
+The optional `src/editor/` tooling also recovers the supplied app, icons, starter
+recipes, worker and static UI shell. Local-storage authority and the separate
+Three.js viewer are replaced by a revisioned project document and a required
+project-owned view. Formatting changes preserve the recovered controls; GUI
+swatches receive the game's explicit colours. Root and `/three` imports do not
+load this tooling.

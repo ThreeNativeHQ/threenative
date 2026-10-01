@@ -4,7 +4,7 @@ import { terrainPalette } from "../src/render/palette.js";
 
 // Authoring runs before either runtime is bundled. The game imports only the baked JSON.
 
-const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
+export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({ id: "hills", base: 18, amplitude: 16, scale: 180, warp: 35, octaves: 5 })
   .stamp({
     id: "eroded-hill",
@@ -48,7 +48,7 @@ const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shoulder: 8,
     enforceDownhill: true,
   });
-const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
+export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({
     id: "island",
     base: 13,

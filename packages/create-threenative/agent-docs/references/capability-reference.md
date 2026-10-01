@@ -5472,6 +5472,78 @@ export function validateDocument(doc: ITerrainDocument): void { … }
 validateDocument(new Terrain({ resolution: 17 }).toJSON());
 ```
 
+## `@threenative/terrain/editor`
+
+### `mountTerrainEditor`
+
+`function` — Mount recovered terrain controls around the project-owned ThreeNative view.
+
+```ts
+export async function mountTerrainEditor(options: { … }
+```
+
+- **Use when:** open the terrain brush and layer GUI around game-owned rendering
+- **Constraints:** browser authoring only; createView and materialColours are required game choices
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** createView owns the renderer scene, materials, lighting and camera
+
+```ts
+await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });
+```
+
+### `TerrainEditorController`
+
+`class` — HTTP controller for the project-local terrain editor.
+
+```ts
+export class TerrainEditorController { … }
+```
+
+- **Use when:** inspect and atomically edit the terrain editor from an agent
+- **Constraints:** optional tooling; only subscribe/mount touches DOM; stale revisions fail explicitly
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** editorUrl is the activation-returned project URL
+
+```ts
+const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+## `@threenative/terrain/editor/server`
+
+### `terrainEditor`
+
+`function` — Mount the optional terrain document API on an existing loopback Vite server.
+
+```ts
+export function terrainEditor(options: { … }
+```
+
+- **Use when:** share terrain recipe edits between an agent and the live terrain editor
+- **Constraints:** dev tooling only; serve a project-owned /terrain-editor/index.html; no runtime import
+- **Requires:** npm i -D @threenative/terrain vite
+- **Overrides:** documentPath and optional configured viewerUrl belong to the project
+
+```ts
+const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
+```
+
+### `TerrainEditorDocument`
+
+`class` — Project-local terrain document authority; no renderer or game dependency.
+
+```ts
+export class TerrainEditorDocument { … }
+```
+
+- **Use when:** validate atomic revision-based project-local terrain document edits
+- **Constraints:** Node authoring only; documentPath is a configured absolute regular file; input is bounded to 64 MiB
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project chooses its document path; revisions come from validated content
+
+```ts
+const document = new TerrainEditorDocument("/project/terrain/world.json"); const snapshot = document.snapshot();
+```
+
 ## `@threenative/terrain/three`
 
 ### `toGeometry`

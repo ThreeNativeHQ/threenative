@@ -1,0 +1,245 @@
+import { type ICtx, Scene, defineGame } from "@threenative/core";
+import { playtest } from "@threenative/core/playtest";
+import { type ITerrainState, bakeMesh } from "@threenative/terrain";
+import type { IEditorView } from "@threenative/terrain/editor";
+import {
+  BufferGeometry,
+  Color,
+  DirectionalLight,
+  FogExp2,
+  HemisphereLight,
+  Line,
+  LineBasicMaterial,
+  LineLoop,
+  type Mesh,
+  type MeshStandardMaterial,
+  type PerspectiveCamera,
+  Vector2,
+  Vector3,
+} from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createOcean, createWaterMesh } from "./ocean.js";
+import { terrainPalette } from "./palette.js";
+import { createTerrain } from "./terrain.js";
+
+const initialState = {
+  renderedRevision: "",
+  renderedCount: 0,
+  renderedFrames: 0,
+  vertexCount: 0,
+  heightSum: 0,
+  evaluationMs: 0,
+};
+type EditorState = typeof initialState;
+
+export async function createEditorView(
+  host: HTMLElement,
+): Promise<
+  IEditorView & { noteRevision(revision: string, ms: number): void; inspect(): EditorState }
+> {
+  let ctx: ICtx<EditorState>;
+  let controls: OrbitControls;
+  let mesh: Mesh<BufferGeometry, MeshStandardMaterial> | undefined;
+  let terrain: ITerrainState | undefined;
+  let sea: ReturnType<typeof createOcean> | undefined;
+  let water: Mesh | undefined;
+  let elapsed = 0;
+  let first = true;
+  let mode = "lit";
+  let requestedRevision = "";
+  let evaluationMs = 0;
+  let seen = "";
+  const brush = new LineLoop(
+    new BufferGeometry().setFromPoints(
+      Array.from(
+        { length: 65 },
+        (_, i) =>
+          new Vector3(Math.cos((i / 64) * Math.PI * 2), 0, Math.sin((i / 64) * Math.PI * 2)),
+      ),
+    ),
+    new LineBasicMaterial({ color: 0xe1f4bb, depthTest: false }),
+  );
+  brush.visible = false; // engine-override: this target-dependent LineLoop is not a mesh handled by prewarm.
+  const spline = new Line(
+    new BufferGeometry(),
+    new LineBasicMaterial({ color: 0xd9efb9, depthTest: false }),
+  );
+  function clearWater(): void {
+    if (!water) return;
+    ctx.scene.remove(water);
+    water.geometry.dispose();
+    const materials = Array.isArray(water.material) ? water.material : [water.material];
+    for (const material of materials) material.dispose();
+    water = undefined;
+  }
+  function frame(): void {
+    if (!mesh) return;
+    mesh.geometry.computeBoundingSphere();
+    const sphere = mesh.geometry.boundingSphere;
+    if (!sphere) throw new Error("Terrain bounds unavailable");
+    controls.target.copy(sphere.center);
+    const distance =
+      (sphere.radius / Math.sin(((ctx.camera as PerspectiveCamera).fov * Math.PI) / 360)) * 1.15;
+    ctx.camera.position
+      .copy(sphere.center)
+      .add(new Vector3(0.7, 0.65, 1).normalize().multiplyScalar(distance));
+    ctx.camera.up.set(0, 1, 0);
+    controls.update();
+  }
+  class EditorScene extends Scene<EditorState> {
+    static override readonly initialState = initialState;
+    override enter(context: ICtx<EditorState>): void {
+      ctx = context;
+      ctx.add(ctx.camera);
+      ctx.scene.background = new Color(0x9dc2d2);
+      ctx.scene.fog = new FogExp2(0x9dc2d2, 0.0008);
+      ctx.add(new HemisphereLight(0xd6e9ef, 0x403c2e, 1.2));
+      const sun = ctx.add(new DirectionalLight(0xffedd4, 2.8));
+      sun.position.set(-180, 240, 120);
+      ctx.add(brush);
+      ctx.add(spline);
+      ctx.renderer.domElement.classList.add("render-canvas");
+      controls = new OrbitControls(ctx.camera, ctx.renderer.domElement);
+      controls.enableDamping = true;
+      controls.enableRotate = true;
+      controls.mouseButtons.LEFT = null; // Left drag authors terrain; right drag navigates.
+      ctx.beforeRender(() => {
+        if (!mesh) return;
+        ctx.state.set({ renderedFrames: ctx.state.getState().renderedFrames + 1 });
+        if (!requestedRevision || seen === requestedRevision) return;
+        seen = requestedRevision;
+        mesh.userData.revision = seen;
+        ctx.state.set({ renderedRevision: seen });
+        ctx.state.set({ renderedCount: ctx.state.getState().renderedCount + 1 });
+        ctx.state.set({ evaluationMs });
+      });
+      ctx.entities.add("terrain-editor", {
+        debug: () => ({
+          ...ctx.state.getState(),
+          terrainVertices: mesh?.geometry.getAttribute("position").count ?? 0,
+        }),
+      });
+    }
+    override update(_context: ICtx<EditorState>, dt: number): void {
+      elapsed += dt;
+      sea?.advance(elapsed);
+      controls.update();
+    }
+  }
+  const game = defineGame<EditorState>({
+    container: host,
+    camera: { projection: "perspective", fov: 60, far: 5000 },
+    initialState,
+    plugins: [playtest()],
+    render: { preferWebGPU: true },
+    scenes: { editor: EditorScene },
+    start: "editor",
+  });
+  await game.start();
+  return {
+    backend: "ThreeNative · WebGPU",
+    update(state): void {
+      const baked = bakeMesh(state, { palette: terrainPalette });
+      if (!baked.colors) throw new Error("Editor surface colours missing");
+      const data = {
+        size: state.size,
+        resolution: state.resolution,
+        heights: Array.from(state.height),
+        colors: Array.from(baked.colors),
+        waterLevel: state.waters.find((w) => w.kind === "ocean")?.level ?? null,
+      };
+      const next = createTerrain(data).mesh as Mesh<BufferGeometry, MeshStandardMaterial>;
+      next.material.wireframe = mode === "wire";
+      if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
+      const nextWater = data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
+      if (mesh) {
+        ctx.scene.remove(mesh);
+        mesh.geometry.dispose();
+        mesh.material.dispose();
+      }
+      clearWater();
+      mesh = next;
+      ctx.add(mesh);
+      terrain = state;
+      if (nextWater) {
+        water = nextWater;
+        ctx.add(water);
+      }
+      ctx.state.set({ vertexCount: mesh.geometry.getAttribute("position").count });
+      const positions = mesh.geometry.getAttribute("position");
+      let heightSum = 0;
+      for (let i = 0; i < positions.count; i++) heightSum += positions.getY(i);
+      ctx.state.set({ heightSum });
+      if (first) {
+        first = false;
+        frame();
+      }
+    },
+    pick(clientX, clientY) {
+      if (!mesh) return null;
+      const box = ctx.renderer.domElement.getBoundingClientRect();
+      const hit = ctx.raycast({
+        screen: new Vector2(clientX - box.left, clientY - box.top),
+        targets: [mesh],
+      });
+      return hit ? [hit.point.x, hit.point.y, hit.point.z] : null;
+    },
+    setMode(value): void {
+      mode = value;
+      if (mesh) mesh.material.wireframe = value === "wire";
+    },
+    setBrush(value): void {
+      brush.visible = !!value && !!terrain;
+      if (!value || !terrain) return;
+      const hit = ctx.raycast({
+        origin: new Vector3(value.at[0], 10000, value.at[1]),
+        direction: new Vector3(0, -1, 0),
+        targets: mesh ? [mesh] : [],
+      });
+      if (!hit) {
+        brush.visible = false; // engine-override: no terrain target exists; prewarm handles meshes, not this LineLoop. // engine-override: this target-dependent LineLoop is not a mesh handled by prewarm.
+        return;
+      }
+      brush.position.set(value.at[0], hit.point.y + 0.2, value.at[1]);
+      brush.scale.setScalar(value.radius);
+    },
+    showSpline(points): void {
+      spline.geometry.dispose();
+      spline.geometry = new BufferGeometry().setFromPoints(
+        points.map((p) => new Vector3(p[0], p[1] + 0.3, p[2])),
+      );
+    },
+    setNavigation(enabled): void {
+      controls.mouseButtons.LEFT = enabled ? 0 : null;
+    },
+    setView(value): void {
+      if (!mesh) return;
+      frame();
+      if (value === "top") {
+        const distance = ctx.camera.position.distanceTo(controls.target);
+        ctx.camera.position.copy(controls.target).add(new Vector3(0, distance, 0));
+        ctx.camera.up.set(0, 0, -1);
+      }
+      controls.update();
+    },
+    frame,
+    inspect(): EditorState {
+      return { ...ctx.state.getState() };
+    },
+    noteRevision(revision, ms): void {
+      requestedRevision = revision;
+      evaluationMs = ms;
+    },
+    dispose(): void {
+      clearWater();
+      mesh?.geometry.dispose();
+      mesh?.material.dispose();
+      brush.geometry.dispose();
+      brush.material.dispose();
+      spline.geometry.dispose();
+      spline.material.dispose();
+      controls.dispose();
+      game.stop();
+    },
+  };
+}

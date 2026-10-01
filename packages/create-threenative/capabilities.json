@@ -6579,6 +6579,74 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "browser authoring only; createView and materialColours are required game choices"
+      ],
+      "example": "await mountTerrainEditor({ createView: createEditorView, materialColours: terrainPalette });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["createView owns the renderer scene, materials, lighting and camera"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export async function mountTerrainEditor(options: { … }",
+      "situations": ["open the terrain brush and layer GUI around game-owned rendering"],
+      "summary": "Mount recovered terrain controls around the project-owned ThreeNative view.",
+      "supersedes": [],
+      "symbol": "mountTerrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "optional tooling; only subscribe/mount touches DOM; stale revisions fail explicitly"
+      ],
+      "example": "const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "class",
+      "overrides": ["editorUrl is the activation-returned project URL"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export class TerrainEditorController { … }",
+      "situations": ["inspect and atomically edit the terrain editor from an agent"],
+      "summary": "HTTP controller for the project-local terrain editor.",
+      "supersedes": [],
+      "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "dev tooling only; serve a project-owned /terrain-editor/index.html; no runtime import"
+      ],
+      "example": "const editor = terrainEditor({ documentPath: resolve(\"terrain/world.json\") });",
+      "importPath": "@threenative/terrain/editor/server",
+      "kind": "function",
+      "overrides": ["documentPath and optional configured viewerUrl belong to the project"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain vite"],
+      "signature": "export function terrainEditor(options: { … }",
+      "situations": ["share terrain recipe edits between an agent and the live terrain editor"],
+      "summary": "Mount the optional terrain document API on an existing loopback Vite server.",
+      "supersedes": [],
+      "symbol": "terrainEditor"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Node authoring only; documentPath is a configured absolute regular file; input is bounded to 64 MiB"
+      ],
+      "example": "const document = new TerrainEditorDocument(\"/project/terrain/world.json\"); const snapshot = document.snapshot();",
+      "importPath": "@threenative/terrain/editor/server",
+      "kind": "class",
+      "overrides": ["the project chooses its document path; revisions come from validated content"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export class TerrainEditorDocument { … }",
+      "situations": ["validate atomic revision-based project-local terrain document edits"],
+      "summary": "Project-local terrain document authority; no renderer or game dependency.",
+      "supersedes": [],
+      "symbol": "TerrainEditorDocument"
+    },
+    {
+      "aliases": [],
       "constraints": ["creates only geometry; the caller owns its material, scene and disposal"],
       "example": "const geometry = toGeometry(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));",
       "importPath": "@threenative/terrain/three",

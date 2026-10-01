@@ -375,8 +375,12 @@
       "symbols": {}
     },
     "@threenative/terrain": {
-      "exports": [".", "./package.json", "./three"],
+      "exports": [".", "./editor", "./editor/server", "./package.json", "./three"],
       "symbols": {
+        "@threenative/terrain/editor/server#terrainEditor": "export function terrainEditor(options: { … }",
+        "@threenative/terrain/editor/server#TerrainEditorDocument": "export class TerrainEditorDocument { … }",
+        "@threenative/terrain/editor#mountTerrainEditor": "export async function mountTerrainEditor(options: { … }",
+        "@threenative/terrain/editor#TerrainEditorController": "export class TerrainEditorController { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
         "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",
         "@threenative/terrain#bakeTerrain": "export function bakeTerrain( state: ITerrainState, { … }",
