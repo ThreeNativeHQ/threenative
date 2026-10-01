@@ -1153,6 +1153,7 @@ export type {
  * @situation delay an enemy patrol transition
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
+ * @situation a countdown timer: end the level when its time limit runs out
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

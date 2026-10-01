@@ -635,6 +635,14 @@
       "source": "template:rain#Ownership",
       "expect": ["createStormRain", "GPUParticles3D"],
       "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.round-time-limit",
+      "query": "countdown timer that ends the round",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["Scheduler"],
+      "reject": ["Area3D"]
     }
   ]
 }

@@ -2672,7 +2672,8 @@
       "situations": [
         "delay an enemy patrol transition",
         "run a callback every simulation tick",
-        "tween a numeric property with a game-owned curve"
+        "tween a numeric property with a game-owned curve",
+        "a countdown timer: end the level when its time limit runs out"
       ],
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],

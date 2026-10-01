@@ -2078,7 +2078,7 @@ defineGame({ display: { maxFps: 60 }, scenes: { Play } });
 export class Scheduler { … }
 ```
 
-- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve
+- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve · a countdown timer: end the level when its time limit runs out
 - **Constraints:** dispose returned handles when the owning scene exits · ease receives progress in the range 0 to 1 and its return value is the interpolation factor
 
 ```ts
