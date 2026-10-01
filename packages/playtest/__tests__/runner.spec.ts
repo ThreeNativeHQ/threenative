@@ -487,14 +487,14 @@ test("--allow-software accepts the fallback deliberately", () => {
   expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
 });
 
-// The browser's software adapter is a silent fallback, so it fails. A native host's is not: the
-// host reports its own `adapter.info`, and the hosted device lanes have no hardware to reach for
-// (the emulator is configured `-gpu swiftshader_indirect`, the Linux runners bind llvmpipe, the
-// Windows runner has no GPU and answers `Microsoft Basic Render Driver`). Both of these adapters
-// came out of a real CI failure with every assertion green, which is what a target-blind error here
-// looks like. The fact is still recorded, still labelled, and still carried on the report.
+// A native host reporting its own software adapter is not a licence: the target only says which
+// machine asked, not that anyone accepted the answer. Hosted device lanes have no hardware to
+// reach for (the emulator is configured `-gpu swiftshader_indirect`, the Linux runners bind
+// llvmpipe, the Windows runner answers `Microsoft Basic Render Driver`), and a generic local
+// desktop run can hit the same wall by accident. So the error stands on every target, and the
+// hosted lanes say `TN_PLAYTEST_ALLOW_SOFTWARE=1` where they declare their own acceptance.
 test.each(["android", "desktop", "ios"] as const)(
-  "a software adapter the %s host reported itself is labelled, not failed",
+  "a software adapter the %s host reported itself fails unless it was accepted",
   (target) => {
     const result = reportWithAdapter(
       { device: "Microsoft Basic Render Driver", vendor: "microsoft" },
@@ -502,11 +502,30 @@ test.each(["android", "desktop", "ios"] as const)(
     );
     const diagnostic = result.diagnostics.find(({ code }) => code === "TN_PLAYTEST_SOFTWARE_ADAPTER");
 
-    expect(diagnostic?.severity).toBe("warning");
+    expect(diagnostic?.severity).toBe("error");
     expect(diagnostic?.message).toContain("Microsoft Basic Render Driver");
-    // `reportWithAdapter`'s scenario asserts nothing, so it stays red on
-    // TN_PLAYTEST_SCENARIO_NO_ASSERTIONS. The claim is that the adapter no longer decides it.
-    expect(errorCodes(result)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+    expect(errorCodes(result)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+    // The acceptance only removes the error; the fact stays on the report and still classifies.
+    expect(result.capture?.adapter).toEqual({
+      device: "Microsoft Basic Render Driver",
+      vendor: "microsoft",
+    });
+  },
+);
+
+test.each(["android", "desktop", "ios"] as const)(
+  "a %s host that declared --allow-software passes with the adapter labelled",
+  (target) => {
+    const result = reportWithAdapter(
+      { device: "Microsoft Basic Render Driver", vendor: "microsoft" },
+      { ...CONFIG, allowSoftwareAdapter: true, target },
+    );
+
+    expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+    expect(classifyAdapter(result)).toEqual({
+      adapterClass: "software",
+      softwareAdapter: "Microsoft Basic Render Driver",
+    });
   },
 );
 

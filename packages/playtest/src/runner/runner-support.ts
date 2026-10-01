@@ -379,29 +379,13 @@ export function buildReport(
   // Scoped to WebGPU because that is where the fallback is silent: a WebGL context reports its
   // software renderer in the same provenance field, but the browser never pretends otherwise
   // and the repo already runs WebGL fixtures headless on purpose.
-  //
-  // And on the browser target, because that is the only target where the fact is a silent
-  // fallback. A native host reports its own `adapter.info` through `nativeCaptureProvenance`, and
-  // the hosted device lanes have no hardware to reach for: the Android emulator is configured
-  // with `-gpu swiftshader_indirect`, the Linux runners bind Mesa llvmpipe, the Windows runner has
-  // no GPU at all and answers `Microsoft Basic Render Driver`. Those runs were green while the
-  // device target's capture was empty, and every one of them turned red the moment it carried a
-  // real adapter — three CI jobs failing on a fact they cannot change and cannot avoid, with every
-  // assertion green. So on a device target the same fact is recorded and labelled instead of
-  // failed: `classifyAdapter` still reads the identity, `assert.renderChain.perAdapter` still takes
-  // the software branch, and `capture.adapter` still ships on the report. A browser run that lands
-  // on a software rasteriser without saying so is still an error.
   if (softwareAdapter !== undefined && config.allowSoftwareAdapter !== true) {
-    const nativeHost = config.target === "android" || config.target === "desktop" || config.target === "ios";
     allDiagnostics.push({
       code: "TN_PLAYTEST_SOFTWARE_ADAPTER",
-      message: nativeHost
-        ? `The native host's own adapter.info named the software adapter '${softwareAdapter}'. Nothing fell back silently — this is the adapter this machine has — so every pixel in this run is a CPU rasteriser's and this lane is not render evidence.`
-        : `WebGPU was served by a software adapter: '${softwareAdapter}'. Nothing errored, so every result in this run is a CPU rasteriser's.`,
-      severity: nativeHost ? "warning" : "error",
-      suggestion: nativeHost
-        ? "Run the lane on a machine with a hardware adapter before reading any pixels; --allow-software / TN_PLAYTEST_ALLOW_SOFTWARE=1 labels the run's startup rule as compile-settled."
-        : "Run with --headed under a display and --browser-recipe webgpu so Chromium reaches the GPU driver, or pass --allow-software to accept the fallback deliberately.",
+      message: `WebGPU was served by a software adapter: '${softwareAdapter}'. Nothing errored, so every result in this run is a CPU rasteriser's.`,
+      severity: "error",
+      suggestion:
+        "Run with --headed under a display and --browser-recipe webgpu so Chromium reaches the GPU driver, or pass --allow-software to accept the fallback deliberately.",
     });
   }
   if (captureFailure !== undefined) {
