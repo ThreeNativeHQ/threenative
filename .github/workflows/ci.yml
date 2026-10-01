@@ -470,7 +470,14 @@ jobs:
         run: |
           mkdir -p artifacts/native-performance/native-linux-contract
           set +e
-          timeout 90s node packages/runtime-native/scripts/profile-production.mjs \
+          # 180 s, not 90: this collector packs every workspace package, scaffolds and installs a
+          # game, builds it, then runs startup and the workload. Measured phase by phase on a
+          # 24-core machine that is already faster than a hosted runner: 15.7 s stage, 36.1 s
+          # build, 21.9 s startup, 23.5 s workload, 103 s in all; an unbounded CI run took 90.55 s.
+          # The old 90 s cap sat under the floor and killed a healthy run at exactly 90 s (exit
+          # 124). Only this outer watchdog moves: every runtime, assertion, sample and duration
+          # budget inside the collector is unchanged, so a hang still dies, just not a slow run.
+          timeout 180s node packages/runtime-native/scripts/profile-production.mjs \
             --profile production --target desktop --duration 1 --cold-starts 1 --repetitions 1 --warmup 1 \
             --hosted-software \
             --prebuilt-artifact "$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral" \
