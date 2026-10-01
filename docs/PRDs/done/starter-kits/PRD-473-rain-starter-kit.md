@@ -183,6 +183,34 @@ look differences were found by this comparison and fixed: a transposed fbm rotat
 puddles and cloud shapes drifted; desktop difference 1.16% → 0.41%), a bloom pass that never got its
 resolution and bloomed every highlight mirrored about the horizon, and the sky sampled upside down.
 
+## Sandbox demo — Storm Chaser (2026-10-01)
+
+A cold, user-like game on the kit, outside the workspace: `sandbox/rain-demo` in the shared sandbox repo
+(commit `fbc56a8`, local, not pushed), scaffolded with `--template rain` from tarballs packed off feat/rain
+at 74c910a4f (`sandbox/.packages/rain/*-rain-<sha>.tgz`). The game on top: log readings at two survey lamps,
+then reach the field station within 75 s; a lightning strike within 500 m while you are in the open costs
+one of three nerves, and a lamp post is shelter. Rules `src/chase.ts`, HUD `src/ui/ChaseHud.tsx`, light
+pillars `src/render/beacons.ts` (the engine's `Billboard3D`), wired through the kit's `strike()` and frame.
+
+| Scenario | Target | Result |
+| --- | --- | --- |
+| `playtests/chase-win.playtest.json` | browser, headed WebGPU (NVIDIA) | pass — lamp 1, lamp 2, station at their labelled steps; won with 71.3 s left; player moved 85.1 m; zero diagnostics |
+| `playtests/chase-lose.playtest.json` | browser, headed WebGPU (NVIDIA) | pass — three strikes in the open: nerve 3 → 0, lost (`nerve`); "Run it again" restores 3 and `playing` |
+| `native-playtests/chase-win.playtest.json` | `--target desktop`, feat/rain's built `mystral` host | pass — same route and outcome; flashes are suppressed there (the web view reports reduced motion), so the round is the clock and the route |
+
+Friction (`sandbox/rain-demo/FRICTION.md`), fixed at its layer in feat/rain 1b326f19f: capability search
+answered "countdown timer that ends the round" with `TracerPool3D` (the `Scheduler` now carries that
+situation; recall row `rain.round-time-limit` red → green); every scaffold's `.gitignore` now ignores the
+asset pipeline's compiled outputs (only starter had such rules, and missed the bake receipt; a new scaffold
+test was red for rain); and the kit's `AGENTS.md` now says where gameplay attaches. Not fixable in a lane:
+`pnpm build:desktop` fails at its last step on the unpublished 0.3.4 prebuilt (`prebuilt-lock.json` HTTP
+404), so the native run used the engine checkout's host. Captures:
+[desktop](../../../verification/PRD-473/sandbox-desktop-1440x900.jpg),
+[tablet](../../../verification/PRD-473/sandbox-tablet-1024x768.jpg),
+[mobile](../../../verification/PRD-473/sandbox-mobile-390x844.jpg),
+[gameplay](../../../verification/PRD-473/sandbox-gameplay-1440x900.jpg),
+[native desktop](../../../verification/PRD-473/sandbox-native-desktop-1280x720.jpg).
+
 ## Blocked on
 
 - The template's human visual score in `docs/verification/visuals/scores.json` is the owner's taste call
