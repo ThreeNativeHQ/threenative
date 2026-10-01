@@ -12,14 +12,15 @@ for (const [left, right, label] of [
   const a = inspectCapture(readFileSync(resolve(directory, `${left}.png`)));
   const b = inspectCapture(readFileSync(resolve(directory, `${right}.png`)));
   assert(
-    a.width === 1280 && a.height === 720 && b.width === a.width && b.height === a.height,
-    "Shared scenario capture dimensions changed",
+    a.width * 9 === a.height * 16 && b.width === a.width && b.height === a.height,
+    "Shared scenario captures must be one 16:9 size",
   );
+  const scale = a.width / 1280;
   let waterPixels = 0;
   let changed = 0;
-  // Camera-matched water region in the shared 1280 x 720 coastal view; exclude white foam.
-  for (let y = 468; y < 700; y++)
-    for (let x = 900; x < 1260; x++) {
+  // Camera-matched water region in the shared 16:9 coastal view, authored at 1280 wide and scaled; exclude white foam.
+  for (let y = Math.round(468 * scale); y < Math.round(700 * scale); y++)
+    for (let x = Math.round(900 * scale); x < Math.round(1260 * scale); x++) {
       const i = (y * a.width + x) * 4;
       if (a.png.data[i + 2] <= a.png.data[i] + 15 || b.png.data[i + 2] <= b.png.data[i] + 15)
         continue;
@@ -30,7 +31,7 @@ for (const [left, right, label] of [
       );
       if (difference > 12) changed++;
     }
-  assert(waterPixels > 10000, `${label}: water region was not observed`);
+  assert(waterPixels > 10000 * scale * scale, `${label}: water region was not observed`);
   assert(
     changed / waterPixels > 0.01,
     `${label}: water did not visibly change (${changed}/${waterPixels})`,
