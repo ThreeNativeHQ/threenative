@@ -244,6 +244,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       };
     };
     ctx.entities.add("ball", {
+      object: ballObject,
       debug: () => {
         const { gap, sink } = ballState();
         const kick = telemetry.kickedAt;
@@ -275,14 +276,19 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       return Math.abs(p.x) < half && Math.abs(p.z) < half ? snow.sample(p.x, p.z).indent : 0;
     };
     ctx.entities.add("crate", {
+      object: crateObject,
       debug: () => ({ load: snowPhysics.loadOf(crate), sink: pressedUnder(crateObject) }),
     });
     ctx.entities.add("log", {
+      object: logObject,
       debug: () => ({ load: snowPhysics.loadOf(log), sink: pressedUnder(logObject) }),
     });
     ctx.entities.add("player", explorer);
+    // The first print of the arrival trail: nothing walks back over it unless steered there.
+    const trailStart = { x: 0.35 * Math.sin(6.4 * 0.7) + 0.165, z: 6.4 };
     ctx.entities.add("snow", {
       debug: () => ({
+        trailPressed: snow.sample(trailStart.x, trailStart.z).indent > 0.01,
         ...snowPhysics.observe(),
         activeCells: snow.activeCells,
         depth: snow.depth,

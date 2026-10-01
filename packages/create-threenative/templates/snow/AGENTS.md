@@ -1,11 +1,11 @@
-# AGENTS.md — __PROJECT_NAME__ sailing
+# AGENTS.md — __PROJECT_NAME__ snow
 
 Instructions for the AI agent in this game. `CLAUDE.md` mirrors this file; edit `AGENTS.md`.
 
 ## Ownership
 
-ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns ship handling, the sea's look and tuning, `Buoyancy3D`, course order, HUD,
-water, and look; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
+ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics bindings, and the state bridge. This repository owns the explorer, the boot print, the glade, the weather, the HUD and the
+look; `src/game.ts` is portable and React mounts from `src/main.ts`. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way.
 
 ## Start every change
 
@@ -14,8 +14,8 @@ water, and look; `src/game.ts` is portable and React mounts from `src/main.ts`. 
    matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
 2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
-3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
-   this kit uses its analytic wave field and measured hull points instead.
+3. Treat returned constraints as binding. This kit needs no navmesh and imports none, so it runs
+   on every target; adding `@threenative/physics/navigation` would make it web and desktop only.
 4. If a build, import, device, or blank frame fails, run `npx threenative doctor` and
    `npx @threenative/playtest doctor`; missing observations are not zero.
 For *"a bullet passes through a wall"*, `RigidBody3D` defaults to continuous collision; `continuousCollision` is the named per-body override, and `body.continuousCollision` reports the effective setting on web/native.
@@ -44,37 +44,30 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 ```sh
 pnpm dev
 pnpm build
-pnpm build --target desktop
+pnpm test
 pnpm test:native
 ```
 
-`Ship.ts` uses `RigidBody3D` plus `Buoyancy3D`; apply forces before fixed-step simulation.
+The snow is one `SnowField` (`@threenative/core/world`) over one `Heightfield` built in `src/terrain.ts`: indentation, bank, compaction and disturbance composed into the canonical surface that queries, the drawn mesh and the collider all read. Never keep a second height grid.
+`attachSnowPhysics` (`@threenative/physics`) owns the snow collider: each fixed step it reads the solver's contacts for the ball, crate and log, presses each body's own shape with its solved load, and installs the changed surface before the next step. Call `step` from `afterPhysics`, once; `observe()` reports `colliderError` and `loadProvenance` (load is a solver estimate). A kinematic `CharacterBody3D` makes no contact load, so `src/entities/Explorer.ts` plants `src/render/bootPrint.ts` itself with `snow.stamp`, only while `grounded`.
 
-The sea is `SpectralOcean`, added with `ctx.add` so the compute registry runs its passes. It draws nothing: `src/render/ocean.ts` owns the mesh, the material and every colour, and is the only file to edit for the water's look. The cascade buffers the vertex stage reads are the ones the CPU height query is copied from — summed onto one small grid and read back, not sampled a second way — so the hull floats on the surface that is drawn. Two fields would leave the ship riding water nothing renders, with every assertion here still green.
-
-Three details are load-bearing. The material is `MeshStandardNodeMaterial`, not a basic one: a basic material takes no lights, so the sun on the water has to be faked with a `pow()` term, and the sea cannot agree with the hull floating on it. `normalNode` overrides `normalView`, so feed it a view-space normal or the reflection becomes a column of glare that follows the camera. And the CPU height is a coarse throttled copy: `readbackResolution` over the largest `patchSize` is the spacing between samples, and make that spacing wider than the waves and the ship sits at a smoothed mean sea level, hanging over its own troughs. It is also `undefined` until the first copy lands, which `Ship.ts` handles by falling back to mean sea level. `WaveField.sample(x, z, time)` returns height and analytic normal and allocates to do it; `heightAt(x, z, time)` returns the height alone from the same arithmetic, agreeing exactly, with no warp jacobian, no normalisation and no allocation — ask it for floats, splash and wake queries, and keep `sample` where you shade with the normal. `RippleField` is the sea answering back: a finite patch carrying only the disturbance, so add its `heightAt` to the sea height and its `foamAt` to the foam and never use it in place of a sea. It steps at display rate or at the CFL stability limit for its resolution and celerity, whichever is smaller, so `new RippleField({ resolution, size })` needs no other option; `speed`, `damping`, `foamHalfLife`, `current`, `step` and `maxSteps` override that on the same object, and a `step` above the limit is rejected with the limit in the message rather than quietly clamped. Its rim absorbs, so `recenter` it on whatever the player is watching; it carries no obstacle mask, because a mask is only right for a body that never moves.
-
-Tune the sea state in `src/render/ocean.ts`, hull points in `src/entities/Ship.ts`, and course
-order in `src/scenes/Sailing.ts`. The single React HUD reads published state; keep
-`playtests/survives.playtest.json` as smoke proof and native scenarios honest.
-
-On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts`
-adds a left movement stick whose vector `Sailing` passes to `Ship`; keyboard is the desktop fallback.
+Look lives in `src/render/`: `snowSurface.ts` (TSL material, compaction view, redraws `takeDirtyRegion`), `weather.ts` (`GPUParticles3D` snowfall and powder), `explorer.ts`, `scenery.ts`, `props.ts`. Tune response with `depth`/`hardness` and the refill in `src/scenes/Snow.ts`. The React HUD reads `GameState` and sends intents; `src/commands.ts` routes panel verbs into the same functions as the keys. Keep `playtests/survives.playtest.json` as smoke proof and `playtests/snow-physics.playtest.json` honest: it proves drop, settle and rolling track.
+On a touch-primary device (`isMobile() && isTouchscreenAvailable()`), `src/render/touch-controls.ts` adds a left movement stick; keyboard is the desktop fallback.
 
 ## Portable authoring contracts
 
 Leave `assets` absent: the cook selects target-decodable passes, with `models.sharedImages: true` deduplicating images. `sharedImages: false` embeds duplicate copies; `models.compact` (default `{ flatten: true, join: true, instance: true }`) flattens the scene graph, merges primitives by material and batches a mesh shared by several nodes as `EXT_mesh_gpu_instancing` — all lossless, keeping any node matching `protectedPattern` (or named in `protectedNames`), an animation target, or a skin joint individually addressable; `compact: false` ships the scene graph as authored. `models: "none"` / `textures: "none"` / `audio: "none"` skip those passes and report uncooked bytes. Android/iOS currently skip compression and model dedupe. `assets.exclude` defaults to `[]`; source-relative globs (for example `["unused/**"]`) omit matching files and report saved bytes. `assets.budget` accepts `{ uncooked?: number | "none", total?: number | "none" }`, default `{ uncooked: 64_000_000, total: "none" }`: only bytes left uncooked where cooking was possible count toward `uncooked`. A number sets that ceiling; `"none"` disables both gates. Either disabled gate still reports bytes. Automatic texture cooking retains unaligned source images unchanged and reports `block-size`; those bytes still count toward the uncooked budget. An explicit compression codec override must satisfy four-pixel block alignment; `codec: "none"` opts out. Cooking never silently resizes an image to fix alignment.
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
-Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable. Generated conventions call `normaliseToMetres` for authored ship scale; buoyancy owns water contact.
-`input.vector("move").y` is +up and means forward wind; use one explicit `-move.y` conversion.
+Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable. The fixed step is the snow's clock: deposition, footsteps and contacts never read the frame rate.
+`input.vector("move").y` is +up and means forward; `Snow.ts` turns it into a camera-relative direction.
 Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive `AnimationPlayer` beside its entity. `ctx.goto(name)` rebuilds without resetting game
 state; from a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 `src/render/quality.ts` owns `low`, `medium`, `high`; `isMobile()` chooses `low`, otherwise `high`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The bridge flushes about 100 ms; keep speed/lap in state and frame feedback in Three.js.
+the source. The bridge flushes about 100 ms; keep readouts in state and frame feedback in Three.js.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's

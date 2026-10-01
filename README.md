@@ -122,6 +122,7 @@ lifecycle.
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |
 | `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
+| `snow` | Deformable snow footprints, a ball that carves its own track, blizzard weather |
 
 Details in [`create-threenative`](packages/create-threenative/README.md).
 

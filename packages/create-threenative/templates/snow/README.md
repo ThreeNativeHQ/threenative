@@ -1,22 +1,19 @@
-# Sailing starter
+# Snow glade starter
 
-This starter is a small bluewater passage: steer the ship through four buoys in order while a
-simulated sea moves underneath the hull. `SpectralOcean` inverse-transforms cascaded wave spectra
-on the GPU every frame; the same field displaces the surface that is drawn and answers the height
-query `Buoyancy3D` measures the hull against, so the ship floats on the water you can see.
-`src/entities/Ship.ts` is deliberately ordinary game code, so handling, hull points, density, and
-course rules are easy to replace.
+A small winter glade where the snow remembers. The explorer leaves boot prints that sink with
+their weight; a ball dropped into the powder settles into the crater it makes, and pushed, it rolls
+and carves a connected track. A crate and a fallen log press their own shapes. Switch on the
+blizzard and fresh snow slowly fills every track.
 
-Controls: drag the left touch stick to steer and sail forward, or use WASD/the arrow keys; `C` is a
-capsize/fail test; `R` restarts.
+`SnowField` stores the deformation and `attachSnowPhysics` connects it to real Rapier contacts, so
+the ball rests on the same surface you see. Everything that decides how it looks — the snow
+material, the boot, the explorer, the forest, the flakes — is ordinary source in `src/render/`.
 
-## Rendering credit
+Controls: WASD or the arrow keys to walk (Shift to run), drag to orbit and scroll to zoom; `F` drops
+the ball and `G` pushes it; `B` blizzard, `C` camera view, `V` compaction view, `P` auto-explore,
+`R` clears every footprint, `M` sound. On a touch screen, drag the left stick.
 
-`src/render/sky.ts`'s organization is adapted from
-[VictorZakharov/beautiful-water](https://github.com/VictorZakharov/beautiful-water), released
-under the MIT License. The water is no longer adapted from it: `src/render/ocean.ts` is written
-against `SpectralOcean` and is original to this starter, as are the gameplay, materials, palette,
-geometry, and ThreeNative integration.
+The crunch and wind clips in `assets/` are generated noise; replace either with a recording.
 
 ## Commands
 
@@ -25,4 +22,5 @@ pnpm dev
 pnpm build
 pnpm typecheck
 pnpm test
+pnpm test:native
 ```

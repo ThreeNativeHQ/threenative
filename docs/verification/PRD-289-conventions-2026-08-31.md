@@ -23,6 +23,7 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:7` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | shooter | `src/conventions.ts:43` | `src/conventions.ts:32` | `src/conventions.ts:42` | N/A — no skinned or animated asset is loaded |
+| snow | N/A — the procedural explorer plants each boot on the canonical snow surface (`src/entities/Explorer.ts`), and no authored model is grounded | N/A — every body is built from primitives in metres; no authored model is loaded | N/A — the template has no held object | N/A — the gait is procedural IK, not an AnimationClip |
 | starter | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — the native proof asset is static and has no AnimationClip |
 
 Updated 2026-09-02: the `shooter` kit became first person. Its `GroundSnap` now measures the legs

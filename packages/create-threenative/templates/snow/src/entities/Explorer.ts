@@ -62,6 +62,8 @@ function paceThrough(depth: number, compaction: number, running: boolean): numbe
 export class Explorer {
   readonly body: CharacterBody3D;
   readonly model: ExplorerModel;
+  /** What a playtest or camera tracks: the drawn explorer, not the collision capsule. */
+  readonly object: Object3D;
   readonly position = { x: 0, y: 0, z: 0 };
   heading = Math.PI;
   speed = 0;
@@ -95,6 +97,7 @@ export class Explorer {
       snapToGround: 0.3,
     });
     this.model = new ExplorerModel(materials);
+    this.object = this.model.root;
     this.position.x = start.x;
     this.position.z = start.z;
     this.position.y = snow.heightAt(start.x, start.z) - 0.07;

@@ -125,6 +125,7 @@ const TEMPLATE_NAMES = [
   "racing",
   "sailing",
   "shooter",
+  "snow",
   "starter",
 ] as const;
 const BRIEF_NAMES = [
