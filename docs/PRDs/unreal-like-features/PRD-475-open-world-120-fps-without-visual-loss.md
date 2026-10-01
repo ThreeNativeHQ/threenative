@@ -1,6 +1,6 @@
 # PRD-475 — Machinefall's open world at 120 fps with no visual loss
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Complexity:** 5 (MEDIUM) — 6–10 engine files (+2), engine and Machinefall release separately (+2), GPU-pass state (+1 risk); risk override: none
 **Owner:** João
 **Depends on:** PRD-473 (merged at 75% in #375 as `a602467db`)
@@ -82,11 +82,12 @@ Risks:
 ## Execution Phases
 
 #### Phase 1: Sync Machinefall with develop and record the baseline
-**Status:** NOT STARTED
 **Files:** Machinefall `apps/client/package.json`, `pnpm-lock.yaml`, and the re-cooked `public/world/*`; `docs/verification/runtime-perf-state.md` (perf findings update in place).
 
-- [ ] Machinefall runs develop's engine: the core and assets tarballs packed from develop `a602467db` or later are pinned, the world is re-cooked, and map-walk passes. proof: `pnpm test:scenes` (map-walk) in Machinefall, 0 console errors.
-- [ ] The baseline is recorded in `docs/verification/runtime-perf-state.md`. It covers the CPU phases p50/p95 and the `gpuMain/gpuShadow/gpuOther/gpuCompute` p50/p95, with draws and triangles per pass, over 3 quiet-machine map-walk runs. The same-pose reference captures (4 walk, 4 views) are saved as the AC-3 `--before` directory. proof: `node packages/playtest/dist/runner/cli.js perf` on the runs.
+- [x] Machinefall runs develop's engine: the core and assets tarballs packed from develop `a602467db` or later are pinned, the world is re-cooked, and map-walk passes. proof: `pnpm test:scenes` (map-walk) in Machinefall, 0 console errors. — machinefall `feat/prd-475-develop-engine` `2ba8f21`. Core 0.3.4 and assets 0.3.5 tarballs from `a602467db`; installed dist tree hash equals the engine build. map-walk ran 5 times on nvidia/turing with 0 console errors; 4 green, 1 red on `state.failures` 1, the unlogged cell failure in Phase 2. map-views is green with 4 distinct poses.
+- [x] The baseline is recorded in `docs/verification/runtime-perf-state.md`. It covers the CPU phases p50/p95 and the `gpuMain/gpuShadow/gpuOther/gpuCompute` p50/p95, with draws and triangles per pass, over 3 quiet-machine map-walk runs. The same-pose reference captures (4 walk, 4 views) are saved as the AC-3 `--before` directory. proof: `node packages/playtest/dist/runner/cli.js perf` on the runs. — 3 runs at load 3.4–3.8: frame p50 12.3 / p95 26.3 ms, CPU render 12.1 / 26.1 ms, GPU 7.4 / 11.3 ms (main 5.6, shadow 1.1), draws main 318 and shadow 200. References are in `artifacts/prd-475/reference/` (gitignored): 4 walk and 4 views.
+
+**Status:** DONE. The CPU render phase leads: render p50 is 1.6× GPU p50, and update/overlay/ui read 0. Phase 2 therefore starts with CPU attribution.
 
 **Verification:** the scenario run plus the perf report. The ranking of costs decides the order of Phase 2.
 
@@ -98,6 +99,7 @@ Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 m
 
 - [ ] Shadow passes: map-walk `gpuShadow` p95 ≤ 2.5 ms. The shadow pass's share of CPU render time halves against the baseline, with a red-green spec on the mechanism and AC-3's A/B at the four walk poses. proof: `pnpm exec vitest run packages/core/__tests__/<shadow spec>` plus `playtest perf`.
 - [ ] Main pass: map-walk `gpuMain` p95 ≤ 5 ms, with a red-green spec on the mechanism and the same A/B. proof: the mechanism's spec plus `playtest perf`.
+- [ ] A failed world load names itself: `WorldCells` prints the asset or cell and the error behind a `TN_WORLD_CELL_FAILURE` marker instead of only counting it (`world-cells.ts` `#startAssetLoad`, `#startChunkLoad`, `#attachChunks`). proof: a red-green spec in `packages/core/__tests__/` with a rejecting loader.
 - [ ] CPU render phase p95 ≤ 4 ms on map-walk, with a red-green spec on the mechanism and the same A/B. proof: the mechanism's spec plus `playtest perf`.
 
 **Verification:** each cut is measured A/B against the build before it, interleaved and on a quiet machine. A cut that fails its meter, or the visual A/B, is reverted and recorded under Decisions.
