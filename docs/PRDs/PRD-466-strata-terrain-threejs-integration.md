@@ -469,7 +469,7 @@ the supplied HTML alone is not proof of a third-party code license.
 
 ### Phase 2: ThreeNative rendering and matching collision
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 
 **Files:** `examples/strata-terrain-preview/package.json`, existing-template-derived
 build config, `src/game.ts`, `src/world/terrain.ts`, `src/render/terrain.ts`,
@@ -489,6 +489,18 @@ material source. Ocean compute advances every frame without reevaluating terrain
 - [ ] AC-3 [local, actor: implementing agent]: Browser WebGPU play exercises the generated hill/road with matching rendered and physical ground. proof: `pnpm --filter strata-terrain-preview test:terrain:web` — Evidence: pending; planned script invokes the existing playtest runner with `--browser-recipe webgpu`, names the adapter, verifies at least 50 m of character travel and maximum vertical mesh/physics contact error of 0.02 m across asymmetric cell interiors, with no missing observations or failed asset loads.
 - [ ] AC-4 [local, actor: implementing agent]: The same baked terrain scenario runs in the Linux native desktop host. proof: `pnpm --filter strata-terrain-preview test:terrain:desktop` — Evidence: pending; planned script builds/packages through existing native tooling and invokes the runner with `--target desktop --executable ...` and required host args; require the same contact/travel observations, at least 300 frames, a nonblank terrain screenshot, and zero runtime errors. This does not claim an FPS or mobile result.
 - [ ] AC-9 [local, actor: implementing agent]: The coastal ocean mesh visibly consumes the installed spectral simulation in the game scene. proof: AC-3 and AC-4 scenario runs — Evidence: pending; observe changing wave displacement and normals across recorded times, lit material response, and coast masking on browser and desktop, with no silent substitute or missing compute observations.
+
+Phase 2 work in progress: the preview bakes seeded 512 m / 257-vertex forest
+and coastal worlds before startup, consumes only baked arrays in its game graph,
+and builds through the existing desktop bundler. Preview typecheck and desktop
+bundle pass. The browser run remains unverified: headless Chromium selected
+SwiftShader and lost its WebGPU instance, yielding blank captures; a headed
+hardware-adapter run is pending. No blank image is accepted as visual evidence.
+Raw Rapier also reproduces a vertical-ray miss at z=159.99998474121094 near a
+heightfield grid boundary; walking probes compare identical oblique rays in both
+mesh and physics, while the asymmetric fixture retains exact vertical edge/corner
+checks. This does not claim that the dependency's near-boundary vertical miss is
+fixed. Ocean, native scenario and visual coast qualification remain open.
 
 ### Phase 3: Replaceable starter assets and cold-agent workflow
 
@@ -568,3 +580,14 @@ also requires PRD-467; do not describe a runtime-only delivery as editor complet
 It also requires PRD-468; live atmosphere/cameras/imports are part of the request.
 Publishing requires its own
 explicit authorization; packing tarballs and exercising a local install do not.
+
+Scaffold instruction progress (2026-09-30): all ten template AGENTS files link to
+`node_modules/create-threenative/agent-docs/references/terrain-authoring.md`;
+their generated CLAUDE mirrors include the same guidance. The shipped guide
+covers the optional authoring dependency, existing public Terrain/Mask/bake
+imports, stable recipe edits, caller-owned materials, triangle/collision units,
+and keeping evaluation out of the game loop. Template/mirror suites pass 48
+checks (including all ten pristine scaffold typechecks), documentation links pass,
+and the six prescribed documentation suites pass 180 checks. Live editor
+installation/controller instructions and packed editor/scaffold proof remain
+pending; AC-7 stays open until those APIs land.
