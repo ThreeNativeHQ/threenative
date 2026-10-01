@@ -458,7 +458,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
-  starter: "d555ee34f4c37e60673591f5a2c0c5b61a5ca40dff0be0ea58d896cf4898bc8f",
+  // Recomputed 2026-10-01 for PRD-470: the starter ships its realism-effect source again
+  // (`src/render/effects/{lensDistortion,sparkle,gradualBackground}.ts`), so only this tree moves.
+  starter: "c466f700b2c949412934fa8b682f286d0c63be838ec6545cfdb1f4cca5086b6a",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
