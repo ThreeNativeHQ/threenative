@@ -89,11 +89,21 @@ export const SCATTER = {
    * not visible in any count — only in the picture.
    */
   grassCell: 0.55,
-  grassRadiusCells: 30,
-  /** Poppies grow in patches: a patch centre, and a radius around it, in metres. */
-  poppyPatches: 26,
-  poppyPatchRadius: [3.5, 11],
-  poppySpacing: 0.85,
+  grassRadiusCells: 36,
+  /** Metres from the focus at which the meadow is at full density, and where it has thinned to a
+   *  tenth. Inside the plateau every cell is walked; outside the radius none is. */
+  grassFull: 8,
+  grassThin: 19,
+  /**
+   * Poppies grow in patches: a patch centre, and a radius around it, in metres.
+   *
+   * Twenty patches, not thirty-four, and held closer to the focus. Overlap them and they stop being
+   * patches: at thirty-four the colonies merged into one red band across the whole meadow, which is
+   * a field of poppies rather than a meadow that has poppies in it.
+   */
+  poppyPatches: 20,
+  poppyPatchRadius: [2.5, 6.5],
+  poppySpacing: 0.62,
   seed: 466_468,
 } as const;
 
@@ -190,14 +200,27 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
       // Full density out to a third of the radius, thinning to a fifth of that at the edge. A meadow
       // read at eye height is a wall of blades in the first few metres and a suggestion past fifteen,
       // and that is what a distance-weighted density buys over a uniform carpet.
-      const density = Math.max(0.1, 1 - distance / 14);
+      // A plateau, then a ramp. A meadow read at eye height is a wall of blades in the first few
+      // metres and a suggestion past fifteen, and a straight falloff from the focus cannot be both:
+      // it thins the ground under the camera to make the ground at the focus thick, or the reverse.
+      // Inside the plateau every cell is walked, and past `grassThin` a clump is a few pixels tall
+      // and only its silhouette is left — so it thins to a floor and stops.
+      const density = Math.max(
+        0.12,
+        1 -
+          (Math.max(0, distance - SCATTER.grassFull) / (SCATTER.grassThin - SCATTER.grassFull)) *
+            0.88,
+      );
       if (grass() > density) continue;
       const x = cellX + (grass() - 0.5) * cellSize;
       const z = cellZ + (grass() - 0.5) * cellSize;
       if (!inside(x, z, 4) || wet(x, z)) continue;
       const y = clampedHeight(data, x, z);
       if (slopeDegrees(data, x, z) > 30) continue;
-      if (grassWeight(data, x, z) < 0.5) continue;
+      // Half strength over a dirt patch, not none. Grass does grow across a worn path — it is the
+      // path that is thinner, not bare — and the rule that kept every blade off the bake's own dirt
+      // mask is what left those patches as flat brown shapes with a hard edge.
+      if (grassWeight(data, x, z) < 0.22) continue;
       placements.push({
         alignToNormal: false,
         asset: "grass",
@@ -206,7 +229,7 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
         normal: [0, 1, 0],
         position: [x, y, z],
         rotation: grass() * Math.PI * 2,
-        scale: 0.75 + grass() * 0.55,
+        scale: 0.7 + grass() * 0.7,
       });
       counts.grass += 1;
     }
@@ -220,7 +243,7 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
   const patches: { x: number; z: number; radius: number }[] = [];
   for (let p = 0; p < SCATTER.poppyPatches; p += 1) {
     const angle = poppy() * Math.PI * 2;
-    const reach = Math.sqrt(poppy()) * SCATTER.grassRadiusCells * cellSize * 1.1;
+    const reach = Math.sqrt(poppy()) * SCATTER.grassRadiusCells * cellSize * 0.8;
     patches.push({
       radius:
         SCATTER.poppyPatchRadius[0] +

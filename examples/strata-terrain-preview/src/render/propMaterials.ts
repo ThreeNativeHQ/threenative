@@ -333,6 +333,15 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     side: DoubleSide,
     vertexColors: true,
   });
+  // Sun through a blade. A grass blade is one cell thick and translucent, and the light that comes
+  // through the top half of it is most of what a meadow looks lit by — the vertex colour already
+  // grades every blade from a dark root to a bright tip, so the tip's share of that light is a
+  // channel away, and no second texture is spent on it.
+  const blade = attribute<"vec3">("color", "vec3");
+  grassMaterial.emissiveNode = color(0x8fbf4a)
+    .mul(blade.g.sub(float(0.2)))
+    .max(float(0))
+    .mul(float(0.18));
   sway(grassMaterial, seconds, WIND.amplitude.grass);
 
   const stemMaterial = new MeshStandardNodeMaterial({

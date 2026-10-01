@@ -36,7 +36,11 @@ import baked from "./world/baked.json";
  */
 const BENCHMARK = {
   forest: {
-    focus: { x: 200, z: 62 },
+    // Eleven metres along the meadow-close camera's own line of sight, which is what makes the
+    // meadow a place the camera is *in* rather than a disc it looks across: the blades that fill the
+    // bottom of the frame are the ones this point scatters, and the ones thinning towards the ridge
+    // are the same blades a hundred metres further off.
+    focus: { x: 186, z: 76 },
     "meadow-close": { at: [176, 84], eye: 1.7, look: [214, 44], lookUp: 2.2 },
     overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
   },

@@ -58,8 +58,10 @@ export function boulder(seed: number): BufferGeometry {
     if (point.y > 0) point.y = point.y * 0.86;
     position.setXYZ(i, point.x, point.y, point.z);
   }
-  const flat = geometry.toNonIndexed();
-  geometry.dispose();
+  // `IcosahedronGeometry` is already non-indexed — every facet owns its vertices — so this is a
+  // copy, and disposing the source here used to dispose the buffer that was about to be drawn.
+  const flat = geometry.index === null ? geometry : geometry.toNonIndexed();
+  if (flat !== geometry) geometry.dispose();
   flat.computeVertexNormals();
   // Bury the base: the placement point is the ground, and the rock has to come out of it.
   flat.translate(0, -ROCK.radius * ROCK.flatten * ROCK.buried, 0);
@@ -67,13 +69,26 @@ export function boulder(seed: number): BufferGeometry {
   return flat;
 }
 
-/** One grass clump's blade count and height, in metres. Knee-high meadow grass, not a lawn. */
+/**
+ * One grass clump's blade count and height, in metres. Knee-high meadow grass, not a lawn.
+ *
+ * Twelve blades, not seven, and wider and taller than the first pass: at eye height a seven-blade
+ * clump one clump every half metre reads as scattered wires on a green plane, and the count that
+ * fixes it is the count of blades, not the number of clumps. The curve is deeper too, because a
+ * straight blade is a line and a curved one catches the sun along its length.
+ */
 export const GRASS = {
-  blades: 7,
+  blades: 14,
   /** Height range of a clump, in metres. */
-  height: [0.42, 0.78],
+  height: [0.5, 0.95],
+  /**
+   * Blade width range, in metres. A grass blade is two or three millimetres of edge-on leaf and a
+   * sedge's is nearer fifteen; four centimetres of it, seen from a metre and a half, is a strap of
+   * agave, which is what the first pass of this lane grew.
+   */
+  width: [0.017, 0.031],
   /** How far a blade leans from vertical at its tip, as a share of its length. */
-  bend: 0.55,
+  bend: 0.72,
   /** Wind sway at the tip, in metres. */
   sway: 0.09,
 } as const;
@@ -120,9 +135,18 @@ class CoverBuffer {
   }
 }
 
-/** The root and tip colours a grass blade is graded between. Dark at the root is what gives depth. */
-const BLADE_ROOT = new Vector3(0.09, 0.17, 0.06);
-const BLADE_TIP = new Vector3(0.42, 0.55, 0.2);
+/**
+ * The root and tip colours a grass blade is graded between. Dark at the root is what gives depth.
+ *
+ * These are linear, not sRGB: a vertex colour is used as it is written, and a meadow green written
+ * as the sRGB numbers a colour picker shows (0.36, 0.5, 0.18) comes out of the tone curve as sage.
+ *
+ * One clump is graded between these and one neighbour of them: a meadow is not one green, and a
+ * carpet of identically tinted blades reads as astroturf however good the blade is. The variation
+ * is per clump and seeded, so the same meadow grows the same greens every time it is loaded.
+ */
+const BLADE_ROOT = new Vector3(0.1, 0.19, 0.07);
+const BLADE_TIP = new Vector3(0.18, 0.34, 0.06);
 
 /**
  * One seeded grass clump: `GRASS.blades` tapered strips, each bent over in its own direction.
@@ -135,13 +159,19 @@ export function grassClump(seed: number): BufferGeometry {
   const random = createRandom(seed);
   const buffer = new CoverBuffer();
   const segments = 3;
+  // This clump's own green: every blade in it grades between a root and a tip shifted off the
+  // meadow's, so a stand of clumps has weather and age in it rather than one flat colour.
+  const shift = 0.82 + random() * 0.36;
+  const warm = 0.9 + random() * 0.24;
+  const root = BLADE_ROOT.clone().multiply(new Vector3(shift, shift * warm, shift));
+  const tip = BLADE_TIP.clone().multiply(new Vector3(shift, shift * warm, shift));
   for (let blade = 0; blade < GRASS.blades; blade += 1) {
     const azimuth = random() * Math.PI * 2;
     const height = GRASS.height[0] + random() * (GRASS.height[1] - GRASS.height[0]);
     const bend = GRASS.bend * (0.5 + random());
     // Blades lean outward from the clump's own centre, so the clump is round, not a flat fan.
     const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
-    const width = 0.022 + random() * 0.016;
+    const width = GRASS.width[0] + random() * (GRASS.width[1] - GRASS.width[0]);
     const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
     // The blade's spine at `at`: rising, and leaning over further the higher it goes.
     const spine = (at: number) =>
@@ -170,10 +200,10 @@ export function grassClump(seed: number): BufferGeometry {
         [a, b, c, d],
         normal,
         [
-          BLADE_ROOT.clone().lerp(BLADE_TIP, at0),
-          BLADE_ROOT.clone().lerp(BLADE_TIP, at0),
-          BLADE_ROOT.clone().lerp(BLADE_TIP, at1),
-          BLADE_ROOT.clone().lerp(BLADE_TIP, at1),
+          root.clone().lerp(tip, at0),
+          root.clone().lerp(tip, at0),
+          root.clone().lerp(tip, at1),
+          root.clone().lerp(tip, at1),
         ],
         at0 * at0,
       );
@@ -186,10 +216,20 @@ export function grassClump(seed: number): BufferGeometry {
 export const POPPY = {
   /** Stems per cluster. A patch is a colony, not a bouquet. */
   stems: 5,
-  /** Stem height range. */
-  height: [0.34, 0.56],
-  /** Radius of the red disc on top of a stem. */
-  disc: 0.075,
+  /**
+   * Stem height range, in metres. Taller than the grass on purpose: a poppy holds its head above the
+   * blades it grows through, and a flower at forty centimetres in grass that reaches a metre is a
+   * red disc buried in a green carpet.
+   */
+  height: [0.62, 0.9],
+  /**
+   * Petal fans per head, and the radius of the disc they make, in metres. Nine centimetres is a
+   * poppy at its widest, and the size decides whether a patch reads as flowers or as red dust: at
+   * half this the disc is two pixels wide at thirty metres, and a meadow of poppies is a meadow of
+   * specks.
+   */
+  disc: 0.09,
+  petals: 3,
 } as const;
 
 /**
@@ -245,12 +285,17 @@ export function poppyCluster(
         at0 * at0 * 0.8,
       );
     }
-    // Two crossed petal quads, one rotated a quarter turn from the other.
+    // Three petal fans a sixth of a turn apart, all leaning out over the stem. One lobe is a
+    // petal, two is a bowtie and three is a flower, and the fan is left flat in the head's own plane
+    // with a normal tipped away from the stem: a poppy seen from a metre and a half is a red disc
+    // with a dark centre, and anything more modelled than that stops being a poppy at twenty metres.
     const head = spine(1);
-    for (const twist of [random() * Math.PI, random() * Math.PI]) {
-      const right = new Vector3(Math.cos(twist), 0, Math.sin(twist));
-      const up = new Vector3(-Math.sin(twist), 0, Math.cos(twist));
-      const centre = head.clone().add(new Vector3(0, POPPY.disc * 0.35, 0));
+    const twist = random() * Math.PI * 2;
+    for (let petal = 0; petal < POPPY.petals; petal += 1) {
+      const angle = twist + (petal / POPPY.petals) * Math.PI * 2;
+      const right = new Vector3(Math.cos(angle), 0, Math.sin(angle));
+      const out = new Vector3(-Math.sin(angle), 0, Math.cos(angle));
+      const centre = head.clone().add(new Vector3(0, POPPY.disc * 0.3, 0));
       const radius = POPPY.disc;
       heads.quad(
         [
@@ -259,13 +304,13 @@ export function poppyCluster(
           centre
             .clone()
             .addScaledVector(right, radius)
-            .addScaledVector(up, radius * 1.15),
+            .addScaledVector(out, radius * 1.15),
           centre
             .clone()
             .addScaledVector(right, -radius)
-            .addScaledVector(up, radius * 1.15),
+            .addScaledVector(out, radius * 1.15),
         ],
-        new Vector3(0, 1, 0),
+        new Vector3(out.x * 0.45, 1, out.z * 0.45).normalize(),
         [white, white, white, white],
         0.8,
       );

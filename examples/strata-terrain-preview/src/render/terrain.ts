@@ -138,6 +138,15 @@ const SHORE = { beach: 7.5, wet: 1 };
 const MEADOW = vec3(0.66, 1.06, 0.54);
 
 /**
+ * What the litter is: dry needles and grit, which are redder and lighter than the soil they lie on.
+ * Multiplied into the dirt's own albedo, so it takes the dirt's hue with it.
+ */
+const LITTER = vec3(1.34, 1.06, 0.74);
+
+/** How much of the bare ground the litter covers at its densest. */
+const LITTER_AMOUNT = 0.55;
+
+/**
  * A world-space UV, rotated by a slow noise so the tile lattice is never axis-aligned.
  *
  * Rotating a *tiling* texture cannot open a seam — neighbouring tiles stay identical wherever the
@@ -221,12 +230,23 @@ export function createGroundMaterial(
   // entries is redder than it is green where grass and moss are not. That difference *is* the
   // authored mask arriving with the data: the patches this world's recipe painted, with no second
   // splat texture that could disagree with the geometry.
+  //
+  // What it is not is an edge. The bake paints a blob, and a blob is a shape with a boundary, so
+  // taken straight the dirt reads as a brown amoeba laid on the meadow with a hard rim — which is
+  // what the captures showed. The threshold therefore carries a noise of its own: the same signal,
+  // asked at a different place on every metre of ground, which frays the rim into the interlocking
+  // fingers that a worn patch actually has. `patchy` then eats holes *inside* the blob, because a
+  // worn patch is bare in the middle and grassy at its edges far more often than it is the reverse.
   const baked = attribute<"vec3">("color", "vec3");
   const painted = smoothstep(
     float(0.012),
     float(-0.02),
-    baked.g.sub(baked.r).add(breakUp.mul(0.035)),
+    baked.g
+      .sub(baked.r)
+      .add(breakUp.mul(0.035))
+      .add(mx_fractal_noise_float(positionWorld.mul(0.28), 3).mul(0.05)),
   );
+  const patchy = painted.mul(mx_fractal_noise_float(positionWorld.mul(0.09), 3).mul(0.5).add(0.62));
   // No recorded sea level means an inland world, and an inland world has no beach.
   const sand =
     data.waterLevel === null
@@ -238,7 +258,7 @@ export function createGroundMaterial(
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
     // has to be the one that speaks for the shore; painted dirt steps aside where it does.
     dirt: max(
-      painted,
+      patchy,
       smoothstep(0.28, 0.62, mx_fractal_noise_float(positionWorld.mul(0.016), 4)).mul(
         smoothstep(0.5, 0.2, steep),
       ),
@@ -301,6 +321,20 @@ export function createGroundMaterial(
     crevice = mix(crevice, relief.crevice, over);
   }
   albedo = albedo.mul(mix(float(1), crevice, OCCLUSION));
+
+  // Litter, on the ground where the ground is bare: the needles and twigs a spruce drops, and the
+  // grit between them. It rides the same weight the dirt does, so it collects on the worn patches
+  // and along the edge of the path rather than dusting the whole meadow evenly, and it is the thing
+  // that stops a bare patch reading as a hole cut in the grass. Two scales, because needle litter
+  // is a centimetre of red-brown over a brown patch a metre across, and one scale cannot be both.
+  const litter = mix(
+    mx_fractal_noise_float(positionWorld.mul(1.6), 2),
+    mx_fractal_noise_float(positionWorld.mul(0.42), 3),
+    float(0.45),
+  )
+    .mul(0.5)
+    .add(0.5);
+  albedo = mix(albedo, albedo.mul(LITTER), weights.dirt.mul(LITTER_AMOUNT).mul(litter));
 
   // Macro colour variation, in metres rather than in tile space so it survives the tiling, and at
   // two scales: one wide enough to read across a valley, one at the distance where a player is
