@@ -50,6 +50,10 @@ export function sampleThreeObservations(input: IThreeObservationInput, request: 
     clock: {
       mode: input.clockMode,
       ...(input.tick === undefined ? { timeMs: performance.now() } : { tick: input.tick }),
+      // A live run is measured in seconds: the runner reads `timeMs` for any mode that is not
+      // fixed-step, so a wall-clock producer that reported only a tick would leave every
+      // seconds-based rate unmeasured rather than measured.
+      ...(input.clockMode === "wall-clock" ? { timeMs: performance.now() } : {}),
     },
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics() }),
     entities,

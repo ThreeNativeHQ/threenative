@@ -176,14 +176,29 @@ export function pageLifecycleDiagnostic(
       "The renderer process died mid-run, so no assertion after that point was observed. Re-run with a smaller scene or a hardware GPU; under a virtual display the software WebGPU path is the usual cause.",
     );
   }
-  const where = lifecycle.navigations.length === 0
-    ? "an unrecorded location"
-    : `'${lifecycle.navigations.join("', '")}'`;
   const observed = [
     `page closed: ${lifecycle.closed}`,
     `main-frame navigations: ${lifecycle.frameNavigations.length}`,
     ...(lifecycle.tail.length === 0 ? [] : [`last console: ${lifecycle.tail.join(" | ")}`]),
   ].join("; ");
+  // A closed page is not a navigated one. Playwright reports a browser or renderer that went away
+  // with the same "Target page, context or browser has been closed" wording, and a renderer killed
+  // by a GPU stall or an out-of-memory kill never navigates anything — so this used to report a
+  // navigation the lifecycle listeners had already proven did not happen, with a fix aimed at the
+  // game ("remove the navigation from the game") for a machine failure. One production profile hit
+  // it at 18.8 s of a 60 s window: `page closed: true; main-frame navigations: 1`, the one being the
+  // run's own. The same false reading cost the suite its expected transport diagnostics once
+  // (`docs/verification/runtime-perf-state.md`, e2e-runner.spec.ts).
+  if (lifecycle.closed && lifecycle.navigations.length === 0) {
+    return playtestDiagnostic(
+      "TN_PLAYTEST_PAGE_CLOSED",
+      `The page went away without navigating while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,
+      "Nothing moved the document: the page closed mid-run, so every observation after that point is missing. This is the machine rather than the game — check for a GPU stall, an out-of-memory kill, or another browser benchmark competing for the display, then re-run. Nothing in the scenario can fix it.",
+    );
+  }
+  const where = lifecycle.navigations.length === 0
+    ? "an unrecorded location"
+    : `'${lifecycle.navigations.join("', '")}'`;
   return playtestDiagnostic(
     "TN_PLAYTEST_PAGE_NAVIGATED",
     `The page navigated to ${where} while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,

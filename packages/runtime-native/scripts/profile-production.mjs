@@ -19,6 +19,8 @@ import {
   REGRESSION_COLLECTION_PROFILE,
   meanFps,
   nearestRank,
+  oneSecondFrameFloors,
+  unmeasurableIntervalCount,
   sha256,
   writeProductionEvidence,
   sanitizeManifest,
@@ -104,6 +106,33 @@ export function resolveProductionTools() {
   };
 }
 
+// The primary checkout that owns a checkout or linked worktree at `cwd`. Git's common directory is
+// the one answer a linked worktree gives without being asked for a worktree: it names the primary
+// `.git`, while the worktree's own parent directory is still inside the primary repository.
+export function owningCheckout(cwd) {
+  try {
+    const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return common.length > 0 ? dirname(common) : cwd;
+  } catch {
+    return cwd;
+  }
+}
+
+// Beside the owning primary checkout, so the staged game shares its volume and inherits no
+// pnpm-workspace.yaml; an ancestor that is itself a workspace is climbed past, because pnpm reads
+// the nearest one upwards and would install the staged game into it.
+export function stagingParentDirectory(primaryCheckout, workspaceExists = existsSync) {
+  let parent = dirname(primaryCheckout);
+  while (parent !== dirname(parent) && workspaceExists(join(parent, 'pnpm-workspace.yaml'))) {
+    parent = dirname(parent);
+  }
+  return join(parent, '.threenative-profile-production');
+}
+
 export function parseProductionArgs(argv = process.argv.slice(2)) {
   const options = {
     audioEvidence: undefined,
@@ -113,6 +142,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     device: undefined,
     duration: 60,
     hostedSoftware: false,
+    liveClock: false,
     out: '.runtime/prd064/production',
     prebuiltArtifact: undefined,
     physicalEvidence: undefined,
@@ -136,6 +166,7 @@ export function parseProductionArgs(argv = process.argv.slice(2)) {
     else if (flag === '--device') { explicit.add('device'); options.device = nextValue(argv, ++index, flag); }
     else if (flag === '--duration') { explicit.add('duration'); options.duration = positiveNumber(nextValue(argv, ++index, flag), flag); }
     else if (flag === '--hosted-software') { options.hostedSoftware = true; }
+    else if (flag === '--live-clock') { options.liveClock = true; }
     else if (flag === '--out') { explicit.add('out'); options.out = nextValue(argv, ++index, flag); }
     else if (flag === '--prebuilt-artifact') { explicit.add('prebuiltArtifact'); options.prebuiltArtifact = nextValue(argv, ++index, flag); }
     else if (flag === '--physical-evidence') { explicit.add('physicalEvidence'); options.physicalEvidence = nextValue(argv, ++index, flag); }
@@ -258,13 +289,18 @@ export async function collectProduction(options, context, runId) {
     );
   }
 
+  // Resolved before the scaffold so a lane that cannot carry a frame rate costs a second, not the
+  // three minutes it takes to pack the workspace and build a platformer nobody may judge.
+  const webDisplay = webArmRequested(options) ? await rateBearingDisplay(tools) : undefined;
+
   // Keep staging on the checkout's volume (Windows packaging cannot cross volumes), but outside
-  // the repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
+  // every repository workspace. A project under repo/.runtime is discovered by pnpm as part of the
   // parent workspace, so its install populates the workspace root and leaves the staged project's
-  // node_modules missing. The checkout sibling keeps the same-volume guarantee without inheriting
-  // pnpm-workspace.yaml.
+  // node_modules missing. A linked worktree's own parent is no better - <primary>/.worktrees is
+  // still inside <primary> - so the parent of the *owning primary* checkout is the one directory
+  // that is both same-volume and workspace-free.
   const stagingParent = inRepositoryCheckout
-    ? join(dirname(commandRoot), '.threenative-profile-production')
+    ? stagingParentDirectory(owningCheckout(commandRoot))
     : tmpdir();
   await mkdir(stagingParent, { recursive: true });
   const temporaryRoot = await mkdtemp(join(stagingParent, 'threenative-production-'));
@@ -276,9 +312,7 @@ export async function collectProduction(options, context, runId) {
     const scenarios = await writeRunScenarios(project, options);
     const artifactsRoot = join(project, 'artifacts', 'production');
     await mkdir(artifactsRoot, { recursive: true });
-    const web = options.target === 'web' || options.target === 'desktop-pair'
-      ? await collectWeb(project, scenarios, artifactsRoot, options, tools)
-      : undefined;
+    const web = webDisplay === undefined ? undefined : await collectWeb(project, scenarios, artifactsRoot, options, tools, webDisplay);
     const native = nativeTargets.has(options.target) || options.target === 'desktop-pair'
       ? await collectNative(project, scenarios, artifactsRoot, options, tools)
       : undefined;
@@ -321,6 +355,10 @@ function normalizeOptions(input = {}) {
     duration: input.duration ?? (regression ? REGRESSION_COLLECTION_PROFILE.durationSeconds : 60),
     hostedSoftware: input.hostedSoftware === true,
     help: input.help,
+    // Listed explicitly like every other option here: this function rebuilds the option set field by
+    // field, so an unlisted one is dropped rather than defaulted, and a `--live-clock` that never
+    // reached the instrumentation would quietly profile the frozen run it was asked to replace.
+    liveClock: input.liveClock === true,
     out: input.out ?? (regression ? '.runtime/prd358/regression' : '.runtime/prd064/production'),
     prebuiltArtifact: input.prebuiltArtifact === undefined ? undefined : resolve(input.prebuiltArtifact),
     physicalEvidence: input.physicalEvidence,
@@ -337,6 +375,16 @@ function normalizeOptions(input = {}) {
 
 function warmupFramesFor(options) {
   return Math.max(0, Math.ceil((options.warmup ?? 0) * 60));
+}
+
+// Only the scaffolded default needs its ticks paced to wall time, because only it has no authored
+// workload whose own step durations are the seconds the run means. A live-clock run needs it too, and
+// not because it needs pacing twice: the wrapper is idempotent, so an `advance` that already spent
+// the interval leaves a wait of zero or less and the pace adds nothing. Excluding it left the native
+// host free to consume the frame-count workload faster than wall time, and the run published a
+// measured window shorter than the `--duration` it was asked for.
+function paceTicksFor(options) {
+  return options.project === undefined;
 }
 
 // Directories the judge regenerates itself. Copying a previous build measures stale bytes and
@@ -547,10 +595,44 @@ export async function writeRunScenarios(project, options) {
   };
 }
 
-async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
+/**
+ * A production frame rate is only evidence from a display that can carry one. The runner provisions
+ * a private software Xvfb by default, and this repository's own playtest contract says a rate read
+ * there is wrong rather than missing. Two collections of the same built platformer at 1920x1080 on
+ * this host agree: the private-display web arm reported 33.97 fps mean and a 117.1 ms p99
+ * (`.runtime/prd064/control/web-baseline-paired/production-evidence.json`) where the session-display
+ * arm reported 163.45 fps and a 19.6 ms p99
+ * (`.runtime/prd064/production/desktop-pair-6/production-evidence.json`) — a 4.8x difference in the
+ * number the gate reads. Judging the budget on the private lane measures the X server, so the run
+ * refuses before it spends a collection on it.
+ */
+export function webRateDisplayFault(strategy) {
+  if (strategy === undefined || strategy.kind !== 'private-xvfb') return undefined;
+  return new ProductionEvidenceError(
+    'TN_PROD_DISPLAY_UNTRUSTWORTHY',
+    `A web frame-rate verdict needs a display that can carry one, and this run would be measured on a private software Xvfb (${strategy.screen}). Run it with TN_PLAYTEST_HOST_DISPLAY=1 on a machine with a live X display, or judge the native arm alone.`,
+  );
+}
+
+function webArmRequested(options) {
+  return options.target === 'web' || options.target === 'desktop-pair';
+}
+
+async function rateBearingDisplay(tools) {
+  const { decideDisplayStrategy } = await import(pathToFileURL(tools.playtestRunner).href);
+  const display = decideDisplayStrategy({ env: process.env, platform: process.platform });
+  const fault = webRateDisplayFault(display);
+  if (fault !== undefined) throw fault;
+  return display;
+}
+
+async function collectWeb(project, scenarios, artifactsRoot, options, tools, display) {
+  // The marker endpoint the judge is told to report its first frame to. The game's own samples ride
+  // the console (a fetch from the page is an in-flight request Chromium reports as ERR_ABORTED at
+  // teardown, which the scenario's own noNetworkErrors policy would fail the run for).
   const markerServer = await createFrameMarkerServer(options.profile === REGRESSION_PROFILE ? 41778 : 0);
   try {
-    await installWebProfileEntry(project, markerServer.url, options.control, warmupFramesFor(options), options.project === undefined);
+    await installWebProfileEntry(project, options.control, warmupFramesFor(options), paceTicksFor(options), options.liveClock);
     // A production build can outlast the default timeout on slow hosted runners.
     const build = await runCommand('pnpm', ['run', 'build:web'], project, undefined, 300_000);
     if (build.status !== 0) throw new ProductionEvidenceError('TN_PROD_WEB_BUILD_FAILED', `The scaffolded platformer web build failed.${failureSuffix(build)}`);
@@ -577,6 +659,7 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
       applicationClass: 'platformer-web-build',
       driverClass: 'playwright-chromium-webgpu',
       kind: 'web',
+      display,
       runs,
       startups,
     };
@@ -585,6 +668,15 @@ async function collectWeb(project, scenarios, artifactsRoot, options, tools) {
   }
 }
 
+/**
+ * A display is the difference between the machine's GPU and SwiftShader. Headless Chromium serves
+ * WebGPU from its CPU rasteriser even with the recipe's `--enable-features=Vulkan`, so a machine
+ * that has a display must run the web arm headed: measured on one RTX 2080, headless reported
+ * `google / swiftshader` and headed `nvidia / turing`. The scene-overview probe already makes the
+ * same choice (`packages/playtest/src/runner/sceneOverview.ts`). The web arm is refused outright
+ * when the runner would measure it on a private Xvfb (`webRateDisplayFault`), so an unconditional
+ * `--headed` here costs no headless lane its frames.
+ */
 async function runWebScenario(project, scenarioPath, artifactDirectory, markerServer, playtestCli, timeoutMs) {
   await mkdir(artifactDirectory, { recursive: true });
   const port = await availablePort();
@@ -594,6 +686,8 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     relative(project, scenarioPath),
     '--artifacts', relativeArtifact,
     '--browser-recipe', 'webgpu',
+    // The judge reports its first frame here, and the runner exempts that one request from the
+    // network-failure policy. The game's own samples ride the console instead.
     '--judge-marker-url', markerServer.url,
     '--headed',
     '--project', project,
@@ -602,20 +696,18 @@ async function runWebScenario(project, scenarioPath, artifactDirectory, markerSe
     '--url', `http://127.0.0.1:${port}`,
   ];
   const command = await browserCommand(args);
-  const markerIndex = markerServer.length;
-  const startedAt = performance.now();
+  // The game stamps its first frame with `Date.now()`, so the elapsed clock here is wall time.
+  const startedAt = Date.now();
   // The outer process has to outlive the inner operation budget it hands the CLI, or a scenario
   // the CLI is still legitimately running would be killed from outside.
   const result = await runCommand(command.command, command.args, commandRoot, undefined, timeoutMs + PLAYTEST_TIMEOUT_BASE_MS);
-  const markers = await markerServer.waitFor(markerIndex, 1_000);
   const report = parsePlaytestReport(result.stdout);
   return normalizeRun(
     result,
     artifactDirectory,
     'web',
     report,
-    markers?.firstFrame === undefined ? undefined : markers.firstFrame.receivedAt - startedAt,
-    markers?.samples ?? [],
+    firstFrameMsFromReport(report, startedAt),
   );
 }
 
@@ -715,7 +807,7 @@ async function runNativeScenario(project, target, scenarioPath, artifactDirector
       target,
       report,
       firstFrameMsFromReport(report, startedAt),
-      frameSeriesFromReport(report),
+      frameSeriesFromReport(report, target),
     );
   } catch {
     return { elapsedMs: performance.now() - started, report: undefined, screenshot: undefined, series: undefined, status: 2 };
@@ -773,7 +865,6 @@ async function runDesktopBridgeScenario(project, scenarioPath, artifactDirectory
       'desktop',
       report,
       firstFrameMsFromReport(report, startedAt),
-      frameSeriesFromReport(report),
     );
   } catch (error) {
     let cleanupError;
@@ -968,7 +1059,7 @@ export async function installNativeProfileEntry(project, target, options) {
   const mailbox = target === 'desktop'
     ? `globalThis.TN_PLAYTEST_MAILBOX = ${JSON.stringify({ request: join(mailboxRoot, 'tn-playtest-request.json'), response: join(mailboxRoot, 'tn-playtest-response.json') })};\n`
     : '';
-  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), options.project === undefined)}\n${mailbox}export default game;\n`;
+  const source = `import "./profile-native-profile.js";\nimport game from "./game.js";\n${nativeFrameInstrumentation(options.control, warmupFramesFor(options), paceTicksFor(options), options.liveClock)}\n${mailbox}export default game;\n`;
   await writeFile(profileMarkerPath, profileMarker);
   await writeFile(entryPath, source);
   await setNativeProfileEntry(project, 'src/profile-native-entry.ts', options.renderSize);
@@ -979,10 +1070,15 @@ export async function setNativeProfileEntry(project, entry, renderSize = undefin
   const packagePath = join(project, 'package.json');
   const config = await readFile(configPath, 'utf8').catch(() => undefined);
   if (config !== undefined) {
-    const withEntry = config.replace(
-      /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu,
-      `$1"${entry}"$2`,
-    );
+    // Whether the config declares the field at all is a different question from whether its value
+    // changes, and only the first one decides where the entry lives. Reading it off `withEntry !==
+    // config` conflates the two: a config already naming this entry left the value unchanged, fell
+    // through to the package.json branch below, and declared `nativeEntry` in *both* files — which
+    // the next `threenative build --target desktop` refuses with `TN_CONFIG_CONFLICT`. A project
+    // profiled once could therefore never be profiled a second time.
+    const entryPattern = /^(\s*nativeEntry\s*:\s*)["'][^"']*["'](,?.*)$/mu;
+    const declaresEntry = entryPattern.test(config);
+    const withEntry = config.replace(entryPattern, `$1"${entry}"$2`);
     // The packaged desktop artifact carries the game's config embedded, and the native host reads
     // its window size from there before any command-line flag, so the profiled surface is only the
     // requested render size when the config states it.
@@ -990,7 +1086,9 @@ export async function setNativeProfileEntry(project, entry, renderSize = undefin
     if (sized !== config) {
       await writeFile(configPath, sized);
     }
-    if (withEntry !== config) {
+    if (declaresEntry) {
+      // One declaration, in the file the config layer resolves first. Dropping a stale key is also
+      // how a project already corrupted by the old fall-through is repaired on its next run.
       const packageJson = JSON.parse(await readFile(packagePath, 'utf8'));
       if (packageJson.threenative?.nativeEntry !== undefined) {
         delete packageJson.threenative.nativeEntry;
@@ -1044,6 +1142,21 @@ const tnProductionReadPerformance = () => {
 }
 
 /**
+ * Ask the game for the wall clock, so the profile measures a game playing.
+ *
+ * A profile run is a playtest run, and a playtest run freezes the live clock: the runner asks the
+ * bridge for fixed steps and the loop simulates nothing else, so the frames the host presents while
+ * a burst of ticks is delivered repeat one standing state. The browser reported ~60 fps of a
+ * platformer whose movement was advancing in ten-tick jumps, and the frame samples the judge reads
+ * described that, not the game. `__THREENATIVE_PLAYTEST_CLOCK__` is the framework's own switch for
+ * the opposite, and it has to be set before the bundle evaluates — which is what the instrumentation
+ * this rides in is.
+ */
+export function productionClockRequest(liveClock = false) {
+  return liveClock === true ? 'globalThis.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";\n' : '';
+}
+
+/**
  * Pace the fixed step to wall time so a synthetic workload's tick budget is the seconds it names.
  *
  * The native device transport drives the simulation through `bridge.advance(ticks)`, and the host
@@ -1052,6 +1165,14 @@ const tnProductionReadPerformance = () => {
  * or measure, and the warmup boundary is never reached. Wrapping `advance` to wait one display
  * interval per tick lets the host's own loop run during the wait, so the frames exist to be
  * measured.
+ *
+ * The same wrapper arms on the live clock, and it is idempotent there rather than a second wait: a
+ * wall-clock `advance` spends the span its ticks name before the wrapper reads its own deadline, so
+ * the remainder is zero or less and no wall-clock run is slowed. It is also the only thing that
+ * makes the host present the frames on any host whose `advance` did not wait them, which is what a
+ * short measured window is. Reading the live clock as "already paced, so skip the pacer" was the
+ * defect: the native host consumed the frame-count workload at its own speed, and 60 requested
+ * seconds published as a 1.5 s window.
  */
 export function productionExecutionHold(paceTicks = false) {
   return `
@@ -1078,7 +1199,46 @@ tnProductionInstallPace();
 `;
 }
 
-export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false) {
+/**
+ * The warmup boundary both arms share: the frame count *and* the wall time those frames were asked
+ * to cover.
+ *
+ * A frame count only names a duration on a host that presents at 60 Hz, and neither host is one. The
+ * native host ran 120 frames — the whole `--warmup 2` budget — in 1.18 s of a requested 2 s while it
+ * booted at 100-170 Hz, so the measured window started at the last first-use pipeline compile and
+ * published boot as a frame rate: native 26.29 mean fps, 306.04 ms p95, beside
+ * `execution.warmupSeconds: 2`. The frame bound stays, because a host *slower* than 60 Hz needs it
+ * more than a host that runs ahead, and the two are the same number on a 60 Hz browser.
+ */
+function productionWarmupBoundary(warmupFrames = 0) {
+  return `
+const tnProductionWarmupMs = ${Math.max(0, Math.floor(warmupFrames)) / 60 * 1_000};
+let tnProductionStartedAtMs;
+const tnProductionInWarmup = (frameIndex, now) => {
+  tnProductionStartedAtMs ??= now;
+  return frameIndex < tnProductionWarmupFrames || now - tnProductionStartedAtMs < tnProductionWarmupMs;
+};
+`;
+}
+
+/**
+ * The measurement reset, on the transition rather than on the frame count the boundary also checks.
+ *
+ * The frame count is only one of the two bounds, and a host that presents slower than 60 Hz reaches
+ * the wall time later. Clearing the carry on the frame count left the last warmup frame still holding
+ * the previous frame's clock, so the first measured frame reported the interval that spanned the
+ * boundary — the crossing stall, or the whole warmup tail — as gameplay. Both arms warm up
+ * monotonically, so the transition happens once and the flag keeps it to once.
+ */
+function tnProductionMeasurementStart() {
+  return `if (!inWarmup && !tnProductionMeasuring) {
+  tnProductionMeasuring = true;
+  tnProductionPreviousFrame = undefined;
+  tnProductionSamples = [];
+}`;
+}
+
+export function nativeFrameInstrumentation(control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
@@ -1086,28 +1246,28 @@ const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_NATIVE_RAF_UNAVAILABLE: native host did not provide requestAnimationFrame.");
 }
+${productionClockRequest(liveClock)}
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
 let tnProductionPresentation;
 let tnProductionSamples = [];
+let tnProductionMeasuring = false;
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
   const deadline = performance.now() + milliseconds;
   while (performance.now() < deadline) {}
 };
+${productionWarmupBoundary(warmupFrames)}
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
   tnProductionInstallPace();
   const frameIndex = tnProductionFrameIndex++;
-  const inWarmup = frameIndex < tnProductionWarmupFrames;
-  if (frameIndex === tnProductionWarmupFrames) {
-    tnProductionPreviousFrame = undefined;
-    tnProductionSamples = [];
-  }
   if (tnProductionFirstFrame && tnProductionControl === "slow-startup") tnProductionBusyWait(${SLOW_STARTUP_DELAY_MS});
   const now = performance.now();
+  const inWarmup = tnProductionInWarmup(frameIndex, now);
+  ${tnProductionMeasurementStart()}
   const frameMs = inWarmup || tnProductionPreviousFrame === undefined ? undefined : now - tnProductionPreviousFrame;
   tnProductionPreviousFrame = now;
   callback(timestamp);
@@ -1136,33 +1296,34 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-export function webFrameInstrumentation(markerUrl, control, warmupFrames = 0, paceTicks = false) {
+/**
+ * The web arm reports over the console, the same transport the native arm already uses, so one
+ * parser and one clock serve both. It used to POST to a marker server, which the playtest's own
+ * `noNetworkErrors` policy then failed the run for: Chromium reports every in-flight `fetch` as
+ * `net::ERR_ABORTED` when the runner tears the page down, so the profile failed its own runs for
+ * its own instrumentation. The judge still owns `--judge-marker-url`; only the game's samples moved.
+ */
+export function webFrameInstrumentation(control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   return `
 const tnProductionControl = ${JSON.stringify(control ?? '')};
 const tnProductionWarmupFrames = ${Math.max(0, Math.floor(warmupFrames))};
-const tnProductionMarkerUrl = ${JSON.stringify(markerUrl)};
 const tnProductionRequestAnimationFrame = globalThis.requestAnimationFrame;
 if (typeof tnProductionRequestAnimationFrame !== "function") {
   throw new Error("TN_PROD_WEB_RAF_UNAVAILABLE: browser host did not provide requestAnimationFrame.");
 }
+${productionClockRequest(liveClock)}
 let tnProductionFirstFrame = true;
 let tnProductionFrameIndex = 0;
 let tnProductionPreviousFrame;
 let tnProductionPresentation;
 let tnProductionSamples = [];
+let tnProductionMeasuring = false;
 let tnProductionSlowFramesRemaining = ${SLOW_FRAME_COUNT};
 const tnProductionBusyWait = (milliseconds) => {
   const deadline = performance.now() + milliseconds;
   while (performance.now() < deadline) {}
 };
-const tnProductionPost = (payload) => {
-  void fetch(tnProductionMarkerUrl, {
-    body: JSON.stringify(payload),
-    keepalive: true,
-    method: "POST",
-    mode: "no-cors",
-  }).catch(() => undefined);
-};
+${productionWarmupBoundary(warmupFrames)}
 ${productionPerformanceReader()}
 ${productionExecutionHold(paceTicks)}
 globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFrame((timestamp) => {
@@ -1177,19 +1338,16 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
   }
   tnProductionPresentation = Number.isFinite(timestamp) ? timestamp : undefined;
   const frameIndex = tnProductionFrameIndex++;
-  const inWarmup = frameIndex < tnProductionWarmupFrames;
-  if (frameIndex === tnProductionWarmupFrames) {
-    tnProductionPreviousFrame = undefined;
-    tnProductionSamples = [];
-  }
   if (tnProductionFirstFrame && tnProductionControl === "slow-startup") tnProductionBusyWait(${SLOW_STARTUP_DELAY_MS});
   const now = performance.now();
+  const inWarmup = tnProductionInWarmup(frameIndex, now);
+  ${tnProductionMeasurementStart()}
   const frameMs = inWarmup || tnProductionPreviousFrame === undefined ? undefined : now - tnProductionPreviousFrame;
   tnProductionPreviousFrame = now;
   callback(timestamp);
   if (tnProductionFirstFrame) {
     tnProductionFirstFrame = false;
-    tnProductionPost({ kind: "first-frame" });
+    console.log("TN_PROD_FIRST_NONBLANK_FRAME:" + Date.now());
   }
   if (!inWarmup && frameMs !== undefined) {
     tnProductionSamples.push({
@@ -1200,7 +1358,7 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
       frameMs,
     });
     if (tnProductionSamples.length >= ${FRAME_SAMPLE_BATCH_SIZE}) {
-      tnProductionPost({ kind: "samples", samples: tnProductionSamples });
+      console.log("TN_PROD_FRAME_SAMPLES:" + JSON.stringify(tnProductionSamples));
       tnProductionSamples = [];
     }
   }
@@ -1212,15 +1370,16 @@ globalThis.requestAnimationFrame = (callback) => tnProductionRequestAnimationFra
 `;
 }
 
-async function installWebProfileEntry(project, markerUrl, control, warmupFrames = 0, paceTicks = false) {
+async function installWebProfileEntry(project, control, warmupFrames = 0, paceTicks = false, liveClock = false) {
   const markerPath = join(project, 'src/profile-production-marker.ts');
   const mainPath = join(project, 'src/main.ts');
   const markerImport = 'import "./profile-production-marker.js";';
   const main = await readFile(mainPath, 'utf8');
-  const source = webFrameInstrumentation(markerUrl, control, warmupFrames, paceTicks);
+  const source = webFrameInstrumentation(control, warmupFrames, paceTicks, liveClock);
   await writeFile(markerPath, source);
   if (!main.includes(markerImport)) await writeFile(mainPath, `${markerImport}\n${main}`);
 }
+
 
 async function createFrameMarkerServer(port = 0) {
   const events = [];
@@ -1277,7 +1436,7 @@ function markerEvents(events) {
   return { firstFrame, samples };
 }
 
-async function normalizeRun(
+export async function normalizeRun(
   result,
   artifactDirectory,
   kind,
@@ -1287,20 +1446,35 @@ async function normalizeRun(
 ) {
   const reportSeries = report?.observations?.visual?.runtimeDiagnosticsSeries;
   const performanceSeries = report?.observations?.performanceSeries;
-  const consoleSeries = frameSeriesFromReport(report);
-  const series = [collectedSeries, reportSeries, performanceSeries, consoleSeries]
-    .find((candidate) => Array.isArray(candidate) && candidate.length > 0);
+  const consoleSeries = frameSeriesFromReport(report, kind);
+  const series = kind === 'desktop'
+    ? consoleSeries
+    : [collectedSeries, reportSeries, performanceSeries, consoleSeries]
+      .find((candidate) => Array.isArray(candidate) && candidate.length > 0);
   const screenshotPath = join(artifactDirectory, 'after.png');
   const screenshot = await nonBlankPng(screenshotPath) ? await readFile(screenshotPath) : undefined;
   return {
     elapsedMs: result.durationMs,
     ...(Number.isFinite(firstFrameMs) ? { firstFrameMs } : {}),
+    // A child that exits without a parseable report has no report and usually no screenshot, so
+    // without this the whole run vanishes from the evidence and the failure is an absence.
+    ...(report === undefined ? { failure: missingReportFailure(result) } : {}),
     kind,
     report: report === undefined ? undefined : safeReport(report),
     screenshot,
     series: Array.isArray(series) ? series : undefined,
     status: result.status,
   };
+}
+
+function missingReportFailure(result) {
+  return sanitizeReportValue({
+    code: 'TN_PROD_RUN_REPORT_MISSING',
+    message: `The child run exited without a parseable report${failureSuffix(result).slice(-4_000)}`,
+    severity: 'error',
+    status: result.status,
+    timedOut: result.timedOut === true,
+  });
 }
 
 const REPORT_REDACTION_MESSAGE = 'TN_PROD_REDACTION: unsafe native report detail withheld.';
@@ -1376,9 +1550,26 @@ function firstFrameMsFromReport(report, startedAt) {
   return elapsed >= 0 ? elapsed : undefined;
 }
 
-function frameSeriesFromReport(report) {
+/**
+ * The desktop host takes its `after.png` inside its own frame loop, so the readback runs where a
+ * frame runs and the frame that spans it reports the readback as its own `frameMs`. Both clean-HEAD
+ * native collections at `f645e65c8` carry a 358.26 ms and a 312.72 ms gap in the batch logged after
+ * the host's capture line, beside a `TN_SLOW_PHASE pollEvents` at 358.19 and 312.79 ms. The capture
+ * line and the sample batches are both `std::cout` in that one process, so console order is write
+ * order and the line is an exact boundary rather than a threshold: every batch logged at or after it
+ * is dropped whole, because such a batch straddles the capture and dropping one is the direction
+ * that cannot read the readback as gameplay. The capture is still requested and its artifact still
+ * retained — this bounds the measured window, it does not remove the evidence.
+ */
+function frameSeriesFromReport(report, kind) {
+  const lines = reportConsoleLines(report);
+  // No capture line means no boundary, so a desktop report keeps nothing and fails closed rather than
+  // publishing a window this parser cannot bound; every other arm keeps its whole console.
+  const capture = kind === 'desktop'
+    ? lines.findIndex((line) => line.includes('[Screenshot] First 16 bytes'))
+    : lines.length;
   const series = [];
-  for (const line of reportConsoleLines(report)) {
+  for (const line of lines.slice(0, Math.max(capture, 0))) {
     const prefix = 'TN_PROD_FRAME_SAMPLES:';
     const offset = line.indexOf(prefix);
     if (offset === -1) continue;
@@ -1408,10 +1599,12 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     for (const [index, run] of arm.runs.entries()) {
       if (run.screenshot !== undefined) rawArtifacts.push({ content: run.screenshot, label: `production-render-${arm.kind}-${index + 1}` });
       if (run.report !== undefined) rawArtifacts.push({ content: JSON.stringify(run.report), label: `production-playtest-${arm.kind}-${index + 1}` });
+      if (run.failure !== undefined) rawArtifacts.push({ content: JSON.stringify(run.failure), label: `production-run-failure-${arm.kind}-${index + 1}` });
     }
     for (const [index, startup] of arm.startups.entries()) {
       if (startup.screenshot !== undefined) rawArtifacts.push({ content: startup.screenshot, label: `production-first-frame-${arm.kind}-${index + 1}` });
       if (startup.report !== undefined) rawArtifacts.push({ content: JSON.stringify(startup.report), label: `production-startup-${arm.kind}-${index + 1}` });
+      if (startup.failure !== undefined) rawArtifacts.push({ content: JSON.stringify(startup.failure), label: `production-startup-failure-${arm.kind}-${index + 1}` });
     }
   }
   const metricsByArm = new Map(arms.map((arm) => [arm.kind, aggregateMetrics(arm.runs, arm.startups, warmupFramesFor(options))]));
@@ -1473,6 +1666,9 @@ export function assembleEvidence({ context, native, options, performanceBounds, 
     codes: [...new Set(codes)],
     evidenceClasses: ['production'],
     execution: {
+      // Which clock the arms ran on, published because the two are not the same measurement: on a
+      // frozen clock every presented frame repeats a standing state, so its rate is not a frame rate.
+      clock: options.liveClock === true ? 'wall-clock' : 'fixed-step',
       coldStarts: options.coldStarts,
       ...(options.control === undefined ? {} : { control: options.control }),
       deviceSelected: options.device !== undefined,
@@ -1632,7 +1828,9 @@ export function postWarmupFrameSamples(samples, warmupFrames = 0) {
 
 export function aggregateMetrics(runs, startups, warmupFrames = 0) {
   const intervals = [];
-  const frameIntervalsMs = [];
+  const callbackIntervalsMs = [];
+  const presentedIntervalsMs = [];
+  const presentedStampsMs = [];
   const clockSamplesMs = [];
   const presentationSamplesMs = [];
   const runWindows = [];
@@ -1642,28 +1840,25 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
     .map(({ firstFrameMs }) => firstFrameMs);
   let timestampMs = 0;
   let sequence = 1;
-  let sampleCount = 0;
-  let hitchCount = 0;
-  let worstFrameMs;
+  let callbackCount = 0;
+  let presentedElapsedMs = 0;
   let missingClock = false;
   let missingPresentationClock = false;
+  let unmeasurablePresentation = false;
   for (const run of runs) {
     let clockOrigin;
     let presentationOrigin;
+    let lastPresentedMs;
     const postWarmupSamples = postWarmupFrameSamples(run.series ?? [], warmupFrames);
     let runDurationMs = 0;
     let runSampleCount = 0;
     for (const sample of postWarmupSamples) {
       if (typeof sample?.frameMs !== 'number') {
-        frameIntervalsMs.push(sample?.frameMs);
+        callbackIntervalsMs.push(sample?.frameMs);
         continue;
       }
-      frameIntervalsMs.push(sample.frameMs);
-      sampleCount += 1;
-      runSampleCount += 1;
-      runDurationMs += sample.frameMs;
-      if (sample.frameMs > 33.3) hitchCount += 1;
-      worstFrameMs = worstFrameMs === undefined ? sample.frameMs : Math.max(worstFrameMs, sample.frameMs);
+      callbackIntervalsMs.push(sample.frameMs);
+      callbackCount += 1;
       if (Number.isFinite(sample.clockMs)) {
         clockOrigin ??= sample.clockMs;
         clockSamplesMs.push(timestampMs + sample.clockMs - clockOrigin);
@@ -1671,10 +1866,34 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
         missingClock = true;
       }
       if (Number.isFinite(sample.presentationMs)) {
+        // The frame interval the budget is about is the gap between presented frames, and the rAF
+        // timestamp is the frame. Both arms run three rAF callbacks per presented frame — the
+        // engine loop, the UI hit-test pump and this instrumentation each register one — so a
+        // `performance.now()` callback delta measures how the host spread its callbacks inside a
+        // fixed display period: at its 95th percentile it is the idle remainder of that period, and
+        // the arm that spends less per callback is the one that reads worse. The presented series
+        // therefore advances only when the presentation stamp changes, and one frame's callbacks
+        // collapse into the single interval they belong to. Every quantity the frame budget counts —
+        // the per-second floor, the window's sample count, the worst frame and the hitch count —
+        // counts this series, because a callback count reads three frames for every frame presented.
+        if (lastPresentedMs !== undefined && sample.presentationMs !== lastPresentedMs) {
+          const presentedDeltaMs = sample.presentationMs - lastPresentedMs;
+          if (presentedDeltaMs > 0) {
+            presentedIntervalsMs.push(presentedDeltaMs);
+            runSampleCount += 1;
+            runDurationMs += presentedDeltaMs;
+            presentedElapsedMs += presentedDeltaMs;
+            presentedStampsMs.push(presentedElapsedMs);
+          } else {
+            unmeasurablePresentation = true;
+          }
+        }
+        lastPresentedMs = sample.presentationMs;
         presentationOrigin ??= sample.presentationMs;
         presentationSamplesMs.push(timestampMs + sample.presentationMs - presentationOrigin);
       } else {
         missingPresentationClock = true;
+        unmeasurablePresentation = true;
       }
       if (sample.phases !== undefined && typeof sample.phases === 'object' && sample.phases !== null) {
         for (const [phase, value] of Object.entries(sample.phases)) {
@@ -1698,31 +1917,49 @@ export function aggregateMetrics(runs, startups, warmupFrames = 0) {
     }
     runWindows.push({ durationSeconds: runDurationMs / 1_000, sampleCount: runSampleCount });
   }
+  // A sample the presentation clock could not place has no place in a cadence series, and a partial
+  // one would publish a percentile of the frames that happened to survive. The series stays
+  // unmeasured, which fails the timing budget and blocks a pair rather than judging a subset. The
+  // windows go with it: a count of presented frames and a duration measured from the same voided
+  // series are the same partial subset under two names.
+  if (unmeasurablePresentation) presentedIntervalsMs.length = 0;
   const phaseP95ByName = Object.fromEntries(
     Object.entries(phaseSamples).map(([phase, samples]) => [phase, nearestRank(samples, 0.95)]),
   );
+  const presentedFrames = presentedIntervalsMs.length;
+  const presentedHitchCount = presentedIntervalsMs.filter((value) => value > 33.3).length;
   return {
     ...(clockSamplesMs.length === 0 ? {} : { clockSamplesMs }),
-    ...(sampleCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
-    ...(frameIntervalsMs.length === 0 ? {} : { frameIntervalsMs }),
-    ...(hitchCount === 0 ? { hitchCount: 0 } : { hitchCount }),
+    ...(callbackCount === 0 ? {} : { clockSource: missingClock ? 'missing' : 'monotonic-performance' }),
+    ...(presentedFrames === 0 ? {} : { frameIntervalsMs: presentedIntervalsMs }),
     ...(intervals.length === 0 ? {} : { intervals }),
     ...(Object.keys(phaseP95ByName).length === 0 ? {} : {
       phaseP95ByName,
       ...(phaseP95ByName.render === undefined ? {} : { phaseP95Ms: phaseP95ByName.render }),
     }),
     ...(presentationSamplesMs.length === 0 ? {} : { presentationSamplesMs }),
-    ...(runWindows.length === 0 ? {} : { runWindows }),
-    ...(sampleCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation', sampleCount, worstFrameMs }),
+    ...(runWindows.length === 0 || unmeasurablePresentation ? {} : { runWindows }),
+    ...(callbackCount === 0 ? {} : { presentationClockSource: missingPresentationClock ? 'missing' : 'raf-presentation' }),
     ...(startupSamplesMs.length === 0 ? {} : { startupSamplesMs, startupMs: startupSamplesMs[0] }),
     ...(timestampMs === 0 ? {} : { durationSeconds: timestampMs / 1_000 }),
     ...(startupSamplesMs.length === 0 ? {} : { startupP95Ms: nearestRank(startupSamplesMs, 0.95) }),
-    ...(frameIntervalsMs.length === 0 ? {} : {
-      meanFps: meanFps(frameIntervalsMs),
-      p50FrameMs: nearestRank(frameIntervalsMs, 0.5),
-      p95FrameMs: nearestRank(frameIntervalsMs, 0.95),
-      p99FrameMs: nearestRank(frameIntervalsMs, 0.99),
+    // The presented-frame quantities publish together or not at all: a sample count beside a
+    // percentile of a different series is how a 3x callback count reads as a collected window.
+    ...(presentedFrames === 0 ? {} : {
+      hitchCount: presentedHitchCount,
+      oneSecondFps: oneSecondFrameFloors(presentedStampsMs),
+      sampleCount: presentedFrames,
+      worstFrameMs: Math.max(...presentedIntervalsMs),
     }),
+    ...(presentedFrames === 0 ? {} : {
+      meanFps: meanFps(presentedIntervalsMs),
+      p50FrameMs: nearestRank(presentedIntervalsMs, 0.5),
+      p95FrameMs: nearestRank(presentedIntervalsMs, 0.95),
+      p99FrameMs: nearestRank(presentedIntervalsMs, 0.99),
+    }),
+    ...(unmeasurableIntervalCount(callbackIntervalsMs) === 0
+      ? {}
+      : { unmeasurableCallbackIntervals: unmeasurableIntervalCount(callbackIntervalsMs) }),
     ...(intervals.some(({ drawCalls }) => drawCalls !== undefined) ? { drawCalls: Math.max(...intervals.flatMap(({ drawCalls }) => drawCalls === undefined ? [] : [drawCalls])) } : {}),
     ...(intervals.some(({ triangles }) => triangles !== undefined) ? { triangles: Math.max(...intervals.flatMap(({ triangles }) => triangles === undefined ? [] : [triangles])) } : {}),
   };
@@ -1741,10 +1978,33 @@ function pairMetrics(metrics) {
   };
 }
 
+/**
+ * The display a web frame rate was read from.
+ *
+ * `observations.hardwareIdentity` was the key this used to read and no producer has ever written it,
+ * so every web artifact published an identity with no GPU in it. `webDisplay` is published from the
+ * decision the runner itself made, and it is the field that separates this host's two web
+ * collections: 33.97 fps on the private display, 163.45 fps on the session display.
+ *
+ * The playtest report retains its observed WebGPU adapter in the pipeline census. Repeated
+ * workload runs must agree before one adapter can identify the whole rate sample.
+ */
+export function webRateIdentity(web) {
+  const display = web?.display;
+  const adapters = web?.runs?.map((run) => run?.report?.observations?.pipelineCensus?.adapter?.identity);
+  const adapter = adapters?.length > 0 && adapters.every((identity) => typeof identity === 'string' && identity !== 'unavailable' && identity === adapters[0])
+    ? adapters[0]
+    : undefined;
+  return {
+    ...(display === undefined ? {} : { webDisplay: display.kind === 'existing' ? `session:${display.display}` : display.kind }),
+    ...(adapter === undefined ? {} : { webAdapter: adapter }),
+  };
+}
+
 function identityFor(options, web, native, artifactHashes, resolutionScaleSetting) {
   const common = {
     // Only observed hardware data may certify a promoted comparison. Missing fields remain absent.
-    ...(web?.runs[0]?.report?.observations?.hardwareIdentity ?? native?.runs[0]?.report?.observations?.hardwareIdentity ?? {}),
+    ...webRateIdentity(web),
     workloadHash: web?.workloadHash ?? native?.workloadHash,
     renderHeight: options.renderSize.height,
     renderWidth: options.renderSize.width,
@@ -1839,6 +2099,7 @@ function profileCommand(options) {
     `--repetitions ${options.repetitions}`,
     ...(options.device === undefined ? [] : ['--device <selected>']),
     ...(options.hostedSoftware ? ['--hosted-software'] : []),
+    ...(options.liveClock === true ? ['--live-clock'] : []),
     ...(options.prebuiltArtifact === undefined ? [] : ['--prebuilt-artifact <existing-build>']),
     ...(options.project === undefined ? [] : ['--project <existing-project>']),
     ...(options.scenario === undefined ? [] : ['--scenario <production-scenario>']),
@@ -1886,8 +2147,12 @@ async function createFixtureControlEvidence(options, context, runId) {
 }
 
 async function collectFixtureFrameSeries(control) {
+  // The real producers stamp every sample with the rAF presentation timestamp, so the fixture that
+  // stands in for them carries one too: the judge reads presented cadence, and a fixture without
+  // presentation identity would now be (correctly) unmeasured rather than a passing control.
   const intervals = Array.from({ length: 120 }, (_, index) => ({
     frameMs: 16.5,
+    presentationMs: index * 16.5,
     sequence: index + 1,
     timestampMs: index * 16.5,
   }));
@@ -1895,7 +2160,9 @@ async function collectFixtureFrameSeries(control) {
   for (const index of [intervals.length - 2, intervals.length - 1]) {
     const startedAt = performance.now();
     await new Promise((resolve) => setTimeout(resolve, SLOW_FRAME_DELAY_MS));
-    intervals[index].frameMs = Math.max(SLOW_FRAME_DELAY_MS, performance.now() - startedAt);
+    const slowFrameMs = Math.max(SLOW_FRAME_DELAY_MS, performance.now() - startedAt);
+    intervals[index].frameMs = slowFrameMs;
+    intervals[index].presentationMs = intervals[index - 1].presentationMs + slowFrameMs;
     intervals[index].timestampMs = intervals[index - 1].timestampMs + intervals[index - 1].frameMs;
   }
   return intervals;
