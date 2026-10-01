@@ -350,7 +350,11 @@ async function yieldThroughHost(yieldFrame: () => Promise<void>): Promise<void> 
   ]);
 }
 
-async function within(
+/**
+ * @internal Shared with `world-cells.ts`, whose streamed chunks warm up on the same bound: a
+ * compile that never settles must not hold an object out of the world for the rest of the session.
+ */
+export async function within(
   work: Promise<unknown>,
   limitMs: number,
   yieldFrame: () => Promise<void>,

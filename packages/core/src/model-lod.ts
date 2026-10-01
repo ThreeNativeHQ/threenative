@@ -90,6 +90,38 @@ export function projectedLodError(
   return worldError * lodPixelScale(camera, viewportHeight, depth);
 }
 
+/**
+ * The adaptive LOD bias both selection paths share: one multiplier on the camera distance, `>= 1`.
+ *
+ * `WorldCells`' control loop owns it (see its `adaptiveLod` option) and rewrites it once it has a
+ * fresh main-pass GPU reading; `setLodBias` is the only writer. The CPU selection here reads it
+ * through {@link biasedLodDistance}, and the GPU scene mirrors it as a uniform, so a placement at
+ * one distance crosses the same switch wherever the level is decided. `1` is exactly as authored.
+ */
+let lodBiasValue = 1;
+
+/** The multiplier every LOD selection path scales camera distance by. */
+export function lodBias(): number {
+  return lodBiasValue;
+}
+
+/**
+ * Sets the adaptive LOD bias, clamped to `>= 1`. A bias below 1 would refine past what the chain
+ * authored, so it is refused rather than applied; a non-finite value is no reading and resets to 1.
+ */
+export function setLodBias(bias: number): void {
+  lodBiasValue = Number.isFinite(bias) && bias >= 1 ? bias : 1;
+}
+
+/**
+ * The camera distance an LOD switch is compared against: the measured distance times
+ * {@link lodBias}. Scaling up crosses every authored switch earlier and never later, so a bias can
+ * only coarsen selection, never refine it below the level the chain would show unaided.
+ */
+export function biasedLodDistance(distance: number): number {
+  return distance * lodBiasValue;
+}
+
 const nearest = new Vector3();
 
 /**
@@ -268,7 +300,7 @@ async function readPendingLevels(
  * forever; recovering the chain from the geometry the clone carries is what makes a clone behave
  * like the source.
  */
-interface ILodChain {
+export interface ILodChain {
   readonly levels: BufferGeometry[];
   readonly errors: readonly number[];
   readonly base: BufferGeometry;
@@ -342,7 +374,12 @@ class ModelLod {
       world.radius,
       (camera as ILodCameraLike).near ?? 0,
     );
-    const view: ILodView = { camera, degenerate, depth, viewportHeight };
+    const view: ILodView = {
+      camera,
+      degenerate,
+      depth: biasedLodDistance(depth),
+      viewportHeight,
+    };
     const index = selectLodLevel(
       this.#chain.errors,
       this.#current,
@@ -375,7 +412,12 @@ class ModelLod {
     );
     const errors = [...this.#chain.errors, rung.error];
     const joinedIndex = this.#chain.errors.length;
-    const view: ILodView = { camera, degenerate, depth, viewportHeight };
+    const view: ILodView = {
+      camera,
+      degenerate,
+      depth: biasedLodDistance(depth),
+      viewportHeight,
+    };
     const index = selectLodLevel(
       errors,
       this.#current,
@@ -688,8 +730,18 @@ interface IRegisteredChain {
  * to the source's chain instead of vanishing. Weak on the key, so a chain whose last live geometry
  * is dropped leaves with it: the value holds its own level geometries, and an ephemeron keeps that
  * self-reference from pinning them.
+ *
+ * One map per realm, not per module copy: the package builds each entry without code splitting,
+ * so `@threenative/core` (whose asset loader registers) and `@threenative/core/world` (whose
+ * `WorldCells` reads) each carry this module. A module-local map left WorldCells finding no chain.
  */
-const chains = new WeakMap<BufferGeometry, IRegisteredChain>();
+const CHAINS_KEY = Symbol.for("threenative.discreteLodChains");
+const chainsHost = globalThis as Record<symbol, unknown>;
+const carriedChains = chainsHost[CHAINS_KEY] as
+  | WeakMap<BufferGeometry, IRegisteredChain>
+  | undefined;
+const chains: WeakMap<BufferGeometry, IRegisteredChain> = carriedChains ?? new WeakMap();
+chainsHost[CHAINS_KEY] = chains;
 
 /** Per-mesh selection state, keyed weakly by the mesh so a disposed or dropped clone drops out. */
 const controllers = new WeakMap<Mesh, ModelLod>();
@@ -985,6 +1037,22 @@ export function baseGeometryOf(mesh: Mesh): BufferGeometry {
   const controller = controllers.get(mesh);
   if (controller !== undefined) return controller.base;
   return chains.get(mesh.geometry)?.chain.base ?? mesh.geometry;
+}
+
+/**
+ * The chain registered against `geometry`, or `undefined` when the geometry carries none.
+ *
+ * For a caller that draws one geometry many times. A `ModelLod` swaps one mesh's geometry, so an
+ * instanced batch — which cannot swap a geometry per instance — derives levels of its own from these
+ * numbers and crosses between them by distance instead. Selection stays here: this reads the chain
+ * out and hands it over, and the caller does the arithmetic {@link projectedLodError} documents, with
+ * a screen-space error budget of its own — a batch's placements are all at different distances, so
+ * the budget the loader registered the chain with, which is calibrated for the one mesh it drives,
+ * is not the one that applies. Any level of a chain answers, since a clone may be carrying a derived
+ * geometry.
+ */
+export function lodChainOf(geometry: BufferGeometry): ILodChain | undefined {
+  return chains.get(geometry)?.chain;
 }
 
 // --- Per-frame update, mirroring `updateClusteredMeshes` ----------------------------------------

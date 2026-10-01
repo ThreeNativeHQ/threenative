@@ -287,8 +287,12 @@ function cornersOfBounds(bounds: IBoundsLike): IVector3Like[] {
 export class DirectionalClipmap {
   readonly clipExtents: readonly number[];
   readonly pagesPerAxis: number;
-  /** Per level, finest first; the last entry stands in for every level past it. */
-  readonly refreshStep: readonly number[];
+  /**
+   * Per level, finest first; the last entry stands in for every level past it. Mutable through
+   * {@link setRefreshStep} so a level whose own render is expensive can be stepped further, which
+   * is fewer grid positions for its window rather than a different grid.
+   */
+  refreshStep: number[];
   /** Per level, finest first; the last entry stands in for every level past it. */
   readonly selectionGuard: readonly number[];
   readonly levelCount: number;
@@ -402,6 +406,16 @@ export class DirectionalClipmap {
       y: this.basisU.y * u + this.basisV.y * v + this.basisW.y * w,
       z: this.basisU.z * u + this.basisV.z * v + this.basisW.z * w,
     };
+  }
+
+  /** Re-step one level's window: the trail its followed centre may move before it re-renders. */
+  setRefreshStep(level: number, step: number): void {
+    assertInteger("level", level);
+    if (level < 0 || level >= this.levelCount) throw new RangeError(`invalid clip level: ${level}`);
+    if (!Number.isFinite(step) || step < 0 || step >= 1) {
+      throw new RangeError(`refreshStep must stay in the range [0, 1), got ${String(step)}`);
+    }
+    this.refreshStep[Math.min(level, this.refreshStep.length - 1)] = step;
   }
 
   updateCenter(worldPoint: IVector3Like): readonly IClipWindow[] {

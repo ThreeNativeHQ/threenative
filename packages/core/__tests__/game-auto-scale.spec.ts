@@ -178,16 +178,19 @@ describe('resolutionScale: "auto"', () => {
 
   it("reports atFloor once the scaler has run out of rungs and the frame is still over budget", async () => {
     // Measured on a physical Pixel 8 the same day: Bayview walked all ten rungs to 0.23 and was
-    // still under 60 fps, because 13.79 ms of its frame does not scale with pixels at all. A
-    // window reporting 0.23 and nothing else would read as a budget met at a low resolution.
+    // still under 60 fps. A window reporting 0.23 and nothing else would read as a budget met at a
+    // low resolution.
     //
-    // Reaching the floor takes measured GPU cost: an fps deficit alone only ever probes. So the
-    // mock reports a fresh 40 ms GPU timestamp every frame — genuine overload — while the frame
-    // itself runs 60 ms over budget.
+    // Reaching the floor takes measured GPU cost that genuinely falls with the pixels: an fps
+    // deficit alone only ever probes, and a *constant* GPU cost is now the insensitivity guard's
+    // case — it would hold the sharp rung rather than surrender pixels for nothing. So the mock
+    // reports a fresh GPU timestamp that tracks the drawing buffer and is still over the 16.67 ms
+    // budget at the lowest rung, so the scaler runs out of room and must report it.
     const canvas = testCanvas();
     let frame: ((time: number) => void) | undefined;
     let gpuFrame = 0;
-    const gpuInfo = { frame: 0, render: { timestamp: 40 } };
+    let bufferWidth = 2400;
+    const gpuInfo = { frame: 0, render: { timestamp: 0 } };
     const windows: Array<{ surface?: { atFloor: boolean; resolutionScale: number } }> = [];
     const game = defineGame({
       display: { maxFps: 60 },
@@ -203,8 +206,12 @@ describe('resolutionScale: "auto"', () => {
           render: () => {
             gpuFrame += 1;
             gpuInfo.frame = gpuFrame;
+            // Pixel-bound cost: 352 ms at full resolution, 20.5 ms at 0.23 — still over budget.
+            gpuInfo.render.timestamp = 2 + 350 * (bufferWidth / 2400) ** 2;
           },
-          setSize: () => undefined,
+          setSize: (width: number) => {
+            bufferWidth = width;
+          },
         }),
       },
       scenes: { test: Empty },

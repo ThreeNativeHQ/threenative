@@ -2575,6 +2575,22 @@
     {
       "aliases": [],
       "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resolveTargetFps( config: ITargetFpsConfig | undefined, platform: ITargetFpsPlatform | undefined, measuredRefreshHz?: number, ): ITargetFps { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "resolveTargetFps"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "it draws nothing; the game supplies the mesh, the material and every colour",
         "add its height to an analytic swell, never in place of one",
         "the patch is finite and its rim absorbs; call recenter to keep it over the action",
@@ -2761,6 +2777,22 @@
       "summary": "List the names of every bone in a character hierarchy.",
       "supersedes": [],
       "symbol": "skeletonBones"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function snapRefreshRate(refreshHz: number): number { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "snapRefreshRate"
     },
     {
       "aliases": [],
@@ -3691,13 +3723,14 @@
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
-        "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws"
+        "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws",
+        "seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off"
       ],
       "example": "const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, and budgets"
+        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets"
       ],
       "package": "@threenative/core",
       "signature": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
@@ -3709,6 +3742,23 @@
       "summary": "Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.",
       "supersedes": [],
       "symbol": "TerrainTiles"
+    },
+    {
+      "aliases": [],
+      "constraints": ["off by default: it is the work it checks, every frame"],
+      "example": "// Reads its own the way `renderListValidationRequested` does: a native launch sets the\n// environment variable, a browser asks with the query string, a test or harness sets the\n// global. `0` and `false` are off, so a saved URL that enabled it still says \"off\".\nconst tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function terrainValidationRequested(): boolean { … }",
+      "situations": [
+        "turn terrain's per-frame seam, LOD pop and vertex checks on for one run",
+        "assert the terrain geometry a game streams before it ships"
+      ],
+      "summary": "Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch.",
+      "supersedes": [],
+      "symbol": "terrainValidationRequested"
     },
     {
       "aliases": [],
@@ -3736,16 +3786,21 @@
         "budgets are hard caps that report pressure instead of over-committing",
         "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
         "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
-        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, and a deferred cell keeps drawing what it has",
+        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
         "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
+        "a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it",
         "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",
-        "`shadows.castDistance` needs `shadows.cast`; it puts a shadow-only companion mesh on `VIRTUAL_SHADOW_CASTER_LAYER` per castable batch and `shadows.invalidate` is called once after a rebuild"
+        "every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers",
+        "two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct",
+        "the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds",
+        "a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left",
+        "`shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed"
       ],
       "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `shadows.castDistance` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
+        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
       ],
       "package": "@threenative/core",
       "signature": "export class WorldCells extends Group implements IComputeDriven { … }",
@@ -3754,7 +3809,7 @@
         "keep scattered props and hand-placed chunks resident around a moving player",
         "honour per-asset draw distances and hard streaming budgets without a mid-frame throw"
       ],
-      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances.",
+      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset whose package entry names no `lods` is drawn at the levels its own model carries a baked AutoLOD chain for: the levels an instanced draw cannot reach by itself, switched at the distance their error projects over the `autoLod` viewport. Authored `lods` win; a chain is only a fallback.",
       "supersedes": [],
       "symbol": "WorldCells"
     },

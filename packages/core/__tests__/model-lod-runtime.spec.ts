@@ -11,6 +11,7 @@ import {
   DiscreteLodPlugin,
   TN_DISCRETE_LOD,
   baseGeometryOf,
+  setLodBias,
   updateModelLods,
 } from "../src/model-lod.js";
 
@@ -70,6 +71,7 @@ function definition(overrides: Record<string, unknown> = {}): Record<string, unk
 }
 
 afterEach(() => {
+  setLodBias(1);
   vi.restoreAllMocks();
 });
 
@@ -216,5 +218,43 @@ describe("DiscreteLodPlugin", () => {
     expect(position.array.byteLength).toBeGreaterThan(0);
     expect(base.index?.count).toBe(BASE_INDICES.length);
     expect(baseGeometryOf(right)).toBe(base);
+  });
+});
+
+describe("adaptive LOD bias on the CPU path", () => {
+  it("coarsens a fixed-distance selection and never refines it below what was authored", async () => {
+    const target = mesh();
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser(parserFor(target, definition()) as never);
+    await plugin.afterRoot({ scene: target });
+    plugin.attach(target, { hysteresis: 0.15, maxPixelError: 1 });
+    const scene = new Scene();
+    scene.add(target);
+
+    // 46 m out: the chain's first derived level (error 0.05) projects just over the one-pixel
+    // budget, so the authored level is LOD0 and the coarsening hysteresis has nothing to accept.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100_000);
+    camera.position.set(0, 0, 46);
+    camera.updateMatrixWorld(true);
+    setLodBias(1);
+    updateModelLods(scene, camera, 1080);
+    expect((target as Mesh & { geometry: BufferGeometry }).geometry).toBe(baseGeometryOf(target));
+
+    // The same distance under a bias is ~64 m of effective distance, inside the derived level's
+    // budget and inside the hysteresis band, so the switch moves earlier and it takes over.
+    setLodBias(1.4);
+    updateModelLods(scene, camera, 1080);
+    const coarse = (target as Mesh & { geometry: BufferGeometry }).geometry;
+    expect(coarse).not.toBe(baseGeometryOf(target));
+    expect(coarse.index?.count).toBe(12);
+
+    // A camera already at the coarsest level is never refined by a bias.
+    const far = new PerspectiveCamera(60, 1, 0.1, 100_000);
+    far.position.set(0, 0, 100_000);
+    far.updateMatrixWorld(true);
+    updateModelLods(scene, far, 1080);
+    const coarsest = (target as Mesh & { geometry: BufferGeometry }).geometry;
+    expect(coarsest.index?.count).toBe(6);
+    expect(coarsest).not.toBe(baseGeometryOf(target));
   });
 });

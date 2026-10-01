@@ -76,11 +76,12 @@ async function hashOutputRoot(outputRoot: string): Promise<Map<string, string>> 
 async function stageTwoSharedModels(): Promise<string> {
   const root = await makeTempDir("threenative-determinism-");
   await mkdir(path.join(root, "assets"));
-  const glb = await buildFixtureGlb();
-  // Two logical paths, byte-identical models: both embed the same images, so the shared-image
-  // merge is on the path and the two inputs are the independent work a scheduler would overlap.
-  await writeFile(path.join(root, "assets", "a.glb"), glb);
-  await writeFile(path.join(root, "assets", "b.glb"), glb);
+  // Two logical paths over the same images: the shared-image merge is on the path and the two
+  // inputs are the independent work a scheduler would overlap. Different geometry, because a
+  // byte-identical copy is one model published under two names (TN_ASSET_MODEL_DEDUPE) and only
+  // one of the two would ever be cooked — which is also what makes a reversed run indistinguishable.
+  await writeFile(path.join(root, "assets", "a.glb"), await buildFixtureGlb());
+  await writeFile(path.join(root, "assets", "b.glb"), await buildFixtureGlb({ gridDepth: 4 }));
   return root;
 }
 
@@ -232,7 +233,7 @@ describe("decoder-free resizing is deterministic and cache-correct", () => {
     await writeFile(path.join(root, "assets", "character.glb"), await buildFixtureGlb());
     try {
       const outputs = async (config: {
-        readonly lod?: { readonly enabled: boolean };
+        readonly lod?: { readonly generation?: { readonly minSaving: number } };
         readonly textures: { readonly maxSize: number };
       }): Promise<Record<string, string>> => {
         await compileAssets({ config, cwd: root, platform: "android" });
@@ -250,8 +251,10 @@ describe("decoder-free resizing is deterministic and cache-correct", () => {
       // A standalone texture cap does not touch the model, whose embedded textures are "none".
       expect(capped["character.glb"]).toBe(base["character.glb"]);
 
+      // Absent already means "on with defaults" (PRD-458 AC-6), so the change that must move the
+      // model's digest is one that actually alters the baked chain, not a restatement of the default.
       const lodChanged = await outputs({
-        lod: { enabled: true },
+        lod: { generation: { minSaving: 0.5 } },
         textures: { maxSize: 32 },
       });
       // The model-only lod policy is not in the texture's digest...

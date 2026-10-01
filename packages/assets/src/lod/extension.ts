@@ -348,12 +348,14 @@ export function attachDiscreteLod(
     readonly errors: readonly number[];
     readonly indices: readonly Uint32Array[];
     readonly lod0Triangles: number;
+    /** Which reducer produced the levels; `"cards"` is the foliage ladder (PRD-458 §4). */
+    readonly strategy?: "cards" | "discrete";
   },
 ): DiscreteLod {
   const buffer = document.getRoot().listBuffers()[0] ?? document.createBuffer();
   const property = extension
     .createDiscreteLod()
-    .setStrategy("discrete")
+    .setStrategy(chain.strategy ?? "discrete")
     .setBaselineTriangles(chain.baselineTriangles)
     .setLod0Triangles(chain.lod0Triangles)
     .setErrorScale(chain.errorScale)

@@ -49,6 +49,35 @@ describe("createRenderer", () => {
     }
   });
 
+  it("smooths the main-pass GPU time and reports it absent once the samples go stale", async () => {
+    const canvas = testCanvas();
+    const renderer = await createRenderer({
+      canvas,
+      preferWebGPU: false,
+      webgl2Factory: () => ({
+        domElement: canvas,
+        info: { frame: 0 },
+        render: () => undefined,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      expect(renderer.gpuMainMs?.()).toBeUndefined();
+      renderer.noteGpuMainMs?.(8, 1);
+      expect(renderer.gpuMainMs?.()).toBe(8);
+      // A repeated frame id is the previous resolve still in flight, not a second measurement.
+      renderer.noteGpuMainMs?.(12, 1);
+      expect(renderer.gpuMainMs?.()).toBe(8);
+      renderer.noteGpuMainMs?.(12, 2);
+      expect(renderer.gpuMainMs?.()).toBe(10);
+      // No fresh sample for long enough reads absent rather than as the last number forever.
+      for (let frame = 0; frame < 8; frame += 1) renderer.noteGpuMainMs?.(undefined);
+      expect(renderer.gpuMainMs?.()).toBeUndefined();
+    } finally {
+      renderer.dispose();
+    }
+  });
+
   it("records GPU timestamps on one of every eight renderer frames by default", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

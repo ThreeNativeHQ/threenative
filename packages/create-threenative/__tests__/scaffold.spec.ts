@@ -164,6 +164,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
+  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not.
   // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
   // the first gave each quality.ts a software adapter policy; the second found ten of eleven
   // setupPost callers never forwarded the adapter fact to it; the third found no template but
@@ -178,17 +180,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
   // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
   // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  "action-rpg": "b1b2dbf0c28708c6c68585e795413675a54b1dacadbd1015411ac17b1c67eba0",
-  minimal: "03d260f37b6596e4d08d2112608f4fc5bb2d99b6fe38d734400b3f2f253d7a40",
-  platformer: "652251e10a5f74b7d9a6858313e7dd1ad429fcae976bce79604cd8531003946d",
-  puzzle: "f35e1d6aca4c44ab2788651afb717eb861bd8ec401c3d19655e6832de139ae06",
-  racing: "914c62bf6ce97e535bed60d66ea8485ca1c7262667a1c50060c5b338f35eec8d",
+  "action-rpg": "ad132576dd89bbef0b56bdb5b687149992b425e81c738243abb0f1efde68d141",
+  minimal: "548385f4ecb3e8f4b2b11351597007852083fdeffa13bb85dd774faac0b0e901",
+  platformer: "c7e49fc623678f3897138cb8374c718fa27212194db021dad0e7feeb35f983e6",
+  puzzle: "10b30f1c46f45b7f26dfa5c1e4e7b839b433c09f1665ccbcfbf6b1a434029b4c",
+  racing: "acccc1ae5dde3f81bc1d90928f423fac10c12e4033c95cce6e17eb80ff05366f",
   rts: "b13e0f5661a23caf46e1ca3c4b29df28ab6904d6a5157abcc1eca777b4b78a0c",
-  runner: "e889bfbf16f132921ab3ea93f62238fefe3ed47e0bb44ba35d4f73087ee767b9",
-  sailing: "a69872b498a0342819b288eb36847fc5bfb10316daed2974e17f800b5571f9c4",
-  shooter: "1e9e44e2fb173d56bbf6ae4035a16210b27b4116a1f22f446a06c40b10a38ce3",
-  starter: "47f40062a7a7dea1c0c461401c3831585302e7bd7249daf043fb208a42a006cd",
-  "tower-defense": "a61876346b8a1a197206bbbc858a07e70ba7e0d7fdc99a3b6feac252bb4ff3dc",
+  runner: "9a6f22a7aa816dba9787a36b6d8d4c8d0fdd51e723eed54ca438f9886b398a99",
+  sailing: "ea8f2a8fdb527b3217652cdfa2eb576a5ee6ce5f1d86924e26c8bb2abae14f43",
+  shooter: "116116386cec4860c6ada1b3bf95b6f32c574c6fda33c4a431791176035d3343",
+  starter: "87a238c6e188ab0baf5a086011b36b51c353d422435aa892bb306405d31f0fd7",
+  "tower-defense": "b250e2608cf55acd699378a02a274aef39a357296bc1e74ae662145c8b6ba44d",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

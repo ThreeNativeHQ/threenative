@@ -13,9 +13,9 @@ const config: IThreeNativeConfig = {
     orientation: "landscape",
     fullscreen: true,
     keepScreenOn: true,
-    // 240, not 60: a first-person shooter is judged on whether a turn feels instant, and a
-    // 60 Hz cap on a 144 Hz display is a visible input lag the player feels before they see.
-    maxFps: 240,
+    // No `maxFps`: the engine targets the display's own refresh rate, capped at 120 on desktop
+    // and web and 60 on mobile, and reports the resolved value in every `TN_FRAME_BUDGET` window.
+    // Set a number to override it, or 0 to remove the ceiling.
   },
   window: {
     title: "__PROJECT_NAME__",

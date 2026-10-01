@@ -4,8 +4,10 @@ import {
   Scene,
   type SceneFrame,
   createRandom,
+  getPlatform,
   isMobile,
   isTouchscreenAvailable,
+  resolveTargetFps,
 } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import {
@@ -150,7 +152,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         godraysLight: key,
         mobile: isMobile(),
         software: ctx.renderer.softwareAdapter !== undefined,
-        targetFps: config.display?.maxFps ?? 60,
+        // One rule for the frame budget, from the engine: the display refresh capped at 120,
+        // 60 on mobile. A game that names `display.maxFps` overrides it here too.
+        targetFps: resolveTargetFps(config, getPlatform()).targetFps,
         ready: () => ctx.startup.phase === "ready",
       }),
     );
