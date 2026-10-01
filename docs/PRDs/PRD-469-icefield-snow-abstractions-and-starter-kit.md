@@ -120,6 +120,26 @@ Proposed file paths become actual entry-point references when their owning phase
 - 2026-09-30 (João): extract the HTML's existing raw snow code into abstractions and include them in engine capability discovery; write the PRD now.
 - 2026-09-30 (planning): physics acceptance explicitly includes spheres, not just character steps. Reuse the existing terrain, bodies, particles and scaffold mechanisms; the snow starter owns its look.
 
+## Current state (this branch)
+
+Phase 1 is complete and verified; Phases 2 and 3 are not started. Phase 1 landed the
+source-derived numerical abstraction, the canonical-surface update contract, the
+source-derived regression fixture, both AC-1/AC-2 proofs, the Charter and core-ownership
+entries, and discovery of the new exports as engine capabilities
+(`SnowField` and `snowDiscFootprint` both appear in `packages/create-threenative/capabilities.json`
+and the generated capability reference, with compiling examples). A contact-shape figure is on
+PR #382.
+
+Phases 2 and 3 remain unstarted on this branch: the persistent-contact backend seam,
+`attachSnowPhysics`, `packages/physics/__tests__/snow-contacts.spec.ts`, the
+`packages/create-threenative/templates/snow/` kit, template discovery/audit wiring, the MCP
+situation/recall work, the packed `snow-proof` browser run, and the native desktop proof
+(AC-3 through AC-8). No box below is ticked without a result beside it.
+
+**Blocked on (AC-5, native desktop):** not attempted on this branch — `pnpm native:build`
+(which downloads host dependencies and compiles the C++ host) was not run, so no native
+observation exists and no native claim is made.
+
 ## Execution Phases
 
 ### Phase 1: Source-derived numerical snow abstractions
