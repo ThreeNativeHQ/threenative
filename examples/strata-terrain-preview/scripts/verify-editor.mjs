@@ -12,6 +12,8 @@ import {
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
 
+import { verifyPropTransforms } from "./verify-transforms.mjs";
+
 const root = resolve(".");
 const temporary = mkdtempSync(join(tmpdir(), "strata-editor-proof-"));
 const path = join(temporary, "world.json");
@@ -38,6 +40,8 @@ try {
     "--browser-recipe",
     "webgpu",
     "--headed",
+    "--timeout",
+    "60000",
     "--artifacts",
     "artifacts/playtest/editor",
   ]);
@@ -91,6 +95,7 @@ try {
       "Three accepted revisions must change rendered geometry",
     );
     assert.equal(new Set(observed.map((item) => item.revision)).size, 3);
+    await verifyPropTransforms(session, controller, config);
     const validPreview = await session.page.evaluate(() => window.strata.view.inspect());
     const beforeMissing = await controller.snapshot();
     await controller.commit({
@@ -184,7 +189,11 @@ try {
       (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
       recovered.revision,
     );
-    assert.deepEqual(errors, []);
+    assert.deepEqual(
+      errors,
+      ["Failed to load resource: the server responded with a status of 409 (Conflict)"],
+      "Only the deliberately injected stale GUI transaction may produce a console error",
+    );
     console.log(
       JSON.stringify({
         editorUrl: activation.editorUrl,

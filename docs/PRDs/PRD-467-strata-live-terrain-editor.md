@@ -365,15 +365,41 @@ not claim native editor props, final PBR starter art or steady-state FPS.
 
 ### Phase 2: Individual selection and persistent gizmos
 
-**Status:** NOT STARTED
-**Files:** `editor/selection.ts`, `editor/transforms.ts`, authoring validation and
-stable-key evaluation, `__tests__/placement-overrides.spec.ts`, editor scenario.
+**Status:** PARTIAL
+**Files:** game-owned `src/render/selection.ts`, `editorView.ts` and `props.ts`,
+addon `core/placements.ts`, shared authoring validation,
+`__tests__/placement-overrides.spec.ts` and the editor browser scenario.
 **Implementation:** Reuse picker/gizmo, preserve instance identity, persist one
 transaction per drag, and consume overrides in bake/export. Preserve recipe
 intent for landforms. Invalidate only affected static/instance data during drag.
 
-- [ ] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; chosen stable key/matrix changes, sibling matrices unchanged, numeric inputs select the same object, and unsupported landform axes are explicit.
-- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: planned `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` — Evidence: PARTIAL — two public scatter tests reproduce and fix identity retargeting: every candidate consumes five seeded draws even if rejected; keys include layer, unsigned seed and candidate attempt. Mask rejection retains shared candidate coordinates/scale/yaw, a seed change creates new keys, and JSON/count-growth round trips preserve them. All 16 public terrain tests pass. Manual overrides remain pending; change rejection order, assert no retargeting, retained unmatched diagnostics, round-trip transforms, and invalid-input rejection.
+- [ ] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — a real mesh click maps `instanceId` to one durable key; the object list selects that same placement. Actual mouse drags exercise translate X, rotate Y and nonuniform scale X, plus keyboard-accessible numeric inputs. Sibling matrices stay exactly unchanged, Orbit pauses during drag, each completed gesture saves once, and Escape saves nothing. Transform/undo metadata dispatches no terrain evaluation. Heightfield landform selection and explicit supported/disabled axes remain pending, so this box stays open.
+- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` and `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — public tests cover stable candidates across rejection changes, saved nonuniform transforms, unit quaternion/finite/positive-scale validation, atomic rejection (including explicit null grounding), retained unmatched diagnostics and transform records in `bakeTerrain`. The real browser restores every actual instance pose on reload; an unrelated layer edit retains the override, a stale drag preserves the newer actor edit and retains an explicit reapply draft, and selective undo retains the other actor's layer edit. Unmatched override removal works through the GUI. Installed `GroundSnap` uses the actual model bounds and terrain-triangle query; grounding on reaches clearance below 1e-4 m, while a real Y-handle lift records `grounding: false` and reports 2.5549 m clearance. Complete portable game/GLB consumption and exercised reassignment remain pending; this box stays open.
+
+Prop transforms use one ordinary Three.js `TransformControls` proxy around the
+project scene. The measurement mesh is never rendered; updates write only the
+selected instance buffer. Initial creation and later edits write the same prepared
+matrix, avoiding Euler round-trip differences when resetting a placement. Stable
+authoring records keep requested transforms and the named grounding choice;
+unmatched keys are not silently redirected. Public root and `/three` remain
+headless. The recovered view contract receives the existing controller and applies
+metadata through `setDocument`, separately from the evaluator worker.
+
+Gizmo milestone checks (2026-10-01): all 20 public terrain tests and the real
+WebGPU browser integration pass, including the fresh standalone scene scenario.
+The three simple 100-prop terrain revisions draw in 141–167 ms on NVIDIA/turing
+RTX 2080. Root typecheck, lint, budgets, documentation links and 180 documentation
+tests pass. The full board's documentation/build/package-test phases pass; its
+unit phase is green through the existing `pnpm gate:resume` path: 523 files /
+6,489 tests pass (12 skips), with no temporary-directory growth. The earlier unit
+attempt lost the asset-budget worker; that file passes all 26 tests alone and the
+entire resumed suite passes. The worker exit's cause remains unconfirmed. Actual
+selection/scale/grounding screenshots accompany this draft milestone. This proves
+browser editor behavior, not native editor props, final starter art or FPS.
+
+Open follow-up: guard requested/rendered revision labels when metadata arrives
+while a terrain rebuild is pending or has failed; exercise that interleaving before
+considering the full transform phase complete.
 
 ### Phase 3: GUI polish and GLB handoff
 

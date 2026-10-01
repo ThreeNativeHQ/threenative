@@ -374,6 +374,18 @@ export interface IPlacement {
   readonly scale: number;
   readonly normal: [number, number, number];
   readonly alignToNormal: boolean;
+  /** Authored transform; absent means the original scatter pose, with grounding enabled. */
+  readonly transform?: IPlacementOverride;
+}
+
+/** A manual edit of one stable scatter candidate; model bounds remain game-owned. */
+export interface IPlacementOverride {
+  readonly position: [number, number, number];
+  /** Unit quaternion in Three.js x/y/z/w order. */
+  readonly quaternion: [number, number, number, number];
+  readonly scale: [number, number, number];
+  /** False retains requested Y; clearance is still measured by the game. */
+  readonly grounding: boolean;
 }
 
 /** The disposable result of one evaluation: arrays the caller owns, plus its diagnostics. */

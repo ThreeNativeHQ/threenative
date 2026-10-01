@@ -4,8 +4,8 @@ import { terrainPalette } from "./render/palette.js";
 
 let view: Awaited<ReturnType<typeof createEditorView>>;
 void mountTerrainEditor({
-  createView: async (host) => {
-    view = await createEditorView(host);
+  createView: async (host, controller) => {
+    view = await createEditorView(host, controller);
     return view;
   },
   materialColours: terrainPalette,

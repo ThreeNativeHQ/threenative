@@ -6317,6 +6317,25 @@
     {
       "aliases": [],
       "constraints": [
+        "headless authoring; game applies transforms against its model bounds and actual terrain surface"
+      ],
+      "example": "const state = applyPlacementOverrides(terrain.evaluate(), document.placementOverrides ?? {});",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": [
+        "transform.grounding=false preserves requested Y while the game still measures clearance"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",
+      "situations": ["retain manual prop transforms across terrain scatter re-evaluation"],
+      "summary": "Attach manual transforms to raw evaluated candidates and report orphan keys.",
+      "supersedes": [],
+      "symbol": "applyPlacementOverrides"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "no material is chosen; vertex colours exist only with a caller-supplied palette"
       ],
       "example": "const mesh = bakeMesh(new Terrain({ resolution: 17 }).evaluate());",
@@ -6576,6 +6595,25 @@
       "summary": "Validates the recovered recipe schema, operation allow-lists and numeric bounds.",
       "supersedes": [],
       "symbol": "validateDocument"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "grounding defaults on only when omitted; position and scale have three components and quaternion is unit length"
+      ],
+      "example": "const transforms = validatePlacementOverrides(document.placementOverrides);",
+      "importPath": "@threenative/terrain",
+      "kind": "function",
+      "overrides": ["grounding=false preserves authored Y and keeps clearance observable"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validatePlacementOverrides( value: unknown = { … }",
+      "situations": [
+        "validate finite positive manual prop transforms before a terrain authoring transaction"
+      ],
+      "summary": "Validate and clone stable-key placement transforms before saving or previewing them.",
+      "supersedes": [],
+      "symbol": "validatePlacementOverrides"
     },
     {
       "aliases": [],

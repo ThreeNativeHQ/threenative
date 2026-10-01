@@ -3,8 +3,10 @@ import { lstatSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute, resolve } from "node:path";
 import type { Plugin } from "vite";
+import { validatePlacementOverrides } from "../core/placements.js";
 import { type PatchCommand, Terrain } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
+import type { IPlacementOverride } from "../core/types.js";
 
 const PREFIX = "/terrain-editor/";
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -12,6 +14,7 @@ const MAX_BYTES = 64 * 1024 * 1024;
 export interface IAuthoringDocument {
   version: 1;
   recipe: ITerrainDocument;
+  placementOverrides?: Record<string, IPlacementOverride>;
 }
 export interface IEditorSnapshot {
   revision: string;
@@ -29,10 +32,15 @@ function validate(value: unknown): IAuthoringDocument {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Expected an authoring document");
   const input = value as Record<string, unknown>;
-  if (input.version !== 1 || Object.keys(input).some((key) => !["version", "recipe"].includes(key)))
+  if (
+    input.version !== 1 ||
+    Object.keys(input).some((key) => !["version", "recipe", "placementOverrides"].includes(key))
+  )
     throw new Error("Unsupported authoring document fields/version");
   const recipe = Terrain.fromJSON(input.recipe as ITerrainDocument).toJSON();
   const document: IAuthoringDocument = { version: 1, recipe };
+  if (input.placementOverrides !== undefined)
+    document.placementOverrides = validatePlacementOverrides(input.placementOverrides);
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
     throw new Error("Authoring document exceeds 64 MiB");
   return document;

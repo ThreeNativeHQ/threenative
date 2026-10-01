@@ -1,5 +1,5 @@
-import { InstancedBatch, createRandom, mergeParts } from "@threenative/core";
-import type { IPlacement } from "@threenative/terrain";
+import { GroundSnap, InstancedBatch, createRandom, mergeParts } from "@threenative/core";
+import type { IPlacement, IPlacementOverride } from "@threenative/terrain";
 import {
   type BufferGeometry,
   ConeGeometry,
@@ -8,7 +8,9 @@ import {
   Group,
   IcosahedronGeometry,
   type InstancedMesh,
+  type Material,
   Matrix4,
+  Mesh,
   MeshStandardMaterial,
   Quaternion,
   Vector3,
@@ -66,55 +68,131 @@ function shape(asset: string): BufferGeometry {
   }
 }
 
-export function createProps(
-  placements: readonly IPlacement[],
-  groundAt: (placement: IPlacement) => number,
+export type PropGroundQuery = (
+  placement: IPlacement,
+  position: [number, number, number],
+) => { height: number | null; offset: number };
+export interface IPropInstance {
+  mesh: InstancedMesh;
+  index: number;
+  placement: IPlacement;
+  grounding: boolean;
+  clearance: number | null;
+}
+function preparePose(
+  geometry: BufferGeometry,
+  material: Material | Material[],
+  placement: IPlacement,
+  transform: IPlacementOverride | undefined,
+  groundAt: PropGroundQuery,
 ) {
-  const grouped = new Map<string, { placement: IPlacement; ground: number }[]>();
+  // This measurement mesh is never added to the scene; the actual draw stays instanced.
+  const model = new Mesh(geometry, material);
+  model.position.fromArray(transform?.position ?? placement.position);
+  if (transform) {
+    model.quaternion.fromArray(transform.quaternion);
+    model.scale.fromArray(transform.scale);
+  } else {
+    const up = new Vector3(0, 1, 0);
+    if (placement.alignToNormal)
+      model.quaternion.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
+    model.quaternion.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
+    model.scale.setScalar(placement.scale);
+  }
+  const grounding = transform?.grounding ?? true;
+  const ground = groundAt(placement, model.position.toArray());
+  const snap = new GroundSnap(model, { enabled: grounding });
+  if (ground.height === null) {
+    if (grounding) throw new Error(`Missing terrain ground for '${placement.id}'`);
+  } else {
+    snap.apply(model, ground.height, 0);
+    if (grounding && ground.offset !== 0) {
+      model.position.y += ground.offset;
+      snap.enabled = false;
+      snap.apply(model, ground.height, 0);
+    }
+  }
+  model.updateMatrix();
+  if (!new Float32Array(model.matrix.elements).every(Number.isFinite))
+    throw new Error(`Transform exceeds the renderer range for '${placement.id}'`);
+  return { matrix: model.matrix.clone(), grounding, clearance: snap.clearance };
+}
+export function preparePropTransform(
+  instance: IPropInstance,
+  transform: IPlacementOverride | undefined,
+  groundAt: PropGroundQuery,
+) {
+  return preparePose(
+    instance.mesh.geometry,
+    instance.mesh.material,
+    instance.placement,
+    transform,
+    groundAt,
+  );
+}
+export function writePropTransform(
+  instance: IPropInstance,
+  prepared: ReturnType<typeof preparePropTransform>,
+): void {
+  instance.mesh.setMatrixAt(instance.index, prepared.matrix);
+  instance.mesh.instanceMatrix.needsUpdate = true;
+  instance.mesh.computeBoundingSphere();
+  instance.grounding = prepared.grounding;
+  instance.clearance = prepared.clearance;
+}
+export function readPropTransform(instance: IPropInstance): IPlacementOverride {
+  const matrix = new Matrix4();
+  const position = new Vector3();
+  const quaternion = new Quaternion();
+  const scale = new Vector3();
+  instance.mesh.getMatrixAt(instance.index, matrix);
+  matrix.decompose(position, quaternion, scale);
+  return {
+    position: position.toArray(),
+    quaternion: quaternion.normalize().toArray(),
+    scale: scale.toArray(),
+    grounding: instance.grounding,
+  };
+}
+export function createProps(placements: readonly IPlacement[], groundAt: PropGroundQuery) {
+  const grouped = new Map<string, IPlacement[]>();
   for (const placement of placements) {
     if (!["pine", "boulder", "grass"].includes(placement.asset))
       throw new Error(`Unregistered prop asset '${placement.asset}'`);
-    const ground = groundAt(placement);
-    if (!Number.isFinite(ground)) throw new Error(`Missing prop ground '${placement.id}'`);
     const group = grouped.get(placement.asset) ?? [];
-    group.push({ placement, ground });
+    group.push(placement);
     grouped.set(placement.asset, group);
   }
   const object = new Group();
   const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.96 });
   const geometries: BufferGeometry[] = [];
   const meshes: InstancedMesh[] = [];
+  const byId = new Map<string, IPropInstance>();
   function dispose(): void {
     for (const mesh of meshes) mesh.dispose();
     for (const geometry of geometries) geometry.dispose();
     material.dispose();
     object.clear();
+    byId.clear();
   }
   try {
     for (const [asset, entries] of grouped) {
       const geometry = shape(asset);
       geometries.push(geometry);
-      geometry.computeBoundingBox();
-      const bounds = geometry.boundingBox;
-      if (!bounds) throw new Error(`Missing prop bounds '${asset}'`);
       const batch = new InstancedBatch({ geometry, material });
-      for (const { placement, ground } of entries) {
-        const up = new Vector3(0, 1, 0);
+      const prepared = entries.map((placement) =>
+        preparePose(geometry, material, placement, placement.transform, groundAt),
+      );
+      for (const pose of prepared) {
+        const position = new Vector3();
         const rotation = new Quaternion();
-        if (placement.alignToNormal)
-          rotation.setFromUnitVectors(up, new Vector3().fromArray(placement.normal));
-        rotation.multiply(new Quaternion().setFromAxisAngle(up, placement.rotation));
-        const transform = new Matrix4().compose(
-          new Vector3(),
-          rotation,
-          new Vector3().setScalar(placement.scale),
-        );
-        const bottom = bounds.clone().applyMatrix4(transform).min.y;
+        const scale = new Vector3();
+        pose.matrix.decompose(position, rotation, scale);
         const euler = new Euler().setFromQuaternion(rotation);
         batch.place({
-          position: [placement.position[0], ground - bottom, placement.position[2]],
+          position: position.toArray(),
           rotation: [euler.x, euler.y, euler.z],
-          scale: placement.scale,
+          scale: scale.toArray(),
         });
       }
       const mesh = batch.build({
@@ -124,10 +202,24 @@ export function createProps(
         receiveShadow: true,
       });
       if (!mesh) throw new Error(`Empty prop batch '${asset}'`);
-      mesh.userData.placementIds = entries.map(({ placement }) => placement.id);
+      mesh.userData.placementIds = entries.map((placement) => placement.id);
       meshes.push(mesh);
+      prepared.forEach((pose, index) => {
+        const placement = entries[index];
+        if (!placement) throw new Error(`Placement/pose mismatch '${asset}'`);
+        mesh.setMatrixAt(index, pose.matrix);
+        byId.set(placement.id, {
+          mesh,
+          index,
+          placement,
+          grounding: pose.grounding,
+          clearance: pose.clearance,
+        });
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
     }
-    return { object, meshes, dispose };
+    return { object, meshes, byId, dispose };
   } catch (error) {
     dispose();
     throw error;

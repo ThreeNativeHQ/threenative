@@ -382,6 +382,7 @@
         "@threenative/terrain/editor#mountTerrainEditor": "export async function mountTerrainEditor(options: { … }",
         "@threenative/terrain/editor#TerrainEditorController": "export class TerrainEditorController { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
+        "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",
         "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",
         "@threenative/terrain#bakeTerrain": "export function bakeTerrain( state: ITerrainState, { … }",
         "@threenative/terrain#decodeHeightPNG": "export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }",
@@ -398,7 +399,8 @@
         "@threenative/terrain#splinePoints": "export function splinePoints( points: readonly (readonly [number, number, number])[], step = 3, smooth = true, ): [number, number, number][] { … }",
         "@threenative/terrain#Terrain": "export class Terrain { … }",
         "@threenative/terrain#TerrainEvaluator": "export class TerrainEvaluator { … }",
-        "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }"
+        "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }",
+        "@threenative/terrain#validatePlacementOverrides": "export function validatePlacementOverrides( value: unknown = { … }"
       }
     },
     "@threenative/ueformat": {

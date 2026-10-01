@@ -67,12 +67,15 @@ const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
 ```
 
 The project supplies `/terrain-editor/index.html`. Its browser entry calls
-`mountTerrainEditor` from `@threenative/terrain/editor` with `createView(host)` and
+`mountTerrainEditor` from `@threenative/terrain/editor` with `createView(host, controller)` and
 an explicit eight-channel material colour palette. Implement the exported
 `IEditorView` around this game's ThreeNative scene and `src/render/` helpers; keep
 that authoring entry separate from `src/game.ts`. The addon reuses the recovered
 brush, layer, recipe, cancellation and data-export controls around that view.
 It does not create a second renderer or silently choose the game's appearance.
+The view's `setDocument(document, revision)` applies metadata changes separately
+from its terrain `update(state)` path. Keep camera and placement edits out of the
+evaluator worker.
 
 After the server listens and the route is ready, `await editor.activate()` returns
 `editorUrl`, `projectId`, `sessionId` and the current content-hashed `revision`.
@@ -104,3 +107,13 @@ valid preview and show a diagnostic; restore a valid save before submitting more
 patches. Editor imports, workers, watchers and the document stay out of the game
 runtime. Bake committed data before handing it to the game. The currently shipped
 GLB action remains terrain-only; complete portable world export is in development.
+
+For individual props, save `placementOverrides` in the authoring document, keyed
+by evaluated placement `id`. Each entry contains `position: [x,y,z]`, a unit
+`quaternion: [x,y,z,w]`, positive `scale: [sx,sy,sz]` and `grounding: true|false`.
+Use `validatePlacementOverrides` and `applyPlacementOverrides` from the headless
+addon. Grounding defaults on; the game uses its actual model bounds and terrain
+triangles. A free Y lift records `grounding: false` and still measures clearance.
+The resolved state and `bakeTerrain` retain transforms; the game must consume
+them. Never use an instance-buffer index as a saved key. Keep unmatched overrides
+visible until the author explicitly removes or reassigns them.

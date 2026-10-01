@@ -2,6 +2,7 @@ import {
   MATERIAL_IDS,
   Mask,
   Terrain,
+  applyPlacementOverrides,
   bakeTerrain,
   decodeHeightPNG,
   decodeRAW16,
@@ -38,6 +39,7 @@ export function mountRecoveredEditor({
     ["scatter", "Scatter", "Place deterministic assets inside the brush."],
     ["spline", "Spline", "Click control points. Enter finishes the road or river."],
     ["water", "Water", "Flood a connected basin from the clicked point."],
+    ["select", "Select", "Select one prop. Drag its handles or edit its transform."],
   ];
   const options = {
     flatten: { height: 24 },
@@ -61,6 +63,7 @@ export function mountRecoveredEditor({
   let busy = false;
   let sequence = 0;
   let workerBusy = false;
+  let evaluationRequests = 0;
   let pending = null;
   let worker = null;
   let exportWorker = null;
@@ -107,7 +110,7 @@ export function mountRecoveredEditor({
           $("save-status").textContent = "Build failed · last preview retained";
         } else if (data.type === "evaluated") {
           const ready = attempt(() => {
-            view.update(data.state);
+            data.state = view.update(data.state) ?? data.state;
             return true;
           });
           if (!ready) {
@@ -146,6 +149,7 @@ export function mountRecoveredEditor({
       worker ??= newWorker();
       workerBusy = true;
       worker.postMessage(job);
+      evaluationRequests++;
     } catch (e) {
       workerBusy = false;
       setBusy(false);
@@ -276,7 +280,23 @@ export function mountRecoveredEditor({
       return;
     }
     if (snapshot.revision === revision) return;
+    const recipeChanged =
+      JSON.stringify(terrain.toJSON()) !== JSON.stringify(snapshot.document.recipe);
+    const ready = attempt(() => {
+      view.setDocument(snapshot.document, snapshot.revision);
+      return true;
+    });
+    if (!ready) {
+      $("save-status").textContent = "Preview failed · last preview retained";
+      return;
+    }
     revision = snapshot.revision;
+    if (!recipeChanged) {
+      if (state) state = applyPlacementOverrides(state, snapshot.document.placementOverrides ?? {});
+      renderedRevision = revision;
+      $("save-status").textContent = `Applied ${revision.slice(0, 8)} · saved on disk`;
+      return;
+    }
     loading = true;
     terrain.loadJSON(snapshot.document.recipe);
     loading = false;
@@ -302,6 +322,7 @@ export function mountRecoveredEditor({
       });
       saved = next;
       revision = next.revision;
+      view.setDocument(next.document, next.revision);
       $("save-status").textContent = `Requested ${revision.slice(0, 8)} · building`;
       build();
     } catch (error) {
@@ -309,6 +330,7 @@ export function mountRecoveredEditor({
       const next = await getSnapshot();
       saved = next;
       revision = next.revision;
+      view.setDocument(next.document, next.revision);
       loading = true;
       terrain.loadJSON(next.document.recipe);
       loading = false;
@@ -383,15 +405,18 @@ export function mountRecoveredEditor({
   function selectTool(id) {
     stroke = null;
     active = id;
+    document.body.dataset.terrainTool = id;
     navigation = false;
     view.setNavigation(false);
+    view.setSelection?.(id === "select");
+    view.setBrush(null);
     $("navigate-btn").classList.remove("active");
     points = [];
     showPoints();
     const i = tools.findIndex((t) => t[0] === id);
-    $("brush-title").textContent = `${tools[i][1]} terrain`;
+    $("brush-title").textContent = id === "select" ? "Select one prop" : `${tools[i][1]} terrain`;
     $("brush-desc").textContent = tools[i][2];
-    $("tool-key").textContent = (i + 1) % 10;
+    $("tool-key").textContent = id === "select" ? "Q" : (i + 1) % 10;
     for (const b of document.querySelectorAll(".tool-button")) {
       b.classList.toggle("active", b.dataset.tool === id);
     }
@@ -404,7 +429,7 @@ export function mountRecoveredEditor({
     const b = document.createElement("button");
     b.className = "tool-button";
     b.dataset.tool = id;
-    b.innerHTML = `${icon(id)}<span>${name}</span><small>${(i + 1) % 10}</small>`;
+    b.innerHTML = `${icon(id === "select" ? "mouse" : id)}<span>${name}</span><small>${id === "select" ? "Q" : (i + 1) % 10}</small>`;
     b.onclick = () => selectTool(id);
     $("tool-grid").append(b);
   }
@@ -549,6 +574,7 @@ export function mountRecoveredEditor({
     if (saving) return;
     if (e.target !== host && !e.target.classList.contains("render-canvas")) return;
     if (e.button !== 0 || e.altKey || navigation) return;
+    if (active === "select") return;
     const hit = view.pick(e.clientX, e.clientY);
     if (!hit) return;
     if (active === "spline" || active === "ramp") {
@@ -570,7 +596,7 @@ export function mountRecoveredEditor({
     $("coordinates").textContent =
       `X ${hit[0].toFixed(1)} · Y ${hit[1].toFixed(1)} · Z ${hit[2].toFixed(1)} m`;
     const b = brush();
-    view.setBrush(navigation ? null : { ...b, at: [hit[0], hit[2]] });
+    view.setBrush(navigation || active === "select" ? null : { ...b, at: [hit[0], hit[2]] });
     if (stroke && ["sculpt", "smooth", "flatten", "paint"].includes(active)) {
       const last = stroke.path.at(-1);
       if (
@@ -911,6 +937,7 @@ export function mountRecoveredEditor({
   const keydown = (e) => {
     if (saving) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+    if (active === "select" && (e.ctrlKey || e.metaKey || e.key === "Escape")) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       e.shiftKey ? terrain.redo() : terrain.undo();
@@ -923,6 +950,7 @@ export function mountRecoveredEditor({
     }
     if (document.querySelector("dialog[open]")) return;
     if (/^[0-9]$/.test(e.key)) selectTool(tools[(Number(e.key) + 9) % 10][0]);
+    if (e.key.toLowerCase() === "q") selectTool("select");
     if (e.key.toLowerCase() === "v") $("navigate-btn").click();
     if (e.key.toLowerCase() === "f") view.frame();
     if (e.key === "Enter") finishSpline();
@@ -950,6 +978,9 @@ export function mountRecoveredEditor({
     },
     get workerBusy() {
       return workerBusy;
+    },
+    get evaluationRequests() {
+      return evaluationRequests;
     },
     get busy() {
       return busy;
@@ -992,6 +1023,7 @@ export function mountRecoveredEditor({
   $("landscape-tag").textContent = "LANDSCAPE / PROJECT";
   selectTool("sculpt");
   renderLayers();
+  view.setDocument(initial.document, initial.revision);
   build();
   $("renderer-badge").textContent = view.backend;
   return window.strata;

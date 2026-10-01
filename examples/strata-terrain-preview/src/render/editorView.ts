@@ -1,7 +1,13 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { type ITerrainState, bakeMesh, sampleHeight } from "@threenative/terrain";
-import type { IEditorView } from "@threenative/terrain/editor";
+import {
+  type ITerrainState,
+  applyPlacementOverrides,
+  bakeMesh,
+  sampleHeight,
+} from "@threenative/terrain";
+import type { IEditorView, TerrainEditorController } from "@threenative/terrain/editor";
+import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
 import {
   BufferGeometry,
   Color,
@@ -20,7 +26,14 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
-import { createProps } from "./props.js";
+import {
+  type PropGroundQuery,
+  createProps,
+  preparePropTransform,
+  readPropTransform,
+  writePropTransform,
+} from "./props.js";
+import { createPropSelection } from "./selection.js";
 import { createTerrain } from "./terrain.js";
 
 const initialState = {
@@ -37,16 +50,30 @@ type EditorState = typeof initialState;
 
 export async function createEditorView(
   host: HTMLElement,
+  controller: TerrainEditorController,
 ): Promise<
-  IEditorView & { noteRevision(revision: string, ms: number): void; inspect(): EditorState }
+  IEditorView & {
+    noteRevision(revision: string, ms: number): void;
+    inspect(): EditorState;
+    inspectProps(): {
+      id: string;
+      transform: ReturnType<typeof readPropTransform>;
+      clearance: number | null;
+    }[];
+    inspectSelection(): ReturnType<ReturnType<typeof createPropSelection>["inspect"]>;
+    projectPlacement(id: string): [number, number] | undefined;
+    inspectHandles(): ReturnType<ReturnType<typeof createPropSelection>["handles"]>;
+  }
 > {
-  let ctx: ICtx<EditorState>;
-  let controls: OrbitControls;
+  let ctx!: ICtx<EditorState>;
+  let controls!: OrbitControls;
   let mesh: Mesh<BufferGeometry, MeshStandardMaterial> | undefined;
   let terrain: ITerrainState | undefined;
   let sea: ReturnType<typeof createOcean> | undefined;
   let water: Mesh | undefined;
   let props: ReturnType<typeof createProps> | undefined;
+  let authoring: IAuthoringDocument | undefined;
+  let groundAt: PropGroundQuery | undefined;
   let elapsed = 0;
   let first = true;
   let mode = "lit";
@@ -152,11 +179,61 @@ export async function createEditorView(
     start: "editor",
   });
   await game.start();
+  const selection = createPropSelection(
+    ctx,
+    controls,
+    controller,
+    () => props?.byId,
+    () => groundAt,
+    (x, y) => {
+      if (!props || !mesh) return undefined;
+      const box = ctx.renderer.domElement.getBoundingClientRect();
+      const hit = ctx.raycast({
+        screen: new Vector2(x - box.left, y - box.top),
+        targets: [mesh, ...props.meshes],
+      });
+      if (hit?.instanceId === undefined) return undefined;
+      const id = hit.object.userData.placementIds?.[hit.instanceId];
+      return typeof id === "string" ? id : undefined;
+    },
+  );
   return {
     get backend(): string {
       return `ThreeNative · ${ctx.renderer.kind}`;
     },
-    update(state): void {
+    setDocument(next, revision): void {
+      const sameRecipe =
+        authoring && JSON.stringify(authoring.recipe) === JSON.stringify(next.recipe);
+      if (sameRecipe && props && groundAt) {
+        const keys = new Set([
+          ...Object.keys(authoring?.placementOverrides ?? {}),
+          ...Object.keys(next.placementOverrides ?? {}),
+        ]);
+        const changes = [...keys].flatMap((key) => {
+          const instance = props?.byId.get(key);
+          if (
+            !instance ||
+            !groundAt ||
+            JSON.stringify(authoring?.placementOverrides?.[key]) ===
+              JSON.stringify(next.placementOverrides?.[key])
+          )
+            return [];
+          return [
+            {
+              instance,
+              prepared: preparePropTransform(instance, next.placementOverrides?.[key], groundAt),
+            },
+          ];
+        });
+        for (const change of changes) writePropTransform(change.instance, change.prepared);
+        requestedRevision = revision;
+      }
+      authoring = next;
+      selection.sync({ document: next, revision, diagnostic: null });
+      selection.refresh();
+    },
+    update(state): ITerrainState {
+      const resolved = applyPlacementOverrides(state, authoring?.placementOverrides ?? {});
       const baked = bakeMesh(state, { palette: terrainPalette });
       if (!baked.colors) throw new Error("Editor surface colours missing");
       const data = {
@@ -174,16 +251,21 @@ export async function createEditorView(
       if (top === undefined) throw new Error("Terrain bounds unavailable for prop grounding");
       let nextProps: ReturnType<typeof createProps>;
       try {
-        nextProps = createProps(state.instances, (placement) => {
-          const [x, y, z] = placement.position;
+        const nextGround: PropGroundQuery = (placement, at) => {
+          const [x, , z] = at;
           const hit = ctx.raycast({
             origin: new Vector3(x, top + 1, z),
             direction: new Vector3(0, -1, 0),
             targets: [next],
           });
-          if (!hit) throw new Error(`Missing terrain triangle for '${placement.id}'`);
-          return hit.point.y + y - sampleHeight(state, x, z);
-        });
+          const [originalX, originalY, originalZ] = placement.position;
+          return {
+            height: hit?.point.y ?? null,
+            offset: originalY - sampleHeight(state, originalX, originalZ),
+          };
+        };
+        nextProps = createProps(resolved.instances, nextGround);
+        groundAt = nextGround;
       } catch (error) {
         next.geometry.dispose();
         next.material.dispose();
@@ -219,6 +301,8 @@ export async function createEditorView(
         first = false;
         frame();
       }
+      selection.refresh();
+      return resolved;
     },
     pick(clientX, clientY) {
       if (!mesh) return null;
@@ -257,6 +341,9 @@ export async function createEditorView(
     setNavigation(enabled): void {
       controls.mouseButtons.LEFT = enabled ? 0 : null;
     },
+    setSelection(enabled): void {
+      selection.setActive(enabled);
+    },
     setView(value): void {
       if (!mesh) return;
       frame();
@@ -271,11 +358,28 @@ export async function createEditorView(
     inspect(): EditorState {
       return { ...ctx.state.getState() };
     },
+    inspectProps() {
+      return [...(props?.byId ?? [])].map(([id, instance]) => ({
+        id,
+        transform: readPropTransform(instance),
+        clearance: instance.clearance,
+      }));
+    },
+    inspectSelection() {
+      return selection.inspect();
+    },
+    projectPlacement(id) {
+      return selection.project(id);
+    },
+    inspectHandles() {
+      return selection.handles();
+    },
     noteRevision(revision, ms): void {
       requestedRevision = revision;
       evaluationMs = ms;
     },
     dispose(): void {
+      selection.dispose();
       clearWater();
       props?.dispose();
       mesh?.geometry.dispose();

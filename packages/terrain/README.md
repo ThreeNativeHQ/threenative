@@ -44,3 +44,16 @@ Scatter placement `id` identifies the layer, unsigned seed and candidate attempt
 not the accepted array index. Mask/spacing changes can remove candidates without
 retargeting surviving keys or their seeded scale/yaw. Changing a seed creates new
 identities. Save keys rather than mesh instance indices for later authoring edits.
+
+The authoring document may also contain `placementOverrides`, keyed by those IDs.
+`validatePlacementOverrides()` validates finite position/quaternion/positive scale
+and defaults omitted `grounding` to true. `applyPlacementOverrides(state, overrides)`
+attaches each requested transform to its placement and reports retained unmatched
+keys. `bakeTerrain()` preserves those records. The game applies grounding against
+its actual mesh bounds and terrain triangles; disabling grounding retains measured
+clearance. The example's Select tool uses ordinary Three.js TransformControls and
+numeric fields, saves once per drag, and preserves newer edits on conflict.
+
+`mountTerrainEditor` passes `(host, controller)` to `createView`. The view implements
+`setDocument(document, revision)` for metadata changes without terrain evaluation;
+its `update(state)` may return the resolved state for inspection and data bakes.

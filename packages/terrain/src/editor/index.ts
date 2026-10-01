@@ -6,7 +6,8 @@ import { editorShell } from "./shell.js";
 
 export interface IEditorView {
   readonly backend: string;
-  update(state: ITerrainState): void;
+  update(state: ITerrainState): ITerrainState | undefined;
+  setDocument(document: IAuthoringDocument, revision: string): void;
   pick(clientX: number, clientY: number): [number, number, number] | null;
   setMode(mode: string): void;
   setBrush(
@@ -14,6 +15,7 @@ export interface IEditorView {
   ): void;
   showSpline(points: readonly [number, number, number][]): void;
   setNavigation(enabled: boolean): void;
+  setSelection?(enabled: boolean): void;
   setView(view: string): void;
   frame(): void;
   registerAsset?(id: string, object: unknown): void;
@@ -87,7 +89,7 @@ export class TerrainEditorController {
  * @override createView owns the renderer scene, materials, lighting and camera
  */
 export async function mountTerrainEditor(options: {
-  createView(host: HTMLElement): Promise<IEditorView>;
+  createView(host: HTMLElement, controller: TerrainEditorController): Promise<IEditorView>;
   materialColours: readonly (readonly [number, number, number])[];
   onEvaluated?(event: { revision: string; state: ITerrainState; ms: number }): void;
 }): Promise<{ controller: TerrainEditorController; dispose(): void }> {
@@ -100,7 +102,7 @@ export async function mountTerrainEditor(options: {
   if (!host) throw new Error("Recovered editor has no viewport");
   const controller = new TerrainEditorController(new URL("./", location.href).href);
   const initial = await controller.snapshot();
-  const view = await options.createView(host);
+  const view = await options.createView(host, controller);
   let unsubscribe = () => {};
   const controls = mountRecoveredEditor({
     initial,

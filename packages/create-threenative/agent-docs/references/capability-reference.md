@@ -5196,6 +5196,23 @@ sparkle(...)
 
 ## `@threenative/terrain`
 
+### `applyPlacementOverrides`
+
+`function` — Attach manual transforms to raw evaluated candidates and report orphan keys.
+
+```ts
+export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }
+```
+
+- **Use when:** retain manual prop transforms across terrain scatter re-evaluation
+- **Constraints:** headless authoring; game applies transforms against its model bounds and actual terrain surface
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** transform.grounding=false preserves requested Y while the game still measures clearance
+
+```ts
+const state = applyPlacementOverrides(terrain.evaluate(), document.placementOverrides ?? {});
+```
+
 ### `bakeMesh`
 
 `function` — Bakes the recovered indexed top surface and optional vertical skirts into caller-owned arrays.
@@ -5470,6 +5487,23 @@ export function validateDocument(doc: ITerrainDocument): void { … }
 
 ```ts
 validateDocument(new Terrain({ resolution: 17 }).toJSON());
+```
+
+### `validatePlacementOverrides`
+
+`function` — Validate and clone stable-key placement transforms before saving or previewing them.
+
+```ts
+export function validatePlacementOverrides( value: unknown = { … }
+```
+
+- **Use when:** validate finite positive manual prop transforms before a terrain authoring transaction
+- **Constraints:** grounding defaults on only when omitted; position and scale have three components and quaternion is unit length
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** grounding=false preserves authored Y and keeps clearance observable
+
+```ts
+const transforms = validatePlacementOverrides(document.placementOverrides);
 ```
 
 ## `@threenative/terrain/editor`

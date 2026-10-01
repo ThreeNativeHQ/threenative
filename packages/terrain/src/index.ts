@@ -4,6 +4,7 @@ export { Mask, MATERIAL_IDS } from "./core/masks.js";
 export { sampleHeight, gradientAt, slopeAtIndex, splinePoints } from "./core/math.js";
 export { validateDocument, RESOLUTIONS, PARAMS } from "./core/validation.js";
 export { bakeMesh, bakeTerrain } from "./core/bake.js";
+export { applyPlacementOverrides, validatePlacementOverrides } from "./core/placements.js";
 export {
   encodeRAW16,
   decodeRAW16,
