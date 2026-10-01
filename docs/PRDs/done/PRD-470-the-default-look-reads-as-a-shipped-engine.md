@@ -50,6 +50,14 @@ gets clean edges from the same code. No new package, no new dependency, no new a
 A fresh judge subagent compares blind before/after captures per phase; its verdicts go in the PR
 body, not here (R2).
 
+### Acceptance criteria
+
+- [x] A1 — `minimal` reads as the Unreal third-person reference frame: photo sky as background, environment light and fog, one sun, metre-grid arena, trimesh colliders, rigged mannequin, and an antialiasing stage in every chain. proof: phase 1 receipts — 4/4 `minimal` scenarios green, the `sky` and `play` captures, `TN_VIRTUAL_SHADOW` reuse 0.997, `worldEnvironment.ts` covered by the shared-source specs
+- [x] A2 — `starter` reaches the same bar without losing its course, HUD or rules. proof: phase 2 receipts — the 1280x720 after-capture against the exact pre-PRD baseline, and 23/23 golden-path scenarios green with the alternate-arm negative control failing as designed
+- [x] A3 — the other kits inherit the environment light and AO and stay green. proof: phase 3 receipts — 9/9 of `TEMPLATE_PLAYTEST_NAMES` plus `action-rpg`, `minimal` and `puzzle`, 72 pass / 0 fail across the per-kit logs, and `platformer`/`starter` through the golden-path lane
+- [x] A4 — a fresh blind judge graded every before/after pair before the claim was made. proof: its verdicts and scores live in the PR body per R2 and are deliberately not duplicated here; each phase box above names the capture pair handed to it
+- [x] A5 — the engine defect this work exposed is fixed in the engine, not worked around in a template. proof: `CollisionShape3D.fromMesh` compared an unscaled geometry centre against scaled dimensions, so it accepted 0.1 m of collider drift at scale 100 and rejected a physically centred 1 µm offset at scale 1e-6; each centre component is now scaled by its own axis, pinned in both directions plus an anisotropic case (`packages/physics/__tests__/character.spec.ts`, 21/21 green)
+
 ## Decisions
 
 - Photo sky from Poly Haven instead of the procedural atmosphere: "skybox should be from polyhaven" — owner, 2026-09-28.

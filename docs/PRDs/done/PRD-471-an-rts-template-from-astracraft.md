@@ -51,6 +51,13 @@ simulation step. Worldgen is seeded (mulberry32) with exactly one `Math.random` 
   "presentation rate" reading was wrong. The series held the boot (frames with no draw count failed `maxDrawCalls` closed) and the
   p95 tail was a queue stall from whole-buffer instance uploads, not the virtual display. See the sub-box in phase 3.
 
+### Acceptance criteria
+
+- [x] A1 — the ruleset is plain deterministic TypeScript with no renderer import, and a seeded match replays to the same state twice. proof: `pnpm exec vitest run packages/create-threenative/__tests__/rts-sim.spec.ts` 9/9 green after this change (6000 fixed 0.05 s steps; seed 18 byte-identical at steps 2000 and 6000, seed 19 diverges), and the spec asserts `src/sim/` imports no three
+- [x] A2 — an ordinary frame of a sixty-own-unit match allocates nothing, in the simulation or in the render sync. proof: `rts-runtime-cost.spec.ts` 5/5 green. The new array sentinel counts every array-returning builtin in a 600-step and a 600-sync window and reports 0; an independent probe counted 29 fresh filter arrays per step before this change, and the reviewer's own reproduction is what the sentinel names. Vector, clone, state-patch-identity and entity-mint sentinels unchanged
+- [ ] A3 — select, gather, move, build and attack reach the simulation through `ctx.input` in a scaffolded browser run. open: the phase-2 receipts (2026-09-30) predate this movement rewrite — `dist` no longer boxes through `Math.hypot`, the separation pass and the step iterate in place — so `TN_TEMPLATE_ONLY=rts pnpm test:templates` has to be re-run before this row can be ticked again
+- [ ] A4 — the native desktop host runs the kit and a held key reaches the selection. open: same cause as A3; `/tmp/pr376-main-rts-native.log` is from before the movement rewrite and no longer proves the current sources
+
 ## Decisions
 
 - 2026-09-28, phase 2: the kit dropped `@threenative/physics`. `src/sim/` does its own collision,
