@@ -27,6 +27,15 @@ function blockMeshes(tiles: TerrainTiles): Mesh[] {
   );
 }
 
+function geometryBytes(mesh: Mesh): number {
+  const index = mesh.geometry.getIndex();
+  return (
+    mesh.geometry.getAttribute("position").array.byteLength +
+    mesh.geometry.getAttribute("normal").array.byteLength +
+    (index?.array.byteLength ?? 0)
+  );
+}
+
 /** Every visible terrain level mesh and block mesh: the tiles the main pass would submit. */
 function submittedMeshes(tiles: TerrainTiles): number {
   const levels = new Set<unknown>();
@@ -88,6 +97,42 @@ function sortedCounts(values: readonly string[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   return counts;
+}
+
+function normalKeys(geometry: BufferGeometry, offsetX: number, offsetZ: number): string[] {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const keys: string[] = [];
+  for (let vertex = 0; vertex < position.count; vertex += 1)
+    keys.push(
+      `${String(normal.getX(vertex))},${String(normal.getY(vertex))},${String(
+        normal.getZ(vertex),
+      )}|${String(position.getX(vertex) + offsetX)},${String(position.getY(vertex))},${String(
+        position.getZ(vertex) + offsetZ,
+      )}`,
+    );
+  return keys;
+}
+
+/** Every triangle as its three world positions, so a merge can be compared without vertex order. */
+function triangleKeys(geometry: BufferGeometry, offsetX: number, offsetZ: number): Map<string, number> {
+  const position = geometry.getAttribute("position");
+  const index = geometry.getIndex();
+  if (index === null) throw new Error("Expected an indexed terrain geometry.");
+  const keys: string[] = [];
+  for (let element = 0; element + 2 < index.count; element += 3) {
+    const corners: string[] = [];
+    for (let corner = 0; corner < 3; corner += 1) {
+      const vertex = index.getX(element + corner);
+      corners.push(
+        `${String(position.getX(vertex) + offsetX)},${String(position.getY(vertex))},${String(
+          position.getZ(vertex) + offsetZ,
+        )}`,
+      );
+    }
+    keys.push(corners.sort().join("|"));
+  }
+  return sortedCounts(keys);
 }
 
 describe("TerrainTiles merge", () => {
@@ -157,6 +202,21 @@ describe("TerrainTiles merge", () => {
     }
   });
 
+  it("charges a merged block's bytes to the resident budget instead of holding both for free", () => {
+    const walk = (mergeTiles: boolean): number => {
+      const tiles = terrain(mergeTiles);
+      try {
+        tiles.follow({ x: 16, z: 16 });
+        const held = blockMeshes(tiles).reduce((total, mesh) => total + geometryBytes(mesh), 0);
+        return tiles.residentBytes - held;
+      } finally {
+        tiles.dispose();
+      }
+    };
+    // Nine tiles cost the same resident bytes merged or not, once the block's own copy is charged.
+    expect(walk(true)).toBe(walk(false));
+  });
+
   it("leaves the draw structure untouched with the merge off", () => {
     const tiles = terrain(false);
     try {
@@ -188,17 +248,29 @@ describe("TerrainTiles merge", () => {
       const originX = blockX * 4 * 16;
       const originZ = blockZ * 4 * 16;
       const expected: string[] = [];
+      const expectedNormals: string[] = [];
+      const expectedTriangles = new Map<string, number>();
       for (const key of tiles.residentKeys) {
         const tile = tiles.getTile(key);
         if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
-        expected.push(
-          ...levelWorldKeys(tiles, key, 0, tile.tileX * 16 - originX, tile.tileZ * 16 - originZ),
-        );
+        const offsetX = tile.tileX * 16 - originX;
+        const offsetZ = tile.tileZ * 16 - originZ;
+        expected.push(...levelWorldKeys(tiles, key, 0, offsetX, offsetZ));
+        const level = tile.lod.levels[0]?.object;
+        if (!(level instanceof Mesh)) throw new Error("Missing level 0.");
+        expectedNormals.push(...normalKeys(level.geometry, offsetX, offsetZ));
+        for (const [triangle, count] of triangleKeys(level.geometry, offsetX, offsetZ))
+          expectedTriangles.set(triangle, (expectedTriangles.get(triangle) ?? 0) + count);
       }
       const expectedCounts = sortedCounts(expected);
       const actualCounts = sortedCounts(mergedWorldKeys(block, 0, 0));
       expect(actualCounts.size).toBe(expectedCounts.size);
       expect(actualCounts).toEqual(expectedCounts);
+      // One visible mesh for the island, and every vertex carrying the normal and the triangles of
+      // the tile it came from: the merge moved no vertex and dropped no triangle.
+      expect(submittedMeshes(tiles)).toBe(1);
+      expect(sortedCounts(normalKeys(block.geometry, 0, 0))).toEqual(sortedCounts(expectedNormals));
+      expect(triangleKeys(block.geometry, 0, 0)).toEqual(expectedTriangles);
     } finally {
       tiles.dispose();
     }

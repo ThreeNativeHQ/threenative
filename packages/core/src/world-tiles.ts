@@ -187,6 +187,8 @@ interface IMergedBlock {
   readonly lod: number;
   readonly geometry: BufferGeometry;
   readonly mesh: Mesh;
+  /** This block's share of the resident byte budget; see `residentBytes`. */
+  bytes: number;
   /** The tile keys whose current level geometry this block holds. */
   members: Set<string>;
 }
@@ -1839,6 +1841,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
+  /** Merged super-tile bytes, charged to `residentBytes` beside the tiles they duplicate. */
+  #blockBytes = 0;
   #tilesToldAt = Number.NEGATIVE_INFINITY;
   readonly #mergeTiles: boolean;
   // The last `follow` ran out of admission budget before it wanted everything, so the next one
@@ -1953,10 +1957,17 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return this.#resident.size;
   }
 
+  /**
+   * Every retained terrain byte, against `residentByteBudget`: the resident tiles with their levels
+   * and edge samples, the stitch bridges, the retained topology, and any merged super-tile. A block
+   * duplicates the level vertices of the tiles it covers — they stay, because a tile that leaves the
+   * block draws its own mesh again — so the copy is charged here rather than held for free, and a
+   * budget sized for unmerged terrain admits fewer tiles.
+   */
   get residentBytes(): number {
     // Read four times a frame by the residency admission and the peak record, so it accumulates
     // instead of materialising the resident set.
-    let total = this.#topologyBytes + this.#stitchBytes;
+    let total = this.#topologyBytes + this.#stitchBytes + this.#blockBytes;
     for (const tile of this.#resident.values()) total += tile.bytes;
     return total;
   }
@@ -2959,17 +2970,20 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       z: blockZ * TERRAIN_MERGE_BLOCK * this.tileSize,
     };
     const geometry = mergeLevelGeometry(parts, blockOrigin);
+    const bytes = geometryBytes(geometry);
+    this.#blockBytes += bytes - (existing?.bytes ?? 0);
     if (existing === undefined) {
       const mesh = new Mesh(geometry, this.#surface);
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
       mesh.receiveShadow = this.#receiveShadow;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh });
+      this.#blocks.set(blockKey, { bytes, geometry, key: blockKey, lod, members, mesh });
       this.add(mesh);
     } else {
       existing.geometry.dispose();
+      existing.bytes = bytes;
       existing.mesh.geometry = geometry;
-      this.#blocks.set(blockKey, { geometry, key: blockKey, lod, members, mesh: existing.mesh });
+      this.#blocks.set(blockKey, existing);
     }
     if (existing !== undefined)
       for (const key of existing.members) if (!members.has(key)) this.#showTile(key, blockKey);
@@ -3011,6 +3025,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (block === undefined) return;
     this.#blocks.delete(blockKey);
     this.remove(block.mesh);
+    this.#blockBytes -= block.bytes;
     block.geometry.dispose();
     for (const key of block.members) this.#showTile(key, blockKey);
   }
