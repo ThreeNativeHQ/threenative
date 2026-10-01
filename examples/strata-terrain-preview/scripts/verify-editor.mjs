@@ -124,8 +124,51 @@ try {
     );
     assert.equal((await session.page.evaluate(() => window.strata.view.inspect())).propCount, 100);
     const broken = await controller.snapshot();
-    const modelRecovery = await controller.commit({
+    const retainedProps = await session.page.evaluate(() => window.strata.view.inspectProps());
+    const overrideKey = Object.keys(broken.document.placementOverrides)[0];
+    assert(overrideKey, "The saved gizmo transform must remain in the failed document");
+    const metadataWhileBroken = await controller.commit({
       baseRevision: broken.revision,
+      document: {
+        ...broken.document,
+        placementOverrides: {
+          ...broken.document.placementOverrides,
+          [overrideKey]: {
+            ...broken.document.placementOverrides[overrideKey],
+            position: [12, 140, -4],
+          },
+        },
+      },
+    });
+    await session.page.waitForFunction(
+      (revision) => window.strata.revision === revision,
+      metadataWhileBroken.revision,
+    );
+    const acceptedFrame = await session.page.evaluate(
+      () => window.strata.view.inspect().renderedFrames,
+    );
+    await session.page.waitForFunction(
+      (frame) => window.strata.view.inspect().renderedFrames > frame,
+      acceptedFrame,
+    );
+    assert.equal(
+      (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
+      validPreview.renderedRevision,
+      "Metadata cannot label retained geometry as a successful newer recipe",
+    );
+    assert.equal(
+      await session.page.evaluate(() => window.strata.renderedRevision),
+      validPreview.renderedRevision,
+      "The recovered GUI must retain the actual rendered recipe revision",
+    );
+    assert.deepEqual(
+      await session.page.evaluate(() => window.strata.view.inspectProps()),
+      retainedProps,
+      "Metadata for a failed recipe must retain every last-valid instance matrix",
+    );
+    await session.screenshot("editor-retained-recipe");
+    const modelRecovery = await controller.commit({
+      baseRevision: metadataWhileBroken.revision,
       commands: [{ op: "remove", id: "missing-model" }],
     });
     await session.page.waitForFunction(
@@ -135,6 +178,19 @@ try {
         !window.strata.workerBusy,
       modelRecovery.revision,
       { timeout: 2000 },
+    );
+    await session.page.waitForFunction(
+      (revision) => window.strata.view.inspect().renderedRevision === revision,
+      modelRecovery.revision,
+    );
+    const recoveredPose = await session.page.evaluate(
+      (id) => window.strata.view.inspectProps().find((item) => item.id === id),
+      overrideKey,
+    );
+    assert.equal(
+      recoveredPose.transform.position[1],
+      140,
+      "Recovery must apply the deferred metadata pose",
     );
     await advanceFixedStep(session.page, session.bridge, 2);
     await session.page.locator("#selected-name").fill("Human-polished hill");
@@ -163,6 +219,51 @@ try {
       ],
     });
     await session.page.waitForFunction(() => window.strata.workerBusy, {}, { timeout: 2000 });
+    const pendingDocument = await controller.snapshot();
+    const pendingMatrices = await session.page.evaluate(() => window.strata.view.inspectProps());
+    const pendingRequests = await session.page.evaluate(() => window.strata.evaluationRequests);
+    const pendingMetadata = await controller.commit({
+      baseRevision: pendingDocument.revision,
+      document: {
+        ...pendingDocument.document,
+        placementOverrides: {
+          ...pendingDocument.document.placementOverrides,
+          [overrideKey]: {
+            ...pendingDocument.document.placementOverrides[overrideKey],
+            position: [12, 150, -4],
+          },
+        },
+      },
+    });
+    await session.page.waitForFunction(
+      (revision) => window.strata.revision === revision,
+      pendingMetadata.revision,
+    );
+    const pendingFrame = await session.page.evaluate(
+      () => window.strata.view.inspect().renderedFrames,
+    );
+    await session.page.waitForFunction(
+      (frame) => window.strata.view.inspect().renderedFrames > frame,
+      pendingFrame,
+    );
+    assert.equal(await session.page.evaluate(() => window.strata.workerBusy), true);
+    assert.equal(
+      (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
+      prior.renderedRevision,
+    );
+    assert.equal(
+      await session.page.evaluate(() => window.strata.renderedRevision),
+      prior.renderedRevision,
+    );
+    assert.deepEqual(
+      await session.page.evaluate(() => window.strata.view.inspectProps()),
+      pendingMatrices,
+    );
+    assert.equal(
+      await session.page.evaluate(() => window.strata.evaluationRequests),
+      pendingRequests,
+      "Metadata must not replace or restart pending erosion",
+    );
     await session.page.locator("#cancel-build").click();
     await session.page.waitForFunction(() => !window.strata.busy, {}, { timeout: 2000 });
     assert.equal(
@@ -188,6 +289,15 @@ try {
     assert.equal(
       (await session.page.evaluate(() => window.strata.view.inspect())).renderedRevision,
       recovered.revision,
+    );
+    const latestPose = await session.page.evaluate(
+      (id) => window.strata.view.inspectProps().find((item) => item.id === id),
+      overrideKey,
+    );
+    assert.equal(
+      latestPose.transform.position[1],
+      150,
+      "Recovery must retain the accepted metadata from the cancelled evaluation",
     );
     assert.deepEqual(
       errors,

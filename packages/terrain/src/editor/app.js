@@ -53,6 +53,7 @@ export function mountRecoveredEditor({
   };
   const terrain = Terrain.fromJSON(initial.document.recipe);
   let state = null;
+  let renderedRecipe = null;
   const view = providedView;
   let selected = terrain.layers[0]?.id;
   let active = "sculpt";
@@ -117,6 +118,7 @@ export function mountRecoveredEditor({
             $("save-status").textContent = "Preview failed · last preview retained";
           } else {
             state = data.state;
+            renderedRecipe = JSON.stringify(terrain.toJSON());
             renderedRevision = revision;
             onEvaluated?.({ revision, state, ms: data.ms });
             $("mesh-stats").textContent =
@@ -292,9 +294,17 @@ export function mountRecoveredEditor({
     }
     revision = snapshot.revision;
     if (!recipeChanged) {
-      if (state) state = applyPlacementOverrides(state, snapshot.document.placementOverrides ?? {});
-      renderedRevision = revision;
-      $("save-status").textContent = `Applied ${revision.slice(0, 8)} · saved on disk`;
+      const matchesPreview = renderedRecipe === JSON.stringify(snapshot.document.recipe);
+      if (state && matchesPreview)
+        state = applyPlacementOverrides(state, snapshot.document.placementOverrides ?? {});
+      if (matchesPreview && !busy) {
+        renderedRevision = revision;
+        $("save-status").textContent = `Applied ${revision.slice(0, 8)} · saved on disk`;
+      } else {
+        $("save-status").textContent = busy
+          ? `Requested ${revision.slice(0, 8)} · building`
+          : "Saved recipe not rendered · last preview retained";
+      }
       return;
     }
     loading = true;

@@ -76,6 +76,9 @@ It does not create a second renderer or silently choose the game's appearance.
 The view's `setDocument(document, revision)` applies metadata changes separately
 from its terrain `update(state)` path. Keep camera and placement edits out of the
 evaluator worker.
+Track the accepted document and the successfully rendered recipe separately. While
+a rebuild is pending or has failed, metadata must retain the last valid scene and
+rendered revision; apply deferred transforms when that recipe renders successfully.
 
 After the server listens and the route is ready, `await editor.activate()` returns
 `editorUrl`, `projectId`, `sessionId` and the current content-hashed `revision`.

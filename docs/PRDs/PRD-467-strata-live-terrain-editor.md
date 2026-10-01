@@ -397,9 +397,24 @@ entire resumed suite passes. The worker exit's cause remains unconfirmed. Actual
 selection/scale/grounding screenshots accompany this draft milestone. This proves
 browser editor behavior, not native editor props, final starter art or FPS.
 
-Open follow-up: guard requested/rendered revision labels when metadata arrives
-while a terrain rebuild is pending or has failed; exercise that interleaving before
-considering the full transform phase complete.
+Revision-label follow-up (2026-10-01): the real browser reproduces metadata
+incorrectly advancing the GUI and renderer revision after a missing-asset rebuild.
+Both paths now compare against the recipe that successfully produced the scene.
+While that recipe differs, metadata retains both rendered labels and all 100
+instance matrices; the accepted metadata applies after successful recovery.
+The same check passes during active 200,000-droplet erosion: metadata does not
+restart the worker, cancellation retains the previous scene, and recovery applies
+the latest accepted pose. The standalone scene scenario remains green. An actual
+retained-preview screenshot shows the unrendered saved recipe and named asset
+error. Landform handles, reassignment and portable bake/export consumption remain
+open, so phase 2 remains partial.
+
+Revision-guard verification (2026-10-01): root typecheck, lint, budgets,
+documentation links and 180 documentation tests pass. The complete `pnpm test`
+command passes documentation/build/package checks and 523 test files / 6,489 tests
+(12 skips), with no suite temporary-directory growth. The real browser integration
+and standalone scene scenario pass at this source state; no resumed test verdict
+is needed for this follow-up.
 
 ### Phase 3: GUI polish and GLB handoff
 

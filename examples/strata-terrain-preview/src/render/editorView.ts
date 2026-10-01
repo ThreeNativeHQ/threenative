@@ -73,6 +73,7 @@ export async function createEditorView(
   let water: Mesh | undefined;
   let props: ReturnType<typeof createProps> | undefined;
   let authoring: IAuthoringDocument | undefined;
+  let renderedRecipe: string | undefined;
   let groundAt: PropGroundQuery | undefined;
   let elapsed = 0;
   let first = true;
@@ -202,8 +203,7 @@ export async function createEditorView(
       return `ThreeNative · ${ctx.renderer.kind}`;
     },
     setDocument(next, revision): void {
-      const sameRecipe =
-        authoring && JSON.stringify(authoring.recipe) === JSON.stringify(next.recipe);
+      const sameRecipe = renderedRecipe === JSON.stringify(next.recipe);
       if (sameRecipe && props && groundAt) {
         const keys = new Set([
           ...Object.keys(authoring?.placementOverrides ?? {}),
@@ -229,7 +229,7 @@ export async function createEditorView(
         requestedRevision = revision;
       }
       authoring = next;
-      selection.sync({ document: next, revision, diagnostic: null });
+      selection.sync({ document: next, revision, diagnostic: null }, sameRecipe);
       selection.refresh();
     },
     update(state): ITerrainState {
@@ -297,6 +297,7 @@ export async function createEditorView(
       let heightSum = 0;
       for (let i = 0; i < positions.count; i++) heightSum += positions.getY(i);
       ctx.state.set({ heightSum });
+      renderedRecipe = authoring ? JSON.stringify(authoring.recipe) : undefined;
       if (first) {
         first = false;
         frame();

@@ -356,9 +356,9 @@ export function createPropSelection(
         orbit.enabled = true;
       } else refreshPose();
     },
-    sync(next: IEditorSnapshot): void {
+    sync(next: IEditorSnapshot, matchesPreview: boolean): void {
       snapshot = next;
-      if (!drag && !saving) restore();
+      if (matchesPreview && !drag && !saving) restore();
     },
     refresh(): void {
       const entries = [...(instances()?.values() ?? [])];
