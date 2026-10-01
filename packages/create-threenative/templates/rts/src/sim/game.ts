@@ -44,6 +44,7 @@ import {
   type BuildingType,
   COMMAND_KINDS,
   type EntityType,
+  EVENT_FIELDS,
   type IBank,
   type ICommandTarget,
   IDLE_ORDER,
@@ -129,6 +130,50 @@ interface IOrderScratch {
   seen: Set<number>;
 }
 
+/** How many events a batch holds before the oldest is dropped, and so the size of one bank. */
+const EVENT_CAPACITY = 250;
+
+/** What an event field reads when the event that owns it did not set it. */
+const EMPTY = undefined as unknown as never;
+
+/** One bank: 250 records that all have every declared field, so a reused slot keeps its shape. */
+function makeEventBank(): IGameEvent[] {
+  const bank: IGameEvent[] = [];
+  for (let i = 0; i < EVENT_CAPACITY; i++) {
+    bank.push({
+      type: "",
+      time: 0,
+      id: 0,
+      unitId: 0,
+      workerId: 0,
+      builderId: 0,
+      targetId: 0,
+      team: 0,
+      name: "",
+      count: 0,
+      targetTeam: 0,
+      x: 0,
+      z: 0,
+      y: 0,
+      tx: 0,
+      tz: 0,
+      ty: 0,
+      height: 0,
+      altitude: 0,
+      building: false,
+      repair: false,
+      destruction: false,
+      unit: "",
+      typeName: "",
+      style: "",
+      result: "",
+      reason: "",
+      refund: 0,
+    });
+  }
+  return bank;
+}
+
 export class Game {
   readonly rng: () => number;
   readonly seed: number;
@@ -153,6 +198,16 @@ export class Game {
   paused = false;
   result: IResult = null;
   events: IGameEvent[] = [];
+  /** The live bank of event records, the one being written to right now. */
+  #slots: IGameEvent[] = [];
+  /** The bank handed out by the last drain: still readable until the next one. */
+  #spareSlots: IGameEvent[] = [];
+  /** The bank neither of the other two is using, kept so a drain never allocates. */
+  #pool: IGameEvent[] = [];
+  /** The array the last drain handed out, reused as the next batch's array. */
+  #spareEvents: IGameEvent[] = [];
+  #cursor = 0;
+  #used = 0;
   navRevision = 0;
   visionClock = 0;
   navMasks = new Map<string, Uint8Array>();
@@ -160,6 +215,12 @@ export class Game {
 
   constructor({ ai = true, seed = 17, random }: IGameOptions = {}) {
     this.rng = random ?? seeded(seed);
+    // Cold, and once: two banks of distinct records, because a drained batch stays readable until
+    // the next drain, and the array that carries it is reused rather than reallocated.
+    this.#pool = makeEventBank();
+    this.#slots = this.#pool;
+    this.#spareSlots = makeEventBank();
+    this.#spareEvents = [];
     this.seed = seed;
     this.ai = ai;
     this.players = STARTS.map((s) => ({
@@ -570,23 +631,63 @@ export class Game {
   /**
    * Records one game event.
    *
-   * The payload becomes the record rather than being copied into a second object: every call site
-   * passes a literal it never touches again, so `{type, time, ...data}` was two objects per event to
-   * hold one record. The record itself cannot be pooled — `events` retains up to 250 of them and
-   * `drainEvents` hands the array to the caller — but one record per emitted event is the floor, and
-   * this is now that floor instead of twice it.
+   * The record is a slot, not an object minted per event. There are two banks of 250 distinct
+   * records and two arrays holding them, all built once when the game is born, and `drainEvents`
+   * swaps which bank is live. That is what lets the array a caller is holding stay readable: the
+   * next events land in the other bank, so the batch just returned is not overwritten under the
+   * consumer that is still reading it. Two banks, not one, because the batch outlives the call
+   * that produced it until the next drain.
+   *
+   * `payload` is copied into the slot field by field rather than kept, so a call site may hand over
+   * a scratch object it reuses: the copy happens before this returns, and the queue never aliases
+   * the caller's object. A field the payload does not carry is cleared, so a reused slot never
+   * reports a value left by the event that held it before.
    */
-  emit(type: string, data: Record<string, unknown> = {}): void {
-    data.type = type;
-    data.time = this.time;
-    this.events.push(data as IGameEvent);
-    if (this.events.length > 250) this.events.shift();
+  emit(type: string, payload: Partial<IGameEvent> = {}): void {
+    const slots = this.#slots;
+    // The overflow rule is the one this always had: the 251st event drops the oldest. The bank is a
+    // ring, so "oldest" is the slot the cursor is about to reuse, and the array is rewritten in
+    // order rather than shifted, which would be 250 writes to drop one.
+    const slot = slots[this.#cursor];
+    if (slot === undefined) return;
+    for (let f = 0; f < EVENT_FIELDS.length; f++) {
+      const key = EVENT_FIELDS[f] as keyof IGameEvent;
+      slot[key] = (payload[key] ?? EMPTY) as never;
+    }
+    slot.type = type;
+    slot.time = this.time;
+    this.#cursor += 1;
+    if (this.#cursor === EVENT_CAPACITY) this.#cursor = 0;
+    if (this.#used < EVENT_CAPACITY) this.#used += 1;
+    // The array is the ordered view of the ring, oldest first, which is the order the queue had.
+    const events = this.events;
+    events.length = this.#used;
+    const start = this.#cursor - this.#used + (this.#used === EVENT_CAPACITY ? EVENT_CAPACITY : 0);
+    for (let i = 0; i < this.#used; i++) {
+      const record = slots[(start + i) % EVENT_CAPACITY];
+      if (record !== undefined) events[i] = record;
+    }
   }
 
+  /**
+   * Hands the caller this frame's events and starts a fresh batch.
+   *
+   * The returned array and the records in it stay valid until the NEXT `drainEvents`: the live bank
+   * is swapped for the other one first, so events emitted after this call cannot land in the batch
+   * being read. `Play.#drain` reads its batch synchronously and keeps only the notice strings, so
+   * nothing in this template outlives the call.
+   */
   drainEvents(): IGameEvent[] {
-    const e = this.events;
-    this.events = [];
-    return e;
+    const handed = this.events;
+    this.events = this.#spareEvents;
+    this.#spareEvents = [];
+    this.#slots = this.#spareSlots;
+    this.#spareSlots = this.#pool;
+    this.#pool = this.#slots;
+    this.#cursor = 0;
+    this.#used = 0;
+    this.events.length = 0;
+    return handed;
   }
 
   /** The simulation's fixed step. The engine's fixed loop calls this; a test calls it in a loop. */

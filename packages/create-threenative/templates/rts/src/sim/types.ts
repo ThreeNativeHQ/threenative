@@ -484,11 +484,76 @@ export interface ISupply {
   cap: number;
 }
 
+/**
+ * One event record. Every field the rules emit is declared, so a reused slot is a record with the
+ * same shape as a fresh one and a consumer reading `event.name` gets `undefined`, not a leftover
+ * from whatever the slot held before.
+ */
 export interface IGameEvent {
   type: string;
   time: number;
-  [key: string]: unknown;
+  id: number;
+  unitId: number;
+  workerId: number;
+  builderId: number;
+  targetId: number;
+  team: number;
+  name: string;
+  count: number;
+  targetTeam: number;
+  x: number;
+  z: number;
+  y: number;
+  tx: number;
+  tz: number;
+  ty: number;
+  height: number;
+  altitude: number;
+  building: boolean;
+  repair: boolean;
+  destruction: boolean;
+  unit: string;
+  typeName: string;
+  style: string;
+  result: string;
+  reason: string;
+  refund: number;
 }
+
+/**
+ * The fields `Game.emit` copies, in the order the rules set them. A caller-owned payload is copied
+ * into the queue slot field by field, and the same list is walked backwards to clear the slot first,
+ * so a record never shows a value from the event that used it. `type` and `time` are set by `emit`
+ * itself and are not in this list.
+ */
+export const EVENT_FIELDS = [
+  "id",
+  "unitId",
+  "workerId",
+  "builderId",
+  "targetId",
+  "team",
+  "name",
+  "count",
+  "targetTeam",
+  "x",
+  "z",
+  "y",
+  "tx",
+  "tz",
+  "ty",
+  "height",
+  "altitude",
+  "building",
+  "repair",
+  "destruction",
+  "unit",
+  "typeName",
+  "style",
+  "result",
+  "reason",
+  "refund",
+] as const satisfies readonly (keyof IGameEvent)[];
 
 export type IResult = "victory" | "defeat" | null;
 
