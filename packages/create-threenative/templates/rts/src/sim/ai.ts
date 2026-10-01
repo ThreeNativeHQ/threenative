@@ -6,7 +6,9 @@ import { RESOURCE_SITES, STARTS } from "./terrain.js";
 import {
   type BuildingType,
   type EntityType,
+  type ICommandTarget,
   type IEntity,
+  type IOrderResult,
   type IPoint,
   type IResourceNode,
   type ISupply,
@@ -86,6 +88,11 @@ const _candidates: IEntity[] = [];
 const _expanded: IEntity[] = [];
 const _builders: IEntity[] = [];
 const _searchSites = RESOURCE_SITES.slice(3);
+/**
+ * A one-element id list for the orders that reach a single unit. `Game.command` reads the ids and
+ * copies what it needs before it returns, so one list serves every single-unit order.
+ */
+const _one: number[] = [0];
 
 /** The scouting legs, module-level: the routes were two fresh arrays on every scout order. */
 const SCOUT_ROUTES_1: readonly IPoint[] = [
@@ -157,6 +164,18 @@ export class CommanderAI {
   private nextScout: number;
   force: number[] = [];
   private initialForce = 0;
+  /**
+   * The order result this commander's own orders report into. The commander reads `ok` and `count`
+   * immediately and keeps neither, so it hands `command` a record it already has rather than
+   * letting each order mint one. `Game.command` still returns a fresh result to anyone who does not
+   * pass one, which is every other caller in the game.
+   */
+  private readonly result: IOrderResult = { ok: false, count: 0 };
+  /**
+   * The order target the repair orders name. `command` reads the id before it returns and the record
+   * is never kept, so one is enough for every structure this commander patches.
+   */
+  private readonly targetPoint: ICommandTarget = { id: 0 };
   target: (IPoint & { team: number }) | null = null;
   /** The commander's rally point, rewritten in place: every tick hands it out. */
   private readonly rally: IPoint = { x: 0, z: 0 };
@@ -309,7 +328,7 @@ export class CommanderAI {
           }
         }
         if (closest) {
-          game.command(this.ids(army, _ids), "attackMove", closest, team);
+          game.command(this.ids(army, _ids), "attackMove", closest, team, false, this.result);
         }
         this.lastOrders = game.time;
       }
@@ -355,7 +374,7 @@ export class CommanderAI {
       this.initialForce = force.length;
       // The assault's target is state the commander keeps, so it gets its own object once.
       this.target = { x: target.x, z: target.z, team: target.team };
-      game.command(this.force, "attackMove", this.target, team);
+      game.command(this.force, "attackMove", this.target, team, false, this.result);
       this.state = "ATTACKING";
       this.lastOrders = game.time;
       this.nextAttack = game.time + 85;
@@ -377,7 +396,7 @@ export class CommanderAI {
       if (e !== undefined && e.id !== this.scoutId && e.order.kind === "idle") idle.push(e);
     }
     if (idle.length) {
-      game.command(this.ids(idle, _ids), "attackMove", rally, team);
+      game.command(this.ids(idle, _ids), "attackMove", rally, team, false, this.result);
     }
   }
 
@@ -462,7 +481,7 @@ export class CommanderAI {
         }
       }
     }
-    game.command(this.ids(surviving, _ids), "attackMove", goal, this.team);
+    game.command(this.ids(surviving, _ids), "attackMove", goal, this.team, false, this.result);
     this.lastOrders = game.time;
   }
 
@@ -482,7 +501,7 @@ export class CommanderAI {
       const e = army[i];
       if (e !== undefined && !e.garrisonId && e.order.kind !== "garrison") free.push(e);
     }
-    game.command(this.ids(free, _ids), "move", rally, this.team);
+    game.command(this.ids(free, _ids), "move", rally, this.team, false, this.result);
     this.state = "REGROUPING";
     this.nextAttack = Math.max(game.time + 30, this.nextAttack);
     this.stats.retreats++;
@@ -521,7 +540,7 @@ export class CommanderAI {
   }
 
   private trainUnit(game: Game, building: IEntity | undefined, type: EntityType): boolean {
-    if (!building || !game.train(building.id, type, this.team).ok) return false;
+    if (!building || !game.train(building.id, type, this.team, this.result).ok) return false;
     this.stats.trained++;
     if (TYPES[type].air) this.stats.aircraft++;
     return true;
@@ -672,7 +691,11 @@ export class CommanderAI {
             worker = w;
           }
         }
-        if (worker) game.command([worker.id], "repair", { id: damaged.id }, team);
+        if (worker) {
+          this.targetPoint.id = damaged.id;
+          _one[0] = worker.id;
+          game.command(_one, "repair", this.targetPoint, team, false, this.result);
+        }
       }
     }
     const reserve =
@@ -880,7 +903,11 @@ export class CommanderAI {
           nearest = n;
         }
       }
-      if (nearest) game.command([worker.id], "gather", { id: nearest.id }, this.team);
+      if (nearest) {
+        this.targetPoint.id = nearest.id;
+        _one[0] = worker.id;
+        game.command(_one, "gather", this.targetPoint, this.team, false, this.result);
+      }
     }
   }
 
@@ -935,7 +962,14 @@ export class CommanderAI {
       }
       if (
         taken.length &&
-        game.command(this.ids(taken, _ids), "garrison", { id: bunker.id }, this.team).ok
+        game.command(
+          this.ids(taken, _ids),
+          "garrison",
+          { id: bunker.id },
+          this.team,
+          false,
+          this.result,
+        ).ok
       ) {
         this.stats.garrisons += taken.length;
       }
@@ -994,7 +1028,7 @@ export class CommanderAI {
       // The expansion is state this commander keeps until it lands, so it gets its own records.
       const escorts = chosen.map((w) => w.id);
       this.expansion = { x: site.baseX, z: site.baseZ, workers: escorts, started: game.time };
-      game.command(this.expansion.workers, "move", this.expansion, this.team);
+      game.command(this.expansion.workers, "move", this.expansion, this.team, false, this.result);
     }
     const expansion = this.expansion;
     if (!expansion) return;
@@ -1024,7 +1058,8 @@ export class CommanderAI {
       this.stats.expansions++;
       // Do not stop the Surveyor now bound to the new core. Other escorts may mine.
       for (const worker of builders) {
-        if (worker.id !== ready.id) game.command([worker.id], "stop", {}, this.team);
+        if (worker.id !== ready.id) _one[0] = worker.id;
+        game.command(_one, "stop", {}, this.team, false, this.result);
       }
       this.expansion = null;
     }
@@ -1085,7 +1120,8 @@ export class CommanderAI {
       }
     }
     if (danger || scout.hp < scout.maxHp * 0.5) {
-      game.command([scout.id], "move", rally, this.team);
+      _one[0] = scout.id;
+      game.command(_one, "move", rally, this.team, false, this.result);
       this.scoutId = null;
       this.nextScout = game.time + 24;
       return;
@@ -1095,7 +1131,8 @@ export class CommanderAI {
       const routes = this.team === 1 ? SCOUT_ROUTES_1 : SCOUT_ROUTES_2;
       const point = routes[this.scoutLeg % routes.length];
       if (!point) return;
-      game.command([scout.id], "move", point, this.team);
+      _one[0] = scout.id;
+      game.command(_one, "move", point, this.team, false, this.result);
       this.scoutLeg++;
       this.stats.scouted++;
     }

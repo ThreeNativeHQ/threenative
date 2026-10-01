@@ -192,6 +192,80 @@ describe("rts construction", () => {
   });
 });
 
+// The event records are reused slots rather than a record per event, which is only safe because of
+// three properties, and each of them is a way the reuse could go wrong. A batch is only ever read
+// between a drain and the next one, so these are about the lifetime rather than the contents.
+describe("rts event queue", () => {
+  const game_ = () => sandbox(3);
+
+  it("keeps two events in one batch distinct and in order", () => {
+    const game = game_();
+    game.emit("trained", { id: 11, name: "Ranger", team: 0 });
+    game.emit("complete", { id: 22, name: "Barracks", team: 0 });
+    const batch = game.drainEvents();
+    // One shared record for both would make these the same event twice, which is the failure a
+    // single reused slot produces and the reason there are 250 distinct ones.
+    expect(batch.map((e) => e.type)).toEqual(["trained", "complete"]);
+    expect(batch.map((e) => e.id)).toEqual([11, 22]);
+    expect(batch.map((e) => e.name)).toEqual(["Ranger", "Barracks"]);
+  });
+
+  it("drops the oldest event past 250, keeping the newest 250 in order", () => {
+    const game = game_();
+    for (let i = 0; i < 260; i++) game.emit("trained", { id: i, name: `u${i}`, team: 0 });
+    const batch = game.drainEvents();
+    expect(batch).toHaveLength(250);
+    // The overflow rule is unchanged: the first ten are gone and nothing is duplicated or reordered.
+    expect(batch[0]?.id).toBe(10);
+    expect(batch[249]?.id).toBe(259);
+    expect(batch.map((e) => e.id)).toEqual(Array.from({ length: 250 }, (_, i) => i + 10));
+  });
+
+  it("does not overwrite a batch that was returned but not yet read again", () => {
+    const game = game_();
+    game.emit("trained", { id: 1, name: "first", team: 0 });
+    const first = game.drainEvents();
+    // The consumer is still holding the first batch. Everything emitted now must land elsewhere.
+    for (let i = 0; i < 40; i++) game.emit("shot", { id: 100 + i, team: 1 });
+    expect(first.map((e) => e.id)).toEqual([1]);
+    expect(first[0]?.name).toBe("first");
+    // ...and the next drain is the one that ends that promise, handing over the 40 shots.
+    expect(game.drainEvents().map((e) => e.id)).toEqual(
+      Array.from({ length: 40 }, (_, i) => 100 + i),
+    );
+  });
+
+  it("clears a field the next event does not set, so a slot never reports a stale value", () => {
+    const game = game_();
+    game.emit("death", { id: 5, x: 1, z: 2, name: "Ranger", team: 0 });
+    // The next event is 250-1 events later only in the full queue, so drain to free the slot: the
+    // same slot comes back on the bank swap and must not still be the death event's.
+    game.drainEvents();
+    game.emit("end", { result: "victory" });
+    const [ended] = game.drainEvents();
+    expect(ended?.type).toBe("end");
+    expect(ended?.result).toBe("victory");
+    // These were set on the reused slot by the death event and must not survive into the end event.
+    expect(ended?.name).toBeUndefined();
+    expect(ended?.x).toBeUndefined();
+    expect(ended?.team).toBeUndefined();
+  });
+
+  it("does not let a caller's reused payload alias the queue", () => {
+    const game = game_();
+    // The copy has to be immediate: a payload the caller keeps writing to must not be what the
+    // consumer later reads out of the batch.
+    const scratch = { id: 1, name: "alpha", team: 0 };
+    game.emit("trained", scratch);
+    scratch.id = 2;
+    scratch.name = "beta";
+    game.emit("trained", scratch);
+    const batch = game.drainEvents();
+    expect(batch.map((e) => e.name)).toEqual(["alpha", "beta"]);
+    expect(batch.map((e) => e.id)).toEqual([1, 2]);
+  });
+});
+
 describe("rts production", () => {
   it("trains the queue in order and refuses work past the supply cap", () => {
     const game = sandbox(13);

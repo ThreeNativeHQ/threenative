@@ -43,8 +43,8 @@ import {
 import {
   type BuildingType,
   COMMAND_KINDS,
-  type EntityType,
   EVENT_FIELDS,
+  type EntityType,
   type IBank,
   type ICommandTarget,
   IDLE_ORDER,
@@ -54,6 +54,7 @@ import {
   type IOrderResult,
   type IPlayer,
   type IPoint,
+  type IQueueItem,
   type IResourceNode,
   type IResult,
   type ISupply,
@@ -133,8 +134,97 @@ interface IOrderScratch {
 /** How many events a batch holds before the oldest is dropped, and so the size of one bank. */
 const EVENT_CAPACITY = 250;
 
+const eliminatedEvent: Partial<IGameEvent> = {};
+const endEvent: Partial<IGameEvent> = {};
+
 /** What an event field reads when the event that owns it did not set it. */
 const EMPTY = undefined as unknown as never;
+
+/**
+ * How many order records a unit owns. A unit's current order plus a full 20-order queue is 21 live
+ * records, and the record for a replacement order is written before the queue it replaces is
+ * dropped, so 22 is the smallest number that cannot hand the same record to two live orders.
+ */
+const ORDER_POOL = 22;
+
+/**
+ * The orders `command` writes, filled one field at a time and copied into a pool record. They are
+ * never retained: `writeOrder` copies before returning, so one of each kind is enough however many
+ * units a group order touches. `kind` is set per branch, so only the fields that kind reads matter.
+ */
+const moveOrder = { kind: "move" as "move" | "attackMove", x: 0, z: 0 };
+const gatherOrder = { kind: "gather" as const, id: 0, phase: "out" as "out" | "return" };
+const targetOrder = {
+  kind: "attack" as "attack" | "garrison" | "repair" | "heal" | "follow",
+  id: 0,
+};
+const HOLD_ORDER: Order = { kind: "hold" };
+
+/** The next record off a unit's own ring of order records. */
+function takeOrder(unit: IEntity): Order {
+  const pool = unit.orderPool;
+  const record = pool[unit.orderCursor];
+  unit.orderCursor += 1;
+  if (unit.orderCursor === pool.length) unit.orderCursor = 0;
+  return record as Order;
+}
+
+/** Copies `next` over a fresh record of the unit's own and hands that record back. */
+function writeOrder(unit: IEntity, next: Order): Order {
+  const record = takeOrder(unit);
+  copyOrder(record, next);
+  return record;
+}
+
+/**
+ * Field by field, so an order that had a target does not keep it after being overwritten by one that
+ * only moves. `id` is where a stale value shows: a move order read as an attack on whatever the
+ * last target was.
+ */
+function copyOrder(record: Order, next: Order): void {
+  const to = record as unknown as {
+    kind: Order["kind"];
+    x: number;
+    z: number;
+    id: number;
+    phase: "out" | "return";
+  };
+  const from = next as unknown as typeof to;
+  to.kind = from.kind;
+  to.x = from.x;
+  to.z = from.z;
+  to.id = from.id;
+  to.phase = from.phase;
+}
+
+/** A building's own training-queue records: one per position, plus the one a push is written into. */
+function makeQueuePool(): IQueueItem[] {
+  const pool: IQueueItem[] = [];
+  for (let i = 0; i < 7; i++) pool.push({ id: 0, type: "worker", progress: 0 });
+  return pool;
+}
+
+/** Fills a caller-owned result. `message` is left off: an order that reports one is rare and cold. */
+function writeResult(into: IOrderResult, ok: boolean, count: number): IOrderResult {
+  into.ok = ok;
+  into.count = count;
+  return into;
+}
+
+/** A unit's own order records, built when the unit is born. */
+function makeOrderPool(): Order[] {
+  const pool: Order[] = [];
+  for (let i = 0; i < ORDER_POOL; i++) {
+    pool.push({
+      kind: "idle",
+      x: 0,
+      z: 0,
+      id: 0,
+      phase: "out",
+    } as unknown as Order);
+  }
+  return pool;
+}
 
 /** One bank: 250 records that all have every declared field, so a reused slot keeps its shape. */
 function makeEventBank(): IGameEvent[] {
@@ -208,6 +298,21 @@ export class Game {
   #spareEvents: IGameEvent[] = [];
   #cursor = 0;
   #used = 0;
+
+  /** The scratch for one level of nesting, reused: a group order nests a few deep, repeatedly. */
+  #nestedScratch(depth: number): IOrderScratch {
+    const found = this.scratchPool[depth - 1];
+    if (found !== undefined) {
+      found.depth = 0;
+      found.seen.clear();
+      return found;
+    }
+    if (this.scratchPool.length >= 3)
+      return { depth: 0, units: [], mobile: [], points: [], seen: new Set() };
+    const made: IOrderScratch = { depth: 0, units: [], mobile: [], points: [], seen: new Set() };
+    this.scratchPool.push(made);
+    return made;
+  }
   navRevision = 0;
   visionClock = 0;
   navMasks = new Map<string, Uint8Array>();
@@ -376,7 +481,11 @@ export class Game {
       angle: team === 0 ? Math.PI : 0,
       order: IDLE_ORDER,
       orders: [],
+      orderPool: makeOrderPool(),
+      orderCursor: 0,
       queue: [],
+      queuePool: makeQueuePool(),
+      queueFree: 0,
       rally: null,
       cooldown: 0,
       carry: 0,
@@ -425,8 +534,9 @@ export class Game {
     pay(this, type, team);
   }
 
-  train(id: number, type: EntityType, team = 0): IOrderResult {
-    return train(this, id, type, team);
+  /** `into` is passed through for the commander; see `train`. Anyone else gets a fresh result. */
+  train(id: number, type: EntityType, team = 0, into?: IOrderResult): IOrderResult {
+    return train(this, id, type, team, into);
   }
 
   cancelTrain(id: number, index: number, team = 0): IOrderResult {
@@ -463,24 +573,36 @@ export class Game {
     points: [],
     seen: new Set(),
   };
+  /**
+   * The scratch one nesting level deeper uses, and the next, and so on. A nested command (a
+   * reassigned builder abandoning its site resumes the worker, which orders it) needs a selection
+   * and a formation grid of its own, and minting one per nesting meant a fresh array to grow the
+   * grid into every time a worker was reassigned mid-construction. Three levels is well past any
+   * chain this ruleset produces, and the fourth falls back to a fresh scratch rather than growing.
+   */
+  readonly scratchPool: IOrderScratch[] = [];
 
+  /**
+   * Orders a selection. `into` is for the hot internal callers: the result is read immediately and
+   * thrown away, so the AI passes a record it owns rather than making one per order. A caller that
+   * does not pass one gets a fresh result it may keep, which is the public contract and does not
+   * change.
+   */
   command(
     ids: number[],
     kind: string,
     target: ICommandTarget = {},
     team = 0,
     append = false,
+    into?: IOrderResult,
   ): IOrderResult {
     const scratch = this.orderScratch;
     // A nested call (a reassigned builder abandoning its site resumes the worker) gets its own
     // scratch, so the outer call's selection and formation grid are still intact underneath it.
-    const mine: IOrderScratch =
-      scratch.depth > 0
-        ? { depth: 0, units: [], mobile: [], points: [], seen: new Set() }
-        : scratch;
+    const mine: IOrderScratch = scratch.depth > 0 ? this.#nestedScratch(scratch.depth) : scratch;
     scratch.depth += 1;
     try {
-      return this.#command(ids, kind, target, team, append, mine);
+      return this.#command(ids, kind, target, team, append, mine, into);
     } finally {
       scratch.depth -= 1;
     }
@@ -493,15 +615,17 @@ export class Game {
     team: number,
     append: boolean,
     scratch: IOrderScratch,
+    into: IOrderResult | undefined,
   ): IOrderResult {
     if (this.result || this.paused || !Array.isArray(ids) || !this.players[team])
-      return { ok: false };
-    if (!COMMAND_KINDS.includes(kind)) return { ok: false };
+      return into === undefined ? { ok: false } : writeResult(into, false, 0);
+    if (!COMMAND_KINDS.includes(kind))
+      return into === undefined ? { ok: false } : writeResult(into, false, 0);
     if (
       (kind === "move" || kind === "attackMove") &&
       (!Number.isFinite(target.x) || !Number.isFinite(target.z))
     ) {
-      return { ok: false };
+      return into === undefined ? { ok: false } : writeResult(into, false, 0);
     }
     // The selection, deduplicated in first-seen order — the order `[...new Set(ids)]` gave, and the
     // order every formation slot and every `units` index below depends on.
@@ -563,11 +687,15 @@ export class Game {
           )
         )
           continue;
-        order = { kind: "gather", id: n.id, phase: unit.carry ? "return" : "out" };
+        gatherOrder.id = n.id;
+        gatherOrder.phase = unit.carry ? "return" : "out";
+        order = writeOrder(unit, gatherOrder);
       } else if (kind === "garrison") {
         const bunker = target.id === undefined ? undefined : this.get(target.id);
         if (!bunker || !garrisonCheck(this, unit, bunker)) continue;
-        order = { kind: "garrison", id: bunker.id };
+        targetOrder.kind = "garrison";
+        targetOrder.id = bunker.id;
+        order = writeOrder(unit, targetOrder);
       } else if (kind === "repair") {
         const structure = target.id === undefined ? undefined : this.get(target.id);
         if (
@@ -578,7 +706,9 @@ export class Game {
           structure.team !== team
         )
           continue;
-        order = { kind: "repair", id: structure.id };
+        targetOrder.kind = "repair";
+        targetOrder.id = structure.id;
+        order = writeOrder(unit, targetOrder);
       } else if (kind === "heal" || kind === "follow") {
         const ally = target.id === undefined ? undefined : this.get(target.id);
         if (
@@ -591,26 +721,33 @@ export class Game {
           ally.air
         )
           continue;
-        order = { kind, id: ally.id };
+        targetOrder.kind = kind as "heal" | "follow";
+        targetOrder.id = ally.id;
+        order = writeOrder(unit, targetOrder);
       } else if (kind === "attack") {
         const enemy = target.id === undefined ? undefined : this.get(target.id);
         if (!enemy || !this.canAttack(unit, enemy) || !this.visibleAt(enemy.x, enemy.z, team))
           continue;
-        order = { kind: "attack", id: enemy.id };
+        targetOrder.kind = "attack";
+        targetOrder.id = enemy.id;
+        order = writeOrder(unit, targetOrder);
       } else if (kind === "stop") {
         order = IDLE_ORDER;
       } else if (kind === "hold") {
-        order = { kind: "hold" };
+        order = writeOrder(unit, HOLD_ORDER);
       } else {
-        order = {
-          kind: kind === "attackMove" ? "attackMove" : "move",
-          x: clamp(point.x, -HALF + 3, HALF - 3),
-          z: clamp(point.z, -HALF + 3, HALF - 3),
-        };
+        moveOrder.kind = kind === "attackMove" ? "attackMove" : "move";
+        moveOrder.x = clamp(point.x, -HALF + 3, HALF - 3);
+        moveOrder.z = clamp(point.z, -HALF + 3, HALF - 3);
+        order = writeOrder(unit, moveOrder);
       }
       if (append && kind !== "stop" && kind !== "hold" && unit.order.kind !== "idle") {
         if (unit.orders.length < 20) {
-          unit.orders.push(order);
+          // A queued order is a record of its own: the unit's current order and up to 20 queued
+          // ones are all readable at once, so they cannot come from one shared record.
+          const queued = takeOrder(unit);
+          copyOrder(queued, order);
+          unit.orders.push(queued);
           accepted++;
         }
       } else {
@@ -625,7 +762,8 @@ export class Game {
         accepted++;
       }
     }
-    return { ok: accepted > 0, count: accepted };
+    if (into === undefined) return { ok: accepted > 0, count: accepted };
+    return writeResult(into, accepted > 0, accepted);
   }
 
   /**
@@ -773,7 +911,9 @@ export class Game {
     for (const player of this.players) {
       if (player.eliminated || coreAlive(this, player.team)) continue;
       player.eliminated = true;
-      this.emit("eliminated", { team: player.team, name: player.name });
+      eliminatedEvent.team = player.team;
+      eliminatedEvent.name = player.name;
+      this.emit("eliminated", eliminatedEvent);
       for (const e of this.own(player.team)) {
         this.damage(e, e.hp, player.team === 0 ? 1 : 0);
       }
@@ -788,10 +928,12 @@ export class Game {
     if (anyEliminated) this.updateVision();
     if (!coreAlive(this, 0)) {
       this.result = "defeat";
-      this.emit("end", { result: "defeat" });
+      endEvent.result = "defeat";
+      this.emit("end", endEvent);
     } else if (!anyEnemyCoreAlive(this)) {
       this.result = "victory";
-      this.emit("end", { result: "victory" });
+      endEvent.result = "victory";
+      this.emit("end", endEvent);
     }
   }
 

@@ -380,13 +380,11 @@ describe("rts kit ordinary-frame runtime cost", () => {
       }
       growth += growthHere;
       if (growthHere > 0) growthSteps.push(frame);
-      // What makes a step an event step is that it ordered, trained or emitted — not that it
-      // allocated. Classifying by allocation instead would let a leaking frame excuse itself as an
-      // event, which is the whole way this gate is cheatable.
-      if (events > 0) {
-        eventSteps += 1;
-        continue;
-      }
+      // A step that ordered, trained or emitted is ordinary play: a shot, an order, a weld and a
+      // training command are the match, not an interruption of it. Counting them separately let
+      // 213 of 600 active frames out of the measurement, which is most of the fight, so they are
+      // counted here like every other frame and reported as their own total beside it.
+      if (events > 0) eventSteps += 1;
       ordinary += 1;
       steady += otherHere;
       for (const [line, count] of whereHere)
@@ -397,6 +395,11 @@ describe("rts kit ordinary-frame runtime cost", () => {
       .map(([line, count]) => `${line} x${count}`);
     const moved = game.own(0).filter((entity) => before.get(entity.id) !== position(entity)).length;
 
+    // Reported, not just asserted: a reader has to be able to see how much of the window was
+    // combat and orders rather than take the zero on faith.
+    console.log(
+      `rts ordinary-frame window: ${ordinary} frames measured, ${eventSteps} of them ordered, trained or emitted, ${MEASURED_FRAMES - ordinary} skipped as entity birth, steady literals ${steady}, growth ${growth}`,
+    );
     expect(game.ai, "the default AI must stay on for this case to mean anything").toBe(true);
     expect(movingAtWarmup, "the fixture must be moving units, not idle ones").toBeGreaterThan(40);
     expect(game.result, "a finished match would stop stepping and pass by doing nothing").toBe(

@@ -440,7 +440,25 @@ export interface IEntity extends IPoint {
   angle: number;
   order: Order;
   orders: Order[];
+  /**
+   * Every order record this entity's `order` and `orders` have ever held, kept after both drop
+   * them. A group order replaces the order of every unit in the selection, so a plain literal is one
+   * object per unit per order — and ordering is what an ordinary frame is full of. Each record is
+   * taken from here and rewritten in place, so a unit's own current order and its own queued orders
+   * never share one: `orders` may hold up to 20 of them at once, all readable at the same time.
+   */
+  orderPool: Order[];
+  /** Which record of `orderPool` the next order comes from. */
+  orderCursor: number;
   queue: IQueueItem[];
+  /**
+   * Every queue record this building's `queue` has ever held, kept after it drops them. The queue
+   * holds up to six at once and a shift moves the rest down, so its records are a ring like
+   * `orderPool` is, and one per position rather than one per training.
+   */
+  queuePool: IQueueItem[];
+  /** The pool slot a push may reuse: the record the queue last let go of. */
+  queueFree: number;
   /** A bunker's own weapon profile, filled in place: `engage` holds one while it asks again. */
   profile?: IUnitDef;
   rally: IPoint | null;
@@ -603,6 +621,7 @@ export function seeded(seed = 17): () => number {
  * in the selection, and `out.push({...})` was one array plus one object per unit per order. Nothing
  * keeps a formation point — `Game.command` reads each one's two numbers and copies them into the
  * order — so one store per call site is enough, and the store outlives the order that filled it.
+ * Only the first `n` entries are written or read, so the store is free to stay at its longest.
  */
 export function formation(
   n: number,
@@ -623,6 +642,10 @@ export function formation(
     point.x = x + ((i % cols) - (count - 1) / 2) * spacing;
     point.z = z + (Math.floor(i / cols) - (rows - 1) / 2) * spacing;
   }
-  into.length = n;
+  // The store keeps its longest length rather than shrinking to this order's: a group order for
+  // twenty units followed by one for eight used to leave eight points, so the next twenty re-minted
+  // twelve of them, and a group order is ordinary play. The caller reads only the `n` it asked for,
+  // which is what `n` is for.
+  if (into.length < n) into.length = n;
   return into;
 }

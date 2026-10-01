@@ -6,8 +6,10 @@ import { HALF, onBridge, waterBlocked } from "./terrain.js";
 import {
   type BuildingType,
   type EntityType,
+  type ICommandTarget,
   IDLE_ORDER,
   type IEntity,
+  type IGameEvent,
   type IOrderResult,
   type IPoint,
   type Order,
@@ -49,6 +51,22 @@ export function availableBuilder(
  * tests each candidate and copies the accepted one's two numbers into the worker's own point.
  */
 const _workCandidate: IPoint = { x: 0, z: 0 };
+
+/**
+ * The events this file emits, filled one field at a time. `Game.emit` copies a payload into the
+ * queue slot before it returns, so these are never retained and one of each is enough — a weld
+ * fires on a construction tick for every site in the game, which is ordinary play, not an event.
+ */
+const weldEvent: Partial<IGameEvent> = {};
+const lostEvent: Partial<IGameEvent> = {};
+const buildEvent: Partial<IGameEvent> = {};
+const doneEvent: Partial<IGameEvent> = {};
+
+/** A one-element id list and one order target for the resumes this file issues. */
+const _one: number[] = [0];
+const _target: ICommandTarget = { id: 0 };
+/** Nobody here reads the answer to a resume, so it is written into a record nobody keeps. */
+const _result: IOrderResult = { ok: false, count: 0 };
 
 export function constructionWorkPoint(
   game: Game,
@@ -129,7 +147,12 @@ export function beginConstruction(
   worker.pathGoal = null;
   worker.pathClock = 0;
   worker.targetId = null;
-  game.emit("build", { id: site.id, builderId: worker.id, x: siteX, z: siteZ, team });
+  buildEvent.id = site.id;
+  buildEvent.builderId = worker.id;
+  buildEvent.x = siteX;
+  buildEvent.z = siteZ;
+  buildEvent.team = team;
+  game.emit("build", buildEvent);
   return { ok: true, id: site.id, builderId: worker.id };
 }
 
@@ -142,7 +165,11 @@ export function releaseBuilder(game: Game, site: IEntity, resume = true): void {
   worker.path.length = 0;
   worker.pathClock = 0;
   if (resume && !worker.orders.length && site.resumeOrder.kind === "gather") {
-    game.command([worker.id], "gather", { id: site.resumeOrder.id }, worker.team);
+    // The id and the target are the commander's own to hand over: `command` reads both before it
+    // returns and keeps neither, and this runs on ordinary construction steps.
+    _one[0] = worker.id;
+    _target.id = site.resumeOrder.id;
+    game.command(_one, "gather", _target, worker.team, false, _result);
   }
 }
 
@@ -168,15 +195,14 @@ export function abandonConstruction(
     }
   }
   releaseBuilder(game, site, resume);
-  game.emit("constructionLost", {
-    id: site.id,
-    x: site.x,
-    z: site.z,
-    team: site.team,
-    name: TYPES[site.type].name,
-    reason,
-    refund,
-  });
+  lostEvent.id = site.id;
+  lostEvent.x = site.x;
+  lostEvent.z = site.z;
+  lostEvent.team = site.team;
+  lostEvent.name = TYPES[site.type].name;
+  lostEvent.reason = reason;
+  lostEvent.refund = refund;
+  game.emit("constructionLost", lostEvent);
   return true;
 }
 
@@ -241,22 +267,25 @@ export function updateConstruction(game: Game, site: IEntity, dt: number): void 
   site.weldClock -= dt;
   if (site.weldClock <= 0) {
     site.weldClock = 0.16;
-    game.emit("weld", {
-      id: site.id,
-      workerId: worker.id,
-      x: worker.x,
-      z: worker.z,
-      tx: site.x + (worker.x - site.x) * 0.74,
-      tz: site.z + (worker.z - site.z) * 0.74,
-      height: 0.4 + site.progress * 2,
-      team: site.team,
-    });
+    weldEvent.id = site.id;
+    weldEvent.workerId = worker.id;
+    weldEvent.x = worker.x;
+    weldEvent.z = worker.z;
+    weldEvent.tx = site.x + (worker.x - site.x) * 0.74;
+    weldEvent.tz = site.z + (worker.z - site.z) * 0.74;
+    weldEvent.height = 0.4 + site.progress * 2;
+    weldEvent.team = site.team;
+    weldEvent.repair = false;
+    game.emit("weld", weldEvent);
   }
   if (site.progress >= 1 - 1e-9) {
     site.progress = 1;
     site.built = true;
     releaseBuilder(game, site, true);
-    game.emit("complete", { id: site.id, name: d.name, team: site.team });
+    doneEvent.id = site.id;
+    doneEvent.name = d.name;
+    doneEvent.team = site.team;
+    game.emit("complete", doneEvent);
   }
 }
 

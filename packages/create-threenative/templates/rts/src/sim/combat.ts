@@ -6,6 +6,7 @@ import { clearMovement } from "./movement.js";
 import {
   IDLE_ORDER,
   type IEntity,
+  type IGameEvent,
   type IOrderResult,
   type IUnitDef,
   TYPES,
@@ -137,6 +138,15 @@ export function weaponProfile(game: Game, unit: IEntity): IUnitDef {
 /** Hoisted: `canAttackTarget` runs once per unit per candidate, and a literal mask is an array. */
 const GROUND_ONLY: readonly string[] = ["ground"];
 
+/**
+ * The scratch the two hottest events are written into. `Game.emit` copies a payload into the queue
+ * slot field by field before it returns, so one object per call site is enough however many shots a
+ * frame fires — and it is not a pool the queue points into, because the queue holds a copy.
+ */
+const shotEvent: Partial<IGameEvent> = {};
+const weldEvent: Partial<IGameEvent> = {};
+const deathEvent: Partial<IGameEvent> = {};
+
 export function canAttackTarget(
   game: Game,
   attacker: IEntity | undefined,
@@ -215,19 +225,18 @@ export function engage(game: Game, unit: IEntity, dt: number, hold = false): boo
             ? 1.8
             : 1.4;
       const ty = target.air ? target.altitude + 0.4 : target.building ? 2 : 1.1;
-      game.emit("shot", {
-        id: unit.id,
-        x: unit.x,
-        z: unit.z,
-        y,
-        tx: target.x,
-        tz: target.z,
-        ty,
-        team: unit.team,
-        unit: unit.type,
-        targetId: target.id,
-        style: d.shot || "tracer",
-      });
+      shotEvent.id = unit.id;
+      shotEvent.x = unit.x;
+      shotEvent.z = unit.z;
+      shotEvent.y = y;
+      shotEvent.tx = target.x;
+      shotEvent.tz = target.z;
+      shotEvent.ty = ty;
+      shotEvent.team = unit.team;
+      shotEvent.unit = unit.type;
+      shotEvent.targetId = target.id;
+      shotEvent.style = d.shot || "tracer";
+      game.emit("shot", shotEvent);
       const impactX = target.x;
       const impactZ = target.z;
       const impactAir = !!target.air;
@@ -365,15 +374,14 @@ export function updateRepair(game: Game, worker: IEntity, dt: number): void {
   worker.repairClock -= dt;
   if (worker.repairClock <= 0) {
     worker.repairClock = 0.16;
-    game.emit("weld", {
-      x: worker.x,
-      z: worker.z,
-      tx: target.x + (worker.x - target.x) * 0.7,
-      tz: target.z + (worker.z - target.z) * 0.7,
-      height: 1.5,
-      team: worker.team,
-      repair: true,
-    });
+    weldEvent.x = worker.x;
+    weldEvent.z = worker.z;
+    weldEvent.tx = target.x + (worker.x - target.x) * 0.7;
+    weldEvent.tz = target.z + (worker.z - target.z) * 0.7;
+    weldEvent.height = 1.5;
+    weldEvent.team = worker.team;
+    weldEvent.repair = true;
+    game.emit("weld", weldEvent);
   }
 }
 
@@ -397,13 +405,12 @@ export function applyDamage(
   if (entity.team > 0 && attacker === 0) game.kills++;
   if (entity.team === 0) game.losses++;
   if (entity.building) game.navRevision++;
-  game.emit("death", {
-    id: entity.id,
-    x: entity.x,
-    z: entity.z,
-    building: entity.building,
-    team: entity.team,
-    typeName: entity.type,
-    altitude: entity.altitude || 0,
-  });
+  deathEvent.id = entity.id;
+  deathEvent.x = entity.x;
+  deathEvent.z = entity.z;
+  deathEvent.building = entity.building;
+  deathEvent.team = entity.team;
+  deathEvent.typeName = entity.type;
+  deathEvent.altitude = entity.altitude || 0;
+  game.emit("death", deathEvent);
 }
