@@ -308,12 +308,25 @@ export function createArmy(models: IUnitModels): IArmy {
  * Send the GPU only the slots a batch is using. Every mesh here is sized for the supply cap, so a
  * whole-buffer upload is 8 KB per mesh per frame for the two or three copies actually on the
  * field; across the ~45 meshes that is tens of megabytes a second of writes the driver stalls on.
- * Three does not clear the ranges after a WebGPU upload, so they are reset here every time.
+ *
+ * The range is held here rather than minted per upload: `addUpdateRange` pushes a fresh
+ * `{ start, count }`, and this runs ~45 times a frame. Both installed backends empty `updateRanges`
+ * after the upload, so the record is put back each time — a reused one costs a write, a new one
+ * costs a collection. A mesh that swaps its attribute gets a fresh record, because the record is
+ * keyed by the attribute it describes.
  */
+const _ranges = new WeakMap<BufferAttribute, { start: number; count: number }>();
+
 function upload(attribute: BufferAttribute, live: number): void {
   if (live === 0) return;
+  const count = live * attribute.itemSize;
+  let range = _ranges.get(attribute);
+  if (range === undefined) {
+    range = { start: 0, count };
+    _ranges.set(attribute, range);
+  } else range.count = count;
   attribute.clearUpdateRanges();
-  attribute.addUpdateRange(0, live * attribute.itemSize);
+  attribute.updateRanges.push(range);
   attribute.needsUpdate = true;
 }
 

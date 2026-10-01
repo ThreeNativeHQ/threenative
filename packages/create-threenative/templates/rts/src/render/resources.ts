@@ -55,7 +55,9 @@ export function createResources(): IResources {
     new MeshStandardMaterial({ color: 0x6b7050, roughness: 1 }),
     sites * ROCKS,
   );
-  for (const mesh of [crystals, vents, rubble]) {
+  // Listed once: the sync below walks this every frame, and a literal here is an array a frame.
+  const meshes = [crystals, vents, rubble];
+  for (const mesh of meshes) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -115,14 +117,14 @@ export function createResources(): IResources {
       crystals.count = crystal;
       vents.count = vent;
       rubble.count = rock;
-      for (const mesh of [crystals, vents, rubble]) {
+      for (const mesh of meshes) {
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor !== null) mesh.instanceColor.needsUpdate = true;
         if (mesh.count > 0) mesh.computeBoundingSphere();
       }
     },
     dispose: () => {
-      for (const mesh of [crystals, vents, rubble]) {
+      for (const mesh of meshes) {
         mesh.geometry.dispose();
         (mesh.material as MeshStandardMaterial).dispose();
       }

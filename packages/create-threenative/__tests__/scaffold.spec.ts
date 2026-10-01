@@ -183,7 +183,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   platformer: "652251e10a5f74b7d9a6858313e7dd1ad429fcae976bce79604cd8531003946d",
   puzzle: "f35e1d6aca4c44ab2788651afb717eb861bd8ec401c3d19655e6832de139ae06",
   racing: "914c62bf6ce97e535bed60d66ea8485ca1c7262667a1c50060c5b338f35eec8d",
-  rts: "042ddeda483cd25c6d4e3d0aa415614c49ca34b23b32c4620ad7bd3f9de52320",
+  rts: "b13e0f5661a23caf46e1ca3c4b29df28ab6904d6a5157abcc1eca777b4b78a0c",
   runner: "e889bfbf16f132921ab3ea93f62238fefe3ed47e0bb44ba35d4f73087ee767b9",
   sailing: "6552352ec33ad1470c5c9d45823d024e633bf3acd1812f6d8ecb4653de2f4a36",
   shooter: "1e9e44e2fb173d56bbf6ae4035a16210b27b4116a1f22f446a06c40b10a38ce3",
