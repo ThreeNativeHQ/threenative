@@ -57,6 +57,6 @@
       },
       { "id": "state", "path": "supplyUsed", "gte": 24 }
     ],
-    "renderChain": { "tier": "high" }
+    "renderChain": { "tier": "high", "perAdapter": { "software": { "tier": "low" } } }
   }
 }

@@ -8,7 +8,7 @@
       "maxTriangles": 45000,
       "minFps": 30
     },
-    "renderChain": { "tier": "high" }
+    "renderChain": { "tier": "high", "perAdapter": { "software": { "tier": "low" } } }
   },
   "name": "production-performance",
   "schemaVersion": 1,

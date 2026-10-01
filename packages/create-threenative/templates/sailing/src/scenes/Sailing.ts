@@ -88,7 +88,11 @@ export class Sailing extends Scene<GameState, IPhysicsContext> {
     const shipModel = getShipModel();
     setupSky(ctx.scene);
     const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: sun,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);

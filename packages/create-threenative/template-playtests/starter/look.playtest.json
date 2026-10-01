@@ -64,6 +64,16 @@
     },
     "renderChain": {
       "tier": "high",
+      "perAdapter": {
+        "software": {
+          "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
+          "stages": {
+            "includes": ["bloom", "vignette", "antialias"],
+            "order": ["bloom", "vignette", "antialias"]
+          },
+          "tier": "low"
+        }
+      },
       "stages": {
         "includes": ["ambientOcclusion", "bloom", "vignette"],
         "order": ["ambientOcclusion", "bloom", "vignette"]

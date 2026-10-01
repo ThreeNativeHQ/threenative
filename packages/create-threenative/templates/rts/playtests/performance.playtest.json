@@ -34,7 +34,8 @@
       "minFps": 30
     },
     "renderChain": {
-      "tier": "high"
+      "tier": "high",
+      "perAdapter": { "software": { "tier": "low" } }
     }
   }
 }

@@ -18,7 +18,11 @@ const names = await templateNames(templatesDir);
 
 interface IQualityModule {
   readonly qualityPreset: (tier: string) => Record<string, unknown>;
-  readonly resolveQualityTier: (request?: { mobile?: boolean; tier?: string }) => string;
+  readonly resolveQualityTier: (request?: {
+    mobile?: boolean;
+    software?: boolean;
+    tier?: string;
+  }) => string;
 }
 
 async function load(template: string): Promise<IQualityModule> {
@@ -87,6 +91,43 @@ describe("template quality tiers", () => {
     const { resolveQualityTier } = await load("starter");
     expect(resolveQualityTier({ mobile: true, tier: "high" })).toBe("high");
     expect(resolveQualityTier({ mobile: false, tier: "low" })).toBe("low");
+  });
+
+  // Run 36821800527, `template-nonvisual (starter, 2/3)`: a SwiftShader adapter reported
+  // `swiftshader/google`, the game took `high`, one frame cost 2,649.9 ms at 4.6 s uptime and the
+  // device was gone. The engine reads the adapter; what a software rasteriser gets to look at is
+  // this game's own answer, and it has to be one of the tiers the game already declares.
+  it("should take the cheap tier on a named software adapter in every template", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(
+        resolveQualityTier({ software: true }),
+        `${name}: software adapter at the desktop tier`,
+      ).toBe("low");
+    }
+  });
+
+  it("should still let a named tier override a software adapter", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(
+        resolveQualityTier({ software: true, tier: "high" }),
+        `${name}: override ignored`,
+      ).toBe("high");
+      expect(
+        () => resolveQualityTier({ tier: "ultra", software: true }),
+        `${name}: unknown name`,
+      ).toThrow(/"ultra"/u);
+    }
+  });
+
+  it("should keep the desktop tier when no adapter was named", async () => {
+    for (const name of names) {
+      const { resolveQualityTier } = await load(name);
+      expect(resolveQualityTier({ software: false }), `${name}: reads absence as hardware`).toBe(
+        "high",
+      );
+    }
   });
 
   it("should differ between low and high in at least one enabled stage", async () => {

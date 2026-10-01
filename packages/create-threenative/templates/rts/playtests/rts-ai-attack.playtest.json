@@ -19,6 +19,6 @@
       "runtimeReady": true
     },
     "resources": [{ "id": "state", "path": "kills", "gte": 1 }],
-    "renderChain": { "tier": "high" }
+    "renderChain": { "tier": "high", "perAdapter": { "software": { "tier": "low" } } }
   }
 }
