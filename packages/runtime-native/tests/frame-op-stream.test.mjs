@@ -339,6 +339,51 @@ describe("packed frame op stream", () => {
     }
   });
 
+  it("records only the layer an offset writeTexture reads out of a whole array", () => {
+    // three uploads layer k of an array texture as the whole array plus `offset`. Recording the
+    // whole source per layer made an 821-layer morph texture copy the array 821 times.
+    const { device, queue, drain } = harness();
+    const texture = device.createTexture({});
+    texture.format = "rgba8unorm";
+    const layerBytes = 2 * 2 * 4;
+    const layers = new Uint8Array(layerBytes * 4);
+    for (let layer = 0; layer < 4; layer += 1)
+      layers.fill(layer + 1, layer * layerBytes, (layer + 1) * layerBytes);
+    queue.writeTexture(
+      { texture, origin: { x: 0, y: 0, z: 2 } },
+      layers,
+      { offset: 2 * layerBytes, bytesPerRow: 8, rowsPerImage: 2 },
+      { width: 2, height: 2, depthOrArrayLayers: 1 },
+    );
+    const frame = drain();
+    const { view, result } = records(frame);
+    const record = result.find(({ opcode }) => opcode === 30);
+    expect(record).toBeDefined();
+    expect(view.getUint32(record.cursor + 24, true), "destination layer").toBe(2);
+    expect(view.getFloat64(record.cursor + 32, true), "recorded offset").toBe(0);
+    expect(view.getUint32(record.cursor + 60, true), "payload bytes").toBe(layerBytes);
+    expect(Array.from(new Uint8Array(frame, record.cursor + 64, layerBytes))).toEqual(
+      new Array(layerBytes).fill(3),
+    );
+  });
+
+  it("counts block rows for a compressed writeTexture slice", () => {
+    const { device, queue, drain } = harness();
+    const texture = device.createTexture({});
+    texture.format = "bc7-rgba-unorm";
+    // An 8x8 BC7 image is 2 block rows of 2 blocks (16 bytes each): 64 bytes per layer.
+    const source = new Uint8Array(64 * 3).fill(7);
+    queue.writeTexture(
+      { texture, origin: [0, 0, 1] },
+      source,
+      { offset: 64, bytesPerRow: 32, rowsPerImage: 2 },
+      [8, 8, 1],
+    );
+    const { view, result } = records(drain());
+    const record = result.find(({ opcode }) => opcode === 30);
+    expect(view.getUint32(record.cursor + 60, true)).toBe(64);
+  });
+
   it("fails synchronously on invalid upload ranges, offsets, and resource ids", () => {
     const { device, queue, drain } = harness();
     const buffer = { _bufferId: 1 };

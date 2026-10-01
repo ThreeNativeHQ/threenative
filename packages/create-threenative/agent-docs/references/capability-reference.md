@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -2946,6 +2946,92 @@ export class WorldCells extends Group implements IComputeDriven { … }
 const world = await WorldCells.load({ url: "/world/world.json", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });
 scene.add(world);
 world.update();
+```
+
+## `@threenative/metahuman`
+
+### `assertAssetPath`
+
+`function` — Keeps a caller-supplied asset path inside the asset directory.
+
+```ts
+export function assertAssetPath(path: string): string { … }
+```
+
+- **Use when:** reject a MetaHuman asset path that would read outside the game's asset root
+- **Constraints:** absolute paths, Windows drive letters, backslashes and any `..` segment throw MetaHumanAssetError with TN_MH_PATH_ESCAPE before the path is joined onto a root
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+assertAssetPath("metahuman/specimen.glb");
+```
+
+### `loadMetaHuman`
+
+`function` — Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced   `diagnostics().backend` reads "native"; the game code does not change
+
+```ts
+loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }
+```
+
+- **Use when:** put a MetaHuman head in a browser game without an Unreal import or a baked clip
+- **Constraints:** the model is loaded through the game's own asset loader and cloned per instance, so · the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD · an undeclared control, an out-of-domain value, an undeclared LOD and any call after · in a native host that installed the MetaHuman resident the C++ evaluator runs and
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const human = await loadMetaHuman({ assets: ctx.assets, model: "metahuman/head.glb",
+  dna: "metahuman/head.dna", bindings: "metahuman/bindings.json" });
+  human.setControls({ jawOpen: 0.4 });
+// in the scene update, after any body animation
+  human.update();
+```
+
+### `MetaHumanAssetError`
+
+`class` — The rejection every check in this package raises, carrying a stable machine-readable code.
+
+```ts
+export class MetaHumanAssetError extends Error { … }
+```
+
+- **Use when:** branch on why a MetaHuman asset or evaluator call was refused
+- **Constraints:** `code` is part of the public surface; renaming one is a breaking change
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+if (error instanceof MetaHumanAssetError && error.code === "TN_MH_HASH_MISMATCH") refetch();
+```
+
+### `RigEvaluator`
+
+`class` — One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory   `create` and the WASM is never fetched; `RigEvaluator.backend()` says which one runs
+
+```ts
+export class RigEvaluator implements IRigEvaluator { … }
+```
+
+- **Use when:** drive a prepared MetaHuman head's expression from the browser without an Unreal import
+- **Constraints:** the binary's SHA-256 is checked against the shipped manifest before it is · every returned array is a copy, so no view survives a memory growth; a disposed · a native host that installed the MetaHuman resident gets its C++ evaluator from
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const rig = await RigEvaluator.create(dna); rig.setGuiControls(gui); rig.evaluate(true); rig.jointOutputs();
+```
+
+### `validateMetaHumanAssets`
+
+`function` — Checks one prepared specimen — bindings sidecar, DNA and GLB — against the rig it claims to drive, and returns the bindings only when every name, index, domain and hash holds up.   channels, morph targets or LODs the loaded files do not contain   disk and an index past the end of its array are rejections, each with a stable code   cannot pass a hand-written sidecar the rig cannot drive
+
+```ts
+export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHumanBindings { … }
+```
+
+- **Use when:** refuse a MetaHuman specimen whose bindings point at joints, nodes, blend shape
+- **Constraints:** fails closed: a missing key, a wrong type, a hash that differs from the bytes on · reads the rig's real names and the GLB's real node, mesh and target counts, so it
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const bindings = validateMetaHumanAssets({ bindings: parsed, dnaSha256, glbSha256, rig, gltf });
 ```
 
 ## `@threenative/physics`

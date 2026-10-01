@@ -87,11 +87,12 @@ test("should fail when a declared test target is not executed", () => {
   // thread contract; +1 for PRD-327 Phase 4's stall-budget hitch shape contract; +1 for the
   // screenshot capture-gate ordering contract; +1 for PRD-329's surface-format selection
   // diagnostic contract; +5 for the comprehensive coverage contracts; +1 for PRD-368's pipeline
-  // cache contract; +1 for PRD-399's presentation-pacing contract.
+  // cache contract; +1 for PRD-399's presentation-pacing contract; +1 for PRD-465 Phase 2's
+  // MetaHuman facial rig bindings contract.
   // Bump alongside any new add_executable contract target.
-  // 44 since PRD-399 registered threenative-presentation-pacing-test. The next assertion pins this against CMakeLists
+  // 45 since PRD-465 registered threenative-metahuman-bindings-test. The next assertion pins this against CMakeLists
   // itself, so the literal is a tripwire for an unreviewed target, not the source of truth.
-  assert.equal(discovered.length, 44);
+  assert.equal(discovered.length, 45);
   assert.deepEqual(discovered, declaredTargets(cmake));
   assert.doesNotThrow(() => validateExecutionContracts(discovered, executionContracts));
 
@@ -121,6 +122,22 @@ test("uses the required exceptional invocations and opt-in verification builds",
     helper,
     /build-native-physics\.mjs[\s\S]*--desktop[\s\S]*contracts-physics[\s\S]*"TN_ENABLE_NATIVE_PHYSICS", "ON"/u,
   );
+  assert.match(helper, /contracts-metahuman[\s\S]*"TN_ENABLE_METAHUMAN", "ON"/u);
+  assert.match(
+    helper,
+    /download-deps\.mjs"\), "--only", "openriglogic"[\s\S]*contracts-metahuman/u,
+  );
+  const metahumanVerifier = readFileSync(join(root, "scripts/verify-desktop-metahuman.mjs"), "utf8");
+  assert.match(metahumanVerifier, /configureMetaHumanVerificationBuild\(cmake\)/u);
+  assert.match(
+    metahumanVerifier,
+    /buildNativeTarget\(cmake, buildDirectory, target[\s\S]*run\(nativeTestExecutable\(buildDirectory, target\)[\s\S]*passLine/u,
+  );
+  assert.equal(
+    packageJson.scripts["native:verify:metahuman"],
+    "node scripts/verify-desktop-metahuman.mjs",
+  );
+  assert.doesNotMatch(packageJson.scripts["native:verify:desktop"], /verify-desktop-metahuman/u);
   assert.match(physicsVerifier, /configurePhysicsVerificationBuild\(cmake\)/u);
   assert.doesNotMatch(physicsVerifier, /build-native-physics\.mjs/u);
   assert.match(readFileSync(join(root, "CMakePresets.json"), "utf8"), /"TN_ENABLE_VIDEO": "OFF"/u);

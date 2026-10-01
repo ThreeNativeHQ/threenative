@@ -221,7 +221,8 @@ if [[ "$suite_prebuilt" -eq 1 ]]; then
   for tn_prebuilt_package in \
     @threenative/assets \
     @threenative/ueformat \
-    @threenative/raw-unreal; do
+    @threenative/raw-unreal \
+    @threenative/metahuman; do
     package_test_command+=(--filter "!$tn_prebuilt_package")
   done
 fi
@@ -257,6 +258,8 @@ run_prebuilt_package_tests() {
   pnpm --filter @threenative/ueformat exec publint --strict || return $?
   pnpm --filter @threenative/raw-unreal exec vitest run --root ../.. raw-unreal/__tests__ || return $?
   pnpm --filter @threenative/raw-unreal exec publint --strict || return $?
+  pnpm --filter @threenative/metahuman exec vitest run --root ../.. metahuman/__tests__ || return $?
+  pnpm --filter @threenative/metahuman exec publint --strict || return $?
 }
 
 

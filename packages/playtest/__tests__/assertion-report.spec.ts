@@ -75,6 +75,26 @@ describe("assertion report utilities", () => {
     expect(isRecord(null)).toBe(false);
     expect(jsonEqual({ a: 1 }, { a: 1 })).toBe(true);
     expect(jsonEqual({ a: 1 }, { a: 2 })).toBe(false);
+  });
+
+  test("compares objects independently of key insertion order", () => {
+    expect(jsonEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+    expect(jsonEqual({ a: 1, b: 2, c: 3 }, { c: 3, a: 1, b: 2 })).toBe(true);
+    expect(jsonEqual(
+      { state: { hp: 3, name: "wisp" }, pos: [1, 2, 3] },
+      { pos: [1, 2, 3], state: { name: "wisp", hp: 3 } },
+    )).toBe(true);
+    expect(jsonEqual({ a: 1, b: 2 }, { a: 1, b: 3 })).toBe(false);
+    expect(jsonEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(jsonEqual([{ a: 1, b: 2 }], [{ b: 2, a: 1 }])).toBe(true);
+    // Arrays stay order-sensitive.
+    expect(jsonEqual([1, 2], [2, 1])).toBe(false);
+    expect(jsonEqual({ a: [1, 2] }, { a: [2, 1] })).toBe(false);
+    // NaN/undefined semantics are unchanged: both stringify to null / drop the key.
+    expect(jsonEqual(Number.NaN, null)).toBe(true);
+    expect(jsonEqual(undefined, undefined)).toBe(true);
+    expect(jsonEqual(undefined, null)).toBe(false);
+    expect(jsonEqual({ a: 1, b: undefined }, { a: 1 })).toBe(true);
     expect(expectedPathAssertion({
       allowTrivial: "held",
       atSteps: [{ label: "end" }],

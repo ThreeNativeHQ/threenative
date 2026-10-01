@@ -2,7 +2,7 @@
 # Native coverage — 2026-08-28
 
 Configuration: `tn-linux-coverage` with clang source-based coverage. Executed
-42 native contract targets; 2 configured
+42 native contract targets; 3 configured
 targets could not be built and are named below.
 
 | Subsystem | Instrumented lines | Covered | Line coverage |
@@ -21,12 +21,12 @@ targets could not be built and are named below.
 | `src/storage/` | 327 | 286 | 87.46% |
 | `src/utils/` | 0 | 0 | 0.00% |
 | `src/vfs/` | 239 | 195 | 81.59% |
-| `src/webgpu/` | 9661 | 7379 | 76.38% |
+| `src/webgpu/` | 9661 | 7380 | 76.39% |
 | `src/webtransport/` | 1391 | 1078 | 77.50% |
-| `src/workers/` | 615 | 527 | 85.69% |
-| **TOTAL** | **24108** | **18919** | **78.48%** |
+| `src/workers/` | 615 | 524 | 85.20% |
+| **TOTAL** | **24108** | **18917** | **78.47%** |
 
-Source digest: `sha256:3b48b60828d99258e8588e1692b1e42f9efc5d0c65cd0ac396934ce571ecb088`
+Source digest: `sha256:26482043df2162d041ffeec0c7448661fde58a299a62285a6728d703b75e6aed`
 
 The default `pnpm budgets` gate reads this committed measurement without configuring or compiling
 the native host. Any native source, native C++ test, CTest registration, or coverage aggregation
@@ -58,6 +58,7 @@ change requires this opt-in command to refresh the record.
 - `src/gltf/gltf_loader.cpp`
 - `src/js/jsc_engine.mm`
 - `src/js/quickjs_engine.cpp`
+- `src/metahuman/native_bindings.cpp`
 - `src/physics/native_bindings.cpp`
 - `src/platform/android_main.cpp`
 - `src/platform/surface_android.cpp`
@@ -75,6 +76,7 @@ change requires this opt-in command to refresh the record.
 
 ## Blocked targets
 
+- `threenative-metahuman-bindings-test`: TN_ENABLE_METAHUMAN=OFF
 - `threenative-physics-actuation-bindings-test`: TN_ENABLE_NATIVE_PHYSICS=OFF
 - `threenative-video-recorder-state-test`: TN_ENABLE_VIDEO=OFF
 <!-- native-coverage-generated:end -->

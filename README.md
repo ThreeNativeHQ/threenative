@@ -103,6 +103,11 @@ lifecycle.
 - **Built for agents.** A searchable capability manifest ships with the library and is exposed over
   MCP, so an authoring agent finds what already exists instead of rewriting it.
 
+> [!TIP]
+> **Picking the model that writes the scene.** [threejseval](https://threejseval.com/ranking) ranks
+> AI coding agents on Three.js work — one prompt, blind arena votes on the scenes they build, Elo
+> with cost and tokens beside each entry.
+
 ## Templates
 
 `pnpm create threenative my-game --template <name>`
@@ -128,6 +133,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
 | `create-threenative` | Scaffold a readable game project from eight templates |
+| `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
