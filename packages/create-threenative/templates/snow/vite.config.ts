@@ -1,0 +1,34 @@
+import tailwindcss from "@tailwindcss/vite";
+import { watchAssets } from "@threenative/assets";
+import react from "@vitejs/plugin-react";
+import { createEngineFreshnessPlugin, createWebBrandPlugin } from "create-threenative";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
+import config from "./threenative.config.js";
+
+function assetsWatchPlugin(): Plugin {
+  return {
+    name: "threenative-assets-watch",
+    apply: "serve",
+    configureServer(server) {
+      const handle = watchAssets({ config: config.assets, cwd: server.config.root });
+      server.httpServer?.once("close", () => handle.close());
+    },
+  };
+}
+
+export default defineConfig({
+  plugins: [
+    createEngineFreshnessPlugin(),
+    createWebBrandPlugin(),
+    react(),
+    tailwindcss(),
+    assetsWatchPlugin(),
+  ],
+  server: {
+    watch: {
+      ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],
+      usePolling: true,
+    },
+  },
+});

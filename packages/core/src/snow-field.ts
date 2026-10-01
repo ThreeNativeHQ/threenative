@@ -268,6 +268,7 @@ export class SnowField {
   #lastSink = 0;
   #version = 0;
   #dirty: IHeightfieldRegionBounds | undefined;
+  #untaken: IHeightfieldRegionBounds | undefined;
   #scratch = new Float32Array(0);
 
   constructor(options: ISnowFieldOptions) {
@@ -324,6 +325,19 @@ export class SnowField {
   /** Window of the canonical field the last change wrote, or undefined before the first change. */
   get dirtyRegion(): IHeightfieldRegionBounds | undefined {
     return this.#dirty === undefined ? undefined : { ...this.#dirty };
+  }
+
+  /**
+   * Union of every window written since the previous call, then forgotten.
+   *
+   * One fixed step can write several windows — each contact, then recovery — and `dirtyRegion`
+   * keeps only the last, so a renderer that refreshes geometry once per drawn frame takes this
+   * instead. It has one owner: two consumers taking it would each miss the other's windows.
+   */
+  takeDirtyRegion(): IHeightfieldRegionBounds | undefined {
+    const region = this.#untaken;
+    this.#untaken = undefined;
+    return region;
   }
 
   /** Bytes retained by the four snow channels and the base terrain copy. */
@@ -689,6 +703,7 @@ export class SnowField {
     // The scratch buffer is written straight through: updateHeights copies before it returns.
     this.field.updateHeights({ ...bounds, heights });
     this.#dirty = { ...bounds };
+    this.#untaken = unionBounds(this.#untaken, bounds);
     this.#version += 1;
   }
 }

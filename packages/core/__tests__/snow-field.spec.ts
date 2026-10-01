@@ -310,6 +310,25 @@ describe("SnowField canonical surface", () => {
     expect(region?.column).toBeGreaterThan(0);
     expect(region?.row).toBeGreaterThan(0);
   });
+
+  it("hands a renderer the union of every window written since it last looked", () => {
+    const snow = new SnowField({ field: fixtureTerrain(), depth: 0.28 });
+    snow.takeDirtyRegion();
+    snow.stamp({ area: 0.02, footprint: snowDiscFootprint(0.15), load: 400, x: -1, z: 2 });
+    const first = snow.dirtyRegion;
+    snow.stamp({ area: 0.02, footprint: snowDiscFootprint(0.15), load: 400, x: 1, z: -2 });
+    const second = snow.dirtyRegion;
+    const union = snow.takeDirtyRegion();
+    if (first === undefined || second === undefined || union === undefined)
+      throw new Error("each stamp must report a window");
+    for (const part of [first, second]) {
+      expect(union.column).toBeLessThanOrEqual(part.column);
+      expect(union.row).toBeLessThanOrEqual(part.row);
+      expect(union.column + union.columns).toBeGreaterThanOrEqual(part.column + part.columns);
+      expect(union.row + union.rows).toBeGreaterThanOrEqual(part.row + part.rows);
+    }
+    expect(snow.takeDirtyRegion()).toBeUndefined();
+  });
 });
 
 describe("SnowField contact profiles", () => {

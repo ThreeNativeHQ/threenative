@@ -117,7 +117,7 @@ describe("sphere on deformable snow under real physics", () => {
     const body = ball(ctx.physics, 0, 1.6, 0);
     binding.add(body);
 
-    run(ctx, binding, 15);
+    run(ctx, binding, 15, () => expect(binding.loadOf(body)).toBe(0));
     expect(solved(ctx, body).position.y).toBeGreaterThan(SNOW_DEPTH + BALL_RADIUS + 0.3);
     expect(snow.steps).toBe(0);
     expect(snow.activeCells).toBe(0);
@@ -137,6 +137,7 @@ describe("sphere on deformable snow under real physics", () => {
     run(ctx, binding, 1);
     const observed = binding.observe();
     expect(observed.loadProvenance).toBe("solver-impulse-per-step");
+    expect(binding.loadOf(body)).toBe(observed.load);
     if (observed.supported > 0) {
       expect(observed.load).toBeGreaterThan(BALL_MASS * 9.81 * 0.5);
       expect(observed.load).toBeLessThan(BALL_MASS * 9.81 * 2);

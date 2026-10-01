@@ -112,6 +112,8 @@ function rotateAxis(q: IQuaternion, axis: 0 | 1 | 2): [number, number, number] {
 
 interface IWatchedBody {
   readonly body: PhysicsBody3D;
+  /** Load this body pressed into the snow in the last consumed step, newtons. */
+  load: number;
   readonly shape: IPhysicsShapeDescriptor | undefined;
   readonly custom: ISnowFootprint | undefined;
   readonly cache: Map<number, ISnowFootprint>;
@@ -288,6 +290,8 @@ export interface ISnowPhysicsBinding {
   wind: number;
   add(body: PhysicsBody3D, footprint?: ISnowFootprint): void;
   remove(body: PhysicsBody3D): void;
+  /** Load one watched body pressed into the snow in the last step, newtons; 0 when airborne. */
+  loadOf(body: PhysicsBody3D): number;
   /**
    * Consume one solved step: read contacts, deform the snow, let it recover, then publish the
    * changed surface to collision. Call it once per fixed step, after the physics step and before
@@ -446,6 +450,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       cache: new Map(),
       custom: footprint,
       impulse: 0,
+      load: 0,
       shape,
     });
   }
@@ -470,6 +475,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     // One contact per body per step, under the body: the load is its whole supported impulse,
     // spread over its footprint's own area.
     for (const entry of watched.values()) {
+      entry.load = 0;
       if (entry.impulse <= 0) continue;
       const transform = readBodyTransform(entry.body.body.id);
       if (transform === undefined) throw new Error("attachSnowPhysics lost a watched body.");
@@ -486,6 +492,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       });
       supported += 1;
       load += bodyLoad;
+      entry.load = bodyLoad;
       entry.impulse = 0;
     }
   }
@@ -522,6 +529,9 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     },
     remove(body: PhysicsBody3D): void {
       watched.delete(body.collider.id);
+    },
+    loadOf(body: PhysicsBody3D): number {
+      return watched.get(body.collider.id)?.load ?? 0;
     },
     step(deltaTime: number): void {
       if (disposed) return;
