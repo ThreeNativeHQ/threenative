@@ -1,0 +1,13 @@
+{
+  "name": "rain-native-boot",
+  "schemaVersion": 1,
+  "target": "desktop",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": "after" },
+  "steps": [{ "kind": "wait", "waitTicks": 120, "release": true }],
+  "assert": {
+    "resources": [{ "id": "state", "path": "elapsed", "changed": true }],
+    "renderChain": { "tier": "high", "stages": { "includes": ["stormPost"] } }
+  }
+}

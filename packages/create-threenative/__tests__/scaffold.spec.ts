@@ -164,6 +164,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-01 (PRD-473 sandbox demo): every scaffold's .gitignore now carries the
+  // asset pipeline's compiled outputs (manifest, bake receipt, hashed files), and the copied
+  // capability manifest and reference gained the Scheduler's round-time-limit situation.
   // Recomputed 2026-09-28 after the prepared 11-package cohort changed template version pins and
   // shipped MCP metadata. Values are the ten current no-install createProject trees.
   // Recomputed 2026-09-27 on the merge of develop #289 (32ebfa885, "perf: prepare PRD-400
@@ -430,8 +433,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // arm64 cache-key fix: the distributed `patches/three@0.185.1.patch` carries #358's hunks without
   // the render-target samples line, so every scaffold that embeds it moved and all ten trees were
   // re-measured through `createProject` on the merged tree.
-  "action-rpg": "21db5fdebfbffc574997854b37345da99af24a1bc4ed5ba661f0e4548613d7f6",
-  defense: "bbf2206e5796ae27e58367aa3ae853fbde8de272a4e435b4bc45bec35400d0f9",
+  "action-rpg": "5f2f92b8a025d047ad74695a44a3d39df61defe0269d7abc90e84dccb615eb7c",
+  defense: "1c9976fed927d6f751980bdcb100f641071ce8c952e9440c496bda866df0556e",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -443,12 +446,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  minimal: "be1060a5bb878011d2f244f6b6e220d2d1ee0ec58c64cfc61e5c7a18fd83c0f2",
-  platformer: "8fed6be79bc8e94e29894c4bef89d1805b98a3281db947b4707c9e772b947d32",
-  runner: "5cee68665fc7a7a18632f2ed6323d809881deed0b21f57374fe3762238f9154b",
-  puzzle: "1575670ddc13a36e4ea41b8498f0d2ada22eba39fe25e4ddaaa38663c606a4e4",
-  racing: "64835f581a1301727ac6c1ed11d1596f109ff5cd42d19fc05f9b305fdd2d8118",
-  shooter: "962b27ec5a1899616c6c337cb5eff98e5fa4aeb09b605f1b2f97a3165dcc9212",
+  minimal: "86fa2656f89dced1982c5e43c059a0d16097027a5a46f216df316779f78eecfb",
+  platformer: "be5ffb6200074fb6eb54a0587ae6947e7ada1c80c73e1e53451a8021d3ee5c3c",
+  runner: "3f76b7adc2ae29159be90fded7f4226d15816136346b5424df02445e2ff086f9",
+  puzzle: "12c65fc715a3025712d591c9ccd9a4d551a00a6a3ae6db65969878ea643131cd",
+  racing: "62c82446146b3e18604c3ab6e343603ff1c699064cc43070c9c9cd7824ee6cc7",
+  shooter: "fc153673fd8b2b0cc59d2f2e00973c70c5ae3e65c0bc97a2c1927852b78bffc5",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
@@ -458,7 +461,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-28 on the merge of origin/develop (the prepared 11-package cohort: template
   // version pins and shipped MCP metadata) under PRD-462: neither side's value describes the tree
   // that carries both, so the starter was re-measured through `createProject` on the merged tree.
-  starter: "5f386f6b78b61a9ee8af69bd1c3dd9fa61b197e6fd2829ca31cfda0a18161d47",
+  starter: "7cb203e129938191cd6f37fa564af12c1a9c24fef3b76a65c4e2f2f6d125038f",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
@@ -486,7 +489,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
   // Recomputed 2026-09-27 after merging the PRD-400 three.js velocity patch with develop's
   // PRD-112/365 scaffold changes; the value comes from the committed merged scaffold tree.
-  sailing: "bf32bdef72017dff97c81f3c0240a7ac67eabbd4271192eb771f9b7f8a3281a3",
+  sailing: "348125d2b8e60b766c0fbaa455e3004d9cc262615bfb2c4a9d18fc05e72a8f44",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.
@@ -784,7 +787,8 @@ describe("create-threenative", () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
       const actual: Record<string, string> = {};
-      for (const template of ALL_TEMPLATES) {
+      // Kits added after PRD-201 have no tree in its parent commit.
+      for (const template of Object.keys(PRD_201_PARENT_SCAFFOLD_HASHES)) {
         const { target } = await createProject(
           { install: false, target: template, template },
           root,
@@ -1198,6 +1202,30 @@ describe("create-threenative", () => {
   // The compile step owns public/'s generated outputs; the sources ship in assets/. With no
   // raw copy left in public/, any dev server or build must compile first — which is what
   // playtests/assets.playtest.json proves against a served game.
+  // The asset pipeline writes its compiled outputs into public/ in any project with an assets/
+  // folder, and rain ships source clips. A scaffold whose .gitignore misses them has its next
+  // commit carry cooked WAVs, the manifest and the bake receipt.
+  it("should ignore the asset pipeline's compiled outputs in every template", async () => {
+    const root = await makeTempDir("threenative-scaffold-asset-ignore-");
+    try {
+      for (const template of ["rain", "minimal", "starter"] as const) {
+        const result = await createProject(
+          { install: false, target: `ignore-${template}`, template },
+          root,
+        );
+        const gitignore = await readFile(path.join(result.target, ".gitignore"), "utf8");
+        for (const rule of [
+          "public/assets.manifest.json",
+          "public/bake.receipt.json",
+          "public/*.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].*",
+        ])
+          expect(gitignore, `${template}: ${rule}`).toContain(rule);
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("should ship source assets and never scaffold an empty assets directory", async () => {
     const root = await makeTempDir("threenative-scaffold-assets-");
     try {

@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9090909090909091,
+  "recallAtK": 0.9156626506024096,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -70,10 +70,16 @@
     "snow.bodies",
     "snow.snowfall",
     "snow.powder",
-    "request.snow-glade"
+    "request.snow-glade",
+    "rain.weather-world",
+    "rain.noise-volume",
+    "rain.storm-audio",
+    "rain.lightning",
+    "rain.streaks",
+    "rain.round-time-limit"
   ],
   "rejectHits": 16,
-  "rowCount": 77,
+  "rowCount": 83,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -151,10 +157,16 @@
     "snow.bodies",
     "snow.snowfall",
     "snow.powder",
-    "request.snow-glade"
+    "request.snow-glade",
+    "rain.weather-world",
+    "rain.noise-volume",
+    "rain.storm-audio",
+    "rain.lightning",
+    "rain.streaks",
+    "rain.round-time-limit"
   ],
   "version": 1,
-  "zeroResultRate": 0.06493506493506493,
+  "zeroResultRate": 0.060240963855421686,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

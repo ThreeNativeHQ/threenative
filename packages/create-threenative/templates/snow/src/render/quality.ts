@@ -91,24 +91,11 @@ const high: IWorldEnvironmentOptions = {
 
 /**
  * The rung in between. With no screen-space stage and no bloom at any tier, the post chain is the
- * same everywhere; what a phone saves is decided in `src/scenes/Snow.ts` (fewer flakes), and the
- * snow mesh resolution in `src/terrain.ts` is where the frame actually goes.
+ * same everywhere; the tier only reaches the measured chain as `renderChainTier`. What a phone
+ * saves is decided in `src/scenes/Snow.ts` (fewer flakes), and the snow mesh resolution in
+ * `src/terrain.ts` is where the frame actually goes.
  */
-const medium: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  // Off, as at the high tier.
-  bloomEnabled: false,
-  // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
-  denoiseEnabled: false,
-  exposure: 0.95,
-  // Off at every tier — see the note at the top of this file.
-  ssgiEnabled: false,
-  // Off at every tier — see the note at the top of this file.
-  ssrEnabled: false,
-  tonemapMode: "aces",
-};
+const medium: IWorldEnvironmentOptions = { ...high, renderChainTier: "medium" };
 
 /**
  * What a phone gets: this template's shipped mobile look, unchanged.
@@ -124,6 +111,7 @@ const low: IWorldEnvironmentOptions = {
   ssgiEnabled: false,
   // Off at every tier — see the note at the top of this file.
   ssrEnabled: false,
+  renderChainTier: "low",
   tonemapMode: "aces",
 };
 
