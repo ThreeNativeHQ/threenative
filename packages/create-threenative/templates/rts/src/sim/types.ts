@@ -448,17 +448,13 @@ export interface IEntity extends IPoint {
    * never share one: `orders` may hold up to 20 of them at once, all readable at the same time.
    */
   orderPool: Order[];
-  /** Which record of `orderPool` the next order comes from. */
-  orderCursor: number;
   queue: IQueueItem[];
   /**
    * Every queue record this building's `queue` has ever held, kept after it drops them. The queue
-   * holds up to six at once and a shift moves the rest down, so its records are a ring like
-   * `orderPool` is, and one per position rather than one per training.
+   * holds up to six at once and a shift moves the rest down, so a push takes the one record no entry
+   * of the queue is reading rather than the next one along.
    */
   queuePool: IQueueItem[];
-  /** The pool slot a push may reuse: the record the queue last let go of. */
-  queueFree: number;
   /** A bunker's own weapon profile, filled in place: `engage` holds one while it asks again. */
   profile?: IUnitDef;
   rally: IPoint | null;

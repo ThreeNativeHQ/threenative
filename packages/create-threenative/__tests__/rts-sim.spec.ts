@@ -238,8 +238,10 @@ describe("rts event queue", () => {
   it("clears a field the next event does not set, so a slot never reports a stale value", () => {
     const game = game_();
     game.emit("death", { id: 5, x: 1, z: 2, name: "Ranger", team: 0 });
-    // The next event is 250-1 events later only in the full queue, so drain to free the slot: the
-    // same slot comes back on the bank swap and must not still be the death event's.
+    // Two drains, not one: the second brings the same bank back as the live one, so the record the
+    // death event wrote is the record the next event lands in. One drain lands the end event in the
+    // other bank's fresh slot and never reuses anything.
+    game.drainEvents();
     game.drainEvents();
     game.emit("end", { result: "victory" });
     const [ended] = game.drainEvents();
@@ -249,6 +251,17 @@ describe("rts event queue", () => {
     expect(ended?.name).toBeUndefined();
     expect(ended?.x).toBeUndefined();
     expect(ended?.team).toBeUndefined();
+  });
+
+  it("hands out two alternating batches, so an ordinary drain allocates no array", () => {
+    const game = game_();
+    const first = game.drainEvents();
+    const second = game.drainEvents();
+    const third = game.drainEvents();
+    // A fresh array per drain is what `Play.#drain` runs on every frame, and it is invisible to a
+    // test that only checks contents: two arrays swapped is what makes the third one the first again.
+    expect(second).not.toBe(first);
+    expect(third).toBe(first);
   });
 
   it("does not let a caller's reused payload alias the queue", () => {
@@ -298,6 +311,169 @@ describe("rts production", () => {
     }
     expect(trained).toEqual([TYPES.ranger.name, TYPES.medic.name, TYPES.ranger.name]);
     expect(barracks.queue).toHaveLength(0);
+  });
+
+  it("gives every queued item its own record after a cancel frees one in the middle", () => {
+    const game = sandbox(13);
+    const core = game.own(0).find((e) => e.type === "core");
+    if (!core) throw new Error("the seeded start has no core");
+    const barracks = game.spawn("barracks", 0, core.x + 12, core.z - 2);
+    const player = game.players[0];
+    if (!player) throw new Error("the seeded game has no team 0");
+    player.resources.ore = 100_000;
+    player.resources.gas = 100_000;
+    game.spawn("relay", 0, core.x - 7, core.z - 10);
+    for (let i = 0; i < 3; i++) expect(game.train(barracks.id, "ranger").ok).toBe(true);
+    const first = barracks.queue.map((q) => q.id);
+    expect(new Set(first).size).toBe(3);
+
+    // The middle item is the one a shift closes the window over, so its record is the only free one
+    // and the record behind it is live again. Taking "the next one along" writes over that one.
+    expect(game.cancelTrain(barracks.id, 1).ok).toBe(true);
+    expect(game.train(barracks.id, "medic").ok).toBe(true);
+    expect(game.train(barracks.id, "ranger").ok).toBe(true);
+
+    const ids = barracks.queue.map((q) => q.id);
+    // Five trainings left four entries and four distinct items: a shared record shows up as a
+    // repeated id, or as one entry changing under another.
+    expect(ids).toHaveLength(4);
+    expect(new Set(ids).size).toBe(4);
+    expect(new Set(barracks.queue).size).toBe(4);
+    expect(ids[0]).toBe(first[0]);
+    expect(ids).not.toContain(first[1]);
+    expect(barracks.queue.map((q) => q.type)).toEqual(["ranger", "ranger", "medic", "ranger"]);
+  });
+
+  it("gives a completion and the next training their own records", () => {
+    const game = sandbox(13);
+    const core = game.own(0).find((e) => e.type === "core");
+    if (!core) throw new Error("the seeded start has no core");
+    const barracks = game.spawn("barracks", 0, core.x + 12, core.z - 2);
+    const player = game.players[0];
+    if (!player) throw new Error("the seeded game has no team 0");
+    player.resources.ore = 100_000;
+    player.resources.gas = 100_000;
+    game.spawn("relay", 0, core.x - 7, core.z - 10);
+    for (let i = 0; i < 3; i++) expect(game.train(barracks.id, "ranger").ok).toBe(true);
+
+    // The front item completes and its record goes back to the building; the push after it must not
+    // be the record the completion is still being read out of.
+    stepsUntil(game, () => barracks.queue.length === 2);
+    expect(game.train(barracks.id, "medic").ok).toBe(true);
+    expect(barracks.queue.map((q) => q.type)).toEqual(["ranger", "ranger", "medic"]);
+    expect(new Set(barracks.queue.map((q) => q.id)).size).toBe(3);
+    expect(new Set(barracks.queue).size).toBe(3);
+  });
+});
+
+describe("rts order records", () => {
+  /** A ranger on open ground, with nothing else in the way. */
+  function rangerAt(seed: number): { game: Game; ranger: ReturnType<Game["spawn"]> } {
+    const game = sandbox(seed);
+    const core = game.own(0).find((e) => e.type === "core");
+    if (!core) throw new Error("the seeded start has no core");
+    const ranger = game.spawn("ranger", 0, core.x + 8, core.z);
+    game.updateVision();
+    return { game, ranger };
+  }
+
+  it("keeps the live order and every queued one in records of their own", () => {
+    const { game, ranger } = rangerAt(31);
+    expect(game.command([ranger.id], "move", { x: -40, z: 40 })).toMatchObject({ ok: true });
+    const live = ranger.order;
+
+    // Each appended order used to take a second record from the ring, so eleven of them came to
+    // twenty-two and the twelfth wrapped onto the order the unit was walking.
+    for (let i = 0; i < 11; i++) {
+      expect(game.command([ranger.id], "move", { x: -29 + i, z: 20 }, 0, true)).toMatchObject({
+        ok: true,
+      });
+    }
+    expect(ranger.order).toBe(live);
+    expect(ranger.order).toEqual({ kind: "move", x: -40, z: 40 });
+    expect(ranger.orders).toHaveLength(11);
+    expect(ranger.orders.map((o) => (o.kind === "move" ? o.x : -1))).toEqual(
+      Array.from({ length: 11 }, (_, i) => -29 + i),
+    );
+    // One record per live order: two queued orders sharing one makes the list a single order twice.
+    expect(new Set(ranger.orders).size).toBe(11);
+    expect(ranger.orders.includes(live)).toBe(false);
+  });
+
+  it("refuses a full queue and a bad order without touching what the unit is doing", () => {
+    const { game, ranger } = rangerAt(32);
+    game.command([ranger.id], "move", { x: -40, z: 40 });
+    for (let i = 0; i < 20; i++) game.command([ranger.id], "move", { x: i, z: 7 }, 0, true);
+    expect(ranger.orders).toHaveLength(20);
+    const live = ranger.order;
+    const queued = [...ranger.orders];
+
+    // Past twenty the queue is full, and the refusal has to leave the live order and every queued
+    // record reading what it read before it.
+    expect(game.command([ranger.id], "move", { x: 90, z: 90 }, 0, true)).toMatchObject({
+      ok: false,
+    });
+    // An order the rules discard is refused without being written either.
+    expect(game.command([ranger.id], "attack", {}, 0, true)).toMatchObject({ ok: false });
+    expect(ranger.order).toBe(live);
+    expect(ranger.order).toEqual({ kind: "move", x: -40, z: 40 });
+    expect(ranger.orders).toEqual(queued);
+
+    // A dequeued order frees the queue, and the order that follows is a record of its own again.
+    stepsUntil(game, () => ranger.orders.length < 20);
+    expect(game.command([ranger.id], "move", { x: 12, z: -12 }, 0, true)).toMatchObject({
+      ok: true,
+    });
+    expect(ranger.orders).toHaveLength(20);
+    expect(new Set(ranger.orders).size).toBe(20);
+    // The record the finished order left behind is free and reusable, so only the order being
+    // followed now has to be outside the queue.
+    expect(ranger.orders.includes(ranger.order)).toBe(false);
+    expect(ranger.orders[19]).toMatchObject({ kind: "move", x: 12, z: -12 });
+  });
+
+  it("keeps a caller's target and one unit's order out of another's", () => {
+    const { game, ranger } = rangerAt(33);
+    const other = game.spawn("ranger", 0, ranger.x + 4, ranger.z);
+    game.updateVision();
+    game.command([ranger.id], "stop");
+    game.command([other.id], "stop");
+    const shared = { x: 7, z: -3 };
+    expect(game.command([ranger.id], "move", shared)).toMatchObject({ ok: true });
+    // The gesture's own object is not kept: the record holds the coordinates it was given.
+    shared.x = 99;
+    shared.z = 99;
+    expect(ranger.order).toEqual({ kind: "move", x: 7, z: -3 });
+
+    // The same target given to two units gives each a record of its own, formation offset aside.
+    const point = { x: -20, z: 20 };
+    expect(game.command([ranger.id, other.id], "move", point)).toMatchObject({
+      ok: true,
+      count: 2,
+    });
+    point.x = 99;
+    point.z = 99;
+    if (ranger.order.kind !== "move" || other.order.kind !== "move") {
+      throw new Error("a move order was not written");
+    }
+    expect(ranger.order).not.toBe(other.order);
+    // The pair is spread around the point it was given, each keeping its own slot: the layout is
+    // the formation's business, the point is that one record is not holding both orders.
+    expect(ranger.order).not.toEqual(other.order);
+    expect(Math.abs(ranger.order.x + 20)).toBeLessThanOrEqual(2.05);
+    expect(Math.abs(ranger.order.z - 20)).toBeLessThanOrEqual(2.05);
+    expect(Math.abs(other.order.x + 20)).toBeLessThanOrEqual(2.05);
+    expect(Math.abs(other.order.z - 20)).toBeLessThanOrEqual(2.05);
+
+    // An idle unit shares one order record, so writing into a unit's current order would rewrite
+    // every idle unit's order with it.
+    const idle = game.spawn("ranger", 0, ranger.x - 4, ranger.z);
+    game.updateVision();
+    expect(idle.order.kind).toBe("idle");
+    const otherBefore = { ...other.order };
+    game.command([idle.id], "move", { x: -5, z: -5 });
+    expect(idle.order).toEqual({ kind: "move", x: -5, z: -5 });
+    expect(other.order).toEqual(otherBefore);
   });
 });
 

@@ -340,7 +340,13 @@ describe("rts kit ordinary-frame runtime cost", () => {
       events += 1;
       return emit(...args);
     };
-    for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) game.step();
+    // The frame is step AND drain, because that is what the scene does: `Play.#drain` runs on the
+    // same frame as the step, and a step measured without its drain misses whatever the drain
+    // allocates, which is how a per-drain array hides behind a green gate.
+    for (let frame = 0; frame < WARMUP_FRAMES; frame += 1) {
+      game.step();
+      game.drainEvents();
+    }
     const movingAtWarmup = game.army().filter((entity) => entity.moving).length;
     const enemyStart = game
       .army(1)
@@ -360,6 +366,7 @@ describe("rts kit ordinary-frame runtime cost", () => {
       events = 0;
       watcher.begin();
       game.step();
+      game.drainEvents();
       const step = watcher.take();
       if (game.nextId !== minted) {
         // A birth is cold initialisation: it mints the entity record and its state once. Counted,

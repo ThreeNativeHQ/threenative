@@ -58,14 +58,12 @@ export function train(
     return refuse(into, "Supply blocked. Build a Supply Relay.");
   }
   pay(game, type, team);
-  // The record is the queue's own vacated slot. A removal leaves the records it passed over in
-  // `queuePool` and moves the survivors along, so the next push takes a record nothing is reading:
-  // two queued items are never the same object, which is what sharing one did the moment the queue
-  // had been shortened.
+  // The record is one the queue is not reading. A cursor cannot do this: a cancel frees a slot in
+  // the middle of the queue, so the next push writes over the item behind it. The search is over the
+  // building's own seven records and allocates nothing; a queue full of live records has none left.
   if (e.queue.length >= QUEUE_POOL) return { ok: false, message: "Production queue is full." };
-  const record = e.queuePool[e.queueFree];
+  const record = freeQueueRecord(e);
   if (record === undefined) return { ok: false, message: "Production queue is full." };
-  e.queueFree = e.queueFree + 1 === QUEUE_POOL ? 0 : e.queueFree + 1;
   record.id = game.nextQueueId++;
   record.type = type;
   record.progress = 0;
@@ -87,6 +85,22 @@ function refuse(into: IOrderResult | undefined, message: string): IOrderResult {
   return into;
 }
 
+/**
+ * One of this building's own queue records that no entry of its queue is reading, or nothing. A
+ * cancel closes the window over the hole and moves the survivors along, so the record behind the
+ * removed one is live again and only the removed one is free: `includes` is what keeps a push from
+ * landing on it.
+ */
+function freeQueueRecord(e: IEntity): IQueueItem | undefined {
+  const pool = e.queuePool;
+  for (let i = 0; i < pool.length; i++) {
+    const record = pool[i];
+    if (record === undefined || e.queue.includes(record)) continue;
+    return record;
+  }
+  return undefined;
+}
+
 export function cancelTrain(game: Game, id: number, index: number, team = 0): IOrderResult {
   const e = game.get(id);
   if (
@@ -106,8 +120,6 @@ export function cancelTrain(game: Game, id: number, index: number, team = 0): IO
   // record and `queue[i]` is still the i-th item for the HUD, `serialize` and `updateProduction`.
   for (let i = index; i < e.queue.length - 1; i++) e.queue[i] = e.queue[i + 1] as IQueueItem;
   e.queue.length -= 1;
-  // The record the queue no longer points at is the one a push may reuse next.
-  e.queueFree = e.queuePool.indexOf(q);
   const d = TYPES[q.type];
   const p = game.players[team];
   if (!p) return { ok: false };
@@ -135,10 +147,9 @@ export function updateProduction(game: Game, e: IEntity, dt: number): void {
   const p = game.spawnPoint(e, q.type);
   if (!p) return;
   // The survivors move up one, each keeping its own record, so `queue[i]` is still the i-th item
-  // for the HUD, `serialize` and this loop. The record that left is the one a push may reuse.
+  // for the HUD, `serialize` and this loop.
   for (let i = 0; i < e.queue.length - 1; i++) e.queue[i] = e.queue[i + 1] as IQueueItem;
   e.queue.length -= 1;
-  e.queueFree = e.queuePool.indexOf(q);
   const u = game.spawn(q.type, e.team, p.x, p.z);
   _one[0] = u.id;
   if (u.type === "worker") {

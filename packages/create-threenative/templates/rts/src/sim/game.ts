@@ -160,18 +160,32 @@ const targetOrder = {
 };
 const HOLD_ORDER: Order = { kind: "hold" };
 
-/** The next record off a unit's own ring of order records. */
-function takeOrder(unit: IEntity): Order {
+/**
+ * A record of this unit's own that nothing is reading: not its current order and not any of the up
+ * to 20 it has queued. A cursor cannot do this, because a cancelled order frees a slot in the middle
+ * and a wrap then writes over the order the unit is walking. The search is over the unit's own 22
+ * records and allocates nothing; a unit with a full queue has none, and the caller refuses instead.
+ */
+function takeOrder(unit: IEntity): Order | undefined {
   const pool = unit.orderPool;
-  const record = pool[unit.orderCursor];
-  unit.orderCursor += 1;
-  if (unit.orderCursor === pool.length) unit.orderCursor = 0;
-  return record as Order;
+  for (let i = 0; i < pool.length; i++) {
+    const record = pool[i];
+    if (record === undefined || record === unit.order) continue;
+    if (unit.orders.includes(record)) continue;
+    return record;
+  }
+  return undefined;
 }
 
-/** Copies `next` over a fresh record of the unit's own and hands that record back. */
-function writeOrder(unit: IEntity, next: Order): Order {
+/**
+ * Copies `next` over a record of the unit's own that nothing is reading, and hands that record back.
+ * The unit's current order is not one of those: it is replaced by the returned record, so writing
+ * over it would leave the old order and the new one as the same object — which is what a cursor over
+ * the ring did after eleven appends wrapped it onto the order the unit was walking.
+ */
+function writeOrder(unit: IEntity, next: Order): Order | undefined {
   const record = takeOrder(unit);
+  if (record === undefined) return undefined;
   copyOrder(record, next);
   return record;
 }
@@ -482,10 +496,8 @@ export class Game {
       order: IDLE_ORDER,
       orders: [],
       orderPool: makeOrderPool(),
-      orderCursor: 0,
       queue: [],
       queuePool: makeQueuePool(),
-      queueFree: 0,
       rally: null,
       cooldown: 0,
       carry: 0,
@@ -689,13 +701,13 @@ export class Game {
           continue;
         gatherOrder.id = n.id;
         gatherOrder.phase = unit.carry ? "return" : "out";
-        order = writeOrder(unit, gatherOrder);
+        order = gatherOrder;
       } else if (kind === "garrison") {
         const bunker = target.id === undefined ? undefined : this.get(target.id);
         if (!bunker || !garrisonCheck(this, unit, bunker)) continue;
         targetOrder.kind = "garrison";
         targetOrder.id = bunker.id;
-        order = writeOrder(unit, targetOrder);
+        order = targetOrder;
       } else if (kind === "repair") {
         const structure = target.id === undefined ? undefined : this.get(target.id);
         if (
@@ -708,7 +720,7 @@ export class Game {
           continue;
         targetOrder.kind = "repair";
         targetOrder.id = structure.id;
-        order = writeOrder(unit, targetOrder);
+        order = targetOrder;
       } else if (kind === "heal" || kind === "follow") {
         const ally = target.id === undefined ? undefined : this.get(target.id);
         if (
@@ -723,38 +735,45 @@ export class Game {
           continue;
         targetOrder.kind = kind as "heal" | "follow";
         targetOrder.id = ally.id;
-        order = writeOrder(unit, targetOrder);
+        order = targetOrder;
       } else if (kind === "attack") {
         const enemy = target.id === undefined ? undefined : this.get(target.id);
         if (!enemy || !this.canAttack(unit, enemy) || !this.visibleAt(enemy.x, enemy.z, team))
           continue;
         targetOrder.kind = "attack";
         targetOrder.id = enemy.id;
-        order = writeOrder(unit, targetOrder);
+        order = targetOrder;
       } else if (kind === "stop") {
         order = IDLE_ORDER;
       } else if (kind === "hold") {
-        order = writeOrder(unit, HOLD_ORDER);
+        order = HOLD_ORDER;
       } else {
         moveOrder.kind = kind === "attackMove" ? "attackMove" : "move";
         moveOrder.x = clamp(point.x, -HALF + 3, HALF - 3);
         moveOrder.z = clamp(point.z, -HALF + 3, HALF - 3);
-        order = writeOrder(unit, moveOrder);
+        order = moveOrder;
       }
       if (append && kind !== "stop" && kind !== "hold" && unit.order.kind !== "idle") {
         if (unit.orders.length < 20) {
-          // A queued order is a record of its own: the unit's current order and up to 20 queued
-          // ones are all readable at once, so they cannot come from one shared record.
+          // A queued order is a record of its own: the current order and up to 20 queued ones are
+          // all readable at once, so they cannot come from one shared record. The record is taken
+          // before anything live is written, so a full queue leaves the current order as it was.
           const queued = takeOrder(unit);
+          if (queued === undefined) continue;
           copyOrder(queued, order);
           unit.orders.push(queued);
           accepted++;
         }
       } else {
+        // The record a new order goes into is written before `abandonConstruction` reads the old
+        // order, because writing it touches a free record and never the one the unit is following.
+        // `stop` keeps the one idle order every idle unit shares rather than a copy of it.
+        const record = order === IDLE_ORDER ? IDLE_ORDER : writeOrder(unit, order);
+        if (record === undefined) continue;
         if (unit.order.kind === "construct") {
           abandonConstruction(this, this.get(unit.order.id), "Surveyor reassigned");
         }
-        unit.order = order;
+        unit.order = record;
         unit.orders.length = 0;
         clearMovement(unit);
         unit.targetId = null;
@@ -783,9 +802,8 @@ export class Game {
    */
   emit(type: string, payload: Partial<IGameEvent> = {}): void {
     const slots = this.#slots;
-    // The overflow rule is the one this always had: the 251st event drops the oldest. The bank is a
-    // ring, so "oldest" is the slot the cursor is about to reuse, and the array is rewritten in
-    // order rather than shifted, which would be 250 writes to drop one.
+    // The overflow rule is the one this always had: the 251st event drops the oldest, and the bank is
+    // a ring, so "oldest" is the slot the cursor is about to reuse.
     const slot = slots[this.#cursor];
     if (slot === undefined) return;
     for (let f = 0; f < EVENT_FIELDS.length; f++) {
@@ -798,12 +816,18 @@ export class Game {
     if (this.#cursor === EVENT_CAPACITY) this.#cursor = 0;
     if (this.#used < EVENT_CAPACITY) this.#used += 1;
     // The array is the ordered view of the ring, oldest first, which is the order the queue had.
+    // Below the cap the batch is already in that order, so the new record is appended and nothing is
+    // rewritten. A full bank rotates instead: the record the cursor just left is the oldest one, so
+    // the whole array is rewritten rather than shifted, which is the 250 writes that drops one.
     const events = this.events;
-    events.length = this.#used;
-    const start = this.#cursor - this.#used + (this.#used === EVENT_CAPACITY ? EVENT_CAPACITY : 0);
-    for (let i = 0; i < this.#used; i++) {
-      const record = slots[(start + i) % EVENT_CAPACITY];
-      if (record !== undefined) events[i] = record;
+    if (this.#used < EVENT_CAPACITY) {
+      events.push(slot);
+    } else {
+      events.length = EVENT_CAPACITY;
+      for (let i = 0; i < EVENT_CAPACITY; i++) {
+        const record = slots[(this.#cursor + i) % EVENT_CAPACITY];
+        if (record !== undefined) events[i] = record;
+      }
     }
   }
 
@@ -817,8 +841,11 @@ export class Game {
    */
   drainEvents(): IGameEvent[] {
     const handed = this.events;
+    // The array just handed out becomes the next batch's array, and the one that was waiting takes
+    // over as this batch's. Two arrays, swapped: a drain on an ordinary frame allocates nothing,
+    // which is the frame `Play` drains on.
     this.events = this.#spareEvents;
-    this.#spareEvents = [];
+    this.#spareEvents = handed;
     this.#slots = this.#spareSlots;
     this.#spareSlots = this.#pool;
     this.#pool = this.#slots;
