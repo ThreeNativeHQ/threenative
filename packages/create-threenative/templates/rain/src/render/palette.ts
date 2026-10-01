@@ -1,17 +1,18 @@
-// Generated for you. These six roles are the sailing kit's editable visual vocabulary.
-// Open water at mid-morning. The values these replace put a pale cyan at the top of the sky dome
-// *and* used a near-cyan accent for the wave crests, so sea and sky met at the same value and the
-// frame photographed as one flat sheet with no horizon in it. Sea and sky have to disagree.
+// Generated for you. These six roles are the storm's editable colour vocabulary.
+//
+// Hex is sRGB, as a colour picker shows it; `sky.ts` and `materials.ts` hand the shaders the linear
+// value Three converts each to, which is the reference study's own number to within 0.002.
 export const palette = {
-  /** Zenith. Properly blue, so the dome has somewhere to fall from. */
-  skyHigh: 0x2f6fae,
-  /** Horizon haze, and the fog colour. Where sea meets sky, this is the value. */
-  skyLow: 0x9dc2d2,
-  /** Deep water in the troughs. */
-  floor: 0x0a2c3e,
-  /** The sun's own colour, used for the glint on the water. */
-  player: 0xffe6b8,
-  /** Crest water: green-lit shallow, not cyan. */
-  accent: 0x2b8496,
-  shadow: 0x143243,
+  /** Haze at the horizon: the fog the coast fades into, and the lower half of the haze. */
+  horizon: 0x6c808b,
+  /** Haze looking up, where it thins towards the deck. */
+  zenith: 0x4d5f73,
+  /** Sodium street lamps: the light they cast on the wet road. */
+  lamp: 0xffba65,
+  /** Deep sea water, before the sky is reflected in it. */
+  water: 0x1e3237,
+  /** The night behind the loading screen. */
+  night: 0x101c24,
+  /** The one accent: the interface mint, also the loading bar. */
+  accent: 0xb6d9cc,
 } as const;

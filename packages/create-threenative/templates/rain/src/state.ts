@@ -26,17 +26,6 @@ export const PRESETS: Record<PresetName, Weather> = {
   clearing: { rain: 0.04, cloud: 0.32, wind: 0.14, fog: 0.14, exposure: 1.3, wet: 0.94 },
 };
 
-/**
- * Rain drops the quality tier keeps in the air. The tier is the game's own name for a render
- * budget, so it is a game-owned table rather than a framework enum.
- */
-export const QUALITY_RAIN_BUDGET: Record<QualityName, number> = {
-  performance: 6_500,
-  balanced: 12_000,
-  high: 12_000,
-  ultra: 16_000,
-};
-
 /** A frame longer than this is a stall, and integrating it moves the weather in one visible jump. */
 export const MAX_STEP = 0.08;
 

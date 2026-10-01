@@ -6,6 +6,8 @@ precision highp float;
 precision highp sampler3D;
 uniform float uTime, uRain, uCloud, uWind, uFog, uWet, uFlash, uAspect, uTan;
 uniform vec3 uCam, uForward, uRight, uUp, uStrike;
+// The look, owned by src/render/{sky,lighting,materials}.ts and set from there every run.
+uniform vec3 uHazeLow, uHazeHigh, uSunDir, uSunColor, uFill, uFlashLight, uLampLight, uLampGlow, uWater;
 uniform vec2 uRes;
 in vec2 vUv;
 out vec4 fragColor;
@@ -15,7 +17,7 @@ float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h
 float fbm2(vec2 p){float v=.5*noise2(p);p=mat2(.8,-.6,.6,.8)*p*2.03+19.1;v+=.25*noise2(p);p=p*2.02+9.3;v+=.125*noise2(p);return v+.0625*noise2(p*2.01+17.);}
 vec3 ray(vec2 uv){vec2 q=uv*2.-1.;return normalize(uForward+uRight*q.x*uAspect*uTan+uUp*q.y*uTan);}
 vec4 project(vec3 p){vec3 v=p-uCam;float d=dot(v,uForward);return vec4(dot(v,uRight)/(uAspect*uTan),dot(v,uUp)/uTan,1.00012*d-.300018,d);}
-vec3 hazeColor(vec3 rd){return mix(vec3(.15,.215,.26),vec3(.075,.115,.17),smoothstep(0.,.7,abs(rd.y)))+uFlash*vec3(.11,.16,.24);}
+vec3 hazeColor(vec3 rd){return mix(uHazeLow,uHazeHigh,smoothstep(0.,.7,abs(rd.y)))+uFlash*vec3(.11,.16,.24);}
 uniform sampler2D uSky;
 uniform int uReflect;
 float roadCenter(float z){return -1.6+2.1*sin(z*.012)+15.*(1.-smoothstep(-420.,-150.,z));}
@@ -110,13 +112,12 @@ vec3 baseColor(vec3 p,float mat,vec3 n){
  return res;
 }
 vec3 surfaceLight(vec3 p,vec3 n,vec3 v,vec3 albedo,float rough){
- vec3 sun=normalize(vec3(-.62,.34,-.71));
- float hemi=.45+.55*max(n.y,0.);vec3 c=albedo*(vec3(.64,.86,1.03)*hemi*.65+vec3(.56,.61,.67)*max(dot(n,sun),0.)*.35);
- c+=albedo*uFlash*(.6+max(dot(n,normalize(uStrike-p)),0.)*2.5)*vec3(.8,1.04,1.4);
+ float hemi=.45+.55*max(n.y,0.);vec3 c=albedo*(uFill*hemi+uSunColor*max(dot(n,uSunDir),0.));
+ c+=albedo*uFlash*(.6+max(dot(n,normalize(uStrike-p)),0.)*2.5)*uFlashLight;
  for(int i=0;i<6;i++){
   float z=-10.-float(i)*38.;vec3 lp=vec3(roadCenter(z)-3.90,7.87,z);vec3 l=lp-p;float dist2=dot(l,l);l=normalize(l);
   float ndl=max(dot(n,l),0.);float cone=smoothstep(.1,.62,-l.y)*smoothstep(-.1,.1,l.y);
-  float atten=48./(1.+dist2);vec3 warm=vec3(1.,.49,.13);
+  float atten=48./(1.+dist2);vec3 warm=uLampLight;
   c+=albedo*warm*atten*ndl*2.;
   vec3 hv=normalize(l+v);float shin=mix(20.,900.,1.-rough);float spec=pow(max(dot(n,hv),0.),shin)*(shin+2.)*.018;
   c+=warm*spec*atten*ndl*(rough>.55?.022:1.);
@@ -144,7 +145,7 @@ vec3 reflected(vec3 p,vec3 rd,vec3 sky){
    if(t>280.)break;
    vec3 q=p+rd*t;vec2 d=sceneMap(q);
    if(d.x<max(.03,t*.0016)){
-    if(d.y>5.5&&d.y<6.5)res=vec3(4.5,2.2,.6);
+    if(d.y>5.5&&d.y<6.5)res=uLampGlow*.75;
     else res=mix(baseColor(q,d.y,vec3(0,1,0))*.7,hazeColor(rd),1.-exp(-t*(.0015+uFog*.004)));
     break;
    }t+=max(.15,d.x*.9);
@@ -183,7 +184,7 @@ void main(){
    alb=mix(alb,vec3(.50,.36,.11),stripe*wear*.85);
    alb=mix(alb,vec3(.49,.54,.50),edge*wear*.60);
   }
-  if(water){alb=vec3(.013,.032,.038);rough=.045;}
+  if(water){alb=uWater;rough=.045;}
   color=surfaceLight(p,n,-rd,alb,rough);
   float fres=.025+.975*pow(1.-max(dot(-rd,n),0.),5.);
   vec2 suv=clamp(vUv+vec2(n.x,n.z)*vec2(.07,.05),.002,.998);
@@ -195,7 +196,7 @@ void main(){
   mat=water?8.:(road?7.:1.);
  }else if(mat>0.){
   n=getNormal(p,t);
-  if(mat>5.5&&mat<6.5)color=vec3(6.,2.75,.72);
+  if(mat>5.5&&mat<6.5)color=uLampGlow;
   else color=surfaceLight(p,n,-rd,baseColor(p,mat,n),mat>3.5?.28:.88);
   float ao=clamp((p.y-terrain(p.xz))*.09+.50,.4,1.);if(mat!=6.)color*=ao;
  }

@@ -8,11 +8,22 @@
 // owns the camera basis, the weather uniforms and the sky it reflects, and nothing else.
 //
 // Conventions: one world unit is one metre, +x is out to sea, -z runs down the coast.
-import { DoubleSide, Mesh, type PerspectiveCamera, PlaneGeometry, type Scene, Vector3 } from "three";
+import {
+  DoubleSide,
+  Mesh,
+  type PerspectiveCamera,
+  PlaneGeometry,
+  type Scene,
+  Vector3,
+} from "three";
 import { cameraFar, cameraNear, clamp, float, positionGeometry, uv, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import type { QualityName, Weather } from "../state.js";
 import { type ICloudPass, createCloudPass } from "./clouds.js";
+import { setupLighting } from "./lighting.js";
+import { setupMaterials } from "./materials.js";
+import { studyTier } from "./quality.js";
+import { setupSky } from "./sky.js";
 import {
   tempestWorld,
   uAspect,
@@ -35,12 +46,10 @@ export interface IWeatherWorldOptions {
   readonly elapsed: number;
   /** Current flash envelope, already gated on the photosensitivity switch by the caller. */
   readonly flash: number;
-  /** Unused by the raymarch, which draws every drop in the shader; kept for the pass to come. */
-  readonly rainBudget: number;
   readonly weather: Weather;
   /** Where the last strike landed, in metres. Only visible while `flash` is above zero. */
   readonly strike: Vector3;
-  /** `performance` skips the 36-step reflection march, exactly as the source shader's switch does. */
+  /** The player's tier: `quality.ts` decides whether it runs the 36-step reflection march. */
   readonly quality: QualityName;
 }
 
@@ -58,6 +67,11 @@ export interface IWeatherWorld {
  */
 export function createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld {
   const clouds: ICloudPass = createCloudPass({ camera });
+  // The look the two passes read: sky and haze colours, the sun and the flash light, and the lamp
+  // and sea colours. Set once; nothing here changes per frame.
+  setupSky(scene);
+  setupLighting();
+  setupMaterials();
 
   const world = tempestWorld(uv());
   // The shader's own depth is a curve fitted to the source's camera; the closed form is reversible,
@@ -119,7 +133,7 @@ export function createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWe
       uWet.value = weather.wet;
       uFlash.value = flash;
       uStrike.value.copy(strike);
-      uReflect.value = quality === "performance" ? 0 : 1;
+      uReflect.value = studyTier(quality).reflections ? 1 : 0;
 
       // The sky the shader draws and reflects is the cloud target, so the same weather that steers
       // the rain also lights the ceiling, and a flash reaches both from one value.

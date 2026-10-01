@@ -1,44 +1,19 @@
-// Generated for you. This file owns the sailing kit's surface decisions, and nothing in
-// `props.ts` names a colour: change the ship's timber, canvas or cordage entirely from here.
-import { DoubleSide, MeshBasicMaterial, MeshStandardMaterial } from "three";
+// Generated for you. This file owns the coast's surface decisions that are worth a name.
+//
+// The coast is one ray-marched shader, so its materials are colours the march reads rather than
+// Three material objects. The ones a storm is recognised by are here; the rest of the albedos
+// (moss, conifers, asphalt, paint) sit in `tools/tempest-world.frag` beside the shapes they colour.
+import { Color } from "three";
 import { palette } from "./palette.js";
+import * as world from "./world-shader.js";
 
-export interface ISailingMaterials {
-  readonly deck: MeshStandardMaterial;
-  readonly hull: MeshStandardMaterial;
-  readonly buoy: MeshStandardMaterial;
-  readonly sail: MeshStandardMaterial;
-  readonly island: MeshStandardMaterial;
-  readonly horizon: MeshBasicMaterial;
-  /** Masts, yards, bowsprit, palm trunks. */
-  readonly spar: MeshStandardMaterial;
-  /** Standing rigging: thinner and darker than the spars, or it reads as more mast. */
-  readonly cordage: MeshStandardMaterial;
-  /** Rails, wale strakes, pennant — the ship's one saturated accent. */
-  readonly trim: MeshStandardMaterial;
-  readonly sand: MeshStandardMaterial;
-  readonly foliage: MeshStandardMaterial;
-}
+/** How bright the lamp heads burn: the study's own HDR colour, far above 1 so they bloom. */
+const LAMP_GLOW = { b: 0.72, g: 2.75, r: 6 } as const;
 
-export function createMaterials(): ISailingMaterials {
-  return {
-    // Holystoned deck: pale, and clearly not the hull. One timber colour for both made the ship
-    // read as a single carved lump.
-    deck: new MeshStandardMaterial({ color: 0xd9b98a, roughness: 0.68, metalness: 0 }),
-    hull: new MeshStandardMaterial({ color: 0x8a5a3a, roughness: 0.72, metalness: 0.03 }),
-    buoy: new MeshStandardMaterial({ color: palette.accent, roughness: 0.4, metalness: 0.08 }),
-    sail: new MeshStandardMaterial({
-      color: 0xf2e7d2,
-      metalness: 0,
-      roughness: 0.95,
-      side: DoubleSide,
-    }),
-    island: new MeshStandardMaterial({ color: 0x4c6b45, roughness: 0.96, metalness: 0 }),
-    horizon: new MeshBasicMaterial({ color: palette.skyLow }),
-    spar: new MeshStandardMaterial({ color: 0x8a6238, roughness: 0.72, metalness: 0 }),
-    cordage: new MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.94, metalness: 0 }),
-    trim: new MeshStandardMaterial({ color: 0xa33f2c, roughness: 0.6, metalness: 0.05 }),
-    sand: new MeshStandardMaterial({ color: 0xe4d3a6, roughness: 0.98, metalness: 0 }),
-    foliage: new MeshStandardMaterial({ color: 0x3f7a48, roughness: 0.94, metalness: 0 }),
-  };
+export function setupMaterials(): void {
+  const lamp = new Color(palette.lamp);
+  world.uLampLight.value.set(lamp.r, lamp.g, lamp.b);
+  world.uLampGlow.value.set(LAMP_GLOW.r, LAMP_GLOW.g, LAMP_GLOW.b);
+  const water = new Color(palette.water);
+  world.uWater.value.set(water.r, water.g, water.b);
 }

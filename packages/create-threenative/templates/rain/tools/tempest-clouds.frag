@@ -12,6 +12,8 @@ precision highp float;
 precision highp sampler3D;
 uniform float uTime, uRain, uCloud, uWind, uFog, uWet, uFlash, uAspect, uTan;
 uniform vec3 uCam, uForward, uRight, uUp, uStrike;
+// The look, owned by src/render/{sky,lighting}.ts and set from there every run.
+uniform vec3 uSunDir, uSkyLow, uSkyHigh;
 uniform vec2 uRes;
 in vec2 vUv;
 out vec4 fragColor;
@@ -21,7 +23,6 @@ float noise2(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h
 float fbm2(vec2 p){float v=.5*noise2(p);p=mat2(.8,-.6,.6,.8)*p*2.03+19.1;v+=.25*noise2(p);p=p*2.02+9.3;v+=.125*noise2(p);return v+.0625*noise2(p*2.01+17.);}
 vec3 ray(vec2 uv){vec2 q=uv*2.-1.;return normalize(uForward+uRight*q.x*uAspect*uTan+uUp*q.y*uTan);}
 vec4 project(vec3 p){vec3 v=p-uCam;float d=dot(v,uForward);return vec4(dot(v,uRight)/(uAspect*uTan),dot(v,uUp)/uTan,1.00012*d-.300018,d);}
-vec3 hazeColor(vec3 rd){return mix(vec3(.15,.215,.26),vec3(.075,.115,.17),smoothstep(0.,.7,abs(rd.y)))+uFlash*vec3(.11,.16,.24);}
 uniform sampler3D uNoise;
 uniform int uSteps;
 float density(vec3 p){
@@ -47,8 +48,8 @@ float density(vec3 p){
 float lightAt(vec3 p,vec3 l){float sum=0.,stepLen=28.;for(int i=0;i<5;i++){p+=l*stepLen;sum+=density(p)*stepLen;stepLen*=1.7;}return exp(-sum*.015);}
 void main(){
  vec3 rd=ray(vUv);rd.y=abs(rd.y);rd=normalize(rd);
- vec3 sunDir=normalize(vec3(-.62,.34,-.71));float mu=dot(rd,sunDir);
- vec3 sky=mix(vec3(.22,.30,.355),vec3(.055,.10,.17),pow(clamp(rd.y,0.,1.),.62));
+ vec3 sunDir=uSunDir;float mu=dot(rd,sunDir);
+ vec3 sky=mix(uSkyLow,uSkyHigh,pow(clamp(rd.y,0.,1.),.62));
  sky+=vec3(.31,.27,.205)*pow(max(mu,0.),14.);
  sky+=vec3(.7,.57,.37)*pow(max(mu,0.),140.);
  sky+=uFlash*vec3(.14,.22,.36);

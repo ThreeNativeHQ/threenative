@@ -45,8 +45,8 @@ export interface ICameraInput {
     };
   };
   /**
-   * `move` and `altitude` are key vectors; `look` is the drag's motion since the last tick, in
-   * pixels — the engine samples it at the tick, so the raw pointer's own counter is already spent.
+   * `move` is the key vector; `look` is the drag's motion since the last tick, in pixels — the
+   * engine samples it at the tick, so the raw pointer's own counter is already spent.
    */
   vector(name: string): { x: number; y: number };
 }
@@ -119,7 +119,7 @@ export function createCameraRig(camera: PerspectiveCamera): ICameraRig {
     up,
     update(dt, elapsed, input, cinematic) {
       const move = input.vector("move");
-      const altitude = input.vector("altitude").y;
+      const altitude = Number(input.pressed("ascend")) - Number(input.pressed("descend"));
       const boost = input.pressed("boost");
       const dragging = input.raw.pointer.down && (input.raw.pointer.buttons & LEFT_MOUSE) !== 0;
       manual = move.x !== 0 || move.y !== 0 || altitude !== 0 || boost || dragging;

@@ -12,7 +12,6 @@ import {
   AUTO_STRIKE_CLOUD,
   type GameState,
   MAX_STEP,
-  QUALITY_RAIN_BUDGET,
   type SimStatus,
   WEATHER_KEYS,
   type Weather,
@@ -86,6 +85,8 @@ export class Coast extends Scene<GameState> {
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     const rig = createCameraRig(camera);
+    // The study's player is the fly camera, so that is the subject a playtest moves and measures.
+    ctx.entities.add("player", camera);
     const loading = createLoadingScreen(ctx);
     // The storm's noise volume is the same 64³ every run whatever the player does: it is seeded
     // inside the render layer, because the sequence that fills it is the storm's appearance.
@@ -211,7 +212,6 @@ export class Coast extends Scene<GameState> {
         elapsed,
         flash,
         quality: ui.quality,
-        rainBudget: QUALITY_RAIN_BUDGET[ui.quality],
         strike: strikePoint,
         weather,
       });

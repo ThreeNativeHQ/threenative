@@ -12,16 +12,16 @@ import {
 import { palette } from "./palette.js";
 
 /* BEGIN THREENATIVE LOADING APPEARANCE */
-/** Sailing keeps its own sea composition; all behavior is authored here. */
+/** The storm's own night behind the bar; all behavior is authored here. */
 export const loading = {
-  backgroundColor: palette.skyLow,
+  backgroundColor: palette.night,
   backgroundImage: undefined as string | undefined,
   enabled: true,
   fillImage: undefined as string | undefined,
   logoImage: undefined as string | undefined,
   progressColor: palette.accent,
   showStatus: false,
-  trackColor: palette.skyHigh,
+  trackColor: palette.zenith,
   bar: { anchorX: 0.5, anchorY: 0.7, height: 9, maxWidth: 560, minWidth: 1, width: 0.64 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */

@@ -23,43 +23,23 @@ import { MeshBasicNodeMaterial, PassNode } from "three/webgpu";
 import type { QualityName, Weather } from "../state.js";
 import {
   setNoise,
+  tempestClouds,
   uAspect,
   uCam,
   uCloud,
   uFlash,
   uForward,
   uRight,
+  uSteps,
   uStrike,
   uTan,
   uTime,
   uUp,
   uWind,
-  uSteps,
-  tempestClouds,
 } from "./clouds-shader.js";
 import { createNoiseVolume } from "./noise-volume.js";
+import { studyTier } from "./quality.js";
 import { setSky } from "./world-shader.js";
-
-/**
- * The pass renders at this share of the frame's resolution, per quality tier, exactly as the
- * source's `qualitySize` does: the cloud target is `round(width * q[1])`. The march is smooth and
- * low-frequency next to the coast it backs, so a lower tier costs the march little and buys the
- * frame a lot.
- */
-const CLOUD_SCALE: Record<QualityName, number> = {
-  performance: 0.4,
-  balanced: 0.48,
-  high: 0.6,
-  ultra: 0.75,
-};
-
-/** March steps per quality tier: the source's own ladder, from its cheapest to its finest. */
-const STEPS: Record<QualityName, number> = {
-  performance: 32,
-  balanced: 48,
-  high: 64,
-  ultra: 88,
-};
 
 export interface ICloudPassOptions {
   readonly camera: PerspectiveCamera;
@@ -136,13 +116,16 @@ export function createCloudPass({ camera }: ICloudPassOptions): ICloudPass {
       uFlash.value = flash;
       uStrike.value.copy(strike);
 
-      const next = STEPS[quality];
+      const tier = studyTier(quality);
+      const next = tier.cloudSteps;
       if (next !== steps) {
         steps = next;
         uSteps.value = next;
       }
 
-      const nextScale = CLOUD_SCALE[quality];
+      // The pass renders at this share of the frame's resolution: the cloud march is smooth and
+      // low-frequency next to the coast it backs, so a lower tier costs it little and buys a lot.
+      const nextScale = tier.cloudScale;
       if (nextScale !== scale) {
         scale = nextScale;
         pass.setResolutionScale(nextScale);

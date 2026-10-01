@@ -47,7 +47,8 @@ import {
 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import type { Node } from "three/webgpu";
-import { QUALITY_RAIN_BUDGET, type QualityName, type Weather } from "../state.js";
+import type { QualityName, Weather } from "../state.js";
+import { studyTier } from "./quality.js";
 
 /**
  * The six corners of one drop's quad, exactly as the study's `rainGeometry` wrote them: `x` runs
@@ -270,11 +271,7 @@ export function createStormRain(scene: Scene, camera: PerspectiveCamera): IStorm
       return geometry.instanceCount;
     },
     update({ elapsed, flash, weather, quality }): void {
-      const budget = QUALITY_RAIN_BUDGET[quality];
-      if (budget === undefined) {
-        throw new Error(`unknown rain quality tier ${JSON.stringify(quality)}`);
-      }
-      geometry.instanceCount = rainInstanceCount(budget, weather.rain);
+      geometry.instanceCount = rainInstanceCount(studyTier(quality).rainBudget, weather.rain);
 
       // The same basis and the same field of view the coast is drawn with, so a drop and the
       // headland behind it agree on where the horizon is.

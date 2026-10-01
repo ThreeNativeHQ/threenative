@@ -56,6 +56,9 @@ export const uForward = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uRight = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uUp = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uStrike = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uSunDir = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uSkyLow = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uSkyHigh = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 const uNoisePlaceholder = new Data3DTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, 1);
 uNoisePlaceholder.needsUpdate = true;
 export let uNoise: TextureNode = texture3D(uNoisePlaceholder).setGroup(frameGroup);
@@ -69,6 +72,8 @@ export const uSteps = uniform(0, "int").setGroup(frameGroup);
 // Polyfills
 
 const gl_FragCoord = vec3(screenCoordinate.x, screenCoordinate.y.oneMinus(), depth);
+
+// The look, owned by src/render/{sky,lighting}.ts and set from there every run.
 
 export const hash12 = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
   const p3 = fract(vec3(p.xyx).mul(0.1031)).toVar();
@@ -128,12 +133,6 @@ export const project = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
   );
 });
 
-export const hazeColor = /*@__PURE__*/ Fn(([rd]: [Node<"vec3">]) => {
-  return mix(vec3(0.15, 0.215, 0.26), vec3(0.075, 0.115, 0.17), smoothstep(0, 0.7, abs(rd.y))).add(
-    uFlash.mul(vec3(0.11, 0.16, 0.24)),
-  );
-});
-
 export const density = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
   // One value, one return, for the reason given in the coast's `baseColor`: the transpiler turns a
   // GLSL early return into a JavaScript return that only leaves the `If` callback the node graph is
@@ -184,13 +183,9 @@ export const tempestClouds = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
   const rd = ray(vUv).toVar();
   rd.y.assign(abs(rd.y));
   rd.assign(normalize(rd));
-  const sunDir = normalize(vec3(-0.62, 0.34, -0.71)).toVar();
+  const sunDir = uSunDir.toVar();
   const mu = dot(rd, sunDir).toVar();
-  const sky = mix(
-    vec3(0.22, 0.3, 0.355),
-    vec3(0.055, 0.1, 0.17),
-    pow(clamp(rd.y, 0, 1), 0.62),
-  ).toVar();
+  const sky = mix(uSkyLow, uSkyHigh, pow(clamp(rd.y, 0, 1), 0.62)).toVar();
   sky.addAssign(vec3(0.31, 0.27, 0.205).mul(pow(max(mu, 0), 14)));
   sky.addAssign(vec3(0.7, 0.57, 0.37).mul(pow(max(mu, 0), 140)));
   sky.addAssign(uFlash.mul(vec3(0.14, 0.22, 0.36)));

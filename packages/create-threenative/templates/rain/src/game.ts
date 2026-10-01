@@ -15,8 +15,9 @@ import {
 
 const game = defineGame<GameState>({
   input: {
-    altitude: { down: ["KeyQ"], up: ["KeyE"] },
+    ascend: { keys: ["KeyE"] },
     boost: { keys: ["ShiftLeft", "ShiftRight"] },
+    descend: { keys: ["KeyQ"] },
     // The drag's own motion, sampled at the tick. No click capture: the study looks by dragging,
     // and a locked pointer would take the cursor away from the panel beside it.
     look: { captureOnClick: false, pointerRelative: true },

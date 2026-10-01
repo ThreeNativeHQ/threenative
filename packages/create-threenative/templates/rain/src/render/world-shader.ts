@@ -63,6 +63,15 @@ export const uForward = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uRight = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uUp = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 export const uStrike = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uHazeLow = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uHazeHigh = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uSunDir = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uSunColor = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uFill = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uFlashLight = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uLampLight = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uLampGlow = uniform(new Vector3(), "vec3").setGroup(frameGroup);
+export const uWater = uniform(new Vector3(), "vec3").setGroup(frameGroup);
 const uSkyPlaceholder = new DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
 uSkyPlaceholder.needsUpdate = true;
 export let uSky: TextureNode = texture(uSkyPlaceholder).setGroup(frameGroup);
@@ -72,6 +81,8 @@ export function setSky(value: TextureNode): void {
 export const uReflect = uniform(0, "int").setGroup(frameGroup);
 
 // Three.js Transpiler r185
+
+// The look, owned by src/render/{sky,lighting,materials}.ts and set from there every run.
 
 export const hash12 = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
   const p3 = fract(vec3(p.xyx).mul(0.1031)).toVar();
@@ -132,7 +143,7 @@ export const project = /*@__PURE__*/ Fn(([p]: [Node<"vec3">]) => {
 });
 
 export const hazeColor = /*@__PURE__*/ Fn(([rd]: [Node<"vec3">]) => {
-  return mix(vec3(0.15, 0.215, 0.26), vec3(0.075, 0.115, 0.17), smoothstep(0, 0.7, abs(rd.y))).add(
+  return mix(uHazeLow, uHazeHigh, smoothstep(0, 0.7, abs(rd.y))).add(
     uFlash.mul(vec3(0.11, 0.16, 0.24)),
   );
 });
@@ -404,25 +415,13 @@ export const surfaceLight = /*@__PURE__*/ Fn(
     Node<"vec3">,
     Node<"float">,
   ]) => {
-    const sun = normalize(vec3(-0.62, 0.34, -0.71)).toVar();
     const hemi = add(0.45, mul(0.55, max(n.y, 0))).toVar();
-    const c = albedo
-      .mul(
-        vec3(0.64, 0.86, 1.03)
-          .mul(hemi)
-          .mul(0.65)
-          .add(
-            vec3(0.56, 0.61, 0.67)
-              .mul(max(dot(n, sun), 0))
-              .mul(0.35),
-          ),
-      )
-      .toVar();
+    const c = albedo.mul(uFill.mul(hemi).add(uSunColor.mul(max(dot(n, uSunDir), 0)))).toVar();
     c.addAssign(
       albedo
         .mul(uFlash)
         .mul(add(0.6, max(dot(n, normalize(uStrike.sub(p))), 0).mul(2.5)))
-        .mul(vec3(0.8, 1.04, 1.4)),
+        .mul(uFlashLight),
     );
 
     Loop({ start: int(0), end: 6 }, ({ i }) => {
@@ -436,7 +435,7 @@ export const surfaceLight = /*@__PURE__*/ Fn(
         .mul(smoothstep(-0.1, 0.1, l.y))
         .toVar();
       const atten = div(48, add(1, dist2)).toVar();
-      const warm = vec3(1, 0.49, 0.13).toVar();
+      const warm = uLampLight.toVar();
       c.addAssign(albedo.mul(warm).mul(atten).mul(ndl).mul(2));
       const hv = normalize(l.add(v)).toVar();
       const shin = mix(20, 900, sub(1, rough)).toVar();
@@ -513,7 +512,7 @@ export const reflected = /*@__PURE__*/ Fn(
 
         If(d.x.lessThan(max(0.03, t.mul(0.0016))), () => {
           If(d.y.greaterThan(5.5).and(d.y.lessThan(6.5)), () => {
-            res.assign(vec3(4.5, 2.2, 0.6));
+            res.assign(uLampGlow.mul(0.75));
           }).Else(() => {
             res.assign(
               mix(
@@ -602,7 +601,7 @@ export const tempestWorld = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
     });
 
     If(water, () => {
-      alb.assign(vec3(0.013, 0.032, 0.038));
+      alb.assign(uWater);
       rough.assign(0.045);
     });
 
@@ -633,7 +632,7 @@ export const tempestWorld = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
     n.assign(getNormal(p, t));
 
     If(mat.greaterThan(5.5).and(mat.lessThan(6.5)), () => {
-      color.assign(vec3(6, 2.75, 0.72));
+      color.assign(uLampGlow);
     }).Else(() => {
       color.assign(
         surfaceLight(

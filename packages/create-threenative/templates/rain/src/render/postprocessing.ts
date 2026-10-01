@@ -123,10 +123,6 @@ export function setupPost(
   let disposed = false;
   const world = new WorldEnvironment({
     ...qualityPreset(tier),
-    // The post pass applies the weather exposure itself, after the bloom add, where the demo puts
-    // it, so the chain's own multiply would be a second one.
-    exposure: 1,
-    bloomEnabled: false,
     authoredStageNames: ["stormPost"],
     authoredStages: () => [stormStage()],
   });
