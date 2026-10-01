@@ -542,8 +542,12 @@ tests pass; 3 files/12 tests are existing skips. Six prescribed docs suites pass
 180 tests; the changed mirror/CI suites pass 149 tests. The full suite also
 identified the required README package row, generated release comment, scoped
 package test selector and a reasoned waiver for the exact supplied noise
-coefficient; those integration fixes pass 15 targeted tests and retain compatibility. No Strata browser,
-desktop, editor, starter-art or full-world export result is claimed yet.
+coefficient; those integration fixes pass 15 targeted tests and retain compatibility. Those full-repository results used the original `0625f0f26` develop baseline.
+The PR branch subsequently received develop commit `7d8367a58`; the terrain
+consumer suite (7 tests), package integration suites (15 tests), strict publint
+and capability regeneration pass again on the preserved merged baseline. Full
+repository checks will be refreshed with the next behavior phase. No Strata
+browser, desktop, editor, starter-art or full-world export result is claimed yet.
 
 
 Commands naming the new package, example, tests, and `test:terrain:*` /
