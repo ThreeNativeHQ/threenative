@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
-**Progress:** 2/8 required boxes verified
+**Progress:** 5/8 required boxes verified
 
 ## Context
 
@@ -122,23 +122,14 @@ Proposed file paths become actual entry-point references when their owning phase
 
 ## Current state (this branch)
 
-Phase 1 is complete and verified; Phases 2 and 3 are not started. Phase 1 landed the
-source-derived numerical abstraction, the canonical-surface update contract, the
-source-derived regression fixture, both AC-1/AC-2 proofs, the Charter and core-ownership
-entries, and discovery of the new exports as engine capabilities
-(`SnowField` and `snowDiscFootprint` both appear in `packages/create-threenative/capabilities.json`
-and the generated capability reference, with compiling examples). A contact-shape figure is on
-PR #382.
-
-Phases 2 and 3 remain unstarted on this branch: the persistent-contact backend seam,
-`attachSnowPhysics`, `packages/physics/__tests__/snow-contacts.spec.ts`, the
-`packages/create-threenative/templates/snow/` kit, template discovery/audit wiring, the MCP
-situation/recall work, the packed `snow-proof` browser run, and the native desktop proof
-(AC-3 through AC-8). No box below is ticked without a result beside it.
-
-**Blocked on (AC-5, native desktop):** not attempted on this branch — `pnpm native:build`
-(which downloads host dependencies and compiles the C++ host) was not run, so no native
-observation exists and no native claim is made.
+Phases 1 and 2 are complete and verified. Phase 2 landed the persistent-contact and in-place
+collider-refresh operations on both backends (`readContacts`, `setColliderShape`; Rust
+`tn_physics_read_contacts`/`tn_physics_set_trimesh_shape`, native heightfields as the trimesh of
+their canonical samples), `attachSnowPhysics` with `observe()`/`loadOf()`, and the generated snow
+game's `snow-physics.playtest.json` passing on browser WebGPU and on the native Linux desktop host.
+Phase 3 has a playable, registered `templates/snow/` kit whose six web scenarios pass in the packed
+template harness; capability discovery (AC-7), the repository gates (AC-8) and the visual record
+are still open.
 
 ## Execution Phases
 
@@ -157,21 +148,21 @@ observation exists and no native claim is made.
 
 ### Phase 2: Physical bodies deform and collide with the same snow
 
-**Status:** NOT STARTED
+**Status:** COMPLETE
 
 **Files:** proposed `packages/physics/src/snow.ts`; existing physics exports, `simulation.ts`, `plugin.ts`, native `host.ts` and relevant runtime-native physics bridge/Rust implementation if the missing bulk operations require them; `packages/physics/__tests__/snow-contacts.spec.ts`; shared snow scene and `snow-physics.playtest.json` fixtures introduced for the starter.
 
 **Implementation:** Wire solved supported contacts to `SnowField`; add minimal persistent-contact and dirty-collider refresh operations at the shared backend seam. Reuse native trimesh support first. Preserve ordering, collision filters, body identity, wakeup and cleanup. Exercise real Rapier with source-derived material values; do not mock the solver for acceptance. Include an airborne interval, drop, rest, lateral push, loaded recovery and a field reset.
 
-- [ ] AC-3 [local, actor: implementation agent]: A real sphere falls, settles within the stated surface tolerance and rotates through a continuous circular snow track; airborne intervals do not stamp. proof: `pnpm exec vitest run packages/physics/__tests__/snow-contacts.spec.ts -t sphere` plus the browser `snow-physics.playtest.json` included in AC-6's generated-project run — Evidence: pending.
-- [ ] AC-4 [local, actor: implementation agent]: Box/capsule support uses shape-appropriate contacts and survives recovery/reset without stale colliders or cross-field deformation. proof: `pnpm exec vitest run packages/physics/__tests__/snow-contacts.spec.ts -t "box|capsule|lifecycle"` — Evidence: pending.
-- [ ] AC-5 [local, actor: implementation agent]: The generated snow game meets the sphere/contact and canonical-surface assertions on the native Linux desktop host. proof: `pnpm build:desktop && pnpm exec threenative-playtest --scenario playtests/snow-physics.playtest.json --target desktop --executable dist-native/snow-proof` from the packed generated project named `snow-proof` — Evidence: pending.
+- [x] AC-3 [local, actor: implementation agent]: A real sphere falls, settles within the stated surface tolerance and rotates through a continuous circular snow track; airborne intervals do not stamp. proof: `pnpm exec vitest run packages/physics/__tests__/snow-contacts.spec.ts -t sphere` plus the browser `snow-physics.playtest.json` included in AC-6's generated-project run — Evidence: 6/6 sphere tests pass against real Rapier 0.19.3 (no solver mock): 0 loads during 15 airborne steps, settled underside within 0.02 m of the surface it pressed, push rolls ≥ 1 m with turn×r/distance in 0.8–1.2 and every sample along the path pressed (connected, circular, nothing beyond 1.6 r), collider within 0.001 m of canonical after every step and ≤ 1 step behind a game-side reset, triangle interiors within 0.01 m by ray cast, a sleeping sphere re-seats after `setDepth`, 30/60/120 Hz presentation within 0.001 m, a sideways shove digs no pit. Browser: `TN_TEMPLATE_ONLY=snow pnpm test:templates` exit 0 (2026-10-01, NVIDIA Turing adapter on every run) — `snow-physics` passes: airborne at `falling`, settled at `settled`, 0 airborne loads, reach ≥ 1 m, roll ratio in band, 0 track gaps, `colliderError`/`renderError` ≤ 0.001, `loadProvenance` `solver-impulse-per-step`.
+- [x] AC-4 [local, actor: implementation agent]: Box/capsule support uses shape-appropriate contacts and survives recovery/reset without stale colliders or cross-field deformation. proof: `pnpm exec vitest run packages/physics/__tests__/snow-contacts.spec.ts -t "box|capsule|lifecycle"` — Evidence: 8/8 pass. A yawed box presses its own rotated face (1.0 m side along z, untouched 0.4 m off its 0.25 m half-width); a fallen capsule presses a trough along its spine and an upright one a disc; x- and z-sloped fields hold a box at surface + half-height/cos within 0.03 m (a transposed collider is > 0.09 m off); recovery and `reset` keep the same collider identity with the sphere re-seated within 0.02 m; two fields in one world route contacts only to the touched field (the other: 0 steps, 0 active cells, 0 contacts); scenery-supported bodies press nothing and a removed body stops stamping; unsupported shapes throw naming sphere, box, capsule.
+- [x] AC-5 [local, actor: implementation agent]: The generated snow game meets the sphere/contact and canonical-surface assertions on the native Linux desktop host. proof: `pnpm build:desktop && pnpm exec threenative-playtest --scenario playtests/snow-physics.playtest.json --target desktop --executable dist-native/snow-proof` from the packed generated project named `snow-proof` — Evidence: exit 0 on 3/3 consecutive runs (2026-10-01) from a `snow-proof` scaffolded outside the workspace from packed tarballs; `runtime: native`, NVIDIA RTX 2080 via Vulkan. The packed runtime ships no prebuilt host, so `THREENATIVE_RUNTIME_BINARY` pointed `build:desktop` at this branch's `pnpm native:build` output (exit 0). Below the game: `cargo test --release` in `runtime-native/native/physics` green including `tests/snow_contacts.rs`; `native-contract.spec.ts` 24/24 including web-heightfield vs native-trimesh agreement (< 1e-4 m; 0.777 m with the cell diagonal flipped).
 
 **Verification:** Use the same physics scenario/telemetry on browser and desktop, with captured nonblank frames and solver-derived poses. Report canonical/render/collider versions, maximum surface error, load provenance and supported-contact counts through the existing registry/state observation bridge. A changed snow surface alone does not prove physical support; assert both deformation and the sphere's actual solved height/rotation. Native behavior proof lands with its portable seam changes.
 
 ### Phase 3: Discoverable, packed snow starter kit
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — kit playable and registered; AC-6 to be re-run on the final kit, AC-7 and AC-8 open
 
 **Files:** `packages/create-threenative/templates/snow/` with portable scene/entities, editable `src/render/`, controls, instructions and playtests; existing scaffold/playtest/look/convention tests and `scripts/visual-gate.ts` template inventory; manifest/reference generators, existing MCP search/server tests and recall corpus. Generated mirrors/manifests follow their generators.
 
