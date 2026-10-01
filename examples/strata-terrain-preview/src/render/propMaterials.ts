@@ -325,7 +325,7 @@ function mipCompensatedCutoff(mip: Node<"float">) {
 const SOLID = { from: 3, to: 5.5 } as const;
 
 /** The colour a poppy is at the far edge of a meadow, where its petal is a handful of texels. */
-const POPPY_RED = 0xe23a2c;
+const POPPY_RED = 0xd41f16;
 
 /** What a petal transmits: the sun through one cell of pigment, which is red and not green. */
 const PETAL_RED_TINT = 0xd8523a;
@@ -490,8 +490,8 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     // A poppy petal is the most translucent thing in a meadow, so it gets the same two-sided
     // wrap the canopy does — at a higher share, because a petal is one cell of pigment thin — with
     // the distance fade still folded in, so a patch stays red rather than violet at the far edge.
-    petalMaterial.emissiveNode = canopyTranslucency(0.22, PETAL_RED_TINT).add(
-      color(POPPY_RED).mul(float(0.18).add(solid.mul(0.4))),
+    petalMaterial.emissiveNode = canopyTranslucency(0.09, PETAL_RED_TINT).add(
+      color(POPPY_RED).mul(float(0.1).add(solid.mul(0.34))),
     );
   }
   sway(petalMaterial, seconds, WIND.amplitude.petal);
