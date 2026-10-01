@@ -258,6 +258,18 @@ export function parseConsumerPlaytestReport(stdout, target, declaredFamilies = [
     throw consumerError('ROW_MALFORMED', 'the playtest diagnostics are malformed.');
   }
   const diagnostics = rawDiagnostics.map((item) => item.code);
+  if (
+    parsed.assertionResults === undefined &&
+    rawDiagnostics.some((diagnostic) => diagnostic.severity === 'error')
+  ) {
+    return {
+      assertionIds: ['diagnostics'],
+      assertions: 1,
+      diagnostics,
+      failures: diagnostics,
+      pass: false,
+    };
+  }
   if (diagnostics.some((code) => code.endsWith('UNSUPPORTED_ON_TARGET'))) {
     throw consumerError(
       'SCENARIO_NOT_CROSS_TARGET',
@@ -474,6 +486,28 @@ function defaultConsumerRunner(
   return { ...result, stderr: result.stderr ?? '', stdout: result.stdout ?? '' };
 }
 
+/**
+ * What a failing runner said about itself. The harness writes its failure report to stderr as
+ * `{ diagnostics: [{ code, message, severity }], pass: false }`, so that is where the real cause
+ * lives; the raw tail is the fallback, so a runner that crashed before it could format a report
+ * still contributes its own words. Never returns empty — a diagnosis with nothing in it is the
+ * failure this exists to prevent.
+ */
+function consumerRunnerFailureDetail(stderr) {
+  const text = stderr.trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const diagnostics = Array.isArray(parsed?.diagnostics) ? parsed.diagnostics : [];
+  const named = diagnostics
+    .filter((item) => item !== null && typeof item === 'object' && nonEmptyString(item.code))
+    .map((item) => `${item.code}${nonEmptyString(item.message) ? `: ${item.message}` : ''}`);
+  return named.length > 0 ? named.join('; ') : `no JSON failure report; stderr: ${text.slice(-2000) || '(empty)'}`;
+}
+
 export function verifyStarterConsumerGameplay(options = {}) {
   const target = options.target;
   if (!CONSUMER_REQUIRED_TARGETS.includes(target)) {
@@ -596,7 +630,7 @@ export function verifyStarterConsumerGameplay(options = {}) {
       options.activity ?? 'com.threenative.runtime.MystralActivity',
     );
   } else {
-    args.push('--executable', artifact, '--host-arg', '--windowed');
+    args.push('--executable', artifact, '--host-arg', '--windowed', '--no-screenshots');
   }
   try {
     if (android) {
@@ -616,7 +650,29 @@ export function verifyStarterConsumerGameplay(options = {}) {
         `the '${target}' process did not complete: ${result.error?.message ?? result.signal ?? result.status}.`,
       );
     }
-    const report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
+    // Exit 1 is "the run evaluated assertions and some failed" and the report naming which ones is
+    // on STDOUT; exit 2 (and 75) is "it never reached assertions" and that reason is on STDERR.
+    // Checking the status first and reading only stderr therefore reported `stderr: (empty)` for
+    // every failing assertion — both scaffolded-starter lanes failed on an assertion with nothing
+    // naming it. Read the report when there is one; fall back to stderr only when there is not.
+    let report;
+    try {
+      report = parseConsumerPlaytestReport(result.stdout ?? '', target, declaredFamilies);
+    } catch (error) {
+      if (result.status === 0) throw error;
+      throw consumerError(
+        'RUNNER_FAILED',
+        `the '${target}' runner exited ${result.status}: ${consumerRunnerFailureDetail(result.stderr ?? '')}`,
+      );
+    }
+    // A nonzero exit outranks its own report: a process that ended 1 with a green report has not
+    // passed, whatever the JSON claims. The report is read for the diagnosis, never for the verdict.
+    if (result.status !== 0 && report.pass) {
+      throw consumerError(
+        'RUNNER_FAILED',
+        `the '${target}' runner exited ${result.status} although its report claims ${report.assertions} passing assertion(s); the process verdict outranks a report it did not exit 0 on.`,
+      );
+    }
     Object.assign(row, {
       assertionIds: report.assertionIds,
       assertions: report.assertions,
@@ -624,12 +680,6 @@ export function verifyStarterConsumerGameplay(options = {}) {
       pass: report.pass,
       log: log.slice(-4000),
     });
-    if (result.status !== 0 && report.pass) {
-      throw consumerError(
-        'RUNNER_FAILED',
-        `the '${target}' runner reported pass but exited ${result.status}.`,
-      );
-    }
     if (hashFile(artifact) !== artifactHash) {
       throw consumerError('ARTIFACT_MISMATCH', 'the consumer artifact changed during the run.');
     }

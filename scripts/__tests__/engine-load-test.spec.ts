@@ -1,6 +1,15 @@
+import { createHash } from "node:crypto";
+import fs, { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
+import {
+  type ILoadTestHarness,
+  initInstanceMatrices,
+  writeInstanceMatrices,
+} from "../../examples/engine-load-test/src/game.js";
 import {
   type IModuleGraphEntry,
   extractModuleSpecifiers,
@@ -9,10 +18,37 @@ import {
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
 import {
+  LADDER_FOX_HEIGHT,
+  characterPlacement,
+  expectedLadderCounts,
+  foxMeasurementReason,
+  foxParityReason,
+  foxScale,
+} from "../../examples/engine-load-test/src/ladder.js";
+import {
+  CULLED_OFFSET_X,
+  DEFAULT_AXES,
+  type IWorkloadAxes,
+  RENDER_MODES,
+  assertRungAxesSupported,
+  canonicalPlacementBytes,
   createLcg,
   createPlacements,
+  culledOffsetX,
+  isAuthoredRung,
+  isMutated,
+  isProjectedRung,
+  isVisible,
+  parseAxesRecord,
   positionHash,
+  resolveAxes,
+  uniqueMaterialColor,
 } from "../../examples/engine-load-test/src/workload.js";
+import {
+  assertHardwareAdapter,
+  assertPlainThreePilot,
+  browserLaunchArgs,
+} from "../engine-load-test/browser.js";
 import {
   type IRunReport,
   PERFORMANCE_BASELINES,
@@ -23,10 +59,11 @@ import {
   knee,
   looksVsyncPinned,
   parseRunReport,
+  renderArmMarkdown,
   summarize,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -105,6 +142,13 @@ function ladderReport(topP95: number, arm: IRunReport["arm"] = "tn-web"): IRunRe
     ],
   });
 }
+
+describe("benchmark browser selection", () => {
+  it("selects the native Wayland path when a Wayland socket is present", () => {
+    expect(browserLaunchArgs("wayland-0")).toContain("--ozone-platform=wayland");
+    expect(browserLaunchArgs(undefined)).not.toContain("--ozone-platform=wayland");
+  });
+});
 
 describe("engine load test workload", () => {
   it("extracts executable module specifiers without reading strings or comments as imports", () => {
@@ -290,16 +334,18 @@ describe("engine load test workload", () => {
   });
 
   it("wires the browser collector to the syntax-aware scanner and workload filter", async () => {
-    const browserSource = await readFile(
-      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+    // The served-graph walk moved to the driver both web arms share; `main.ts` is the TN arm's own
+    // projection and culling wiring, and `plain.ts` reaches the same walk without the framework.
+    const driverSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
       "utf8",
     );
-    expect(browserSource).toMatch(/extractModuleSpecifiers\(source\)/u);
-    expect(browserSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
-    expect(browserSource).toMatch(
+    expect(driverSource).toMatch(/extractModuleSpecifiers\(source\)/u);
+    expect(driverSource).toMatch(/filter\(isBenchmarkWorkloadModule\)/u);
+    expect(driverSource).toMatch(
       /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
     );
-    expect(browserSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
+    expect(driverSource).not.toMatch(/IMPORT_FROM_PATTERN|IMPORT_SIDE_EFFECT_PATTERN/u);
   });
 
   it("should produce the LCG sequence PRD-117 §3.3 specifies", () => {
@@ -313,6 +359,290 @@ describe("engine load test workload", () => {
     expect(positionHash(createPlacements(1024))).toBe(positionHash(createPlacements(1024)));
     expect(positionHash(createPlacements(1024))).not.toBe(positionHash(createPlacements(256)));
     expect(positionHash(createPlacements(1024))).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  it("detects a changed placement after the legacy first-eight window", () => {
+    const original = createPlacements(16);
+    const changed = original.map((placement) => ({ ...placement }));
+    const ninth = changed[9];
+    if (!ninth) throw new Error("expected the tenth placement");
+    ninth.x += 1;
+    expect(positionHash(changed)).toBe(positionHash(original));
+    const digest = (placements: typeof original) =>
+      createHash("sha256")
+        .update(
+          canonicalPlacementBytes(
+            placements.length,
+            (index) => placements[index] as (typeof original)[number],
+          ),
+        )
+        .digest("hex");
+    expect(digest(changed)).not.toBe(digest(original));
+  });
+
+  it("should reproduce the PRD-117 scene and identity at the default axes", () => {
+    // The literal hashes are the identity key the Godot port is compared on (PRD-400 Phase 1). A
+    // scene change that moved a cube would fail here, not silently on the next benchmark run.
+    expect(positionHash(createPlacements(1024))).toBe("78812d31");
+    expect(positionHash(createPlacements(16384))).toBe("3acfd9c3");
+    expect(resolveAxes()).toEqual(DEFAULT_AXES);
+    expect(parseAxesRecord({})).toEqual(DEFAULT_AXES);
+    expect(DEFAULT_AXES).toEqual({
+      geometry: "shared",
+      hierarchyDepth: 0,
+      material: "shared",
+      mutationRate: 1,
+      passCount: 1,
+      shadowCasterShare: 0,
+      visibleFraction: 1,
+    });
+    // The old scene exactly: every object dirty and every object on the lattice.
+    for (let index = 0; index < 256; index += 1) {
+      expect(isMutated(index, DEFAULT_AXES.mutationRate)).toBe(true);
+      expect(culledOffsetX(index, DEFAULT_AXES.visibleFraction)).toBe(0);
+    }
+  });
+
+  it("should move exactly its axes on a nondefault combo, deterministically", () => {
+    const axes = resolveAxes({
+      geometry: "unique",
+      hierarchyDepth: 2,
+      material: "unique",
+      mutationRate: 0.1,
+      passCount: 2,
+      shadowCasterShare: 0.5,
+      visibleFraction: 0.5,
+    });
+    expect(axes).toEqual({
+      geometry: "unique",
+      hierarchyDepth: 2,
+      material: "unique",
+      mutationRate: 0.1,
+      passCount: 2,
+      shadowCasterShare: 0.5,
+      visibleFraction: 0.5,
+    });
+    const indices = Array.from({ length: 4096 }, (_, index) => index);
+    // Deterministic: two reads over the same axis pick the same subset.
+    expect(indices.map((index) => isMutated(index, 0.1))).toEqual(
+      indices.map((index) => isMutated(index, 0.1)),
+    );
+    expect(indices.some((index) => isMutated(index, 0))).toBe(false);
+    expect(indices.filter((index) => isMutated(index, 1)).length).toBe(4096);
+    for (const rate of [0.01, 0.1]) {
+      const count = indices.filter((index) => isMutated(index, rate)).length;
+      expect(count).toBeGreaterThan(0);
+      expect(count).toBeLessThan(4096);
+    }
+    const visible = indices.filter((index) => isVisible(index, 0.5));
+    expect(visible.length).toBeGreaterThan(1024);
+    expect(visible.length).toBeLessThan(3072);
+    // Culled objects clear the far plane; visible ones stay on the lattice.
+    expect(culledOffsetX(visible[0] as number, 0.5)).toBe(0);
+    const culled = indices.find((index) => !isVisible(index, 0.5)) as number;
+    expect(culledOffsetX(culled, 0.5)).toBe(CULLED_OFFSET_X);
+    for (const bad of [
+      { geometry: "many" },
+      { hierarchyDepth: 1.5 },
+      { mutationRate: -1 },
+      { passCount: 0 },
+      { shadowCasterShare: 2 },
+      { visibleFraction: 2 },
+    ]) {
+      expect(() => resolveAxes(bad)).toThrow(/TN_BENCH_BAD_AXIS/u);
+    }
+    expect(() => parseAxesRecord({ passCount: "two" })).toThrow(/TN_BENCH_BAD_AXIS:passCount/u);
+  });
+
+  it("should bake instance matrices once and only rewrite mutated instances per frame", () => {
+    const placements = createPlacements(64);
+    const axesAt = (mutationRate: number): IWorkloadAxes => ({ ...DEFAULT_AXES, mutationRate });
+    const dummy = {
+      matrix: {},
+      position: { set: () => undefined },
+      rotation: { set: () => undefined },
+      updateMatrix: () => undefined,
+    } as unknown as Parameters<typeof writeInstanceMatrices>[4];
+    const makeBatch = (): {
+      instanceMatrix: Parameters<typeof writeInstanceMatrices>[5];
+      instanced: Parameters<typeof writeInstanceMatrices>[0];
+      written: number[];
+    } => {
+      const written: number[] = [];
+      return {
+        written,
+        instanced: {
+          instanceMatrix: { needsUpdate: false },
+          setMatrixAt: (index: number) => written.push(index),
+        } as unknown as Parameters<typeof writeInstanceMatrices>[0],
+        instanceMatrix: { copy: () => undefined } as unknown as Parameters<
+          typeof writeInstanceMatrices
+        >[5],
+      };
+    };
+
+    // The base pose lands on every instance exactly once, and the upload is requested once here.
+    const baked = makeBatch();
+    initInstanceMatrices(baked.instanced, placements, axesAt(0), dummy, baked.instanceMatrix);
+    expect(baked.written).toEqual(placements.map((_, index) => index));
+    expect(baked.instanced.instanceMatrix.needsUpdate).toBe(true);
+
+    // The old default: every instance is dirty, so every one is rewritten and an upload is asked.
+    const allDirty = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        allDirty.instanced,
+        placements,
+        3,
+        axesAt(1),
+        dummy,
+        allDirty.instanceMatrix,
+      ),
+    ).toBe(true);
+    expect(allDirty.written.length).toBe(placements.length);
+
+    // A mutation rate of 0 rewrites nothing, so the caller never marks the buffer dirty.
+    const staticBatch = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        staticBatch.instanced,
+        placements,
+        3,
+        axesAt(0),
+        dummy,
+        staticBatch.instanceMatrix,
+      ),
+    ).toBe(false);
+    expect(staticBatch.written).toEqual([]);
+
+    // A partial rate touches exactly the mutated subset.
+    const partial = makeBatch();
+    expect(
+      writeInstanceMatrices(
+        partial.instanced,
+        placements,
+        3,
+        axesAt(0.5),
+        dummy,
+        partial.instanceMatrix,
+      ),
+    ).toBe(true);
+    expect(partial.written).toEqual(
+      placements.map((_, index) => index).filter((index) => isMutated(index, 0.5)),
+    );
+  });
+
+  it("fails closed on L2 cells its single InstancedMesh cannot express", () => {
+    // The default L2 cell is unchanged and must keep working.
+    expect(() => assertRungAxesSupported("L2", DEFAULT_AXES)).not.toThrow();
+    expect(() =>
+      assertRungAxesSupported("L1", { ...DEFAULT_AXES, geometry: "unique" }),
+    ).not.toThrow();
+    // A whole-batch shadow share is expressible; visibility is not because L2 disables culling.
+    expect(() =>
+      assertRungAxesSupported("L2", { ...DEFAULT_AXES, shadowCasterShare: 1 }),
+    ).not.toThrow();
+    for (const unsupported of [
+      { geometry: "unique" as const },
+      { material: "unique" as const },
+      { visibleFraction: 0 },
+      { visibleFraction: 0.5 },
+      { shadowCasterShare: 0.5 },
+    ]) {
+      expect(() => assertRungAxesSupported("L2", { ...DEFAULT_AXES, ...unsupported })).toThrow(
+        /TN_BENCH_UNSUPPORTED_L2_AXES/u,
+      );
+    }
+  });
+
+  it("adds L4 as the per-cube-material rung on both arms, with the colour Godot mirrors", async () => {
+    // One flag, not a new project: L4 is L3's shipped-default projection over L1's one-mesh-per-cube
+    // authoring, and only the material changes. L2 stays the single batch, L1 the un-projected
+    // control, and the projection still runs over L3 and L4 alone.
+    // R1-R5 are PRD-464's realistic-scene ladder on top of the same list: authored and projected
+    // rungs like L3, because a ladder row that quietly measured the un-projected scene would be a
+    // different experiment from the one its name states.
+    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4", "R5"]);
+    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(RENDER_MODES.map(isProjectedRung)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    // Distinct per cube over the whole ladder, and a pure function of the index, so the two arms
+    // compute the same colour and no engine has two materials it could pair.
+    const colors = Array.from({ length: 16_384 }, (_, index) => uniqueMaterialColor(index));
+    expect(new Set(colors).size).toBe(16_384);
+    expect(uniqueMaterialColor(0)).toBe(0xff0000);
+    expect(uniqueMaterialColor(0)).not.toBe(uniqueMaterialColor(1));
+
+    // The GDScript twin builds the same three channels from the same index, and takes the L1 branch
+    // both when it builds the rung and when it steps it — the two places L1's authoring is used.
+    const godot = await readFile(
+      path.join(process.cwd(), "benchmark/godot-load-test/load_test.gd"),
+      "utf8",
+    );
+    expect(godot).toMatch(/Color\(\s*1\.0, float\(\(index >> 16\) & 0xff\) \/ 255\.0/u);
+    expect(godot.match(/_mode == "L1" or _mode == "L4"/gu) ?? []).toHaveLength(2);
+
+    // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
+    // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
+    // PRD-464's R1-R5 are L3's authoring, so they keep both guards too.
+    for (const entry of ["driver.ts", "native.ts"]) {
+      const source = await readFile(
+        path.join(process.cwd(), "examples/engine-load-test/src", entry),
+        "utf8",
+      );
+      expect(source).toMatch(/if \(isProjectedRung\((rung\.)?mode\)\)/u);
+      expect(source).toMatch(/if \((rung\.)?mode === "L3"( \|\| isRealisticRung\(\1?mode\))?\)/u);
+    }
+    const game = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/game.ts"),
+      "utf8",
+    );
+    expect(game).toMatch(/if \(isAuthoredRung\(rung\.mode\)\)/u);
+    expect(game).toMatch(/owned\?\.color\.setHex\(uniqueMaterialColor\(index\)\)/u);
+  });
+
+  it("wires every axis through the CLI and both runtime entry points", async () => {
+    const load = (relative: string): Promise<string> =>
+      readFile(path.join(process.cwd(), relative), "utf8");
+    const [cli, web, native, vite, game, driver] = await Promise.all([
+      load("scripts/engine-load-test/cli.ts"),
+      load("examples/engine-load-test/src/main.ts"),
+      load("examples/engine-load-test/src/native.ts"),
+      load("examples/engine-load-test/vite.config.ts"),
+      load("examples/engine-load-test/src/game.ts"),
+      load("examples/engine-load-test/src/driver.ts"),
+    ]);
+    expect(cli).toMatch(/parseAxesRecord\(\{/u);
+    expect(cli).toMatch(/shadowCasterShare: flag\("shadow-caster-share"\)/u);
+    // The axes are read where the page is, in the driver both web arms drive.
+    expect(driver).toMatch(/parseAxesRecord\(Object\.fromEntries\(parameters\.entries\(\)\)\)/u);
+    expect(driver).toMatch(/createLoadTestHarness\([\s\S]*arm\.createCollapse/u);
+    expect(web).toMatch(/createCollapse: \(scene, options\) => new SceneRenderProjection/u);
+    expect(native).toMatch(/parseAxesRecord\(config\.axes\)/u);
+    expect(native).toMatch(/createLoadTestHarness\([\s\S]*axes,[\s\S]*new SceneRenderProjection/u);
+    expect(vite).toMatch(/TN_BENCH_SHADOW_CASTER_SHARE/u);
+    expect(vite).toMatch(/axes: axesEnvironment\(\)/u);
+    // L2's unsupported cells fail closed at the one place a rung is built.
+    expect(game).toMatch(/assertRungAxesSupported\(rung\.mode, axes\)/u);
   });
 
   it("should keep artifact identity independent of source labels and workload identity byte-sensitive", async () => {
@@ -362,15 +692,28 @@ describe("engine load test workload", () => {
     expect(relabeledIdentity.artifactHash).toBe(candidateIdentity.artifactHash);
     expect(relabeledIdentity.sourceSha).not.toBe(candidateIdentity.sourceSha);
 
-    const browserSource = await readFile(
-      path.join(process.cwd(), "examples/engine-load-test/src/main.ts"),
+    const driverSource = await readFile(
+      path.join(process.cwd(), "examples/engine-load-test/src/driver.ts"),
       "utf8",
     );
-    expect(browserSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
-    expect(browserSource).toMatch(
+    expect(driverSource).toMatch(/hashServedModuleGraph\(artifactModules\)/u);
+    expect(driverSource).toMatch(
       /hashWorkloadModuleGraph\([\s\S]*workloadModules[\s\S]*workloadGraph/u,
     );
-    expect(browserSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
+    expect(driverSource).not.toMatch(/hashServedModuleGraph\(sourceSha\)/u);
+  });
+
+  it("should recognize workload source assets emitted by the production build", () => {
+    const entry = (url: string): IModuleGraphEntry => ({ bytes: new Uint8Array([1]), url });
+    expect(isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/game-CdxDcIvp.ts"))).toBe(
+      true,
+    );
+    expect(
+      isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/workload-BGzP-H1X.ts")),
+    ).toBe(true);
+    expect(
+      isBenchmarkWorkloadModule(entry("http://127.0.0.1:5199/assets/three.webgpu-BnCeQ44k.js")),
+    ).toBe(false);
   });
 
   it("should keep graph identity stable across absolute worktree roots", async () => {
@@ -1752,6 +2095,85 @@ describe("engine load test scorer", () => {
     );
   });
 
+  it("preserves native step and projection timing series with matching frames", () => {
+    const measured = rung({ collapseMs: series(2), stepMs: series(3) });
+    expect(parseRunReport(report({ rungs: [measured] })).rungs[0]).toMatchObject({
+      collapseMs: series(2),
+      stepMs: series(3),
+    });
+    expect(() => parseRunReport(report({ rungs: [rung({ stepMs: series(3, 7) })] }))).toThrow(
+      /TN_BENCH_BAD_SHAPE/,
+    );
+  });
+
+  it("preserves the completed-work block so a saved report keeps the primary metric", () => {
+    const v2 = {
+      completedWorkMeanMs: 28.5,
+      completedWorkReason: null,
+      cpuSubmitMeanMs: 10,
+      drainPolicy:
+        "pre-drain:untimed,post-drain:timed,per-frame-fence:none,timing-scope:cadence-inclusive-browser-delivery",
+      measuredFrames: 8,
+    };
+    expect(parseRunReport(report({ rungs: [rung(v2)] })).rungs[0]).toMatchObject(v2);
+  });
+
+  it("keeps a rung written before the completed-work metric existed, with no invented value", () => {
+    const [legacy] = parseRunReport(report()).rungs;
+    expect(legacy).toBeDefined();
+    // One key list pins it: a parsed legacy rung carries exactly what it was written with, so no
+    // field is invented and no legacy report is refused.
+    expect(Object.keys(legacy ?? {}).sort()).toEqual([
+      "drawCalls",
+      "frameMs",
+      "mode",
+      "objectCount",
+      "positionHash",
+      "repeat",
+      "triangles",
+      "visibleObjects",
+    ]);
+  });
+
+  it("keeps an unobservable completed-work metric as null plus its reason", () => {
+    expect(
+      parseRunReport(
+        report({
+          rungs: [
+            rung({
+              completedWorkMeanMs: null,
+              completedWorkReason: "queue-completion-unavailable",
+              cpuSubmitMeanMs: 10,
+            }),
+          ],
+        }),
+      ).rungs[0],
+    ).toMatchObject({
+      completedWorkMeanMs: null,
+      completedWorkReason: "queue-completion-unavailable",
+    });
+  });
+
+  it("fails closed on a completed-work record nobody could read", () => {
+    for (const fields of [
+      // A hole with no reason, a reason on a measurement that exists, and a half-written pair.
+      { completedWorkMeanMs: null },
+      { completedWorkMeanMs: 4, completedWorkReason: "queue-completion-unavailable" },
+      { completedWorkReason: null },
+      { completedWorkMeanMs: 4, completedWorkReason: null, cpuSubmitMeanMs: Number.NaN },
+      { completedWorkMeanMs: -1, completedWorkReason: null },
+      { completedWorkMeanMs: 4, completedWorkReason: null, cpuSubmitMeanMs: 1, drainPolicy: "" },
+      // A declared window that disagrees with the series written beside it.
+      { completedWorkMeanMs: 4, completedWorkReason: null, measuredFrames: 7 },
+      { completedWorkMeanMs: 4, completedWorkReason: null, measuredFrames: 0 },
+    ]) {
+      expect(
+        () => parseRunReport(report({ rungs: [rung(fields)] })),
+        JSON.stringify(fields),
+      ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    }
+  });
+
   it("should reject a report missing its driver line", () => {
     const missing = report() as unknown as Record<string, unknown>;
     // biome-ignore lint/performance/noDelete: the point of the test is an absent key.
@@ -1764,6 +2186,28 @@ describe("engine load test scorer", () => {
 
   it("should reject a report with no rungs at all", () => {
     expect(() => parseRunReport(report({ rungs: [] }))).toThrow(/TN_BENCH_NO_RUNGS/);
+  });
+
+  it("should preserve the reported axes and reject a malformed one", () => {
+    // Godot reports and older reports carry no axes, so the field stays optional; a tn arm's axes
+    // are the matrix cell the row belongs to and must survive parsing.
+    expect(parseRunReport(report()).axes).toBeUndefined();
+    expect(parseRunReport(report({ axes: DEFAULT_AXES })).axes).toEqual(DEFAULT_AXES);
+    // The arm markdown names the cell; a Godot report (no axes) prints no axes line.
+    expect(renderArmMarkdown(parseRunReport(report({ axes: DEFAULT_AXES })))).toMatch(
+      /- axes: geometry shared, material shared, hierarchy 0, visible 1, mutation 1, shadow-casters 0, passes 1/u,
+    );
+    expect(renderArmMarkdown(parseRunReport(report()))).not.toMatch(/- axes:/u);
+    for (const broken of [
+      { ...DEFAULT_AXES, geometry: "many" },
+      { ...DEFAULT_AXES, hierarchyDepth: 1.5 },
+      { ...DEFAULT_AXES, passCount: 0 },
+      { ...DEFAULT_AXES, visibleFraction: 2 },
+    ]) {
+      expect(() => parseRunReport(report({ axes: broken as IRunReport["axes"] }))).toThrow(
+        /TN_BENCH_BAD_SHAPE/u,
+      );
+    }
   });
 
   it("should require a condition block on Android reports", () => {
@@ -1848,6 +2292,237 @@ describe("engine load test scorer", () => {
   });
 });
 
+// PRD-464's rung gate. A ladder row is a number about a scene, so a run only publishes one when the
+// scene it claims to have built is the scene it built *and* the frame it drew was not a flat fill.
+// Both engines go through this one parser, so neither can pass the other.
+describe("the realistic-scene ladder gate", () => {
+  const OBJECT_COUNT = 4096;
+
+  /** A rung that built exactly what its name says, with a frame that shows something. */
+  function ladderRung(
+    mode: "R1" | "R2" | "R3" | "R4" | "R5",
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      // L3's projection folds the 4,096 cubes into a handful of instanced draws; R3 adds one draw
+      // per skinned fox on top. Anything near 4,097 would fail the L2 batch rule in `compare`.
+      drawCalls: mode === "R1" || mode === "R2" ? 8 : 58,
+      frameMs: series(12),
+      // R1 and R2 build no characters, so a measurement on them would be a shape error below.
+      ...(mode === "R1" || mode === "R2"
+        ? {}
+        : { foxMeasurement: { heightM: LADDER_FOX_HEIGHT, screenFraction: 0.041 } }),
+      ladder: expectedLadderCounts(mode, OBJECT_COUNT),
+      mode,
+      objectCount: OBJECT_COUNT,
+      positionHash: "aabbccdd",
+      renderCheck: {
+        distinctColors: 24_912,
+        luminanceStdDev: 0.081,
+        maxLuminance: 0.74,
+        sampledPixels: 32_400,
+      },
+      repeat: 0,
+      triangles: 49_176,
+      visibleObjects: 4096,
+      ...overrides,
+    };
+  }
+
+  function ladderReport(
+    rungOverrides: Record<string, unknown> = {},
+    mode: "R1" | "R2" | "R3" | "R4" | "R5" = "R1",
+  ): Record<string, unknown> {
+    return {
+      arm: "tn-web",
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "desktop-chrome-linux" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "test adapter", renderer: "test renderer" },
+      engine: { name: "threenative", version: "workspace" },
+      rungs: [ladderRung(mode, rungOverrides)],
+    };
+  }
+
+  it("accepts a rung whose counts and read-back frame both say what the rung claims", () => {
+    for (const mode of ["R1", "R2", "R3", "R4", "R5"] as const) {
+      const parsed = parseRunReport(
+        ladderReport({ mode, ladder: expectedLadderCounts(mode, OBJECT_COUNT) }, mode),
+      );
+      expect(parsed.rungs[0]?.ladder).toEqual(expectedLadderCounts(mode, OBJECT_COUNT));
+      expect(parsed.rungs[0]?.renderCheck?.luminanceStdDev).toBe(0.081);
+    }
+  });
+
+  it("refuses a rung whose counts do not match the rung it is published under", () => {
+    // R1 published with R3's 50 characters in the scene is the failure this exists for.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "R1", ladder: expectedLadderCounts("R3", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS.*skinnedMeshes|pointLights/u);
+    // A missing count block is a hole in the measurement, not a rung that measured nothing.
+    expect(() => parseRunReport(ladderReport({ ladder: undefined }))).toThrow(
+      /TN_BENCH_MISSING_FIELD|TN_BENCH_BAD_SHAPE/u,
+    );
+    // A string where a count belongs is a wrong count, and fails the same way.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ ladder: { ...expectedLadderCounts("R1", OBJECT_COUNT), pointLights: "8" } }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS/u);
+  });
+
+  it("refuses a character rung whose fox is not a fox", () => {
+    // The bug this exists for: the Khronos Fox is authored in centimetres, so an unscaled import is
+    // a 79 m statue. Every count still matched, the frame was still non-blank, and the published
+    // number was a measurement of a camera full of overdraw rather than of skinning.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 79.03, screenFraction: 0.9 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*79/u);
+    // The tolerance is 5%, so 2% off passes and 6% off does not.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.53, screenFraction: 0.04 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE/u);
+    const passes = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.51, screenFraction: 0.04 } }, "R3"),
+    );
+    expect(passes.rungs[0]?.foxMeasurement?.heightM).toBe(0.51);
+    // A character rung that recorded no size is unmeasured, and a size with no height is nonsense.
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: undefined }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_FIELD/u,
+    );
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5 } }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE.*screenFraction/u,
+    );
+    // A character covering none of the frame was culled or off-camera: the skinning was never drawn.
+    expect(() =>
+      parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0 } }, "R3")),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*none of the frame/u);
+    // A size on a rung with no characters is a shape error: R1 and R2 build no fox.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0.04 } }, "R1"),
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+  });
+
+  it("refuses a comparison whose two engines drew different-sized foxes", () => {
+    // Neither per-arm gate can see this: 0.476 m and 0.524 m are each inside the 5% band around the
+    // target, and the 9.6% between them is only visible once both are in hand.
+    const left = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.476, screenFraction: 0.04 } }, "R3"),
+    );
+    const agree = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.48, screenFraction: 0.04 }, repeat: 1 }, "R3"),
+    );
+    expect(checkEquivalence(left, agree)).toEqual([]);
+    const apart = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.524, screenFraction: 0.04 } }, "R3"),
+    );
+    const failures = checkEquivalence(left, apart);
+    expect(failures.map((failure) => failure.field).join(" ")).toMatch(/foxMeasurement/u);
+    expect(() => compare(left, apart)).toThrow(/TN_BENCH_NOT_EQUIVALENT/u);
+  });
+
+  it("reads a 0.5 m character out of any import that reports its own height", () => {
+    // The factor is measured, not hardcoded, so an importer that changes its units changes the
+    // answer rather than quietly leaving a 79 m fox in a scene published as 0.5 m ones.
+    expect(foxScale(79.028_933)).toBeCloseTo(0.5 / 79.028_933, 12);
+    expect(() => foxScale(0)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(() => foxScale(Number.NaN)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(foxMeasurementReason({ heightM: 0.5, screenFraction: 0.04 })).toBeNull();
+    expect(foxMeasurementReason(undefined)).toMatch(/no character measurement/u);
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.51, screenFraction: 0.04 },
+      ),
+    ).toBeNull();
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.6, screenFraction: 0.04 },
+      ),
+    ).toMatch(/apart in height/u);
+  });
+
+  it("puts the characters on the ground, on the cube grid, identically in both engines", () => {
+    // The 10x5 block is spaced at `CUBE_SPACING` so a fox stands in a gap between lattice cells,
+    // and its y is the ground: the old 4.5 m placement put a centimetre-authored fox at head height.
+    for (const index of [0, 9, 10, 49]) {
+      expect(characterPlacement(index).y).toBe(0);
+    }
+    expect(characterPlacement(0).x).toBe(-11.25);
+    expect(characterPlacement(9).x).toBe(11.25);
+    expect(characterPlacement(0).z).toBe(-5);
+    expect(characterPlacement(49).z).toBe(5);
+  });
+
+  it("refuses a rung that drew nothing, and a rung that has no read-back at all", () => {
+    expect(() => parseRunReport(ladderReport({ drawCalls: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    expect(() => parseRunReport(ladderReport({ triangles: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    // A rung with no read-back is unmeasured, which is not the same as measured-and-fine.
+    expect(() => parseRunReport(ladderReport({ renderCheck: undefined }))).toThrow(
+      /TN_BENCH_RENDER_CHECK_MISSING/u,
+    );
+  });
+
+  it("refuses a uniform frame: the flat grey an unlit or unwired window renders as", () => {
+    // One colour and no variation at any brightness: exactly what an empty viewport reads back.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 1,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // A frame with plenty of colours that are all the same brightness is uniform too.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 40_000,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // And a read-back that returned nothing at all is blank, not unmeasured.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 0,
+            luminanceStdDev: 0,
+            maxLuminance: 0,
+            sampledPixels: 0,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+  });
+
+  it("refuses a ladder block on an L rung, where it would mean nothing", () => {
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "L1", ladder: expectedLadderCounts("R1", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/only meaningful on a realistic-scene rung/u);
+  });
+});
+
 describe("engine load test equivalence gate", () => {
   it("should refuse a comparison whose scenes hash differently, naming the field", () => {
     const left = ladderReport(24);
@@ -1855,6 +2530,39 @@ describe("engine load test equivalence gate", () => {
     right.rungs[1] = rung({ ...right.rungs[1], positionHash: "deadbeef" });
     expect(checkEquivalence(left, right).map((failure) => failure.field)).toContain("positionHash");
     expect(() => compare(left, right)).toThrow(/TN_BENCH_NOT_EQUIVALENT.*positionHash/s);
+  });
+
+  it("should refuse an initial placement mismatch beyond the legacy hash window", () => {
+    const left = ladderReport(24);
+    const right = ladderReport(24, "godot-web");
+    left.rungs[0] = rung({ ...left.rungs[0], initialPlacementSha256: "a".repeat(64) });
+    right.rungs[0] = rung({ ...right.rungs[0], initialPlacementSha256: "b".repeat(64) });
+    expect(left.rungs[0]?.positionHash).toBe(right.rungs[0]?.positionHash);
+    expect(checkEquivalence(left, right).map((failure) => failure.field)).toContain(
+      "initialPlacementSha256",
+    );
+  });
+
+  it("should refuse a nondefault matrix cell against an arm with no axes", () => {
+    // `positionHash` covers only the initial placements, so these two hash alike and would publish
+    // as equivalent without comparing the axis records.
+    const cell = ladderReport(24);
+    cell.axes = { ...DEFAULT_AXES, mutationRate: 0 };
+    const godot = ladderReport(24, "godot-web");
+    expect(checkEquivalence(cell, godot).map((failure) => failure.field)).toContain("axes");
+    expect(() => compare(cell, godot)).toThrow(/TN_BENCH_NOT_EQUIVALENT.*axes/s);
+
+    // A missing record is the default scene: it matches another missing record and an explicit
+    // default, but never a nondefault cell.
+    expect(checkEquivalence(ladderReport(24), godot)).toEqual([]);
+    const explicitDefault = ladderReport(24);
+    explicitDefault.axes = DEFAULT_AXES;
+    expect(checkEquivalence(explicitDefault, godot).map((failure) => failure.field)).not.toContain(
+      "axes",
+    );
+    expect(checkEquivalence(cell, explicitDefault).map((failure) => failure.field)).toContain(
+      "axes",
+    );
   });
 
   it("should refuse a hash that diverges on only one repeat of a rung", () => {
@@ -1923,6 +2631,23 @@ describe("engine load test equivalence gate", () => {
     expect(comparison.leftKnee.L1).toBe(4096);
     expect(comparison.rightKnee.L1).toBe(4096);
     expect(checkEquivalence(ladderReport(24), ladderReport(30, "godot-web"))).toEqual([]);
+  });
+
+  it("should publish an L4 pair at one draw per cube and refuse one that batched", () => {
+    // R3's row is "nothing can batch", so the record has to survive the reader and the gate has to
+    // judge it by per-cube draws rather than by the L2 batch rule.
+    const l4 = (arm: IRunReport["arm"]): IRunReport =>
+      report({ arm, rungs: [rung({ mode: "L4", drawCalls: 4097, visibleObjects: 4096 })] });
+    expect(parseRunReport(JSON.parse(JSON.stringify(l4("tn-desktop")))).rungs[0]?.mode).toBe("L4");
+    expect(() =>
+      parseRunReport({ ...l4("tn-desktop"), rungs: [rung({ mode: "L5" as never })] }),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(checkEquivalence(l4("tn-desktop"), l4("godot-desktop"))).toEqual([]);
+    const batched = l4("godot-desktop");
+    batched.rungs[0] = rung({ mode: "L4", drawCalls: 2, visibleObjects: 4096 });
+    expect(checkEquivalence(l4("tn-desktop"), batched).map((failure) => failure.field)).toContain(
+      "drawCalls (right arm auto-batched L4)",
+    );
   });
 
   it("should refuse a provisional comparison", () => {
@@ -2011,6 +2736,35 @@ describe("engine load test desktop capture", () => {
       runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
     ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
+
+  it("should kill a host that never reaches its marker, and leave nothing running", async () => {
+    // The failure this exists for: a smoke run that never finished left `load_test.x86_64`
+    // reparented to init and burning 75% of a core for half an hour, which showed up as a grey
+    // window on the display and as load on every run after it. A timed-out arm must take its whole
+    // process group down: the fixture is a shell, a background sleeper and a foreground sleep, so
+    // signalling only the direct child would leave the sleeper behind — the orphan itself.
+    const pidFile = path.join(os.tmpdir(), `tn-bench-orphan-${process.pid}.pid`);
+    fs.rmSync(pidFile, { force: true });
+    const script = `sleep 300 & echo $! > ${pidFile}; sleep 300`;
+    await expect(
+      runCapturing("sh", ["-c", script], { cwd: process.cwd(), timeoutMs: 1_500 }),
+    ).rejects.toThrow(/TN_BENCH_DESKTOP_TIMEOUT/);
+    const pid = Number(fs.readFileSync(pidFile, "utf8").trim());
+    // Past the SIGTERM grace, so a process that ignored SIGTERM would already have been SIGKILLed.
+    await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 2_000));
+    expect(Number.isInteger(pid)).toBe(true);
+    // `kill -0` on a surviving, reparented process is the orphan. It throws ESRCH only when the
+    // process is gone, which is the observation this whole test exists to make.
+    expect(() => process.kill(pid, 0)).toThrow();
+    fs.rmSync(pidFile, { force: true });
+  }, 30_000);
+
+  it("should give a host a grace period to die before signalling it the hard way", () => {
+    // Godot tears down a Vulkan swapchain and a shadow atlas on the way out, and the observation is
+    // that it did it on SIGTERM and never on SIGKILL. A group stopped with SIGKILL alone skips that
+    // teardown, so the grace is the difference between a clean exit and a grey window.
+    expect(KILL_GRACE_MS).toBeGreaterThanOrEqual(1_000);
+  });
 });
 
 describe("the performance baseline gate", () => {
@@ -2312,5 +3066,359 @@ describe("the emulator canary", () => {
     const check = checkPerformance(androidRun("37251FDJH0037Z", PHONE_V8));
     expect(check?.arm).toBe("tn-android");
     expect(check?.regressions).toEqual([]);
+  });
+});
+
+// PRD-449's `plain-three-webgpu` control: the same Three.js bytes and the same authored scene as
+// the TN web arm, with no framework code in the graph it serves. Two things can silently rot it —
+// framework code reaching the graph, and a software rasteriser answering for a hardware pilot —
+// and a third, a page that reports a scene the collector cannot confirm.
+describe("plain three.js control arm", () => {
+  // One import statement, from `import` to its terminating semicolon, reaching into `packages/`
+  // without saying `import type`. A type-only import is erased before the browser sees it; a
+  // runtime one is the framework sitting inside the control.
+  const RUNTIME_FRAMEWORK_IMPORT = /import\s+(?!type\b)[^;]*?["'][^"']*\/packages\//u;
+
+  it("keeps every module the plain entry serves free of runtime framework code", async () => {
+    const seen = new Set<string>();
+    const pending = ["examples/engine-load-test/src/plain.ts"];
+    while (pending.length > 0) {
+      const file = pending.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const absolute = path.join(process.cwd(), file);
+      if (!existsSync(absolute)) continue;
+      const source = await readFile(absolute, "utf8");
+      expect([file, RUNTIME_FRAMEWORK_IMPORT.test(source)]).toEqual([file, false]);
+      // `import type` is erased before the browser sees it, so a type-only reference is not part of
+      // the graph the control serves and the walk does not follow it.
+      const runtime = source.replace(/import\s+type\s+[^;]*;/gu, "");
+      for (const specifier of extractModuleSpecifiers(runtime)) {
+        if (!specifier.startsWith(".")) continue;
+        pending.push(path.join(path.dirname(file), specifier).replace(/\.js$/u, ".ts"));
+      }
+    }
+    // A control that measures nothing is not a control: the harness it shares with the TN arm is
+    // the only reason the two arms frame the same scene. `ladder.ts` is in that graph because
+    // `workload.ts` imports its rung names from it; it is constants and pure functions, which is
+    // why the framework-import check above passes for it too.
+    expect([...seen].sort()).toEqual([
+      "examples/engine-load-test/src/driver.ts",
+      "examples/engine-load-test/src/game.ts",
+      "examples/engine-load-test/src/identity.ts",
+      "examples/engine-load-test/src/ladder.ts",
+      "examples/engine-load-test/src/plain.ts",
+      "examples/engine-load-test/src/workload.ts",
+    ]);
+  });
+
+  it("reads a real control report through the shared parser and refuses the rest", () => {
+    // The control is a `report.ts` arm now, so the dashboard, `--check-report` and the CLI all reach
+    // it through the one parser every other arm uses.
+    const parsed = parseRunReport(plainReport());
+    expect(parsed.arm).toBe("plain-three-webgpu");
+    expect(parsed.engine).toEqual({ name: "three", version: "185" });
+    // The axes are the matrix cell the number belongs to; without them a pilot is not comparable.
+    expect(parsed.axes).toEqual(DEFAULT_AXES);
+    // An arm is one engine, and `three` is only ever the control's: a `three` report under a TN arm
+    // is a build stamp that does not match the platform, and the TN/Godot pairing is unchanged.
+    expect(() => parseRunReport(plainReport({ arm: "tn-web" }))).toThrow(/is not an engine/u);
+    expect(() => parseRunReport(plainReport({ arm: "godot-web" }))).toThrow(/is not an engine/u);
+    expect(() =>
+      parseRunReport(plainReport({ engine: { name: "threenative", version: "workspace" } })),
+    ).toThrow(/is not an engine/u);
+    // Fail closed on samples, as every other arm does: an empty series and a non-finite or negative
+    // sample are faults, not numbers.
+    const malformed = (frameMs: unknown[]): Record<string, unknown> =>
+      plainReport({ rungs: [rung({ frameMs: frameMs as number[] })] });
+    expect(() => parseRunReport(malformed([]))).toThrow(/TN_BENCH_EMPTY_SERIES/u);
+    expect(() => parseRunReport(malformed([Number.NaN]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() => parseRunReport(malformed(["9"]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() => parseRunReport(malformed([8, -1]))).toThrow(/TN_BENCH_BAD_SHAPE/u);
+    expect(() =>
+      parseRunReport(
+        plainReport({ rungs: [{ ...rung(), initialPlacementSha256: "not-a-sha256" }] }),
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+  });
+
+  it("refuses a software rasteriser and a scene the collector cannot confirm", () => {
+    expect(assertHardwareAdapter("nvidia / turing")).toBe("nvidia / turing");
+    for (const software of ["swiftshader / google", "llvmpipe / mesa", "lavapipe / llvm"]) {
+      expect(() => assertHardwareAdapter(software)).toThrow(/TN_BENCH_SOFTWARE_ADAPTER/u);
+    }
+    // The collector catches a false legacy positionHash; full-fixture identity, including objects
+    // beyond index eight, is a separate gate before publication.
+    const pilot = parseRunReport(plainReport());
+    expect(assertPlainThreePilot(pilot)).toBe(pilot);
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(plainReport({ rungs: [rung({ positionHash: "deadbeef" })] })),
+      ),
+    ).toThrow(/TN_BENCH_SCENE_MISMATCH/u);
+    const objectCount = 4096;
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(
+          plainReport({
+            rungs: [
+              {
+                ...rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) }),
+                initialPlacementSha256: placementDigest(objectCount, 9),
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/TN_BENCH_PLACEMENT_MISMATCH/u);
+    expect(() =>
+      assertPlainThreePilot(
+        parseRunReport(
+          plainReport({ driver: { adapter: "google / swiftshader", renderer: "three/webgpu" } }),
+        ),
+      ),
+    ).toThrow(/TN_BENCH_SOFTWARE_ADAPTER/u);
+  });
+});
+
+function plainReport(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const objectCount = 4096;
+  return {
+    arm: "plain-three-webgpu",
+    axes: DEFAULT_AXES,
+    build: { notes: "vite production build, plain three/webgpu control", type: "release" },
+    device: { battery: null, label: "desktop-chrome-linux" },
+    display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+    driver: { adapter: "nvidia / turing", renderer: "three/webgpu WebGPURenderer" },
+    engine: { name: "three", version: "185" },
+    rungs: [
+      {
+        ...rung({ objectCount, positionHash: positionHash(createPlacements(objectCount)) }),
+        initialPlacementSha256: placementDigest(objectCount),
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function placementDigest(objectCount: number, mutatedIndex = -1): string {
+  const placements = createPlacements(objectCount);
+  return createHash("sha256")
+    .update(
+      canonicalPlacementBytes(objectCount, (index) => {
+        const placement = placements[index] as (typeof placements)[number];
+        return {
+          x:
+            placement.x +
+            culledOffsetX(index, DEFAULT_AXES.visibleFraction) +
+            (index === mutatedIndex ? 1 : 0),
+          y: placement.y,
+          z: placement.z,
+        };
+      }),
+    )
+    .digest("hex");
+}
+
+// PRD-449 §7.4's primary metric, on the shared driver both web arms run: the wall time for N
+// *complete* rendered frames, drained once at the boundary. Summing the CPU submit spans instead
+// leaves the browser's rAF waits out of the window, and a queue-backed arm is then measured by its
+// submission cost rather than by how long N finished frames took — so the boundary is pinned here on
+// an injected clock rather than inferred from a run.
+describe("the completed-work measurement boundary", () => {
+  const FRAMES = 4;
+  const WARMUP = 2;
+  const STEP_MS = 1;
+  const RENDER_MS = 9;
+  /** One vsync wait per frame: real browser cadence, and inside the wall window by definition. */
+  const PRESENT_MS = 16;
+  const PRE_DRAIN_MS = 3;
+  const POST_DRAIN_MS = 5;
+  const KNOBS = { frames: FRAMES, repeats: 1, warmup: WARMUP };
+  const ARM: ILadderArm = {
+    arm: "stub",
+    buildNotes: "stub",
+    engineName: "three",
+    engineVersion: "185",
+    rendererLabel: "stub",
+  };
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // The driver reads the page's query string at module scope, which node has no `location` for.
+  async function loadDriver(): Promise<
+    typeof import("../../examples/engine-load-test/src/driver.js")
+  > {
+    vi.stubGlobal("location", { search: "" });
+    return import("../../examples/engine-load-test/src/driver.js");
+  }
+
+  /**
+   * A virtual clock: only `advance` moves time, so every millisecond in the report is one this test
+   * put there. The presentation wait is charged to `nextFrame`, where a real rAF's wait belongs.
+   */
+  function virtualClock(presentMs = PRESENT_MS): {
+    advance: (ms: number) => void;
+    clock: MeasurementClock;
+  } {
+    let time = 0;
+    return {
+      advance: (ms) => {
+        time += ms;
+      },
+      clock: {
+        nextFrame: async () => {
+          time += presentMs;
+          return time;
+        },
+        now: () => time,
+      },
+    };
+  }
+
+  /**
+   * A harness carrying only the seams the driver reads, plus the queue seam itself: `queue` is what
+   * turns finished work into an observation, so its absence is the case under test.
+   */
+  function stubHarness(
+    queue: { onSubmittedWorkDone?: () => Promise<void> } | undefined,
+    advance: (ms: number) => void,
+    onDrain: () => void = () => {},
+  ): ILoadTestHarness {
+    return {
+      adapterLabel: "stub adapter",
+      beginCollapse: () => {
+        throw new Error("the stub arm has no projection");
+      },
+      collapseMovingParts: () => -1,
+      collapseMs: 0,
+      collapseStatus: () => "pending",
+      dispose: () => {},
+      foxMeasurement: () => undefined,
+      ladderCounts: () => undefined,
+      placementBytes: new Uint8Array(8),
+      positionHash: "00000000",
+      // The stub draws no pixels; the driver only probes a rung that asked to be a ladder rung, and
+      // this harness never claims to be one.
+      probeFrame: async () => {
+        throw new Error("TN_BENCH_NO_LADDER_RUNG");
+      },
+      render: async () => {
+        advance(RENDER_MS);
+      },
+      // The stub renderer holds nothing but the backend seam the completion probe reads.
+      renderer: (queue === undefined
+        ? {}
+        : { backend: { device: { queue } } }) as unknown as ILoadTestHarness["renderer"],
+      setRung: () => {},
+      stats: () => ({ drawCalls: 8, triangles: 96, visibleObjects: 4 }),
+      step: () => {
+        advance(STEP_MS);
+      },
+      stepMs: STEP_MS,
+    };
+  }
+
+  /** A harness whose queue drains, so the completed-work metric is observable. */
+  function drainingHarness(advance: (ms: number) => void): {
+    harness: ILoadTestHarness;
+    drains: () => number;
+  } {
+    let drains = 0;
+    const harness = stubHarness(
+      {
+        onSubmittedWorkDone: async () => {
+          drains += 1;
+          advance(drains === 1 ? PRE_DRAIN_MS : POST_DRAIN_MS);
+        },
+      },
+      advance,
+    );
+    return { drains: () => drains, harness };
+  }
+
+  it("measures the wall window over N completed frames, the browser's waits included", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const { drains, harness } = drainingHarness(advance);
+    const report = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(report.measuredFrames).toBe(2);
+    // Wall time from immediately after the 3 ms pre-drain (t=55) to immediately after the 5 ms tail
+    // drain (t=112) over 2 frames: 57/2 = 28.5. Two waits of 16 ms sit inside it, so the sum of the
+    // 10 ms submit spans plus the 5 ms drain (12.5) is not the answer, the pre-drain is outside it
+    // (30.0), and the tail is inside (26.0). One number pins every edge of the window.
+    expect(report.completedWorkMeanMs).toBe(28.5);
+    expect(report.drainPolicy).toBe(
+      "pre-drain:untimed,post-drain:timed,per-frame-fence:none,timing-scope:cadence-inclusive-browser-delivery",
+    );
+    // One pre-drain and one post-drain, and never a fence per frame: four frames would be six.
+    expect(drains()).toBe(2);
+    // The CPU submit half is a proxy and stays labelled as one, beside the metric that is not.
+    expect(report.cpuSubmitMeanMs).toBe(10);
+    // The legacy series is untouched: successive rAF intervals over the measured frames only, still
+    // read from the drained clock, so the boundary change moves the primary metric and nothing else.
+    expect(report.frameMs).toEqual([26, 26]);
+    expect(report.stepMs).toEqual([STEP_MS, STEP_MS]);
+  });
+
+  it("reports the same window on a clock with no cadence, where it equals the submit sum", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock(0);
+    const { harness } = drainingHarness(advance);
+    const report = await measureRung(
+      harness,
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    // With no presentation wait there is nothing between the submit spans, so 20 ms of work plus the
+    // 5 ms tail drain over 2 frames is 12.5 — the two clocks differ by exactly the cadence, which is
+    // what makes the browser's number a delivery figure and not a capacity one.
+    expect(report.completedWorkMeanMs).toBe(12.5);
+    expect(report.cpuSubmitMeanMs).toBe(10);
+  });
+
+  it("reports a hole in the measurement as null plus a reason, never the submit proxy", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    // A backend with no queue to ask: a WebGL context, a stub, a seam that moved.
+    const report = await measureRung(
+      stubHarness(undefined, advance),
+      ARM,
+      { mode: "L1", objectCount: 64 },
+      0,
+      KNOBS,
+      clock,
+    );
+    expect(report.completedWorkMeanMs).toBeNull();
+    expect(report.completedWorkReason).toBe("queue-completion-unavailable");
+    // The submit time is still worth having, as long as nothing can mistake it for finished work.
+    expect(report.cpuSubmitMeanMs).toBe(10);
+  });
+
+  it("fails closed on a window with no measured frame", async () => {
+    const { measureRung } = await loadDriver();
+    const { advance, clock } = virtualClock();
+    const harness = stubHarness(undefined, advance);
+    const rung = { mode: "L1" as const, objectCount: 64 };
+    for (const knobs of [
+      { frames: FRAMES, repeats: 1, warmup: FRAMES },
+      { frames: FRAMES, repeats: 1, warmup: FRAMES + 1 },
+    ]) {
+      await expect(measureRung(harness, ARM, rung, 0, knobs, clock)).rejects.toThrow(
+        /TN_BENCH_WARMUP_GE_FRAMES/u,
+      );
+    }
   });
 });

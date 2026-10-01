@@ -1,5 +1,8 @@
-use rapier3d::control::{CharacterAutostep, CharacterLength, KinematicCharacterController};
-use rapier3d::na::{Quaternion, UnitQuaternion};
+use rapier3d::control::{
+    CharacterAutostep, CharacterLength, DynamicRayCastVehicleController, KinematicCharacterController,
+    WheelTuning,
+};
+use rapier3d::na::{Point3, Quaternion, UnitQuaternion};
 use rapier3d::prelude::*;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ptr;
@@ -9,6 +12,10 @@ const TRANSFORM_WIDTH: usize = 8;
 const SLEEP_STATE_WIDTH: usize = 2;
 const EVENT_WIDTH: usize = 4;
 const CHARACTER_STATE_WIDTH: usize = 6;
+/// One float of signed speed, then `PHYSICS_VEHICLE_WHEEL_STRIDE` floats per wheel: contact,
+/// suspension length, rotation.
+const VEHICLE_SPEED_FLOATS: usize = 1;
+const VEHICLE_WHEEL_STRIDE: usize = 3;
 
 #[repr(C)]
 pub struct TnPhysicsWorldOptions {
@@ -141,6 +148,35 @@ pub struct TnPhysicsVector3 {
     pub z: f32,
 }
 
+/// Floats per wheel in the flat `wheels` array of `tn_physics_create_vehicle`: the attachment
+/// point, the four suspension numbers, the tyre, the travel limit, and the two wheel roles.
+/// `max_suspension_travel` is always present, defaulted to Rapier's own 5.0 by the caller, so
+/// "absent" and "5.0" cannot drift apart across the ABI.
+#[repr(C)]
+pub struct TnPhysicsVehicleOptions {
+    pub id: u32,
+    pub body_id: u32,
+    /// Chassis-local forward axis: 0 = x, 2 = z.
+    pub forward_axis: u32,
+    /// Chassis-local wheel axle. The vehicle's forward is `up × axle`, so its sign decides which
+    /// way a positive engine force drives and which way a positive speed means.
+    pub axle_x: f32,
+    pub axle_y: f32,
+    pub axle_z: f32,
+    pub wheel_count: u32,
+}
+
+const VEHICLE_WHEEL_WIDTH: usize = 12;
+const WHEEL_RADIUS: usize = 3;
+const WHEEL_REST_LENGTH: usize = 4;
+const WHEEL_STIFFNESS: usize = 5;
+const WHEEL_COMPRESSION: usize = 6;
+const WHEEL_RELAXATION: usize = 7;
+const WHEEL_FRICTION_SLIP: usize = 8;
+const WHEEL_MAX_TRAVEL: usize = 9;
+const WHEEL_STEERING: usize = 10;
+const WHEEL_TRACTION: usize = 11;
+
 #[derive(Debug, PartialEq, Eq)]
 enum RayQueryError {
     InvalidArithmetic,
@@ -164,6 +200,23 @@ struct CharacterEntry {
     ground_normal: [f32; 3],
     one_way_layers: u32,
     pushes_dynamic_bodies: bool,
+}
+
+/// A chassis plus its ray-cast wheels. A vehicle lives and dies with its body: `remove_body`
+/// drops every entry whose `body_id` it removed, so a controller can never outlive its chassis.
+struct VehicleEntry {
+    controller: DynamicRayCastVehicleController,
+    body_id: u32,
+    /// The chassis' own collision groups, so a wheel ray misses whatever the chassis is masked
+    /// against. Rapier 0.30 takes this as a query filter rather than a per-ray argument.
+    ray_groups: InteractionGroups,
+    rest_lengths: Vec<Real>,
+    /// Indices of the wheels that take engine force and the ones that steer.
+    traction: Vec<usize>,
+    steering: Vec<usize>,
+    /// Which way along `forward_axis` a positive engine force drives; see `vehicle_speed`.
+    direction: f32,
+    forward_axis: usize,
 }
 
 #[repr(i32)]
@@ -227,6 +280,7 @@ pub struct Simulation {
     entries: BTreeMap<u32, BodyEntry>,
     joints: BTreeMap<u32, ImpulseJointHandle>,
     characters: BTreeMap<u32, CharacterEntry>,
+    vehicles: BTreeMap<u32, VehicleEntry>,
     collision_events: CollisionEventCollector,
     events: VecDeque<[u32; EVENT_WIDTH]>,
     query_dirty: bool,
@@ -255,6 +309,7 @@ impl Simulation {
             entries: BTreeMap::new(),
             joints: BTreeMap::new(),
             characters: BTreeMap::new(),
+            vehicles: BTreeMap::new(),
             collision_events: CollisionEventCollector::default(),
             events: VecDeque::new(),
             query_dirty: true,
@@ -262,6 +317,34 @@ impl Simulation {
     }
 
     fn add_body(&mut self, options: TnPhysicsBodyOptions) -> bool {
+        let collider = match options.shape_type {
+            0 if options.shape_x > 0.0 && options.shape_y > 0.0 && options.shape_z > 0.0 => {
+                ColliderBuilder::cuboid(options.shape_x, options.shape_y, options.shape_z)
+            }
+            1 if options.shape_x > 0.0 => ColliderBuilder::ball(options.shape_x),
+            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
+                ColliderBuilder::capsule_y(options.shape_x, options.shape_y)
+            }
+            _ => return false,
+        };
+        self.insert_body(options, collider)
+    }
+
+    /// A triangle mesh, the only concave shape a static level needs. Rapier refuses a degenerate
+    /// mesh with an error rather than panicking, so a bad import fails closed.
+    fn add_trimesh_body(
+        &mut self,
+        options: TnPhysicsBodyOptions,
+        vertices: Vec<Point3<Real>>,
+        indices: Vec<[u32; 3]>,
+    ) -> bool {
+        let Ok(collider) = ColliderBuilder::trimesh(vertices, indices) else {
+            return false;
+        };
+        self.insert_body(options, collider)
+    }
+
+    fn insert_body(&mut self, options: TnPhysicsBodyOptions, collider: ColliderBuilder) -> bool {
         let finite = [
             options.position_x,
             options.position_y,
@@ -317,28 +400,9 @@ impl Simulation {
             body = body.additional_mass(options.mass);
         }
         let body = self.bodies.insert(body);
-        let mut collider = match options.shape_type {
-            0 if options.shape_x > 0.0 && options.shape_y > 0.0 && options.shape_z > 0.0 => {
-                ColliderBuilder::cuboid(options.shape_x, options.shape_y, options.shape_z)
-            }
-            1 if options.shape_x > 0.0 => ColliderBuilder::ball(options.shape_x),
-            2 if options.shape_x >= 0.0 && options.shape_y > 0.0 => {
-                ColliderBuilder::capsule_y(options.shape_x, options.shape_y)
-            }
-            _ => {
-                self.bodies.remove(
-                    body,
-                    &mut self.islands,
-                    &mut self.colliders,
-                    &mut self.impulse_joints,
-                    &mut self.multibody_joints,
-                    true,
-                );
-                return false;
-            }
-        }
-        .collision_groups(InteractionGroups::new(layer, mask))
-        .sensor(options.sensor);
+        let mut collider = collider
+            .collision_groups(InteractionGroups::new(layer, mask))
+            .sensor(options.sensor);
         collider = collider.active_events(ActiveEvents::COLLISION_EVENTS);
         let shape = collider.shape.clone();
         let collider = self
@@ -409,6 +473,199 @@ impl Simulation {
         true
     }
 
+    /// Attach ray-cast wheels to a dynamic chassis. `wheels` is `wheel_count` records of
+    /// `VEHICLE_WHEEL_WIDTH` floats, copied into the controllers during this call.
+    fn create_vehicle(&mut self, options: TnPhysicsVehicleOptions, wheels: &[f32]) -> bool {
+        if options.forward_axis != 0 && options.forward_axis != 2 {
+            return false;
+        }
+        let forward_axis = options.forward_axis as usize;
+        let Some(entry) = self.entries.get(&options.body_id).cloned() else {
+            return false;
+        };
+        if !self.bodies[entry.body].is_dynamic() {
+            return false;
+        }
+        let wheel_count = options.wheel_count as usize;
+        if wheel_count == 0 || wheels.len() != wheel_count * VEHICLE_WHEEL_WIDTH {
+            return false;
+        }
+        if !wheels.iter().all(|value| value.is_finite())
+            || ![options.axle_x, options.axle_y, options.axle_z]
+                .into_iter()
+                .all(f32::is_finite)
+        {
+            return false;
+        }
+        if wheels
+            .chunks_exact(VEHICLE_WHEEL_WIDTH)
+            .any(|wheel| wheel[WHEEL_RADIUS] <= 0.0 || wheel[WHEEL_REST_LENGTH] <= 0.0)
+        {
+            return false;
+        }
+        let mut controller = DynamicRayCastVehicleController::new(entry.body);
+        controller.index_up_axis = 1;
+        controller.index_forward_axis = forward_axis;
+        let axle = vector![options.axle_x, options.axle_y, options.axle_z];
+        let mut rest_lengths = Vec::with_capacity(wheel_count);
+        let mut traction = Vec::new();
+        let mut steering = Vec::new();
+        for (index, wheel) in wheels.chunks_exact(VEHICLE_WHEEL_WIDTH).enumerate() {
+            let tuning = WheelTuning {
+                suspension_stiffness: wheel[WHEEL_STIFFNESS],
+                suspension_compression: wheel[WHEEL_COMPRESSION],
+                suspension_damping: wheel[WHEEL_RELAXATION],
+                max_suspension_travel: wheel[WHEEL_MAX_TRAVEL],
+                friction_slip: wheel[WHEEL_FRICTION_SLIP],
+                ..WheelTuning::default()
+            };
+            // The role flags are 0/1 floats on the wire; anything non-zero counts as set.
+            if wheel[WHEEL_STEERING] > 0.0 {
+                steering.push(index);
+            }
+            if wheel[WHEEL_TRACTION] > 0.0 {
+                traction.push(index);
+            }
+            rest_lengths.push(wheel[WHEEL_REST_LENGTH]);
+            controller.add_wheel(
+                point![wheel[0], wheel[1], wheel[2]],
+                vector![0.0, -1.0, 0.0],
+                axle,
+                wheel[WHEEL_REST_LENGTH],
+                wheel[WHEEL_RADIUS],
+                &tuning,
+            );
+        }
+        // The engine force follows `up × axle`, so that is also the direction a positive speed
+        // means. This is the web adapter's rule, unchanged.
+        let axle_component = if forward_axis == 2 {
+            options.axle_x
+        } else {
+            options.axle_z
+        };
+        let forward_component = if forward_axis == 2 {
+            -axle_component
+        } else {
+            axle_component
+        };
+        self.vehicles.insert(
+            options.id,
+            VehicleEntry {
+                controller,
+                body_id: options.body_id,
+                ray_groups: self.colliders[entry.collider].collision_groups(),
+                rest_lengths,
+                traction,
+                steering,
+                direction: if forward_component < 0.0 { -1.0 } else { 1.0 },
+                forward_axis,
+            },
+        );
+        true
+    }
+
+    fn set_vehicle_input(
+        &mut self,
+        id: u32,
+        engine_force: f32,
+        brake: f32,
+        steering_angle: f32,
+    ) -> bool {
+        if ![engine_force, brake, steering_angle]
+            .into_iter()
+            .all(f32::is_finite)
+        {
+            return false;
+        }
+        let Some(vehicle) = self.vehicles.get_mut(&id) else {
+            return false;
+        };
+        let wheels = vehicle.controller.wheels_mut();
+        for wheel in &vehicle.traction {
+            wheels[*wheel].engine_force = engine_force;
+        }
+        for wheel in &vehicle.steering {
+            wheels[*wheel].steering = steering_angle;
+        }
+        for wheel in wheels.iter_mut() {
+            wheel.brake = brake;
+        }
+        true
+    }
+
+    /// Signed metres per second along the vehicle's own forward axis.
+    ///
+    /// Rapier's `current_vehicle_speed()` is not this: it follows the positive forward axis
+    /// regardless of which way the car drives, and on a settled car it reports the suspension's
+    /// residual vertical velocity. Rotating the chassis velocity into the chassis frame and taking
+    /// the forward component is the number the shared seam names, on both backends.
+    fn vehicle_speed(&self, vehicle: &VehicleEntry) -> f32 {
+        let Some(entry) = self.entries.get(&vehicle.body_id) else {
+            return 0.0;
+        };
+        let body = &self.bodies[entry.body];
+        let local = body.rotation().inverse_transform_vector(body.linvel());
+        let forward = if vehicle.forward_axis == 2 {
+            local.z
+        } else {
+            local.x
+        };
+        (forward * vehicle.direction) as f32
+    }
+
+    /// Writes the signed speed followed by contact, suspension length and rotation per wheel.
+    fn write_vehicle_state(&self, id: u32, output: &mut [f32]) -> Option<usize> {
+        let vehicle = self.vehicles.get(&id)?;
+        let wheels = vehicle.controller.wheels();
+        let required = VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheels.len();
+        if output.len() < required {
+            return None;
+        }
+        output[0] = self.vehicle_speed(vehicle);
+        for (index, wheel) in wheels.iter().enumerate() {
+            let info = wheel.raycast_info();
+            let offset = VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * index;
+            output[offset] = if info.is_in_contact { 1.0 } else { 0.0 };
+            output[offset + 1] = info.suspension_length;
+            output[offset + 2] = wheel.rotation;
+        }
+        Some(required)
+    }
+
+    /// Respawn: move the chassis, face `yaw` radians about up, and drop both velocities.
+    fn reset_vehicle(&mut self, id: u32, x: f32, y: f32, z: f32, yaw: f32) -> bool {
+        if ![x, y, z, yaw].into_iter().all(f32::is_finite) {
+            return false;
+        }
+        let Some(vehicle) = self.vehicles.get(&id) else {
+            return false;
+        };
+        let Some(entry) = self.entries.get(&vehicle.body_id).cloned() else {
+            return false;
+        };
+        let body = &mut self.bodies[entry.body];
+        if !body.is_dynamic() {
+            return false;
+        }
+        body.set_translation(vector![x, y, z], true);
+        // Godot's yaw is a turn about up: (0, sin(yaw / 2), 0, cos(yaw / 2)) in w, x, y, z order.
+        body.set_rotation(
+            UnitQuaternion::new_normalize(Quaternion::new(
+                (yaw * 0.5).cos(),
+                0.0,
+                (yaw * 0.5).sin(),
+                0.0,
+            )),
+            true,
+        );
+        body.set_linvel(Vector::zeros(), true);
+        body.set_angvel(Vector::zeros(), true);
+        self.bodies
+            .propagate_modified_body_positions_to_colliders(&mut self.colliders);
+        self.query_dirty = true;
+        true
+    }
+
     fn remove_body(&mut self, id: u32) -> bool {
         let Some(entry) = self.entries.remove(&id) else {
             return false;
@@ -422,6 +679,7 @@ impl Simulation {
             true,
         );
         self.characters.remove(&id);
+        self.vehicles.retain(|_, vehicle| vehicle.body_id != id);
         self.joints
             .retain(|_, handle| self.impulse_joints.contains(*handle));
         self.query_dirty = true;
@@ -778,6 +1036,7 @@ impl Simulation {
         {
             return false;
         }
+        self.update_vehicles(delta_time);
         self.integration.dt = delta_time;
         self.pipeline.step(
             &self.gravity,
@@ -830,6 +1089,65 @@ impl Simulation {
         }
         self.query_dirty = false;
         true
+    }
+
+    /// Ray-cast the wheels and write the chassis' velocity, before the solver runs — the same
+    /// order the web adapter uses, and the only place a vehicle can be stepped.
+    fn update_vehicles(&mut self, delta_time: f32) {
+        let delta_time = delta_time as Real;
+        // The vehicle map is borrowed per iteration rather than across it, because
+        // `update_vehicle` needs `&mut` on the body and collider sets it also holds.
+        for id in self.vehicles.keys().copied().collect::<Vec<_>>() {
+            let Some((chassis, ray_groups)) = self
+                .vehicles
+                .get(&id)
+                .map(|vehicle| (vehicle.controller.chassis, vehicle.ray_groups))
+            else {
+                continue;
+            };
+            {
+                // The chassis' own groups, exactly as the web adapter passes them: a wheel ray
+                // misses whatever the chassis itself is masked against. The chassis is also
+                // excluded outright, because a wheel ray starts inside the chassis box and Rapier
+                // 0.30 reports that as a hit at zero distance, which reads as a fully compressed
+                // strut and launches the car. Rapier 0.19.3 missed the same ray on its own; a
+                // vehicle must never stand on itself. Sensors are excluded for the same reason the
+                // web adapter excludes them: an `Area3D` is a trigger volume, and a wheel that
+                // rests on the finish-line gate reads a fully compressed strut and is thrown into
+                // the air. A trigger volume is never ground.
+                let filter = QueryFilter {
+                    groups: Some(ray_groups),
+                    exclude_rigid_body: Some(chassis),
+                    flags: QueryFilterFlags::EXCLUDE_SENSORS,
+                    ..QueryFilter::default()
+                };
+                let queries = self.broad_phase.as_query_pipeline_mut(
+                    self.narrow_phase.query_dispatcher(),
+                    &mut self.bodies,
+                    &mut self.colliders,
+                    filter,
+                );
+                if let Some(vehicle) = self.vehicles.get_mut(&id) {
+                    vehicle.controller.update_vehicle(delta_time, queries);
+                }
+            }
+            // A loaded wheel is holding the car up, and `update_vehicle` writes velocity rather
+            // than impulses. Rapier skips a sleeping body, so a car that dozed off mid-drop would
+            // hang in the air for good; only an unloaded car is left alone to sleep.
+            let loaded = self.vehicles[&id]
+                .controller
+                .wheels()
+                .iter()
+                .enumerate()
+                .any(|(index, wheel)| {
+                    let info = wheel.raycast_info();
+                    info.is_in_contact
+                        && info.suspension_length < self.vehicles[&id].rest_lengths[index]
+                });
+            if loaded && self.bodies.contains(chassis) {
+                self.bodies[chassis].wake_up(true);
+            }
+        }
     }
 
     fn refresh_query_pipeline(&mut self) {
@@ -1183,6 +1501,54 @@ pub extern "C" fn tn_physics_add_body(
     simulation.add_body(unsafe { ptr::read(options) })
 }
 
+/// Add a fixed or dynamic body whose collider is a triangle mesh.
+///
+/// `vertices` is a flat `x, y, z` float array and `indices` a flat triangle-index array. Both are
+/// copied into the collider here, so the caller's buffers only have to outlive this call.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_add_trimesh_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    if vertices.is_null() || indices.is_null() {
+        return false;
+    }
+    let vertex_count = vertex_floats as usize;
+    let triangle_vertices = index_count as usize;
+    if vertex_count == 0 || vertex_count % 3 != 0 || triangle_vertices == 0 || triangle_vertices % 3 != 0
+    {
+        return false;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, vertex_count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return false;
+    }
+    let raw_indices = unsafe { std::slice::from_raw_parts(indices, triangle_vertices) };
+    let point_count = vertex_count / 3;
+    if raw_indices
+        .iter()
+        .any(|index| *index as usize >= point_count)
+    {
+        return false;
+    }
+    let points = floats
+        .chunks_exact(3)
+        .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+        .collect();
+    let triangles = raw_indices
+        .chunks_exact(3)
+        .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+        .collect();
+    simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_create_joint(
     simulation: *mut Simulation,
@@ -1219,6 +1585,78 @@ pub extern "C" fn tn_physics_configure_character(
         return false;
     };
     simulation.configure_character(unsafe { ptr::read(options) })
+}
+
+/// Attach ray-cast wheels to a dynamic chassis. `wheels` is `wheel_count` records of
+/// `VEHICLE_WHEEL_WIDTH` floats, copied into the controllers here, so the caller's buffer only
+/// has to outlive the call. Returns the vehicle id, or -1 when the chassis is missing, not
+/// dynamic, or the wheel records are malformed.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_create_vehicle(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsVehicleOptions,
+    wheels: *const f32,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return -1;
+    };
+    let options = unsafe { ptr::read(options) };
+    let (id, wheel_count) = (options.id, options.wheel_count);
+    if wheel_count == 0 || wheels.is_null() {
+        return -1;
+    }
+    let values =
+        unsafe { std::slice::from_raw_parts(wheels, wheel_count as usize * VEHICLE_WHEEL_WIDTH) };
+    if simulation.create_vehicle(options, values) {
+        id as i32
+    } else {
+        -1
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_set_vehicle_input(
+    simulation: *mut Simulation,
+    id: u32,
+    engine_force: f32,
+    brake: f32,
+    steering: f32,
+) -> bool {
+    unsafe { simulation.as_mut() }
+        .is_some_and(|simulation| simulation.set_vehicle_input(id, engine_force, brake, steering))
+}
+
+/// Writes the signed speed followed by contact, suspension length and rotation per wheel.
+/// Returns the number of floats written, or -1 for an unknown vehicle or a short buffer.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_read_vehicle_state(
+    simulation: *const Simulation,
+    id: u32,
+    output: *mut f32,
+    output_float_capacity: usize,
+) -> i32 {
+    let Some(simulation) = (unsafe { simulation.as_ref() }) else {
+        return -1;
+    };
+    if output.is_null() {
+        return -1;
+    }
+    let values = unsafe { std::slice::from_raw_parts_mut(output, output_float_capacity) };
+    simulation
+        .write_vehicle_state(id, values)
+        .map_or(-1, |count| count as i32)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_reset_vehicle(
+    simulation: *mut Simulation,
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+    yaw: f32,
+) -> bool {
+    unsafe { simulation.as_mut() }.is_some_and(|simulation| simulation.reset_vehicle(id, x, y, z, yaw))
 }
 
 #[unsafe(no_mangle)]
@@ -1655,6 +2093,108 @@ mod tests {
             discrete_x > 0.1,
             "opted-out body did not tunnel at {discrete_x}"
         );
+    }
+
+    /// A 4 m wide, 2 m tall wall in the x/y plane at z = 0 with a 1 m opening centred on x = 0.
+    /// `left` and `right` are the two quad halves, so the gap between them is the doorway.
+    fn trimesh_wall() -> (Vec<Point3<Real>>, Vec<[u32; 3]>) {
+        let left = [-2.0f32, -1.0, 0.0, -0.5, -1.0, 0.0, -0.5, 1.0, 0.0, -2.0, -1.0, 0.0,
+            -0.5, 1.0, 0.0, -2.0, 1.0, 0.0];
+        let right = [0.5f32, -1.0, 0.0, 2.0, -1.0, 0.0, 2.0, 1.0, 0.0, 0.5, -1.0, 0.0, 2.0, 1.0,
+            0.0, 0.5, 1.0, 0.0];
+        let flat: Vec<f32> = left.into_iter().chain(right).collect();
+        let points = flat
+            .chunks_exact(3)
+            .map(|vertex| Point3::new(vertex[0], vertex[1], vertex[2]))
+            .collect();
+        let triangles = (0..12u32).collect::<Vec<u32>>()
+            .chunks_exact(3)
+            .map(|triangle| [triangle[0], triangle[1], triangle[2]])
+            .collect();
+        (points, triangles)
+    }
+
+    #[test]
+    fn a_trimesh_body_keeps_the_openings_the_mesh_has() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let (points, triangles) = trimesh_wall();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 3;
+        assert!(simulation.add_trimesh_body(options, points, triangles));
+        assert!(simulation.step(1.0 / 60.0, &[]));
+
+        let through = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 0.0,
+                from_y: 0.0,
+                from_z: -2.0,
+                to_x: 0.0,
+                to_y: 0.0,
+                to_z: 2.0,
+                collision_mask: 1,
+            })
+            .expect("clear ray arithmetic");
+        assert!(through.is_none(), "a ray through the opening must miss");
+        let wall = simulation
+            .intersect_ray(TnPhysicsRayQuery {
+                from_x: 1.5,
+                from_y: 0.0,
+                from_z: -2.0,
+                to_x: 1.5,
+                to_y: 0.0,
+                to_z: 2.0,
+                collision_mask: 1,
+            })
+            .expect("wall ray arithmetic")
+            .expect("a ray into the intact wall must hit");
+        assert_eq!(wall.body_id, 0);
+    }
+
+    #[test]
+    fn the_trimesh_ffi_rejects_a_degenerate_or_out_of_range_mesh() {
+        let gravity = TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        };
+        let mut simulation = Simulation::new(gravity).unwrap();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 3;
+        let vertices = [-1.0f32, -1.0, 0.0, 1.0, -1.0, 0.0, 0.0, 1.0, 0.0];
+        // An index past the vertex buffer must be refused, not read.
+        let bad = [0u32, 1, 3];
+        assert!(!tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            vertices.as_ptr(),
+            9,
+            bad.as_ptr(),
+            3,
+        ));
+        // A NaN vertex is not a mesh.
+        let nan = [0.0f32, f32::NAN, 0.0];
+        assert!(!tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            nan.as_ptr(),
+            3,
+            [0u32, 0, 0].as_ptr(),
+            3,
+        ));
+        let good = [0u32, 1, 2];
+        assert!(tn_physics_add_trimesh_body(
+            &mut simulation,
+            &options,
+            vertices.as_ptr(),
+            9,
+            good.as_ptr(),
+            3,
+        ));
     }
 
     #[test]
@@ -2417,5 +2957,207 @@ mod tests {
         assert!(simulation.add_body(body(2, false, 2, 4)));
         assert!(simulation.step(1.0 / 60.0, &[]));
         assert_eq!(simulation.area_intersections(), vec![[1, 2]]);
+    }
+    /// The car from `packages/physics/__tests__/vehicle-body.spec.ts`, in the same numbers: a
+    /// 900 kg chassis on four 0.34 m wheels, front pair steering and rear pair driven.
+    const CAR_RIDE: f32 = 0.3 + 0.34 + 0.15;
+
+    fn car_wheel(x: f32, z: f32, steering: bool, traction: bool) -> [f32; VEHICLE_WHEEL_WIDTH] {
+        [
+            x, -0.15, z, // attachment point
+            0.34,         // wheel radius
+            0.3,          // suspension rest length
+            100.0,        // suspension stiffness, mass-normalised
+            2.3,          // damping compression
+            4.4,          // damping relaxation
+            10.5,         // friction slip
+            0.3,          // max suspension travel
+            f32::from(steering),
+            f32::from(traction),
+        ]
+    }
+
+    fn car_wheels() -> Vec<f32> {
+        [
+            car_wheel(-0.8, -1.2, true, false),
+            car_wheel(0.8, -1.2, true, false),
+            car_wheel(-0.8, 1.2, false, true),
+            car_wheel(0.8, 1.2, false, true),
+        ]
+        .concat()
+    }
+
+    fn car_body(id: u32, y: f32) -> TnPhysicsBodyOptions {
+        TnPhysicsBodyOptions {
+            id,
+            body_type: 0,
+            shape_type: 0,
+            position_x: 0.0,
+            position_y: y,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            shape_x: 0.8,
+            shape_y: 0.25,
+            shape_z: 1.8,
+            mass: 900.0,
+            collision_layer: 1,
+            collision_mask: u16::MAX.into(),
+            sensor: false,
+            continuous_collision: false,
+        }
+    }
+
+    /// The default `forwardAxis` is `-z`, whose axle is +x, so a positive engine force drives
+    /// towards -z and a positive speed means the same thing.
+    fn car_vehicle(id: u32, body_id: u32) -> TnPhysicsVehicleOptions {
+        TnPhysicsVehicleOptions {
+            id,
+            body_id,
+            forward_axis: 2,
+            axle_x: 1.0,
+            axle_y: 0.0,
+            axle_z: 0.0,
+            wheel_count: 4,
+        }
+    }
+
+    fn car_on_a_floor() -> Simulation {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .expect("the simulation is created");
+        // A 0.5 m slab whose top face is at y = 0, exactly the floor the web spec builds, so the
+        // strut it settles on is the same number both backends report.
+        let mut floor = fixed_box(0, 0.0, -0.25, 1);
+        floor.shape_x = 200.0;
+        floor.shape_y = 0.25;
+        floor.shape_z = 200.0;
+        assert!(simulation.add_body(floor));
+        assert!(simulation.add_body(car_body(1, CAR_RIDE + 0.05)));
+        assert!(simulation.create_vehicle(car_vehicle(0, 1), &car_wheels()));
+        simulation
+    }
+
+    fn vehicle_state(simulation: &Simulation) -> Vec<f32> {
+        // Exactly what the JavaScript seam hands the C ABI: one speed float plus three per wheel.
+        // Over-allocating here hid a stride mistake the desktop host reported as a short buffer.
+        let mut output = vec![0.0; VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * 4];
+        let count = simulation
+            .write_vehicle_state(0, &mut output)
+            .expect("the vehicle exists");
+        assert_eq!(count, output.len(), "the read must fill exactly what it claims");
+        output
+    }
+
+    #[test]
+    fn a_vehicle_settles_on_its_suspension_with_every_wheel_loaded() {
+        let mut simulation = car_on_a_floor();
+        for _ in 0..300 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+
+        let state = vehicle_state(&simulation);
+        assert!(state[0].abs() < 0.01, "parked car read {}", state[0]);
+        for wheel in 0..4 {
+            let contact = state[VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheel];
+            let length = state[VEHICLE_SPEED_FLOATS + VEHICLE_WHEEL_STRIDE * wheel + 1];
+            assert_eq!(contact, 1.0, "wheel {wheel} is not on the ground");
+            assert!(length > 0.0 && length < 0.3, "wheel {wheel} strut is {length}");
+        }
+        // Carried by the springs, not resting on its own collider: the floor top is at 0, and a
+        // settled chassis rides a radius, a strut and half its own box above it.
+        let y = simulation.bodies[simulation.entries[&1].body].translation().y;
+        assert!(y > 0.7, "the chassis sank to {y}");
+    }
+
+    #[test]
+    fn engine_force_drives_forward_along_the_signed_forward_axis() {
+        let mut simulation = car_on_a_floor();
+        assert!(simulation.set_vehicle_input(0, 4000.0, 0.0, 0.0));
+        for _ in 0..180 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+
+        let state = vehicle_state(&simulation);
+        assert!(state[0] > 5.0, "three seconds of thrust reached {}", state[0]);
+        let z = simulation.bodies[simulation.entries[&1].body].translation().z;
+        assert!(z < -5.0, "the car drove to z {z} instead of -z");
+    }
+
+    #[test]
+    fn braking_stops_the_car_from_its_running_speed() {
+        let mut simulation = car_on_a_floor();
+        assert!(simulation.set_vehicle_input(0, 4000.0, 0.0, 0.0));
+        for _ in 0..120 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        let running = vehicle_state(&simulation)[0].abs();
+        assert!(simulation.set_vehicle_input(0, 0.0, 60.0, 0.0));
+
+        let mut seconds = 0.0;
+        while vehicle_state(&simulation)[0].abs() > 0.2 && seconds < 3.0 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+            seconds += 1.0 / 60.0;
+        }
+
+        assert!(running > 5.0, "braking from {running}");
+        assert!(seconds < 3.0, "braking took {seconds}s");
+    }
+
+    #[test]
+    fn reset_moves_and_turns_the_car_and_removing_the_chassis_frees_the_vehicle() {
+        let mut simulation = car_on_a_floor();
+        for _ in 0..60 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+
+        assert!(simulation.reset_vehicle(0, 10.0, CAR_RIDE, 40.0, std::f32::consts::PI));
+        for _ in 0..10 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        let body = simulation.entries[&1].body;
+        let translation = *simulation.bodies[body].translation();
+        assert!((translation.x - 10.0).abs() < 0.01 && (translation.z - 40.0).abs() < 0.01);
+        assert!(vehicle_state(&simulation)[0].abs() < 0.5);
+
+        // Facing the other way, the same positive engine force is now +z.
+        assert!(simulation.set_vehicle_input(0, 4000.0, 0.0, 0.0));
+        for _ in 0..120 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        assert!(vehicle_state(&simulation)[0] > 5.0);
+        assert!(simulation.bodies[body].translation().z > 41.0);
+
+        assert!(simulation.remove_body(1));
+        assert!(simulation.write_vehicle_state(0, &mut [0.0; 4]).is_none());
+        assert!(simulation.step(1.0 / 60.0, &[]));
+    }
+
+    #[test]
+    fn a_vehicle_is_refused_for_a_car_it_cannot_drive() {
+        let mut simulation = car_on_a_floor();
+        // A fixed chassis has nothing to drive, an empty wheel list has nothing to stand on, and
+        // a zero-radius wheel divides the suspension term.
+        let mut fixed = car_body(2, CAR_RIDE);
+        fixed.body_type = 1;
+        assert!(simulation.add_body(fixed));
+        assert!(!simulation.create_vehicle(car_vehicle(1, 2), &car_wheels()));
+        assert!(!simulation.create_vehicle(car_vehicle(1, 99), &car_wheels()));
+        assert!(!simulation.create_vehicle(car_vehicle(1, 1), &[]));
+        let mut wheels = car_wheels();
+        wheels[3] = 0.0;
+        assert!(!simulation.create_vehicle(car_vehicle(1, 1), &wheels));
+        let mut sideways = car_vehicle(1, 1);
+        sideways.forward_axis = 1;
+        assert!(!simulation.create_vehicle(sideways, &car_wheels()));
+        assert!(!simulation.set_vehicle_input(99, 0.0, 0.0, 0.0));
+        assert!(!simulation.set_vehicle_input(0, f32::NAN, 0.0, 0.0));
+        assert!(!simulation.reset_vehicle(99, 0.0, 0.0, 0.0, 0.0));
+        assert!(!simulation.reset_vehicle(0, f32::NAN, 0.0, 0.0, 0.0));
     }
 }

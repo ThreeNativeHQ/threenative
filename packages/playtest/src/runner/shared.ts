@@ -17,6 +17,8 @@ import type {
 import type { IStandalonePlaytestConfig } from "./config.js";
 
 export const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
+/** How long a single screenshot may take before the runner calls it a failure. */
+export const SCREENSHOT_TIMEOUT_MS = 120_000;
 export const MAX_FIXED_STEP_STARTUP_RETRIES = 120;
 export const STOPPED_LOOP_ERROR = "Cannot advance a stopped loop.";
 
@@ -49,10 +51,11 @@ export interface IStandalonePlaytestReport extends IPlaytestReport {
   /**
    * What the run waited for before it observed anything, and what it settled on.
    *
-   * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
-   * because the operator declared a software adapter. A pass from such a run is not a smoothness
-   * measurement and must not be read as one, so the report says which rule applied rather than
-   * leaving a reader to assume the stricter one.
+    * `rule: "compile-settled"` means the sustained in-budget frame window was not required,
+    * because the operator declared a software adapter: the wait still ran to full readiness, but
+    * a CPU rasteriser reaches it on the bounded window rather than on five sustained frames. A
+    * pass from such a run is not a smoothness measurement and must not be read as one, so the
+    * report says which rule applied rather than leaving a reader to assume the stricter one.
    */
   startup?: {
     compileSettled?: boolean;

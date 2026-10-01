@@ -44,6 +44,15 @@ const SUPPORTED_ATTRIBUTES: ReadonlySet<string> = new Set([
   "TEXCOORD_1",
 ]);
 
+/**
+ * True when every level can draw the base's copy of this attribute. glTF reserves the `_` prefix
+ * for application data (a baked wind weight, say); a level only swaps the index buffer over the
+ * base vertices, so it shares that data exactly as it shares COLOR_0.
+ */
+function sharedByLevels(semantic: string): boolean {
+  return SUPPORTED_ATTRIBUTES.has(semantic) || semantic.startsWith("_");
+}
+
 const DEFORMING_ATTRIBUTES: ReadonlySet<string> = new Set(["JOINTS_0", "WEIGHTS_0"]);
 
 const TRIANGLES_MODE = 4;
@@ -109,10 +118,20 @@ function validIndices(primitive: Primitive): boolean {
   return true;
 }
 
-/** A material whose appearance index-only geometry cannot preserve. */
+/**
+ * A material whose appearance index-only geometry cannot preserve.
+ *
+ * `MASK` is admitted, and that admission is the whole of the foliage path (PRD-458 §4): an
+ * alpha-tested material draws a *subset* of the LOD0 fragments — the ones above the cutoff — so a
+ * chain that keeps every border vertex, with UVs weighted, keeps the silhouette. `BLEND` is not,
+ * because a simplified card blends with whatever is behind it and a dropped triangle there is a
+ * visible hole. Everything that is really translucent (transmission, volume, displacement) keeps
+ * its refusal whatever its alpha mode, because no index reduction preserves it.
+ */
 function unsupportedMaterial(material: Material | null): boolean {
   if (material === null) return false;
-  if (material.getAlphaMode() !== "OPAQUE") return true;
+  const alphaMode = material.getAlphaMode();
+  if (alphaMode !== "OPAQUE" && alphaMode !== "MASK") return true;
   for (const extension of material.listExtensions()) {
     const name = extension.extensionName.toLowerCase();
     if (name.includes("transmission") || name.includes("displacement") || name.includes("volume"))
@@ -173,8 +192,7 @@ export function classifyPrimitive(primitive: Primitive, flags: IEligibilityFlags
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!SUPPORTED_ATTRIBUTES.has(semantic))
-      return { eligible: false, reason: "unsupported-attributes" };
+    if (!sharedByLevels(semantic)) return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
   if (!finitePositions(primitive) || !validIndices(primitive))
@@ -225,8 +243,7 @@ export function classifyJoinCandidate(
   const semantics = primitive.listSemantics();
   for (const semantic of semantics) {
     if (DEFORMING_ATTRIBUTES.has(semantic)) return { eligible: false, reason: "deforming" };
-    if (!SUPPORTED_ATTRIBUTES.has(semantic))
-      return { eligible: false, reason: "unsupported-attributes" };
+    if (!sharedByLevels(semantic)) return { eligible: false, reason: "unsupported-attributes" };
   }
   if (!semantics.includes("POSITION")) return { eligible: false, reason: "unsupported-topology" };
   if (!finitePositions(primitive) || !validIndices(primitive))

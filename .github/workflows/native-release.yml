@@ -486,6 +486,9 @@ jobs:
       - name: Verify the desktop runtime with MSVC
         if: runner.os == 'Windows'
         shell: cmd
+        env:
+          # Hosted runners have no GPU (WARP / llvmpipe); the loading proof fails closed unless declared.
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
           if not defined VSINSTALL exit /b 1
@@ -495,6 +498,8 @@ jobs:
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - name: Stage the verified runtime
         shell: bash

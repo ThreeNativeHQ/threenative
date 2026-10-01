@@ -23,16 +23,8 @@ const TARGET_RELATIVE_PATH = path.join(
   "threenative-context",
   "SKILL.md",
 );
-const MIRROR_TARGET_RELATIVE_PATH = path.join(
-  "packages",
-  "create-threenative",
-  "agent-files",
-  ".claude",
-  "skills",
-  "threenative-context",
-  "SKILL.md",
-);
-const TARGET_RELATIVE_PATHS = [TARGET_RELATIVE_PATH, MIRROR_TARGET_RELATIVE_PATH] as const;
+// The skill is stored once; the scaffold links `.claude/skills` into it (PRD-449).
+const TARGET_RELATIVE_PATHS = [TARGET_RELATIVE_PATH] as const;
 
 export const GENERATED_REGION_START = "<!-- generated: superseded-constructs -->";
 const GENERATED_REGION_END = "<!-- /generated -->";

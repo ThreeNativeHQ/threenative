@@ -13,6 +13,7 @@ import {
   type IPlaytestSetupRequest,
   type IPlaytestStartupObservation,
   type JsonValue,
+  type PlaytestClockMode,
 } from "../protocol.js";
 import type { Camera, Scene } from "three";
 
@@ -32,6 +33,15 @@ export interface IThreePlaytestResources {
 
 export interface IThreePlaytestBridgeOptions {
   camera: Camera;
+  /**
+   * The clock this producer is actually running on, reported verbatim in every observation.
+   *
+   * `wall-clock` is a producer that lets its own frame pump move the simulation, which is the only
+   * way to observe a game *playing*: on that clock `advance` delivers the span of wall time the tick
+   * count names and reports the ticks that clock really ran, instead of stepping the loop itself.
+   * A production profile asks for it; a deterministic scenario never does.
+   */
+  clockMode?: PlaytestClockMode;
   components?: () => Record<string, Record<string, JsonValue>>;
   /**
    * Runtime diagnostics for the current frame.
@@ -76,6 +86,10 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
   if (options.physics !== undefined && options.tick === undefined)
     throw new Error("A physics provider requires the authoritative tick provider, and therefore fixedStep.");
   const recorder = options.physics === undefined ? undefined : new ThreePlaytestPhysicsRecorder(options.physics);
+  // The producer's own answer, with the capability-gated default every existing installation has
+  // always reported. A wall-clock producer still needs `fixedStep`, so the capability is unchanged.
+  const clockMode = (): PlaytestClockMode =>
+    options.clockMode ?? (options.fixedStep === undefined ? "render-frame" : "fixed-step");
   const host = globalThis as IPlaytestBridgeHost;
   const previous = host[PLAYTEST_BRIDGE_GLOBAL];
   const registry = new ThreePlaytestEntityRegistry();
@@ -112,9 +126,15 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
             await options.fixedStep!(ticks);
             const tick = options.tick!();
             const advanced = tick - startTick;
-            if (advanced !== ticks)
-              throw new Error(`fixedStep advanced ${advanced} actual ticks; expected ${ticks}.`);
-            return { clock: { mode: "fixed-step" as const, tick }, ticks: advanced };
+            // A fixed-step producer is asked for a count and must deliver exactly that count. A
+            // wall-clock producer is asked for the span those ticks cover and reports what the
+            // host's own frame pump ran in it, so the only count that can fail closed here is none
+            // at all: a game nobody is presenting never simulates, and that is not a run.
+            if (clockMode() === "wall-clock" ? advanced < 1 : advanced !== ticks)
+              throw new Error(clockMode() === "wall-clock"
+                ? `wall-clock advance moved no tick in ${ticks} step(s) of wall time; the host presented no frame.`
+                : `fixedStep advanced ${advanced} actual ticks; expected ${ticks}.`);
+            return { clock: { mode: clockMode(), tick }, ticks: advanced };
           },
         }),
     applySetup: async (request) => {
@@ -150,7 +170,7 @@ export function installThreePlaytestBridge(options: IThreePlaytestBridgeOptions)
       syncEntities(registry, options.entities);
       const snapshot = sampleThreeObservations({
         camera: options.camera,
-        clockMode: options.fixedStep === undefined ? "render-frame" : "fixed-step",
+        clockMode: clockMode(),
         diagnostics: options.diagnostics,
         gameplay: options.gameplay,
         runtimeDiagnosticsSeries: options.runtimeDiagnosticsSeries,

@@ -780,7 +780,7 @@ export function stageAndroidAssets(
   // Derived from the runtime this build is about to pack, not declared here. A hardcoded claim
   // goes stale the moment the build changes under it, which is exactly what happened to WebP.
   assertAndroidAssetsDecodable(assets, { webp: deriveAndroidWebpSupport(runtimeSource) });
-  const files = selectManifestAssets(assets);
+  const { selected: files } = selectManifestAssets(assets);
   for (const file of files) {
     const output = join(destination, file);
     mkdirSync(dirname(output), { recursive: true });

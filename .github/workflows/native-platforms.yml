@@ -103,7 +103,12 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Called from ci.yml this is the same run as `build-artifacts`, which already holds the one
+      # reservation this key allows; a standalone dispatch has no such job, so this job is the run's
+      # only saver either way. The other two consumers are restore-only.
       - uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: ${{ github.event_name == 'workflow_dispatch' }}
       - uses: ./.github/actions/playwright-chromium
       - name: Capture commit-keyed browser reference
         run: |
@@ -134,6 +139,9 @@ jobs:
     runs-on: ubuntu-24.04
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
+    outputs:
+      recipe-hash: ${{ steps.v8.outputs.recipe-hash }}
+      published: ${{ steps.v8.outputs.published }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
@@ -150,23 +158,56 @@ jobs:
       - uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      - name: Restore the pinned Android NDK
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
-          key: android-v8-ndk-28.2.13676358-${{ runner.os }}
+      # No Actions cache for the NDK: the runner image already carries it (this step takes two
+      # seconds on a miss), while saving it took 90 seconds and a GB-scale share of the cache budget.
       - name: Install and select the pinned Android NDK
         run: |
           set -euo pipefail
           sdkmanager "ndk;28.2.13676358"
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
-      - uses: ./.github/actions/android-v8-source
+      - id: v8
+        uses: ./.github/actions/android-v8-source
       - uses: actions/upload-artifact@v7
         with:
           name: android-v8-${{ needs.scope.outputs.candidate_sha }}
           path: packages/runtime-native/third_party/v8-android
           if-no-files-found: error
           retention-days: 2
+
+  # Publishes a freshly built payload as the release asset every later run downloads instead of
+  # building V8 for two hours. Trusted refs only: a pull request's code never runs in a job holding a
+  # token that can write releases, and this job checks nothing out. A PR that changes the V8 recipe
+  # builds its own payload; dispatch this workflow on develop after it merges to publish the new one
+  # before the nightly does.
+  publish-android-v8:
+    name: Publish the Android V8 payload
+    needs: [scope, android-v8-source]
+    if: >-
+      needs.android-v8-source.outputs.published == 'false' &&
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-v8-${{ needs.scope.outputs.candidate_sha }}
+          path: v8-android
+      - name: Upload the payload to the ci-v8-android release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET: v8-android-${{ needs.android-v8-source.outputs.recipe-hash }}.tgz
+          TARGET: ${{ needs.scope.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          tar -czf "$ASSET" -C v8-android .
+          gh release view ci-v8-android --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create ci-v8-android --repo "$GITHUB_REPOSITORY" --target "$TARGET" \
+              --prerelease --latest=false --title "CI cache: Android V8 payload" \
+              --notes "Built Android V8 payloads, one asset per recipe hash, for CI to download instead of rebuilding. Not a product release."
+          gh release upload ci-v8-android "$ASSET" --repo "$GITHUB_REPOSITORY" --clobber
 
   performance-coverage:
     name: Native collector evidence coverage
@@ -330,16 +371,9 @@ jobs:
               'packages/runtime-native/scripts/download-deps.mjs',
               'packages/runtime-native/scripts/build-android-v8.mjs',
               'packages/runtime-native/scripts/package-android.mjs') }}
-      - name: Restore the Android SDK packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.ANDROID_SDK_ROOT }}/platforms/android-35
-            ${{ env.ANDROID_SDK_ROOT }}/build-tools/35.0.0
-            ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
-            ${{ env.ANDROID_SDK_ROOT }}/system-images/android-35
-            ${{ env.ANDROID_SDK_ROOT }}/emulator
-          key: android-sdk-35-ndk28.2.13676358-${{ runner.os }}-${{ runner.arch }}
+      # No Actions cache for the SDK packages: sdkmanager installs platform, build-tools, NDK,
+      # emulator and system image in about 30 seconds here, while saving them took four minutes per
+      # run and multiple GB of the shared 10 GiB budget, evicting the Gradle and Cargo caches below.
       - name: Restore the Gradle caches
         uses: actions/cache@v4
         with:
@@ -365,8 +399,15 @@ jobs:
           restore-keys: cargo-android-${{ runner.os }}-
       - run: pnpm install --frozen-lockfile
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+      # Restore-only: a standalone dispatch runs this alongside web-reference and desktop-parity on
+      # the same key, and only the first of them gets the one reservation the cache service grants
+      # this key. `github.event_name == 'workflow_dispatch'` is true for all three, so gating on the
+      # event decided nothing; web-reference needs only `scope`, publishes, and this job needs it,
+      # so it can never restore a key this run will not save.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -461,8 +502,8 @@ jobs:
           script: >-
             adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
             "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
-            "$RUNNER_TEMP/android-page-size.err";
-            node packages/runtime-native/conformance/run-conformance.mjs --target android
+            "$RUNNER_TEMP/android-page-size.err"; TN_PLAYTEST_ALLOW_SOFTWARE=1 node
+            packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
             "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
@@ -822,8 +863,14 @@ jobs:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
       # Restore source-keyed JS bundles; every native build and conformance assertion still runs.
+      # Restore-only, and it needs web-reference: on a standalone dispatch that job takes the one
+      # reservation this key allows instead of racing for it. `inputs.ios_only` does not create a
+      # second saver either — it skips this job and web-reference together, and no `ios_only`-only
+      # job restores these bundles at all.
       - name: Build browser reference workspace imports
         uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - name: Capture browser references from the commit-keyed artifact
         uses: actions/download-artifact@v7
@@ -853,6 +900,10 @@ jobs:
         shell: bash
         run: ccache --show-stats
       - name: Compare the desktop host with browser references
+        # Same hosted-software declaration as the ui-frame gate below: this runner binds Mesa
+        # llvmpipe, so the desktop host reports a software adapter it cannot avoid.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           set +e
           sh scripts/xvfb.sh \
@@ -912,6 +963,10 @@ jobs:
       # Android and iOS attach their own web views from their own hosts (Java/Swift) and keep their
       # own lanes; nothing in this gate applies to them.
       - name: Verify the web UI composites into the game's own frame
+        # The Linux runner has no GPU; its Vulkan ICD is Mesa lavapipe, the llvmpipe software
+        # rasteriser. Declared at this caller rather than assumed for every native target.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: pnpm --filter @threenative/runtime-native native:verify:ui-frame
       - name: Collect bounded desktop performance evidence from the existing binary
         if: always()
@@ -1100,6 +1155,9 @@ jobs:
           set "CC=cl"
           set "CXX=cl"
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
+          rem This runner has no GPU and its adapter reports `Microsoft Basic Render Driver`.
+          rem The acceptance is declared here, in the lane that has none, and stays off macOS.
+          set "TN_PLAYTEST_ALLOW_SOFTWARE=1"
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
@@ -1133,6 +1191,10 @@ jobs:
           runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
           if [ "${{ matrix.platform }}" = "Windows" ]; then
             runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
+            # A hosted Windows runner has no GPU and answers `Microsoft Basic Render Driver`.
+            # Only Windows declares it; the macOS leg of this same matrix runs against whatever
+            # the machine actually has and keeps the default fail-closed software-adapter error.
+            export TN_PLAYTEST_ALLOW_SOFTWARE=1
           fi
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$runtime" pnpm --dir "$target" test:native
@@ -1628,6 +1690,10 @@ jobs:
       - name: Install and play the final signed Windows setup, then uninstall it
         if: matrix.platform == 'Windows'
         shell: pwsh
+        # The hosted Windows runner has no GPU: its adapter is `Microsoft Basic Render Driver`. The
+        # acceptance is declared here, at the one caller that knows it, like the other Windows steps.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           $ErrorActionPreference = 'Stop'
           $project = Join-Path $env:RUNNER_TEMP 'threenative-starter-native'
@@ -1790,7 +1856,13 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
           pnpm --dir "$target" install --ignore-scripts
+          # This runner has no GPU: its Vulkan ICD is Mesa lavapipe, the llvmpipe software
+          # rasteriser (see the desktop parity job's own note). The lane declares that here, at the
+          # caller that knows it, instead of teaching the harness that a native target may always
+          # accept a software adapter — a local desktop run on this same machine still fails.
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
+          TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
+          TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
       # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
       # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.

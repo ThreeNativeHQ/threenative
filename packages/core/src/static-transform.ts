@@ -80,6 +80,18 @@ function snapshotMatches(root: Object3D, snapshot: Float64Array, scratch: Float6
 const scratch = new Float64Array(SNAPSHOT_LENGTH);
 
 /**
+ * Three's own "nothing about me changes between frames" flag, read by its node material observer.
+ *
+ * A static object is redrawn every frame but skips the per-object work that cannot change: the
+ * OBJECT node updates, the object uniform group upload and the attribute scan. Three only trusts it
+ * while the world matrix, the material, the geometry and the scene environment are unchanged, so
+ * this is the same promise the freeze already makes, said in three's own words.
+ */
+function setThreeStatic(object: Object3D, value: boolean): void {
+  (object as Object3D & { static?: boolean }).static = value;
+}
+
+/**
  * Objects whose local compose *this* turned off, as opposed to a game that composes its own matrix
  * and turned `matrixAutoUpdate` off for its own reasons.
  *
@@ -116,6 +128,7 @@ function freeze(root: Object3D): number {
   let objects = 0;
   root.traverse((object) => {
     objects += 1;
+    setThreeStatic(object, true);
     if (object.matrixAutoUpdate) composeSilenced.add(object);
     object.matrixAutoUpdate = false;
     object.matrixWorldNeedsUpdate = false;
@@ -158,6 +171,7 @@ export function unmarkStatic(root: Object3D): void {
   if (worldSilenced.delete(root)) root.matrixWorldAutoUpdate = true;
   root.traverse((object) => {
     if (composeSilenced.delete(object)) object.matrixAutoUpdate = true;
+    setThreeStatic(object, false);
     object.matrixWorldNeedsUpdate = true;
   });
 }

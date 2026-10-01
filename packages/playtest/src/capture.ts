@@ -117,4 +117,11 @@ export function assertCaptureNotBlank(png: Buffer, label: string): ICaptureFrame
   return stats;
 }
 
+/**
+ * Fail closed when a screenshot is blank or uniform.
+ * @situation guard a visual playtest against a blank frame
+ * @situation prove a screenshot contains more than a loading surface
+ * @constraint the assertion throws instead of returning a false pass
+ * @example assertFrameShowsSomething(png, "first frame");
+ */
 export const assertFrameShowsSomething = assertCaptureNotBlank;

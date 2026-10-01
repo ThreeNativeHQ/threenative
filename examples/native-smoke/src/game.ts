@@ -1,6 +1,7 @@
 import {
   type ICtx,
   Scene,
+  debugFlag,
   defineGame,
   getPlatform,
   isMobile,
@@ -9,6 +10,7 @@ import {
   isWeb,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
+import { UI_READY_INTENT } from "@threenative/core/ui-layer";
 import {
   BoxGeometry,
   Matrix4,
@@ -30,6 +32,8 @@ import { type IWorkerProof, startWorkerProof } from "./worker-proof.js";
 interface ISmokeState extends INetworkingState {
   airborne: boolean;
   currentPointers: number;
+  /** `debugFlag("probe")`, read once at load: `?probe` in a browser, `TN_DEBUG_PROBE` natively. */
+  debugProbe: boolean;
   frames: number;
   preparedFrames: number;
   preparationErrors: number;
@@ -283,6 +287,7 @@ class NativeSmoke extends Scene<ISmokeState> {
   static override readonly initialState: ISmokeState = {
     airborne: false,
     currentPointers: 0,
+    debugProbe: debugFlag("probe"),
     frames: 0,
     preparedFrames: 0,
     preparationErrors: 0,
@@ -683,7 +688,7 @@ game.ui.onIntent((intent, payload) => {
     lastUiIntent: intent,
     uiIntents: state.uiIntents + 1,
     ...(intent === "slide" ? { slide: payload !== false } : {}),
-    ...(intent === "ready" ? { uiReady: true, uiRegions: Number(payload) } : {}),
+    ...(intent === UI_READY_INTENT ? { uiReady: true, uiRegions: Number(payload) } : {}),
     ...(intent === "restart" ? { restarts: state.restarts + 1 } : {}),
     ...(intent === "slideDone" ? { slidesDone: state.slidesDone + 1 } : {}),
   });

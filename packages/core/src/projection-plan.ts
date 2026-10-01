@@ -7,8 +7,12 @@ import type {
   Mesh,
   Object3D,
   Scene,
+  SkinnedMesh,
 } from "three";
 
+import { isEngineRenderHook } from "./engine-render-hook.js";
+import { skinnedMaterialBlocked } from "./projection-skinned.js";
+import { uniformSignatureOf } from "./projection-uniform.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
 
 /**
@@ -50,6 +54,17 @@ export const MIN_BATCH_MEMBERS = 4;
  * projection that cannot beat this ratio is abandoned before it costs anything.
  */
 const WORTHWHILE_DRAW_RATIO = 0.75;
+
+/**
+ * How many rigid meshes one skinned rig counts as against the mesh floor, which is priced in rigid
+ * draws. Measured 2026-09-25 on tn-web, NVIDIA Turing, shadows on, 300 frames per arm
+ * (`scripts/engine-load-test/skinned-crowd.ts`): 512 shadow-casting boxes cost 0.8 ms of CPU a
+ * frame and 512 rigs of 32 bones 20.8 ms, so a rig submits about 26 rigid draws' worth. The scenes
+ * this admits below the rigid floor were measured faster, not merely equal: 4 rigs beside 100 props
+ * went 6.2 -> 3.85 ms a frame and 8 rigs beside 150 props 9.7 -> 6.85 ms (medians of 4 pairs). A
+ * scene whose props cannot batch is still declined by the draw-ratio rule above.
+ */
+const SKINNED_FLOOR_WEIGHT = 26;
 
 function isMesh(object: Object3D): object is Mesh {
   return (object as Mesh).isMesh === true;
@@ -103,11 +118,32 @@ function specializedLaneReason(
   return undefined;
 }
 
-function hasMorphAttributes(geometry: BufferGeometry): boolean {
+export function hasMorphAttributes(geometry: BufferGeometry): boolean {
   for (const name in geometry.morphAttributes) {
     if (Object.hasOwn(geometry.morphAttributes, name)) return true;
   }
   return false;
+}
+
+/**
+ * True when the material already moves its own vertices: `positionNode`, the shadow path's
+ * `castShadowPositionNode`, or a `displacementMap`. Read through `Reflect` because a plain
+ * `MeshStandardMaterial` has none of them, and they are read as plain properties rather than through
+ * `Reflect` because the structure proof asks this of every material in the scene on every frame:
+ * `Reflect.get` is a runtime call on a key the engine cannot fold, and the direct read is a load it
+ * can.
+ */
+export function displacesVertices(material: Material): boolean {
+  const candidate = material as {
+    positionNode?: unknown;
+    castShadowPositionNode?: unknown;
+    displacementMap?: unknown;
+  };
+  return (
+    candidate.positionNode != null ||
+    candidate.castShadowPositionNode != null ||
+    candidate.displacementMap != null
+  );
 }
 
 function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | undefined {
@@ -121,6 +157,40 @@ function geometryLaneReason(geometry: BufferGeometry): ProjectionExactReason | u
   const range = geometry.drawRange;
   if (range !== undefined && (range.start !== 0 || Number.isFinite(range.count))) {
     return "drawRange";
+  }
+  return undefined;
+}
+
+/**
+ * Why a skinned mesh cannot join a skinned batch, or `undefined` when it can.
+ *
+ * The same semantics a batched draw cannot carry as on the other lanes, plus the ones the palette
+ * shader cannot: a material that already moves its own vertices, and a geometry without the four
+ * weighted bone influences and the normal the palette deforms.
+ */
+function skinnedLaneReason(object: Object3D): ProjectionExactReason | undefined {
+  const candidate = object as ProjectionCandidate & SkinnedMesh;
+  if (Array.isArray(candidate.material)) return "multiMaterial";
+  if (candidate.customDepthMaterial != null || candidate.customDistanceMaterial != null) {
+    return "customDepthMaterial";
+  }
+  const geometry = candidate.geometry;
+  if (geometry === undefined) return "unsupportedGeometry";
+  const geometryReason = geometryLaneReason(geometry);
+  if (geometryReason !== undefined) return geometryReason;
+  if ((object.renderOrder ?? 0) !== 0) return "renderOrder";
+  const material = candidate.material as Material | undefined;
+  if (material === undefined) return "unsupportedGeometry";
+  if (material.transparent === true) return "transparent";
+  if (
+    skinnedMaterialBlocked(material) ||
+    candidate.skeleton === undefined ||
+    candidate.skeleton.bones.length === 0 ||
+    geometry.getAttribute("normal")?.itemSize !== 3 ||
+    geometry.getAttribute("skinIndex")?.itemSize !== 4 ||
+    geometry.getAttribute("skinWeight")?.itemSize !== 4
+  ) {
+    return "skinned";
   }
   return undefined;
 }
@@ -165,6 +235,10 @@ function laneReasonOf(
   const material = candidate.material as Material | undefined;
   if (material === undefined) return "unsupportedGeometry";
   if (material.transparent === true) return "transparent";
+  // A batch is one object with one model matrix, so a displacement written against the object's own
+  // is wrong there, or lost. The mesh keeps its own draw and its own matrix; the skinned lane
+  // refuses these materials for the same reason (`skinnedMaterialBlocked`).
+  if (displacesVertices(material)) return "vertexDisplaced";
   return undefined;
 }
 
@@ -175,9 +249,17 @@ function laneReasonOf(
  * and a batch would not call it at all, so a game that hooks a draw gets its own object back or the
  * frame is not projected. There is no third option that is honest, and this is rare enough that
  * whole-scene fallback is the right price.
+ *
+ * The engine's own borrows are the exception (PRD-458): `WorldCells` marks each prewarm hook as
+ * bookkeeping, and a marked callback claims no object, so folding it away loses nothing. A streamed
+ * world carries hundreds of them and unmarking them silently disabled the projection on exactly the
+ * scenes it exists for.
  */
-function hasRenderHook(object: Object3D): boolean {
-  return Object.hasOwn(object, "onBeforeRender") || Object.hasOwn(object, "onAfterRender");
+export function hasRenderHook(object: Object3D): boolean {
+  return (
+    (Object.hasOwn(object, "onBeforeRender") && !isEngineRenderHook(object.onBeforeRender)) ||
+    (Object.hasOwn(object, "onAfterRender") && !isEngineRenderHook(object.onAfterRender))
+  );
 }
 
 /** Why a source cannot share a batch, or the whole classification for one frame. */
@@ -212,7 +294,9 @@ class ProjectionSeen implements IProjectionSeenWorkspace {
   }
 }
 
-/** A reusable identity group for one (geometry, material, flags) combination. */
+/**
+ * A reusable identity group for one (geometry, material, flags) combination.
+ */
 export interface IProjectionBatchGroup {
   readonly geometry: BufferGeometry;
   readonly material: Material;
@@ -224,6 +308,20 @@ export interface IProjectionBatchGroup {
   readonly members: Array<Mesh | undefined>;
   memberCount: number;
   activeScan: number;
+}
+
+/**
+ * An instanced group whose members' materials are interchangeable except for their base colour.
+ *
+ * Keyed on (geometry, material signature, flags) rather than material identity, so a scene of
+ * per-object material clones that differ only in albedo — the shape a game gets by cloning a
+ * material per prop — collapses to one draw. The draw cannot use the game's material instances,
+ * because there is one draw and many materials: it carries a clone the mirror owns with the colour
+ * removed, and each instance carries its source material's colour. `material` stays the group's
+ * representative, which is what every member was equal to.
+ */
+export interface IProjectionUniformGroup extends IProjectionBatchGroup {
+  readonly uniform: true;
 }
 
 /**
@@ -269,6 +367,17 @@ export interface IProjectionScanWorkspace {
   readonly seen: IProjectionSeenWorkspace;
   readonly eligible: Array<Mesh | undefined>;
   eligibleCount: number;
+  /** Skinned meshes the palette lane can draw, grouped separately from the rigid lanes. */
+  readonly skinned: Array<SkinnedMesh | undefined>;
+  skinnedCount: number;
+  readonly skinnedGroupsByGeometry: WeakMap<
+    BufferGeometry,
+    WeakMap<Material, Map<number, IProjectionBatchGroup>>
+  >;
+  readonly activeSkinnedGroups: Array<IProjectionBatchGroup | undefined>;
+  activeSkinnedGroupCount: number;
+  readonly skinnedGroups: Array<IProjectionBatchGroup | undefined>;
+  skinnedGroupCount: number;
   readonly exactLane: IProjectionExactEntry[];
   readonly exactEntryPool: IProjectionExactEntry[];
   exactLaneCount: number;
@@ -290,6 +399,19 @@ export interface IProjectionScanWorkspace {
     BufferGeometry,
     WeakMap<Material, Map<number, IProjectionBatchGroup>>
   >;
+  /**
+   * Uniform groups, by geometry, then by the material signature, then by the batching flags — a
+   * signature is a value, so the geometry key has to be the weak one for the index not to outlive
+   * the geometry it describes.
+   */
+  readonly uniformGroups: WeakMap<
+    BufferGeometry,
+    Map<string, Map<number, IProjectionUniformGroup>>
+  >;
+  readonly activeUniformGroups: Array<IProjectionUniformGroup | undefined>;
+  activeUniformGroupCount: number;
+  /** The uniform group each mesh was filed under, so nothing files it a second time this scan. */
+  readonly uniformOf: WeakMap<Mesh, IProjectionUniformGroup>;
   readonly groupsByMaterial: WeakMap<Material, Map<number, Map<string, IProjectionMaterialGroup>>>;
   /** Attribute signature per geometry, computed once and interned so group lookup stays pointer-cheap. */
   readonly geometrySignatures: WeakMap<BufferGeometry, string>;
@@ -324,6 +446,9 @@ export interface IProjectionProjectPlan {
   /** Material-keyed groups worth batching across differing geometries, sized before anything is built. */
   readonly materialGroups: readonly (IProjectionMaterialGroup | undefined)[];
   readonly materialGroupCount: number;
+  /** Skinned groups worth one palette draw each; their members share geometry, material and rig size. */
+  readonly skinnedGroups: readonly (IProjectionBatchGroup | undefined)[];
+  readonly skinnedGroupCount: number;
   /** Group members below the batching floor: released from batches, drawn on the exact lane. */
   readonly belowFloor: readonly (Mesh | undefined)[];
   readonly belowFloorCount: number;
@@ -355,6 +480,13 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     seen: new ProjectionSeen(),
     eligible: [],
     eligibleCount: 0,
+    skinned: [],
+    skinnedCount: 0,
+    skinnedGroupsByGeometry: new WeakMap(),
+    activeSkinnedGroups: [],
+    activeSkinnedGroupCount: 0,
+    skinnedGroups: [],
+    skinnedGroupCount: 0,
     exactLane: [],
     exactEntryPool: [],
     exactLaneCount: 0,
@@ -373,6 +505,10 @@ export function createProjectionScanWorkspace(): IProjectionScanWorkspace {
     walkStack: [],
     walkStackCount: 0,
     groupsByGeometry: new WeakMap(),
+    uniformGroups: new WeakMap(),
+    activeUniformGroups: [],
+    activeUniformGroupCount: 0,
+    uniformOf: new WeakMap(),
     groupsByMaterial: new WeakMap(),
     geometrySignatures: new WeakMap(),
     materialClaims: new WeakMap(),
@@ -410,6 +546,27 @@ function releaseActiveMaterialGroup(
   }
 }
 
+/** The skinned lane's share of `releaseProjectionScanWorkspace`. */
+function releaseSkinnedScan(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.skinnedCount; index += 1) {
+    workspace.skinned[index] = undefined;
+  }
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      group.members[member] = undefined;
+    }
+    group.memberCount = 0;
+    workspace.activeSkinnedGroups[index] = undefined;
+  }
+  for (let index = 0; index < workspace.skinnedGroupCount; index += 1) {
+    workspace.skinnedGroups[index] = undefined;
+  }
+  workspace.skinnedCount = 0;
+  workspace.activeSkinnedGroupCount = 0;
+  workspace.skinnedGroupCount = 0;
+}
+
 export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspace): void {
   for (let index = 0; index < workspace.exactEntryPool.length; index += 1) {
     const entry = workspace.exactEntryPool[index] as IProjectionExactEntry;
@@ -423,6 +580,14 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
     group.memberCount = 0;
     workspace.activeGroups[index] = undefined;
   }
+  for (let index = 0; index < workspace.activeUniformGroupCount; index += 1) {
+    const group = workspace.activeUniformGroups[index] as IProjectionUniformGroup;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      group.members[member] = undefined;
+    }
+    group.memberCount = 0;
+    workspace.activeUniformGroups[index] = undefined;
+  }
   for (let index = 0; index < workspace.activeMaterialGroupCount; index += 1) {
     releaseActiveMaterialGroup(
       workspace,
@@ -433,6 +598,7 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     workspace.eligible[index] = undefined;
   }
+  releaseSkinnedScan(workspace);
   for (let index = 0; index < workspace.exactLaneCount; index += 1) {
     const entry = workspace.exactLane[index] as IProjectionExactEntry;
     entry.object = undefined;
@@ -460,6 +626,7 @@ export function releaseProjectionScanWorkspace(workspace: IProjectionScanWorkspa
   workspace.activeMaterialGroupCount = 0;
   workspace.belowFloorCount = 0;
   workspace.activeGroupCount = 0;
+  workspace.activeUniformGroupCount = 0;
   workspace.walkStackCount = 0;
 }
 
@@ -495,20 +662,67 @@ function addToBatchGroup(
   mesh: Mesh,
   scanNumber: number,
 ): void {
+  const byFlags = flagGroupsOf(workspace.groupsByGeometry, mesh);
+  const flags = batchFlagsOf(mesh);
+  const group = activeGroupOf(byFlags, flags, mesh, scanNumber);
+  if (group.memberCount === 0) {
+    workspace.activeGroups[workspace.activeGroupCount] = group;
+    workspace.activeGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+}
+
+/**
+ * Files a skinned mesh under (geometry, material, flags, bone count). The bone count is part of
+ * the key because it is the palette stride: rigs of different sizes cannot share one shader.
+ */
+function addToSkinnedGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: SkinnedMesh,
+  scanNumber: number,
+): void {
+  const byFlags = flagGroupsOf(workspace.skinnedGroupsByGeometry, mesh);
+  // Bone counts stay far below 2^16, so the composite key stays an exact integer.
+  const key = batchFlagsOf(mesh) * 65536 + mesh.skeleton.bones.length;
+  const group = activeGroupOf(byFlags, key, mesh, scanNumber);
+  if (group.memberCount === 0) {
+    workspace.activeSkinnedGroups[workspace.activeSkinnedGroupCount] = group;
+    workspace.activeSkinnedGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+}
+
+function flagGroupsOf(
+  index: WeakMap<BufferGeometry, WeakMap<Material, Map<number, IProjectionBatchGroup>>>,
+  mesh: Mesh,
+): Map<number, IProjectionBatchGroup> {
   const geometry = mesh.geometry;
   const material = mesh.material as Material;
-  let byMaterial = workspace.groupsByGeometry.get(geometry);
+  let byMaterial = index.get(geometry);
   if (byMaterial === undefined) {
     byMaterial = new WeakMap();
-    workspace.groupsByGeometry.set(geometry, byMaterial);
+    index.set(geometry, byMaterial);
   }
   let byFlags = byMaterial.get(material);
   if (byFlags === undefined) {
     byFlags = new Map();
     byMaterial.set(material, byFlags);
   }
-  const flags = batchFlagsOf(mesh);
-  let group = byFlags.get(flags);
+  return byFlags;
+}
+
+/** The group for `key`, emptied on its first sighting this scan. */
+function activeGroupOf(
+  byFlags: Map<number, IProjectionBatchGroup>,
+  key: number,
+  mesh: Mesh,
+  scanNumber: number,
+): IProjectionBatchGroup {
+  const geometry = mesh.geometry;
+  const material = mesh.material as Material;
+  let group = byFlags.get(key);
   if (group === undefined) {
     group = {
       geometry,
@@ -521,16 +735,13 @@ function addToBatchGroup(
       memberCount: 0,
       activeScan: 0,
     };
-    byFlags.set(flags, group);
+    byFlags.set(key, group);
   }
   if (group.activeScan !== scanNumber) {
     group.activeScan = scanNumber;
     group.memberCount = 0;
-    workspace.activeGroups[workspace.activeGroupCount] = group;
-    workspace.activeGroupCount += 1;
   }
-  group.members[group.memberCount] = mesh;
-  group.memberCount += 1;
+  return group;
 }
 
 /**
@@ -573,7 +784,7 @@ function attributeVersionOf(attribute: BufferAttribute | InterleavedBufferAttrib
  * is how the lane learns that a game streams into vertex data it had admitted — the one thing a
  * packed copy cannot follow that the instanced lane's shared reference can.
  */
-function geometryVersionSum(geometry: BufferGeometry): number {
+export function geometryVersionSum(geometry: BufferGeometry): number {
   let sum = 0;
   for (const name in geometry.attributes) {
     if (!Object.hasOwn(geometry.attributes, name)) continue;
@@ -582,6 +793,68 @@ function geometryVersionSum(geometry: BufferGeometry): number {
   }
   const index = geometry.getIndex();
   return index === null ? sum : sum + attributeVersionOf(index);
+}
+
+/**
+ * Files a mesh under (geometry, material signature, flags) for a draw that carries the colour
+ * per instance.
+ *
+ * The signature is the material's own readable properties minus its colour, so a mesh whose
+ * material is ineligible — transparent, vertex-coloured, a node graph, an unknown class — simply
+ * has no signature and never reaches this lane. A material that shares an instance with a twin is
+ * still better served by the identity lane, so this runs over the groups that fell below its floor.
+ */
+function addToUniformGroup(
+  workspace: IProjectionScanWorkspace,
+  mesh: Mesh,
+  scanNumber: number,
+): void {
+  const geometry = mesh.geometry;
+  const material = mesh.material as Material;
+  const signature = uniformSignatureOf(material);
+  if (signature === undefined) return;
+  const flags = batchFlagsOf(mesh);
+  let bySignature = workspace.uniformGroups.get(geometry);
+  if (bySignature === undefined) {
+    bySignature = new Map();
+    workspace.uniformGroups.set(geometry, bySignature);
+  }
+  let byFlags = bySignature.get(signature);
+  if (byFlags === undefined) {
+    byFlags = new Map();
+    bySignature.set(signature, byFlags);
+  }
+  let group = byFlags.get(flags);
+  if (group === undefined) {
+    group = {
+      geometry,
+      material,
+      castShadow: mesh.castShadow,
+      receiveShadow: mesh.receiveShadow,
+      frustumCulled: mesh.frustumCulled,
+      layersMask: mesh.layers.mask,
+      members: [],
+      memberCount: 0,
+      activeScan: 0,
+      uniform: true,
+    };
+    byFlags.set(flags, group);
+  }
+  if (group.activeScan !== scanNumber) {
+    group.activeScan = scanNumber;
+    group.memberCount = 0;
+    workspace.activeUniformGroups[workspace.activeUniformGroupCount] = group;
+    workspace.activeUniformGroupCount += 1;
+  }
+  group.members[group.memberCount] = mesh;
+  group.memberCount += 1;
+  workspace.uniformOf.set(mesh, group);
+}
+
+/** Whether a mesh was claimed by a uniform group that made the member floor this scan. */
+function uniformClaimed(workspace: IProjectionScanWorkspace, mesh: Mesh): boolean {
+  const group = workspace.uniformOf.get(mesh);
+  return group !== undefined && group.memberCount >= MIN_BATCH_MEMBERS;
 }
 
 function addToMaterialGroup(
@@ -733,6 +1006,14 @@ function visitProjectionObject(
   if (!isRenderable(object)) return;
   state.renderables += 1;
   workspace.seen.add(object);
+  if ((object as SkinnedMesh).isSkinnedMesh === true) {
+    const skinnedReason = skinnedLaneReason(object);
+    if (skinnedReason === undefined) {
+      workspace.skinned[workspace.skinnedCount] = object as SkinnedMesh;
+      workspace.skinnedCount += 1;
+    } else addExactEntry(workspace, object, skinnedReason);
+    return;
+  }
   const reason = walkLaneReason(object);
   if (reason === undefined && isMesh(object)) {
     workspace.eligible[workspace.eligibleCount] = object;
@@ -764,22 +1045,68 @@ function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: nu
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
     addToBatchGroup(workspace, workspace.eligible[index] as Mesh, scanNumber);
   }
+  for (let index = 0; index < workspace.skinnedCount; index += 1) {
+    addToSkinnedGroup(workspace, workspace.skinned[index] as SkinnedMesh, scanNumber);
+  }
   // Meshes whose own (geometry, material, flags) group is too small to instance-batch are exactly
-  // the population a material-keyed batch exists for — distinct geometries over a shared
-  // surface. A mesh whose geometry group made the floor never reaches here; instancing stays its
-  // lane, and it references its geometry live rather than through a packed copy.
+  // the population a material-keyed batch exists for — distinct geometries over a shared surface. A
+  // mesh whose geometry group made the floor never reaches here; instancing stays its lane, and it
+  // references its geometry live rather than through a packed copy.
+  //
+  // The uniform pass runs first, because it is the only one of the two that can collapse these
+  // meshes into a *single* draw: a packed batch is still one sub-draw per member on WebGPU, while a
+  // per-instance colour over one shared geometry is one draw however many members it holds. A mesh
+  // whose uniform group made the floor is claimed by it and never filed here.
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
-      addToMaterialGroup(workspace, group.members[member] as Mesh, scanNumber);
+      addToUniformGroup(workspace, group.members[member] as Mesh, scanNumber);
+    }
+  }
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      const mesh = group.members[member] as Mesh;
+      if (uniformClaimed(workspace, mesh)) continue;
+      addToMaterialGroup(workspace, mesh, scanNumber);
     }
   }
   watchMaterialGroupGeometries(workspace);
 }
 
+/**
+ * A skinned group is one draw per pass however many rigs it holds; below the floor each rig keeps
+ * its own, exactly as it had. Groups that make the floor are claimed into the plan here.
+ */
+function predictSkinnedDraws(workspace: IProjectionScanWorkspace): number {
+  let draws = 0;
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) {
+      draws += group.memberCount;
+      continue;
+    }
+    workspace.skinnedGroups[workspace.skinnedGroupCount] = group;
+    workspace.skinnedGroupCount += 1;
+    draws += 1;
+  }
+  return draws;
+}
+
 function predictDraws(workspace: IProjectionScanWorkspace): number {
   let predictedDraws = workspace.exactLaneCount;
+  // A uniform group is one instanced draw however many members it holds, which is the whole reason
+  // it exists: unlike the packed lane below, its members do not become one sub-draw each. Claimed
+  // here so the same source cannot be drawn twice — once as an instance and once on the exact lane.
+  for (let index = 0; index < workspace.activeUniformGroupCount; index += 1) {
+    const group = workspace.activeUniformGroups[index] as IProjectionUniformGroup;
+    if (group.memberCount < MIN_BATCH_MEMBERS) continue;
+    workspace.batchGroups[workspace.batchGroupCount] = group;
+    workspace.batchGroupCount += 1;
+    predictedDraws += 1;
+  }
   // A BatchedMesh still executes one multidraw sub-draw per visible member on WebGPU, so charge
   // every material-group member rather than pretending the packed object is one draw. The group
   // still earns admission when the aggregate plan beats the authored candidate count: it removes
@@ -795,12 +1122,17 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
     }
     predictedDraws += group.memberCount;
   }
+  predictedDraws += predictSkinnedDraws(workspace);
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount < MIN_BATCH_MEMBERS) {
       for (let member = 0; member < group.memberCount; member += 1) {
         const mesh = group.members[member] as Mesh;
-        if (workspace.materialClaims.get(mesh) !== workspace.scanNumber) predictedDraws += 1;
+        if (
+          workspace.materialClaims.get(mesh) !== workspace.scanNumber &&
+          !uniformClaimed(workspace, mesh)
+        )
+          predictedDraws += 1;
       }
     } else {
       workspace.batchGroups[workspace.batchGroupCount] = group;
@@ -812,17 +1144,26 @@ function predictDraws(workspace: IProjectionScanWorkspace): number {
 }
 
 function collectBelowFloor(workspace: IProjectionScanWorkspace): void {
+  for (let index = 0; index < workspace.activeSkinnedGroupCount; index += 1) {
+    const group = workspace.activeSkinnedGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    for (let member = 0; member < group.memberCount; member += 1) {
+      workspace.belowFloor[workspace.belowFloorCount] = group.members[member] as Mesh;
+      workspace.belowFloorCount += 1;
+    }
+  }
   for (let index = 0; index < workspace.activeGroupCount; index += 1) {
     const group = workspace.activeGroups[index] as IProjectionBatchGroup;
     if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
     for (let member = 0; member < group.memberCount; member += 1) {
       const mesh = group.members[member] as Mesh;
-      // Claimed by a batched material group this scan: it is already an instance inside a batch,
-      // not below the floor. Everything else here — including members evicted from a material
-      // group by the stream watch, whose geometry groups are always below the floor — keeps its
-      // own draw. A material group needs no sweep of its own: every one of its members came from
+      // Claimed by a batched material or uniform group this scan: it is already an instance inside
+      // a batch, not below the floor. Everything else here — including members evicted from a
+      // material group by the stream watch, whose geometry groups are always below the floor — keeps
+      // its own draw. A material group needs no sweep of its own: every one of its members came from
       // a below-floor geometry group, so this loop already reaches each of them exactly once.
       if (workspace.materialClaims.get(mesh) === workspace.scanNumber) continue;
+      if (uniformClaimed(workspace, mesh)) continue;
       workspace.belowFloor[workspace.belowFloorCount] = mesh;
       workspace.belowFloorCount += 1;
     }
@@ -860,7 +1201,7 @@ export function scanProjection(
       seen: workspace.seen,
     };
   }
-  if (workspace.eligibleCount < minMeshes) {
+  if (workspace.eligibleCount + workspace.skinnedCount * SKINNED_FLOOR_WEIGHT < minMeshes) {
     return {
       exactLane: workspace.exactLane,
       exactLaneCount: workspace.exactLaneCount,
@@ -900,6 +1241,8 @@ export function scanProjection(
       batchGroupCount: workspace.batchGroupCount,
       materialGroups: workspace.materialGroups,
       materialGroupCount: workspace.materialGroupCount,
+      skinnedGroups: workspace.skinnedGroups,
+      skinnedGroupCount: workspace.skinnedGroupCount,
       belowFloor: workspace.belowFloor,
       belowFloorCount: workspace.belowFloorCount,
       exactLane: workspace.exactLane,

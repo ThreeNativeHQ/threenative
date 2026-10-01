@@ -106,6 +106,23 @@ export interface IThreeNativeModelPassesConfig {
 
 /** Model optimization options for the asset compile step; `"none"` ships sources verbatim. */
 export interface IThreeNativeModelsConfig {
+  /**
+   * Lossless scene-graph compaction: flatten empty transform chains, join sibling primitives
+   * that share a material, and batch a mesh several nodes reuse as `EXT_mesh_gpu_instancing`.
+   *
+   * On by default; `false` ships the scene graph as authored. A node matching `protectedPattern`,
+   * named in `protectedNames`, targeted by an animation or a skin joint is never merged or
+   * instanced, so an exact-name lookup or a bone-driven node survives.
+   */
+  readonly compact?:
+    | boolean
+    | {
+        readonly flatten?: boolean;
+        readonly instance?: boolean | { readonly min?: number };
+        readonly join?: boolean;
+        readonly protectedNames?: readonly string[];
+        readonly protectedPattern?: string;
+      };
   /** Standard glTF TEXCOORD_1 atlas generation for offline static-light assets. */
   readonly lightmap?: {
     readonly atlasSize: number;
@@ -253,6 +270,47 @@ export interface IThreeNativeLodConfig {
   readonly runtime?: IThreeNativeLodRuntimeConfig;
 }
 
+/** One measured byte ceiling on a produced artifact, and what crossing it does. */
+export interface IThreeNativeArtifactBudgetLimit {
+  /** Bytes, exclusive: a build measuring exactly the limit is inside it. */
+  readonly limit: number;
+  /** `"error"` refuses the build and keeps the previous artifact; `"warn"` prints and publishes. */
+  readonly severity: "error" | "warn";
+}
+
+/**
+ * Runtime ceilings a profile wants every playtest of the artifact it builds to hold.
+ *
+ * The fields are the playtest harness's own `assert.performance` fields, one name for one meaning:
+ * a budget declared here is merged into each scenario's performance assertion, so a budget and a
+ * scenario bound the same number instead of two vocabularies for one measurement. Spelled out
+ * rather than imported — the harness runs against plain Three.js with no dependency on this
+ * package, and core must not invert that. A closed key list validated in both places is the price;
+ * `create-threenative/__tests__/build-report.spec.ts` fails if the two lists drift.
+ */
+export interface IThreeNativePerformanceBudget {
+  /** Per-pass draw-call ceilings, keyed by pass kind: main, shadow, reflection, nested. */
+  readonly maxPassDrawCalls?: Readonly<Partial<Record<ThreeNativeRenderPassKind, number>>>;
+  /** Per-pass triangle ceilings, keyed by pass kind: main, shadow, reflection, nested. */
+  readonly maxPassTriangles?: Readonly<Partial<Record<ThreeNativeRenderPassKind, number>>>;
+  /** Per-phase millisecond ceilings at nearest-rank p95: hostGap, update, render, overlay, residual. */
+  readonly maxPhaseMsP95?: Readonly<Partial<Record<ThreeNativeFramePhase, number>>>;
+  /** Maximum renderer draw-call count across every pass combined. */
+  readonly maxDrawCalls?: number;
+  /** Maximum nearest-rank 95th-percentile frame time in milliseconds. */
+  readonly maxFrameMsP95?: number;
+  /** Maximum renderer triangle count across every pass combined. */
+  readonly maxTriangles?: number;
+  /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */
+  readonly minFps?: number;
+}
+
+/** The engine's frame-budget phases, as a budget spells them. */
+export type ThreeNativeFramePhase = "hostGap" | "overlay" | "render" | "residual" | "update";
+
+/** The render-pass kinds a per-pass budget bounds. */
+export type ThreeNativeRenderPassKind = "main" | "shadow" | "reflection" | "nested";
+
 export interface IThreeNativeConfig {
   readonly app?: {
     readonly id?: string;
@@ -267,7 +325,10 @@ export interface IThreeNativeConfig {
     readonly fullscreen?: boolean;
     readonly keepScreenOn?: boolean;
     /**
-     * Maximum native presentation rate in frames per second. Defaults to 60; `0` removes the
+     * Maximum native presentation rate in frames per second. Left out, it follows the display's own
+     * refresh rate capped at 120 on desktop and web, and stays 60 on mobile where the ceiling is
+     * power and heat; the resolved value and its source are reported on every `TN_FRAME_BUDGET`
+     * line as `targetFps` and `targetSource`. A number set here wins outright, and `0` removes the
      * software ceiling. Android also submits this value as the surface's preferred frame rate,
      * which the display policy may decline because of hardware, power, or thermal state. Android
      * uses non-blocking presentation above 60 fps so a missed high-refresh interval does not fall
@@ -293,6 +354,51 @@ export interface IThreeNativeConfig {
     readonly maximized?: boolean;
     readonly resizable?: boolean;
   };
+  /**
+   * Named cook profiles: one authored asset tree, one compiler, a different representation per
+   * artifact. `--profile` on `threenative build` wins over `defaults[target]`; with neither, the
+   * `assets` block is used exactly as declared. An overlay changes resource-processing options
+   * only — the source root, the output root, worker concurrency and exclusions stay in `assets`.
+   */
+  readonly buildProfiles?: {
+    readonly defaults?: {
+      readonly android?: string;
+      readonly desktop?: string;
+      readonly ios?: string;
+      readonly web?: string;
+    };
+    readonly profiles: Readonly<
+      Record<
+        string,
+        {
+          /**
+           * Byte ceilings on what this profile actually produced, measured after packaging and
+           * checked before the artifact is published. `artifactBytes` is the artifact itself (a
+           * file, or the recursive sum of a directory, `.app` bundle or outDir);
+           * `packagedAssetBytes` is the sum of the asset files that survived the packaging
+           * selector. `"error"` refuses the build and leaves the previous artifact in place;
+           * `"warn"` prints and publishes.
+           */
+          readonly artifactBudget?: {
+            readonly artifactBytes?: IThreeNativeArtifactBudgetLimit;
+            readonly packagedAssetBytes?: IThreeNativeArtifactBudgetLimit;
+          };
+          /**
+           * Runtime ceilings this profile's artifact must hold, published into the
+           * `<artifact>.build-report.json` a build writes beside it and merged by
+           * `threenative-playtest --build-report` into every scenario's `assert.performance`. The
+           * build measures none of it — it cannot; the numbers exist only once a runtime drew
+           * frames — so a budget never refuses a build and never passes one either.
+           */
+          readonly performanceBudget?: IThreeNativePerformanceBudget;
+          readonly assets?: Pick<
+            NonNullable<IThreeNativeConfig["assets"]>,
+            "audio" | "budget" | "lod" | "models" | "targets" | "textures"
+          >;
+        }
+      >
+    >;
+  };
   readonly assets?: {
     /**
      * Audio conditioning options, or `"none"` to ship every clip exactly as committed. Absent
@@ -313,6 +419,11 @@ export interface IThreeNativeConfig {
         };
     /** Source-relative globs omitted from builds; excluded bytes are still reported. */
     readonly exclude?: readonly string[];
+    /**
+     * How many cook workers a bake may run at once; absent means the driver's default,
+     * min(4, cores - 1). Not part of any cache key, so changing it re-cooks nothing.
+     */
+    readonly concurrency?: number;
     /**
      * Automatic discrete LOD. `assets.lod: {}` opts in with the balanced default; `false` or
      * `{ enabled: false }` is the absolute kill switch, and per-asset overrides key off canonical
@@ -355,7 +466,8 @@ export interface IThreeNativeConfig {
      */
     readonly alphaAntialiasing?: boolean;
     /**
-     * Whether the engine may render an internal mirror of the scene to collapse repeated draws.
+     * Whether the engine may render an internal mirror of the scene to collapse repeated draws,
+     * and how often that mirror proves a batched material still matches its group's shared draw.
      *
      * On by default, which is the shipping behaviour and is what an unset option means. The mirror
      * is opportunistic and correctness-preserving, but it pays a reconciliation cost per frame, so
@@ -364,8 +476,26 @@ export interface IThreeNativeConfig {
      * eligibility scan, so the opt-out costs nothing rather than declining each frame; the authored
      * scene is what renders. The `TN_RENDER_PROJECTION` marker still reports it, with its own
      * reason code rather than one of the measured declines.
+     *
+     * An object instead of `false` names the material check:
+     *
+     * - `materialChecks: "spread"` — **the default.** A bounded slice of the batched materials is
+     *   proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs
+     *   512 checks rather than 4,096. A material that gains a roughness, a map or a define still
+     *   leaves its group and is drawn exactly; it is caught up to `materialCheckStaleFrames` frames
+     *   later, and `TN_RENDER_PROJECTION` reports that bound. A base-colour edit never waits: the
+     *   per-instance colour is O(1) per member and always exact.
+     * - `materialChecks: "everyFrame"` — the named alternative, and the check exactly as it shipped
+     *   before the sweep existed: every material proved every frame, at about 1.1 µs a material. Use
+     *   it when a game would rather pay the per-frame cost than accept the bound.
+     *
+     * Any other value throws at startup rather than falling back to a default nobody asked for.
      */
-    readonly projection?: boolean;
+    readonly projection?:
+      | boolean
+      | {
+          readonly materialChecks?: "spread" | "everyFrame";
+        };
     /**
      * Projected diameter, in raster pixels, below which the engine does not submit an object to
      * the render camera. On by default at a conservative **0.5 px**: an object under half a pixel

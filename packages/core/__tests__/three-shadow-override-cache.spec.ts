@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { BoxGeometry, Camera, Mesh, Scene } from "three";
 // @ts-expect-error Three's private renderer module has no public declaration; this test must exercise it directly.
 import RenderObjects from "three/src/renderers/common/RenderObjects.js";
@@ -26,7 +23,7 @@ import { describe, expect, it, vi } from "vitest";
 // with `dynamicOpen` and `clipOpen` both exactly zero — the version gate was the only one open.
 // Evidence: artifacts/wildwood-performance/cache-gate/.
 //
-// The fix lives in `patches/three@0.185.1.patch`: the per-object scratchpad write goes to the
+// The fix lives in `packages/core/patches/three@0.185.1.patch`: the per-object scratchpad write goes to the
 // backing field so the shared version stops moving, and each render object tracks its own source
 // material's version instead, which is the signal that actually belongs to it.
 
@@ -138,6 +135,8 @@ interface IRendererProbe {
   _currentSourceMaterial: NodeMaterial | null;
   readonly backend: { isWebGPUBackend: true };
   readonly contextNode: { id: number; version: number };
+  readonly currentSamples: number;
+  readonly getRenderTarget: () => { samples: number } | null;
 }
 
 function renderObjectsProbe(): {
@@ -145,11 +144,16 @@ function renderObjectsProbe(): {
   makeSource: (alphaTest: number) => MeshStandardNodeMaterial;
   makeObject: (source: NodeMaterial) => Mesh;
   override: InternalNodeMaterial;
+  /** Mimic the engine's `compileAsync()` swap: a non-null framebuffer target while it compiles. */
+  setRenderTargetSamples: (samples: number) => void;
 } {
+  let renderTarget: { samples: number } | null = null;
   const renderer: IRendererProbe = {
     _currentSourceMaterial: null,
     backend: { isWebGPUBackend: true },
     contextNode: { id: 1, version: 0 },
+    currentSamples: 0,
+    getRenderTarget: () => renderTarget,
   };
   const nodes = {
     delete: vi.fn(),
@@ -186,6 +190,9 @@ function renderObjectsProbe(): {
     },
     makeObject: (source) => new Mesh(new BoxGeometry(1, 1, 1), source),
     override,
+    setRenderTargetSamples: (samples) => {
+      renderTarget = samples === 0 ? null : { samples };
+    },
   };
 }
 
@@ -344,19 +351,19 @@ describe("three RenderObjects source invalidation", () => {
     expect(secondGetCacheKey).not.toHaveBeenCalled();
   });
 
-  it("keeps every shipped Three.js patch copy byte-identical", () => {
-    const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-    const patchPaths = [
-      resolve(repositoryRoot, "patches/three@0.185.1.patch"),
-      resolve(repositoryRoot, "packages/core/patches/three@0.185.1.patch"),
-      resolve(
-        repositoryRoot,
-        "packages/create-threenative/template-assets/patches/three@0.185.1.patch",
-      ),
-    ];
-    const [rootPatch, corePatch, templatePatch] = patchPaths.map((path) => readFileSync(path));
+  it("keeps a render object's key stable while a compile swaps the render target", () => {
+    const probe = renderObjectsProbe();
+    const source = probe.makeSource(0.5);
+    const object = probe.makeObject(source);
+    const renderObject = probe.get(object, source);
 
-    expect(corePatch).toEqual(rootPatch);
-    expect(templatePatch).toEqual(rootPatch);
+    // `compileAsync()` replaces `renderer.getRenderTarget()` with the framebuffer target for the
+    // length of its slice, and a live frame then reads `currentSamples`. A dynamic key that reads
+    // `getRenderTarget()` disagrees between the two, so `RenderObjects.get` disposes this object
+    // and its pipeline is recompiled — the arm64 CI stall that took the playtest screenshot down.
+    probe.setRenderTargetSamples(4);
+    expect(probe.get(object, source)).toBe(renderObject);
+    probe.setRenderTargetSamples(0);
+    expect(probe.get(object, source)).toBe(renderObject);
   });
 });

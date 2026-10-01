@@ -1,8 +1,19 @@
 // Native entry for the PRD-117 ThreeNative desktop/device arms. It drives the same ladder as the
 // web entry against the same `game.ts`, and prints the §5.1 run report between two markers because
 // a native host has no `window` for the collector to read.
-import { VIEWPORT_HEIGHT, VIEWPORT_WIDTH, createLoadTestHarness } from "./game.js";
-import { type RenderMode, percentile } from "./workload.js";
+import { MatrixWorldPass } from "../../../packages/core/src/matrix-world.js";
+import { RenderCameraCull } from "../../../packages/core/src/render-camera-cull.js";
+import { SceneRenderProjection } from "../../../packages/core/src/renderProjection.js";
+import { createLoadTestHarness } from "./game.js";
+import { createFoxCrowd } from "./ladder-characters.js";
+import { ladderRank } from "./ladder.js";
+import {
+  type RenderMode,
+  isProjectedRung,
+  isRealisticRung,
+  parseAxesRecord,
+  percentile,
+} from "./workload.js";
 
 declare global {
   var canvas: HTMLCanvasElement | undefined;
@@ -12,24 +23,62 @@ declare const __TN_PLATFORM__: string;
 
 declare const __TN_BENCH_CONFIG__: Readonly<{
   animate: boolean;
+  axes: Record<string, string | undefined>;
   frames: number;
+  height: number;
   refreshHz: number;
   ladder: number[];
   modes: RenderMode[];
   repeats: number;
+  sourceSha?: string;
   warmup: number;
+  width: number;
 }>;
 
 const config = __TN_BENCH_CONFIG__;
+const axes = parseAxesRecord(config.axes);
 
-function nextFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+function nextFrame(): Promise<number> {
+  return new Promise((resolve) => requestAnimationFrame((timestamp) => resolve(timestamp)));
 }
 
 async function main(): Promise<void> {
+  const presentMode =
+    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
+      ?.presentMode ?? "fifo";
+  // The desktop collector requests immediate presentation. The host's separate 60 FPS ceiling
+  // otherwise still paces the run, so require its existing diagnostic uncapped mode as well.
+  if (__TN_PLATFORM__ !== "android" && presentMode !== "fifo") {
+    const presentationCap = (globalThis as { __tnPresentationCap?: (hz: number) => number })
+      .__tnPresentationCap;
+    if (typeof presentationCap !== "function" || presentationCap(0) !== 0)
+      throw new Error("TN_BENCH_PRESENTATION_CAP_NOT_DISABLED");
+  }
   const surface = globalThis.canvas;
   if (surface === undefined) throw new Error("TN_BENCH_NO_CANVAS");
-  const harness = await createLoadTestHarness(surface, "native host surface", config.animate);
+  // The characters are decoded before the harness exists, and only when a ladder rung asked for
+  // them, so R3's first measured frame is a skinning frame rather than a decode frame.
+  // Only R3 and above draw the crowd, so R1 and R2 do not pay to build 50 rigs they never attach.
+  const characters = config.modes.some(
+    (mode) => isRealisticRung(mode) && ladderRank(mode) >= ladderRank("R3"),
+  )
+    ? await createFoxCrowd()
+    : undefined;
+  // The projection is passed in rather than imported by `game.ts`, so the `plain-three-webgpu`
+  // control can drive the same harness without the framework in its graph. This arm has one, and
+  // L3 is a native cell. The other two passes a shipped `defineGame` installs around the draw go
+  // with it, at the same defaults `defineGame` resolves (`renderer.matrixWorld` is `"visible"`,
+  // `renderer.minimumProjectedPixels` is 0.5), because an L3 that kept three's own world-matrix
+  // walk and no projected-size cull would time a pipeline no ThreeNative game ever draws with.
+  const harness = await createLoadTestHarness(
+    surface,
+    "native host surface",
+    config.animate,
+    axes,
+    (scene, options) => new SceneRenderProjection(scene, options),
+    { cameraCull: new RenderCameraCull(), matrixWorld: new MatrixWorldPass() },
+    characters,
+  );
   const rungs: unknown[] = [];
 
   for (const objectCount of config.ladder) {
@@ -37,7 +86,7 @@ async function main(): Promise<void> {
       for (let repeat = 0; repeat < config.repeats; repeat += 1) {
         console.log(`begin ${mode}@${objectCount}`);
         harness.setRung({ mode, objectCount });
-        if (mode === "L3") {
+        if (isProjectedRung(mode)) {
           harness.beginCollapse();
           for (let settle = 0; settle < 5_000 && harness.collapseStatus() === "pending"; settle++) {
             // See the web entry: drawing one settle frame in eight keeps the host's frame pump
@@ -53,23 +102,35 @@ async function main(): Promise<void> {
             }
             await nextFrame();
           }
-          // `projected` is the projection's applied state. The pass this replaced said `applied`;
-          // both mean the same thing here, that the optimizer took the scene rather than handing
-          // the frame back, and a rung that measured an un-optimized scene must still refuse to
-          // report rather than publish L1 timings under an L3 label.
-          if (harness.collapseStatus() !== "projected")
-            throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
-          // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
-          // dangerous outcome here, not the good one.
-          const moving = harness.collapseMovingParts();
-          if (moving < objectCount)
-            throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
+          // L4 measures what the shipped default costs on a scene nothing may batch, so the
+          // projection declining is that row's answer and `drawCalls` is what records it. The
+          // realistic-scene rungs are L3's authoring, so they keep L3's two guards.
+          if (mode === "L3" || isRealisticRung(mode)) {
+            // `projected` is the projection's applied state. The pass this replaced said `applied`;
+            // both mean the same thing here, that the optimizer took the scene rather than handing
+            // the frame back, and a rung that measured an un-optimized scene must still refuse to
+            // report rather than publish L1 timings under an L3 label.
+            if (harness.collapseStatus() !== "projected")
+              throw new Error(`TN_BENCH_COLLAPSE_${harness.collapseStatus().toUpperCase()}`);
+            // Fail closed on the frozen scene: see the web entry for why a fast still picture is the
+            // dangerous outcome here, not the good one.
+            const moving = harness.collapseMovingParts();
+            if (moving < objectCount)
+              throw new Error(`TN_BENCH_COLLAPSE_FROZE:${moving}/${objectCount}`);
+          }
         }
         const frameMs: number[] = [];
         // Split the frame in two: `stepMs` is the game-side transform loop, the remainder is the
         // renderer. Without the split a mobile regression cannot be attributed to either.
         const stepMs: number[] = [];
         const collapseMs: number[] = [];
+        // The rAF timestamp the host handed this frame's callback, aligned one-to-one with
+        // frameMs/stepMs/collapseMs so a budget sample can be joined to the host-gap meter's
+        // rafTimestampMs without inferring it from wall time.
+        const rafTimestampMs: number[] = [];
+        let ladder: unknown;
+        let foxMeasurement: unknown;
+        let renderCheck: unknown;
         let drawCalls = 0;
         let triangles = 0;
         let visibleObjects = 0;
@@ -83,8 +144,15 @@ async function main(): Promise<void> {
             drawCalls = stats.drawCalls;
             triangles = stats.triangles;
             visibleObjects = stats.visibleObjects;
+            // The rung's asserted scene cost, read at the same frame as the counters.
+            ladder = harness.ladderCounts();
+            foxMeasurement = harness.foxMeasurement();
           }
-          await nextFrame();
+          // PRD-464: the rung's own read-back, on the last warmup frame so the GPU stall the
+          // read-back causes never lands inside a measured frame. See the web entry.
+          if (frameIndex === config.warmup - 1 && isRealisticRung(mode))
+            renderCheck = await harness.probeFrame();
+          const rafTimestamp = await nextFrame();
           const now = performance.now();
           const interval = now - previous;
           previous = now;
@@ -92,15 +160,21 @@ async function main(): Promise<void> {
             frameMs.push(Math.round(interval * 1000) / 1000);
             stepMs.push(Math.round(harness.stepMs * 1000) / 1000);
             collapseMs.push(Math.round(harness.collapseMs * 1000) / 1000);
+            rafTimestampMs.push(Math.round(rafTimestamp * 1000) / 1000);
           }
         }
         rungs.push({
+          collapseMs,
           drawCalls,
           frameMs,
+          ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
+          ...(ladder === undefined ? {} : { ladder }),
+          ...(renderCheck === undefined ? {} : { renderCheck }),
           stepMs,
           mode,
           objectCount,
           positionHash: harness.positionHash,
+          rafTimestampMs,
           repeat,
           triangles,
           visibleObjects,
@@ -116,11 +190,9 @@ async function main(): Promise<void> {
   // property access like `scope.__TN_PLATFORM__` is never replaced and silently reads undefined —
   // which filed every phone run as `tn-desktop`.
   const onAndroid = __TN_PLATFORM__ === "android";
-  const presentMode =
-    (globalThis as { __THREENATIVE_NATIVE__?: { presentMode?: string } }).__THREENATIVE_NATIVE__
-      ?.presentMode ?? "fifo";
   const report = {
     arm: onAndroid ? "tn-android" : "tn-desktop",
+    axes,
     build: {
       notes:
         "owned C++ runtime, three/webgpu render path; defineGame loop not in the measured path",
@@ -131,19 +203,26 @@ async function main(): Promise<void> {
     // cosmetic — the scorer refuses to compare two arms whose displays disagree.
     device: { battery: null, label: onAndroid ? "android-native" : "desktop-native-linux" },
     display: {
-      height: VIEWPORT_HEIGHT,
+      // The host surface this run was given, not the drawing buffer a rung drew into: R1-R4 render
+      // at 1280x720 inside the 1920x1080 window the ladder is run with, and the per-rung
+      // `ladder.resolution` is the field that says so.
+      height: config.height,
       refreshHz: __TN_BENCH_CONFIG__.refreshHz,
       // Read back from the surface, never assumed: the host reports `fifo`, `immediate` or
       // `mailbox`, and only `fifo` pins frames to the display. Reporting `true` unconditionally is
       // how an uncapped run still described itself as display-bound.
       vsync: presentMode === "fifo",
-      width: VIEWPORT_WIDTH,
+      width: config.width,
     },
     driver: {
       adapter: harness.adapterLabel,
       renderer: "three/webgpu WebGPURenderer (native host)",
     },
     engine: { name: "threenative", version: "workspace" },
+    // Only the one field the host can know: the module graph and adapter identity the web arm
+    // derives need an HTTP server this target has none of, and a partial identity is read as
+    // "not an accepted baseline" rather than as a claim.
+    ...(config.sourceSha === undefined ? {} : { identity: { sourceSha: config.sourceSha } }),
     rungs,
   };
   // Android's logcat truncates a line at ~1 KB, which silently cut every report this arm emitted

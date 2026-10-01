@@ -1,0 +1,74 @@
+{
+  "name": "enemy-uses-crouch-clips",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "enemy",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn-grace",
+      "waitTicks": 170,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "advance-1",
+      "press": "KeyW",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-1",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "he-hunts",
+      "waitTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "advance-2",
+      "press": "KeyW",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot-2",
+      "press": "Space",
+      "holdTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "he-searches",
+      "waitTicks": 400,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "enemy",
+        "component": "crouchClipFrames",
+        "gte": 10,
+        "allowTrivial": "clip frame counters rest at zero until the animation actually runs"
+      }
+    ]
+  }
+}

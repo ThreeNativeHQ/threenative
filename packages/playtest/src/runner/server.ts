@@ -176,14 +176,47 @@ export function pageLifecycleDiagnostic(
       "The renderer process died mid-run, so no assertion after that point was observed. Re-run with a smaller scene or a hardware GPU; under a virtual display the software WebGPU path is the usual cause.",
     );
   }
-  const where = lifecycle.navigations.length === 0
-    ? "an unrecorded location"
-    : `'${lifecycle.navigations.join("', '")}'`;
   const observed = [
     `page closed: ${lifecycle.closed}`,
     `main-frame navigations: ${lifecycle.frameNavigations.length}`,
     ...(lifecycle.tail.length === 0 ? [] : [`last console: ${lifecycle.tail.join(" | ")}`]),
   ].join("; ");
+  // A closed page is not a navigated one. Playwright reports a browser or renderer that went away
+  // with the same "Target page, context or browser has been closed" wording, and a renderer killed
+  // by a GPU stall or an out-of-memory kill never navigates anything — so this used to report a
+  // navigation the lifecycle listeners had already proven did not happen, with a fix aimed at the
+  // game ("remove the navigation from the game") for a machine failure. One production profile hit
+  // it at 18.8 s of a 60 s window: `page closed: true; main-frame navigations: 1`, the one being the
+  // run's own. The same false reading cost the suite its expected transport diagnostics once
+  // (`docs/verification/runtime-perf-state.md`, e2e-runner.spec.ts).
+  if (lifecycle.closed && lifecycle.navigations.length === 0) {
+    return playtestDiagnostic(
+      "TN_PLAYTEST_PAGE_CLOSED",
+      `The page went away without navigating while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,
+      "Nothing moved the document: the page closed mid-run, so every observation after that point is missing. This is the machine rather than the game — check for a GPU stall, an out-of-memory kill, or another browser benchmark competing for the display, then re-run. Nothing in the scenario can fix it.",
+    );
+  }
+  // A renderer that goes away raises neither event. Playwright destroys the execution context the
+  // same way for a dead renderer and a moved document, and a software rasteriser losing its device
+  // mid-frame (run 36821800527, `template-nonvisual (starter, 2/3)`: one 2649.9 ms frame at 4.6 s
+  // uptime, then `page closed: false` and one main-frame navigation — the run's own) produced the
+  // navigation reading, whose fix is aimed at the game. Nothing moved the document and nothing
+  // closed the page, so the report says what was observed.
+  //
+  // It then stops there, deliberately. The absence of both events says how the page died, not why:
+  // a software adapter running a hardware-tier look is the same observation as an out-of-memory
+  // kill, and the last line of the console tail usually separates them. Blaming the machine alone
+  // sent this exact reading back for a re-run that the look would have fixed.
+  if (!lifecycle.closed && lifecycle.navigations.length === 0) {
+    return playtestDiagnostic(
+      "TN_PLAYTEST_PAGE_CRASHED",
+      `The renderer went away without navigating or closing while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,
+      "Nothing moved the document and nothing closed the page, so Playwright destroyed the execution context because the renderer itself is gone, and every observation after that point is missing. The events say how the page died, not why: read the console tail above for the last frame cost or device-loss line. A frame that cost seconds on a software adapter is what a hardware look costs there — check the adapter and the tier the run reported before re-running, and check for a GPU stall, a lost or out-of-memory device, or another browser benchmark competing for the display. No scenario step can fix this.",
+    );
+  }
+  const where = lifecycle.navigations.length === 0
+    ? "an unrecorded location"
+    : `'${lifecycle.navigations.join("', '")}'`;
   return playtestDiagnostic(
     "TN_PLAYTEST_PAGE_NAVIGATED",
     `The page navigated to ${where} while the scenario was running at '${url}'; runner error: ${detail}. Observed: ${observed}.`,

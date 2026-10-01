@@ -99,6 +99,24 @@ test("desktop runner forwards --cpu-prof to the native host", async () => {
   expect(constructed).toEqual([["--cpu-prof=/project/out.cpuprofile"]]);
 });
 
+test("desktop runner gives the driver the run's screenshot budget", async () => {
+  // A run can pass its 300-frame gate and still need longer than the driver's 5s default to
+  // produce one screenshot on a loaded arm64 runner, which then fails
+  // TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE. The transport already spends config.timeoutMs.
+  const constructed: (number | undefined)[] = [];
+  const driverFactory = (options: { screenshotTimeoutMs?: number }): IDevicePlaytestDriver => {
+    constructed.push(options.screenshotTimeoutMs);
+    throw new Error("captured");
+  };
+
+  await runDesktopPlaytest(
+    { ...minimalConfig("desktop"), timeoutMs: 30_000 },
+    { driverFactory },
+  ).catch(() => undefined);
+
+  expect(constructed).toEqual([30_000]);
+});
+
 test("desktop CLI routing selects the shared desktop runner", async () => {
   const calls: string[] = [];
   const report = { pass: true } as never;
@@ -446,39 +464,174 @@ test("desktop signal during preparation stops before bridge evaluation continues
   expect(driver?.stopped).toBe(true);
 });
 
-test.skipIf(process.platform === "win32")("desktop screenshot timeout fails closed", async () => {
+test.skipIf(process.platform === "win32")("desktop screenshot timeout fails closed with the host's own words", async () => {
+  // A timeout that names only "request timed out" sends the reader to the wrong layer: the host
+  // said something, and whether it still sees the request file says which half broke — the file
+  // left behind means it never looked, a consumed one means it read the request and the capture
+  // never landed. Both readings fail closed under the same prefix.
   const root = await makeTempDir("playtest-desktop-screenshot-");
   const executable = join(root, "native-test.mjs");
-  await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n");
+  await writeFile(executable, [
+    "#!/usr/bin/env node",
+    'if (process.argv[2] !== "silent") {',
+    '  console.log("[Playtest] mailbox ready");',
+    '  console.log("[Screenshot] waiting for request");',
+    '  console.log("platform noise the reader does not need");',
+    "}",
+    'if (process.argv[2] === "error") {',
+    '  console.log("[Screenshot] request pending");',
+    '  console.log("platform noise the reader does not need");',
+    // Untagged, so a tag-only tail drops the one line that says why the frame never came.
+    '  console.error("eglInitialize failed: no display");',
+    "}",
+    "setInterval(() => {}, 1000);",
+    "",
+  ].join("\n"));
   await chmod(executable, 0o755);
-  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root, screenshotTimeoutMs: 20 });
+
+  const driveTimeout = async (args: string[]): Promise<string> => {
+    const driver = new DesktopPlaytestDriver({ executable, args, mailboxRoot: root, screenshotTimeoutMs: 1_000 });
+    try {
+      await driver.prepare("unused");
+      return await driver.screenshot(join(root, "capture.png")).then(
+        () => { throw new Error("screenshot unexpectedly resolved"); },
+        (error: unknown) => (error as Error).message,
+      );
+    } finally {
+      await driver.stop();
+    }
+  };
+
+  try {
+    const untouched = await driveTimeout([]);
+    expect(untouched).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(untouched).toContain("request file still present");
+    expect(untouched).toContain("[Screenshot] waiting for request");
+    expect(untouched).toContain("[Playtest] mailbox ready");
+    // The tail is short and tagged: a line the reader cannot act on is not evidence.
+    expect(untouched).not.toContain("platform noise the reader does not need");
+
+    // A host that logged nothing still has to name the state it was in, not print an empty tail.
+    const mute = await driveTimeout(["silent"]);
+    expect(mute).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(mute).toContain("request file still present");
+    expect(mute).toContain("native host output: none captured");
+
+    // An untagged error is the root cause in most real timeouts (TN_FRAME_NOT_PRESENTED, a lost
+    // EGL context), so the tail carries it beside the tagged lines — and still drops the noise.
+    const errored = await driveTimeout(["error"]);
+    expect(errored).toContain("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(errored).toContain("[Screenshot] request pending");
+    expect(errored).toContain("eglInitialize failed: no display");
+    expect(errored).not.toContain("platform noise the reader does not need");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("a failed desktop screenshot still leaves the host console in the artifact directory", async () => {
+  // A screenshot that never arrives reports its own tail, but the timing and error lines printed
+  // before it were thrown away with the host — TN_FRAME_NOT_PRESENTED with nothing to explain it.
+  // The original failure must still be what propagates; the artifact is written beside it.
+  const console = [
+    { text: "[Playtest] mailbox ready", type: "log" },
+    { text: "[Screenshot] request consumed, no png written", type: "log" },
+    { text: "TN_FRAME_NOT_PRESENTED (texture=false)", type: "error" },
+  ];
+  const screenshotError = new Error(
+    "TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: request timed out; request file consumed",
+  );
+  const projectPath = await makeTempDir("playtest-desktop-console-artifact-");
+  try {
+    await expect(runDesktopScenario(2, { console, projectPath, screenshotError }))
+      .rejects.toThrow(screenshotError.message);
+    expect(JSON.parse(await readFile(join(projectPath, "artifacts", "console.json"), "utf8"))).toEqual(console);
+  } finally {
+    await rm(projectPath, { force: true, recursive: true });
+  }
+});
+
+// Arm64 llvmpipe serves endDawnFrame at p50 333ms and max 4.3s, so the host picks the request up
+// inside the short wait and then needs far longer than it for the readback and the present. One
+// deadline for both phases reported that healthy host as TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE.
+test.skipIf(process.platform === "win32")("desktop screenshot outlives the unpicked-request wait", async () => {
+  const root = await makeTempDir("playtest-desktop-slow-screenshot-");
+  const executable = join(root, "native-test.mjs");
+  await writeFile(executable, `#!/usr/bin/env node
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { env } from "node:process";
+const request = \`\${env.TN_PLAYTEST_MAILBOX_ROOT}/tn-playtest-screenshot-request.txt\`;
+setInterval(() => {
+  if (!existsSync(request)) return;
+  unlinkSync(request);
+  setTimeout(() => writeFileSync(env.TN_PLAYTEST_CAPTURE, Buffer.from("${nonBlankPngBase64()}", "base64")), 800);
+}, 5);
+`);
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({
+    env: { TN_PLAYTEST_CAPTURE: join(root, "capture.png") },
+    executable,
+    mailboxRoot: root,
+    screenshotTimeoutMs: 200,
+  });
   try {
     await driver.prepare("unused");
-    await expect(driver.screenshot(join(root, "capture.png")))
-      .rejects.toThrow("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    await driver.screenshot(join(root, "capture.png"));
   } finally {
     await driver.stop();
     await rm(root, { force: true, recursive: true });
   }
 });
 
+test.skipIf(process.platform === "win32")("desktop screenshot timeout can be raised by environment", async () => {
+  const previous = process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS;
+  process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = "75";
+  const root = await makeTempDir("playtest-desktop-screenshot-env-");
+  const executable = join(root, "native-test.mjs");
+  await writeFile(executable, "#!/usr/bin/env node\nsetInterval(() => {}, 1000);\n");
+  await chmod(executable, 0o755);
+  const driver = new DesktopPlaytestDriver({ executable, mailboxRoot: root });
+  const started = Date.now();
+  try {
+    await driver.prepare("unused");
+    await expect(driver.screenshot(join(root, "capture.png")))
+      .rejects.toThrow("TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE");
+    expect(Date.now() - started).toBeLessThan(1_000);
+  } finally {
+    if (previous === undefined) process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = undefined;
+    else process.env.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS = previous;
+    await driver.stop();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 interface IDesktopScenarioOptions {
+  console?: { text: string; type: string }[];
   mailboxFile?: boolean;
   onDriver?: (driver: FakeDesktopDriver) => void;
   onPrepare?: () => void;
+  /** A caller-owned root the caller also removes, so its artifacts outlive the run. */
+  projectPath?: string;
+  screenshotError?: Error;
   signalBeforeStart?: boolean;
   stopError?: Error;
 }
 
 async function runDesktopScenario(minDistance: number, options: IDesktopScenarioOptions = {}) {
-  const projectPath = await makeTempDir("playtest-desktop-scenario-");
+  const ownsProjectPath = options.projectPath === undefined;
+  const projectPath = options.projectPath ?? await makeTempDir("playtest-desktop-scenario-");
   const scenarioPath = join(projectPath, "scenario.json");
   await writeFile(scenarioPath, JSON.stringify({
     artifacts: { screenshots: false },
     assert: { movement: { entity: "player", minDistance } },
     name: "desktop-cross-target-scenario",
     schemaVersion: 1,
-    steps: [{ holdFrames: 3, press: "KeyW", release: true }],
+    steps: [{
+      holdFrames: 3,
+      press: "KeyW",
+      release: true,
+      ...(options.screenshotError === undefined ? {} : { screenshot: "frame" }),
+    }],
     subject: "player",
     target: "desktop",
     viewport: { height: 360, width: 640 },
@@ -486,7 +639,13 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   }));
   const endpoint = `http://127.0.0.1:${await availablePort()}/playtest`;
   const moving = movingBridge();
-  const driver = new FakeDesktopDriver(moving.bridge, options.stopError, options.onPrepare);
+  const driver = new FakeDesktopDriver(
+    moving.bridge,
+    options.stopError,
+    options.onPrepare,
+    options.screenshotError,
+    options.console,
+  );
   options.onDriver?.(driver);
   const mailboxRoot = options.mailboxFile ? join(projectPath, "mailbox-root-file") : undefined;
   if (mailboxRoot !== undefined) await writeFile(mailboxRoot, "not a directory");
@@ -522,7 +681,7 @@ async function runDesktopScenario(minDistance: number, options: IDesktopScenario
   } finally {
     if (previous === undefined) delete host.__THREENATIVE_NATIVE__;
     else host.__THREENATIVE_NATIVE__ = previous;
-    await rm(projectPath, { force: true, recursive: true });
+    if (ownsProjectPath) await rm(projectPath, { force: true, recursive: true });
   }
 }
 
@@ -573,16 +732,20 @@ class FakeDesktopDriver implements IDevicePlaytestDriver {
     private readonly bridge: IPlaytestBridgeV1,
     private readonly stopError?: Error,
     private readonly onPrepare?: () => void,
+    private readonly screenshotError?: Error,
+    private readonly console: { text: string; type: string }[] = [],
   ) {}
 
-  async captureConsole() { return []; }
+  async captureConsole() { return this.console; }
   async isAlive() { return !this.stopped; }
   async prepare(endpoint: string) {
     this.prepareCalls += 1;
     this.installation = connectDevicePlaytestBridge(this.bridge, endpoint);
     this.onPrepare?.();
   }
-  async screenshot() {}
+  async screenshot() {
+    if (this.screenshotError !== undefined) throw this.screenshotError;
+  }
   async stop() {
     this.stopped = true;
     try {

@@ -82,8 +82,8 @@ Native bundles enter through the project's declared `threenative.nativeEntry` (d
 `src/game.ts`), which must default-export the game. `TN_NATIVE_ENTRY_MISSING` and
 `TN_NATIVE_ENTRY_NO_DEFAULT` are entry-contract failures; `TN_NATIVE_WEB_ONLY_UI` means the
 portable graph reached browser UI; `TN_NATIVE_WASM_ON_MOBILE` means Android or iOS reached
-WASM. Do not weaken these guards. Every packager stages `public/` beside the game bundle,
-and a missing runtime asset must reject game startup rather than fall back to the network.
+WASM. Do not weaken these guards. Every packager stages the configured asset root (`assets.output`, default `public/`) through
+`selectManifestAssets` beside the game bundle, and a missing runtime asset must reject game startup rather than fall back to the network.
 
 **Mobile has no compressed-asset decoders.** Android QuickJS and iOS JSC have no WASM engine,
 so three's Basis/zstd transcoder (`KTX2Loader`), its Meshopt decoder and Draco's wasm decoder

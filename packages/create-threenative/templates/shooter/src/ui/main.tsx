@@ -1,10 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { GameUi } from "./GameUi.js";
 import "../style.css";
-import "../render/ui.css";
+import { GameUi } from "./GameUi.js";
 
 /**
- * The UI entry the native web view loads.
+ * The UI entry the platform's web view loads.
  *
  * It mounts the UI and nothing else — no scene, no simulation, no renderer. The game runs beside
  * it in the native runtime and reaches it only through published state and intents, which is why

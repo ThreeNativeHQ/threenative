@@ -654,6 +654,10 @@ per-pass split.
       component's comment that a unit test could not make, and it is now observed
       (`packages/ui/src/UiLayer.tsx`), carried on the dev-metrics message the game already posts, so
       the human watching the window and the agent reading the log are told the same thing.
+      **Superseded 2026-09-28**: the chip no longer draws the frame rate — the loop's rAF rate reads
+      throttled under a compositor or a virtual display, so a number on it lied to anyone reading a
+      screenshot. It carries the verdict alone, posted when the sentence changes rather than four
+      times a second.
 - [x] Files wired: all ten templates' `AGENTS.md` and the shipped `threenative-performance` skill
       name the warning, what it means, and that the answer is to move the draw and object counts —
       read the bucket census before promising a merge — not to change render settings.

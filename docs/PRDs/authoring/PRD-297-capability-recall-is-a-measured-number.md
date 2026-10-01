@@ -171,7 +171,7 @@ neither is deleted.
 - [ ] Row schema: `{ id, query, scope: "request"|"mechanic", source, expect: string[], reject: string[] }`
 - [ ] `expect` symbols must exist in the manifest — an `expect` naming a symbol that was renamed is
       a gate failure, not a miss
-- [ ] `source` resolves as `brief:<genre>#<bullet-index>` or `template:<name>#<heading text>`;
+- [ ] `source` resolves as `brief:<genre>#<bullet-index>` or `template:<name>#<heading text>` (PRD-451 adds `sandbox:<game>#<file>`, provenance only: the games are not in this repo);
       re-read the file and confirm the line is still there
 - [ ] Seed the corpus with **every** brief bullet, including the 11 known misses, and at least the
       11 plain-words queries from the baseline record

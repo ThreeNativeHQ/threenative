@@ -53,58 +53,48 @@ function useUiLayer(name: string): IUiLayerValue {
 }
 
 /**
- * The frame rate the game reports when it was launched in dev mode.
+ * The scene-shape verdict the game reports when it was launched in dev mode.
  *
- * Renders nothing until the game says it is a dev launch, so a shipped build carries the component
- * and never a number. `pointer-events: none` because a readout must never eat a touch: the host
- * routes input by the rectangles the UI publishes, and a chip that intercepted one would be a
- * button that stopped working while a developer was watching.
+ * Renders nothing until a frame earns a verdict, so a shipped build carries the component and never
+ * a sentence. There is no frame rate here on purpose: the loop's own rAF rate reads throttled under
+ * a compositor or a virtual display, so a number drawn from it lies in exactly the sessions where
+ * somebody is trying to measure. `pointer-events: none` because a readout must never eat a touch:
+ * the host routes input by the rectangles the UI publishes, and a chip that intercepted one would
+ * be a button that stopped working while a developer was watching.
  */
-function DevFrameRateChip({ bridge }: { bridge: IUiBridge }) {
-  const [fps, setFps] = useState<number | undefined>(undefined);
-  // The engine's scene-shape verdict, when the frame earned one. Shown beside the rate rather than
-  // in a second surface: a developer watching a slow window should not have to know which log line
-  // explains it.
+function DevSceneVerdict({ bridge }: { bridge: IUiBridge }) {
   const [verdict, setVerdict] = useState<string | undefined>(undefined);
   useEffect(
     () =>
       bridge.onMessage((message) => {
         if (message.type !== UI_DEV_METRICS_MESSAGE) return;
-        const value: unknown = message.fps;
-        if (typeof value === "number" && Number.isFinite(value) && value > 0) setFps(value);
         const warning: unknown = message.sceneWarning;
         if (typeof warning === "string" && warning.length > 0) setVerdict(warning);
       }),
     [bridge],
   );
-  if (fps === undefined) return null;
+  if (verdict === undefined) return null;
   return (
     // `<output>` carries the status role natively, so the readout is announced without an ARIA
     // attribute standing in for an element that already means this.
     <output
-      className="tn-dev-fps"
+      className="tn-dev-scene-warning"
       style={{
         position: "absolute",
         top: 8,
         right: 8,
+        maxWidth: 420,
         padding: "2px 6px",
         borderRadius: 4,
         background: "rgba(0, 0, 0, 0.55)",
-        color: "#e8f0ff",
+        color: "#ffd98a",
         font: "500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace",
+        whiteSpace: "normal",
         pointerEvents: "none",
         zIndex: 2147483647,
       }}
     >
-      {`${Math.round(fps)} fps`}
-      {verdict === undefined ? null : (
-        <span
-          className="tn-dev-scene-warning"
-          style={{ display: "block", maxWidth: 420, color: "#ffd98a", whiteSpace: "normal" }}
-        >
-          {verdict}
-        </span>
-      )}
+      {verdict}
     </output>
   );
 }
@@ -146,7 +136,7 @@ export function UiLayer({ children }: { children: ReactNode }) {
   return (
     <UiLayerContext.Provider value={value}>
       {children}
-      <DevFrameRateChip bridge={value.bridge} />
+      <DevSceneVerdict bridge={value.bridge} />
     </UiLayerContext.Provider>
   );
 }

@@ -92,8 +92,8 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   // fires down the sights. Measured on the browser lane, that chorded press never reaches the
   // page at all: `pointer.buttons` stayed at 2 for the whole step and the game recorded no shot.
   // A scenario that presses two mouse buttons at once therefore proves nothing about either, so
-  // the aim is held on `KeyQ` and the left button is pressed on its own.
-  assert.deepEqual(labeled.get("aim-key")?.press, "KeyQ");
+  // the aim is held on `KeyF` and the left button is pressed on its own.
+  assert.deepEqual(labeled.get("aim-key")?.press, "KeyF");
   assert.deepEqual(labeled.get("fire-while-aiming")?.pointerPosition, {
     buttons: 1,
     x: 0.5,
@@ -105,6 +105,14 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
     order.indexOf("release-buttons") < order.indexOf("fire-while-aiming"),
     "the aim button must be released before the trigger is pressed",
   );
+  // And the shot the harness just caused is the one the crosshair made, which is the part a
+  // relative look axis cannot prove on its own.
+  const ammo = (scenario.assert?.resources ?? []).find(({ path }) => path === "ammo");
+  assert.deepEqual(ammo?.atSteps, [{ label: "fire-settle", equals: 29 }]);
+  const divergence = (scenario.assert?.components ?? []).find(
+    ({ component }) => component === "barrelAxisErrorDeg",
+  );
+  assert.ok(divergence !== undefined, "the scenario must score the shot against the camera axis");
   return { entry, scenario, scenarioPath };
 }
 
@@ -134,6 +142,7 @@ function stubBridge() {
       capabilities: [
         "entity.bounds",
         "entity.observe",
+        "runtime.components",
         "runtime.diagnostics",
         "runtime.events",
         "runtime.fixedStep",
@@ -147,6 +156,12 @@ function stubBridge() {
     ready: () => ({ ready: true }),
     sample: () => ({
       clock: { mode: "fixed-step", tick },
+      components: {
+        rifle: {
+          barrelAxisErrorDeg: 0,
+          opticScreen: { x: 0.5 },
+        },
+      },
       diagnostics: [],
       entities: [
         {
@@ -277,30 +292,30 @@ test("should preserve button order on the native target", async () => {
   // browser lane never reaching the page at all, so a scenario built on one proves nothing.
   const pointers = deliveries.filter((delivery) => delivery.kind === "pointer");
   const expectedOrder = [
-    { buttons: 0, type: "pointermove", x: 640 },   // wake-pointer: absorb the first-move warp
+    { buttons: 1, type: "pointerdown", x: 640 },   // wake-pointer: left press absorbs the first-move warp
+    { buttons: 0, type: "pointerup", x: 640 },     // wake-pointer releases in-step
     { buttons: 2, type: "pointerdown", x: 640 },   // aim-down: right button press
-    { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
-    { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
     { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
     { buttons: 0, type: "pointerup", x: 640 },     // that release closes the pointer at its last point
     { buttons: 1, type: "pointerdown", x: 640 },   // fire-while-aiming: the trigger, alone
     { buttons: 0, type: "pointerup", x: 640 },     // end-of-step release closes it at the last point
+    { buttons: 0, type: "pointermove", x: 960 },   // look-right: a relative move with no button held
   ];
   assert.deepEqual(
     pointers.map(({ buttons, type, x }) => ({ buttons, type, x })),
     expectedOrder,
-    "native delivery must preserve the right-hold -> release -> left-alone order",
+    "native delivery must preserve the wake -> right-hold -> release -> trigger-alone -> look order",
   );
   assert.deepEqual(
     deliveries.filter(({ kind }) => kind === "key"),
     [
       // device.ts derives the DOM key from the scenario code: Enter arrives as "Enter" and
-      // KeyQ — the aim held while the trigger is pressed — arrives as "q".
+      // KeyF — the aim held while the trigger is pressed — arrives as "f".
       { kind: "key", key: "Enter", type: "keydown" },
       { kind: "key", key: "Enter", type: "keyup" },
-      // No `q` release: the aim is held from its own step to the end of the scenario, which is
+      // No `f` release: the aim is held from its own step to the end of the scenario, which is
       // the whole point — the shot has to be taken while it is down.
-      { kind: "key", key: "q", type: "keydown" },
+      { kind: "key", key: "f", type: "keydown" },
     ],
   );
 

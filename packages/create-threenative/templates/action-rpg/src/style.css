@@ -3,15 +3,17 @@
 @source "../index.html";
 @source "./";
 
+/* The same roles as `src/render/palette.ts`, in the two places the UI can reach: the HUD is a
+   web view, so it cannot import a Three.js palette. Keep the two lists in step when you repaint. */
 @theme {
-  --color-void: #080b12;
-  --color-panel: #111a25;
-  --color-line: #2b3a4b;
+  --color-void: #3a3a3c;
+  --color-panel: #4b4c4f;
+  --color-line: #6d6e71;
   --color-amber: #e8b86a;
-  --color-cyan: #71d1c4;
-  --color-red: #d96572;
-  --color-text: #dce5e8;
-  --color-dim: #7d8b99;
+  --color-cyan: #2a6cf0;
+  --color-red: #d0532a;
+  --color-text: #e6e4e1;
+  --color-dim: #9a9997;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

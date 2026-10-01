@@ -1,7 +1,7 @@
 {
   "name": "platformer",
-  "title": "Platformer",
-  "blurb": "A side-scrolling platformer with jumping, patrols, pickups, and camera follow.",
+  "title": "Fox Dash",
+  "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
   "genre": "platformer",
   "kit": true
 }

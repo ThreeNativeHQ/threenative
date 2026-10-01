@@ -294,6 +294,7 @@ export function lightmapPass(options: ILightmapPassOptions): IAssetPass {
   const atlasSize = positiveInteger(options.atlasSize, "atlasSize");
   const padding = positiveInteger(options.padding, "padding");
   return {
+    appliesTo: ["model"],
     cacheKey: JSON.stringify({ atlasSize, padding }),
     name: "lightmap-uv2",
     async apply(input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> {

@@ -4,10 +4,21 @@ import { dirname, join } from "node:path";
 
 import { assertCaptureNotBlank } from "../capture.js";
 import type { IDevicePlaytestDriver } from "./androidRunner.js";
+import { SCREENSHOT_TIMEOUT_MS as OVERALL_SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 
+/** How long the host may leave a screenshot request untouched before the app counts as hung. */
 const SCREENSHOT_TIMEOUT_MS = 5_000;
 const SCREENSHOT_REQUEST_FILE = "tn-playtest-screenshot-request.txt";
+
+function nativeScreenshotTimeoutMs(environment: NodeJS.ProcessEnv = process.env): number {
+  const configured = environment.TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS;
+  if (configured === undefined || configured.trim().length === 0) return SCREENSHOT_TIMEOUT_MS;
+  const parsed = Number(configured);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : SCREENSHOT_TIMEOUT_MS;
+}
 const SCREENSHOT_REQUEST_TEMP_FILE = `${SCREENSHOT_REQUEST_FILE}.tmp`;
+const HOST_TAIL_LINES = 6;
+const HOST_DIAGNOSTIC_LINE = /\[(?:Screenshot|Playtest)\]/u;
 
 export interface IDesktopPlaytestDriverOptions {
   args?: readonly string[];
@@ -126,25 +137,54 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     await rm(path, { force: true });
     const request = join(root, SCREENSHOT_REQUEST_FILE);
     await new LocalDeviceMailbox().write(request, path);
-    const deadline = Date.now() + (this.options.screenshotTimeoutMs ?? SCREENSHOT_TIMEOUT_MS);
+    // Two phases, because two different things bound them. The host deletes the request file the
+    // moment it accepts the request (processPlaytestScreenshotRequest in runtime.cpp), so a file
+    // still sitting there past the short wait means an app that never serviced the mailbox at all.
+    // Once it is gone the host is inside its own budget — up to 120 polled frames plus a 5s buffer
+    // map — which a software adapter's present outlasts (endDawnFrame p50 333ms, max 4.3s on arm64
+    // llvmpipe), so only that phase gets the harness's overall screenshot budget. The sum is the
+    // absolute cap, and isAlive() still fails fast inside both.
+    const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? nativeScreenshotTimeoutMs());
+    const deadline = pickupDeadline + OVERALL_SCREENSHOT_TIMEOUT_MS;
+    let accepted = false;
     let lastReadError: unknown;
     while (Date.now() < deadline) {
-      try {
-        const png = await readFile(path);
-        assertCaptureNotBlank(png, path);
-        return;
-      } catch (error) {
-        if (error instanceof Error && error.name === "CaptureGuardError") throw error;
-        if (!isMissingFile(error)) lastReadError = error;
-      }
+      const readError = await tryReadDesktopScreenshot(path);
+      if (readError === undefined) return;
+      lastReadError = readError;
       if (!(await this.isAlive())) {
         throw new Error("Desktop playtest executable exited before screenshot capture.");
+      }
+      if (!accepted) {
+        accepted = (await new LocalDeviceMailbox().read(request)) === undefined;
+        if (!accepted && Date.now() >= pickupDeadline) break;
       }
       await delay(25);
     }
     throw new Error(
-      `TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: ${lastReadError instanceof Error ? lastReadError.message : "request timed out"}`,
+      `TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE: ${await this.describeScreenshotTimeout(request, lastReadError)}`,
     );
+  }
+
+  /**
+   * Why a screenshot produced no file. The host's own lines are the only place that answer is
+   * written, and the request file's presence splits the failure in two: left behind means the host
+   * never looked, consumed means it read the request and the capture never landed. A bounded tail,
+   * never the whole log — a 40k-line dump is how a timeout becomes unreadable. The tail keeps the
+   * host's tagged lines and the entries classified as errors, because the root cause (an EGL
+   * failure, a texture that never arrived) is usually an untagged line the tag filter alone drops.
+   */
+  private async describeScreenshotTimeout(request: string, lastReadError: unknown): Promise<string> {
+    this.flushOutput("stdout");
+    this.flushOutput("stderr");
+    const cause = lastReadError instanceof Error ? lastReadError.message : "request timed out";
+    const requestState = await requestFileState(request);
+    const diagnostic = this.consoleEntries.filter((entry) =>
+      entry.type === "error" || HOST_DIAGNOSTIC_LINE.test(entry.text));
+    const tail = (diagnostic.length > 0 ? diagnostic : this.consoleEntries)
+      .slice(-HOST_TAIL_LINES)
+      .map((entry) => entry.text);
+    return `${cause}; ${requestState}; native host output: ${tail.length > 0 ? tail.join(" | ") : "none captured"}`;
   }
 
   async stop(): Promise<void> {
@@ -185,6 +225,17 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       this.consoleEntries.push({ text: line, type: desktopConsoleType(stream, line) });
       this.pendingOutput[stream] = "";
     }
+  }
+}
+
+async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefined> {
+  try {
+    const png = await readFile(path);
+    assertCaptureNotBlank(png, path);
+    return undefined;
+  } catch (error) {
+    if (error instanceof Error && error.name === "CaptureGuardError") throw error;
+    return isMissingFile(error) ? "request timed out" : error;
   }
 }
 
@@ -273,4 +324,19 @@ function isMissingFile(error: unknown): boolean {
     && error !== null
     && "code" in error
     && (error as { code?: unknown }).code === "ENOENT";
+}
+
+/**
+ * Reads the request file to name the host's state. Only ENOENT proves the host consumed it;
+ * a permission or I/O failure proves nothing about the host, so it is reported as unreadable
+ * rather than folded into "consumed" — a wrong label sends the reader to the wrong layer.
+ */
+async function requestFileState(path: string): Promise<string> {
+  try {
+    await readFile(path);
+    return "request file still present";
+  } catch (error) {
+    if (isMissingFile(error)) return "request file consumed";
+    return `request file unreadable: ${error instanceof Error ? error.message : String(error)}`;
+  }
 }

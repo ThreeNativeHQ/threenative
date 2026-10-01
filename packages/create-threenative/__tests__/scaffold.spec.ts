@@ -1,6 +1,18 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import {
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
@@ -21,6 +33,9 @@ const run = promisify(execFile);
 
 const TEMPLATE_ROOT = path.resolve("packages/create-threenative/templates");
 const KIT_FIXTURE_ROOT = path.resolve("packages/create-threenative/__tests__/fixtures/kits");
+/** Where a generated project reads a reference page: the installed `create-threenative` copy
+ * (PRD-449), the same path `assertReferenceBundle` checks against the package's bundle. */
+const REFERENCE_PREFIX = "node_modules/create-threenative/agent-docs/references/";
 const ASSET_MCP = "threenative-asset-mcp";
 const SCULPT_MCP = "threenative-sculpt-mcp";
 const ENGINE_MCP = "threenative-engine-mcp";
@@ -36,7 +51,6 @@ const AGENT_ROLE_PATHS = [
   ".claude/agents/threenative-verifier.md",
   ".agents/skills/threenative-builder/SKILL.md",
   ".agents/skills/threenative-verifier/SKILL.md",
-  "AGENT-ROLES.md",
 ] as const;
 
 // The engine-bug report skill ships through `agent-files` to every scaffold, in the two skill
@@ -150,302 +164,33 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // PRD-399: WebUI guidance and frame-cadence capability docs ship in every scaffold; minimal
-  // now explicitly selects native UI. Hashes measured through createProject, 2026-09-21.
-  // Recomputed 2026-09-16 for the Midway consolidation on develop: the scaffolds pick up the
-  // `threenative-performance` skill's shipped-default section and `agent-docs/performance-basics.md`
-  // alongside the merged develop tree, so all ten trees move together.
-  // Recomputed 2026-09-15 after merging origin/develop into develop: AutoLOD (PRD-377) and
-  // the rig-preparation/perf work each moved the generated capability manifest and reference,
-  // and those bytes ship in every scaffold, so all ten trees move together. Neither side's
-  // frozen values describe the merged tree; these were measured from it.
-  // Recomputed 2026-09-03 after merging PRD-346's MCP host configs into the authored painterly
-  // starter. Every scaffold gains the Blender server wiring; starter also gains its bounded mix.
-  // Recomputed 2026-09-03 for PRD-339, starter and sailing only: both dropped
-  // `assets: { models: "none", textures: "none" }`. The compile step now takes the build's
-  // `--target` and drops the passes a platform cannot decode, so the config no longer has to pin
-  // one constant for four targets — which is how a scaffolded game shipped 2 GB of uncompressed
-  // web output to satisfy an Android constraint. No other template named the key, and no other
-  // tree moved.
-  // Values recomputed 2026-08-28 when every template began shipping `renderer.resolutionScale:
-  // "auto"` and passing `display: config.display` into `defineGame` (PRD-228), so the engine
-  // holds the frame budget instead of the game hand-authoring a resolution constant.
-  // Recomputed after Biome reformatted nine template files: the previous values were measured
-  // before that formatting ran and were therefore stale the moment they were committed.
-  // Recomputed again for PRD-237: the shared capability reference now documents PointerEvents3D,
-  // which changes the generated reference bytes embedded in every scaffold.
-  // Recomputed again for the PRD-237 repair: the shared ctx surface now documents ctx.pointer,
-  // which changes the generated instructions embedded in every scaffold.
-  // Recomputed again for the PRD-237 continuation repair: the defense pointer-placement scenario
-  // clears mouse hover and captures the held touch highlight before its release.
-  // Recomputed 2026-08-29: `RunnerConsoleEntry` was renamed to `IRunnerConsoleEntry` in
-  // packages/playtest/src/index.ts without regenerating the capability manifest. A scaffold
-  // generates its capability reference from source, so all seven trees moved while the
-  // committed reference stayed stale; both are fixed in the same commit.
-  // Recomputed 2026-08-29 for PRD-246: `GPUReadback` and `SpectralOcean` entered the public
-  // surface, so the capability manifest and the capability reference generated from it both grew,
-  // and those bytes are copied into every scaffold.
-  // Recomputed 2026-08-29 for PRD-256: every scaffold now forwards its asset config to the dev
-  // watcher and carries the bounded static-lightmap setup, rollback, and platform warning. The
-  // shooter hash also includes its 60-frame input-control warmup from current main.
-  // Recomputed for PRD-251 Phase 1: every scaffold embeds the capability manifest and reference,
-  // which now document the optional Heightfield world subpath.
-  // Recomputed 2026-08-30 for the starter only: eighteen of its playtest scenarios gained the
-  // menu-entry steps they had been missing since the menu screen flow landed, so a scaffolded
-  // project's own `npm test` can reach the play scene at all. Scenario bytes moved and no source
-  // did, so exactly one tree's hash moved.
-  // Recomputed 2026-08-30 for InstancedBatch: the capability manifest and the reference generated
-  // from it both gained an entry, and those bytes are embedded in every scaffold, so all seven
-  // trees move. The racing tree moves for a second reason — its track gathers the ten kerb stones
-  // into one batch instead of drawing each on its own.
-  // Recomputed again the same day for the TSL silent-no-op traps, which every scaffold carries in
-  // `agent-docs/visual-baseline.md`, and for the starter dropping its hand-rolled `makeRandom` in
-  // favour of the identical `createRandom` the framework already exports. That swap is
-  // output-identical — same multiplier, same increment, verified over 35,000 draws — so the ridge
-  // does not move; the bytes around it do.
-  // Recomputed 2026-08-30 for the realism-effects roll. Every template moved because the shared
-  // render-chain API, generated instructions, and optional effect sources are scaffolded bytes.
-  // Recomputed again after the starter's composed sharpen/bloom proof, optional effect parameters,
-  // and its migrated browser fixtures; the shooter hash also moved with its fixture corrections.
-  // Recomputed 2026-08-30 for the distributed Three.js batched-velocity patch, its generated
-  // project pnpm declaration, and the completed-frame render-chain measurement field.
-  // Recomputed for PRD-243: every scaffold embeds the capability manifest and reference, which
-  // now document SoftBody3D and the optional physics collision adapter. The starter also gains
-  // its shipped cloth caller and menu-to-play proof.
-  // Recomputed 2026-08-30 after removing duplicate starter menu-entry blocks introduced by the
-  // realism-effects merge.
-  // Recomputed after retaining the WebGPU instance in Three's distributed patch; the starter
-  // also materialises its SSR input once so the reflection graph presents instead of going blank.
-  // Recomputed 2026-08-30 after documenting the starter's WorldEnvironment render layer in
-  // every scaffold's visual reference and generated instructions.
-  // Recomputed when PRD-243 added the qualified Pixel 8 cost to the copied capability docs; the
-  // starter also carries the physical-device cloth displacement threshold.
-  // Recomputed after capability discovery became mechanic-driven and every scaffold gained the
-  // project-scoped Codex MCP config required to expose the installed engine server.
-  // Recomputed after the authoring tools gained explicit request-versus-mechanic search scope.
-  // Recomputed after MCP server packages became automatic core payloads rather than scaffold pins.
-  // Recomputed 2026-08-30 for the starter only: the branded "THREE NATIVE" start screen and its
-  // mandatory character-name form are deleted, so the tree loses MainMenu.ts, MainMenuUi.tsx and
-  // menu-flow.playtest.json, and every remaining scenario loses its menu-entry steps. One tree
-  // moved because only the starter shipped a menu.
-  // The cloth and two zoom scenarios also move: with the play scene running from tick 0 their
-  // baseline is sampled inside the simulation, so a "gte" that was zero at the menu is now
-  // already satisfied. They assert the transition instead.
-  // Recomputed 2026-08-30 for the template typecheck repair: the starter's render chain and
-  // its three optional effects now name the node types they actually take, and the defense
-  // App names the physics its own game defines. Both moves are type-only — the emitted
-  // JavaScript is unchanged apart from two forwarding helpers — so two trees move and the
-  // pixels do not.
-  // Recomputed when virtual geometry added `ClusteredMesh` and `ClusteredBatch` to the
-  // capability manifest and reference, both of which every scaffold copies.
-  // Recomputed again when virtual geometry started shipping on: every template's instructions
-  // gained the convention and its opt-out, and the capability text lost the per-frame call the
-  // engine now makes itself.
-  // Recomputed 2026-08-30 for the platformer only: `348463f5` pinned the patrol in the damage
-  // scenario and `cf5520c8` guarded the stomp scenarios' frozen placement. Scenario bytes moved
-  // and no other tree did, so exactly one hash moves.
-  // Recomputed 2026-08-30 for PRD-278: all seven trees. The six templates that had a 14-45 line
-  // `postprocessing.ts` now ship `worldEnvironment.ts` and a desktop/mobile preset pair beside
-  // it, every `setupLighting` returns its key light so godrays can refuse a shadowless one by
-  // name, every scene passes `isMobile()` in, and each template's AGENTS.md gained the
-  // `TN_WORLD_ENVIRONMENT` paragraph. The starter moves too: the shared file gained the
-  // `baseColour` seam `minimal`'s aerial perspective needs, bloom radius and threshold as
-  // arguments, and the report that prints even when every stage is off.
-  // Recomputed 2026-08-30, second PRD-278 move: with the runner now waiting for startup readiness
-  // (2042b33d) the per-template performance budgets were being read behind a loading layer — the
-  // action-rpg scenario reported 4 draw calls where the running scene issues 144 — so every genre
-  // template's maxDrawCalls/maxTriangles is re-measured against the real frame, and `minimal`
-  // ships without the SSGI gather because with it the play scenario measured 34.2 ms p95 against
-  // its 33 ms ceiling.
-  // Recomputed 2026-08-30 after PRD-067 added the shipped native icon and app-config defaults
-  // Recomputed 2026-08-31 after squashing PRD-289 onto local main 6b91f42f: current main's
-  // scaffold assets and the convention-enabled generated trees are measured together.
-  // Recomputed 2026-08-31 after PRD-251 added the terrain entries to the generated manifest.
-  // Recomputed 2026-08-31 when every template began shipping the MCP config each agent host
-  // reads. Claude Code and Codex already had theirs; Cursor, VS Code, the Gemini CLI, opencode and
-  // Zed each gained a project-scoped file, and the shared asset-MCP instructions now name all
-  // seven instead of `.mcp.json` alone. Five new files and one paragraph move all eight trees.
-  // Recomputed 2026-09-01 for PRD-301: the capability manifest and the reference generated
-  // from it now walk @threenative/assets, so the authoring surface those bytes describe grew
-  // in every scaffold tree.
-  // Recomputed 2026-09-01 for the main-sync merge of the two capability-manifest lineages
-  // (local 8c158a56 and origin #29): values measured from the committed merge tree.
-  // Recomputed 2026-09-01 after every game gained the bundled prd-creator skill, approval gate,
-  // and expanded Fab authentication and Unreal conversion instructions.
-  // Recomputed 2026-09-01 after capability discovery became a critical pre-PRD planning gate in
-  // every generated AGENTS.md/CLAUDE.md pair and both shipped host skill adapters.
-  // Recomputed 2026-09-01 for the main-sync merge carrying #40's lazy MRT texture nodes: values
-  // measured from the committed merge tree, per the clean-checkout rule above.
-  // Recomputed 2026-09-01 when @threenative/ueformat entered the public surface: the capability
-  // manifest and the reference generated from it both gained the UEFormat entries, and those
-  // bytes are embedded in every scaffold.
-  // Recomputed 2026-09-01 when @threenative/raw-unreal entered the public surface: the
-  // capability manifest and the reference generated from it gained the raw .uasset loader
-  // entries (parseUAssetStaticMesh, UAssetLoader, the FRawMesh and FMeshDescription readers),
-  // and those bytes are embedded in every scaffold.
-  // Recomputed 2026-09-02 for PRD-316: action-rpg and shooter now ship donor-derived render
-  // source VFX and combat playtests, so only those two scaffold trees move.
-  // Recomputed 2026-09-05 from clean committed HEAD eb1149dd. The Three.js patch landed with
-  // 18 committed agent-file skill changes in b7336980 and remains in eb1149dd, so every scaffold
-  // hash includes both the patch and those reviewed skill bytes. Values come from the isolated
-  // HEAD fixture, not this shared checkout's working tree.
-  // Recomputed 2026-09-05 for the desktop window maximized option: every template's resolved
-  // config now carries `window.maximized`, so all ten scaffold trees move by that source byte.
-  // Recomputed 2026-09-05 for the generated pointer-capture and desktop-mode authoring contract
-  // in every template's AGENTS.md/CLAUDE.md pair; values are from the current Received block.
-  // Recomputed 2026-09-06 for PRD-361: SkeletalMesh3D in capability manifest and action-rpg character setup.
-  // Recomputed 2026-09-07 after SkeletalMesh3D became the AnimationPlayer returned by setup.
-  // Recomputed 2026-09-07 after merging origin/main's networking transport with the PRD-361/362
-  // delivery; values are from the committed merged scaffold tree.
-  // Recomputed 2026-09-08 after merging current origin/main 340dcc29 (PRD-140 plus PRD-144)
-  // into PRD-358; values below come from the merged scaffold tree after regeneration.
-  // Recomputed 2026-09-09 for PRD-367: the bounded pipeline-census capability and its generated
-  // reference are copied into every scaffold, so every tree moves with the public manifest.
-  // Recomputed 2026-09-09 for PRD-370: generated loading screens now consume the warm-up
-  // observation and keep unknown coverage below complete progress.
-  // Recomputed 2026-09-09 after release preparation repinned every generated package manifest to
-  // the fresh npm cohort, which changes the package metadata embedded in every scaffold.
-  // Recomputed 2026-09-09 after the full build regenerated the current capability reference and
-  // PRD-371 validator, with the shared Dream Loop recipe linked from every root AGENTS mirror.
-  // Recomputed 2026-09-09 after formatting the generated reference script and its fixture.
-  // Recomputed 2026-09-09 after consolidating the Dream Loop link in the five longest mirrors.
-  // Recomputed 2026-09-09 after repairing capability output detection and idempotent replans.
-  // Recomputed 2026-09-12 when release preparation repinned every generated package manifest
-  // to the 0.3.2 npm cohort (PRD-377), which changes the package metadata embedded in every
-  // scaffold; the documented recompute-after-release case above. All ten trees move together.
-  // Recomputed 2026-09-14 for PRD-382/PRD-384: `RippleField` and `WaveField.heightAt` enter
-  // the public capability manifest and the generated reference, and the sailing template
-  // documents the ripple patch, so all ten trees move together.
-  // Recomputed again 2026-09-14 for the `ctx.beforeRender` seam: the generated capability manifest
-  // and the reference derived from it each gained the new Situation + example, the shared
-  // `threenative-context` SKILL gained its row, and the starter's AGENTS/CLAUDE gained the seam's
-  // instruction — all bytes embedded in every scaffold, so all ten trees move together on top of
-  // the develop tree the seam rebased onto.
-  // Recomputed 2026-09-15 for the performance-basics reference: every scaffold gains
-  // `agent-docs/performance-basics.md`, and each template's AGENTS.md/CLAUDE.md names it in the
-  // recipe index. Both are scaffolded bytes, so all ten trees move together; re-measured from the
-  // clean worktree.
-  // Recomputed again 2026-09-15 after merging origin/develop: PRD-383 adds
-  // `agent-docs/rigging-characters.md` to that same recipe index in every template, so all ten
-  // trees move together once more.
-  // Recomputed 2026-09-15 for PRD-377: the capability manifest and reference gained
-  // `updateModelLods` and `baseGeometryOf`, and their text now states that omission bakes
-  // nothing until qualification. Those bytes are copied into every scaffold, so all ten trees
-  // move together and no template source changed.
-  // Recomputed 2026-09-15 for the AutoLOD generation-knob fix: the same manifest/reference text
-  // now names `maxLevels`, `minTriangles`, `minTrianglesScope`, `minSaving` and `errorTargets` and
-  // the measured-benefit gate. All ten trees move together again; no template source changed.
-  // Recomputed 2026-09-15 for the Midway consolidation: the render-camera cull guidance was folded
-  // into each template's Ownership paragraph so it adds no line to AGENTS.md or its CLAUDE.md mirror
-  // (the mirror banner costs two lines, so both must stay under the 100-line cap), and the branch
-  // rebased onto origin/develop. All ten trees move together; no other template source changed.
-  // Recomputed 2026-09-16 for the ponytail default: every scaffold gains the `ponytail` skill in
-  // both host adapters, a project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`,
-  // `.claude/hooks/ponytail-context.mjs`) and the lazy-first clause appended to each AGENTS.md
-  // without adding a line, so all ten trees move together. Values are computed from a clean HEAD
-  // checkout (per the warning above), not from a full-suite run racing another lane's uncommitted
-  // template edits; no template source outside AGENTS.md/CLAUDE.md changed.
-  // Recomputed again 2026-09-16 after merging origin/develop: the landed local backlog (#270)
-  // brings scaffold bytes of its own, so the branch's ponytail values no longer describe the
-  // merged tree and all ten move together once more.
-  // Recomputed 2026-09-17 for the binding-sampler Three.js patch: root, core and template mirrors
-  // all carry the new patch bytes, which ship in every scaffold, so all ten trees move together.
-  // Recomputed 2026-09-22 when release preparation repinned every generated package manifest to
-  // the 0.3.3 / create-threenative 0.2.6 npm cohort, which changes the package metadata embedded
-  // in every scaffold; the documented recompute-after-release case above.
-  // Recomputed again 2026-09-22 after merging origin/develop into this branch: the cohort bump and
-  // this branch's binding-sampler Three.js patch bytes land in the same scaffold trees, so neither
-  // side's values alone describe the merged tree; all ten were re-measured from the merged
-  // checkout's Received block and no template source changed.
-  // Recomputed 2026-09-24 for PRD-446: performance-basics.md documents `gpuTimestampFrameInterval`.
-  // Recomputed 2026-09-23 for PRD-444 on top of PRD-442: the performance skill documents `--cpu-prof`.
-  // Recomputed 2026-09-24 for PRD-442: every template's AGENTS.md gained the world-matrix walk
-  // paragraph, `pnpm sync:agents` carried it into each CLAUDE.md mirror, and the generated
-  // capability manifest and reference gained the `renderer.matrixWorld` entry — all bytes copied
-  // into every scaffold, so all ten trees move together and no other template source changed.
-  "action-rpg": "4c810ad9aa59c113310aa8740da35193996599a229797134d8dee877c54ef34a",
-  defense: "fc69d844ba9f17755502155c888bd9757ae78678eef4efd58e857aee6bdc485f",
-  // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
-  // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
-  // authoring reference and its matching agent skill guidance, so all ten trees move together.
-  // Recomputed 2026-09-08 after merging origin/main c315ad343 into the native coverage branch;
-  // values come from the merged scaffold tree after regeneration.
-  // PRD-303 keeps this scenario executable on a GPU-less CI runner by removing its visual
-  // capture, so `minimal` alone moves off the PRD-304 tree that the other seven share.
-  minimal: "2e53ce2e113ae6ef0f2808c90dc277e0d62f325904e67f7e72036bdb8eb315ac",
-  platformer: "c044d0983cf281d551d56113e4a8d9fc9a284b16a8a30385e352d7eba28e278c",
-  runner: "6a61c0d9e82969d3c61db49f40ec9dd36985985d38b421950a7d9f3a214db65b",
-  puzzle: "9e96d0f6c27d4f092a6708d9dfe71d2a3da7b35d1d056481274f8c8157627cd6",
-  racing: "20030e767158a5b75b349bdba16d49119e793766a65f8ab9990d370596dd4c16",
-  shooter: "2af79e7ac6235ae96b702114c065b63c432778a94e873661b9232cd0b6982304",
-  // Recomputed 2026-09-12 for PRD-366: the starter ships a new
-  // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
-  // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
-  // only the starter tree moves.
-  starter: "29db7deb7498b30f72171752bbe68336fb0529c445b6ce2cd5127a046923efca",
-  // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
-  // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
-  // eight parent trees move together.
-  // Recomputed 2026-09-02 for the reconciled main: every tree carries the merged capability
-  // manifest and generated reference, including the VirtualShadowNode surface.
-  // Recomputed 2026-09-02 for PRD-324 phases 1-2: the capability manifest and the generated
-  // reference gain the bone-length and mirrored-clip surfaces, and those bytes ship in every
-  // scaffold.
-  // Recomputed 2026-09-02 for PRD-325: the generated capability manifest and reference gained the
-  // afterPhysics and buildStaticColliders seams, and those bytes are embedded in every scaffold.
-  // Recomputed 2026-08-30 for PRD-193: the starter and racing templates now prove their
-  // steady-state allocation-free frame path, and every scaffold carries the updated capability
-  // manifest/reference bytes.
-  // Recomputed 2026-08-30 for PRD-122: every scaffold now carries the shared canonical role
-  // contracts, provider adapters, and AGENT-ROLES.md guide.
-  // Recomputed 2026-08-30 for PRD-236: the sailing starter kit adds a scaffold tree, and its
-  // WaveField/Buoyancy3D public surface updates the generated capability reference in all trees.
-  // Recomputed for PRD-236 repair round 1: sailing now ships its own desktop native smoke
-  // scenario, routes test:native through it, and closes the generated command fence.
-  // Recomputed after the template contract required every kit to ship a native icon.
-  // Recomputed 2026-09-07 for sailing's fixed-step ocean clock: the scene now advances
-  // `SpectralOcean` before its registered compute passes run, which makes its existing moving-water
-  // playtest prove a time-varying field.
-  // Recomputed 2026-09-07 after merging origin/main's sailing float and PRD-360 Android proof
-  // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
-  sailing: "e518e96344b936eabc8707c51159ff2c6a6f25560d2471fd2943caaac85de90d",
-  // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
-  // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
-  // terrain fields, bounded tile residency, and the three plain-language world situations.
-  // Recomputed 2026-08-31 for the PRD-251 review repair: the generated world capability
-  // reference now states that GPU generation fails closed until canonical readback is supported.
-  // Recomputed after the capability manifest gained the portable scroll/pinch zoom surface
-  // (PRD-239), which is copied into every scaffold.
-  // Recomputed after the starter's zoom binding comment documented the shared DOM wheel sign.
-  // Recomputed after PRD-247 added per-item capabilities, the shooter's proof scenario, and the
-  // unrestricted billboard example in the generated capability reference.
-  // Recomputed after the roll continuation updated the generated shooter's nameplate observer.
-  // Recomputed after the capability reference's Scheduler example switched to the game-owned
-  // `ctx.tween` path, so generated scaffolds no longer embed an un-ticked standalone Scheduler.
-  // Recomputed 2026-08-28 for PRD-248. Every template moved because every scaffold embeds the
-  // capability manifest, which gained the atmosphere entries; `minimal` moved twice over, for its
-  // atmosphere-driven `src/render/` files, its new `playtests/atmosphere.playtest.json`, and the
-  // AGENTS.md paragraph that states the convention.
-  // Recomputed 2026-08-29 for PRD-249. Every template moved because every scaffold embeds the
-  // new FluidField2D capability manifest and generated capability-reference entry.
-  // Recomputed 2026-09-03 for PRD-346: `MCP_SERVERS` gained a fourth entry,
-  // `threenative-blender`, which `pnpm sync:mcp` writes into all seven host configs of every
-  // template, and the shared `finding-assets.md` reference gained the downloaded-.fbx loop.
-  // All ten trees moved; no template source did.
-  // Recomputed 2026-09-06, third move, sailing only: a review of the compressed water section
-  // found one dropped clause (a basic material cannot agree with the hull floating on it), one
-  // weakened mechanism (samples averaging into a mean sea level), and one new sentence that was
-  // simply wrong — the CPU height query does not read the cascade buffers, it reads a grid the
-  // cascades are summed onto. All three are restored, so the sailing instructions move again.
-  // Recomputed 2026-09-06, second move: the starter's `hero()` and `IHeroMaterials` left
-  // `src/render/shapes.ts` for their own `src/render/hero.ts`, which puts the toolkit file back
-  // under the 200-line smell cap `looks.spec.ts` enforces on generated render source. The starter
-  // tree alone moves; `Player.ts` follows the import.
-  // Recomputed 2026-09-06 for the local-main sync repair. Sailing's water became `SpectralOcean`,
-  // moving `src/render/ocean.ts`, `src/scenes/Sailing.ts` and an AGENTS.md rewritten under the
-  // 100-line cap; defense's `src/render/shapes.ts` gained two `Mesh[]` annotations that let the
-  // template typecheck again; Biome reformatted the two sailing sources. Eight trees move on the
-  // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
+  // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
+  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
+  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
+  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
+  // setupPost callers never forwarded the adapter fact to it; the third found no template but
+  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
+  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
+  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
+  // Values measured through createProject by the spec that asserts them, not by hand.
+  // Recomputed again 2026-10-01 for `sailing` alone: `sailMotion` is a range across landed cloth
+  // readbacks, and one landed copy makes that range zero by arithmetic, so the sails scenario now
+  // holds long enough for two copies to arrive on a CPU rasteriser and asserts the landed count
+  // beside it. Only the two sailing template files changed, so only this one tree moves.
+  // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
+  // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
+  // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
+  "action-rpg": "e477cb8fe35157325e234e07bcbb3e7b09a69bb43c94ff2f591f7ee02bc30c48",
+  minimal: "62875da8b839633c518a8f52eb66ebb74a421c271f21bf6a0cdce54b83642082",
+  platformer: "b09a698711561333be22eefa98e9d0b454124bda9a9dcb6a72fad3fd156e5ed5",
+  puzzle: "759634702a6da8c8f70203aeaa5ac6d7163fd275920a084fcbfc10477562edc3",
+  racing: "384c151639f267d1fa530fd3f0b71f7cd5a2249b5eb4817598d35050cedbe3c6",
+  rts: "d2c9eaa70d55b4f99943448444e43e107bbaadea1a4162474a35ffb494a94a62",
+  runner: "d52219261507b0949aeb96f0d865adf81f9dddae6a8ee99f050e21e3ec3c6977",
+  sailing: "718fd70cef653ec6ccdf99ea1dc8a0510479974e19d95acdca60ec1411c0fe10",
+  shooter: "0369a3a146585111d7d2355b887ae7a22b5278e17a84d0324949f3c8ad8c1933",
+  starter: "53d57f84f19160bec1e15147366e0f9bc8fd06d03f11bf050d23fda3a236e239",
+  "tower-defense": "b87e3a3626c0ef744cf24cf106b1e85a51c010856f2f6acc60f6bf7c65f27246",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -466,10 +211,10 @@ async function withBrokenTemplateFile<T>(
   const root = await makeTempDir("threenative-broken-template-");
   try {
     // The package layout the scaffolder reads: templates/ plus the package-level siblings it
-    // reaches up to (capabilities.json, template-assets, agent-docs, agent-files). The copied tree
+    // reaches up to (template-assets, agent-docs, agent-files). The copied tree
     // is the templates dir; the siblings ride along so a test breaks exactly the file it names.
     const packageDirectory = path.dirname(TEMPLATE_ROOT);
-    for (const sibling of ["capabilities.json", "template-assets", "agent-docs", "agent-files"]) {
+    for (const sibling of ["template-assets", "agent-docs", "agent-files"]) {
       await cp(path.join(packageDirectory, sibling), path.join(root, sibling), {
         recursive: true,
       });
@@ -493,7 +238,9 @@ async function scaffoldTreeHash(directory: string): Promise<string> {
       left.name.localeCompare(right.name),
     )) {
       const file = path.join(current, entry.name);
-      if (entry.isDirectory()) {
+      // A linked skill directory reports isDirectory() false, so it needs the stat to be walked
+      // like the real one — otherwise the tree hash silently drops half of every skill.
+      if (entry.isDirectory() || (entry.isSymbolicLink() && (await stat(file)).isDirectory())) {
         await walk(file);
       } else {
         const relative = path.relative(directory, file);
@@ -543,13 +290,11 @@ const STARTER_PATHS = [
   "src/render/worldEnvironment.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
+  "src/render/arena.ts",
   "src/render/shapes.ts",
   "src/render/camera.ts",
   "src/render/easing.ts",
   "src/render/sky.ts",
-  "src/render/scenery.ts",
-  "src/render/coast.ts",
-  "src/render/water.ts",
   "src/render/pennant.ts",
   "src/render/loading.ts",
   "src/entities/Crate.ts",
@@ -561,37 +306,19 @@ const STARTER_PATHS = [
   "src/ui/main.tsx",
   "src/ui/App.tsx",
   "src/state.ts",
+  // PRD-449: three, and only the three that prove a new game works. The other 21 are engine
+  // guards in `packages/create-threenative/template-playtests/starter/`, which `pnpm test:templates`
+  // copies into the scaffold; the "exactly three" assertion below is what keeps them out.
   "playtests/survives.playtest.json",
-  "playtests/assets.playtest.json",
   "playtests/play.playtest.json",
-  "playtests/forward.playtest.json",
   "native-playtests/react-hud.playtest.json",
-  "playtests/coyote.playtest.json",
-  "playtests/buffer.playtest.json",
-  "playtests/look.playtest.json",
-  "playtests/pause.playtest.json",
-  "playtests/respawn.playtest.json",
-  "playtests/goal.playtest.json",
-  "playtests/gameover.playtest.json",
-  "playtests/seed.playtest.json",
-  "playtests/cloth.playtest.json",
   "playtests/production-readiness.playtest.json",
   "assets/native-proof.glb",
   "assets/native-proof.png",
   "public/icon.png",
   "assets/pickup.wav",
-  // P2-2: the searchable reference bundle every generated project must ship.
-  "agent-docs/assertion-reference.md",
-  "agent-docs/capture-the-frame.md",
-  "agent-docs/ctx-cookbook.md",
-  "agent-docs/debug-surface.md",
-  "agent-docs/dream-loop.md",
-  "agent-docs/finding-assets.md",
-  "agent-docs/gameplay-recipes.md",
-  "agent-docs/menu-screens.md",
-  "agent-docs/performance-basics.md",
-  "agent-docs/sculpt-from-a-reference.md",
-  "agent-docs/visual-baseline.md",
+  // PRD-449: no `agent-docs/` — the recipes ship in the installed `create-threenative`, and the
+  // "ships no reference bundle" test is what pins that.
 ];
 
 const MINIMAL_RENDER_PATHS = [
@@ -600,7 +327,6 @@ const MINIMAL_RENDER_PATHS = [
   "src/render/sky.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
-  "src/render/hud.ts",
   "src/render/materials.ts",
   "src/render/postprocessing.ts",
 ] as const;
@@ -615,36 +341,37 @@ const PLATFORMER_PATHS = [
   "src/main.ts",
   "src/state.ts",
   "src/scenes/Boot.ts",
-  "src/scenes/Level.ts",
-  "src/entities/Character.ts",
-  "src/entities/Chaser.ts",
-  "src/entities/Patrol.ts",
+  "src/scenes/Play.ts",
+  "src/entities/Fox.ts",
   "src/entities/Pickup.ts",
+  "src/entities/Walker.ts",
   "src/level/Checkpoints.ts",
-  "src/level/Platform.ts",
-  "src/render/palette.ts",
+  "src/level/Stage.ts",
+  "src/render/blocks.ts",
   "src/render/camera.ts",
+  "src/render/fox.ts",
   "src/render/lighting.ts",
   "src/render/loading.ts",
   "src/render/materials.ts",
-  "src/render/rig.ts",
-  "src/render/sky.ts",
+  "src/render/palette.ts",
+  "src/render/pickups.ts",
   "src/render/postprocessing.ts",
-  "src/render/terrain.ts",
+  "src/render/props.ts",
+  "src/render/sky.ts",
+  "src/render/scenery.ts",
+  "src/render/walkers.ts",
+  "src/render/waterfall.ts",
   "public/icon.png",
-  "playtests/jump.playtest.json",
-  "playtests/patrol.playtest.json",
+  "playtests/coyote.playtest.json",
   "playtests/collect.playtest.json",
-  "playtests/stomp.playtest.json",
-  "playtests/stomp-rise.playtest.json",
+  "playtests/damage.playtest.json",
+  "playtests/hud.playtest.json",
+  "playtests/jump.playtest.json",
+  "playtests/move.playtest.json",
   "playtests/respawn.playtest.json",
-  "playtests/oneway.playtest.json",
-  "playtests/collision-layers.playtest.json",
-  "playtests/chase.playtest.json",
-  "playtests/avoidance.playtest.json",
+  "playtests/stomp.playtest.json",
+  "playtests/survives.playtest.json",
   "playtests/performance.playtest.json",
-  "playtests/terminal-loop-win.playtest.json",
-  "playtests/terminal-loop-fail.playtest.json",
   "playtests/native/touch-controls.playtest.json",
 ];
 
@@ -661,7 +388,7 @@ describe("create-threenative", () => {
       blurb: expect.any(String),
       genre: "platformer",
       kit: true,
-      title: "Platformer",
+      title: "Fox Dash",
     });
     const help = cliHelp();
     expect(help).toContain("Templates:");
@@ -712,7 +439,9 @@ describe("create-threenative", () => {
     ).toHaveLength(1);
     expect(source).not.toContain("for (const [name, flag] of [");
     expect(source.match(/function substituteTemplateVariables\(/gu)).toHaveLength(1);
-    expect(source.match(/substituteTemplateVariables\(/gu)).toHaveLength(3);
+    // Declaration plus its one call: `renderTemplate`. The reference bundle no longer renders
+    // through it (PRD-449), so a second call site means a new substitution nobody gated.
+    expect(source.match(/substituteTemplateVariables\(/gu)).toHaveLength(2);
     expect(source.match(/replaceAll\(placeholder, value\)/gu)).toHaveLength(1);
   });
 
@@ -752,48 +481,47 @@ describe("create-threenative", () => {
     }
   });
 
-  // P2-2: the bounded instructions name long recipes by their shipped path. This is the
-  // generated-project check behind the "omit reference copying" negative control: with
-  // `copyReferenceBundle` removed from `createProject`, the scaffold itself throws
-  // `RED observed: referenced recipe missing` before this body ever runs.
-  it("should copy bounded references with project placeholders", async () => {
+  // PRD-449: the pages ship inside the installed `create-threenative`, so the scaffold writes no
+  // `agent-docs/` at all. The links the generated instructions carry must still resolve, or a
+  // cold agent follows one into a dead path — checked here against the package's bundle, which is
+  // exactly what the package's `files` list installs.
+  it("should ship no reference bundle and leave every link resolving in the package", async () => {
     const root = await makeTempDir("threenative-reference-bundle-");
+    const bundleDirectory = path.resolve("packages/create-threenative/agent-docs/references");
     try {
       const result = await createProject(
         { install: false, target: "my-game", template: "starter" },
         root,
       );
-      const bundleDirectory = path.join(result.target, "agent-docs");
-      const shipped = (await readdir(bundleDirectory)).sort();
-      expect(shipped).toEqual([
-        "assertion-reference.md",
-        "capability-reference.md",
-        "capture-the-frame.md",
-        "creating-creatures.md",
-        "ctx-cookbook.md",
-        "debug-surface.md",
-        "dream-loop.md",
-        "finding-assets.md",
-        "gameplay-recipes.md",
-        "menu-screens.md",
-        "mobile-memory-budget.md",
-        "performance-basics.md",
-        "rigging-characters.md",
-        "sculpt-from-a-reference.md",
-        "trace-a-slow-frame.md",
-        "visual-baseline.md",
-        "webview-ui.md",
-      ]);
-      for (const file of shipped) {
-        const page = await readFile(path.join(bundleDirectory, file), "utf8");
-        expect(page, file).not.toContain("__PROJECT_NAME__");
-        expect(page, file).not.toContain("__PROJECT_ID__");
+      await expect(lstat(path.join(result.target, "agent-docs"))).rejects.toThrow();
+      const instructionFiles = [
+        "AGENTS.md",
+        "CLAUDE.md",
+        ...(await readdir(path.join(result.target, ".agents/skills"))).map(
+          (skill) => `.agents/skills/${skill}/SKILL.md`,
+        ),
+      ];
+      for (const file of instructionFiles) {
+        const content = await readFile(path.join(result.target, file), "utf8");
+        const pages = [
+          ...content.matchAll(
+            /create-threenative\/agent-docs\/references\/([a-z0-9][a-z0-9-]*\.md)/gu,
+          ),
+        ].map((match) => match[1] ?? "");
+        for (const page of pages) {
+          expect(
+            existsSync(path.join(bundleDirectory, page)),
+            `${file} links a page the package does not ship: ${page}`,
+          ).toBe(true);
+        }
+        // Not a vacuous pass: the template's own instructions are the link index.
+        if (file === "AGENTS.md") expect(pages.length).toBeGreaterThan(10);
       }
-      const agents = await readFile(path.join(result.target, "AGENTS.md"), "utf8");
-      expect(agents).toContain("`agent-docs/finding-assets.md`");
-      for (const file of shipped) {
-        // Every path the instructions name must resolve inside the generated project.
-        expect(agents, file).toContain(`agent-docs/${file}`);
+      // Nothing substitutes into the pages any more, so a token would ship literally.
+      for (const page of await readdir(bundleDirectory)) {
+        const content = await readFile(path.join(bundleDirectory, page), "utf8");
+        expect(content, page).not.toContain("__PROJECT_NAME__");
+        expect(content, page).not.toContain("__PROJECT_ID__");
       }
     } finally {
       await rm(root, { force: true, recursive: true });
@@ -807,7 +535,12 @@ describe("create-threenative", () => {
         { install: false, target: "dream-game", template: "starter" },
         root,
       );
-      const workflow = await readFile(path.join(result.target, "agent-docs/dream-loop.md"), "utf8");
+      // The page lives in the installed package, not the project (PRD-449); the generated skill
+      // still points at the file it ships.
+      const workflow = await readFile(
+        path.resolve("packages/create-threenative/agent-docs/references/dream-loop.md"),
+        "utf8",
+      );
       expect(workflow).toContain("node scripts/reference.mjs");
       expect(workflow).toContain("node scripts/visual-loop.mjs");
       expect(workflow).toContain("Anshu Chimala");
@@ -820,8 +553,8 @@ describe("create-threenative", () => {
           path.join(result.target, host, "threenative-assets/SKILL.md"),
           "utf8",
         );
-        expect(visual).toContain("agent-docs/dream-loop.md");
-        expect(assets).toContain("agent-docs/dream-loop.md");
+        expect(visual).toContain(REFERENCE_PREFIX);
+        expect(assets).toContain(REFERENCE_PREFIX);
       }
       await expect(stat(path.join(result.target, "scripts/reference.mjs"))).resolves.toBeTruthy();
       await expect(stat(path.join(result.target, "scripts/visual-loop.mjs"))).resolves.toBeTruthy();
@@ -833,11 +566,59 @@ describe("create-threenative", () => {
     }
   });
 
+  // One stored copy, two host directories. A duplicated skill drifts the day one adapter is
+  // edited, and a copied `capabilities.json` drifts the day the engine dependency moves — the
+  // installed `@threenative/core` copy is what the MCP actually reads.
+  it("should store each skill once and link it into the Claude host directory", async () => {
+    const root = await makeTempDir("threenative-single-skill-copy-");
+    try {
+      const { target } = await createProject(
+        { install: false, target: "linked-skill-game", template: "starter" },
+        root,
+      );
+      const claudeSkills = path.join(target, ".claude", "skills");
+      const stored = (
+        await readdir(path.join(target, ".agents", "skills"), { withFileTypes: true })
+      )
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+      expect(stored.length).toBeGreaterThan(0);
+      // Claude Code gets builder and verifier as subagents, not skills, so it has no skill to link.
+      const linked = (await readdir(claudeSkills, { withFileTypes: true })).map(
+        (entry) => entry.name,
+      );
+      for (const subagentOnly of ["threenative-builder", "threenative-verifier"]) {
+        expect(stored).toContain(subagentOnly);
+        expect(linked, subagentOnly).not.toContain(subagentOnly);
+        await expect(lstat(path.join(claudeSkills, subagentOnly))).rejects.toThrow();
+        await expect(
+          lstat(path.join(target, ".claude", "agents", `${subagentOnly}.md`)),
+        ).resolves.toBeTruthy();
+      }
+      expect(linked.sort()).toEqual(
+        stored.filter((name) => !["threenative-builder", "threenative-verifier"].includes(name)),
+      );
+      for (const name of linked) {
+        const link = path.join(claudeSkills, name);
+        expect((await lstat(link)).isSymbolicLink(), `${name} is a second stored copy`).toBe(true);
+        expect(await realpath(link)).toBe(
+          await realpath(path.join(target, ".agents", "skills", name)),
+        );
+      }
+      for (const dropped of ["capabilities.json", "AGENT-ROLES.md"]) {
+        await expect(lstat(path.join(target, dropped)), dropped).rejects.toThrow();
+      }
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  // One stored copy per skill: `.claude/skills` is a symlink into `.agents/skills`, so breaking the
+  // stored file breaks both host reads the scaffolder asserts on.
   it.each([
     "agent-files/.agents/skills/threenative-visuals/SKILL.md",
-    "agent-files/.claude/skills/threenative-visuals/SKILL.md",
     "agent-files/.agents/skills/threenative-assets/SKILL.md",
-    "agent-files/.claude/skills/threenative-assets/SKILL.md",
   ])("should fail when %s names an absent dream-loop recipe", async (relativePath) => {
     const source = await readFile(
       path.resolve("packages/create-threenative", relativePath),
@@ -845,7 +626,10 @@ describe("create-threenative", () => {
     );
     await withBrokenTemplateFile(
       relativePath,
-      source.replaceAll("agent-docs/dream-loop.md", "agent-docs/missing-dream-loop.md"),
+      source.replaceAll(
+        `${REFERENCE_PREFIX}dream-loop.md`,
+        `${REFERENCE_PREFIX}missing-dream-loop.md`,
+      ),
       async (root) => {
         await expect(
           createProject(
@@ -863,24 +647,22 @@ describe("create-threenative", () => {
       path.resolve("packages/create-threenative/agent-docs/references/sculpt-from-a-reference.md"),
       "utf8",
     );
-    expect(recipe).toContain("agent-docs/dream-loop.md");
+    expect(recipe).toContain(`${REFERENCE_PREFIX}dream-loop.md`);
     expect(recipe).toContain("CREDITS.md");
-    for (const host of [".agents/skills", ".claude/skills"]) {
-      const assets = await readFile(
-        path.resolve(
-          "packages/create-threenative/agent-files",
-          host,
-          "threenative-assets/SKILL.md",
-        ),
-        "utf8",
-      );
-      expect(assets).toContain("sculpt_plan");
-      expect(assets).toContain("sculpt_spec_gate");
-      expect(assets).toContain("sculpt_compare");
-      expect(assets).toContain("sculpt_pass_gate");
-      expect(assets).toContain("agent-docs/dream-loop.md");
-      expect(assets).toContain("CREDITS.md");
-    }
+    const assets = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files",
+        ".agents/skills",
+        "threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    expect(assets).toContain("sculpt_plan");
+    expect(assets).toContain("sculpt_spec_gate");
+    expect(assets).toContain("sculpt_compare");
+    expect(assets).toContain("sculpt_pass_gate");
+    expect(assets).toContain(`${REFERENCE_PREFIX}dream-loop.md`);
+    expect(assets).toContain("CREDITS.md");
   });
 
   it.each(ALL_TEMPLATES)(
@@ -929,14 +711,6 @@ describe("create-threenative", () => {
           expect(builderAdapter.length).toBeLessThan(500);
           expect(verifierAdapter.length).toBeLessThan(500);
         }
-
-        const guide = files.get("AGENT-ROLES.md") ?? "";
-        expect(guide).toContain("claude");
-        expect(guide).toContain("codex");
-        expect(guide).toContain(".agents/skills");
-        expect(guide).not.toContain(".codex/skills");
-        expect(guide).toContain("threenative-builder");
-        expect(guide).toContain("threenative-verifier");
 
         const bugSkillBodies = await Promise.all(
           BUG_REPORT_SKILL_PATHS.map(async (relativePath) => {
@@ -1046,6 +820,18 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, relativePath), "utf8"),
         ).resolves.toBeTruthy();
       }
+      // The whole point of the cut (PRD-449): a new game proves itself with three scenarios, and
+      // the engine's own guards live outside the template. `readdir` rather than the STARTER_PATHS
+      // membership, so a file nobody added to the list still fails here.
+      expect(
+        (await readdir(path.join(result.target, "playtests"))).filter((name) =>
+          name.endsWith(".playtest.json"),
+        ),
+      ).toEqual([
+        "play.playtest.json",
+        "production-readiness.playtest.json",
+        "survives.playtest.json",
+      ]);
       // A scaffolded project must land with audio every target can decode, WAV included, or its
       // first `--target android` build installs and shows nothing.
       const pickupAudio = await readFile(path.join(result.target, "assets/pickup.wav"));
@@ -1255,39 +1041,6 @@ describe("create-threenative", () => {
     });
   });
 
-  it("should fail closed when the capabilities manifest is missing from the package", async () => {
-    const root = await makeTempDir("threenative-capabilities-missing-");
-    try {
-      await cp(TEMPLATE_ROOT, path.join(root, "templates"), { recursive: true });
-      await cp(
-        path.resolve("packages/create-threenative/template-assets"),
-        path.join(root, "template-assets"),
-        { recursive: true },
-      );
-      await cp(
-        path.resolve("packages/create-threenative/agent-docs"),
-        path.join(root, "agent-docs"),
-        { recursive: true },
-      );
-      await cp(
-        path.resolve("packages/create-threenative/agent-files"),
-        path.join(root, "agent-files"),
-        { recursive: true },
-      );
-      // capabilities.json deliberately absent: this is the `files` regression the copy
-      // used to paper over, leaving every generated project without capability search.
-      await expect(
-        createProject(
-          { install: false, target: "my-game", template: "starter" },
-          root,
-          path.join(root, "templates"),
-        ),
-      ).rejects.toThrow(/TN_KIT_CAPABILITIES_MISSING/u);
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 30_000);
-
   it("should reject an occupied or file target and create nested parents", async () => {
     const root = await makeTempDir("threenative-target-collisions-");
     try {
@@ -1417,10 +1170,10 @@ describe("create-threenative", () => {
         ).resolves.toBeTruthy();
       }
       await expect(
-        readFile(path.join(result.target, "src/entities/Character.ts"), "utf8"),
-      ).resolves.toContain("PLATFORMER_FEEL");
+        readFile(path.join(result.target, "src/entities/Fox.ts"), "utf8"),
+      ).resolves.toContain("FOX_FEEL");
       await expect(
-        readFile(path.join(result.target, "src/scenes/Level.ts"), "utf8"),
+        readFile(path.join(result.target, "src/scenes/Play.ts"), "utf8"),
       ).resolves.toContain('ctx.entities.add("player"');
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -1514,6 +1267,20 @@ describe("create-threenative", () => {
     expect(new Set(configs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(new Set(codexConfigs.map((config) => config.toString("utf8"))).size).toBe(1);
     expect(pins.every(({ asset, engine, sculpt }) => !asset && !engine && !sculpt)).toBe(true);
+  });
+
+  it("forces the broken sharp 0.34 line off every template's dependency tree", async () => {
+    // `@gltf-transform/cli@4.4.2` drags `sharp ~0.34.5`, whose prebuilt does not load on modern
+    // glibc: a plain `npm install` of a scaffold then dies trying to build it from source. The
+    // same line is covered by GHSA-rgj7-g3m4-5g8c (`sharp <0.35.4`). PRD-445's root override
+    // does not reach a consumer's own project, so every template carries the pin for npm and pnpm.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
+      expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
+      expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
   });
 
   it("should document only tools the pinned asset MCP actually serves", async () => {

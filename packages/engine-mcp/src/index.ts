@@ -16,6 +16,8 @@ export interface ICapabilityEntry {
   readonly constraints: readonly string[];
   readonly overrides?: readonly string[];
   readonly requires?: readonly string[];
+  /** Absent unless something on this entry is deprecated; each string names what, and what to use. */
+  readonly deprecated?: readonly string[];
 }
 
 export interface INotOwnedCapability {
@@ -223,14 +225,14 @@ export function defaultManifestPath(cwd = process.cwd()): string {
   // committed copies between 115 and 231 entries against the same engine. Walk up so an MCP host
   // that launches from a nested working directory still finds the project root.
   for (let directory = path.resolve(cwd); ; directory = path.dirname(directory)) {
-    const installed = path.join(
-      directory,
-      "node_modules",
-      "@threenative",
-      "core",
-      "capabilities.json",
-    );
-    if (existsSync(installed)) return installed;
+    const nodeModules = path.join(directory, "node_modules");
+    const installed = path.join(nodeModules, "@threenative", "core", "capabilities.json");
+    if (existsSync(installed)) {
+      const relative = path.relative(realpathSync(directory), realpathSync(nodeModules));
+      // An ancestor's node_modules symlink can belong to another project entirely.
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        return installed;
+    }
     const parent = path.dirname(directory);
     if (parent === directory) break;
   }
@@ -258,6 +260,10 @@ function manifestError(file: string, reason: string): Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function validateManifest(value: unknown, file: string): ICapabilityManifest {
@@ -290,12 +296,11 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !Array.isArray(raw.situations) ||
       !Array.isArray(raw.aliases) ||
       !Array.isArray(raw.constraints) ||
-      (raw.requires !== undefined && !Array.isArray(raw.requires)) ||
+      (raw.requires !== undefined && !isStringArray(raw.requires)) ||
+      (raw.deprecated !== undefined && !isStringArray(raw.deprecated)) ||
       !raw.situations.every((situation) => typeof situation === "string") ||
       !raw.aliases.every((alias) => typeof alias === "string") ||
-      !raw.constraints.every((constraint) => typeof constraint === "string") ||
-      (Array.isArray(raw.requires) &&
-        !raw.requires.every((requirement) => typeof requirement === "string"))
+      !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
@@ -672,16 +677,44 @@ export function searchCapabilities(
   };
 }
 
+/**
+ * Every manifest entry named `symbol` (optionally in one `importPath`); throws when there is none.
+ * Two packages can export one name (`createThreeObject` from raw-unreal and ueformat), so a lookup
+ * by name alone must return both — answering with the first hides the second from detail.
+ */
+export function capabilityDetails(
+  symbol: string,
+  manifestFile = defaultManifestPath(),
+  importPath?: string,
+): readonly ICapabilityDetail[] {
+  if (typeof symbol !== "string" || symbol.trim().length === 0)
+    throw new Error("engine_capability_detail requires a non-empty symbol string.");
+  const matches = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) =>
+      candidate.symbol === symbol &&
+      (importPath === undefined || candidate.importPath === importPath),
+  );
+  if (matches.length === 0)
+    throw new Error(
+      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
+    );
+  return matches;
+}
+
+/** One capability's detail; code callers must name `importPath` when the symbol is shared. */
 export function capabilityDetail(
   symbol: string,
   manifestFile = defaultManifestPath(),
+  importPath?: string,
 ): ICapabilityDetail {
-  if (typeof symbol !== "string" || symbol.trim().length === 0)
-    throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const manifest = loadCapabilityManifest(manifestFile);
-  const entry = manifest.entries.find((candidate) => candidate.symbol === symbol);
-  if (entry === undefined) throw new Error(`Unknown engine capability '${symbol}'.`);
-  return entry;
+  const matches = capabilityDetails(symbol, manifestFile, importPath);
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous engine capability '${symbol}': pass importPath, one of ${matches
+        .map((match) => `'${match.importPath}'`)
+        .join(", ")}.`,
+    );
+  return matches[0] as ICapabilityDetail;
 }
 
 const TOOL_DEFINITIONS: readonly IEngineTool[] = [
@@ -709,10 +742,17 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_capability_detail",
     description:
-      "Inspect one engine capability's import, signature, example, constraints, and overrides.",
+      "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     inputSchema: {
       additionalProperties: false,
-      properties: { symbol: { type: "string" } },
+      properties: {
+        importPath: {
+          description:
+            "The search result's importPath; required when two packages export the same symbol.",
+          type: "string",
+        },
+        symbol: { type: "string" },
+      },
       required: ["symbol"],
       type: "object",
     },
@@ -790,8 +830,27 @@ function handleToolCall(
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile);
-    logToolCall({ symbol: argumentsValue.symbol, tool: name });
+    if (argumentsValue.importPath !== undefined && typeof argumentsValue.importPath !== "string")
+      throw new Error("engine_capability_detail 'importPath' must be a string when given.");
+    const matches = capabilityDetails(
+      argumentsValue.symbol,
+      manifestFile,
+      argumentsValue.importPath,
+    );
+    // A shared name answers in one call with every match rather than an error: the agent reads
+    // both summaries and imports the right one without a second round trip.
+    const detail =
+      matches.length === 1
+        ? matches[0]
+        : {
+            guidance: `${matches.length} packages export '${argumentsValue.symbol}'. Import the match whose summary fits; pass importPath to get one.`,
+            matches,
+          };
+    logToolCall({
+      importPath: argumentsValue.importPath,
+      symbol: argumentsValue.symbol,
+      tool: name,
+    });
     return toolText(detail);
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
@@ -818,7 +877,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.4" },
       });
     }
     if (request.method === "tools/list") {

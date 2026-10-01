@@ -1,0 +1,33 @@
+{
+  "name": "sails-fill-with-wind",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "spill-the-sheets",
+      "press": ["ArrowDown"],
+      "holdTicks": 1800,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "set-them-again",
+      "press": ["ArrowUp"],
+      "holdTicks": 1800,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "components": [
+      { "entity": "player", "component": "sailMotion", "gte": 0.2, "changed": true },
+      { "entity": "player", "component": "groundSpeed", "gte": 1.5, "changed": true },
+      { "entity": "player", "component": "sailSamples", "gte": 2, "changed": true }
+    ],
+    "movement": { "entity": "player", "minDistance": 6 }
+  }
+}

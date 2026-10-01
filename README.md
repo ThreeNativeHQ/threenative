@@ -103,6 +103,11 @@ lifecycle.
 - **Built for agents.** A searchable capability manifest ships with the library and is exposed over
   MCP, so an authoring agent finds what already exists instead of rewriting it.
 
+> [!TIP]
+> **Picking the model that writes the scene.** [threejseval](https://threejseval.com/ranking) ranks
+> AI coding agents on Three.js work — one prompt, blind arena votes on the scenes they build, Elo
+> with cost and tokens beside each entry.
+
 ## Templates
 
 `pnpm create threenative my-game --template <name>`
@@ -113,7 +118,7 @@ lifecycle.
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |
 | `action-rpg` | A three-room dungeon with melee, loot, equipment, and persistence |
-| `defense` | Tower placement, routes, waves, and income |
+| `tower-defense` | Four tower types, three upgrade levels, twelve waves and an orbital strike on a polished diorama |
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |
 | `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
@@ -127,6 +132,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
 | `create-threenative` | Scaffold a readable game project from eight templates |
+| `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
@@ -159,21 +165,6 @@ Every claim here is backed by a run. The current numbers live in
 everything the framework does not yet do well — with what is being done about it — is in one
 place: [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md).
 
-## Website
-
-The marketing site lives in `site/` as a private workspace app — never a published package. It is
-prerendered to static HTML at build time and hydrated on the client, so every headline, feature and
-code sample is in the source a crawler downloads.
-
-```sh
-pnpm site:dev      # vite dev server
-pnpm site:build    # client bundle, SSR bundle, prerendered HTML, sitemap
-pnpm site:deploy   # wrangler, Cloudflare static assets
-```
-
-Its claims are typed data with evidence pointers, and its code samples are real files compiled
-against the shipped packages, so renaming an export breaks the site build rather than the site.
-
 ## Docs
 
 - [`docs/README.md`](docs/README.md) — the map: PRDs, verification, benchmarks, strategy,
@@ -182,6 +173,8 @@ against the shipped packages, so renaming an export breaks the site build rather
   refuses to be, and the rules that decide both. Binding.
 - [`docs/architecture/AGENT-INTERFACE.md`](docs/architecture/AGENT-INTERFACE.md) — the surface an
   authoring agent reads.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md#versioning-and-deprecation) — what the public surface is, what
+  each version number promises before and after 1.0, and how a symbol gets deprecated.
 - [`packages/create-threenative/README.md`](packages/create-threenative/README.md) — templates and
   the scaffold command.
 
@@ -210,3 +203,5 @@ follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 ## Licence
 
 MIT — see [`LICENSE`](LICENSE). ThreeNative is MIT end to end, including the native runtime.
+
+The name and logo are not covered by the MIT licence — see [`TRADEMARKS.md`](TRADEMARKS.md).

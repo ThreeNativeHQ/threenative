@@ -4,7 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 
 import { RELEVANCE_FLOOR, capabilitySituationTokens } from "../packages/engine-mcp/src/index.js";
-import { CAPABILITY_PACKAGE_ALLOWLIST } from "./check-capability-docs.js";
+import { CAPABILITY_PACKAGE_ALLOWLIST, isPublicClassOrFunction } from "./check-capability-docs.js";
 import { type INotOwnedCapability, NOT_OWNED_CAPABILITIES } from "./not-owned-capabilities.js";
 import {
   REALISM_EFFECTS_COVERAGE,
@@ -37,6 +37,7 @@ export interface ICapabilityManifestEntry {
   readonly overrides: readonly string[];
   readonly requires?: readonly string[];
   readonly supersedes: readonly string[];
+  readonly deprecated?: readonly string[];
 }
 
 export interface ICapabilityManifest {
@@ -60,6 +61,7 @@ interface IParsedDocumentation {
   readonly overrides: readonly string[];
   readonly requires: readonly string[];
   readonly supersedes: readonly string[];
+  readonly deprecated: readonly string[];
 }
 
 interface IRawExport {
@@ -77,6 +79,7 @@ interface ICapabilityCandidate extends IRawExport {
 const EMPTY_DOCUMENTATION: IParsedDocumentation = {
   aliases: [],
   constraints: [],
+  deprecated: [],
   example: "",
   overrides: [],
   requires: [],
@@ -226,12 +229,13 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   const overrides: string[] = [];
   const requires: string[] = [];
   const supersedes: string[] = [];
+  const deprecated: string[] = [];
   const exampleLines: string[] = [];
   const summaryLines: string[] = [];
   let inExample = false;
   for (const line of lines) {
     const tag =
-      /^@(situation|alias|constraint|example|override|requires|supersedes)\b(?:\s+(.*))?$/u.exec(
+      /^@(situation|alias|constraint|example|override|requires|supersedes|deprecatedOption)\b(?:\s+(.*))?$/u.exec(
         line,
       );
     if (tag !== null) {
@@ -243,6 +247,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
       if (tag[1] === "override" && value.length > 0) overrides.push(value);
       if (tag[1] === "requires" && value.length > 0) requires.push(value);
       if (tag[1] === "supersedes" && value.length > 0) supersedes.push(value);
+      if (tag[1] === "deprecatedOption" && value.length > 0) deprecated.push(value);
       if (tag[1] === "example" && value.length > 0) exampleLines.push(value);
       continue;
     }
@@ -259,6 +264,7 @@ function parseDocumentation(comment: string | undefined): IParsedDocumentation {
   return {
     aliases: [...new Set(aliases)],
     constraints: [...new Set(constraints)],
+    deprecated: [...new Set(deprecated)],
     example,
     overrides: [...new Set(overrides)],
     requires: [...new Set(requires)],
@@ -275,6 +281,7 @@ function mergeDocumentation(
   return {
     aliases: [...new Set([...primary.aliases, ...fallback.aliases])],
     constraints: [...new Set([...primary.constraints, ...fallback.constraints])],
+    deprecated: [...new Set([...primary.deprecated, ...fallback.deprecated])],
     example: primary.example || fallback.example,
     overrides: [...new Set([...primary.overrides, ...fallback.overrides])],
     requires: [...new Set([...primary.requires, ...fallback.requires])],
@@ -436,34 +443,68 @@ function capabilityPackageDirectories(root: string): readonly string[] {
     .map(({ directory }) => directory);
 }
 
-function packageExportCandidatesForDirectory(packageDirectory: string): ICapabilityCandidate[] {
+interface IPackageEntrySource {
+  readonly packageName: string;
+  readonly subpath: string;
+  readonly source: string;
+}
+
+function packageEntrySources(packageDirectory: string): IPackageEntrySource[] {
   const packageFile = path.join(packageDirectory, "package.json");
   if (!existsSync(packageFile)) return [];
   const manifest = JSON.parse(readFileSync(packageFile)) as { exports?: unknown };
   if (manifest.exports === undefined) return [];
   const name = packageName(packageDirectory);
-  const candidates: ICapabilityCandidate[] = [];
-  for (const [subpath, target] of exportMapEntries(manifest.exports)) {
-    if (subpath === "./package.json") continue;
-    const source = sourceFileForTarget(packageDirectory, target);
-    const exports = collectModuleExports(source);
-    for (const entry of exports) {
-      const kind = classifyDeclaration(entry.declaration);
-      if (kind === undefined) continue;
-      candidates.push({
-        ...entry,
-        importPath: importPath(name, subpath),
-        kind,
-        packageName: name,
-      });
+  return exportMapEntries(manifest.exports)
+    .filter(([subpath]) => subpath !== "./package.json")
+    .map(([subpath, target]) => ({
+      packageName: name,
+      source: sourceFileForTarget(packageDirectory, target),
+      subpath,
+    }));
+}
+
+/**
+ * The export names the type checker sees as callable or constructible, per entry source. The
+ * syntactic classifier alone let `export const alias = other` and `export const f = upstream.f`
+ * ship without a manifest entry; this is the same predicate the docs gate uses, so the two agree.
+ */
+function callableExportNames(sources: readonly string[]): ReadonlyMap<string, ReadonlySet<string>> {
+  const program = ts.createProgram({
+    options: {
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      skipLibCheck: true,
+      target: ts.ScriptTarget.ES2022,
+    },
+    rootNames: [...sources],
+  });
+  const checker = program.getTypeChecker();
+  const result = new Map<string, ReadonlySet<string>>();
+  for (const source of sources) {
+    const file = program.getSourceFile(source);
+    const module = file === undefined ? undefined : checker.getSymbolAtLocation(file);
+    const names = new Set<string>();
+    for (const symbol of module === undefined ? [] : checker.getExportsOfModule(module)) {
+      if (isPublicClassOrFunction(checker, symbol)) names.add(symbol.getName());
     }
+    result.set(source, names);
   }
-  return candidates;
+  return result;
 }
 
 function packageExportCandidates(root: string): ICapabilityCandidate[] {
-  return capabilityPackageDirectories(root).flatMap((packageDirectory) =>
-    packageExportCandidatesForDirectory(packageDirectory),
+  const entries = capabilityPackageDirectories(root).flatMap(packageEntrySources);
+  const callable = callableExportNames(entries.map(({ source }) => source));
+  return entries.flatMap(({ packageName: name, source, subpath }) =>
+    collectModuleExports(source).flatMap((entry): ICapabilityCandidate[] => {
+      const kind =
+        classifyDeclaration(entry.declaration) ??
+        (callable.get(source)?.has(entry.symbol) === true ? "function" : undefined);
+      if (kind === undefined) return [];
+      return [{ ...entry, importPath: importPath(name, subpath), kind, packageName: name }];
+    }),
   );
 }
 
@@ -624,6 +665,11 @@ export function buildCapabilityManifest(
     ...documentedCandidates.map((candidate) => ({
       aliases: candidate.documentation.aliases,
       constraints: candidate.documentation.constraints,
+      // Optional and omitted when untagged: a capability with nothing deprecated must not answer
+      // a detail lookup with a key, or every reader learns to check for an empty list.
+      ...(candidate.documentation.deprecated.length > 0
+        ? { deprecated: candidate.documentation.deprecated }
+        : {}),
       example: candidate.documentation.example,
       importPath: candidate.importPath,
       kind: candidate.kind,

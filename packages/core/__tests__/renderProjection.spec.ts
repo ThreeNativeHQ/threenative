@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   Float32BufferAttribute,
   Group,
@@ -19,6 +20,7 @@ import {
   MeshStandardMaterial,
   type Object3D,
   PerspectiveCamera,
+  PointLight,
   Points,
   PointsMaterial,
   Scene,
@@ -31,8 +33,10 @@ import {
   Uint32BufferAttribute,
 } from "three";
 import { positionLocal, vec3 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { markEngineRenderHook } from "../src/engine-render-hook.js";
+import { ProjectionMirror } from "../src/projection-apply.js";
 import {
   createProjectionScanWorkspace,
   releaseProjectionScanWorkspace,
@@ -258,6 +262,25 @@ describe("SceneRenderProjection", () => {
     expect(projection.deoptimized).toBe(true);
     expect(projection.root).toBe(scene);
     expect(projection.report.reasonCode).toBe("renderHook");
+  });
+
+  it("still projects when the only hook is the engine's own prewarm bookkeeping (PRD-458)", () => {
+    const scene = new Scene();
+    const meshes = fill(scene, new MeshStandardMaterial(), 300);
+    const projection = projected(scene, 2);
+
+    // What `WorldCells#awaitDraw` installs: a self-clearing borrow that counts one submitted draw.
+    // It is engine bookkeeping with no game-visible object behind it, so the mirror's own draw
+    // cannot be mistaken for the game's draw and the frame stays projectable. A real game hook on
+    // the same mesh still declines the frame — see the case above.
+    const borrow = (): void => undefined;
+    markEngineRenderHook(borrow);
+    (meshes[7] as Mesh).onBeforeRender = borrow;
+
+    projection.reconcile();
+
+    expect(projection.deoptimized).toBe(false);
+    expect(projection.report.reasonCode).toBe("projected");
   });
 
   it("keeps one draw per material and never merges two materials into one", () => {
@@ -493,19 +516,20 @@ describe("SceneRenderProjection", () => {
     }
   });
 
-  it("keeps forced-visible shader-displaced members in a material batch", () => {
+  it("keeps forced-visible members in a material batch of their own", () => {
     const scene = new Scene();
-    const material = new MeshBasicNodeMaterial();
-    // The shader moves the forced-visible members into the camera, while their authored bounds
-    // stay outside it. BatchedMesh can only answer from those authored bounds.
-    material.positionNode = positionLocal.add(vec3(0, 0, 1_000));
+    const material = new MeshBasicMaterial();
+    // The forced-visible members sit behind the camera, so a batch that culled per object from
+    // their authored bounds would drop them. (A shader that moved them into view used to stand
+    // in for this; a material that displaces vertices now keeps its own draw instead — see
+    // "keeps a static mesh whose material moves its own vertices".)
     const geometries: BoxGeometry[] = [];
     const anchorGeometry = new BoxGeometry(1, 1, 1);
 
     for (let index = 0; index < 8; index += 1) {
       const mesh = new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material);
       mesh.position.z = index < 4 ? -1_000 : 1_000;
-      mesh.frustumCulled = index >= 4;
+      mesh.frustumCulled = index < 4;
       scene.add(mesh);
       geometries.push(mesh.geometry);
     }
@@ -1377,6 +1401,37 @@ describe("SceneRenderProjection exact lane corpus", () => {
     expect(projection.report.projectedObjects).toBe(300);
   });
 
+  it("keeps a static mesh whose material moves its own vertices on a draw of its own", () => {
+    // A batch is one object: it draws with its own model matrix, so a displacement written in
+    // object space — TSL wind reading `modelWorldMatrixInverse`, a `displacementMap` — is wrong
+    // there, or silently lost. Nothing about such a mesh looks batchable, so the mesh keeps its
+    // own draw and the report names the reason instead of counting it as folded.
+    const displacements: Array<(material: MeshStandardNodeMaterial) => void> = [
+      (material) => {
+        material.positionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.castShadowPositionNode = positionLocal.add(vec3(0, 0, 0.25));
+      },
+      (material) => {
+        material.displacementMap = new DataTexture(new Uint8Array(4), 1, 1);
+      },
+    ];
+    for (const displace of displacements) {
+      const material = new MeshStandardNodeMaterial();
+      displace(material);
+      const subject = new Mesh(new BoxGeometry(1, 1, 1), material);
+
+      const { projection } = withSubject(subject);
+
+      expect(projection.report.exact.vertexDisplaced).toBe(1);
+      const proxy = proxyOf(projection, (o) => (o as Mesh).material === material);
+      expect(proxy).toBeDefined();
+      // The 300 props beside it are the same shape without the displacement, and still one draw.
+      expect(projection.report.projectedObjects).toBe(300);
+    }
+  });
+
   it("keeps a mesh that asked for its own place in the draw order", () => {
     const subject = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
     subject.renderOrder = 5;
@@ -2042,7 +2097,7 @@ describe("SceneRenderProjection copies the authored background and environment r
 /**
  * The named opt-out. Projection is an optimizer, and an optimizer a game cannot decline is a tax:
  * a scene whose draw count falls without its frame time following should be able to say so. The
- * option is `enabled: false` on the constructor — `renderer.projection: false` in config — and the
+ * option is `projection: false` on the constructor — `renderer.projection: false` in config — and the
  * contract is that it costs nothing: no mirror, no scan, the authored scene every frame, and a
  * verdict that names the opt-out rather than impersonating one of the measured declines.
  */
@@ -2066,7 +2121,7 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     const meshes = fill(scene, new MeshStandardMaterial(), 300);
     const scanSpy = vi.spyOn(projectionPlan, "scanProjection");
 
-    const projection = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     projection.reconcile();
 
     expect(scanSpy).not.toHaveBeenCalled();
@@ -2089,7 +2144,7 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
 
     const projection = new SceneRenderProjection(scene, {
       minMeshes: 8,
-      enabled: false,
+      projection: false,
       onReport: (report) => reports.push(report),
     });
     projection.reconcile();
@@ -2106,21 +2161,302 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     const scene = new Scene();
     fill(scene, new MeshStandardMaterial(), 300);
 
-    const off = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const off = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     off.reconcile();
     expect(off.root).toBe(scene);
     expect(off.report.batches).toBe(0);
 
-    const on = new SceneRenderProjection(scene, { minMeshes: 8, enabled: true });
+    const on = new SceneRenderProjection(scene, { minMeshes: 8, projection: true });
     on.reconcile();
     expect(on.root).not.toBe(scene);
     expect(on.report.batches).toBeGreaterThan(0);
     on.dispose();
 
-    const offAgain = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const offAgain = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     offAgain.reconcile();
     expect(offAgain.root).toBe(scene);
     expect(offAgain.report.batches).toBe(0);
     expect(offAgain.report.projecting).toBe(false);
+  });
+});
+
+describe("ProjectionMirror CPU guards", () => {
+  function makePlan(
+    batchGroups: unknown[] = [],
+    materialGroups: unknown[] = [],
+    lights: unknown[] = [],
+    seen: Set<Object3D> = new Set(),
+  ): Parameters<ProjectionMirror["apply"]>[0] {
+    return {
+      lights,
+      lightCount: lights.length,
+      belowFloor: [],
+      belowFloorCount: 0,
+      batchGroups,
+      batchGroupCount: batchGroups.length,
+      materialGroups,
+      materialGroupCount: materialGroups.length,
+      seen: { has: (object: Object3D) => seen.has(object) },
+    } as unknown as Parameters<ProjectionMirror["apply"]>[0];
+  }
+
+  function instancedGroup(
+    members: Mesh[],
+    geometry: BufferGeometry,
+    material: MeshStandardMaterial,
+  ) {
+    return { members, memberCount: members.length, geometry, material };
+  }
+
+  function materialGroup(members: Mesh[], material: MeshStandardMaterial, revision = 1) {
+    return {
+      members,
+      memberCount: members.length,
+      geometries: new Map(members.map((mesh) => [mesh.geometry, 0])),
+      material,
+      revision,
+      frustumCulled: true,
+    };
+  }
+
+  function uniqueMeshes(count: number, material: MeshStandardMaterial): Mesh[] {
+    return Array.from(
+      { length: count },
+      (_, index) => new Mesh(new BoxGeometry(1, 1 + index * 0.01, 1), material),
+    );
+  }
+
+  it("describes exact, instanced, and material ownership", () => {
+    const sharedGeometry = new BoxGeometry();
+    const instancedMaterial = new MeshStandardMaterial();
+    const material = new MeshStandardMaterial();
+    const exact = new Sprite(new SpriteMaterial());
+    const instanced = Array.from({ length: 8 }, () => new Mesh(sharedGeometry, instancedMaterial));
+    const materialMembers = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(
+      makePlan(
+        [instancedGroup(instanced, sharedGeometry, instancedMaterial)],
+        [materialGroup(materialMembers, material)],
+        [],
+        new Set([exact, ...instanced, ...materialMembers]),
+      ),
+    );
+
+    const ownership = mirror.describeOwnership();
+    const ownershipEntries = [...ownership.values()];
+    const exactOwnership = ownershipEntries.find((entry) => entry.kind === "exact");
+    const instancedOwnership = ownershipEntries.find((entry) => entry.kind === "instancedBatch");
+    const materialOwnership = ownershipEntries.find((entry) => entry.kind === "materialBatch");
+    expect(ownership.size).toBe(3);
+    expect(exactOwnership?.sources).toStrictEqual([exact]);
+    expect(instancedOwnership?.sources).toHaveLength(instanced.length);
+    expect(materialOwnership?.sources).toHaveLength(materialMembers.length);
+    expect(mirror.drawsWith(instancedMaterial)).toBe(true);
+    expect(mirror.drawsWith(material)).toBe(true);
+    expect(mirror.drawsWith(exact.material as SpriteMaterial)).toBe(true);
+    expect(mirror.drawsWith(new MeshStandardMaterial())).toBe(false);
+  });
+
+  it("fails closed when an exact entry was cleared", () => {
+    const mirror = new ProjectionMirror();
+    mirror.prepare([{ object: undefined, reason: "tooFewToBatch" }] as never, 1);
+    expect(() => mirror.apply(makePlan())).toThrow("cleared before apply");
+  });
+
+  it("releases a mirror when a light cannot be mirrored", () => {
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry();
+    const members = Array.from({ length: 8 }, () => new Mesh(geometry, material));
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([instancedGroup(members, geometry, material)], [], [], new Set(members)));
+    const light = new DirectionalLight(0xffffff, 1);
+    vi.spyOn(light, "clone").mockReturnValue(new Group() as never);
+
+    expect(mirror.apply(makePlan([], [], [light]))).toMatch(/could not be mirrored/u);
+    expect(mirror.batchCount).toBe(0);
+    expect(mirror.proxyCount).toBe(0);
+    expect(mirror.describeOwnership()).toEqual(new Map());
+  });
+
+  it("mirrors point-light runtime settings and retires a no-shadow-change light", () => {
+    const light = new DirectionalLight(0xffffff, 1);
+    light.shadow.autoUpdate = false;
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [], [light]));
+    mirror.apply(makePlan());
+    expect(light.shadow.autoUpdate).toBe(false);
+    expect(mirror.scene.children).toHaveLength(0);
+
+    const point = new PointLight(0xffffff, 2, 30, 1.5);
+    point.power = 17;
+    const pointMirror = new ProjectionMirror();
+    pointMirror.apply(makePlan([], [], [point]));
+    const mirrored = pointMirror.scene.children.find(
+      (object) => (object as PointLight).isPointLight === true,
+    ) as PointLight | undefined;
+    expect(mirrored?.distance).toBe(30);
+    expect(mirrored?.decay).toBe(1.5);
+    expect(mirrored?.power).toBe(17);
+  });
+
+  it("labels material members that cannot use a batch", () => {
+    const material = new MeshStandardMaterial();
+    const mirrored = uniqueMeshes(8, material);
+    mirrored[0]?.scale.set(-1, 1, 1);
+    mirrored[0]?.updateMatrixWorld(true);
+    const small = new Mesh(new BoxGeometry(), material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(
+      makePlan(
+        [],
+        [materialGroup(mirrored, material), materialGroup([small], material)],
+        [],
+        new Set([...mirrored, small]),
+      ),
+    );
+    expect(mirror.exactCounts.get("negativeScale")).toBe(1);
+    expect(mirror.exactCounts.get("tooFewToBatch")).toBe(1);
+  });
+
+  it("refuses a material group whose packed batch cannot be constructed", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const invalidGeometry = new BufferGeometry();
+    const group = {
+      ...materialGroup(members, material),
+      geometries: new Map([[invalidGeometry, 0]]),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+    expect(mirror.exactCounts.get("unsupportedGeometry")).toBe(8);
+  });
+
+  it("disposes a batch when a later geometry cannot be added", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const invalidGeometry = new BufferGeometry();
+    const group = {
+      ...materialGroup(members, material),
+      geometries: new Map([
+        [members[0]?.geometry as BufferGeometry, 0],
+        [invalidGeometry, 0],
+      ]),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+    expect(mirror.exactCounts.get("unsupportedGeometry")).toBe(8);
+  });
+
+  it("falls back when an instanced batch cannot be constructed", () => {
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry();
+    const members = Array.from({ length: 8 }, () => new Mesh(geometry, material));
+    const group = { ...instancedGroup(members, geometry, material), memberCount: Number.NaN };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([group], [], [], new Set(members)));
+    expect(mirror.instancedBatchCount).toBe(0);
+  });
+
+  it("retires material batches and exact proxies when sources disappear", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [materialGroup(members, material)], [], new Set(members)));
+    expect(mirror.materialBatchCount).toBe(1);
+    mirror.apply(makePlan());
+    expect(mirror.materialBatchCount).toBe(0);
+    expect(
+      mirror.scene.children.some((object) => (object as BatchedMesh).isBatchedMesh === true),
+    ).toBe(false);
+
+    const exact = new Sprite(new SpriteMaterial());
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(makePlan([], [], [], new Set([exact])));
+    expect(mirror.proxyCount).toBe(1);
+    mirror.apply(makePlan());
+    expect(mirror.proxyCount).toBe(0);
+    expect(mirror.scene.children.some((object) => (object as Sprite).isSprite === true)).toBe(
+      false,
+    );
+  });
+
+  it("releases a material slot before moving its source to the exact lane", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [materialGroup(members, material)], [], new Set(members)));
+    const exact = members[0] as Mesh;
+    mirror.prepare([{ object: exact, reason: "tooFewToBatch" }] as never, 1);
+    mirror.apply(makePlan([], [], [], new Set([exact])));
+
+    expect(mirror.inspect(exact)?.lane).toBe("exact");
+    const materialOwnership = [...mirror.describeOwnership().values()].find(
+      (entry) => entry.kind === "materialBatch",
+    );
+    expect(materialOwnership).toBeUndefined();
+    expect(mirror.materialBatchCount).toBe(0);
+  });
+
+  it("keeps a material member exact when its geometry or instance cannot be packed", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, material);
+    const group = materialGroup(members, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+
+    const replacement = new Mesh(new BoxGeometry(), material);
+    group.members = [members[0] as Mesh, replacement, ...members.slice(2)];
+    group.memberCount = 8;
+    mirror.apply(makePlan([], [group], [], new Set([members[0] as Mesh, replacement])));
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(1);
+
+    const second = new Mesh(members[0]?.geometry as BufferGeometry, material);
+    const batch = mirror.scene.children.find(
+      (object) => (object as BatchedMesh).isBatchedMesh === true,
+    ) as BatchedMesh;
+    const addInstance = vi.spyOn(batch, "addInstance").mockImplementation(() => {
+      throw new Error("instance packing failed");
+    });
+    group.members = [members[0] as Mesh, ...members.slice(1, 7), second];
+    group.memberCount = 8;
+    mirror.apply(makePlan([], [group], [], new Set([members[0] as Mesh, second])));
+    addInstance.mockRestore();
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(8);
+  });
+
+  it("keeps a material group exact when its packed capacity is exhausted", () => {
+    const material = new MeshStandardMaterial();
+    const members = uniqueMeshes(10, material);
+    const geometry = members[0]?.geometry as BufferGeometry;
+    const group = materialGroup(members, material);
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [group], [], new Set(members)));
+
+    const additions = Array.from({ length: 6 }, () => new Mesh(geometry, material));
+    group.members = [...members, ...additions];
+    group.memberCount = 16;
+    mirror.apply(makePlan([], [group], [], new Set(group.members)));
+
+    const overflow = new Mesh(geometry, material);
+    group.members = [...group.members.slice(0, 15), overflow];
+    mirror.apply(makePlan([], [group], [], new Set(group.members)));
+    expect(mirror.exactCounts.get("batchOverflow")).toBe(1);
+  });
+
+  it("releases the old material batch when a source changes groups", () => {
+    const firstMaterial = new MeshStandardMaterial();
+    const secondMaterial = new MeshStandardMaterial();
+    const members = uniqueMeshes(8, firstMaterial);
+    const first = materialGroup(members, firstMaterial);
+    const second = {
+      ...materialGroup(members, secondMaterial),
+      geometries: new Map(members.map((mesh) => [mesh.geometry, 0])),
+    };
+    const mirror = new ProjectionMirror();
+    mirror.apply(makePlan([], [first, second], [], new Set(members)));
+    expect(mirror.materialBatchCount).toBe(1);
+    expect(mirror.projectedObjects).toBe(16);
   });
 });

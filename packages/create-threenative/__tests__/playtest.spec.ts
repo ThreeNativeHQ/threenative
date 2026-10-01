@@ -7,6 +7,9 @@ import { templatesShipping } from "../../../test-support/templates.js";
 // tomorrow is covered the day it ships one rather than the day somebody extends a list.
 const DURABLE_PLAYTEST_TEMPLATES = templatesShipping("playtests/survives.playtest.json");
 
+/** The four keys every kit binds to `input.vector("move")`. */
+const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
 describe("starter playtest proof", () => {
   it.each(DURABLE_PLAYTEST_TEMPLATES)(
     "should name survives as the durable scenario in the %s guide",
@@ -21,7 +24,7 @@ describe("starter playtest proof", () => {
   );
 
   it.each(DURABLE_PLAYTEST_TEMPLATES)(
-    "should drive the registered player with input in the %s durable scenario",
+    "should drive its registered subject with input in the %s durable scenario",
     async (template) => {
       const scenario = JSON.parse(
         await readFile(
@@ -36,34 +39,38 @@ describe("starter playtest proof", () => {
         subject?: string;
       };
 
+      // The subject is the template's own, not a literal: `minimal` proves its `player` moved,
+      // `tower-defense` its camera, and the `rts` kit its camera, because a strategy game has no avatar
+      // and its durable proof is that a held key pans a battlefield. What every one of them shares
+      // is the claim underneath: a named registered entity, a held input step, and a distance.
+      // Any of the four arrows, not one of them. Every kit binds `input.vector("move")` to all
+      // four, and a room whose first move is sideways — the vault crosses east — is not a kit that
+      // failed to prove anything. Demanding `ArrowUp` rejected a correct durable scenario over the
+      // direction its own game happens to start in.
       const inputStep = scenario.steps?.find(
-        (step) => step.kind === "input" && step.press === "ArrowUp",
+        (step) => step.kind === "input" && MOVE_KEYS.has(step.press ?? ""),
       );
-      expect(scenario.subject).toBe("player");
-      expect(scenario.assert?.movement?.entity).toBe("player");
+      expect(scenario.subject).toBeTruthy();
+      expect(scenario.assert?.movement?.entity).toBe(scenario.subject);
       expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
-      expect(inputStep).toMatchObject({ kind: "input", press: "ArrowUp" });
+      expect(inputStep, `${template}: no movement key in the durable scenario`).toMatchObject({
+        kind: "input",
+      });
       expect(inputStep?.holdTicks).toBeGreaterThan(0);
     },
   );
 
-  it("should register defense's input-controlled player subject", async () => {
-    const scene = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/scenes/Defense.ts"),
-      "utf8",
-    );
-    const player = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/entities/Player.ts"),
+  it("should pan the tower-defense camera from the move axis its durable scenario holds", async () => {
+    const rig = await readFile(
+      path.resolve("packages/create-threenative/templates/tower-defense/src/camera-rig.ts"),
       "utf8",
     );
     const game = await readFile(
-      path.resolve("packages/create-threenative/templates/defense/src/game.ts"),
+      path.resolve("packages/create-threenative/templates/tower-defense/src/game.ts"),
       "utf8",
     );
 
-    expect(scene).toContain('ctx.entities.add("player", player)');
-    expect(scene).toContain("player.update(frameCtx, dt)");
-    expect(player).toContain('ctx.input.vector("move")');
+    expect(rig).toContain('input.vector("move")');
     expect(game).toContain("move: {");
   });
 
@@ -159,11 +166,11 @@ describe("starter playtest proof", () => {
     expect(player).toContain('ctx.input.vector("move")');
   });
 
-  it("should run the chase scenario in the platformer test chain", async () => {
+  it("should run the fox run-and-collect scenario in the platformer test chain", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/chase.playtest.json",
+          "packages/create-threenative/templates/platformer/playtests/move.playtest.json",
         ),
         "utf8",
       ),
@@ -171,36 +178,34 @@ describe("starter playtest proof", () => {
       warmupFrames: number;
       assert: {
         diagnostics: { noConsoleErrors: boolean; runtimeReady: boolean };
-        movement: {
-          pathLength: number;
-          reachesPositionWithin: { maxDistance: number; position: number[] };
-        };
+        movement: { minAxisDelta: { axis: string; min: number } };
+        resources: { id: string; path: string; gte: number }[];
       };
     };
-    const avoidance = JSON.parse(
-      await readFile(
-        path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/avoidance.playtest.json",
-        ),
-        "utf8",
-      ),
-    ) as { warmupFrames: number };
 
-    expect([scenario.warmupFrames, avoidance.warmupFrames]).toEqual([0, 0]);
-    expect(scenario.assert.diagnostics).toEqual({ noConsoleErrors: true, runtimeReady: true });
-    expect(scenario.assert.movement).toMatchObject({
-      pathLength: 6,
-      reachesPositionWithin: { maxDistance: 1.2, position: [0, 0.66, 0] },
+    // The coin line is the route's first real proof: the fox has to run, and the coins only count
+    // if the pickup test and the reach both hold. Boot time decides how far it gets, so the
+    // scenario asserts the smaller of the two rather than a distance the page's start time sets.
+    expect(scenario.warmupFrames).toBe(20);
+    expect(scenario.assert.diagnostics).toEqual({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      runtimeReady: true,
     });
+    expect(scenario.assert.movement.minAxisDelta).toEqual({ axis: "x", min: 3 });
+    expect(scenario.assert.resources).toEqual([
+      { changed: true, gte: 5, id: "GameState", path: "coins" },
+    ]);
   });
 
   // Both stomp scenarios once passed and failed run to run with identical tick counts. The span
   // was always 117; what moved was `firstTick` — the ticks that elapsed while the page booted —
-  // and `Patrol.update(dt)` walks the enemy from the moment the level loads, so a stomp landed on
-  // a target at a different point in its cycle every run. Placing the patrol frozen is what makes
-  // the landing reproducible; deleting the setup block puts the flake straight back.
-  it.each(["stomp", "stomp-rise"])(
-    "should place the platformer patrol frozen in the %s scenario",
+  // and a walking target moves from the moment the level loads, so a stomp landed on it at a
+  // different point in its cycle every run. Placing the target frozen is what makes the landing
+  // reproducible; deleting the setup block puts the flake straight back. The platformer walks the
+  // two stomp and damage scenarios, both of which place a walker.
+  it.each(["damage", "stomp"])(
+    "should place the platformer walker frozen in the %s scenario",
     async (name) => {
       const scenario = JSON.parse(
         await readFile(
@@ -214,11 +219,11 @@ describe("starter playtest proof", () => {
           place?: readonly { entity: string; at: Record<string, number>; frozen?: boolean }[];
         };
       };
-      const patrol = scenario.setup?.place?.find((entry) => entry.entity === "patrol");
+      const walker = scenario.setup?.place?.find((entry) => entry.entity.startsWith("walker."));
 
-      expect(patrol, "the patrol must be placed, or boot time decides the stomp").toBeDefined();
-      expect(patrol?.frozen).toBe(true);
-      expect(Object.keys(patrol?.at ?? {}).sort()).toEqual(["x", "y", "z"]);
+      expect(walker, "the walker must be placed, or boot time decides the stomp").toBeDefined();
+      expect(walker?.frozen).toBe(true);
+      expect(Object.keys(walker?.at ?? {}).sort()).toEqual(["x", "y", "z"]);
     },
   );
 
@@ -238,8 +243,8 @@ describe("starter playtest proof", () => {
       steps: Array<{ pointers?: Array<{ id: number }> }>;
       target: string;
     };
-    const level = await readFile(
-      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Level.ts"),
+    const play = await readFile(
+      path.resolve("packages/create-threenative/templates/platformer/src/scenes/Play.ts"),
       "utf8",
     );
 
@@ -256,8 +261,8 @@ describe("starter playtest proof", () => {
         (entry) => entry.entity === "touch-controls" && entry.present === true,
       ),
     ).toBe(true);
-    expect(level).toContain("const showTouchControls = isMobile() && isTouchscreenAvailable();");
-    expect(level).not.toContain("isNative() && isMobile()");
+    expect(play).toContain("isMobile() && isTouchscreenAvailable()");
+    expect(play).not.toContain("isNative() && isMobile()");
   });
 
   it("should drive sailing movement with browser touch", async () => {
@@ -342,58 +347,40 @@ describe("starter playtest proof", () => {
     ]);
   });
 
-  it("should run a load-bearing platformer physics assertion", async () => {
-    const scenario = JSON.parse(
-      await readFile(
-        path.resolve(
-          "packages/create-threenative/templates/platformer/playtests/physics.playtest.json",
-        ),
-        "utf8",
-      ),
-    ) as {
-      assert: { settled: Array<{ atStep: string; entity: string; minBodies: number }> };
-      steps: Array<{ label: string }>;
-    };
-
-    expect(scenario.steps).toContainEqual(expect.objectContaining({ label: "settled" }));
-    expect(scenario.assert.settled).toEqual([{ atStep: "settled", entity: "crate", minBodies: 1 }]);
-  });
-
-  it("should ship numeric and signal assertions for both terminal outcomes", async () => {
+  it("should ship one smoke and one bounded performance scenario in the platformer chain", async () => {
     const root = path.resolve("packages/create-threenative/templates/platformer");
     const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;
     };
-    const win = JSON.parse(
-      await readFile(path.join(root, "playtests/terminal-loop-win.playtest.json"), "utf8"),
-    ) as { assert: { resources: unknown[]; signals: unknown[] } };
-    const fail = JSON.parse(
-      await readFile(path.join(root, "playtests/terminal-loop-fail.playtest.json"), "utf8"),
-    ) as { assert: { resources: unknown[]; signals: unknown[] } };
+    const survives = JSON.parse(
+      await readFile(path.join(root, "playtests/survives.playtest.json"), "utf8"),
+    ) as { subject: string; assert: { diagnostics: Record<string, boolean> } };
+    const performance = JSON.parse(
+      await readFile(path.join(root, "playtests/performance.playtest.json"), "utf8"),
+    ) as {
+      assert: {
+        performance: { maxDrawCalls: number; maxFrameMsP95: number; minFps: number };
+        renderChain: { tier: string };
+      };
+    };
 
-    expect(packageJson.scripts?.["pretest:terminal-loop"]).toBe("playwright install chromium");
-    const terminalLoop = packageJson.scripts?.["test:terminal-loop"] ?? "";
-    expect(terminalLoop).toContain("terminal-loop-win.playtest.json");
-    expect(terminalLoop).toContain("terminal-loop-fail.playtest.json");
-    expect(win.assert.resources).toContainEqual({
-      changed: true,
-      equals: 1,
-      id: "state",
-      path: "terminal",
+    // `pnpm test` is the whole chain in one command: every scenario in the template, and no
+    // separate script that can rot beside it.
+    const testScript = packageJson.scripts?.test ?? "";
+    expect(testScript).toContain("playtests/*.playtest.json");
+    expect(testScript).toContain("--browser-recipe webgpu");
+    expect(survives.subject).toBe("player");
+    expect(survives.assert.diagnostics).toMatchObject({
+      noConsoleErrors: true,
+      noNetworkErrors: true,
+      noRuntimeDiagnostics: true,
+      runtimeReady: true,
     });
-    expect(win.assert.resources).toContainEqual({
-      atSteps: [{ equals: true, label: "reach-goal" }],
-      id: "state",
-      path: "grounded",
-    });
-    expect(win.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "won" });
-    expect(fail.assert.resources).toContainEqual({
-      changed: true,
-      equals: 2,
-      id: "state",
-      path: "terminal",
-    });
-    expect(fail.assert.signals).toContainEqual({ entity: "game", minCount: 1, name: "lost" });
+    // The Tier 3 Floor lives in the shipped scenario, beside the ceilings, not in a report.
+    expect(performance.assert.performance.maxFrameMsP95).toBe(33);
+    expect(performance.assert.performance.minFps).toBe(30);
+    expect(performance.assert.performance.maxDrawCalls).toBeGreaterThan(0);
+    expect(performance.assert.renderChain.tier).toBe("high");
   });
 
   it("should ship a pause button, a seeded level, and a playable pickup sound", async () => {
@@ -406,7 +393,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const seed = await readFile(
-      path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+      path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
       "utf8",
     );
     const pickupAudio = await readFile(
@@ -428,7 +415,7 @@ describe("starter playtest proof", () => {
   it("should assert the seeded level range instead of a generator draw", async () => {
     const seed = JSON.parse(
       await readFile(
-        path.resolve("packages/create-threenative/templates/starter/playtests/seed.playtest.json"),
+        path.resolve("packages/create-threenative/template-playtests/starter/seed.playtest.json"),
         "utf8",
       ),
     ) as {
@@ -534,71 +521,43 @@ describe("starter playtest proof", () => {
     }
   });
 
-  it("should drive the generated shooter through one committed input-control scenario", async () => {
+  it("should drive the generated shooter through one committed fire-control scenario", async () => {
     const scenario = JSON.parse(
       await readFile(
         path.resolve(
-          "packages/create-threenative/templates/shooter/playtests/input-control.playtest.json",
+          "packages/create-threenative/templates/shooter/playtests/debug-fire.playtest.json",
         ),
         "utf8",
       ),
     ) as {
       assert?: {
-        resources?: Array<{
-          atSteps?: Array<{ equals: unknown; label: string }>;
-          id: string;
-          path: string;
-        }>;
-        signals?: Array<{ atStep?: string; name: string }>;
+        movement?: { entity: string; minDistance: number };
+        resources?: Array<{ id: string; path: string }>;
       };
       name: string;
-      parity?: { targets: string[] };
       schemaVersion: number;
-      steps: Array<{
-        kind?: string;
-        label?: string;
-        pointerPosition?: { buttons?: number; x: number; y: number };
-        press?: string;
-        waitTicks?: number;
-      }>;
+      steps: Array<{ kind?: string; label?: string; press?: string }>;
       target: string;
     };
 
-    expect(scenario.name).toBe("input-control");
+    expect(scenario.name).toBe("debug-fire");
     expect(scenario.schemaVersion).toBe(1);
-    // One scenario, two targets: the desktop run executes this same file, no fork.
-    expect(scenario.parity?.targets).toEqual(["web", "desktop"]);
-    // The control comes first, so a pass from initial state is impossible.
-    expect(scenario.steps[0]).toMatchObject({ kind: "wait", label: "no-input-control" });
+    expect(scenario.target).toBe("web");
+
+    // Three trigger pulls around a reload and a walk: the cadence, the magazine and the fact
+    // that a shot is a raycast from the crosshair rather than a muzzle. None of it can pass
+    // from the opening state, so the scenario is not satisfied by doing nothing.
+    const presses = (scenario.assert?.resources ?? []).map(({ path }) => path);
+    for (const path of ["shots", "targetsHit", "score"]) {
+      expect(presses).toContain(path);
+    }
+    expect(scenario.assert?.movement).toMatchObject({ entity: "player" });
+    expect(scenario.assert?.movement?.minDistance).toBeGreaterThan(0);
 
     const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
-    expect(labeled.get("aim-down")?.pointerPosition).toMatchObject({ buttons: 2, x: 0.5 });
-    expect(labeled.get("look-right")?.pointerPosition).not.toHaveProperty("buttons");
-    // The trigger is pressed alone, after the aim button is released and the aim is held on a
-    // key instead. A chorded press — left while right is down — never reaches the page through
-    // the harness, so a scenario built on one proves nothing about either button.
-    expect(labeled.get("aim-key")?.press).toBe("KeyQ");
-    expect(labeled.get("fire-while-aiming")?.pointerPosition).toMatchObject({
-      buttons: 1,
-      x: 0.5,
-    });
-    expect(labeled.get("release-buttons")?.pointerPosition).toMatchObject({ buttons: 0 });
-
-    const resources = scenario.assert?.resources ?? [];
-    const yaw = resources.find(({ path }) => path === "yawDegrees");
-    // Half of the ninety-two degrees that same pointer travel used to produce: the right button is
-    // held through the look, and aiming down the sights halves the sensitivity.
-    expect(yaw?.atSteps).toContainEqual({ label: "look-right-settle", equals: 46 });
-    const shots = resources.find(({ path }) => path === "shotsFired");
-    expect(shots?.atSteps).toEqual([{ label: "fire-settle", equals: 1 }]);
-    // The heading is zeroed through the template's own restart binding before the measured
-    // looks, so the rotation proof starts from a known baseline on every target. Restart is
-    // Enter, not R: a first-person kit owes R to the reload every shooter binds there.
-    expect(labeled.get("reset-heading")).toMatchObject({ press: "Enter" });
-    const signalNames = (scenario.assert?.signals ?? []).map(({ name }) => name);
-    for (const name of ["aim-engaged", "fired", "hit", "defeated", "aim-released"]) {
-      expect(signalNames).toContain(name);
-    }
+    expect(labeled.get("shot-1")).toMatchObject({ kind: "input", press: "Space" });
+    expect(labeled.get("reload")).toMatchObject({ kind: "input", press: "KeyR" });
+    expect(labeled.get("advance")).toMatchObject({ kind: "input", press: "KeyW" });
   });
 
   it("should bind mouse look, right-button aim, and left-button fire in the shooter template", async () => {
@@ -607,7 +566,7 @@ describe("starter playtest proof", () => {
       "utf8",
     );
     const player = await readFile(
-      path.resolve("packages/create-threenative/templates/shooter/src/entities/Player.ts"),
+      path.resolve("packages/create-threenative/templates/shooter/src/entities/FpsPlayer.ts"),
       "utf8",
     );
     const scene = await readFile(
@@ -615,18 +574,21 @@ describe("starter playtest proof", () => {
       "utf8",
     );
 
-    expect(game).toContain('aim: { keys: ["KeyQ"], mouseButtons: [2] }');
-    expect(game).toContain('fire: { buttons: [0], keys: ["KeyF", "Space"], mouseButtons: [0] }');
+    // Aim is F and the right button; Space and the left button fire. The bindings the game
+    // documents in its own AGENTS.md, asserted here so the docs cannot drift from the map.
+    expect(game).toContain('aim: { keys: ["KeyF"], mouseButtons: [2] }');
+    expect(game).toContain('fire: { keys: ["Space"], mouseButtons: [0] }');
     expect(game).toContain("look: { pointerRelative: true }");
-    expect(game).toContain('reload: { buttons: [3], keys: ["KeyR"] }');
+    expect(game).toContain('reload: { keys: ["KeyR"] }');
     // The player consumes the look axis through the real input map, on the same path a native
     // build takes; nothing in this kit reads `movementX` or the DOM.
     expect(player).toContain('ctx.input.vector("look")');
     expect(player).toContain('ctx.input.pressed("aim")');
-    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the weapon's
-    // cyclic cooldown.
+    // Held, not edge-triggered: hold-to-fire and a single tap take one path through the
+    // weapon's cyclic cooldown.
     expect(scene).toContain('frameCtx.input.pressed("fire")');
-    expect(scene).toContain("fireHitscan(player.aiming)");
-    expect(scene).toContain('emitPlaytestEvent({ entity: "player", name: "fired", aimed:');
+    // A shot starts at the crosshair, from the camera the player is looking through.
+    expect(scene).toContain("const aimRay = player.aimRay();");
+    expect(scene).toContain("fire(frameCtx, aimRay)");
   });
 });

@@ -471,7 +471,51 @@ export class Heightfield extends Group implements IComputeDriven {
 }
 
 export { TerrainTiles } from "./world-tiles.js";
-export type { IWorldTileColliderInput, IWorldTilesTopologyObservation } from "./world-tiles.js";
+export type {
+  IAdmissionBudget,
+  IWorldTileColliderInput,
+  IWorldTilesTopologyObservation,
+} from "./world-tiles.js";
+
+export {
+  TERRAIN_VALIDATE_FLAG,
+  TERRAIN_VALIDATE_MARKER,
+  terrainValidationRequested,
+} from "./world-validate.js";
 
 export { getWorldCapabilities } from "./world-capabilities.js";
 export type { IWorldCapabilities } from "./world-capabilities.js";
+
+export { cellPlacements, validateWorldPackage } from "./world-package.js";
+export type {
+  IWorldAsset,
+  IWorldAssetBounds,
+  IWorldAssetLod,
+  IWorldCell,
+  IWorldExtent,
+  IWorldPackage,
+  IWorldPackageError,
+  IWorldPackageValidationOptions,
+  IWorldRun,
+  IWorldTerrain,
+  WorldPackageErrorCode,
+} from "./world-package.js";
+
+export { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
+export { loadTerrainSplat } from "./world-terrain-splat.js";
+export type {
+  ILoadTerrainSplatOptions,
+  ITerrainSplatLayer,
+  ITerrainSplatMaskedLayer,
+  ITerrainSplatTable,
+} from "./world-terrain-splat.js";
+
+export { WorldCells } from "./world-cells.js";
+export type {
+  IShadowRegion,
+  IWorldCellsBudget,
+  IWorldCellsFollow,
+  IWorldCellsLoadOptions,
+  IWorldCellsStats,
+  IWorldCellsTerrainOptions,
+} from "./world-cells.js";

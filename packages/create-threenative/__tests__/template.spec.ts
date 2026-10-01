@@ -31,8 +31,10 @@ async function typecheckTemplates(): Promise<string[]> {
 // no React and therefore no other way to draw one. Round 10 removed it from platformer, shooter,
 // racing and defense, where it rendered *on top of* their React HUD: four templates drew the same
 // numbers twice, and in shooter the overlap was unreadable.
-const geometryHudTemplates = ["minimal"] as const;
 const templateRoot = path.resolve("packages/create-threenative/templates");
+// PRD-449: the engine guards a template without shipping them to a new game, so they live beside
+// the templates rather than inside one. `pnpm test:templates` copies them into the scaffold.
+const templatePlaytestRoot = path.resolve(templateRoot, "..", "template-playtests");
 const authoringSkills = [
   ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
@@ -97,34 +99,6 @@ function callPattern(name: string): RegExp {
 
 function referencePattern(name: string): RegExp {
   return new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\b`, "u");
-}
-
-function hudGlyphProof(source: string, text: string) {
-  const characters = /const CHARS = "([^"]+)"/u.exec(source)?.[1];
-  const encoded = /"([0-9a-f ]+)"\s*\.split\(" "\)/u.exec(source)?.[1];
-  if (characters === undefined || encoded === undefined)
-    throw new Error("Malformed HUD glyph data");
-  const glyphs = encoded.split(" ").map((hex) => BigInt(`0x${hex}`));
-  if (glyphs.length !== characters.length) throw new Error("HUD glyph table is incomplete");
-  const points: Array<[number, number]> = [];
-  for (const [character, value] of [...text].entries()) {
-    if (value === " ") continue;
-    const glyph = glyphs[characters.indexOf(value)];
-    if (glyph === undefined) throw new Error(`Missing HUD glyph: ${value}`);
-    for (let pixel = 0; pixel < 35; pixel += 1)
-      if ((glyph & (1n << BigInt(pixel))) !== 0n)
-        points.push([character * 6 + (pixel % 5), Math.floor(pixel / 5)]);
-  }
-  if (points.length === 0) throw new Error("HUD glyph proof is blank");
-  return {
-    brightPixels: points.length,
-    bounds: [
-      Math.min(...points.map(([x]) => x)),
-      Math.min(...points.map(([, y]) => y)),
-      Math.max(...points.map(([x]) => x)),
-      Math.max(...points.map(([, y]) => y)),
-    ],
-  };
 }
 
 async function linkDependency(target: string, name: string, source: string): Promise<void> {
@@ -347,10 +321,7 @@ describe("template contracts", () => {
 
   it("requires the starter boot-failure screenshot to keep its error text readable", async () => {
     const scenario = JSON.parse(
-      await readFile(
-        path.join(templateRoot, "starter/playtests/boot-failure.playtest.json"),
-        "utf8",
-      ),
+      await readFile(path.join(templatePlaytestRoot, "starter/boot-failure.playtest.json"), "utf8"),
     ) as {
       assert?: {
         visual?: Array<{
@@ -440,30 +411,6 @@ describe("template contracts", () => {
     }
   });
 
-  it("should ship a user-owned geometry HUD in templates that use one", async () => {
-    for (const template of geometryHudTemplates) {
-      const root = path.join(templateRoot, template);
-      const hud = await readFile(path.join(root, "src/render/hud.ts"), "utf8");
-      const scene = await readFile(path.join(root, "src/scenes/Play.ts"), "utf8");
-      expect(hud, template).toContain("InstancedMesh");
-      expect(hud, template).toContain("camera.add(root)");
-      expect(hud, template).toContain("renderOrder");
-      expect(hud, template).toContain("TIME ");
-      expect(hud, template).not.toMatch(/CanvasTexture|document\.|window\.|@threenative\//u);
-      expect(scene, template).toContain("createHud(");
-      expect(scene, template).toMatch(/ctx\.add\((?:ctx\.)?camera\)/u);
-      expect(scene, template).toContain("hud.update(");
-      expect(scene, template).toMatch(/ctx\.entities\.add\(\s*"hud"/u);
-      expect(hudGlyphProof(hud, "SCORE 1200"), template).toEqual({
-        brightPixels: 161,
-        bounds: [0, 0, 58, 6],
-      });
-    }
-    expect(() => hudGlyphProof('const CHARS = "";', "SCORE 1200")).toThrow(
-      "Malformed HUD glyph data",
-    );
-  });
-
   it("should ship exactly one starter HUD", async () => {
     const hud = await readFile(path.join(templateRoot, "starter/src/ui/Hud.tsx"), "utf8");
     // `useUiState`, not `useGameState`: the HUD reads the game's PUBLISHED state, because on every
@@ -473,42 +420,6 @@ describe("template contracts", () => {
     await expect(
       readFile(path.join(templateRoot, "starter/src/render/hud.ts"), "utf8"),
     ).rejects.toThrow();
-  });
-
-  /**
-   * Source checks above prove the HUD is written. This pins the proof that it *runs*: a
-   * scenario each template's `pnpm test` executes must observe the booted HUD's live glyph
-   * count. Delete the assertion from a scenario and this goes red, so the observation cannot
-   * quietly disappear and leave the source checks looking like coverage.
-   *
-   * The assertion is `changed`, not a floor: any floor is already satisfied by the warmup
-   * value, which the runner correctly rejects as trivial.
-   */
-  it("should observe the booted geometry HUD in templates that use one", async () => {
-    for (const template of geometryHudTemplates) {
-      // Every template's HUD has to expose the count, whether or not its scenario reads it.
-      const source = await readFile(path.join(templateRoot, template, "src/render/hud.ts"), "utf8");
-      expect(source, template).toMatch(/glyphs:\s*0/u);
-      expect(source, template).toContain("this.glyphs = instance");
-    }
-
-    const root = path.join(templateRoot, "minimal");
-    const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-    expect(manifest.scripts?.test ?? "").toContain('--scenario "playtests/*.playtest.json"');
-    // Without the bridge the scenario fails closed on TN_PLAYTEST_BRIDGE_MISSING.
-    expect(await readFile(path.join(root, "src/game.ts"), "utf8")).toContain("playtest(");
-
-    const scenario = JSON.parse(
-      await readFile(path.join(root, "playtests/play.playtest.json"), "utf8"),
-    );
-    const hud = (scenario.assert?.components ?? []).find(
-      (entry: { entity?: string }) => entry.entity === "hud",
-    );
-    expect(hud, "the minimal template boots without observing its HUD").toEqual({
-      changed: true,
-      component: "glyphs",
-      entity: "hud",
-    });
   });
 
   it("should call every exported render integration symbol", async () => {
@@ -534,24 +445,34 @@ describe("template contracts", () => {
     }
   });
 
-  it("should keep the starter ridge on one classic Worker path with disposal", async () => {
-    const [controller, worker, play] = await Promise.all([
-      readFile(path.join(templateRoot, "starter/src/render/rockRidge.ts"), "utf8"),
-      readFile(path.join(templateRoot, "starter/src/render/rockRidge.worker.ts"), "utf8"),
+  it("should build the starter's test arena from two materials and one grid", async () => {
+    const [arena, materials, palette, play, goal] = await Promise.all([
+      readFile(path.join(templateRoot, "starter/src/render/arena.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/render/materials.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/render/palette.ts"), "utf8"),
       readFile(path.join(templateRoot, "starter/src/scenes/Play.ts"), "utf8"),
+      readFile(path.join(templateRoot, "starter/src/entities/Goal.ts"), "utf8"),
     ]);
-    expect(controller).toContain("new Blob");
-    expect(controller).toContain("new Worker(url)");
-    expect(controller).toContain("state.requestedGeneration");
-    expect(controller).toContain("message.generation !== state.requestedGeneration");
-    expect(controller).toContain("previous.geometry.dispose()");
-    expect(controller).toContain('error.name = "TN_ROCK_RIDGE_TOPOLOGY_INVALID"');
-    expect(controller).not.toContain('type: "module"');
-    expect(worker).toContain("createImplicitSurfaceWorkerSource");
-    expect(worker).toContain("[result.indices.buffer, result.positions.buffer]");
-    expect(worker).not.toContain("@threenative/");
-    expect(play).toContain("this.#scenery?.dispose()");
-    expect(play).toContain('ctx.entities.add("scenery.ridge", scenery)');
+    // Three roles, one saturated colour. The look is legible because nothing else is blue.
+    expect(arena).toContain("structureMaterial");
+    expect(arena).toContain("floorMaterial");
+    expect(materials).toMatch(/propMaterial[\s\S]*palette\.accent/);
+    expect(palette.match(/accent:/gu)).toHaveLength(1);
+    // UVs are world metres, so one grid tile is one metre on every face of every prop.
+    expect(arena).toContain("worldGridUVs");
+    expect(materials).toContain("export function worldGridUVs");
+    // The ground the player does not stand on: that is what makes the gap a pit.
+    expect(arena).toContain("GROUND_Y = -6");
+    expect(arena).not.toContain("new RigidBody3D");
+    // Both platforms come from the one builder, and both collide with the triangles they show.
+    expect(play).toContain("platform(");
+    expect(goal).toContain("platform(");
+    expect(play).toContain("createArena()");
+    // The kind is named, not inferred: `fromMesh` alone reads a cylinder as a box, and a
+    // geometry whose offset is baked in would then collide at the world origin.
+    expect(play).toContain('CollisionShape3D.fromMesh(mesh, "trimesh")');
+    expect(goal).toContain('CollisionShape3D.fromMesh(mesh, "trimesh")');
+    expect(play).not.toContain("Math.random(");
   });
 
   it("should use roundedBox for starter meshes and never teach the old vertical path", async () => {
@@ -584,7 +505,7 @@ describe("template contracts", () => {
     expect(play).toContain("createSpringArm");
     expect(play).toContain("createSpringArm(ctx.camera");
     expect(play).toContain("springArm");
-    expect(play).toContain("roundedBox");
+    expect(play).toContain("block(");
     expect(play).toContain("setupSky");
     expect(play).toContain("setupSky(ctx.scene");
     expect(play).toContain("KILL_PLANE");
@@ -639,7 +560,7 @@ describe("template contracts", () => {
     expect(gameEntry).toContain('game.goto("play")');
 
     const restart = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/restart.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/restart.playtest.json"), "utf8"),
     ) as {
       assert: {
         resources: Array<{
@@ -695,27 +616,28 @@ describe("template contracts", () => {
   });
 
   it("should decay the platformer coyote timer every update", async () => {
-    const character = await readFile(
-      path.join(templateRoot, "platformer/src/entities/Character.ts"),
-      "utf8",
-    );
-    expect(character).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
+    const fox = await readFile(path.join(templateRoot, "platformer/src/entities/Fox.ts"), "utf8");
+    expect(fox).toContain("this.#coyote = Math.max(0, this.#coyote - dt);");
   });
 
-  it("should set matched sky background and fog, and reject an incomplete gradient", async () => {
+  it("should make the sky photograph the background, the environment and the fog", async () => {
+    // PRD-470: the starter's authored gradient dome is gone — the sky is a Poly Haven
+    // equirectangular photograph, so the contract is the one that survives a sky swap: the same
+    // image is the background and the environment light, the fog colour is a palette role rather
+    // than a literal, and the fade is thin enough not to wash the playable middle distance.
     const sky = await readFile(path.join(templateRoot, "starter/src/render/sky.ts"), "utf8");
-    expect(sky).toContain("scene.background = top");
-    expect(sky).toContain("resolved.top === undefined");
-    expect(sky).toContain("resolved.bottom === undefined");
-    expect(sky).toContain("throw new TypeError");
+    expect(sky).toContain("scene.background = sky");
+    expect(sky).toContain("scene.environment = sky");
+    expect(sky).toContain("scene.environmentIntensity");
+    expect(sky).toContain('import { palette } from "./palette.js"');
+    const fog = /new FogExp2\(\s*palette\.(\w+),\s*(\d+(?:\.\d+)?)\s*\)/u.exec(sky);
+    expect(fog, "starter sky must construct an exponential fog from a palette role").not.toBeNull();
     // Round 9 lost the visual column to fog reaching the playable middle distance: a blind judge
-    // chose against the build because "the distance fogs to near-white". The near plane belongs
-    // past where the next jump is, not 18 units from the camera.
-    const range = /new Fog\([^,]+,\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)\)/u.exec(sky);
-    expect(range, "starter sky must construct a Fog with a literal near and far").not.toBeNull();
-    const [near, far] = [Number(range?.[1]), Number(range?.[2])];
-    expect(near).toBeGreaterThanOrEqual(40);
-    expect(far).toBeGreaterThan(near);
+    // chose against the build because "the distance fogs to near-white". Exponential fog at this
+    // density is under 2% inside the 20 m route and only reads past a hundred metres.
+    const density = Number(fog?.[2]);
+    expect(density).toBeGreaterThan(0);
+    expect(1 - Math.exp(-((density * 20) ** 2))).toBeLessThan(0.02);
   });
 
   it("should never let fog swallow a template's sky dome", async () => {
@@ -732,12 +654,13 @@ describe("template contracts", () => {
       const source = await readFile(file, "utf8").catch(() => undefined);
       if (source === undefined) continue;
       checked.push(file);
-      // Not every kit has a horizon. An interior draws no dome at all, and demanding one there
-      // would have forced `puzzle` to ship a gradient sky that read, above its walls, as a
-      // hard-edged blue triangle — a hole in the room. So the rule is conditional on there being
-      // a dome, and the else branch is not an escape hatch: a `sky.ts` that draws no dome must
-      // still say what the horizon *is*, by setting `scene.background`. A file that does neither
-      // is the defect this test was written for, and still fails.
+      // Not every kit has a dome. Four put the captured sky photograph straight on
+      // `scene.background` instead — `minimal`, `puzzle`, `rts`, `starter` — and `puzzle`'s walls
+      // are 1.9 m tall, so what a dome-less kit sees above its own room is the photograph rather
+      // than a hard-edged gradient triangle: a hole in the room. So the rule is conditional on
+      // there being a dome, and the else branch is not an escape hatch: a `sky.ts` that draws no
+      // dome must still say what the horizon *is*, by setting `scene.background`. A file that
+      // does neither is the defect this test was written for, and still fails.
       const drawsDome = /BackSide/u.test(source);
       if (!drawsDome) {
         expect(source, `${file}: a sky with no dome must still set scene.background`).toMatch(
@@ -818,19 +741,14 @@ describe("template contracts", () => {
       }
     }
 
+    // One stored copy per skill: the scaffolder links `.claude/skills` into it, so a drifted
+    // second adapter is no longer expressible and only the stored body needs its markers.
     for (const [skill, ...markers] of authoringSkills) {
-      const bodies = await Promise.all(
-        [".agents/skills", ".claude/skills"].map(async (host) => {
-          const body = await readFile(
-            path.resolve("packages/create-threenative/agent-files", host, skill, "SKILL.md"),
-            "utf8",
-          );
-          for (const marker of markers)
-            expect(body, `${host}/${skill}/${marker}`).toContain(marker);
-          return body;
-        }),
+      const body = await readFile(
+        path.resolve("packages/create-threenative/agent-files/.agents/skills", skill, "SKILL.md"),
+        "utf8",
       );
-      expect(new Set(bodies).size, `${skill} host adapters drifted`).toBe(1);
+      for (const marker of markers) expect(body, `${skill}/${marker}`).toContain(marker);
     }
   });
 
@@ -913,7 +831,9 @@ describe("template contracts", () => {
       "utf8",
     );
     expect(skill.split(/\s+/u).filter(Boolean).length).toBeLessThan(260);
-    expect(skill).toContain("agent-docs/assertion-reference.md#performance");
+    expect(skill).toContain(
+      "node_modules/create-threenative/agent-docs/references/assertion-reference.md#performance",
+    );
     expect(skill).toMatch(performanceBoundPattern);
     for (const template of await templateNames()) {
       const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
@@ -1088,14 +1008,16 @@ describe("template contracts", () => {
     }
   });
 
-  it("should use the visible platform object for platform physics", async () => {
-    const platform = await readFile(
-      path.join(templateRoot, "platformer/src/level/Platform.ts"),
-      "utf8",
-    );
-    expect(platform).toContain("object: visual");
-    expect(platform).not.toContain("visible: false");
-    expect(platform).not.toContain("new Mesh(");
+  it("should build the platformer's collision from the level the player can see", async () => {
+    // The platformer's world is authored geometry, so the collider is the same mesh the camera
+    // draws — never a stand-in. `buildStaticColliders` reads the scene root, and the game's own
+    // predicate is what keeps several thousand decorative meshes out of collision.
+    const play = await readFile(path.join(templateRoot, "platformer/src/scenes/Play.ts"), "utf8");
+    const stage = await readFile(path.join(templateRoot, "platformer/src/level/Stage.ts"), "utf8");
+    expect(play).toContain("buildStaticColliders(ctx, stage.group");
+    expect(play).toContain("object.userData.solid === true");
+    expect(stage).toContain("mesh.userData.solid = true");
+    expect(stage).not.toContain("visible: false");
   });
 
   // `vite build` does not typecheck, so a template can ship a red `npm run typecheck` and still
@@ -1126,7 +1048,12 @@ describe("template contracts", () => {
     expect(failures.join("\n\n")).toBe("");
   }, 180_000);
 
-  it("should build a scaffold after deleting its optional realism effects", async () => {
+  it("should build a starter scaffold after pruning its optional effect sources", async () => {
+    // `effects/` ships three standalone TSL effect sources the starter's own look never imports:
+    // real, typechecked algorithm code that sits beside the default look instead of inside it (the
+    // pristine-scaffold typecheck above is what proves those sources compile). Deleting the folder
+    // is a supported edit, and the gate is that the scaffold still builds without it — which is
+    // what proves the default look is genuinely independent of these optional sources.
     const root = await makeTempDir("threenative-optional-effects-");
     try {
       const result = await createProject(
@@ -1134,8 +1061,11 @@ describe("template contracts", () => {
         root,
       );
       for (const file of ["lensDistortion.ts", "sparkle.ts", "gradualBackground.ts"]) {
-        await rm(path.join(result.target, "src/render/effects", file));
+        await expect(
+          readFile(path.join(result.target, "src/render/effects", file), "utf8"),
+        ).resolves.toBeTruthy();
       }
+      await rm(path.join(result.target, "src/render/effects"), { force: true, recursive: true });
       await linkScaffoldBuildDependencies(result.target);
       const vite = await findPnpmPackage("vite");
       await execFileAsync(process.execPath, [path.join(vite, "bin/vite.js"), "build"], {
@@ -1150,7 +1080,7 @@ describe("template contracts", () => {
     const movementFiles = [
       ["starter", "src/entities/Player.ts"],
       ["minimal", "src/entities/Player.ts"],
-      ["platformer", "src/entities/Character.ts"],
+      ["platformer", "src/entities/Fox.ts"],
     ] as const;
     for (const [template, relativePath] of movementFiles) {
       const source = await readFile(path.join(templateRoot, template, relativePath), "utf8");
@@ -1163,7 +1093,7 @@ describe("template contracts", () => {
       expect(agents).toContain("`-move.y` conversion");
     }
     const forward = JSON.parse(
-      await readFile(path.join(templateRoot, "starter/playtests/forward.playtest.json"), "utf8"),
+      await readFile(path.join(templatePlaytestRoot, "starter/forward.playtest.json"), "utf8"),
     ) as { assert?: { movement?: { minAxisDelta?: { axis?: string; min?: number } } } };
     expect(forward.assert?.movement?.minAxisDelta).toEqual({ axis: "-z", min: 0.5 });
   });
@@ -1180,9 +1110,16 @@ describe("template contracts", () => {
     for (const template of names) {
       const source = await readFile(path.join(templateRoot, template, "src/game.ts"), "utf8");
       expect(source, template).toMatch(/move: \{[\s\S]*?up: \[/);
+      // A *button* bound with `down` reads the field as "is this key held", so the action only
+      // ever fires on a press and never releases. A two-way axis is the opposite case: `up` and
+      // `down` are its two ends, which is what `vector()` reads, so a single-line binding that has
+      // an `up` is an axis and not a button. Sailing binds its sheets that way on purpose — a helm
+      // and a set of sheets are two independent controls, and `vector("move")` clamps their
+      // diagonal to unit length, which is wrong for a ship.
       const buttonBindings = source
         .split("\n")
-        .filter((line) => /^\s+\w+: \{[^\n]*\bdown: \[/.test(line));
+        .filter((line) => /^\s+\w+: \{[^\n]*\bdown: \[/.test(line))
+        .filter((line) => !/\bup: \[/.test(line));
       expect(buttonBindings, `${template} binds a button with down instead of keys`).toEqual([]);
     }
   });

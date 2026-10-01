@@ -45,9 +45,10 @@ function isNode(value: unknown): value is Node {
 }
 
 function asVector(value: Vector3 | readonly [number, number, number]): Vector3 {
-  if (value instanceof Vector3) return value.clone();
-  if (value.length !== 3) throw new Error("Atmosphere direction must contain three numbers.");
-  const result = new Vector3(value[0], value[1], value[2]);
+  if (!(value instanceof Vector3) && value.length !== 3)
+    throw new Error("Atmosphere direction must contain three numbers.");
+  const result =
+    value instanceof Vector3 ? value.clone() : new Vector3(value[0], value[1], value[2]);
   if (![result.x, result.y, result.z].every((component) => Number.isFinite(component))) {
     throw new Error("Atmosphere direction must contain finite numbers.");
   }

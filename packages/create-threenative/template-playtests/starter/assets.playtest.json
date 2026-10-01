@@ -1,0 +1,77 @@
+{
+  "name": "starter-assets",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run-toward-the-flag",
+      "press": "ArrowRight",
+      "holdTicks": 205,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump-the-gap",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "land-beside-the-pennant",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "won",
+        "changed": true
+      },
+      {
+        "allowTrivial": "How an asset was served is settled the moment it loads and never changes, so this row proves the cooked output answered rather than the uncompiled source fallback that looks identical on screen.",
+        "id": "assets",
+        "path": "native-proof.png.via",
+        "equals": "manifest"
+      },
+      {
+        "allowTrivial": "How an asset was served is settled the moment it loads and never changes, so this row proves the cooked output answered rather than the uncompiled source fallback that looks identical on screen.",
+        "id": "assets",
+        "path": "native-proof.glb.via",
+        "equals": "manifest"
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "The pennant is authored in frame from the first tick so the player can see where to jump; this row proves the compiled model still draws when the run reaches it.",
+        "entity": "goal",
+        "minProjectedPixels": 20
+      }
+    ]
+  }
+}

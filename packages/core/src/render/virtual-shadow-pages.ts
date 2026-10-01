@@ -222,6 +222,8 @@ export interface IClipWindow {
   readonly level: number;
   readonly extent: number;
   readonly pageWorldSize: number;
+  /** Pages a window trails its followed centre by before it moves and re-renders. */
+  readonly refreshPages: number;
   readonly minX: number;
   readonly minY: number;
   readonly maxX: number;
@@ -234,8 +236,18 @@ export interface IDirectionalClipmapOptions {
   /** Half-width of each level's window in world units, finest first. */
   readonly clipExtents: readonly number[];
   readonly pagesPerAxis: number;
-  /** Fraction of an extent inside which a point selects that level; `(0, 1]`. */
-  readonly selectionGuard?: number;
+  /**
+   * Fraction of an extent inside which a point selects that level, `(0, 1]`, default 0.9. One value
+   * for every level, or one per level finest first, the last entry standing in for the rest.
+   */
+  readonly selectionGuard?: number | readonly number[];
+  /**
+   * Fraction of an extent a level's window may trail its followed centre by before it re-renders,
+   * `[0, 1)`, default 0.125. Rounded to a whole number of the level's texels, so `0` keeps the
+   * old one-texel step. Larger steps re-render a level less often as the camera walks. One value
+   * for every level, or one per level finest first, the last entry standing in for the rest.
+   */
+  readonly refreshStep?: number | readonly number[];
 }
 
 function dot(a: IVector3Like, b: IVector3Like): number {
@@ -275,7 +287,14 @@ function cornersOfBounds(bounds: IBoundsLike): IVector3Like[] {
 export class DirectionalClipmap {
   readonly clipExtents: readonly number[];
   readonly pagesPerAxis: number;
-  readonly selectionGuard: number;
+  /**
+   * Per level, finest first; the last entry stands in for every level past it. Mutable through
+   * {@link setRefreshStep} so a level whose own render is expensive can be stepped further, which
+   * is fewer grid positions for its window rather than a different grid.
+   */
+  refreshStep: number[];
+  /** Per level, finest first; the last entry stands in for every level past it. */
+  readonly selectionGuard: readonly number[];
   readonly levelCount: number;
   basisU: IVector3Like;
   basisV: IVector3Like;
@@ -284,11 +303,17 @@ export class DirectionalClipmap {
   centerLight: ILightSpacePoint = { u: 0, v: 0, w: 0 };
   #windows: IClipWindow[] = [];
 
+  /** The per-level entry of a scalar-or-array option, the last entry standing in. */
+  #perLevel(values: readonly number[], level: number): number {
+    return values[Math.min(level, values.length - 1)] as number;
+  }
+
   constructor({
     direction,
     clipExtents,
     pagesPerAxis,
     selectionGuard = 0.9,
+    refreshStep = 0.125,
   }: IDirectionalClipmapOptions) {
     assertFiniteVector("direction", direction);
     assertPositiveInteger("pagesPerAxis", pagesPerAxis);
@@ -303,12 +328,45 @@ export class DirectionalClipmap {
         throw new RangeError("clipExtents must increase from the finest level to the coarsest");
       }
     }
-    if (!Number.isFinite(selectionGuard) || selectionGuard <= 0 || selectionGuard > 1) {
-      throw new RangeError("selectionGuard must be in the range (0, 1]");
+    // `selectionGuard` and `refreshStep` take one value per level, finest first, the last entry
+    // standing in for every level past it. One step for all of them spends the hysteresis the fine
+    // level can least afford on the coarse one, and the fine level is the one a walking camera
+    // re-renders most: at 20 m/s over 24/96/320 m extents a shared 0.125 re-rendered the fine window
+    // about 9 times a second to hold a shadow the eye reads at 1/8 of its own width.
+    const perLevel = (
+      value: number | readonly number[],
+      name: string,
+      valid: (v: number) => boolean,
+    ) => {
+      const values = Array.isArray(value) ? [...(value as readonly number[])] : [value as number];
+      for (const entry of values) {
+        if (!valid(entry)) {
+          throw new RangeError(`every ${name} must satisfy ${String(valid)}, got ${String(entry)}`);
+        }
+      }
+      return values;
+    };
+    const guards = perLevel(
+      selectionGuard,
+      "selectionGuard",
+      (v) => Number.isFinite(v) && v > 0 && v <= 1,
+    );
+    const steps = perLevel(
+      refreshStep,
+      "refreshStep",
+      (v) => Number.isFinite(v) && v >= 0 && v < 1,
+    );
+    for (let level = 0; level < guards.length; level += 1) {
+      if ((steps[level] as number) >= (guards[level] as number)) {
+        throw new RangeError(
+          `refreshStep must stay below selectionGuard, got ${String(steps[level])} >= ${String(guards[level])}`,
+        );
+      }
     }
     this.clipExtents = [...clipExtents];
     this.pagesPerAxis = pagesPerAxis;
-    this.selectionGuard = selectionGuard;
+    this.refreshStep = steps;
+    this.selectionGuard = guards;
     this.levelCount = clipExtents.length;
     this.basisW = normalize(direction);
     this.basisU = { x: 1, y: 0, z: 0 };
@@ -350,6 +408,16 @@ export class DirectionalClipmap {
     };
   }
 
+  /** Re-step one level's window: the trail its followed centre may move before it re-renders. */
+  setRefreshStep(level: number, step: number): void {
+    assertInteger("level", level);
+    if (level < 0 || level >= this.levelCount) throw new RangeError(`invalid clip level: ${level}`);
+    if (!Number.isFinite(step) || step < 0 || step >= 1) {
+      throw new RangeError(`refreshStep must stay in the range [0, 1), got ${String(step)}`);
+    }
+    this.refreshStep[Math.min(level, this.refreshStep.length - 1)] = step;
+  }
+
   updateCenter(worldPoint: IVector3Like): readonly IClipWindow[] {
     assertFiniteVector("worldPoint", worldPoint);
     this.centerWorld = { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z };
@@ -357,12 +425,25 @@ export class DirectionalClipmap {
     const halfPages = Math.floor(this.pagesPerAxis / 2);
     this.#windows = this.clipExtents.map((extent, level) => {
       const pageWorldSize = (extent * 2) / this.pagesPerAxis;
-      const minX = Math.floor(this.centerLight.u / pageWorldSize) - halfPages;
-      const minY = Math.floor(this.centerLight.v / pageWorldSize) - halfPages;
+      // Hysteresis. The window used to re-centre on every single page boundary, so walking
+      // re-rendered a level about every texel of it — a 512² depth pass per texel of ground
+      // crossed. It now holds still until the followed centre has moved `refreshStep` of the
+      // level's extent, rounded to a whole number of this level's own texels: a whole step is
+      // `refreshStep * pagesPerAxis / 2` pages (32 of 512 at the default), so the window origin
+      // still lands on one fixed world grid and the shadow texels never drift against it.
+      // `refreshStep: 0` restores the old one-page step. Per level, so a fine level a walking camera
+      // re-renders most can step further than the coarse one behind it.
+      const step = this.#perLevel(this.refreshStep, level);
+      const refreshPages =
+        step === 0 ? 1 : Math.max(1, Math.round((step * extent) / pageWorldSize));
+      const snapWorldSize = pageWorldSize * refreshPages;
+      const minX = Math.floor(this.centerLight.u / snapWorldSize) * refreshPages - halfPages;
+      const minY = Math.floor(this.centerLight.v / snapWorldSize) * refreshPages - halfPages;
       return {
         level,
         extent,
         pageWorldSize,
+        refreshPages,
         minX,
         minY,
         maxX: minX + this.pagesPerAxis,
@@ -410,7 +491,11 @@ export class DirectionalClipmap {
       Math.abs(projected.v - this.centerLight.v),
     );
     for (let level = 0; level < this.levelCount; level += 1) {
-      if (distance <= (this.clipExtents[level] as number) * this.selectionGuard) return level;
+      if (
+        distance <=
+        (this.clipExtents[level] as number) * this.#perLevel(this.selectionGuard, level)
+      )
+        return level;
     }
     return this.levelCount - 1;
   }
@@ -586,6 +671,26 @@ function boundsEqual(a: IBoundsLike, b: IBoundsLike, epsilon = 1e-6): boolean {
       Math.abs(a.min[axis] - b.min[axis]) <= epsilon &&
       Math.abs(a.max[axis] - b.max[axis]) <= epsilon,
   );
+}
+
+/**
+ * A world AABB resolved onto one clipmap basis axis, as the interval that axis sees. Exact for a
+ * box: the extreme points along `axis` are the centre offset by half the box's own size, weighted
+ * by the absolute value of each component of the axis, so no corner has to be walked.
+ */
+export function projectBounds(
+  bounds: IBoundsLike,
+  axis: IVector3Like,
+): { low: number; high: number } {
+  const halfX = (bounds.max.x - bounds.min.x) / 2;
+  const halfY = (bounds.max.y - bounds.min.y) / 2;
+  const halfZ = (bounds.max.z - bounds.min.z) / 2;
+  const centreX = (bounds.max.x + bounds.min.x) / 2;
+  const centreY = (bounds.max.y + bounds.min.y) / 2;
+  const centreZ = (bounds.max.z + bounds.min.z) / 2;
+  const reach = Math.abs(axis.x) * halfX + Math.abs(axis.y) * halfY + Math.abs(axis.z) * halfZ;
+  const middle = centreX * axis.x + centreY * axis.y + centreZ * axis.z;
+  return { low: middle - reach, high: middle + reach };
 }
 
 /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { inspectCommand, inspectHelp } from "./inspect.js";
@@ -193,6 +193,32 @@ async function copyTemplateIcon(target: string, templateRootDirectory: string): 
   await cp(source, destination, { errorOnExist: true, force: false });
 }
 
+/**
+ * Copies each packaged baseline asset — the sky photograph, the mannequin — into the generated
+ * project's `assets/` when, and only when, its source names the file. One copy ships in this
+ * package however many kits use it, and a game that never loads one never carries its bytes.
+ */
+async function copySharedAssets(target: string, templateRootDirectory: string): Promise<void> {
+  const shared = path.join(path.dirname(templateRootDirectory), "template-assets", "assets");
+  if (!existsSync(shared)) return;
+  const source = path.join(target, "src");
+  const texts: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(file);
+      else if (/\.(?:ts|tsx)$/u.test(entry.name)) texts.push(await readFile(file, "utf8"));
+    }
+  };
+  if (existsSync(source)) await walk(source);
+  for (const name of readdirSync(shared)) {
+    if (!texts.some((text) => text.includes(`"${name}"`))) continue;
+    const destination = path.join(target, "assets", name);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(shared, name), destination, { errorOnExist: true, force: false });
+  }
+}
+
 function invalidManifest(file: string, reason: string): never {
   throw new Error(`TN_KIT_MANIFEST_INVALID: ${file}: ${reason}`);
 }
@@ -360,8 +386,11 @@ async function renderTemplate(
   }
 }
 
-/** Long recipes live here in the package and ship as `<target>/agent-docs/*.md`. */
-const REFERENCE_BUNDLE_DIRECTORY = "agent-docs";
+/** Long recipes live in this package and are read where it installs them: every generated project
+ * already depends on `create-threenative`, so the scaffold copies no `agent-docs/` of its own
+ * (PRD-449). This is the one definition of that path; the link pattern and the existence check
+ * both read it. */
+const REFERENCE_BUNDLE_PREFIX = "node_modules/create-threenative/agent-docs/references/";
 const REFERENCE_FILE_NAME = /^[a-z0-9][a-z0-9-]*\.md$/u;
 const AGENT_FILES_DIRECTORY = "agent-files";
 const AUTHORING_GITIGNORE_RULES = [
@@ -373,38 +402,38 @@ const AUTHORING_GITIGNORE_RULES = [
   "!.env.example",
 ] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
-const REFERENCE_TOKEN_PATTERN =
-  /`agent-docs\/([a-z0-9][a-z0-9./-]*\.md)`|\[[^\]]*\]\(agent-docs\/([^)#]+\.md)\)/gu;
+const REFERENCE_TOKEN_PATTERN = new RegExp(
+  `\`${REFERENCE_BUNDLE_PREFIX}([a-z0-9][a-z0-9./-]*\\.md)\`|` +
+    `\\[[^\\]]*\\]\\(${REFERENCE_BUNDLE_PREFIX}([^)#]+\\.md)\\)`,
+  "gu",
+);
 
-/**
- * Copies the searchable reference pages into the generated project with the same placeholder
- * substitution as source templates. Path-safe by construction: only flat, validated file names
- * are read from the bundle directory and written under `<target>/agent-docs/`.
- */
-async function copyReferenceBundle(
-  target: string,
-  templateRootDirectory: string,
-  replacements: Readonly<Record<string, string>>,
-): Promise<void> {
-  const bundle = path.join(
-    path.dirname(templateRootDirectory),
-    REFERENCE_BUNDLE_DIRECTORY,
-    "references",
-  );
-  if (!existsSync(bundle)) return;
-  const destination = path.join(target, REFERENCE_BUNDLE_DIRECTORY);
-  await mkdir(destination, { recursive: true });
-  for (const entry of await readdir(bundle, { withFileTypes: true })) {
-    if (!entry.isFile() || !REFERENCE_FILE_NAME.test(entry.name)) continue;
-    const content = substituteTemplateVariables(
-      await readFile(path.join(bundle, entry.name), "utf8"),
-      replacements,
-    );
-    const destinationPath = path.join(destination, entry.name);
-    if (path.relative(target, destinationPath).startsWith("..")) {
-      throw new Error(`Reference page '${entry.name}' resolves outside '${target}'.`);
+/** Links each stored skill into the Claude host directory. Both host directories must resolve the
+ * same bytes, and a duplicated skill drifts the day one adapter is edited, so `.claude/skills` is a
+ * relative symlink into the single `.agents/skills` copy — except where Claude Code takes the
+ * workflow as a subagent instead, which it already has under `.claude/agents/<name>.md`.
+ *
+ * Symlinks need a privilege Windows only grants with developer mode, so a failed link falls back
+ * to a copy: a duplicated skill beats a scaffold that cannot be created. */
+async function linkClaudeSkills(target: string): Promise<void> {
+  const stored = path.join(target, ".agents", "skills");
+  if (!existsSync(stored)) return;
+  const hostSkills = path.join(target, ".claude", "skills");
+  const subagents = path.join(target, ".claude", "agents");
+  await mkdir(hostSkills, { recursive: true });
+  for (const entry of await readdir(stored, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (existsSync(path.join(subagents, `${entry.name}.md`))) continue;
+    const link = path.join(hostSkills, entry.name);
+    const relative = path.relative(hostSkills, path.join(stored, entry.name));
+    try {
+      await symlink(relative, link, "dir");
+    } catch (error) {
+      // Only the privilege refusal falls back; any other failure is a scaffold bug, not a host.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EPERM" && code !== "EACCES") throw error;
+      await cp(path.join(stored, entry.name), link, { recursive: true });
     }
-    await writeFile(destinationPath, content);
   }
 }
 
@@ -417,6 +446,7 @@ async function copyAgentFiles(target: string, templateRootDirectory: string): Pr
     );
   }
   await cp(source, target, { recursive: true });
+  await linkClaudeSkills(target);
 }
 
 /** Installs the same authoring/dependency ignores for every kit without replacing a kit's own
@@ -435,9 +465,15 @@ async function installAuthoringGitignore(target: string): Promise<void> {
   );
 }
 
-/** Fails closed: an instruction that names a recipe the project does not ship strands the
- * agent on a link that goes nowhere. Checks both files of the generated pair. */
-async function assertReferenceBundle(target: string): Promise<void> {
+/** Fails closed: an instruction that names a recipe the package does not ship strands the agent
+ * on a link that goes nowhere. The pages are read from the package's own bundle directory — the
+ * exact directory its `files` list installs — because the project has no copy at scaffold time. */
+async function assertReferenceBundle(target: string, templateRootDirectory: string): Promise<void> {
+  const bundleDirectory = path.join(
+    path.dirname(templateRootDirectory),
+    "agent-docs",
+    "references",
+  );
   for (const file of [
     "AGENTS.md",
     "CLAUDE.md",
@@ -447,14 +483,14 @@ async function assertReferenceBundle(target: string): Promise<void> {
     ".claude/skills/threenative-assets/SKILL.md",
   ]) {
     const filePath = path.join(target, file);
-    if (existsSync(filePath)) await assertReferenceTargets(target, file, filePath);
+    if (existsSync(filePath)) await assertReferenceTargets(file, filePath, bundleDirectory);
   }
 }
 
 async function assertReferenceTargets(
-  target: string,
   from: string,
   filePath: string,
+  bundleDirectory: string,
 ): Promise<void> {
   const content = await readFile(filePath, "utf8");
   for (const match of content.matchAll(REFERENCE_TOKEN_PATTERN)) {
@@ -465,10 +501,9 @@ async function assertReferenceTargets(
         `RED observed: referenced recipe missing: '${from}' names '${referenced}', which is not a shipped reference page.`,
       );
     }
-    const resolved = path.join(target, REFERENCE_BUNDLE_DIRECTORY, referenced);
-    if (!existsSync(resolved)) {
+    if (!existsSync(path.join(bundleDirectory, referenced))) {
       throw new Error(
-        `RED observed: referenced recipe missing: '${from}' links 'agent-docs/${referenced}', which the scaffold did not copy.`,
+        `RED observed: referenced recipe missing: '${from}' links '${REFERENCE_BUNDLE_PREFIX}${referenced}', which the package does not ship.`,
       );
     }
   }
@@ -518,34 +553,23 @@ async function applyPackageSources(
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
-async function copyCapabilityManifest(
-  target: string,
-  templateRootDirectory: string,
-): Promise<void> {
-  const source = path.join(path.dirname(templateRootDirectory), "capabilities.json");
-  // Fail closed: a scaffold without the manifest looks fine and every generated project
-  // silently loses the capability search its AGENTS.md tells the user's agent to run.
-  if (!existsSync(source)) {
-    throw new Error(
-      `TN_KIT_CAPABILITIES_MISSING: '${source}' is not in the package; the generated project needs the capability manifest for its agent tooling.`,
-    );
-  }
-  await cp(source, path.join(target, "capabilities.json"));
-}
-
 const FRAMEWORK_PATCH_DIRECTORY = "patches";
 const THREE_PATCH_NAME = "three@0.185.1.patch";
 
 async function copyFrameworkPatches(target: string, templateRootDirectory: string): Promise<void> {
-  const source = path.join(
-    path.dirname(templateRootDirectory),
-    "template-assets",
-    FRAMEWORK_PATCH_DIRECTORY,
-    THREE_PATCH_NAME,
+  // The only tracked copy lives in @threenative/core; prepack copies it into template-assets for
+  // the tarball, and a workspace run reads core's directly.
+  const packageRoot = path.dirname(templateRoot());
+  const candidates = [...new Set([path.dirname(templateRootDirectory), packageRoot])].map((root) =>
+    path.join(root, "template-assets", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
   );
-  if (!existsSync(source)) {
+  candidates.push(
+    path.join(packageRoot, "..", "core", FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME),
+  );
+  const source = candidates.find((candidate) => existsSync(candidate));
+  if (source === undefined) {
     throw new Error(
-      `TN_FRAMEWORK_PATCH_MISSING: '${source}' is not in the package; the generated project needs the Three.js velocity patch for batched temporal history.`,
+      `TN_FRAMEWORK_PATCH_MISSING: none of ${candidates.map((candidate) => `'${candidate}'`).join(", ")} exists; the generated project needs the Three.js velocity patch for batched temporal history.`,
     );
   }
   const destination = path.join(target, FRAMEWORK_PATCH_DIRECTORY, THREE_PATCH_NAME);
@@ -674,6 +698,7 @@ export async function createProject(
   const source = path.join(root, template);
   await cp(source, target, { recursive: true, errorOnExist: true });
   await copyTemplateIcon(target, root);
+  await copySharedAssets(target, root);
   // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
   // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
   if (existsSync(path.join(target, "gitignore"))) {
@@ -693,12 +718,10 @@ export async function createProject(
   await stampTemplateLoading(target, source, root);
   await copyAgentFiles(target, root);
   await renderTemplate(target, replacements);
-  await copyReferenceBundle(target, root, replacements);
-  await copyCapabilityManifest(target, root);
   await copyFrameworkPatches(target, root);
   await applyPackageSources(target, options.packageSources);
   await assertMcpConfig(target);
-  await assertReferenceBundle(target);
+  await assertReferenceBundle(target, root);
 
   const installed = options.install ?? true;
   if (installed) await runInstall(target);

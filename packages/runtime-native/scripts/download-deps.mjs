@@ -23,7 +23,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, createWriteStream, rmSync, readdirSync, statSync, copyFileSync, readFileSync, writeFileSync, mkdtempSync, renameSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { join, dirname, relative, resolve } from 'node:path';
+import { join, dirname, relative, resolve, win32 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { SDL3_ANDROID_VERSION } from './package-android.mjs';
@@ -409,6 +409,21 @@ const DEPS = {
     version: '1.51.0',
     getUrl: () => `https://github.com/libuv/libuv/archive/refs/tags/v${DEPS['libuv-source'].version}.tar.gz`,
     extractTo: 'libuv-src',
+  },
+  openriglogic: {
+    // OpenRigLogic (RigLogic) source for TN_ENABLE_METAHUMAN, pinned to the commit rather than
+    // to the 5.8 branch so the archive can never move under a review. codeload answers a commit
+    // archive directly instead of redirecting, which is what the lock wants; the commit has to be
+    // the last path segment, so the default archive naming (the URL's last segment) would produce
+    // an extensionless file no extractor recognises, hence the explicit archiveName. GitHub
+    // names the extracted directory `OpenRigLogic-<full revision>`, and CMakeLists.txt reads the
+    // revision back out of that name rather than carrying a second copy of the pin.
+    // `packages/metahuman/scripts/openriglogic.mjs` carries the same commit constant for the
+    // browser WASM lane; keep the two in step.
+    version: '7b9e7a88898f51f29aa308acb4877276f27e1507',
+    getUrl: () => `https://codeload.github.com/EpicGames/OpenRigLogic/tar.gz/${DEPS.openriglogic.version}`,
+    archiveName: 'openriglogic-7b9e7a88898f51f29aa308acb4877276f27e1507.tar.gz',
+    extractTo: 'openriglogic',
   },
   'skia-win-static': {
     // Static Skia + Dawn for Windows from mystralengine/library-builder
@@ -856,7 +871,15 @@ async function ensureGradleWrapper() {
   }
 }
 
-async function extractArchive(archivePath, destDir) {
+/**
+ * The tar to run. On Windows the PATH `tar` is often Git's GNU tar, which reads `D:\\...` as a remote
+ * host and mangles `C:\\...` in `-C`; the bundled bsdtar in System32 takes native paths as they are.
+ */
+export function tarBinary(platform = process.platform, env = process.env) {
+  return platform === 'win32' ? win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+}
+
+export async function extractArchive(archivePath, destDir) {
   console.log(`Extracting: ${archivePath} -> ${destDir}`);
 
   if (!existsSync(destDir)) {
@@ -866,9 +889,9 @@ async function extractArchive(archivePath, destDir) {
   if (archivePath.endsWith('.zip') || archivePath.endsWith('.aar')) {
     execSync(`unzip -o "${archivePath}" -d "${destDir}"`, { stdio: 'inherit' });
   } else if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    execFileSync('tar', ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });
+    execFileSync(tarBinary(), ['-xzf', archivePath, '-C', destDir], { stdio: 'inherit' });
   } else if (archivePath.endsWith('.tar.xz')) {
-    execFileSync('tar', ['-xJf', archivePath, '-C', destDir], { stdio: 'inherit' });
+    execFileSync(tarBinary(), ['-xJf', archivePath, '-C', destDir], { stdio: 'inherit' });
   } else if (archivePath.endsWith('.7z')) {
     // 7z format - requires p7zip (brew install p7zip on macOS)
     try {
@@ -1238,15 +1261,15 @@ export async function downloadDep(name, options = {}) {
     mkdirSync(destDir, { recursive: true });
     const missing = dep.headers.filter((header) => !existsSync(join(destDir, header)));
     if (missing.length === 0) {
-      const receipt = readReceipt(destDir, lock.lockHash);
-      if (!receipt) {
-        throw new Error(
-          `TN_NATIVE_DEP_RECEIPT_MISSING: '${name}' has files but no receipt for the current lock; rerun with --force to replace the stale cache.`,
-        );
+      if (readReceipt(destDir, lock.lockHash)) {
+        console.log(`${name} already exists at ${destDir}`);
+        console.log('Skipping (use --force to re-download)');
+        return true;
       }
-      console.log(`${name} already exists at ${destDir}`);
-      console.log('Skipping (use --force to re-download)');
-      return true;
+      // Same as every other dependency: any lock bump invalidates every receipt, so a stale
+      // cache is replaced rather than failing the whole native build.
+      console.warn(`${name} has no receipt for the current lock; replacing the stale dependency cache`);
+      missing.push(...dep.headers);
     }
     try {
       const verified = [];
@@ -1313,9 +1336,9 @@ export async function downloadDep(name, options = {}) {
 
   // Download
   const ext = url.split('.').slice(-1)[0];
-  const archiveName = url.includes('.tar.') ?
-    url.split('/').pop() :
-    `${name}.${ext}`;
+  const archiveName =
+    dep.archiveName ??
+    (url.includes('.tar.') ? url.split('/').pop() : `${name}.${ext}`);
   const archiveRoot = wgpuVersionOverride && WGPU_DEPS.has(name)
     ? join(dirname(destDir), '.downloads')
     : THIRD_PARTY;
@@ -1555,7 +1578,7 @@ async function main() {
 
   // Downloadable dependencies and the complete --only allowlist.
   const allDeps = [...new Set([...desktopDeps, ...iosDeps, ...androidDeps, ...windowsDeps])];
-  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps])];
+  const availableDeps = [...new Set([...allDeps, ...sourceBuildDeps, 'openriglogic'])];
 
   let depsToDownload;
   if (onlyIndex !== -1) {

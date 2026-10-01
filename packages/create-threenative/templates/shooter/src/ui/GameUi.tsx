@@ -1,22 +1,19 @@
 import { UiLayer } from "@threenative/ui";
-import { Crosshair } from "./Crosshair.js";
 import { Hud } from "./Hud.js";
-import { Menu } from "./Menu.js";
 
 /**
- * Everything the player sees that is not the scene.
+ * Everything the player sees that is not the rendered frame.
  *
- * One component, mounted twice by two entries that differ only in what else is on the page:
- * `src/main.ts` puts it beside the canvas on the web target, and `src/ui/main.tsx` is the whole
- * page the native web view loads. Keeping both entries pointed at this file is what makes "the
- * same UI on every target" a fact rather than an intention.
+ * `UiLayer` is what connects this tree to the game: it opens the bridge, mirrors published state,
+ * and publishes the rectangles of every `data-tn-interactive` element so the host knows which
+ * presses belong to the UI and which fall through to the game. There is no `game` prop anywhere
+ * below it — on native this whole tree runs in the platform's web view, in a different process
+ * from the scene, and reaches the game only through state and intents.
  */
 export function GameUi() {
   return (
     <UiLayer>
-      <Crosshair />
       <Hud />
-      <Menu />
     </UiLayer>
   );
 }

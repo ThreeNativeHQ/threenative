@@ -90,7 +90,7 @@ suppressed either way — acknowledging the trap does not give the display a vsy
 
 The same command also refuses when WebGPU came from SwiftShader, Chromium's CPU rasteriser
 (`TN_TRACE_SOFTWARE_ADAPTER`): a trace of software rendering names software rendering's functions.
-`agent-docs/capture-the-frame.md` covers that adapter trap in full.
+`node_modules/create-threenative/agent-docs/references/capture-the-frame.md` covers that adapter trap in full.
 
 ## After the trace
 

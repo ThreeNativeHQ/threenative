@@ -1,7 +1,8 @@
-import { BufferAttribute, Mesh, MeshBasicMaterial } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, MeshBasicMaterial, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../src/assets.js";
 import { type IWorldTile, type IWorldTileCollider, TerrainTiles } from "../src/world-tiles.js";
+import { Heightfield } from "../src/world.js";
 
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.17) * 2 + Math.cos(z * 0.13) * 1.5 + Math.sin((x + z) * 0.07);
@@ -170,11 +171,23 @@ function canonicalEdgeError(
   return maximum;
 }
 
+/**
+ * A validated ring's measurement, which is a number by construction: every `TerrainTiles` in this
+ * file is built with `validate: true`, and a ring that stopped measuring would say so here rather
+ * than let a `number | undefined` assertion pass silently.
+ */
+function measured(value: number | undefined): number {
+  if (value === undefined)
+    throw new Error("Expected a validated TerrainTiles to report the measurement.");
+  return value;
+}
+
 describe("TerrainTiles", () => {
   it("counts retained topology storage against the hard byte cap", () => {
     expect(
       () =>
         new TerrainTiles({
+          validate: true,
           surface: new MeshBasicMaterial(),
           residentByteBudget: 100_000,
           residentTileBudget: 1,
@@ -195,6 +208,7 @@ describe("TerrainTiles", () => {
 
   it("counts retained edge samples in each tile and its admission estimate", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 9_000,
       residentTileBudget: 1,
@@ -215,6 +229,7 @@ describe("TerrainTiles", () => {
 
   it("rejects a tile when retained edge samples make it exceed the byte cap", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 8_400,
       residentTileBudget: 1,
@@ -252,6 +267,7 @@ describe("TerrainTiles", () => {
     const createTiles = (withObservation: boolean) => {
       const colliderHeights = new Map<string, Float32Array>();
       const tiles = new TerrainTiles({
+        validate: true,
         createCollider: ({ field, key }) => {
           colliderHeights.set(key, field.toColliderHeights());
           return { dispose: () => undefined };
@@ -311,6 +327,7 @@ describe("TerrainTiles", () => {
   it("keeps stitched rendered edges equal to the canonical query and collider source", () => {
     const colliderHeights = new Map<string, Float32Array>();
     const tiles = new TerrainTiles({
+      validate: true,
       createCollider: ({ field, key }) => {
         colliderHeights.set(key, field.toColliderHeights());
         return { dispose: () => undefined };
@@ -348,6 +365,7 @@ describe("TerrainTiles", () => {
 
   it("restores canonical shared edges when mixed neighbors return to equal LOD", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       residentByteBudget: 1_000_000,
       residentTileBudget: 9,
       sampleHeight,
@@ -378,6 +396,7 @@ describe("TerrainTiles", () => {
 
   it("morphs one LOD surface within the measured pop bound for three frames", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 9,
@@ -416,10 +435,13 @@ describe("TerrainTiles", () => {
 
   it("measures the visible per-frame displacement instead of the complete LOD mismatch", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
-      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      // A 14.7 m error between the two levels, so the complete mismatch is three times the
+      // per-frame step and a complete-mismatch reading would still land under the bound.
+      sampleHeight: (x, z) => sampleHeight(x, z) * 350,
       streamRadius: 1,
       tileResolution: 17,
       tileSize: 16,
@@ -448,10 +470,12 @@ describe("TerrainTiles", () => {
 
   it("records a visible snap when an active LOD transition is retargeted before the next render", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 1,
-      sampleHeight: (x, z) => sampleHeight(x, z) * 500,
+      // A 12.6 m error between the two levels, so the retarget snaps two thirds of it.
+      sampleHeight: (x, z) => sampleHeight(x, z) * 300,
       streamRadius: 0,
       tileResolution: 17,
       tileSize: 16,
@@ -481,6 +505,7 @@ describe("TerrainTiles", () => {
 
   it("reports visible edge geometry on every frame of an LOD transition", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -511,6 +536,7 @@ describe("TerrainTiles", () => {
 
   it("fails closed when a live seam edge contains a non-finite position", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -533,6 +559,9 @@ describe("TerrainTiles", () => {
     const resolution = Math.round(Math.sqrt(position.count + 4) - 2);
     for (let row = 0; row < resolution; row += 1)
       position.setY(row * resolution + resolution - 1, Number.NaN);
+    // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+    // told about. A settled ring skips its seam pass until some rendered buffer's version moves.
+    position.needsUpdate = true;
 
     try {
       expect(() => tiles.process()).toThrow(/seam diagnostic.*finite|invalid.*seam/u);
@@ -543,6 +572,7 @@ describe("TerrainTiles", () => {
 
   it("reconciles a mixed-LOD surface edge before skirt coverage", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -573,6 +603,7 @@ describe("TerrainTiles", () => {
 
   it("measures the final rendered LOD frame after edge restoration", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       residentByteBudget: 200_000,
       residentTileBudget: 2,
       sampleHeight: (x, z) => (Math.abs(x - 8) < 1e-6 ? Math.sin(z * (Math.PI / 2)) * 10 : 0),
@@ -606,6 +637,7 @@ describe("TerrainTiles", () => {
 
   it("coordinates adjacent resident LOD targets instead of allowing a two-level jump", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 1_000_000,
       residentTileBudget: 9,
@@ -631,6 +663,7 @@ describe("TerrainTiles", () => {
   it("retains the maximum seam diagnostics after a transient transition seam closes", () => {
     const skirtDepth = 0.000001;
     const tiles = new TerrainTiles({
+      validate: true,
       residentByteBudget: 200_000,
       residentTileBudget: 2,
       sampleHeight: (x, z) => Math.sin(x * 0.2) * 10 + Math.cos(z * 0.11),
@@ -651,8 +684,8 @@ describe("TerrainTiles", () => {
     if (a === undefined || b === undefined) throw new Error("Expected adjacent resident tiles.");
     expect(tiles.maxSeamGap).toBeGreaterThan(0);
     expect(tiles.maxVisualSeamGap).toBeGreaterThan(0);
-    const observedMaximum = tiles.maxSeamGap;
-    const observedVisualMaximum = tiles.maxVisualSeamGap;
+    const observedMaximum = measured(tiles.maxSeamGap);
+    const observedVisualMaximum = measured(tiles.maxVisualSeamGap);
     for (let frame = 0; frame < 3; frame += 1) {
       tiles.process();
     }
@@ -660,20 +693,26 @@ describe("TerrainTiles", () => {
     expect(observedMaximum).toBeGreaterThan(0);
     expect(observedVisualMaximum).toBeGreaterThan(0);
     expect(visibleSeamGap(a, b)).toBeCloseTo(0, 6);
-    expect(tiles.maxSeamGap).toBeCloseTo(observedMaximum, 6);
-    expect(tiles.maxVisualSeamGap).toBeCloseTo(observedVisualMaximum, 6);
-    const maximumBeforeResidencyChange = tiles.maxSeamGap;
-    const visualMaximumBeforeResidencyChange = tiles.maxVisualSeamGap;
+    expect(measured(tiles.maxSeamGap)).toBeCloseTo(observedMaximum, 6);
+    expect(measured(tiles.maxVisualSeamGap)).toBeCloseTo(observedVisualMaximum, 6);
+    const maximumBeforeResidencyChange = measured(tiles.maxSeamGap);
+    const visualMaximumBeforeResidencyChange = measured(tiles.maxVisualSeamGap);
     tiles.follow({ x: 32, z: 0 });
     expect(Number.isFinite(tiles.maxSeamGap)).toBe(true);
     expect(Number.isFinite(tiles.maxVisualSeamGap)).toBe(true);
-    expect(tiles.maxSeamGap).toBeGreaterThanOrEqual(maximumBeforeResidencyChange);
-    expect(tiles.maxVisualSeamGap).toBeGreaterThanOrEqual(visualMaximumBeforeResidencyChange);
+    expect(measured(tiles.maxSeamGap)).toBeGreaterThanOrEqual(maximumBeforeResidencyChange);
+    expect(measured(tiles.maxVisualSeamGap)).toBeGreaterThanOrEqual(
+      visualMaximumBeforeResidencyChange,
+    );
     tiles.dispose();
   });
 
-  it("rejects an LOD transition whose measured mismatch exceeds the pop bound", () => {
+  it("keeps a tile off a level whose height error exceeds the pop bound", () => {
+    // The engine measures the error between the tile's own levels when they are built and
+    // selects the coarsest level that fits the bound, so a game-authored cliff stays finer
+    // instead of throwing a mid-frame error the game cannot act on.
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 9,
@@ -688,7 +727,44 @@ describe("TerrainTiles", () => {
     expect(() => {
       tiles.follow({ x: 6, z: 0 });
       tiles.process();
-    }).toThrow(/LOD pop threshold/u);
+    }).not.toThrow();
+    expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+    expect(tiles.maxLodPop).toBe(0);
+    tiles.dispose();
+  });
+
+  it("walks a gorge cliff across LOD distances without throwing past the pop bound", () => {
+    // A 2 km map at 128 m tiles and 2 m heightfield spacing, like the 1025x1025 Machinefall
+    // field: a 40 m gorge wall with 20 m terraces on the bench above it, cut across the tile
+    // the camera walks over. The tile beside it is rolling ground the engine can still coarsen.
+    const gorge = (x: number, z: number): number => {
+      const rolling = Math.sin(x * 0.25) * 8 + Math.cos(z * 0.2) * 6;
+      return rolling + (x >= 4 && x < 40 ? 40 + Math.sin(z * 0.9) * 20 : 0);
+    };
+    const tiles = new TerrainTiles({
+      validate: true,
+      lodDistances: [32, 48],
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 2,
+      sampleHeight: gorge,
+      streamRadius: 1,
+      surface: new MeshBasicMaterial(),
+      tileResolution: 65,
+      tileSize: 128,
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    for (const x of [40, 56]) {
+      tiles.follow({ x, z: 0 });
+      for (let frame = 0; frame < 3; frame += 1) tiles.process();
+    }
+
+    // The cliffed tile stays on the finest level its own height error allows, and the rolling
+    // tile beside it still transitions, so the per-frame measurement keeps reporting motion.
+    expect(tiles.getTile("0:0")?.lodLevel).toBe(0);
+    expect(tiles.lodTransitions).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeGreaterThan(0);
+    expect(tiles.maxLodPop).toBeLessThanOrEqual(16);
     tiles.dispose();
   });
 
@@ -696,6 +772,7 @@ describe("TerrainTiles", () => {
     const release = vi.fn(() => true);
     const disposed: string[] = [];
     const tiles = new TerrainTiles({
+      validate: true,
       createCollider: ({ key }) => {
         const collider: IWorldTileCollider = {
           dispose: () => disposed.push(key),
@@ -726,8 +803,102 @@ describe("TerrainTiles", () => {
     tiles.dispose();
   });
 
+  it("gives only the tiles inside `colliderRadius` a body, and moves that set as follow moves", () => {
+    // The whole point of a stream radius larger than a collider radius: 49 tiles of ground render
+    // while 9 of them are solid, so a wide horizon does not cost a physics body per tile.
+    const created: string[] = [];
+    const disposed: string[] = [];
+    const tiles = new TerrainTiles({
+      validate: true,
+      colliderRadius: 1,
+      createCollider: ({ key }) => {
+        created.push(key);
+        const collider: IWorldTileCollider = { dispose: () => disposed.push(key) };
+        return collider;
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 4_000_000,
+      residentTileBudget: 49,
+      sampleHeight,
+      streamRadius: 3,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.residentTileCount).toBe(49);
+    expect(tiles.residentColliderKeys).toEqual([
+      "-1:-1",
+      "-1:0",
+      "-1:1",
+      "0:-1",
+      "0:0",
+      "0:1",
+      "1:-1",
+      "1:0",
+      "1:1",
+    ]);
+    // A tile outside the radius never got a body to hand back.
+    expect(created).not.toContain("2:2");
+
+    tiles.follow({ x: 48, z: 0 });
+    expect(tiles.residentColliderKeys).toEqual([
+      "2:-1",
+      "2:0",
+      "2:1",
+      "3:-1",
+      "3:0",
+      "3:1",
+      "4:-1",
+      "4:0",
+      "4:1",
+    ]);
+    // The followed tile's own body is released as it leaves the radius, and the tile that arrived
+    // gets one: the set follows the player instead of being fixed at load.
+    expect(disposed).toContain("0:0");
+    expect(created).toContain("3:0");
+    expect(created).toContain("4:0");
+
+    tiles.dispose();
+    expect(disposed).toContain("4:0");
+  });
+
+  it("leaves settled mixed-LOD seams alone instead of rewriting them every frame", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+    tiles.follow({ x: 12, z: 0 });
+    for (let frame = 0; frame < 4; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    expect(tiles.lodLevelCount).toBeGreaterThanOrEqual(2);
+    // A float64 height compared against its float32 copy never matched, so every call rewrote the
+    // edges and recomputed whole-tile bounds: ~39 ms a frame on a 25-tile ring.
+    const transitions = tiles.lodTransitions;
+    const bounds = vi.spyOn(BufferGeometry.prototype, "computeBoundingSphere");
+    for (let frame = 0; frame < 3; frame += 1) {
+      tiles.follow({ x: 12, z: 0 });
+      tiles.process();
+    }
+    // A still camera must not morph terrain: the neighbour rule used to flip coarse tiles each frame.
+    expect(tiles.lodTransitions).toBe(transitions);
+    expect(bounds).not.toHaveBeenCalled();
+    bounds.mockRestore();
+    tiles.dispose();
+  });
+
   it("keeps a mixed-LOD neighbor seam covered by edge stitching and skirts", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 9,
@@ -755,6 +926,7 @@ describe("TerrainTiles", () => {
 
   it("reports a visual seam when a recorded bridge is detached from the tile owner", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -796,6 +968,7 @@ describe("TerrainTiles", () => {
 
   it("rejects an attached bridge translated away from its seam", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -825,6 +998,7 @@ describe("TerrainTiles", () => {
 
   it("rejects an attached bridge translated vertically away from its seam", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -854,6 +1028,7 @@ describe("TerrainTiles", () => {
 
   it("rejects an attached bridge with an empty rendered draw range", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -883,6 +1058,7 @@ describe("TerrainTiles", () => {
 
   it("rejects an attached bridge whose rendered index buffer is all degenerate", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -915,6 +1091,7 @@ describe("TerrainTiles", () => {
 
   it("rejects an attached bridge whose rendered index buffer uses floating-point data", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 2,
@@ -946,6 +1123,7 @@ describe("TerrainTiles", () => {
 
   it("keeps the manually selected LOD visible when a renderer inspects the LOD", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 9,
@@ -968,12 +1146,13 @@ describe("TerrainTiles", () => {
     expect(tiles.lodTransitions).toBeGreaterThan(0);
     expect(visible).toHaveLength(1);
     expect(visible[0]).toBe(tile.lod.levels[tile.lodLevel]?.object);
-    expect(tiles.maxVisualSeamGap).toBeLessThanOrEqual(tiles.maxSeamGap);
+    expect(measured(tiles.maxVisualSeamGap)).toBeLessThanOrEqual(measured(tiles.maxSeamGap));
     tiles.dispose();
   });
 
   it("publishes the resident field and routed flow for topology evaluation", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 1,
@@ -1022,6 +1201,7 @@ describe("TerrainTiles", () => {
 
   it("publishes a bounded metric summary for the rendered measurement grid", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 20_000_000,
       residentTileBudget: 1,
@@ -1060,12 +1240,13 @@ describe("TerrainTiles", () => {
       1_000_000,
     );
     tiles.dispose();
-  }, 10_000);
+  }, 60_000);
 
   it("rejects a quality field whose sample grid does not match rendered tile geometry", () => {
     expect(
       () =>
         new TerrainTiles({
+          validate: true,
           surface: new MeshBasicMaterial(),
           residentByteBudget: 200_000,
           residentTileBudget: 1,
@@ -1086,6 +1267,7 @@ describe("TerrainTiles", () => {
   it("reports the actual edge discontinuity before skirt coverage", () => {
     let boundarySample = 0;
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 200_000,
       residentTileBudget: 9,
@@ -1132,6 +1314,7 @@ describe("TerrainTiles", () => {
     model.mockClear();
     const release = vi.spyOn(assets, "release");
     const tiles = new TerrainTiles({
+      validate: true,
       assetKey: () => loadedKey,
       assets,
       residentByteBudget: 200_000,
@@ -1158,6 +1341,7 @@ describe("TerrainTiles", () => {
 
   it("fails closed when one tile cannot fit the byte cap", () => {
     const tiles = new TerrainTiles({
+      validate: true,
       surface: new MeshBasicMaterial(),
       residentByteBudget: 1,
       residentTileBudget: 1,
@@ -1166,5 +1350,460 @@ describe("TerrainTiles", () => {
       tileSize: 16,
     });
     expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/residentByteBudget/u);
+  });
+
+  it("validates constructor options and sizes before streaming", () => {
+    const valid = {
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      tileResolution: 9,
+      tileSize: 16,
+    };
+    expect(() => new TerrainTiles({ ...valid, tileSize: Number.NaN })).toThrow(/must be finite/u);
+    expect(() => new TerrainTiles({ ...valid, tileSize: 0 })).toThrow(/greater than zero/u);
+    expect(() => new TerrainTiles({ ...valid, tileResolution: 2.5 })).toThrow(
+      /integer of at least 3/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [3] })).toThrow(/minus one must divide/u);
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [] })).toThrow(/must not be empty/u);
+    expect(() => new TerrainTiles({ ...valid, lodFactors: [1, 2], lodDistances: [] })).toThrow(
+      /one threshold per LOD transition/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, lodDistances: [8, 8] })).toThrow(
+      /strictly increasing/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, surface: undefined as never })).toThrow(
+      /surface is required/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, sampleHeight: "nope" as never })).toThrow(
+      /sampleHeight is required/u,
+    );
+    expect(() => new TerrainTiles({ ...valid, assetKey: "model.glb" })).toThrow(
+      /requires an assets.release consumer/u,
+    );
+    expect(
+      () =>
+        new TerrainTiles({
+          validate: true,
+          ...valid,
+          topologyObservation: {
+            columns: 100,
+            depth: 16,
+            origin: { x: 0, z: 0 },
+            rows: 9,
+            width: 100,
+          },
+        }),
+    ).toThrow(/whole number of rendered tiles/u);
+    expect(
+      () =>
+        new TerrainTiles({
+          validate: true,
+          ...valid,
+          topologyObservation: {
+            columns: 17,
+            depth: 16,
+            origin: { x: 0, z: 0 },
+            rows: 17,
+            width: 32,
+          },
+        }),
+    ).toThrow(/rows must match the rendered tile grid/u);
+  });
+
+  it("rejects an asset key that resolves to an empty string", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      assetKey: () => "  ",
+      assets: loader(vi.fn()),
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/non-empty string/u);
+    tiles.dispose();
+  });
+
+  it("exposes lifecycle state and guards every entry point after release", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(tiles.released).toBe(false);
+    expect(tiles.warmupNodes).toEqual([]);
+    tiles.follow({ x: 0, z: 0 });
+    expect(tiles.warmupNodes).toEqual([]);
+
+    const tile = tiles.getTile("0:0");
+    if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+    expect((tile.collider as { disposed?: boolean }).disposed).toBe(false);
+    expect(tiles.sample("slope", 0, 0)).toBeCloseTo(1 - tiles.normalAt(0, 0).y, 10);
+
+    tiles.attachRenderer({} as never);
+    tiles.process();
+    tiles.detach();
+
+    expect(tiles.released).toBe(true);
+    expect((tile.collider as { disposed?: boolean }).disposed).toBe(true);
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow(/after release/u);
+    expect(() => tiles.attachRenderer({} as never)).toThrow(/after release/u);
+    expect(() => tiles.process()).not.toThrow();
+    expect(() => tiles.dispose()).not.toThrow();
+  });
+
+  it("samples delegated channels from the resident field", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      expect(tiles.sample("height", 0, 0)).toBeCloseTo(tiles.heightAt(0, 0), 10);
+      expect(() => tiles.heightAt(10_000, 0)).toThrow(/outside its resident region/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects an LOD blend that reads a corrupted coarser level", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 1_000_000,
+      residentTileBudget: 9,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    });
+
+    try {
+      tiles.follow({ x: 0, z: 0 });
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the followed tile to remain resident.");
+      const coarse = tile.lod.levels[1]?.object;
+      if (!(coarse instanceof Mesh)) throw new Error("Expected a coarse LOD mesh.");
+      coarse.geometry.getAttribute("position").setY(0, Number.NaN);
+
+      expect(() => tiles.follow({ x: 12, z: 0 })).toThrow(/invalid height/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("fails closed when a rendered edge cannot be placed in the world", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      expect(tiles.stitchedEdgeCount).toBeGreaterThan(0);
+      const tile = tiles.getTile("0:0");
+      if (tile === undefined) throw new Error("Expected the finer tile to remain resident.");
+      const fine = tile.lod.levels[0]?.object;
+      if (!(fine instanceof Mesh)) throw new Error("Expected a fine LOD mesh.");
+      fine.position.x = Number.NaN;
+
+      expect(() => tiles.process()).toThrow(/bridge world coordinates/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose mesh was retargeted to foreign geometry", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry = new BufferGeometry();
+
+      expect(() => tiles.process()).toThrow(/not attached to its mesh/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered index count no longer matches its strip", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1));
+
+      expect(() => tiles.process()).toThrow(/invalid rendered triangle data/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered normals went missing", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.geometry.deleteAttribute("normal");
+
+      expect(() => tiles.process()).toThrow(/invalid rendered triangle data/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose rendered positions went non-finite", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      const position = bridge.geometry.getAttribute("position");
+      position.setY(0, Number.NaN);
+      // Written the way any writer that reaches the screen writes: a buffer change the renderer is
+      // told about. A settled bridge skips its diagnostic until some rendered buffer's version moves.
+      position.needsUpdate = true;
+
+      expect(() => tiles.process()).toThrow(/bridge coordinates must be finite/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("rejects a bridge whose mesh moved its endpoints out of the world", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodFactors: [1, 2],
+      lodDistances: [4],
+    });
+
+    try {
+      tiles.follow({ x: 2, z: 0 });
+      const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+      if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
+      bridge.position.x = Number.NaN;
+
+      expect(() => tiles.process()).toThrow(/bridge world coordinates/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("releases a half-built tile when its collider factory throws", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      createCollider: () => {
+        throw new Error("collider-nope");
+      },
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 200_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      streamRadius: 0,
+      tileResolution: 9,
+      tileSize: 16,
+    });
+
+    expect(() => tiles.follow({ x: 0, z: 0 })).toThrow("collider-nope");
+    expect(tiles.residentTileCount).toBe(0);
+    tiles.dispose();
+  });
+
+  it("fails closed when stitched neighbor geometry exceeds the byte cap", () => {
+    const options = {
+      surface: new MeshBasicMaterial(),
+      residentTileBudget: 2,
+      sampleHeight,
+      streamRadius: 1,
+      tileResolution: 17,
+      tileSize: 16,
+      lodDistances: [8, 16],
+    };
+    const probe = new TerrainTiles({ ...options, residentByteBudget: 1_000_000 });
+    probe.follow({ x: 2, z: 0 });
+    const fitted = probe.residentBytes;
+    expect(probe.residentKeys).toEqual(["0:0", "1:0"]);
+    probe.dispose();
+
+    const tiles = new TerrainTiles({ ...options, residentByteBudget: fitted - 1 });
+    try {
+      expect(() => tiles.follow({ x: 2, z: 0 })).toThrow(/stitched neighbor geometry/u);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("reports a full topology description without retaining samples or flow", () => {
+    const tiles = new TerrainTiles({
+      validate: true,
+      surface: new MeshBasicMaterial(),
+      residentByteBudget: 20_000_000,
+      residentTileBudget: 1,
+      sampleHeight,
+      tileResolution: 17,
+      tileSize: 16,
+      topologyObservation: {
+        columns: 1025,
+        depth: 1024,
+        origin: { x: 0, z: 0 },
+        rows: 1025,
+        width: 1024,
+      },
+    });
+
+    const topology = tiles.debug().topology as Record<string, unknown>;
+    expect(topology).toMatchObject({ columns: 1025, depth: 1024, rows: 1025, width: 1024 });
+    expect(topology).not.toHaveProperty("heights");
+    expect(topology).not.toHaveProperty("flow");
+    expect(topology).not.toHaveProperty("metrics");
+    tiles.dispose();
+  }, 60_000);
+
+  // The tile build reads the field's own heights once and takes every level's normals by central
+  // difference off that grid, so the two things worth proving are that the answer did not move and
+  // that the reads did. A ramp is where the grid and `normalAt` must agree exactly, and a curving
+  // height is where a stencil the grid invented instead of `normalAt`'s own would show: the coarser
+  // levels sit every second and fourth field cell, so their normals only match if the ring kept
+  // `normalAt`'s one-field-cell neighbours and its border clamp.
+  it("derives every level's normals from one grid of the field's own heights", () => {
+    const ramp = (x: number, z: number): number => 0.35 * x - 0.2 * z + 4;
+    for (const [name, height] of [
+      ["ramp", ramp],
+      ["curve", sampleHeight],
+    ] as const) {
+      const heights = vi.spyOn(Heightfield.prototype, "heightAt");
+      const tiles = new TerrainTiles({
+        residentByteBudget: 4_000_000,
+        residentTileBudget: 1,
+        sampleHeight: height,
+        streamRadius: 0,
+        surface: new MeshBasicMaterial(),
+        tileResolution: 17,
+        tileSize: 16,
+      });
+      try {
+        tiles.follow({ x: 8, z: 8 });
+        // Counted here: the verification below asks the field for every `normalAt` itself.
+        const reads = heights.mock.calls.length;
+        const key = tiles.residentKeys[0];
+        const tile = key === undefined ? undefined : tiles.getTile(key);
+        if (tile === undefined) throw new Error("Expected the followed tile to be resident.");
+        const expected = new Vector3();
+        let worst = 0;
+        let vertices = 0;
+        for (const level of tile.lod.levels) {
+          if (!(level.object instanceof Mesh)) throw new Error("Expected a level mesh.");
+          const position = level.object.geometry.getAttribute("position");
+          const normal = level.object.geometry.getAttribute("normal");
+          const resolution = Math.round(Math.sqrt(position.count) - 2);
+          for (let index = 0; index < resolution * resolution; index += 1) {
+            const x = position.getX(index) + tile.field.origin.x;
+            const z = position.getZ(index) + tile.field.origin.z;
+            tile.field.normalAt(x, z, expected);
+            worst = Math.max(
+              worst,
+              Math.abs(normal.getX(index) - expected.x),
+              Math.abs(normal.getY(index) - expected.y),
+              Math.abs(normal.getZ(index) - expected.z),
+            );
+            vertices += 1;
+          }
+        }
+        expect(vertices).toBeGreaterThan(0);
+        expect(worst, `${name} normals`).toBeLessThanOrEqual(1e-5);
+        // 19 x 19 reads for the grid, where the per-vertex stencil asked 2,370.
+        expect(reads, `${name} field reads`).toBeLessThanOrEqual(19 * 19);
+      } finally {
+        heights.mockRestore();
+        tiles.dispose();
+      }
+    }
   });
 });

@@ -6,6 +6,7 @@ import "./web.js";
  * @situation react to a player entering a zone
  * @alias pick up item
  * @constraint add the area to the physics context before stepping the world
+ * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
  * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
  */
 export { Area3D } from "./Area3D.js";
@@ -19,6 +20,7 @@ export { Area3D } from "./Area3D.js";
  * @alias first person
  * @alias run jump coins goal
  * @constraint use moveAndSlide inside the physics update
+ * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
  * @example const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
  */
 export { CharacterBody3D } from "./CharacterBody3D.js";
@@ -55,6 +57,7 @@ export type {
  * @situation build a hinge or pin mechanism
  * @situation swing a pendulum, wrecking ball, or hinged door on a joint
  * @constraint both bodies must belong to the same physics context
+ * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Joint3D itself is not deprecated.
  * @example const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });
  */
 export { Joint3D } from "./Joint3D.js";
@@ -128,6 +131,7 @@ export { interactionGroups } from "./collision.js";
  * @situation a bullet passes through a wall
  * @constraint register rapier() in the game plugin list before using bodies
  * @override continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
+ * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. RigidBody3D itself is not deprecated.
  * @example const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
  */
 export { RigidBody3D } from "./RigidBody3D.js";
@@ -145,6 +149,7 @@ export {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
+  PHYSICS_VEHICLE_WHEEL_STRIDE,
 } from "./simulation.js";
 export type {
   IPhysicsBodyCreateOptions,
@@ -163,5 +168,28 @@ export type {
   IPhysicsRotation,
   IPhysicsShapeQuery,
   IPhysicsVector3,
+  IPhysicsVehicleCreateOptions,
+  IPhysicsVehicleInput,
+  IPhysicsVehicleState,
   PhysicsJointKind,
 } from "./simulation.js";
+/**
+ * Drive a car on ray-cast suspension instead of faking speed and heading.
+ * @situation drive a car, truck or bike around a track
+ * @situation make a vehicle roll over kerbs, brake into a corner or stop at a wall
+ * @alias racing car racing kart drift vehicle go-kart
+ * @alias suspension wheel traction tyre grip
+ * @alias accelerator pedal handbrake steering wheel
+ * @alias rescue respawn flip back on track
+ * @constraint write engineForce, brake and steering every physics update; a car with no input does not move
+ * @constraint suspensionStiffness is a frequency squared, not newtons per metre; 100 is a road car and 20 bottoms out
+ * @override a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask
+ * @override continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall
+ * @example const car = new VehicleBody3D({ object: chassis, physics: ctx.physics, shape: CollisionShape3D.box(1.6, 0.5, 3.6), mass: 900, wheels: [{ position: { x: 0.8, y: -0.15, z: -1.2 }, wheelRadius: 0.34, suspensionRestLength: 0.3, suspensionStiffness: 100, dampingCompression: 2.3, dampingRelaxation: 4.4, wheelFrictionSlip: 10.5, maxSuspensionTravel: 0.3, useAsSteering: true, useAsTraction: false }] });
+ */
+export { VehicleBody3D } from "./VehicleBody3D.js";
+export type {
+  IVehicleBody3DOptions,
+  IVehicleWheel3D,
+  VehicleForwardAxis,
+} from "./VehicleBody3D.js";

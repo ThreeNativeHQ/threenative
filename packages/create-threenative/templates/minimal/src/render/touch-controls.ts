@@ -75,7 +75,7 @@ export class TouchControls {
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = overlayMaterial(palette.shadow, 0.34);
+    this.#idleMaterial = overlayMaterial(palette.gridLine, 0.34);
     this.#activeMaterial = overlayMaterial(palette.accent, 0.6);
     this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);

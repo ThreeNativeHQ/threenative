@@ -32,10 +32,16 @@ export interface IAndroidDriverOptions {
 }
 
 export interface IAndroidDriver {
+  /** Send the app behind HOME and wait until the device reports it unfocused. */
+  background?(): Promise<void>;
   captureConsole(): Promise<Array<{ text: string; type: string }>>;
   /** The device this driver is bound to, when it knows; reported next to its metric samples. */
   deviceSerial?(): string | undefined;
+  /** Bring the launched app back to the foreground without force-stopping it. */
+  foreground?(): Promise<void>;
   isAlive(): Promise<boolean>;
+  /** What the device says about the app right now; the lifecycle phases are read from this. */
+  lifecycleState?(): Promise<IAndroidAppState>;
   prepare(
     endpoint: string,
     mailboxRoot?: string,
@@ -43,6 +49,8 @@ export interface IAndroidDriver {
   ): Promise<void>;
   readFile?(path: string): Promise<string | undefined>;
   removeFile?(path: string): Promise<void>;
+  /** Lock the display to one rotation and wait until the device's own window reports it. */
+  rotate?(rotation: number): Promise<void>;
   /** Raw adb passthrough, so the host can measure the device itself. Read-only probes only. */
   runAdb?(args: readonly string[]): Promise<string>;
   screenshot(path: string): Promise<void>;
@@ -55,6 +63,88 @@ export interface IAndroidDriver {
   stop(): Promise<void>;
   stopScreenRecording?(path: string): Promise<void>;
   writeFile?(path: string, contents: string): Promise<void>;
+}
+
+/** The device operations a scenario's `lifecycle` step can name. */
+export type IAndroidLifecycleOperation = "background" | "foreground" | "rotate";
+
+/**
+ * One reading of the app, taken off the device and never off the game.
+ *
+ * `frames` is the platform's own count of frames drawn for this process (`dumpsys gfxinfo`), which
+ * is what makes "the surface stopped while backgrounded and started again after resume" a
+ * measurement rather than a claim. It is absent when the device declined to report one, and the
+ * runner treats that absence as a failure — a zero here would be indistinguishable from a game
+ * that genuinely drew nothing.
+ */
+export interface IAndroidAppState {
+  focused: boolean;
+  frames?: number;
+  pid?: number;
+  /** `mRotation` for the app's window: how far its content is turned from the panel's frame. */
+  windowRotation?: number;
+}
+
+/** One device-observed lifecycle phase, in the order the scenario drove them. */
+export interface IPlaytestDeviceLifecyclePhase {
+  at: number;
+  focused: boolean;
+  frames: number;
+  /** Only on a `background` phase: the platform's frame count stopped before this reading. */
+  framesPaused?: boolean;
+  phase: IAndroidLifecycleOperation;
+  pid: number;
+  requestedRotation?: number;
+  windowRotation?: number;
+}
+
+/**
+ * The simulation-step count at each read around a driven lifecycle.
+ *
+ * A read the scenario never reached is `null` rather than a count this run did not take.
+ */
+export interface IPlaytestDeviceLifecycleSteps {
+  afterAdvance: number | null;
+  afterForeground: number | null;
+  beforeBackground: number | null;
+}
+
+/**
+ * The simulation-step count read around a driven lifecycle, and what it says about continuity.
+ *
+ * The counter is runtime-owned, not device-observed: the platform counts drawn frames, and
+ * `dumpsys gfxinfo` has no physics counter, so only the plugin that performed the step can say
+ * whether the simulation moved. Neither the device nor a game-authored `GameState` can restate it.
+ */
+export type IPlaytestDeviceLifecyclePhysics =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      /** Read immediately before the app went away, on its return before the advance, and after. */
+      steps: IPlaytestDeviceLifecycleSteps;
+      /** The count moved across the runner's advance after the app came back, or `null`. */
+      stepsAdvanced: boolean | null;
+      /** The count stood still while the app was away, or `null` for a scenario that never left. */
+      stepsPaused: boolean | null;
+    };
+
+/**
+ * The runner's own account of a driven lifecycle, for a collector to bind to a scenario and an
+ * installed artifact. Nothing here was authored by the game.
+ */
+export interface IPlaytestDeviceLifecycleObservation {
+  phases: readonly IPlaytestDeviceLifecyclePhase[];
+  /** Absent rather than zero on a build that installs no physics plugin, and a failed run rather
+   * than a value when the plugin advertised one and reported nothing readable. */
+  physics: IPlaytestDeviceLifecyclePhysics;
+  render: {
+    /** Frames advanced after the background phase, or `null` when there was nothing to compare. */
+    framesAdvanced: boolean | null;
+    /** Whether the device's own frame count stopped while the app was unfocused, or `null`. */
+    framesPaused: boolean | null;
+  };
+  /** The process every phase reported; a different pid anywhere is a failed run, not a row. */
+  session: { pid: number };
 }
 
 export interface IAndroidPointer {
@@ -80,6 +170,8 @@ export interface IAndroidTouchViewport {
 
 export class AdbAndroidDriver implements IAndroidDriver {
   private static readonly COVERAGE_VIDEO_PATH = "/sdcard/tn-playtest-framebuffer-coverage.mp4";
+  /** Bounded polls for a lifecycle operation to become visible to the device's own readings. */
+  private static readonly LIFECYCLE_ATTEMPTS = 50;
   private readonly adbPath: string;
   private screenrecord?: ChildProcess;
   private screenrecordError?: Error;
@@ -94,6 +186,8 @@ export class AdbAndroidDriver implements IAndroidDriver {
   private touchViewport?: IAndroidTouchViewport;
   private readonly user?: string;
   private activeUser?: string;
+  /** Set by a lifecycle `rotate`, whose display lock `stop()` has to free on its own account. */
+  private lifecycleRotationLocked = false;
   private viewportPresented = false;
 
   constructor(private readonly options: IAndroidDriverOptions) {
@@ -178,6 +272,87 @@ export class AdbAndroidDriver implements IAndroidDriver {
 
   async tap(x: number, y: number): Promise<void> {
     await this.adb(tapCommand(x, y));
+  }
+
+  /**
+   * The three device operations a `lifecycle` step names, each waiting for the device to *report*
+   * the effect rather than for the command to return.
+   *
+   * `input keyevent 3` and `am start` both answer `OK` whether or not anything moved, and `wm
+   * user-rotation lock` answers the same way on a device whose rotation is pinned. A step that
+   * recorded a phase on the strength of the exit code alone would certify a device that never went
+   * away — which is the exact value the gate exists to read off the phone, so each op polls the
+   * reading it is about to claim and throws when the claim is false.
+   */
+  async background(): Promise<void> {
+    await this.adb(["shell", "input", "keyevent", "3"]);
+    await this.waitForFocus(false);
+  }
+
+  async foreground(): Promise<void> {
+    const user = this.activeUser ?? await this.resolveUser();
+    await this.adb([
+      "shell",
+      "am",
+      "start",
+      "--user",
+      user,
+      "-n",
+      `${this.options.packageName}/${this.options.activity}`,
+    ]);
+    await this.waitForFocus(true);
+  }
+
+  async rotate(rotation: number): Promise<void> {
+    if (![0, 1, 2, 3].includes(rotation)) {
+      throw new Error(
+        `TN_PLAYTEST_ANDROID_ROTATION_INVALID: rotation must be 0, 1, 2 or 3, got '${String(rotation)}'.`,
+      );
+    }
+    await this.adb(["shell", "wm", "user-rotation", "lock", String(rotation)]);
+    // Set before the poll, not after it: the lock is taken whether or not the window ever turns, so
+    // a device that refused the rotation is exactly the device `stop()` must put back.
+    this.lifecycleRotationLocked = true;
+    let observed: number | undefined;
+    for (let attempt = 0; attempt < AdbAndroidDriver.LIFECYCLE_ATTEMPTS; attempt += 1) {
+      observed = windowRotationFromDump(await this.adb(["shell", "dumpsys", "window"]));
+      if (observed === rotation) return;
+      await delay(100);
+    }
+    throw new Error(
+      `TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED: asked the device for rotation ${rotation} and dumpsys window still reports ${String(observed)}.`,
+    );
+  }
+
+  async lifecycleState(): Promise<IAndroidAppState> {
+    const [pids, window, frames] = await Promise.all([
+      this.adb(["shell", "pidof", this.options.packageName]),
+      this.adb(["shell", "dumpsys", "window"]),
+      this.adb(["shell", "dumpsys", "gfxinfo", this.options.packageName]),
+    ]);
+    const pid = parseAndroidAppPid(pids);
+    const appFrames = parseAndroidAppFrames(frames);
+    const windowRotation = windowRotationFromDump(window);
+    return {
+      focused: windowHasFocus(window, this.options.packageName),
+      ...(appFrames === undefined ? {} : { frames: appFrames }),
+      ...(pid === undefined ? {} : { pid }),
+      ...(windowRotation === undefined ? {} : { windowRotation }),
+    };
+  }
+
+  private async waitForFocus(expected: boolean): Promise<void> {
+    for (let attempt = 0; attempt < AdbAndroidDriver.LIFECYCLE_ATTEMPTS; attempt += 1) {
+      const focused = windowHasFocus(
+        await this.adb(["shell", "dumpsys", "window"]),
+        this.options.packageName,
+      );
+      if (focused === expected) return;
+      await delay(100);
+    }
+    throw new Error(
+      `TN_PLAYTEST_ANDROID_LIFECYCLE_NOT_APPLIED: the device still reports '${this.options.packageName}' as ${expected ? "not focused" : "focused"} after the operation.`,
+    );
   }
 
   /**
@@ -367,6 +542,14 @@ export class AdbAndroidDriver implements IAndroidDriver {
   async stop(): Promise<void> {
     await this.abortScreenRecording();
     await this.setPointers([]).catch(() => undefined);
+    if (this.lifecycleRotationLocked) {
+      // A lifecycle rotation is its own display override, so it is freed on its own account. The
+      // viewport restore below frees the display too, but it also resets size and density, which a
+      // rotation-only run never asked to change — and a device left pinned is a device whose next
+      // measurement is silently against the wrong orientation.
+      this.lifecycleRotationLocked = false;
+      await this.adb(["shell", "wm", "user-rotation", "free"]).catch(() => undefined);
+    }
     if (this.viewportPresented) {
       this.viewportPresented = false;
       this.touchViewport = undefined;
@@ -713,8 +896,42 @@ export function viewportPresentationObserved(
  * is turned 90 degrees off the panel, so every injected touch lands somewhere else.
  */
 export function touchRotationFromWindowDump(dump: string): number | undefined {
+  const rotation = windowRotationFromDump(dump);
+  return rotation === undefined ? undefined : (4 - rotation) % 4;
+}
+
+/**
+ * The window's own `mRotation`, as the device states it rather than as touch needs it. `undefined`
+ * means the dump carried no `mRotation`, never rotation 0.
+ */
+function windowRotationFromDump(dump: string): number | undefined {
   const rotation = /\bmRotation=([0-3])\b/u.exec(dump)?.[1];
-  return rotation === undefined ? undefined : (4 - Number(rotation)) % 4;
+  return rotation === undefined ? undefined : Number(rotation);
+}
+
+/** Whether `dumpsys window` shows this package holding input focus. */
+function windowHasFocus(dump: string, packageName: string): boolean {
+  const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`mCurrentFocus=.*\\s${escaped}/`, "u").test(dump);
+}
+
+/** The pid `pidof` reported for the package, or `undefined` when nothing carries that name. */
+function parseAndroidAppPid(output: string): number | undefined {
+  const pid = output.trim().split(/\s+/u)[0];
+  return pid !== undefined && /^\d+$/u.test(pid) ? Number(pid) : undefined;
+}
+
+/**
+ * The frames the platform has drawn for this process, from `dumpsys gfxinfo <package>`.
+ *
+ * `undefined` when the device declined the query or reported no counter, which is not the same as
+ * a process that drew nothing: a device with the per-app frame statistics turned off prints
+ * neither line, and reading that as `0` would certify a paused surface from a device that never
+ * answered.
+ */
+function parseAndroidAppFrames(dump: string): number | undefined {
+  const frames = /Total frames rendered:\s*(\d+)/u.exec(dump)?.[1];
+  return frames === undefined ? undefined : Number(frames);
 }
 
 /**
@@ -844,4 +1061,9 @@ export function discoverAdb(environment: NodeJS.ProcessEnv = process.env): strin
   throw new Error(
     "adb was not found. Install Android SDK Platform Tools, set ANDROID_HOME, or pass --adb /absolute/path/to/adb.",
   );
+}
+
+/** A bounded pause between device polls. Scenario steps are ticks; this is the OS settling. */
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

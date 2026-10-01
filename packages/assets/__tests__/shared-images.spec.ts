@@ -46,8 +46,8 @@ vi.mock("node:fs/promises", async (importOriginal) => {
  */
 
 /** The shared fixture with its two maps replaced by deterministic 32x32 images. */
-async function fixture(seed: number): Promise<Buffer> {
-  const document = buildFixtureDocument();
+async function fixture(seed: number, gridDepth = 3): Promise<Buffer> {
+  const document = buildFixtureDocument({ gridDepth });
   const [baseColor, normal] = document.getRoot().listTextures();
   baseColor
     ?.setImage(
@@ -111,9 +111,16 @@ async function encodedImageCollisionFixture(): Promise<{
   };
 }
 
-/** Two reachable textures with the same source key, retained independently of model dedup. */
-async function repeatedSourceKeyFixture(): Promise<Buffer> {
-  const document = buildFixtureDocument();
+/**
+ * Two reachable textures with the same source key, retained independently of model dedup.
+ *
+ * `gridDepth` varies the geometry, never the images: a second model staged with it is a distinct
+ * model that still carries the same source bytes, which is what the shared-image tests are about.
+ * A byte-identical copy would not be — the cook publishes one output for content-identical models
+ * (`TN_ASSET_MODEL_DEDUPE`) and there would be no second model to share anything with.
+ */
+async function repeatedSourceKeyFixture(gridDepth = 3): Promise<Buffer> {
+  const document = buildFixtureDocument({ gridDepth });
   const image = rgbaPng({
     blue: (x, y) => (x * 19 + y * 23) % 256,
     green: (x, y) => (x * 29 + y * 31) % 256,
@@ -169,9 +176,8 @@ describe("shared model images", () => {
   it("should publish concurrent shared images with independent staging files", async () => {
     const root = await makeTempDir("threenative-shared-publication-");
     await mkdir(path.join(root, "assets"));
-    const input = await repeatedSourceKeyFixture();
-    await writeFile(path.join(root, "assets", "a.glb"), input);
-    await writeFile(path.join(root, "assets", "b.glb"), input);
+    await writeFile(path.join(root, "assets", "a.glb"), await repeatedSourceKeyFixture());
+    await writeFile(path.join(root, "assets", "b.glb"), await repeatedSourceKeyFixture(4));
     const staged: string[] = [];
     let release = () => {};
     const bothWritten = new Promise<void>((resolve) => {
@@ -238,9 +244,8 @@ describe("shared model images", () => {
     async (concurrency) => {
       const root = await makeTempDir("threenative-shared-default-");
       await mkdir(path.join(root, "assets"));
-      const input = await repeatedSourceKeyFixture();
-      await writeFile(path.join(root, "assets", "a.glb"), input);
-      await writeFile(path.join(root, "assets", "b.glb"), input);
+      await writeFile(path.join(root, "assets", "a.glb"), await repeatedSourceKeyFixture());
+      await writeFile(path.join(root, "assets", "b.glb"), await repeatedSourceKeyFixture(4));
       await compileAssets({ cwd: root, concurrency, transcoder: basisTranscoderPaths() });
       const files = await readdir(path.join(root, "public", "shared", "images"));
       expect(files).toHaveLength(1);
@@ -262,9 +267,8 @@ describe("shared model images", () => {
     const log = vi.spyOn(console, "log");
     const root = await makeTempDir("threenative-shared-opt-out-");
     await mkdir(path.join(root, "assets"));
-    const input = await repeatedSourceKeyFixture();
-    await writeFile(path.join(root, "assets", "a.glb"), input);
-    await writeFile(path.join(root, "assets", "b.glb"), input);
+    await writeFile(path.join(root, "assets", "a.glb"), await repeatedSourceKeyFixture());
+    await writeFile(path.join(root, "assets", "b.glb"), await repeatedSourceKeyFixture(4));
     const result = await compileAssets({
       config: { models: { sharedImages: false } },
       cwd: root,
@@ -478,7 +482,7 @@ describe("shared model images", () => {
     const root = await makeTempDir("threenative-shared-images-");
     await mkdir(path.join(root, "assets", "props"), { recursive: true });
     await writeFile(path.join(root, "assets", "props", "a.glb"), await fixture(0));
-    await writeFile(path.join(root, "assets", "props", "b.glb"), await fixture(0));
+    await writeFile(path.join(root, "assets", "props", "b.glb"), await fixture(0, 4));
 
     const first = await compileAssets({
       config: { models: { sharedImages: true } },
@@ -539,6 +543,58 @@ describe("shared model images", () => {
       files.map(async (file) => (await stat(path.join(shared, file))).mtimeMs),
     );
     expect(after).toEqual(before);
+  });
+
+  it("should resize shared embedded images to PNG and stay deduplicated on a decoder-free target", async () => {
+    const root = await makeTempDir("threenative-shared-decoder-free-");
+    await mkdir(path.join(root, "assets"));
+    const input = await fixture(0);
+    await writeFile(path.join(root, "assets", "a.glb"), input);
+    await writeFile(path.join(root, "assets", "b.glb"), input);
+
+    await compileAssets({
+      config: { models: { textures: { maxSize: 16 } } },
+      concurrency: 2,
+      cwd: root,
+      platform: "android",
+    });
+
+    const directory = path.join(root, "public", "shared", "images");
+    const files = (await readdir(directory)).sort();
+    expect(files).toHaveLength(2);
+    for (const file of files) {
+      expect(file).toMatch(/^[0-9a-f]{16}\.none\.png$/u);
+      const png = PNG.sync.read(await readFile(path.join(directory, file)));
+      expect([png.width, png.height]).toEqual([16, 16]);
+    }
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as {
+      entries: Record<string, { sharedImages?: { output: string }[] } | undefined>;
+    };
+    const a = manifest.entries["a.glb"]?.sharedImages?.map((image) => image.output).sort();
+    const b = manifest.entries["b.glb"]?.sharedImages?.map((image) => image.output).sort();
+    expect(a).toHaveLength(2);
+    expect(a).toEqual(b);
+  }, 60_000);
+
+  it("should key a decoder-free shared image by its size cap", async () => {
+    const compiledAtCap = async (maxSize: number): Promise<string[]> => {
+      const root = await makeTempDir("threenative-shared-decoder-free-cap-");
+      await mkdir(path.join(root, "assets"));
+      await writeFile(path.join(root, "assets", "a.glb"), await fixture(0));
+      await compileAssets({
+        config: { models: { textures: { maxSize } } },
+        cwd: root,
+        platform: "android",
+      });
+      return (await readdir(path.join(root, "public", "shared", "images"))).sort();
+    };
+    // Same source bytes, different caps: the cooked image must not be shared between them.
+    const sixteen = await compiledAtCap(16);
+    const eight = await compiledAtCap(8);
+    expect(sixteen).not.toEqual(eight);
   });
 
   it("should reject a non-boolean sharedImages setting", async () => {

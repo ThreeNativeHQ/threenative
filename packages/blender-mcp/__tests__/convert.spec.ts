@@ -60,6 +60,7 @@ describe("bridge contract", () => {
       "blender_inspect",
       "blender_convert",
       "blender_recipes",
+      "blender_export_world",
       "blender_run_python",
     ]);
   });

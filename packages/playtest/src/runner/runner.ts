@@ -1,6 +1,7 @@
 import { waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
-import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic } from "./runner-support.js";
+import { withPerformanceBudget } from "./buildReport.js";
+import { preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
 import type { IPageLifecycle } from "./server.js";
 import { stopManagedServer, boundedTeardownStep, settledTeardownValue, assertManagedUrlAvailable, startManagedServer, waitForUrl, openPageAndConnectBridge, pageLifecycleDiagnostic, findFreePort, withPort } from "./server.js";
 import { sampleHud } from "./sampling.js";
@@ -9,7 +10,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -84,8 +85,6 @@ import {
 } from "./browserSession.js";
 import { startBrowserCpuProfile, type IBrowserCpuProfile } from "./cpuProfile.js";
 
-/** How long a single screenshot may take before the runner calls it a failure. */
-const SCREENSHOT_TIMEOUT_MS = 120_000;
 const TOUCH_BROWSER_USER_AGENT =
   "Mozilla/5.0 (Linux; Android 13; Pixel 8) AppleWebKit/537.36 Chrome/151.0 Mobile Safari/537.36";
 
@@ -203,7 +202,10 @@ async function runStandalonePlaytestInternal(
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
-  const scenario = await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath);
+  const scenario = withPerformanceBudget(
+    await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
+    activeConfig.performanceBudget,
+  );
   const browserConfig = scenario.assert?.performance === undefined
     ? activeConfig
     : {
@@ -381,7 +383,12 @@ async function runStandalonePlaytestInternal(
       if (pageLifecycle.tail.length > 8) pageLifecycle.tail.shift();
     });
     page.on("pageerror", (error) => consoleEntries.push({ source: "page-error", text: error.stack || error.message, type: "pageerror" }));
-    page.on("requestfailed", (request) => networkEntries.push({ method: request.method(), url: request.url() }));
+    page.on("requestfailed", (request) => {
+      const method = request.method();
+      const url = request.url();
+      if (isJudgeMarkerRequestFailure(method, url, activeConfig.judgeMarkerUrl)) return;
+      networkEntries.push({ method, url });
+    });
     // A renderer crash and a page navigation both surface as "Execution context was destroyed"
     // on the next evaluate, and the two need opposite fixes. Record which actually happened so
     // the report names it instead of emitting the unexplained-error catch-all.
@@ -418,14 +425,15 @@ async function runStandalonePlaytestInternal(
     // `warmupFrames` is a fixed count, so whether it covers the application's launch depends on
     // the machine. Where the application reports its own startup, wait for that instead: the
     // baseline below must be read from a game that is running, not from one still loading.
-    // `allowSoftwareAdapter` is the operator saying out loud that this machine has no GPU. It is
-    // the only thing that relaxes the rule; nothing infers it from a slow run.
+    // `allowSoftwareAdapter` is the operator saying out loud that this machine has no GPU. The
+    // wait still runs to full readiness; the declaration is the only thing that labels the result
+    // as the non-smoothness measurement it is. Nothing infers it from a slow run.
     const startupOutcome = bridge === undefined || scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
           aborted: () => tearingDown,
-          acceptCompileSettled: activeConfig.allowSoftwareAdapter === true,
           bridge,
+          declaredSoftware: activeConfig.allowSoftwareAdapter === true,
           pump: () => waitFrames(activePage, 1),
         });
     const runtimeReady = await page.evaluate(() =>
@@ -820,7 +828,10 @@ export async function runStandalonePlaytests(
   const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenarios = [] as IPlaytestScenario[];
   for (const scenarioPath of scenarioPaths) {
-    scenarios.push(await loadPlaytestScenario(activeConfig.projectPath, scenarioPath));
+    scenarios.push(withPerformanceBudget(
+      await loadPlaytestScenario(activeConfig.projectPath, scenarioPath),
+      activeConfig.performanceBudget,
+    ));
   }
   let server: ChildProcess | undefined;
   try {

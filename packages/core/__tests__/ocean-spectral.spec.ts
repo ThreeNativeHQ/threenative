@@ -1,3 +1,4 @@
+import { Group } from "three";
 import { describe, expect, it } from "vitest";
 import {
   type ISpectralOceanOptions,
@@ -87,6 +88,15 @@ describe("phillipsEnergy", () => {
     expect(aboveBand).toBe(0);
   });
 
+  it("should suppress tiny waves and exclude both band endpoints", () => {
+    expect(phillipsEnergy(5e-7, 0, { ...TUNING, ...band })).toBe(0);
+    const bounded = { ...TUNING, kMin: 1, kMax: 2 };
+    expect(phillipsEnergy(0.999, 0, bounded)).toBe(0);
+    expect(phillipsEnergy(1, 0, bounded)).toBeGreaterThan(0);
+    expect(phillipsEnergy(2, 0, bounded)).toBe(0);
+    expect(phillipsEnergy(1.5, 0, bounded)).toBeGreaterThan(0);
+  });
+
   it("should carry more energy in a stronger wind", () => {
     const breeze = phillipsEnergy(0.2, 0.1, { ...TUNING, ...band, windSpeed: 4 });
     const gale = phillipsEnergy(0.2, 0.1, { ...TUNING, ...band, windSpeed: 20 });
@@ -128,6 +138,18 @@ describe("initialSpectrumData", () => {
           ((resolution - y) % resolution) * resolution + ((resolution - x) % resolution);
         expect(data[index * 4 + 2]).toBeCloseTo(data[mirror * 4] as number, 6);
         expect(data[index * 4 + 3]).toBeCloseTo(-(data[mirror * 4 + 1] as number), 6);
+      }
+    }
+  });
+
+  it("should leave self-mirrored Nyquist rows empty", () => {
+    const resolution = 8;
+    const data = initialSpectrumData(resolution, 100, band, TUNING);
+    for (let y = 0; y < resolution; y += 1) {
+      for (let x = 0; x < resolution; x += 1) {
+        if (x !== 0 && y !== 0) continue;
+        const index = y * resolution + x;
+        expect([...data.slice(index * 4, index * 4 + 4)].every((value) => value === 0)).toBe(true);
       }
     }
   });
@@ -215,6 +237,11 @@ describe("sampleGrid", () => {
     expect(sampleGrid(grid, 2, 4, 4, 4)).toBeCloseTo(sampleGrid(grid, 2, 4, 0, 0), 12);
     expect(sampleGrid(grid, 2, 4, -4, 0)).toBeCloseTo(sampleGrid(grid, 2, 4, 0, 0), 12);
   });
+
+  it("should interpolate across both wrapped edges", () => {
+    const grid = Float32Array.from([0, 1, 2, 3]);
+    expect(sampleGrid(grid, 2, 4, -0.5, -0.5)).toBeCloseTo(0.75, 12);
+  });
 });
 
 describe("SpectralOcean options", () => {
@@ -255,6 +282,18 @@ describe("SpectralOcean options", () => {
     expect(await construct({ directionality: -1 }).then((build) => build)).toThrow(
       "directionality must be a positive number",
     );
+    expect(
+      await construct({ windDirection: Number.POSITIVE_INFINITY }).then((build) => build),
+    ).toThrow("windDirection must be a finite number");
+    expect(await construct({ choppiness: Number.NaN }).then((build) => build)).toThrow(
+      "choppiness must be a finite number",
+    );
+  });
+
+  it("should reject an invalid cadence", async () => {
+    expect(
+      await construct({ cadence: "invalid" as "fixed" | "render" }).then((build) => build),
+    ).toThrow('must be "fixed" or "render"');
   });
 
   it("should refuse a readback cadence it cannot honour", async () => {
@@ -264,23 +303,35 @@ describe("SpectralOcean options", () => {
     expect(await construct({ readbackResolution: -4 }).then((build) => build)).toThrow(
       "readbackResolution must be a non-negative integer",
     );
+    expect(await construct({ readbackResolution: 6 }).then((build) => build)).toThrow(
+      "must be a power of two",
+    );
+    expect(await construct({ readbackEveryFrames: 1.5 }).then((build) => build)).toThrow(
+      "readbackEveryFrames must be a positive integer",
+    );
   });
 });
 
 interface IOceanRendererControl {
   readonly renderer: IRendererLike;
   readonly dispatched: unknown[];
+  /** How many `compute()` calls carried them: three submits one command buffer per call. */
+  readonly computeCalls: () => number;
   readonly readbackCalls: number;
   land(bytes: Float32Array): void;
 }
 
 function oceanRenderer(): IOceanRendererControl {
   const dispatched: unknown[] = [];
+  let computeCalls = 0;
   const pending: ((bytes: ArrayBuffer) => void)[] = [];
   const canvas = new EventTarget() as HTMLCanvasElement;
   const renderer = {
     compileAsync: async () => undefined,
-    compute: (node: unknown) => dispatched.push(node),
+    compute: (node: unknown) => {
+      computeCalls += 1;
+      dispatched.push(...(Array.isArray(node) ? node : [node]));
+    },
     dispose: () => undefined,
     domElement: canvas,
     info: {},
@@ -308,6 +359,7 @@ function oceanRenderer(): IOceanRendererControl {
   return {
     renderer,
     dispatched,
+    computeCalls: () => computeCalls,
     get readbackCalls() {
       return pending.length;
     },
@@ -330,6 +382,9 @@ describe("SpectralOcean lifetime", () => {
     // Two cascades, each: evolve + row reverse + 3 row stages + column reverse + 3 column stages
     // + unpack = 10 passes. Then one height pass shared across both.
     expect(control.dispatched).toHaveLength(2 * 10 + 1);
+    // ...in one `compute()`: three submits a command buffer per call, so a call per pass was 21
+    // submits a frame, and a submit is where the GPU process makes the renderer wait.
+    expect(control.computeCalls()).toBe(1);
     expect(ocean.steps).toBe(1);
     // Warmup covers every pass, so none of them compiles inside a frame the player is watching.
     expect(ocean.warmupNodes).toHaveLength(2 * 10 + 1);
@@ -425,6 +480,24 @@ describe("SpectralOcean lifetime", () => {
     // take a frame down with it.
     ocean.process();
     expect(control.dispatched).toHaveLength(0);
+  });
+
+  it("should reject non-finite time and unknown cascade accessors", async () => {
+    const { SpectralOcean } = await import("../src/ocean/spectral.js");
+    const ocean = new SpectralOcean(options({ resolution: 8, readbackResolution: 4 }));
+    expect(() => ocean.advance(Number.NaN)).toThrow("needs a finite time");
+    expect(() => ocean.cascadePatchSize(-1)).toThrow("has no cascade -1");
+    expect(() => ocean.cascadeDisplacement(2)).toThrow("has no cascade 2");
+    ocean.detach();
+  });
+
+  it("should release when its parent removes it", async () => {
+    const { SpectralOcean } = await import("../src/ocean/spectral.js");
+    const ocean = new SpectralOcean(options({ resolution: 8, readbackResolution: 0 }));
+    const parent = new Group();
+    parent.add(ocean);
+    parent.remove(ocean);
+    expect(ocean.released).toBe(true);
   });
 
   it("should name the cascade a game asks for and refuse one it does not have", async () => {

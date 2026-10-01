@@ -933,6 +933,26 @@
     {
       "aliases": [],
       "constraints": [
+        "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
+        "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
+      ],
+      "example": "const bvh = ctx.add(new GPUSceneBVH(ctx.scene, { include: (object) => object.userData.traceable === true }));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "bvhIntersectFirstHit = upstream.bvhIntersectFirstHit",
+      "situations": [
+        "trace thousands of scene rays inside a TSL kernel",
+        "build a contact-occlusion or visibility query over loaded meshes"
+      ],
+      "summary": "Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.",
+      "supersedes": [],
+      "symbol": "bvhIntersectFirstHit"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "amplitude, rotationAmplitude, frequency, decay, and curve are required game choices",
         "update returns an offset and never writes to a camera"
       ],
@@ -966,6 +986,26 @@
       "summary": "Manage a camera or screen-facing canvas layer.",
       "supersedes": [],
       "symbol": "CanvasLayer"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the browser grants capture only from a user gesture and a refusal is reported, never swallowed",
+        "a relative binding requests capture on canvas click unless `captureOnClick: false` opts out"
+      ],
+      "example": "canvas.addEventListener(\"click\", () => captureMouse(canvas));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function captureMouse(target: EventTarget): Promise<void> | undefined { … }",
+      "situations": [
+        "lock the mouse pointer so first-person mouse look keeps the cursor out of the way",
+        "stop the cursor leaving the window in the middle of a turn"
+      ],
+      "summary": "Lock the pointer to the game's surface: the capture every first-person mouse look needs. A browser grants capture only from a user gesture, so call it from a click or a pointerdown handler. A relative binding such as `look: { pointerRelative: true }` already requests capture on the first canvas click; this is the same request for a game that starts capture from another named gesture, and `ctx.input.captureMouse()` is the map's own way to ask.",
+      "supersedes": [],
+      "symbol": "captureMouse"
     },
     {
       "aliases": [],
@@ -1164,6 +1204,7 @@
       "package": "@threenative/core",
       "signature": "export function createRandom(seed?: number): IRandom { … }",
       "situations": [
+        "get a seeded deterministic random number generator — the same mulberry32 a game would hand-roll",
         "seed enemy patrol choices",
         "reproduce the same procedural level in a playtest"
       ],
@@ -1189,6 +1230,47 @@
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
       "symbol": "createReplayDriver"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every value is required; there is no default sun, sky, haze or exposure",
+        "`skySize` must keep the sky box's corners inside the camera's far plane",
+        "shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing"
+      ],
+      "example": "const daylight = new Daylight({ follow: ctx.camera, sunDirection, sunColor, sunIntensity: 4, shadowExtents: [24, 96, 320], sky: { turbidity: 3, rayleigh: 1.4, mieCoefficient: 0.004, mieDirectionalG: 0.8 }, fill: { sky, ground, intensity: 1.1 }, haze: { color: horizon, density: 0.0011 }, exposure: 2 ** -0.6, skySize: 1600 });\nctx.add(daylight);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "sky uniforms stay live on `daylight.sky`; the light and fill are `daylight.sun` and `daylight.fill`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class Daylight extends Group implements IComputeDriven { … }",
+      "situations": [
+        "daytime sky, sun and shadows for a large outdoor map",
+        "distant terrain should fade into the sky instead of a coloured wall",
+        "match a Blender look-dev scene's sun, sky and exposure in the game"
+      ],
+      "summary": "An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.",
+      "supersedes": [],
+      "symbol": "Daylight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "a name in camelCase becomes UPPER_SNAKE: `debugFlag(\"freeCam\")` reads `?freeCam` or `TN_DEBUG_FREE_CAM`",
+        "`0` and `false` are off, so a saved URL cannot turn a switch back on"
+      ],
+      "example": "import { debugFlag } from \"@threenative/core\";\nif (debugFlag(\"freeCam\")) camera.flyMode = true;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function debugFlag(name: string): boolean { … }",
+      "situations": ["read a debug toggle from the URL or an environment variable"],
+      "summary": "Read a debug switch from the URL, or from `TN_DEBUG_*` in the environment on a native launch.",
+      "supersedes": [],
+      "symbol": "debugFlag"
     },
     {
       "aliases": [
@@ -1355,6 +1437,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["development builds only; a production build publishes nothing"],
+      "example": "import { exposeDebug } from \"@threenative/core\";\nexposeDebug(\"player\", player);\n// then from the console: __THREENATIVE__.debug.player",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function exposeDebug(name: string, value: unknown): void { … }",
+      "situations": ["expose a game object to a capture script or the console in dev builds"],
+      "summary": "Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.",
+      "supersedes": [],
+      "symbol": "exposeDebug"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "every mass, area, power and inertia value comes from the game's airframe",
         "damage, stores and configuration arrive as the game's own modifier sample"
@@ -1478,6 +1574,7 @@
       "package": "@threenative/core",
       "signature": "export class FrameBudget { … }",
       "situations": [
+        "show an on-screen frame time meter with p50, p95 and p99 percentiles",
         "find out why a game runs slowly on a phone",
         "attribute a frame to present wait, simulation, three.js render, or overlay",
         "tell whether the GPU is the frame's constraint from a per-frame series, not one lagged timestamp",
@@ -1638,6 +1735,27 @@
     {
       "aliases": [],
       "constraints": [
+        "`buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it",
+        "scroll, pinch and pointer-relative sources are declared on the binding and read through `axis(name)`; a game adds no window listener of its own"
+      ],
+      "example": "const game = defineGame({ input: { move: { up: [\"KeyW\"], down: [\"KeyS\"], left: [\"KeyA\"], right: [\"KeyD\"] } }, scenes: { Play } });\n// inside the scene, per frame: ctx.input.axis(\"move\") is 0 at rest and 1 at full tilt",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class InputMap { … }",
+      "situations": [
+        "map WASD keys to a movement axis instead of reading the held key set in the update loop",
+        "read a jump, a fire or a reload as one named action bound to key, gamepad button and mouse button together",
+        "read mouse look, wheel zoom or a two-finger pinch as an axis the frame loop already ticks"
+      ],
+      "summary": "The map a game reads input through: named actions, 2D vectors and scalar axes resolved from keyboard, gamepad, mouse, wheel, pinch and touch. `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual route is a binding in the config and `ctx.input.axis(\"move\")` in the update. Construct one directly to drive a menu, a replay or a test outside a running game.",
+      "supersedes": [],
+      "symbol": "InputMap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns an uninstall that restores every wrapper, asserted by test",
         "a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero",
         "only the outermost `_projectObject` opens a span, because three's recurses per child"
@@ -1688,7 +1806,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1751,7 +1869,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -1832,8 +1950,27 @@
     {
       "aliases": [],
       "constraints": [
+        "a non-positive viewport height, a non-positive frustum height or an unprojectable camera throws",
+        "a non-positive depth has no projected scale and returns Infinity"
+      ],
+      "example": "const pixels = lodPixelScale(camera, canvas.clientHeight, mesh.position.distanceTo(camera.position));",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lodPixelScale(camera: Camera, viewportHeight: number, depth: number): number { … }",
+      "situations": [
+        "pick a level of detail from an object's projected size in pixels on screen",
+        "know how many screen pixels a world-space error covers at a given distance"
+      ],
+      "summary": "The screen pixels one world unit covers at `depth` for this camera and viewport. Perspective divides the projected scale by the depth; orthographic has no depth term and uses the frustum height instead. This is the number a level of detail is chosen against: multiply a level's world-space error by it and you have the on-screen error a player can see, which is the comparison `updateModelLods` makes from the baked chain.",
+      "supersedes": [],
+      "symbol": "lodPixelScale"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
-        "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
       "example": "markStatic(island); invalidateStatic(drawbridge);",
@@ -1843,10 +1980,10 @@
       "package": "@threenative/core",
       "signature": "export function markStatic(root: Object3D): number { … }",
       "situations": [
-        "cut the per-frame matrix work of terrain, buildings, props and other scenery that never moves",
-        "keep a frozen subtree correct when the game does move it after all"
+        "freeze a static mesh or subtree so its matrices are not recomputed every frame",
+        "stop the engine recomposing the transforms of props, terrain and buildings each frame"
       ],
-      "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
+      "summary": "Freeze a subtree nobody moves: `markStatic(root)` composes its transforms once and stops the per-frame recompose. It is the call a game makes on scenery, terrain, buildings and props. The engine re-arms a root whose own transform the game changes; a write deeper inside a frozen subtree is announced with `invalidateStatic(object)`.",
       "supersedes": [],
       "symbol": "markStatic"
     },
@@ -1865,6 +2002,7 @@
       "package": "@threenative/core",
       "signature": "export class MatrixWorldPass { … }",
       "situations": [
+        "update the world matrices of the visible objects each frame instead of the whole scene",
         "the per-frame world matrix walk is hot in a profile",
         "stop multiplying matrices for hidden models, LOD levels and merged stand-ins",
         "a game needs every node walked, exactly as three's own updateMatrixWorld does"
@@ -1886,6 +2024,28 @@
       "summary": "Measure a Three.js pose for grounded or attachment-aware checks.",
       "supersedes": [],
       "symbol": "measureThreePose"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the material is the game's own instance and the split follows the materials the game",
+        "the meshes come back in root's local space and unparented, with the originals still in the",
+        "a skinned or instanced mesh, and a mesh with several materials, is left out — its",
+        "a group where only some meshes carry uv throws naming the label rather than losing the"
+      ],
+      "example": "const [hull, deck] = mergeByMaterial(ship, { label: \"ship\" });\n// a piece that must keep moving at run time:\nconst [steady] = mergeByMaterial(ship, { label: \"ship\", skip: (mesh) => mesh.name === \"radar\" });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["skip leaves one mesh out of its group and out of the result"],
+      "package": "@threenative/core",
+      "signature": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+      "situations": [
+        "collapse a building or ship of dozens of boxes into one draw call per material",
+        "consolidate the static parts of a group before adding it to the scene"
+      ],
+      "summary": "Bake a hierarchy's static meshes into one mesh per material, with their transforms baked in. already made; nothing here decides appearance tree: add them to root and remove the sources yourself, or both draw vertices are not its own to bake texture mapping; a missing normal is recomputed",
+      "supersedes": [],
+      "symbol": "mergeByMaterial"
     },
     {
       "aliases": [],
@@ -2247,7 +2407,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2366,7 +2526,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2411,6 +2571,22 @@
       "summary": "Validate and clone game-owned atmosphere coefficients.",
       "supersedes": [],
       "symbol": "resolveAtmosphereParameters"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function resolveTargetFps( config: ITargetFpsConfig | undefined, platform: ITargetFpsPlatform | undefined, measuredRefreshHz?: number, ): ITargetFps { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "resolveTargetFps"
     },
     {
       "aliases": [],
@@ -2601,6 +2777,22 @@
       "summary": "List the names of every bone in a character hierarchy.",
       "supersedes": [],
       "symbol": "skeletonBones"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
+      ],
+      "example": "resolveTargetFps(config, getPlatform()).targetFps;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function snapRefreshRate(refreshHz: number): number { … }",
+      "situations": ["my game does frame-rate-dependent work and must not hardcode 60"],
+      "summary": "Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.",
+      "supersedes": [],
+      "symbol": "snapRefreshRate"
     },
     {
       "aliases": [],
@@ -2822,7 +3014,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2863,7 +3055,7 @@
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
       ],
-      "example": "markStatic(island); invalidateStatic(drawbridge);",
+      "example": "invalidateStatic(drawbridge);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -2999,7 +3191,8 @@
       "constraints": [
         "the light must be a DirectionalLight with `castShadow` and a target in the scene",
         "clipExtents are half-widths in world units, finest first, strictly increasing",
-        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves"
+        "call `trackCaster(object)` for movers; it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants, tracking or untracking refreshes cached levels once, and subsequent mover movement refreshes only when a window moves",
+        "call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does"
       ],
       "example": "const sun = new DirectionalLight(0xffffff, 3);\nsun.castShadow = true;\nsun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [12, 40, 120] });",
       "importPath": "@threenative/core",
@@ -3412,6 +3605,22 @@
     {
       "aliases": [],
       "constraints": [
+        "the returned view aliases the caller's buffer; writing to it mutates the source"
+      ],
+      "example": "const records = cellPlacements(buffer, { asset: \"tree\", offset: 0, count: 120 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function cellPlacements(placements: ArrayBuffer, run: IWorldRun): Float32Array { … }",
+      "situations": ["feed one cell's instance transforms into a batch without copying"],
+      "summary": "Borrow the run's placement records as a live view over the placement buffer.",
+      "supersedes": [],
+      "symbol": "cellPlacements"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "unsupported is returned when compute limits are unknown or below the requirement; callers must not silently continue"
       ],
       "example": "const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackIterations: 8 });",
@@ -3456,16 +3665,72 @@
       "symbol": "Heightfield"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "the sampler reads the game's data; the framework never selects a terrain shape"
+      ],
+      "example": "const sampleHeight = heightSamplerFromHeightmap(terrain, extent, await loadWorldHeightmap(url));",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function heightSamplerFromHeightmap( terrain: IWorldTerrain, extent: IWorldExtent, data: Uint16Array, ): (x: number, z: number) => number { … }",
+      "situations": [
+        "turn an exported raw heightmap into terrain collision and rendering",
+        "query ground height from a Blender-authored world package"
+      ],
+      "summary": "Build a game-usable `sampleHeight` from a raw v1 heightmap. The returned function interpolates bilinearly in world units and clamps to the map edges, so it plugs straight into `Heightfield.fromSampler` and `TerrainTiles`. Height is `heightMin + v / 65535 * (heightMax - heightMin)` at vertex `(column, row)`.",
+      "supersedes": [],
+      "symbol": "heightSamplerFromHeightmap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the package's world.json must carry `terrain.layers.table` and `terrain.layers.splat`, written by the `export_terrain_layers.py` recipe",
+        "WebGPU allows 16 sampled textures per stage: planes + diffuse maps + normal maps must fit"
+      ],
+      "example": "const surface = await loadTerrainSplat({ assets: ctx.assets, url: \"world/world.json\" });\nconst world = await WorldCells.load({ assets: ctx.assets, url: \"world/world.json\", surface, follow, ring: 2 });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [
+        "every value comes from the package's table; the returned material is the game's to adjust"
+      ],
+      "package": "@threenative/core",
+      "signature": "export async function loadTerrainSplat(options: ILoadTerrainSplatOptions): Promise<Material> { … }",
+      "situations": [
+        "terrain textured by splat masks exported from Blender with the world package",
+        "the game's terrain should match the DCC's terrain material without a second copy"
+      ],
+      "summary": "The splat terrain surface a world package describes, for `WorldCells.load({ surface })`. Layers blend over a base by mask channels read as linear data (the masks ship raw, beside the heightmap, so no cook moves a blend threshold), with noise-broken edges and macro brightness variation. Texture sets tile in world metres on the package's ground plane (x, -z: a Z-up authoring tool's x and y), cliffs can be triplanar, and the base plus any layer that asks carries a normal map. Nothing here is a look choice: textures, tiles, tints, thresholds and noise scales all come from the package's table, which the game authors once and its DCC shares.",
+      "supersedes": [],
+      "symbol": "loadTerrainSplat"
+    },
+    {
+      "aliases": [],
+      "constraints": ["a non-OK response throws; bytes are byte-swapped only on a big-endian host"],
+      "example": "const data = await loadWorldHeightmap(\"/world/terrain/heightmap.u16\");",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { … }",
+      "situations": ["load a world package's heightmap once before building terrain"],
+      "summary": "Fetch a raw little-endian uint16 heightmap and expose it as samples.",
+      "supersedes": [],
+      "symbol": "loadWorldHeightmap"
+    },
+    {
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
-        "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws"
+        "residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws",
+        "seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off"
       ],
       "example": "const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });",
       "importPath": "@threenative/core/world",
       "kind": "class",
       "overrides": [
-        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, and budgets"
+        "tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets"
       ],
       "package": "@threenative/core",
       "signature": "export class TerrainTiles extends Object3D implements IComputeDriven { … }",
@@ -3479,8 +3744,176 @@
       "symbol": "TerrainTiles"
     },
     {
+      "aliases": [],
+      "constraints": ["off by default: it is the work it checks, every frame"],
+      "example": "// Reads its own the way `renderListValidationRequested` does: a native launch sets the\n// environment variable, a browser asks with the query string, a test or harness sets the\n// global. `0` and `false` are off, so a saved URL that enabled it still says \"off\".\nconst tiles = new TerrainTiles({ ...options, validate: terrainValidationRequested() });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function terrainValidationRequested(): boolean { … }",
+      "situations": [
+        "turn terrain's per-frame seam, LOD pop and vertex checks on for one run",
+        "assert the terrain geometry a game streams before it ships"
+      ],
+      "summary": "Whether `TN_TERRAIN_VALIDATE` asks for terrain validation on this launch.",
+      "supersedes": [],
+      "symbol": "terrainValidationRequested"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "validation only checks structure and ranges; it never fetches the heightmap or GLBs"
+      ],
+      "example": "const { ok, errors } = validateWorldPackage(json, { placementsByteLength: buffer.byteLength });",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function validateWorldPackage( manifest: unknown, options: IWorldPackageValidationOptions, ): { … }",
+      "situations": [
+        "check a Blender-exported world package before the runtime attaches anything",
+        "report why a world package cannot be streamed"
+      ],
+      "summary": "Validate a `world.json` manifest against the v1 contract. Never throws on garbage input: a non-object manifest is `WORLD_MALFORMED`. Every problem is collected, so an exporter sees the complete list at once.",
+      "supersedes": [],
+      "symbol": "validateWorldPackage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "surface is the game's; this class creates no material, colour or geometry",
+        "budgets are hard caps that report pressure instead of over-committing",
+        "model loads are bounded by `concurrency` (default 12) across every resident cell, not per cell",
+        "refilters are bounded by `rebuildsPerUpdate` (default 16) per update, nearest cell first",
+        "admission is bounded by `admissionBudgetMs` (default 2) per update across every path, plus at most one unit each for terrain and props; while props are queued terrain takes at most half, so neither starves the other, and a deferred cell keeps drawing what it has",
+        "SkinnedMesh parts are skipped; an instanced copy would draw one rest pose",
+        "a baked chain's switch distances are measured against `autoLod` (default 4 px of error over 60° and 1080 raster rows), because an instanced draw cannot select a level per instance; an asset with authored `lods` never consults it",
+        "`prewarmed` resolves once every prewarmed shared batch has been drawn; a game with a loading screen waits on it, and `stats().pendingPrewarm` is the same gate as a number",
+        "every `asset:level:part` is one InstancedMesh for the main pass, plus one caster InstancedMesh per world-grid square of `clusterSize` on the shadow caster layer, so the main pass draws one mesh per key and a shadow level submits only the squares it covers",
+        "two definitions the asset loader resolves to one model — the same cooked `glb`, the same `lods` at the same distances, the same `maxDistance` and bounds — are one asset under the lexicographically smallest id: one model load, one set of `asset:level:part` keys, one prewarm and one refcount, released when the last cell holding any member of the group leaves the ring; `TN_WORLD_ASSET_ALIAS` reports how many of the package's assets are really distinct",
+        "the main pass mesh draws only the squares the render camera's frustum covers — on by default, narrowed once per frame for every main batch by the engine's render-cadence dispatch, never for an orthographic camera — a batch with nothing to draw is hidden rather than submitted at `count 0`, and `TN_WORLD_MAIN_CULL` reports both every five seconds",
+        "a loaded chunk is merged by material before it is added, so it submits one draw per material rather than one per node; a skinned, multi-material or morph-target mesh, one carrying a baked AutoLOD chain, and an instanced mesh past `chunkMergeMaxTriangles` (default 43,690 triangles) or with a shape over 2,048 triangles, all keep their own geometry; a material group crossing 131,072 vertices (4 MiB of position + normal + uv) is split into several meshes in traversal order instead of one giant upload, indexed parts keep their index, and `TN_WORLD_CHUNK_MERGE` reports what the merge did and the bytes it left",
+        "`shadows.castDistance` is accepted and ignored (clusters replaced it); `shadows.invalidate` is called at most once a second after streamed records changed"
+      ],
+      "example": "const world = await WorldCells.load({ url: \"/world/world.json\", surface, follow, ring: 1, budgets: { residentCells: 25, instances: 20000, bytes: 8000000 } });\nscene.add(world);\nworld.update();",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [
+        "ring, budgets, terrain tile size/resolution, terrain stream and collider radius, `transparentScatter`, `clusterSize` and `shadows.invalidate`, load `concurrency`, `rebuildsPerUpdate`, `admissionBudgetMs` and the package's per-asset maxDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WorldCells extends Group implements IComputeDriven { … }",
+      "situations": [
+        "stream a large Blender-authored world by cell instead of one huge GLB",
+        "keep scattered props and hand-placed chunks resident around a moving player",
+        "honour per-asset draw distances and hard streaming budgets without a mid-frame throw"
+      ],
+      "summary": "Stream a Blender-authored world package by cell and keep it resident around a followed point. The class composes `TerrainTiles` for the package's heightmap, builds one `InstancedBatch` per resident cell asset run, distance level and mesh part, and loads hand-placed chunk GLBs through `loadAll` + `addInSlices`. Ring residency, per-asset `maxDistance` filtering, the per-asset `lods` levels, hard budgets and generation-tokened cancellation all live here; every geometry, material and surface still comes from the package's GLBs and the game. An asset is drawn per part, not per model: a GLB with several primitives is one `InstancedBatch` each, and a scattered part whose own material is transparent draws as an alpha cutout unless the game asks for blending, because an `InstancedMesh` cannot sort its instances. An asset whose package entry names no `lods` is drawn at the levels its own model carries a baked AutoLOD chain for: the levels an instanced draw cannot reach by itself, switched at the distance their error projects over the `autoLod` viewport. Authored `lods` win; a chain is only a fallback.",
+      "supersedes": [],
+      "symbol": "WorldCells"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "absolute paths, Windows drive letters, backslashes and any `..` segment throw MetaHumanAssetError with TN_MH_PATH_ESCAPE before the path is joined onto a root"
+      ],
+      "example": "assertAssetPath(\"metahuman/specimen.glb\");",
+      "importPath": "@threenative/metahuman",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export function assertAssetPath(path: string): string { … }",
+      "situations": ["reject a MetaHuman asset path that would read outside the game's asset root"],
+      "summary": "Keeps a caller-supplied asset path inside the asset directory.",
+      "supersedes": [],
+      "symbol": "assertAssetPath"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the model is loaded through the game's own asset loader and cloned per instance, so",
+        "the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD",
+        "an undeclared control, an out-of-domain value, an undeclared LOD and any call after",
+        "in a native host that installed the MetaHuman resident the C++ evaluator runs and"
+      ],
+      "example": "const human = await loadMetaHuman({ assets: ctx.assets, model: \"metahuman/head.glb\",\n  dna: \"metahuman/head.dna\", bindings: \"metahuman/bindings.json\" });\n  human.setControls({ jawOpen: 0.4 });\n// in the scene update, after any body animation\n  human.update();",
+      "importPath": "@threenative/metahuman",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }",
+      "situations": [
+        "put a MetaHuman head in a browser game without an Unreal import or a baked clip"
+      ],
+      "summary": "Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced   `diagnostics().backend` reads \"native\"; the game code does not change",
+      "supersedes": [],
+      "symbol": "loadMetaHuman"
+    },
+    {
+      "aliases": [],
+      "constraints": ["`code` is part of the public surface; renaming one is a breaking change"],
+      "example": "if (error instanceof MetaHumanAssetError && error.code === \"TN_MH_HASH_MISMATCH\") refetch();",
+      "importPath": "@threenative/metahuman",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export class MetaHumanAssetError extends Error { … }",
+      "situations": ["branch on why a MetaHuman asset or evaluator call was refused"],
+      "summary": "The rejection every check in this package raises, carrying a stable machine-readable code.",
+      "supersedes": [],
+      "symbol": "MetaHumanAssetError"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the binary's SHA-256 is checked against the shipped manifest before it is",
+        "every returned array is a copy, so no view survives a memory growth; a disposed",
+        "a native host that installed the MetaHuman resident gets its C++ evaluator from"
+      ],
+      "example": "const rig = await RigEvaluator.create(dna); rig.setGuiControls(gui); rig.evaluate(true); rig.jointOutputs();",
+      "importPath": "@threenative/metahuman",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export class RigEvaluator implements IRigEvaluator { … }",
+      "situations": [
+        "drive a prepared MetaHuman head's expression from the browser without an Unreal import"
+      ],
+      "summary": "One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory   `create` and the WASM is never fetched; `RigEvaluator.backend()` says which one runs",
+      "supersedes": [],
+      "symbol": "RigEvaluator"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "fails closed: a missing key, a wrong type, a hash that differs from the bytes on",
+        "reads the rig's real names and the GLB's real node, mesh and target counts, so it"
+      ],
+      "example": "const bindings = validateMetaHumanAssets({ bindings: parsed, dnaSha256, glbSha256, rig, gltf });",
+      "importPath": "@threenative/metahuman",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/metahuman",
+      "requires": ["npm i @threenative/metahuman"],
+      "signature": "export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHumanBindings { … }",
+      "situations": [
+        "refuse a MetaHuman specimen whose bindings point at joints, nodes, blend shape"
+      ],
+      "summary": "Checks one prepared specimen — bindings sidecar, DNA and GLB — against the rig it claims to drive, and returns the bindings only when every name, index, domain and hash holds up.   channels, morph targets or LODs the loaded files do not contain   disk and an index past the end of its array are rejections, each with a stable code   cannot pass a hand-written sidecar the rig cannot drive",
+      "supersedes": [],
+      "symbol": "validateMetaHumanAssets"
+    },
+    {
       "aliases": ["pick up item"],
       "constraints": ["add the area to the physics context before stepping the world"],
+      "deprecated": [
+        "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated."
+      ],
       "example": "const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });",
       "importPath": "@threenative/physics",
       "kind": "class",
@@ -3538,6 +3971,9 @@
         "run jump coins goal"
       ],
       "constraints": ["use moveAndSlide inside the physics update"],
+      "deprecated": [
+        "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated."
+      ],
       "example": "const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });",
       "importPath": "@threenative/physics",
       "kind": "class",
@@ -3589,6 +4025,9 @@
     {
       "aliases": [],
       "constraints": ["both bodies must belong to the same physics context"],
+      "deprecated": [
+        "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Joint3D itself is not deprecated."
+      ],
       "example": "const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });",
       "importPath": "@threenative/physics",
       "kind": "class",
@@ -3641,6 +4080,9 @@
     {
       "aliases": [],
       "constraints": ["register rapier() in the game plugin list before using bodies"],
+      "deprecated": [
+        "Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. RigidBody3D itself is not deprecated."
+      ],
       "example": "const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });",
       "importPath": "@threenative/physics",
       "kind": "class",
@@ -3679,6 +4121,34 @@
       "summary": "Feed existing rigid-body boxes into `SoftBody3D` without inventing a second collider API.",
       "supersedes": [],
       "symbol": "softBodyCollision"
+    },
+    {
+      "aliases": [
+        "racing car racing kart drift vehicle go-kart",
+        "suspension wheel traction tyre grip",
+        "accelerator pedal handbrake steering wheel",
+        "rescue respawn flip back on track"
+      ],
+      "constraints": [
+        "write engineForce, brake and steering every physics update; a car with no input does not move",
+        "suspensionStiffness is a frequency squared, not newtons per metre; 100 is a road car and 20 bottoms out"
+      ],
+      "example": "const car = new VehicleBody3D({ object: chassis, physics: ctx.physics, shape: CollisionShape3D.box(1.6, 0.5, 3.6), mass: 900, wheels: [{ position: { x: 0.8, y: -0.15, z: -1.2 }, wheelRadius: 0.34, suspensionRestLength: 0.3, suspensionStiffness: 100, dampingCompression: 2.3, dampingRelaxation: 4.4, wheelFrictionSlip: 10.5, maxSuspensionTravel: 0.3, useAsSteering: true, useAsTraction: false }] });",
+      "importPath": "@threenative/physics",
+      "kind": "class",
+      "overrides": [
+        "a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask",
+        "continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall"
+      ],
+      "package": "@threenative/physics",
+      "signature": "export class VehicleBody3D extends RigidBody3D { … }",
+      "situations": [
+        "drive a car, truck or bike around a track",
+        "make a vehicle roll over kerbs, brake into a corner or stop at a wall"
+      ],
+      "summary": "Drive a car on ray-cast suspension instead of faking speed and heading.",
+      "supersedes": [],
+      "symbol": "VehicleBody3D"
     },
     {
       "aliases": ["close engagement range"],
@@ -4141,6 +4611,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["the assertion throws instead of returning a false pass"],
+      "example": "assertFrameShowsSomething(png, \"first frame\");",
+      "importPath": "@threenative/playtest/capture",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "assertFrameShowsSomething = assertCaptureNotBlank",
+      "situations": [
+        "guard a visual playtest against a blank frame",
+        "prove a screenshot contains more than a loading surface"
+      ],
+      "summary": "Fail closed when a screenshot is blank or uniform.",
+      "supersedes": [],
+      "symbol": "assertFrameShowsSomething"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "throw new CaptureGuardError(\"menu\", \"no bright pixels\");",
       "importPath": "@threenative/playtest/capture",
@@ -4408,6 +4895,20 @@
       "summary": "Connect a Playwright page to a playtest bridge.",
       "supersedes": [],
       "symbol": "connectPlaytestBridgeTransport"
+    },
+    {
+      "aliases": [],
+      "constraints": ["a private Xvfb is software, so a rate read there measures the X server"],
+      "example": "import { decideDisplayStrategy } from \"@threenative/playtest/runner\";\nconst lane = decideDisplayStrategy({ env: process.env, platform: \"linux\" });\nif (lane.kind === \"private-xvfb\") throw new Error(\"refuse to judge this frame rate\");",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy { … }",
+      "situations": ["judge whether a measured frame rate came from a display that can carry one"],
+      "summary": "Decide which display a pixel-producing run paints on, the same decision the runner makes.",
+      "supersedes": [],
+      "symbol": "decideDisplayStrategy"
     },
     {
       "aliases": [],
@@ -6190,22 +6691,33 @@
       "package": "@threenative/core",
       "importPath": "src/game.ts",
       "kind": "function",
-      "signature": "renderer.projection?: boolean",
-      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws — on by default. Set `renderer.projection: false` to decline it.",
+      "signature": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
+      "summary": "The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it, or `projection: { materialChecks: 'everyFrame' }` to keep it and pay for a per-material check on every frame.",
       "situations": [
+        "a crowd of animated characters draws slowly",
+        "many SkinnedMesh copies of one rig, each its own draw call",
         "the game got slower after the projection engaged",
         "turn off the render projection, batching, or the instanced mirror",
         "draw count fell but frame time did not",
         "a multi-second freeze when the mirror first engages",
-        "opt out of an engine render optimizer"
+        "opt out of an engine render optimizer",
+        "thousands of props each with their own material, one colour apart",
+        "a material edit takes a few frames to show up",
+        "check every batched material every frame anyway"
       ],
       "example": "renderer: { projection: false } // in threenative.config.ts",
       "constraints": [
         "Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it.",
         "An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame.",
-        "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines."
+        "TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.",
+        "`materialChecks: 'spread'` is the default: a bounded slice of the batched materials is proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs 512 checks rather than 4,096. A base-colour edit is never delayed — that write is O(1) per member.",
+        "The price of `spread` is staleness on every other material edit: a material that gains a roughness, a map or a define still leaves its group and is drawn exactly, up to `materialCheckStaleFrames` frames later. TN_RENDER_PROJECTION reports that bound; `materialChecks: 'everyFrame'` sets it to 0 and restores the per-member, per-frame check.",
+        "Any other `materialChecks` value throws at startup rather than falling back to a default."
       ],
-      "overrides": [],
+      "overrides": [
+        "renderer.projection: false declines the whole mirror and costs nothing to decline",
+        "renderer: { projection: { materialChecks: 'everyFrame' } } proves every batched material every frame instead of the default bounded slice"
+      ],
       "supersedes": [],
       "aliases": []
     },
@@ -6520,7 +7032,7 @@
   ],
   "notOwned": [
     {
-      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state), and read agent-docs/gameplay-recipes.md for the template recipe.",
+      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state), and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "save-load",
       "situations": [
         "persist a player's progress between sessions",
@@ -6529,12 +7041,12 @@
       ]
     },
     {
-      "guidance": "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read agent-docs/gameplay-recipes.md for the template recipe.",
+      "guidance": "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "inventory",
       "situations": ["inventory system", "manage inventory contents"]
     },
     {
-      "guidance": "The framework owns no dialogue system. Write the conversation data and state in your project's src/; render it with the template UI (starter uses src/ui/), and read agent-docs/gameplay-recipes.md.",
+      "guidance": "The framework owns no dialogue system. Write the conversation data and state in your project's src/; render it with the template UI (starter uses src/ui/), and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md.",
       "id": "dialogue",
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
@@ -6542,6 +7054,28 @@
       "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
       "id": "networked-multiplayer",
       "situations": ["authoritative replication", "client prediction"]
+    },
+    {
+      "guidance": "The framework owns no vegetation system. Copy the MIT source in examples/integrations/vegetation/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/vegetation) into your src/ and follow its README: generate seeded, vertex-budgeted EZ Tree variants offline (tree.ts, from the pinned ez-tree source, not the npm 1.1.0 bundle), write them with treeToGlb into assets/, cook them with assets.models.passes.prune: false (prune strips the uv and _WIND weight your materials read), load with ctx.assets.model and re-material by glTF material name. render/wind.ts is editable TSL wind in world metres; call expandBounds(geometry, minWorldScale) per variant geometry. assets.lod bakes bark levels and keeps alpha-masked leaves at LOD0. Worked sample: the grove game in github.com/ThreeNativeHQ/examples.",
+      "id": "procedural-vegetation",
+      "situations": [
+        "procedural trees",
+        "swaying trees",
+        "tree foliage wind sway",
+        "generate a forest of trees"
+      ]
+    },
+    {
+      "guidance": "The framework owns no IK system. Copy the MIT source in examples/integrations/ik/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/ik) into your src/ and follow its README: it needs the closed-chain-ik/core dependency its own package.json pins, three keeps the only rendered pose, and new ConstrainedIK({root, joints: [{bone, axes, min, max}], effectors: [{bone, orientation?}], iterations, positionTolerance, rotationTolerance}) admits direct Bone hierarchies under rigid or positive-uniform-scale parents (shear, reflection, non-uniform or singular scale throws before the pose is touched). Call ik.update(targets) once per frame after AnimationPlayer/mixer and before render, with one world-space metre position per effector in order plus an optional quaternion only where the effector declared orientation: true; it never starts a loop, never moves the root and installs no bone translation or root-motion controller. Joint limits are X/Y/Z offsets relative to the animation pose supplied that call, so reapply the animation pose before solving to avoid accumulation, and the solver only rotates: bone lengths hold to under 1e-15 m. Iterations are 1-128; an unreachable goal returns converged false with finite residuals and never throws, a solver failure restores the original pose, and dispose() at scene teardown. Worked demo: the rifle grip game in examples/constrained-ik/, which plays on web, desktop native and Android.",
+      "id": "constrained-ik",
+      "situations": [
+        "two-handed grip on a prop",
+        "grip shared by two hands",
+        "rifle grip follows sway",
+        "inverse kinematics for a hand on a target",
+        "hand IK pose correction",
+        "elbow limits during an aiming pose"
+      ]
     }
   ],
   "version": 2

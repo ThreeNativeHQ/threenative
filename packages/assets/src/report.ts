@@ -1,4 +1,5 @@
 import type { IBudgetReport } from "./budget.js";
+import type { IModelCompactSummary } from "./passes/compact.js";
 import type { TextureSkipReason } from "./passes/texture.js";
 
 /** Both counters stay visible when either ceiling is disabled. */
@@ -99,6 +100,14 @@ export interface ILodJoinedRow {
 export interface ILodRow {
   /** Bytes the derived index buffers add, before compression. */
   readonly byteOverhead: number;
+  /**
+   * The foliage cutout conversion the cook ran before generating (PRD-458 §4): the `BLEND`
+   * materials that became alpha-tested, and the ones that kept blending and why.
+   */
+  readonly cutout?: {
+    readonly converted: readonly string[];
+    readonly kept: readonly { readonly name: string; readonly reason: string }[];
+  };
   /** Migration/legacy notes the resolver raised, by code. */
   readonly diagnostics: readonly string[];
   /** The resolved increasing geometric-error targets, as the bake consumed them. */
@@ -336,6 +345,14 @@ function spectrumLine(row: IAudioRow): readonly string[] {
 }
 
 /** One compiled model plus a total, before against after the optimization pass. */
+/** The cook's material merge (PRD-458 §5): what collapsed, and the counts either side of it. */
+export interface IMaterialsRow {
+  /** Distinct signatures — the count a draw call is bound by. */
+  readonly distinct: { readonly after: number; readonly before: number };
+  readonly materials: { readonly after: number; readonly before: number };
+  readonly merged: readonly string[];
+}
+
 export interface IModelSizeRow {
   readonly after: number;
   readonly before: number;
@@ -358,8 +375,12 @@ export interface IModelSizeRow {
   readonly simplify?: ISimplifyRow;
   /** Automatic discrete LOD generation (PRD-377), when the effective policy ran. */
   readonly lod?: ILodRow;
+  /** Lossless scene-graph compaction (PRD-443), when it ran. */
+  readonly compact?: IModelCompactSummary;
   /** The cluster-DAG bake, when it was configured for this model. */
   readonly virtual?: IVirtualRow;
+  /** The material merge the cook ran unconditionally, before any other geometry stage. */
+  readonly materials?: IMaterialsRow;
   /** Triangle count of the compiled output, recorded in the manifest. */
   readonly triangles?: number;
 }
@@ -403,6 +424,36 @@ function virtualLine(row: IModelSizeRow): readonly string[] {
     `virtual ${row.logicalPath}: ${virtual.clusters} cluster(s) over ${virtual.levels} level(s) on ${virtual.primitives} primitive(s), ${virtual.skipped} skipped, ${virtual.payloadBytes} payload bytes, bake ${virtual.bakeSeconds.toFixed(1)} s, stopped at ${virtual.stopReason}${warning}`,
   ];
 }
+function compactLine(row: IModelSizeRow): readonly string[] {
+  const compact = row.compact;
+  if (compact === undefined) return [];
+  const parts: string[] = [];
+  if (compact.flatten.enabled) {
+    parts.push(`flatten moved ${compact.flatten.reparented} node(s)`);
+  }
+  if (compact.instance.enabled) {
+    parts.push(
+      compact.instance.batches > 0
+        ? `instance ${compact.instance.batches} batch(es) / ${compact.instance.instances} instance(s)`
+        : `instance none (${compact.instance.reason ?? "no shared mesh"})`,
+    );
+  }
+  if (compact.join.enabled) {
+    parts.push(
+      `join ${compact.join.primitivesBefore} -> ${compact.join.primitivesAfter} primitive(s)`,
+    );
+  }
+  const protectedNote =
+    compact.protected.length === 0
+      ? ""
+      : `; protected ${compact.protected.map((node) => `${node.name} (${node.rule})`).join(", ")}`;
+  const removedNote =
+    (compact.removed?.length ?? 0) === 0
+      ? ""
+      : `; removed named node(s) ${compact.removed.join(", ")} — a getObjectByName on any of these now returns undefined`;
+  return [`compact ${row.logicalPath}: ${parts.join(", ")}${protectedNote}${removedNote}`];
+}
+
 function extensionLabel(row: IModelSizeRow): string {
   const extensions = row.extensions ?? [];
   return extensions.length === 0 ? "" : ` (${extensions.join(", ")})`;
@@ -451,7 +502,12 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
                 `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
             ),
           ];
-    const reduced = [...simplifyLine(row), ...virtualLine(row), ...lodLine(row)];
+    const reduced = [
+      ...compactLine(row),
+      ...simplifyLine(row),
+      ...virtualLine(row),
+      ...lodLine(row),
+    ];
     if (row.lightmap === undefined) return [model, ...reduced, ...images];
     const map = row.lightmap;
     return [

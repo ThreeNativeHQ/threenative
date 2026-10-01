@@ -1,0 +1,139 @@
+{
+  "name": "starter-look",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 1,
+  "subject": "player",
+  "artifacts": {
+    "screenshots": "before-after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "scene-ready",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "move-across-the-platform",
+      "press": "ArrowRight",
+      "holdTicks": 140,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "frame-settles",
+      "waitTicks": 600,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "odometer",
+        "gte": 4,
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "move-across-the-platform",
+            "textIncludes": "."
+          }
+        ]
+      }
+    ],
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "targetInViewport": true,
+      "within": 9.5
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 4
+    },
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "software": {
+          "contributions": { "graphOutputChanged": ["bloom", "vignette", "antialias"] },
+          "stages": {
+            "includes": ["bloom", "vignette", "antialias"],
+            "order": ["bloom", "vignette", "antialias"]
+          },
+          "tier": "low"
+        }
+      },
+      "stages": {
+        "includes": ["ambientOcclusion", "bloom", "vignette"],
+        "order": ["ambientOcclusion", "bloom", "vignette"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["ambientOcclusion", "bloom", "vignette"]
+      }
+    },
+    "visibility": [
+      {
+        "allowTrivial": "The starter scene begins with the player visible and in frame; this held visibility row accompanies the look assertion.",
+        "entity": "player",
+        "minProjectedPixels": 20
+      },
+      {
+        "allowTrivial": "The finish flag is authored in frame from the first tick; this held visibility row accompanies the look assertion.",
+        "entity": "goal",
+        "minProjectedPixels": 20
+      }
+    ],
+    "visual": [
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.01
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.95,
+          "minDarkPixelRatio": 0.05,
+          "maxDarkPixelRatio": 0.35,
+          "maxLuminance": 0.25
+        }
+      },
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 360,
+          "minNonblankPixelRatio": 0.95,
+          "maxDarkPixelRatio": 0.25,
+          "maxLuminance": 0.25
+        }
+      },
+      {
+        "region": {
+          "x": 320,
+          "y": 180,
+          "width": 640,
+          "height": 420,
+          "minNonblankPixelRatio": 0.7,
+          "minDarkPixelRatio": 0.02,
+          "maxLuminance": 0.4
+        }
+      }
+    ]
+  }
+}

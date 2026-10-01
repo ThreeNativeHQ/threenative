@@ -1,27 +1,17 @@
 import { GroundSnap } from "@threenative/core";
-import { BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
+import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { describe, expect, it } from "vitest";
 import { preparePlayerConventions as prepareRpgConventions } from "../templates/action-rpg/src/conventions.js";
-import { createMaterials as createRpgMaterials } from "../templates/action-rpg/src/render/materials.js";
-import { createPlayerVisual as createRpgVisual } from "../templates/action-rpg/src/render/shapes.js";
-import { prepareCommanderConventions } from "../templates/defense/src/conventions.js";
-import { commander } from "../templates/defense/src/render/shapes.js";
+import { createSword } from "../templates/action-rpg/src/render/props.js";
 import { preparePlayerConventions as prepareMinimalConventions } from "../templates/minimal/src/conventions.js";
-import { prepareCharacterConventions } from "../templates/platformer/src/conventions.js";
-import { createCharacterRig } from "../templates/platformer/src/render/rig.js";
+import { createFox } from "../templates/platformer/src/render/fox.js";
 import { prepareVehicleConventions } from "../templates/racing/src/conventions.js";
 import { createMaterials as createRacingMaterials } from "../templates/racing/src/render/materials.js";
 import { vehicle } from "../templates/racing/src/render/shapes.js";
 import { prepareShipConventions } from "../templates/sailing/src/conventions.js";
-import { createMaterials as createSailingMaterials } from "../templates/sailing/src/render/materials.js";
 import { createShipModel } from "../templates/sailing/src/render/props.js";
-import { preparePlayerConventions as prepareShooterConventions } from "../templates/shooter/src/conventions.js";
-import { createMaterials as createShooterMaterials } from "../templates/shooter/src/render/materials.js";
-import {
-  createLegsVisual as createShooterLegs,
-  createViewmodelVisual as createShooterViewmodel,
-} from "../templates/shooter/src/render/shapes.js";
 import { preparePlayerConventions as prepareStarterConventions } from "../templates/starter/src/conventions.js";
+import { templatedRig } from "./templated-rig.js";
 
 const FRAME = 1 / 60;
 
@@ -52,21 +42,23 @@ function expectGrounding(
 
 describe("generated template conventions", () => {
   it("grounds, scales, and attaches the action-rpg player", () => {
-    const model = createRpgVisual(createRpgMaterials());
-    const conventions = prepareRpgConventions(model);
+    // The three conventions a rigged character owes its level, in the order they depend on each
+    // other: measure the crown, hold the prop by bone name, then keep the soles on the floor.
+    const { scene } = templatedRig(["Sword_Idle"]);
+    const conventions = prepareRpgConventions(scene, createSword());
 
     expectFactor(conventions.normaliseFactor);
-    expect(conventions.boneNames).toContain("RightHand");
-    expect(conventions.attachedBone).toBe("RightHand");
-    expectGrounding(model, conventions);
+    expect(conventions.boneNames).toContain("hand_r");
+    expect(conventions.attachedBone).toBe("hand_r");
+    expectGrounding(scene, conventions);
   });
 
-  it("grounds and scales the defense commander", () => {
-    const model = commander();
-    const conventions = prepareCommanderConventions(model);
+  it("reports no attached bone for a bare-handed action-rpg fighter", () => {
+    // The raiders swing bare fists, so `attachToBone` is skipped for them. Reporting the name of
+    // a bone that was never asked for would be a lie the survives scenario would then assert.
+    const { scene } = templatedRig(["Idle_Loop"]);
 
-    expectFactor(conventions.normaliseFactor);
-    expectGrounding(model, conventions);
+    expect(prepareRpgConventions(scene).attachedBone).toBe("");
   });
 
   it("measures disabled grounding while scaling the minimal player", () => {
@@ -82,12 +74,22 @@ describe("generated template conventions", () => {
     expect(model.position.y).toBe(beforeY);
   });
 
-  it("grounds and scales the platformer procedural character", () => {
-    const model = createCharacterRig().root;
-    const conventions = prepareCharacterConventions(model);
+  it("authors the platformer fox in metres, so it needs neither a scale nor a snap", () => {
+    // The platformer's applicability row is N/A for both generated conventions, and this is what
+    // makes that honest rather than a gap: the rig is built from primitives with its feet on
+    // y = 0, and the collider is the `CharacterBody3D` capsule the body already sits on. There is
+    // no imported scale to normalise and no visual offset from the body to snap back.
+    const fox = createFox();
+    const rig = fox.group;
+    rig.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(rig);
 
-    expectFactor(conventions.normaliseFactor);
-    expectGrounding(model, conventions);
+    expect(Number.isFinite(box.min.y)).toBe(true);
+    expect(box.min.y).toBeCloseTo(0, 5);
+    // A fox-sized character: under two metres, over one, and taller than it is long.
+    expect(box.max.y).toBeGreaterThan(1);
+    expect(box.max.y).toBeLessThan(2);
+    expect(box.max.y).toBeGreaterThan(box.max.x - box.min.x);
   });
 
   it("scales the racing vehicle", () => {
@@ -97,24 +99,12 @@ describe("generated template conventions", () => {
   });
 
   it("scales the sailing ship", () => {
-    const model = createShipModel(createSailingMaterials());
+    // `createShipModel` now wraps the loaded `ship.glb` rather than building geometry from
+    // materials; a boxed stand-in gives it a real bounding box to normalise without a fixture GLB.
+    const scene = new Mesh(new BoxGeometry(4, 2, 12), new MeshBasicMaterial());
+    const model = createShipModel({ scene });
 
     expectFactor(prepareShipConventions(model));
-  });
-
-  it("grounds, scales, and attaches the shooter player", () => {
-    const materials = createShooterMaterials();
-    // First person splits the player across two spaces: the weapon rides the camera and the legs
-    // ride the body, so the size-and-hand conventions and the floor-contact one measure different
-    // objects. Both still run, and both still report.
-    const viewmodel = createShooterViewmodel(materials);
-    const legs = createShooterLegs(materials);
-    const conventions = prepareShooterConventions(viewmodel, legs);
-
-    expectFactor(conventions.normaliseFactor);
-    expect(conventions.boneNames).toContain("RightHand");
-    expect(conventions.attachedBone).toBe("RightHand");
-    expectGrounding(legs, conventions);
   });
 
   it("grounds and scales the starter player", () => {

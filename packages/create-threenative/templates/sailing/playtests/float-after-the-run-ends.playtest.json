@@ -6,9 +6,15 @@
     "width": 1280,
     "height": 720
   },
-  "warmupFrames": 2900,
+  "warmupFrames": 60,
   "subject": "player",
   "steps": [
+    {
+      "kind": "wait",
+      "label": "expire-wind-before-observation",
+      "waitTicks": 7200,
+      "release": true
+    },
     {
       "kind": "wait",
       "label": "settle-after-the-run-ends",
@@ -32,15 +38,13 @@
         "id": "state",
         "path": "status",
         "equals": "lost",
-        "throughoutSteps": true,
-        "allowTrivial": "Held on purpose, and the reason this scenario exists. The wind runs out at 45 s with no input, so the long warmup ends the run before the baseline is taken: the harness reports this row as already satisfied, which is the proof that every sample below is observed after gameplay stopped. A run that were still sailing here would be measuring the case playtests/float.playtest.json already covers."
+        "throughoutSteps": true
       },
       {
         "id": "state",
         "path": "wind",
         "lte": 0,
-        "throughoutSteps": true,
-        "allowTrivial": "The other half of the same precondition: the wind is spent before the first observation and cannot come back, so no step below can re-enter the sailing branch and quietly restore the updates this scenario is checking for."
+        "throughoutSteps": true
       }
     ],
     "components": [
@@ -48,7 +52,7 @@
         "entity": "player",
         "component": "seaHeight",
         "changed": true,
-        "allowTrivial": "The finding. The ship samples the swell only when its visual update runs; while that update lived inside gameplay it stopped the moment the run ended, and this height froze at whatever wave the boat died on. Every sample here is post-terminal, so a seaHeight that no longer moves is the freeze itself rather than a still ocean."
+        "allowTrivial": "The finding. The ship samples the swell only when its visual update runs; while that update lived inside gameplay it stopped the moment the run ended, and this height froze at whatever wave the boat died on. The post-terminal samples must still move."
       },
       {
         "entity": "player",

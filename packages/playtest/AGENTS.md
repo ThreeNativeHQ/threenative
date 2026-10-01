@@ -16,7 +16,11 @@ node packages/playtest/dist/runner/cli.js playtests/smoke.playtest.json \
 Exit `0` passed, `1` assertions failed, `2` never reached assertions, `69` when a command's
 external decoder is absent so nothing was inspected, and `75` when the capture lock queue timed
 out — the last two are explicitly **not** test failures, and `75` prints the holder and queue
-depth. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
+depth. `--build-report <artifact>.build-report.json` adopts the `performanceBudget` a
+`threenative build` published beside that artifact: the run re-hashes the artifact under test and
+exits `2` when it is not the one the report describes (`TN_PLAYTEST_BUILD_REPORT_STALE`), and
+merges the budget per key into the scenario's own `assert.performance`. It needs `--artifact` on
+browser and Android, which is the only thing that says which build the run exercises. `--server-command` needs a workspace that has a `dev` script — an example or a scaffolded
 project; there is no root `pnpm dev`. `--browser-recipe webgpu` supplies the current Chromium WebGPU
 flags including `--enable-features=Vulkan`, without which Chromium silently serves WebGPU from
 SwiftShader and reports healthy-looking limits from a CPU rasteriser; `--browser-arg` is the escape
@@ -442,19 +446,23 @@ runner holds — pumping frames on browser, ticks on device — until `phase` is
 startup at all — a plain Three.js page — is never waited on, and advertising the capability without
 reporting it is malformed and throws.
 
-Readiness means two things, and a GPU-less lane is only owed one of them. Core reaches `"ready"`
-after first-use compilation settles **and** a sustained in-budget frame window — the second is a
-player-experience gate, and a CPU rasteriser never meets it, so it can only expire. When the
-operator declares a software adapter (`--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1`) that
-lane has already conceded it is not measuring the player's experience, so the wait resolves on
-**compile settlement** instead. Measured on a real SwiftShader adapter: 56–62s per scenario before,
-31–33s after.
+Readiness means two things, and the wait always insists on both. Core reaches `"ready"` after
+first-use compilation settles **and** a frame window — five sustained in-budget frames, or a
+bounded expiry of `STARTUP_STABLE_WINDOW_MS` (10s) when a CPU rasteriser can never meet them.
+Observing at bare compile settlement is not enough: a game that builds its world on `whenReady()`
+(the puzzle's crate pile is one) has not run yet, and the run then asserts against a half-built
+world. So the software lane waits for `"ready"` like any other — at most 10s more per scenario —
+and the declaration (`--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1`) only **labels** the
+result: `startup.rule` is `"compile-settled"`, because a CPU rasteriser reached readiness on the
+bounded window rather than on sustained frames, and an operator must not read that pass as a
+smoothness measurement. A lane that reaches readiness immediately is labelled the same way.
 
-Compile settlement is never skipped — it is the part that makes a run observe the game rather than
-the loading screen. The relaxation is keyed *only* off that declaration, never off a timeout, an
-adapter guess, or a game that does not report `compileSettled` (which fails closed rather than
-being inferred). Every report carries `startup.rule`, `"sustained-frames"` or `"compile-settled"`,
-so a software-lane pass is never read as a smoothness measurement.
+Compile settlement is still required — it is the part that makes a run observe the game rather than
+the loading screen — and a game whose phase never leaves `"collapsing"` fails
+`TN_PLAYTEST_STARTUP_NOT_READY` rather than being observed mid-load. The label is keyed *only* off
+that declaration, never off a timeout or an adapter guess. Every report carries `startup.rule`,
+`"sustained-frames"` or `"compile-settled"`, so a software-lane pass is never read as a smoothness
+measurement.
 
 A bridge that stops answering is not automatically a slow launch. A host that has **exited** looks
 identical from the runner's side — both are operation timeouts — so on the device targets the wait

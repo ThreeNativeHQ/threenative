@@ -48,20 +48,39 @@ describe("core constraints", () => {
           file !== "particles.ts" &&
           file !== "projection-plan.ts" &&
           file !== "projection-apply.ts" &&
+          // The skinned lane draws a node twin of the game's material; every value on it is copied
+          // from the game's own material each frame. Its tighter check is below.
+          file !== "projection-skinned.ts" &&
           file !== "renderProjection.ts" &&
           file !== "renderer.ts" &&
           file !== "react-host.ts" &&
           file !== "softbody.ts" &&
           file !== "warmup.ts" &&
           file !== "tracers.ts" &&
+          // `mergeByMaterial` groups static meshes by their material's *identity* and hands each
+          // group the game's own material instance on the merged mesh. It constructs no material,
+          // configures no property of one, and reads only `name` for the error label; which
+          // materials exist, and how each looks, is entirely the game's.
+          file !== "merge-parts.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
           file !== "flight.ts" &&
           file !== "instanced-batch.ts" &&
+          // WorldCells streams a package: it reads the geometry and surface out of the package's
+          // own GLBs and hands them to `InstancedBatch` by reference. It constructs no material,
+          // light, colour or shader, and reads no appearance property — a cutout is
+          // `render/foliage-alpha.ts`'s, and a cutoff a part names is the part's own. The word
+          // "light" the generic filter trips on is inside `loadsInFlight`.
+          file !== "world-cells.ts" &&
           file !== "clustered-mesh.ts" &&
           file !== "clustered-batch.ts" &&
           file !== "gpu-scene-bvh.ts" &&
+          // The mesh pool parks a streamed world's instanced meshes by the (geometry, material)
+          // pair they draw, so the cell after a walk gets a parked object back instead of a fresh
+          // NodeBuilder build. It constructs no material, configures no property of one, and uses
+          // the surface only as a map key; which surface exists and how it looks is the game's.
+          file !== "render/mesh-pool.ts" &&
           // The census records material/object provenance at the renderer boundary; it observes
           // appearance inputs without constructing or choosing any visual output.
           file !== "pipeline-census.ts" &&
@@ -76,12 +95,56 @@ describe("core constraints", () => {
           // colour, map, roughness or opacity, and the silhouette itself — the alpha test and the
           // texture behind it — stays entirely the game's. The assertions below keep that true.
           file !== "render/alpha-antialiasing.ts" &&
+          // Material identity compares a material's parameters and texture images to decide that
+          // two package materials draw the same, so a streamed world shares one surface between
+          // them. It reads appearance fields only to compare them; it constructs, sets and chooses
+          // nothing, and the surface kept is the package's own.
+          file !== "render/material-key.ts" &&
+          // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
+          // the game must supply — every colour, angle, intensity, density and exposure is a
+          // required option. It constructs the objects those values need and chooses none of them.
+          file !== "render/daylight.ts" &&
+          // The pool is a Map keyed by the caller's own geometry and material so a recycled
+          // InstancedMesh keeps the surface it was drawn with. It names a Material only as a key
+          // type, reads no property that describes how anything looks, and constructs none.
+          file !== "render/mesh-pool.ts" &&
+          // The splat terrain surface builds its material from the world package's own table:
+          // textures, tiles, tints, thresholds and noise scales are all the package's values.
+          file !== "world-terrain-splat.ts" &&
+          // The mip-aware cutout compensates the SAMPLING of a texture the game owns: it reads a
+          // map's texel size and moves the cutoff the alpha is compared against, so a needle card
+          // survives the mip chain instead of being discarded at mip one. The cutoff itself, the
+          // map, the colour, the geometry and every other appearance value stay the game's, and the
+          // assertions below keep it that way.
+          file !== "render/foliage-alpha.ts" &&
+          // The impostor baker is a SOURCE-derived mechanism: it stages the package's own parts into
+          // a private scene and captures their own albedo and normals into an atlas. It constructs a
+          // material only as a node twin of the source and copies every value from it; it chooses no
+          // colour, light, tone or palette. The assertions below keep that true.
+          file !== "render/world-impostor.ts" &&
+          // The impostor surface projects that atlas: albedo, normals and coverage come from it and
+          // scalar surface values from the source twin. The clear colour it saves is a scratch
+          // object for restore, not a look it picked. The assertions below keep it so.
+          file !== "render/world-impostor-surface.ts" &&
           // The geometry capture counts what the renderer submitted. It is handed a material by
           // `onBeforeRender` and puts it in a Set to report how many DISTINCT surfaces an object
           // was drawn with — identity, exactly as `warmup.ts` reads it. It constructs no material,
           // light or colour and reads no property that describes how anything looks; the
           // assertions below are what keep that true.
           file !== "geometry-capture.ts" &&
+          // The structure proof decides whether a frame may skip re-classifying the scene, and a
+          // material is one of the things that decides it: a transparent or vertex-displacing one
+          // takes an object off the batched lane, so the proof compares identity and the same two
+          // predicates the classification reads, and a light is one of the things that decides
+          // whether a frame can be mirrored at all. It reads no property that describes how
+          // anything looks, chooses none and constructs none — the assertions below keep it so.
+          file !== "projection-stability.ts" &&
+          // The uniform lane draws one geometry under one material the mirror owns, with each
+          // member's own base colour carried per instance. This file is the part that decides
+          // whether two materials are interchangeable: it reads their properties to compare them and
+          // writes nothing on any of them. The white clone it exists to justify is built in
+          // `projection-apply.ts`, which is allowlisted above for the same reason.
+          file !== "projection-uniform.ts" &&
           file !== "index.ts",
       )
       .map((file) => withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8")))
@@ -95,6 +158,13 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    // The same terms as `warmup.ts` for the same reason: `mergeByMaterial` reads a material's
+    // identity to decide which meshes share a draw call, and the material itself is the game's —
+    // so no property of one is ever written here, only its `name` in an error label.
+    const mergeParts = readFileSync(path.join(sourceDirectory, "merge-parts.ts"), "utf8");
+    expect(mergeParts).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
+    expect(mergeParts).not.toMatch(/\.material\s*[.=[]/u);
 
     const geometryCapture = readFileSync(path.join(sourceDirectory, "geometry-capture.ts"), "utf8");
     expect(geometryCapture).not.toMatch(
@@ -115,6 +185,13 @@ describe("core constraints", () => {
     // sharing its material. It never constructs a material, never configures one, and never reads
     // a property that describes how anything looks. The assertions below are what keep that true:
     // the moment it makes an appearance decision, this fails.
+    const skinned = withoutComments(
+      readFileSync(path.join(sourceDirectory, "projection-skinned.ts"), "utf8"),
+    );
+    expect(skinned).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\s*=|new\s+\w*Light|tonemapping|\.wgsl/iu,
+    );
+    expect(skinned.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
     const warmup = readFileSync(path.join(sourceDirectory, "warmup.ts"), "utf8");
     expect(warmup).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(warmup).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
@@ -144,6 +221,40 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu,
     );
     expect(alphaAntialiasing.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    const foliageAlpha = readFileSync(
+      path.join(sourceDirectory, "render/foliage-alpha.ts"),
+      "utf8",
+    );
+    expect(foliageAlpha).not.toMatch(
+      /new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    // A map is read for its texel size, and for nothing else: naming a look — a colour, a
+    // roughness, a metalness, an opacity — is how a framework starts deciding one.
+    expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The impostor baker stages the package's own parts and captures their own albedo and normals.
+    // Every material value is copied from the source twin; the one colour literal is the scratch
+    // clear the capture sets and restores, not a look the framework chose. No light, tone, post or
+    // handwritten shader may appear.
+    const impostorBaker = readFileSync(
+      path.join(sourceDirectory, "render/world-impostor.ts"),
+      "utf8",
+    );
+    expect(impostorBaker).not.toMatch(/new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu);
+    expect([...new Set(impostorBaker.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu) ?? [])]).toEqual([
+      "0x000000",
+    ]);
+
+    // The surface samples albedo, normals and coverage out of the atlas and keeps the source's own
+    // scalar values. It originates no light, tone curve, post effect or shader, and names no colour.
+    const impostorSurface = readFileSync(
+      path.join(sourceDirectory, "render/world-impostor-surface.ts"),
+      "utf8",
+    );
+    expect(impostorSurface).not.toMatch(/new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu);
+    expect(impostorSurface.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(
@@ -243,6 +354,17 @@ describe("core constraints", () => {
     );
     expect(clusteredBatch.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
+    // `world-cells.ts` is exempted on the same terms as `instanced-batch.ts`: streaming a package
+    // means naming the geometry and surface its GLBs carry and handing both to `InstancedBatch` by
+    // reference. It constructs no material, light or colour and reads no property that describes
+    // how anything looks. The assertions below are what keep that true.
+    const worldCells = readFileSync(path.join(sourceDirectory, "world-cells.ts"), "utf8");
+    expect(worldCells).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(worldCells).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(worldCells.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
     // `gpu-scene-bvh.ts` is exempted on the same terms as `warmup.ts`: it reads a material's
     // *identity* — an integer index into the game's own surfaces — to pack triangles for the BVH's
     // leaf order. It never constructs a material and never reads a property that describes how
@@ -251,6 +373,15 @@ describe("core constraints", () => {
     expect(sceneBvh).not.toMatch(/new\s+\w*(Material|Light)|tonemapping|postprocessing|\.wgsl/iu);
     expect(sceneBvh).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(sceneBvh.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // `render/mesh-pool.ts` is exempt on the same terms as `instanced-batch.ts`: the surface is
+    // named to key a pool by, never built and never tuned. The assertions below keep that true.
+    const meshPool = readFileSync(path.join(sourceDirectory, "render/mesh-pool.ts"), "utf8");
+    expect(meshPool).not.toMatch(
+      /new\s+\w*(Material|Light)|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(meshPool).not.toMatch(/\.(color|map|roughness|metalness|emissive|opacity|envMap)\b/iu);
+    expect(meshPool.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.

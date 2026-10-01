@@ -535,6 +535,10 @@ await captureFrame('next');
 ${finalCapture}`
     : `for (let frame = 0; frame < ${test.captureFrames ?? 2}; frame += 1) await new Promise(requestAnimationFrame);
 ${finalCapture}`;
+  // A conformance scene is not a game: nothing installs core's startup readiness, so the native
+  // screenshot gate waited out its full 30 s budget on every row (run 36448456340: 74 rows,
+  // 36-39 s each, all logging "startup gate never opened"). The scene has started once
+  // startScene resolves; say so, and the gate captures the next frame instead.
   const completion =
     target === "browser"
       ? `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
@@ -542,7 +546,8 @@ ${proofWait}
 ${browserCapture}
 `
       : `console.info(${JSON.stringify(`TN_CONFORMANCE_READY:${test.id}`)});
-${proofWait}`;
+${proofWait}
+globalThis.__TN_STARTUP_READY__ = true;`;
   const error =
     target === "browser"
       ? `await fetch('/__tn_conformance__/error/${encodeURIComponent(test.id)}', { method: 'POST', headers: { 'content-type': 'text/plain' }, body: globalThis.__TN_CONFORMANCE_ERROR__ }).catch(() => {});`
@@ -1354,11 +1359,24 @@ export function androidDeathExcerpt(message, appLog) {
   return tail.length > 0 ? `${message} Last app output: ${tail}` : message;
 }
 
-function androidLog(adb, serial) {
-  return String(
+export function androidLog(adb, serial) {
+  const read = () =>
     runCommand(adb, androidArgs(serial, "logcat", "-d", "-v", "threadtime"), {
+      allowFailure: true,
       timeout: 15_000,
-    }).stdout || "",
+    });
+  const first = read();
+  if (first.status === 0) return String(first.stdout || "");
+
+  // Android emulator adbd can briefly reject `logcat -d` under render/capture load, returning 255
+  // with no stderr. Treat that like the restore path's transient offline case: wait once and retry
+  // so a rendered row is not failed solely because diagnostics were momentarily unavailable.
+  runCommand(adb, androidArgs(serial, "wait-for-device"), { allowFailure: true, timeout: 30_000 });
+  const second = read();
+  if (second.status === 0) return String(second.stdout || "");
+
+  throw new Error(
+    `${adb} ${androidArgs(serial, "logcat", "-d", "-v", "threadtime").join(" ")} failed (${second.status}): ${second.stderr || second.stdout || first.stderr || first.stdout || ""}`,
   );
 }
 
@@ -2593,6 +2611,7 @@ async function main(argv = process.argv.slice(2)) {
   const executeRows = async (port, broker = null) => {
     for (const test of registry.tests) {
       const result = createResult(test);
+      const rowStarted = Date.now();
       const hardwareReferenceBlocker =
         !dryRun && ["android", "android-hardware", "desktop"].includes(target)
           ? missingHardwareReferenceBlocker(
@@ -2706,6 +2725,10 @@ async function main(argv = process.argv.slice(2)) {
           runIos(test, result);
         }
       }
+      // Per-row wall time on stderr (stdout carries the JSON summary): the only way to tell which
+      // rows a lane's minutes go to without re-running it.
+      if (!dryRun && result.status !== "blocked")
+        console.error(`[conformance] ${test.id} ${result.status} ${((Date.now() - rowStarted) / 1000).toFixed(1)}s`);
       report.summary[result.status] += 1;
       report.results.push(result);
     }

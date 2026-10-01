@@ -7,10 +7,12 @@
       "**/.threenative/**",
       "**/mcp/engine-server.mjs",
       "**/mcp/blender-server.mjs",
+      "packages/metahuman/wasm/**",
       "artifacts/**",
       "build/**",
       "release-native/**",
       ".linchpin/**",
+      ".runtime/**",
       ".worktrees/**",
       ".claude/worktrees/**",
       ".opencode/**",
@@ -34,11 +36,14 @@
       "examples/abyss-vanilla/src/style.css",
       "examples/abyss-vanilla/vite.config.js",
       "examples/auto-lod/public/**",
+      "examples/abyss-framework/public/**",
+      "examples/csg-doorway/public/**",
       "docs/benchmark/sweeps/**",
       "docs/benchmark/rounds/**",
       "docs/verification/prd-357-c4-duplicate-inventory.json",
       "docs/verification/prd-357-c4-duplicate-inventory-before.json",
-      "docs/verification/visuals/**"
+      "docs/verification/visuals/**",
+      "benchmark/engine-load-test/godot-lights-meshes/benchmark_box_1000.json"
     ]
   },
   "formatter": {

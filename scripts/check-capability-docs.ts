@@ -337,8 +337,13 @@ function sourceProgram(
  * repository names as the most dangerous one, so the form is not the test — being a function or
  * a class is.
  */
-function isPublicClassOrFunction(checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
+export function isPublicClassOrFunction(checker: ts.TypeChecker, symbol: ts.Symbol): boolean {
   const resolved = symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+  if ((resolved.flags & ts.SymbolFlags.Value) === 0) return false;
+  // `export const alias = other` and `export const f = upstream.f` are the same capability as
+  // `export function f`, and slipped past every syntactic form below: the type decides.
+  const type = checker.getTypeOfSymbol(resolved);
+  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return true;
   return (resolved.declarations ?? []).some((declaration) => {
     if (ts.isClassDeclaration(declaration) || ts.isFunctionDeclaration(declaration)) return true;
     if (!ts.isVariableDeclaration(declaration)) return false;

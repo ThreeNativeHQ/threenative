@@ -4,7 +4,30 @@ prd_contract: v1
 
 # PRD-196 — A stranger's install of ThreeNative is functional
 
-**Status:** BLOCKED — `requires-release-credentials`
+**Status:** IN PROGRESS — 2026-09-26: the 0.3.3 cohort is published (`latest` and `next`) with its
+matching `runtime-native-v0.3.3` release, and the next-targeted clean room passed every step. The
+clean room now has a real `android` leg, a registry-only clean room's APK was proved to carry
+the published `arm64-v8a` cohort byte-for-byte, `pnpm sandbox` builds a desktop game from published
+packages, and the `clean-room` runner carries the JDK 17 and Android SDK the `android` step needs.
+Remaining: one hosted run — a `v*` tag push whose `clean-room` job reports `pass npm:android`.
+
+**2026-09-27 checkout gate:** focused registry-install and CI-structure tests pass 152/152;
+`pnpm typecheck`, `pnpm lint`, `pnpm budgets`, and `pnpm check:docs` pass. The first full test
+run was red on the packed mutation control and MCP ancestor-manifest lookup. After merging PR
+#360's fixes into this branch, `pnpm test` passed: 492 files, 6,138 tests passed, 8 skipped,
+exit 0. After reconciling current `origin/develop` again on 2026-09-27, the focused tests still
+passed and the public-registry `pnpm:android` clean-room leg passed locally with JDK 17 + Android SDK,
+verifying the APK's five `arm64-v8a` entries byte-for-byte against `runtime-native-v0.3.3`. The
+full `pnpm tsx scripts/verify-registry-install.ts` run remains red before the Android npm leg:
+`npm:install` fails in published-package dependency installation at `sharp@0.34.5` (`Please add
+node-addon-api to your dependencies`), while the `pnpm` manager's scaffold/install/build/test/
+gameplay/doctor/native/android/mcp steps pass. 2026-09-28 root cause: the public
+`create-threenative@0.2.6` tarball's templates have no npm `overrides.sharp`, so npm follows
+`@gltf-transform/cli@4.4.2` to `sharp@0.34.5`; a minimal clean room with only that dependency
+reproduces the source-build failure under current Node/npm, while the same clean room with
+`overrides: { sharp: ">=0.35.4" }` installs `sharp@0.35.5` successfully. The current branch's
+templates and regression test carry that fix, but the already-published tarball cannot be changed
+without a new package publish. The hosted tag gate above remains open.
 
 Updated 2026-09-23 for the 0.3.3 cohort. The engineering in this PRD is implemented and gated in the
 tree, and the candidate cohort is prepared and committed: eleven packages at
@@ -196,6 +219,7 @@ native build path.
 | 5 | `prebuiltReleaseCensus()` in `check-publish-state.ts` | same report | nothing | n/a | bump `runtime-native` version without a release → `publish:check` fails |
 | 6 | `doctor` / native / MCP steps in `verify-registry-install.ts` | `.github/workflows/npm-release.yml` clean-room job | the 4-step web-only flow | extended in Phase 4 | run it against `create-threenative@0.2.2` → the new steps go red |
 | 7 | `runtime-native` + `engine-mcp` in `PACKAGES` | `scripts/make-sandbox.ts:21` | 6-package list | replaced in Phase 5 | build a sandbox, run `threenative build --target desktop` in it → passes only with the tarballs present |
+| 8 | `android` step: APK carries the published `arm64-v8a` cohort byte-for-byte | `scripts/verify-registry-install.ts:1128` step in `verifyRegistryInstall`; `androidStep` reads the installed `package-android.mjs`/`install-prebuilt.mjs` | nothing (new step) | n/a | zero one published `sha256` in the lock → `TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH` (observed red on the real APK, 2026-09-26) |
 
 ### Reachability
 
@@ -288,8 +312,13 @@ names the missing runtime and exits 1 before any build is attempted.
       — `.github/workflows/native-release.yml:833` imports `PREBUILT_ASSET_NAMES`/`PUBLISHED_PREBUILT_KEYS`;
       `packages/runtime-native/tests/distribution.test.mjs:221` ("the native release workflow covers
       every exported prebuilt key") passes.
-- [ ] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
-      — OPEN: needs release-upload rights; `prebuiltReleaseCensus` reports the release absent.
+- [x] Cut `runtime-native-v0.3.3` and record the run id, the release URL, and each asset's SHA-256.
+      — Done 2026-09-25: tag `runtime-native-v0.3.3` at main `279adb2cac126695b30b33d091f5b6effb8b24d8`,
+      created from native-release run `36149533979` (gates/builds ok; the publish glob bug was fixed in
+      PR #316 and the release materialised manually from the run's verified artifacts). 20 assets, each
+      key's SHA-256 carried by the release's `prebuilt-lock.json`; URL
+      https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3. `prebuiltReleaseCensus`
+      now resolves it.
 
 **Wiring:**
 
@@ -332,8 +361,10 @@ desktop` writes `dist-native/mygame` and it starts.
       existing contract. — `scripts/check-publish-state.ts:308`; spec `:423` (fail) and `:399` (blocked).
 - [x] `prebuiltReleaseCensus`: `HEAD` the `prebuilt-lock.json` for the current `runtime-native`
       version; absent → `fail`. — `scripts/check-publish-state.ts:452`; spec `:536` (fail) and `:543` (blocked).
-- [ ] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
-      — OPEN: needs npm publish rights; the 0.3.3 pins are committed but unresolvable until published.
+- [x] Publish `@threenative/assets` and `threenative-engine-mcp`, then the rest of the set.
+      — Done 2026-09-25: all 11 packages published at `0.3.3` / `0.2.6` / `0.2.3` (under `next` first,
+      then promoted to `latest`). `npm view @threenative/core dist-tags` = `{ latest: '0.3.3', next:
+      '0.3.3' }`; `create-threenative` = `{ latest: '0.2.6', next: '0.2.6' }`. Every template pin resolves.
 
 **Wiring:**
 
@@ -378,6 +409,23 @@ census test fails, and `pnpm publish:check` refuses the tree.
       plain-words query. — `scripts/verify-registry-install.ts:625` (`mcpStep`), `:950`; engine search at `:702`; spec `:344` ("fails when an MCP server never answers initialize").
 - [x] Fail closed: a step that did not run is a failure, matching the file's existing contract.
       — `scripts/verify-registry-install.ts:558` (`step`); spec `:391` ("does not report a pass for a step that did not run").
+- [x] `android` step: `npm run build:android`, then require every `arm64-v8a` library in the APK to
+      hash to the `prebuilt-lock.json` entry the *installed* `runtime-native` names — the prebuilt
+      table and the release URL both read out of the installed package, never this checkout.
+      proof: `pnpm vitest run scripts/__tests__/verify-registry-install.spec.ts` — 31 passed; a
+      deflated `assets/v8/arm64-v8a/` entry passes only with the published bytes, and 9 tests
+      observed red when the `jniLibs/` → `lib/` mapping was reverted.
+      — `scripts/verify-registry-install.ts:646` (`androidApkPrebuiltProofs`), `:668`
+      (`assertPublishedApkPrebuilts`), `:737` (`androidStep`), `:1128` (the step).
+- [ ] The `clean-room` job provisions what the `android` step needs on the runner. proof: a
+      `push` release run whose `clean-room` job reports `pass  npm:android`. — OPEN: the runner is
+      provisioned (`npm-release.yml:181` `actions/setup-java@v5` temurin 17, `:188`
+      `android-actions/setup-android@v4`, `:191` `sdkmanager "platforms;android-35"
+      "build-tools;35.0.0"`, and `:169` `timeout-minutes` 20 → 30 for the Gradle build it adds), and
+      `scripts/__tests__/ci-structure.spec.ts` asserts the provisioning precedes the verifier —
+      observed red on 2026-09-26 with the `sdkmanager` line deleted. Not yet executed: no `v*` tag
+      push has run this job since the provisioning landed, so the step is proven locally and the
+      hosted run is still the missing proof.
 
 **Wiring:**
 
@@ -385,6 +433,7 @@ census test fails, and `pnpm publish:check` refuses the tree.
       — `npm-release.yml:209` runs `pnpm tsx scripts/verify-registry-install.ts` in the `clean-room` job (`:162`).
 - [x] Old path: the four-step flow is extended, not duplicated.
 - [x] Ledger rows filled: #6. — the doctor/native/mcp steps have non-test callers in the runner.
+- [x] Ledger row filled: #8. — the `android` step is the only new consumer-side observation.
 
 **Tests Required:**
 
@@ -393,6 +442,8 @@ census test fails, and `pnpm publish:check` refuses the tree.
 | `scripts/__tests__/verify-registry-install.spec.ts` | `should fail when the native build step produces no executable` | step `ok === false` | stub an existing executable → fails |
 | `scripts/__tests__/verify-registry-install.spec.ts` | `should fail when an mcp server never answers initialize` | step names the server | stub a valid handshake → fails |
 | `scripts/__tests__/verify-registry-install.spec.ts` | `should not report a pass for a step that did not run` | `exitCode === 1` | mark skipped steps `ok:true` → fails |
+| `scripts/__tests__/verify-registry-install.spec.ts` | `refuses an APK whose arm64 library is not the published bytes` | mismatch / not-published / entry-missing all throw | restore the published sha → fails |
+| `scripts/__tests__/verify-registry-install.spec.ts` | `inflates a deflated arm64 asset before comparing it to the published SHA-256` | deflated asset matches the published hash | replace the asset bytes → mismatch throws |
 
 **Revert check:** remove the `native` step → `verify-registry-install.spec.ts`'s step-list test
 fails.
@@ -461,7 +512,7 @@ grep -rn "writeInstallStatus\|templatePinCensus\|prebuiltReleaseCensus\|RELEASE_
 
 # 3. The registry path, end to end, with no workspace above it
 pnpm tsx scripts/verify-registry-install.ts
-# Expected: scaffold, install, lockfile, build, test, doctor, native, mcp — all ok
+# Expected: scaffold, install, lockfile, edit, build, test, gameplay, doctor, native, android, mcp — all ok
 
 # 4. Prebuilt release resolves for the shipped runtime version
 curl -sI "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v$(node -p \
@@ -474,35 +525,67 @@ curl -sI "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime
 Consumer-scoped. Each is checked from a directory with no ThreeNative source and no workspace
 above it.
 
-- [ ] A stranger runs `npm create threenative@latest my-game` and the install exits 0 with no
+- [x] A stranger runs `npm create threenative@latest my-game` and the install exits 0 with no
       failed lifecycle script.
-- [ ] In that project, `threenative build --target desktop` writes an executable that starts and
+      — Done 2026-09-25: the next-targeted clean room (`create-threenative@next`, no engine checkout,
+      HOME isolated) passed every step — scaffold, install, lockfile, edit, build, test, gameplay,
+      doctor, native, mcp — exit 0, no failed lifecycle script.
+- [x] In that project, `threenative build --target desktop` writes an executable that starts and
       renders 300 frames (`verify-starter-desktop.mjs`).
-- [ ] In that project, `threenative build --target android` produces an APK on a machine with only
-      an Android SDK and a JDK — no engine checkout, no `THREENATIVE_RUNTIME_SOURCE`.
-- [ ] In that project, `threenative doctor --text` exits 0 and names every available target; with
+      — Done 2026-09-25: the clean-room `native` step (`npm run build:desktop` from registry packages)
+      exits 0 with the executable present; the installed 0.3.3-cohort 300-frame desktop launch is the
+      PRD-366 phase-2 Linux x64 consumer row (5 assertions, 300 frames).
+- [x] In that project, `threenative build --target android` produces an APK on a machine with only
+      an Android SDK and a JDK — no engine checkout, no `THREENATIVE_RUNTIME_SOURCE`. proof: the
+      `android` step of `pnpm tsx scripts/verify-registry-install.ts` (the clean room the
+      `npm-release.yml` job runs).       — Done 2026-09-26: a registry-only clean room (`create-threenative@0.2.6` scaffold →
+      `@threenative/*@0.3.3` installed, no engine checkout above it, private npm cache) built
+      `dist-native/my-game.apk` through the new `android` step with
+      `ANDROID_HOME=$HOME/Android/Sdk` and `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`, exit 0,
+      no `THREENATIVE_RUNTIME_SOURCE`. Only the `android` step was executed, not the whole script:
+      the `clean-room` CI job still needs its Android runner (the open Phase 4 box above).
+- [x] In that project, `threenative doctor --text` exits 0 and names every available target; with
       the prebuilt removed, it exits 1 and says which target is gone.
-- [ ] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
+      — Done 2026-09-25: the clean-room `doctor` step passed; the prebuilt-removal half is the phase-1
+      `doctor.spec.ts` red-green case (`unavailable` fails the report, `packages/create-threenative/src/doctor.ts:1411`).
+- [x] In that project, an agent calling `engine_search_capabilities("enemy walks around a wall")`
       through the project's `.mcp.json` receives at least one capability.
-- [ ] In that project, `pnpm test` is green on first run with no added flags.
+      — Done 2026-09-25: the clean-room `mcp` step answered `initialize` for every server and the engine
+      search returned 5 hits for a plain-words query.
+- [x] In that project, `pnpm test` is green on first run with no added flags.
+      — Done 2026-09-25: the clean-room `test` step exits 0 on first run.
 - [x] `pnpm publish:check` refuses a tree whose templates pin an unpublished package, and refuses a
       tree whose runtime version has no prebuilt release.
       — observed 2026-09-23: 70 findings — 69 `template:<name>` pin findings for the unpublished 0.3.3
       pins, plus `@threenative/runtime-native: No prebuilt release exists at .../runtime-native-v0.3.3/prebuilt-lock.json`; exit 1.
-- [ ] `pnpm sandbox` produces a sandbox in which the desktop build succeeds without pointing at
-      the engine source. — OPEN: not run this session.
+- [x] `pnpm sandbox` produces a sandbox in which `threenative build --target desktop` succeeds with
+      no engine source reachable. proof: `pnpm sandbox`, then `threenative build --target desktop`
+      inside the unpacked sandbox. — Done 2026-09-26: `pnpm sandbox --genre platformer --out
+      /tmp/opencode/prd196/sandbox` exit 0 (`platformer-game`, packed tarballs, no workspace
+      above it), then `pnpm build:desktop` in the game exit 0 writing an executable
+      `dist-native/platformer-game`. It took the published path, not a checkout:
+      `prebuilt/install-status.json` records `linux-x64` `ok:true` from
+      `.../releases/download/runtime-native-v0.3.3/prebuilt-lock.json`, the installed runtime has
+      no `CMakeLists.txt`, and `THREENATIVE_RUNTIME_SOURCE` was unset.
 
 **Integration gates:**
 
 - [x] Integration Ledger has zero `TBD` cells; every live caller is a real non-test `file:line`.
 - [x] Every new exported symbol has a non-test consumer (census pasted).
       — `templatePinCensus`/`prebuiltReleaseCensus` → `check-publish-state.ts:861,870`; `RELEASE_REPOSITORY`/`writeInstallStatus` → `install-prebuilt.mjs:195,248,283,305,313` and `package-android.mjs:19`.
-- [ ] Revert check passed for each phase. — OPEN: not run this session.
 - [x] The `jonit-dev` URL is deleted, not aliased — no behaviour has two live implementations.
       — `grep -rn "jonit-dev" packages scripts .github` matches only `packages/runtime-native/tests/fixtures/prd056-*.json`.
-- [ ] Every gate has a negative control observed failing. — OPEN: the negative controls are encoded as passing specs; not observed red this session.
-- [ ] Proved on the real subjects: `linux-x64` desktop and `android-arm64-v8a`, not a stub key.
-      — OPEN: needs the published cohort + `runtime-native-v0.3.3` release.
+- [x] `android-arm64-v8a` is proved on the real subject from the published prebuilt cohort, not a
+      stub key. proof: the android leg of `pnpm tsx scripts/verify-registry-install.ts` against
+      `@threenative/*@0.3.3` and the `runtime-native-v0.3.3` prebuilt release, which is published
+      (2026-09-25). The `linux-x64` half is proved by the ticked clean-room `native` step above.
+      — Done 2026-09-26: the clean-room APK carries all five `android-arm64-v8a` published rows
+      byte-for-byte against the live `prebuilt-lock.json` fetched at
+      `.../runtime-native-v0.3.3/prebuilt-lock.json` for the *installed* version —
+      `libmystral-runtime.so` `3b9e385c…`, `libSDL3.so` `ecb1095a…`, `libv8android.so`
+      `aa3b488c…`, `libc++_shared.so` `cd617628…`, `assets/v8/arm64-v8a/snapshot_blob.bin`
+      `8fc946b2…`. Negative control observed red on the same artifact: zeroing one published
+      `sha256` raises `TN_REGISTRY_INSTALL_ANDROID_PREBUILT_MISMATCH`.
 
 ## Out of scope
 
@@ -515,3 +598,14 @@ above it.
   as a missing adapter description with the published test script, which HEAD already fixes by
   passing `--browser-recipe webgpu`. A GPU-backed rerun after Phase 3 confirms it; a software
   adapter run does not.
+## Decisions
+
+- **2026-09-25 (owner, R1) — proof inline from today.** Boxes opened from this date
+  name their `proof:` on the box. Boxes ticked before this date cite their evidence in the lines
+  beside them (command, test name, artifact path, CI run) and are left as they are.
+- **2026-09-25 (owner, R2) — the per-phase revert check and the "every gate has a negative control
+  observed failing" boxes are deleted.** Both are PR-body concerns; the controls themselves stay in
+  the Integration Ledger's *Negative control* column.
+- **2026-09-25 (one box, one claim) — "Proved on the real subjects: `linux-x64` desktop and
+  `android-arm64-v8a`" is now the `android-arm64-v8a` box alone.** The `linux-x64` half was already
+  proved by the ticked clean-room `native` step above it.

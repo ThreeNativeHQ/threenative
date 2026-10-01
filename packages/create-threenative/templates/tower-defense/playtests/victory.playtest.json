@@ -1,0 +1,810 @@
+{
+  "name": "tower-defense-victory",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fastest",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "auto",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-0",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-0",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-0",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-0",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-1",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-1",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-1",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-1",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-2",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-2",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-2",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-2",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-3",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-3",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-3",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-3",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-4",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-4",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-4",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-4",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-5",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-5",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-5",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-5",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-6",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-6",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-6",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-6",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-7",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-7",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-7",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-7",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-8",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-8",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-8",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-8",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-9",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-9",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-9",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-9",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-10",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-10",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-10",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-10",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-11",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-11",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-11",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-11",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-12",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-12",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-12",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-12",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-13",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-13",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-13",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-13",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-14",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-14",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-14",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-14",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-15",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-15",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-15",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-15",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-16",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-16",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-16",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-16",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-17",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-17",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-17",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-17",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-18",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-18",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-18",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-18",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-19",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-19",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-19",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-19",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-20",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-20",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-20",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-20",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-21",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-21",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-21",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-21",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar-22",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-mortar-22",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-mortar-22",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-22",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc-23",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "build-arc-23",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "upgrade-arc-23",
+      "press": "KeyU",
+      "holdTicks": 1,
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "earn-23",
+      "waitTicks": 250,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "resolve",
+      "waitTicks": 3000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "WON",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "wave",
+        "equals": 12,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 200,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "gte": 4,
+        "changed": true
+      }
+    ],
+    "components": [
+      {
+        "entity": "battle",
+        "component": "wave",
+        "equals": 12,
+        "changed": true
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "after"
+  }
+}

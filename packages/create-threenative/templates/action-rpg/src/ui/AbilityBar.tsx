@@ -24,7 +24,9 @@ export function AbilityBar() {
           style={{ width: `${Math.max(0, Math.min(100, (1 - cooldown / 3) * 100))}%` }}
         />
       </div>
-      <div className="mt-2 text-dim">E cast · Q equip · U unequip · C save · uses {uses}</div>
+      <div className="mt-2 text-dim">
+        Shift roll · E cast · Q equip · U unequip · C save · uses {uses}
+      </div>
     </footer>
   );
 }

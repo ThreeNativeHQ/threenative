@@ -234,14 +234,12 @@ describe("PRD-373 local selection", () => {
     expect(result.stdout).toContain("native-platforms is not covered");
   });
 
-  it("runs website types, build and tests without building native consumers", async () => {
+  it("escalates a former site path to the full board, because the site is no longer here", async () => {
     const result = await selected("site/src/fixture.ts");
     expect(result.status, result.stdout + result.stderr).toBe(0);
-    expect(result.trace).toContain("--filter threenative-site typecheck");
-    expect(result.trace).toContain("--filter threenative-site build");
-    expect(result.trace).toContain("--filter threenative-site exec vitest run");
-    expect(result.trace).toContain("--filter threenative-site exec playwright test");
-    expect(result.trace).not.toMatch(/^build\t|native:build/mu);
+    expect(result.stdout).toContain("CI change scope: full");
+    expect(result.trace).not.toContain("--filter threenative-site");
+    expect(result.trace).toMatch(/^typecheck\t/mu);
   });
 
   it("builds instruction dependencies before contracts without starting native checks", async () => {

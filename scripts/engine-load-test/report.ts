@@ -2,6 +2,28 @@
 // were not the same scene, and only then compute a knee. A missing field, a wrong type, or an
 // empty sample array is an error here — never a default, never a skip.
 
+import {
+  FRAME_STAT_KEYS,
+  type IFoxMeasurement,
+  type IFrameStats,
+  type ILadderCounts,
+  LADDER_COUNT_KEYS,
+  type RealisticRung,
+  expectedLadderCounts,
+  foxMeasurementReason,
+  foxParityReason,
+  ladderCountDiff,
+  ladderRank,
+} from "../../examples/engine-load-test/src/ladder.js";
+import {
+  DEFAULT_AXES,
+  type IWorkloadAxes,
+  RENDER_MODES,
+  type RenderMode,
+  isRealisticRung,
+} from "../../examples/engine-load-test/src/workload.js";
+import { blankFrameReason } from "../capture-guard.js";
+
 export const KNEE_THRESHOLD_MS = 20;
 export const ARMS = [
   "tn-web",
@@ -10,10 +32,14 @@ export const ARMS = [
   "godot-web",
   "godot-android",
   "godot-desktop",
+  "plain-three-webgpu",
 ] as const;
 
 export type Arm = (typeof ARMS)[number];
-export type RenderMode = "L1" | "L2" | "L3";
+type EngineName = "godot" | "threenative" | "three";
+// The scene's own mode list, re-exported rather than restated: a report whose reader and whose
+// writer disagree on what a mode is would reject a run the harness happily produced.
+export type { RenderMode };
 export type BuildType = "release" | "debug";
 export type BenchExitCode = 1 | 2;
 
@@ -47,12 +73,48 @@ export interface IPerformancePromotionPolicy {
 }
 
 export interface IRunReportRung {
+  collapseMs?: number[];
+  /**
+   * PRD-449 §7.4's primary metric: the wall window for N completed frames over N, cadence included.
+   * Optional because reports written before it existed still parse; `null` with a reason when the arm
+   * could not observe finished work.
+   */
+  completedWorkMeanMs?: number | null;
+  /** Non-null exactly when `completedWorkMeanMs` is null. */
+  completedWorkReason?: string | null;
+  /** The uncapped CPU submit half, kept beside the primary metric and never in place of it. */
+  cpuSubmitMeanMs?: number;
+  /** Fill/drain policy and timing scope, as recorded by the driver. */
+  drainPolicy?: string;
   drawCalls: number;
   frameMs: number[];
+  /**
+   * PRD-464: how big R3's characters came out in this engine's own import — the world bounding-box
+   * height of one of them and the share of the viewport it covers. Gated by `foxMeasurementReason`
+   * below, so a run carrying one has already proved its foxes are the size the ladder specifies.
+   */
+  foxMeasurement?: IFoxMeasurement;
+  /** Frames the timed window covered, which the driver also writes as `frameMs.length`. */
+  measuredFrames?: number;
+  /**
+   * PRD-464's asserted scene cost, present exactly on the realistic-scene rungs and checked against
+   * `expectedLadderCounts` below. A ladder rung without it is a hole in the measurement, not a rung
+   * that measured nothing, so it fails the run.
+   */
+  ladder?: ILadderCounts;
+  /**
+   * PRD-464's proof that the rung drew something: what the frame read back after warmup said about
+   * itself. Present exactly on the realistic-scene rungs and gated by `blankFrameReason` above, so a
+   * run carrying one has already passed it.
+   */
+  renderCheck?: IFrameStats;
   mode: RenderMode;
   objectCount: number;
+  /** Optional on legacy/native reports; every initial built placement on new browser reports. */
+  initialPlacementSha256?: string;
   positionHash: string;
   repeat: number;
+  stepMs?: number[];
   triangles: number;
   visibleObjects: number;
 }
@@ -70,12 +132,13 @@ export interface IDeviceCondition {
 
 export interface IRunReport {
   arm: Arm;
+  axes?: IWorkloadAxes;
   build: { notes: string; type: BuildType };
   device: { battery: number | null; label: string };
   deviceCondition?: IDeviceCondition;
   display: { height: number; refreshHz: number; vsync: boolean; width: number };
   driver: { adapter: string; renderer: string };
-  engine: { name: "threenative" | "godot"; version: string };
+  engine: { name: EngineName; version: string };
   identity?: IPerformanceIdentity;
   provisional?: string[];
   rungs: IRunReportRung[];
@@ -139,31 +202,89 @@ export class BenchError extends Error {
   }
 }
 
-function requireObject(value: unknown, path: string): Record<string, unknown> {
+// Exported for the v2 campaign reader (`campaign-report.ts`), which parses the same way. Adding the
+// keyword changes no legacy behaviour; the helpers were already the only fail-closed path here.
+export function requireObject(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path} must be an object`);
   return value as Record<string, unknown>;
 }
 
-function requireString(source: Record<string, unknown>, key: string, path: string): string {
+export function requireString(source: Record<string, unknown>, key: string, path: string): string {
   const value = source[key];
   if (typeof value !== "string" || value.length === 0)
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a non-empty string`);
   return value;
 }
 
-function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
+export function requireNumber(source: Record<string, unknown>, key: string, path: string): number {
   const value = source[key];
   if (typeof value !== "number" || !Number.isFinite(value))
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a finite number`);
   return value;
 }
 
-function requireBoolean(source: Record<string, unknown>, key: string, path: string): boolean {
+export function requireBoolean(
+  source: Record<string, unknown>,
+  key: string,
+  path: string,
+): boolean {
   const value = source[key];
   if (typeof value !== "boolean")
     throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.${key} must be a boolean`);
   return value;
+}
+
+// The matrix axes a run reports. Absent on Godot reports and on reports written before the axes
+// existed, so the field is optional; present, it is validated like everything else.
+function parseRunAxes(value: unknown): IWorkloadAxes {
+  const source = requireObject(value, "report.axes");
+  const geometry = requireString(source, "geometry", "report.axes");
+  const material = requireString(source, "material", "report.axes");
+  if (geometry !== "shared" && geometry !== "unique")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.geometry ${geometry} is not a mode`);
+  if (material !== "shared" && material !== "unique")
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.material ${material} is not a mode`);
+  const hierarchyDepth = requireNumber(source, "hierarchyDepth", "report.axes");
+  const mutationRate = requireNumber(source, "mutationRate", "report.axes");
+  const passCount = requireNumber(source, "passCount", "report.axes");
+  const shadowCasterShare = requireNumber(source, "shadowCasterShare", "report.axes");
+  const visibleFraction = requireNumber(source, "visibleFraction", "report.axes");
+  if (!Number.isInteger(hierarchyDepth) || hierarchyDepth < 0)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "report.axes.hierarchyDepth is not a depth");
+  if (!Number.isInteger(passCount) || passCount < 1)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", "report.axes.passCount is not a pass count");
+  for (const [name, fraction] of [
+    ["mutationRate", mutationRate],
+    ["shadowCasterShare", shadowCasterShare],
+    ["visibleFraction", visibleFraction],
+  ] as const) {
+    if (fraction < 0 || fraction > 1)
+      throw new BenchError("TN_BENCH_BAD_SHAPE", `report.axes.${name} is not a fraction`);
+  }
+  return {
+    geometry,
+    hierarchyDepth,
+    material,
+    mutationRate,
+    passCount,
+    shadowCasterShare,
+    visibleFraction,
+  };
+}
+
+// Field-by-field so a reordered but equal record still compares equal; the report's `axes` is built
+// in one order, but a test or a future writer need not preserve it.
+function sameWorkloadAxes(left: IWorkloadAxes, right: IWorkloadAxes): boolean {
+  return (
+    left.geometry === right.geometry &&
+    left.hierarchyDepth === right.hierarchyDepth &&
+    left.material === right.material &&
+    left.mutationRate === right.mutationRate &&
+    left.passCount === right.passCount &&
+    left.shadowCasterShare === right.shadowCasterShare &&
+    left.visibleFraction === right.visibleFraction
+  );
 }
 
 function parseProvisional(value: unknown, path: string, required: boolean): string[] | undefined {
@@ -271,6 +392,111 @@ function parseReportIdentity(value: unknown): IPerformanceIdentity | undefined {
   return identity;
 }
 
+/** A number that must be finite and non-negative, or `undefined` when the field is absent. */
+function optionalNonNegative(source: Record<string, unknown>, key: string, path: string) {
+  const value = source[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.${key} must be a finite non-negative number when present`,
+    );
+  return value;
+}
+
+/**
+ * PRD-449 §7.4's completed-work fields, kept so a saved report still carries them: the CLI serialises
+ * the *parsed* report, so a field dropped here is a field that never reaches the JSON on disk.
+ *
+ * Optional as a block, so a report written before the metric existed still parses. Present, they are
+ * validated like everything else, and the metric and its reason are one exclusive pair — a reason
+ * without a hole, or a hole without one, is a record nobody can read.
+ */
+type TCompletedWork = Pick<
+  IRunReportRung,
+  | "completedWorkMeanMs"
+  | "completedWorkReason"
+  | "cpuSubmitMeanMs"
+  | "drainPolicy"
+  | "measuredFrames"
+>;
+
+/** The metric and the reason for its absence, as one exclusive pair, or `undefined` when absent. */
+function parseCompletedWorkPair(
+  rung: Record<string, unknown>,
+  path: string,
+): Pick<TCompletedWork, "completedWorkMeanMs" | "completedWorkReason"> | undefined {
+  const completedWorkMeanMs = rung.completedWorkMeanMs;
+  const completedWorkReason = rung.completedWorkReason;
+  if (completedWorkMeanMs === undefined && completedWorkReason === undefined) return undefined;
+  if (completedWorkMeanMs === undefined || completedWorkReason === undefined)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path} must carry completedWorkMeanMs and completedWorkReason together`,
+    );
+  if (completedWorkMeanMs === null) {
+    if (typeof completedWorkReason !== "string" || completedWorkReason.length === 0)
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.completedWorkReason must be a non-empty string when completedWorkMeanMs is null`,
+      );
+    return { completedWorkMeanMs, completedWorkReason };
+  }
+  if (
+    typeof completedWorkMeanMs !== "number" ||
+    !Number.isFinite(completedWorkMeanMs) ||
+    completedWorkMeanMs < 0
+  )
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkMeanMs must be a finite non-negative number or null`,
+    );
+  if (completedWorkReason !== null)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.completedWorkReason is for a null measurement only`,
+    );
+  return { completedWorkMeanMs, completedWorkReason };
+}
+
+/** The frames the window covered, which the driver also writes as `frameMs.length`. */
+function parseMeasuredFrames(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): number | undefined {
+  const measuredFrames = optionalNonNegative(rung, "measuredFrames", path);
+  if (measuredFrames === undefined) return undefined;
+  if (!Number.isInteger(measuredFrames) || measuredFrames < 1)
+    throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.measuredFrames must be a positive integer`);
+  // The driver writes one interval per measured frame, so a declared window that disagrees with the
+  // series beside it means the two halves of the record came from different runs.
+  if (measuredFrames !== sampleCount)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `${path}.measuredFrames ${measuredFrames} does not match ${sampleCount} frame samples`,
+    );
+  return measuredFrames;
+}
+
+function parseCompletedWork(
+  rung: Record<string, unknown>,
+  path: string,
+  sampleCount: number,
+): Partial<TCompletedWork> {
+  const cpuSubmitMeanMs = optionalNonNegative(rung, "cpuSubmitMeanMs", path);
+  const drainPolicy = rung.drainPolicy;
+  if (drainPolicy !== undefined) requireString(rung, "drainPolicy", path);
+  const measuredFrames = parseMeasuredFrames(rung, path, sampleCount);
+  const pair = parseCompletedWorkPair(rung, path);
+  return {
+    ...(pair === undefined ? {} : pair),
+    ...(cpuSubmitMeanMs === undefined ? {} : { cpuSubmitMeanMs }),
+    ...(drainPolicy === undefined ? {} : { drainPolicy: drainPolicy as string }),
+    ...(measuredFrames === undefined ? {} : { measuredFrames }),
+  };
+}
+
 export function parseRunReport(value: unknown): IRunReport {
   const root = requireObject(value, "report");
   const arm = requireString(root, "arm", "report");
@@ -286,8 +512,19 @@ export function parseRunReport(value: unknown): IRunReport {
 
   const engine = requireObject(root.engine, "report.engine");
   const engineName = requireString(engine, "name", "report.engine");
-  if (engineName !== "threenative" && engineName !== "godot")
-    throw new BenchError("TN_BENCH_BAD_SHAPE", `report.engine.name ${engineName} is not an engine`);
+  // An arm is one engine, so the report's engine has to be the one that arm runs: a `three` report
+  // stamped `tn-web` is a build that is not the arm it was published under, and its numbers are then
+  // somebody else's. Pairing rather than membership is what keeps `three` off every other arm.
+  const expectedEngine: EngineName = typedArm.startsWith("godot-")
+    ? "godot"
+    : typedArm === "plain-three-webgpu"
+      ? "three"
+      : "threenative";
+  if (engineName !== expectedEngine)
+    throw new BenchError(
+      "TN_BENCH_BAD_SHAPE",
+      `report.engine.name ${engineName} is not an engine the ${typedArm} arm runs`,
+    );
 
   const build = requireObject(root.build, "report.build");
   const buildType = requireString(build, "type", "report.build");
@@ -326,7 +563,7 @@ export function parseRunReport(value: unknown): IRunReport {
     const path = `report.rungs[${index}]`;
     const rung = requireObject(rawRung, path);
     const mode = requireString(rung, "mode", path);
-    if (mode !== "L1" && mode !== "L2" && mode !== "L3")
+    if (!(RENDER_MODES as readonly string[]).includes(mode))
       throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.mode ${mode} is not a render mode`);
     const frameMs = rung.frameMs;
     if (!Array.isArray(frameMs) || frameMs.length === 0)
@@ -335,11 +572,131 @@ export function parseRunReport(value: unknown): IRunReport {
       if (typeof sample !== "number" || !Number.isFinite(sample) || sample < 0)
         throw new BenchError("TN_BENCH_BAD_SHAPE", `${path}.frameMs holds a non-finite sample`);
     }
+    const timingSeries: Partial<Pick<IRunReportRung, "stepMs" | "collapseMs">> = {};
+    for (const field of ["stepMs", "collapseMs"] as const) {
+      const samples = rung[field];
+      if (samples === undefined) continue;
+      if (
+        !Array.isArray(samples) ||
+        samples.length !== frameMs.length ||
+        samples.some(
+          (sample) => typeof sample !== "number" || !Number.isFinite(sample) || sample < 0,
+        )
+      )
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${path}.${field} must match frameMs with finite nonnegative samples`,
+        );
+      timingSeries[field] = samples as number[];
+    }
+    const initialPlacementSha256 = rung.initialPlacementSha256;
+    if (
+      initialPlacementSha256 !== undefined &&
+      (typeof initialPlacementSha256 !== "string" ||
+        !/^[0-9a-f]{64}$/u.test(initialPlacementSha256))
+    )
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.initialPlacementSha256 must be a lowercase SHA-256 digest`,
+      );
+    // PRD-464's rung gate. Both engines build the ladder from the same rung number, so the counts
+    // they record are the only thing that can tell a real R4 from an R1 published under its name:
+    // no counts, or counts that do not match the rung, is a failed run and not a row.
+    const objectCount = requireNumber(rung, "objectCount", path);
+    let ladder: ILadderCounts | undefined;
+    let foxMeasurement: IFoxMeasurement | undefined;
+    let renderCheck: IFrameStats | undefined;
+    if (isRealisticRung(mode as RenderMode)) {
+      // Read exactly the keys the rung spec asserts and nothing else: `ladderCountDiff` compares
+      // with `!==`, so a missing key, a string where a number belongs and a count that is simply
+      // wrong all fail the same way — a non-zero exit, never a row.
+      const recorded = requireObject(rung.ladder, `${path}.ladder`);
+      ladder = Object.fromEntries(
+        LADDER_COUNT_KEYS.map((key) => [key, recorded[key]]),
+      ) as unknown as ILadderCounts;
+      const diff = ladderCountDiff(
+        expectedLadderCounts(mode as RealisticRung, objectCount),
+        ladder,
+      );
+      if (diff !== null)
+        throw new BenchError(
+          "TN_BENCH_LADDER_COUNTS",
+          `${path} mode ${mode} does not match its rung spec: ${diff}`,
+        );
+      // The rung's own proof that it drew something. A fast frame that drew a flat fill is the
+      // dangerous outcome here, not a good one, so a missing read-back, a frame with no draws or no
+      // triangles, and a frame whose pixels carry no variation all fail the run rather than
+      // publishing a number for a scene nobody saw.
+      const stats =
+        rung.renderCheck === undefined
+          ? undefined
+          : requireObject(rung.renderCheck, `${path}.renderCheck`);
+      if (stats === undefined)
+        throw new BenchError(
+          "TN_BENCH_RENDER_CHECK_MISSING",
+          `${path} mode ${mode} recorded no frame read-back`,
+        );
+      const drawCalls = requireNumber(rung, "drawCalls", path);
+      const triangles = requireNumber(rung, "triangles", path);
+      if (drawCalls <= 0 || triangles <= 0)
+        throw new BenchError(
+          "TN_BENCH_NOTHING_DRAWN",
+          `${path} mode ${mode} submitted ${drawCalls} draw call(s) and ${triangles} triangle(s)`,
+        );
+      const readBack = Object.fromEntries(
+        FRAME_STAT_KEYS.map((key) => [
+          key,
+          requireNumber(stats as Record<string, unknown>, key, `${path}.renderCheck`),
+        ]),
+      ) as unknown as IFrameStats;
+      const blank = blankFrameReason(readBack);
+      if (blank !== null)
+        throw new BenchError(
+          "TN_BENCH_BLANK_FRAME",
+          `${path} mode ${mode} read back a blank or uniform frame: ${blank}`,
+        );
+      renderCheck = readBack;
+      // A rung with characters must also say how big they came out. The Khronos Fox is authored in
+      // centimetres, and an unscaled import is a 79 m statue: the counts still match, the frame is
+      // still non-blank, and the number published would be a measurement of overdraw. A rung above
+      // R3 that recorded no measurement, or recorded one outside `LADDER_FOX_TOLERANCE` of
+      // `LADDER_FOX_HEIGHT`, is a failed run.
+      if (ladderRank(mode as RealisticRung) >= ladderRank("R3")) {
+        const recordedFox = requireObject(rung.foxMeasurement, `${path}.foxMeasurement`);
+        foxMeasurement = {
+          heightM: requireNumber(recordedFox, "heightM", `${path}.foxMeasurement`),
+          screenFraction: requireNumber(recordedFox, "screenFraction", `${path}.foxMeasurement`),
+        };
+        const wrongFox = foxMeasurementReason(foxMeasurement);
+        if (wrongFox !== null)
+          throw new BenchError("TN_BENCH_FOX_SIZE", `${path} mode ${mode}: ${wrongFox}`);
+      } else if (rung.foxMeasurement !== undefined) {
+        throw new BenchError(
+          "TN_BENCH_BAD_SHAPE",
+          `${path}.foxMeasurement is only meaningful on a rung with characters, not on ${mode}`,
+        );
+      }
+    } else if (
+      rung.ladder !== undefined ||
+      rung.renderCheck !== undefined ||
+      rung.foxMeasurement !== undefined
+    ) {
+      throw new BenchError(
+        "TN_BENCH_BAD_SHAPE",
+        `${path}.ladder, .renderCheck and .foxMeasurement are only meaningful on a realistic-scene rung, not on ${mode}`,
+      );
+    }
     return {
+      ...parseCompletedWork(rung, path, frameMs.length),
       drawCalls: requireNumber(rung, "drawCalls", path),
       frameMs: frameMs as number[],
+      ...(foxMeasurement === undefined ? {} : { foxMeasurement }),
+      ...(ladder === undefined ? {} : { ladder }),
+      ...(renderCheck === undefined ? {} : { renderCheck }),
+      ...timingSeries,
       mode: mode as RenderMode,
-      objectCount: requireNumber(rung, "objectCount", path),
+      objectCount,
+      ...(initialPlacementSha256 === undefined ? {} : { initialPlacementSha256 }),
       positionHash: requireString(rung, "positionHash", path),
       repeat: requireNumber(rung, "repeat", path),
       triangles: requireNumber(rung, "triangles", path),
@@ -349,6 +706,7 @@ export function parseRunReport(value: unknown): IRunReport {
 
   return {
     arm: arm as Arm,
+    ...(root.axes === undefined ? {} : { axes: parseRunAxes(root.axes) }),
     build: { notes: typeof build.notes === "string" ? build.notes : "", type: buildType },
     device: {
       battery: (battery as number | null) ?? null,
@@ -362,7 +720,10 @@ export function parseRunReport(value: unknown): IRunReport {
     },
     driver: { adapter, renderer },
     ...(deviceCondition === undefined ? {} : { deviceCondition }),
-    engine: { name: engineName, version: requireString(engine, "version", "report.engine") },
+    engine: {
+      name: engineName as EngineName,
+      version: requireString(engine, "version", "report.engine"),
+    },
     ...(root.identity === undefined ? {} : { identity: parseReportIdentity(root.identity) }),
     ...(provisional === undefined ? {} : { provisional }),
     rungs,
@@ -1141,9 +1502,13 @@ function drawCallFailure(
   left: IRungSummary,
   right: IRungSummary,
 ): IEquivalenceFailure | undefined {
-  if (mode === "L1") {
+  // L1 and L4 both draw one call per authored cube — L4 with a material per cube, which is exactly
+  // what stops an engine from folding them — so the "one arm silently batched" guard is the same
+  // check, and the L2 batch check below must not be applied to a rung of 4,096 draws.
+  if (mode === "L1" || mode === "L4") {
     // An arm reporting one draw where the other reports N has silently auto-batched and is not
-    // running L1 at all — the single most likely way this comparison gets published wrong (§5.2).
+    // running this rung at all — the single most likely way this comparison gets published wrong
+    // (§5.2).
     for (const [side, summary] of [
       ["left", left],
       ["right", right],
@@ -1151,19 +1516,26 @@ function drawCallFailure(
       const expected = Math.max(0, summary.visibleObjects);
       if (Math.abs(summary.drawCalls - expected) > 2 && summary.drawCalls < objectCount * 0.5) {
         return {
-          field: `drawCalls (${side} arm auto-batched L1)`,
+          field: `drawCalls (${side} arm auto-batched ${mode})`,
           left: String(left.drawCalls),
           right: String(right.drawCalls),
           rung: rungKey(mode, objectCount),
         };
       }
     }
-    const ratio =
-      Math.max(left.drawCalls, right.drawCalls) /
-      Math.max(1, Math.min(left.drawCalls, right.drawCalls));
-    if (ratio > 1.25) {
+    return ratioFailure(left, right, mode, objectCount);
+  }
+  // L2's own claim is that the batch is small enough to be comparable. R1-R5 are L3's authoring —
+  // the projection folds the cubes and the rungs add real draws on top of it, R3 by one per skinned
+  // character — so the ceiling belongs to L2 alone, and the rungs get the same ratio guard L3 does.
+  if (mode === "L2") {
+    if (
+      left.drawCalls > 8 ||
+      right.drawCalls > 8 ||
+      Math.abs(left.drawCalls - right.drawCalls) > 4
+    ) {
       return {
-        field: "drawCalls",
+        field: "drawCalls (L2 must be a small, comparable batch)",
         left: String(left.drawCalls),
         right: String(right.drawCalls),
         rung: rungKey(mode, objectCount),
@@ -1171,9 +1543,22 @@ function drawCallFailure(
     }
     return undefined;
   }
-  if (left.drawCalls > 8 || right.drawCalls > 8 || Math.abs(left.drawCalls - right.drawCalls) > 4) {
+  return ratioFailure(left, right, mode, objectCount);
+}
+
+/** Two arms of the same batched rung drawing wildly different counts are not the same scene. */
+function ratioFailure(
+  left: IRungSummary,
+  right: IRungSummary,
+  mode: RenderMode,
+  objectCount: number,
+): IEquivalenceFailure | undefined {
+  const ratio =
+    Math.max(left.drawCalls, right.drawCalls) /
+    Math.max(1, Math.min(left.drawCalls, right.drawCalls));
+  if (ratio > 1.25) {
     return {
-      field: "drawCalls (L2 must be a small, comparable batch)",
+      field: "drawCalls",
       left: String(left.drawCalls),
       right: String(right.drawCalls),
       rung: rungKey(mode, objectCount),
@@ -1241,6 +1626,15 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
     );
   }
 
+  // `positionHash` covers only the initial placements, so two different matrix cells can hash alike.
+  // A missing record is the PRD-117 default scene, permitted only against another missing record or
+  // an explicit default; a nondefault TN cell against a Godot report that never carried axes fails
+  // here rather than sailing through on the hash.
+  const leftAxes = left.axes ?? DEFAULT_AXES;
+  const rightAxes = right.axes ?? DEFAULT_AXES;
+  if (!sameWorkloadAxes(leftAxes, rightAxes))
+    push("axes", renderAxes(leftAxes), renderAxes(rightAxes));
+
   // Grouped, never last-wins: a hash that diverges on a single repeat is exactly the failure this
   // gate exists to catch, and keying one rung per ladder step would hide every repeat but the last.
   const leftHashes = groupRungs(left);
@@ -1254,7 +1648,7 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
 
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     const leftPinned = looksVsyncPinned(leftSummaries, mode);
     const rightPinned = looksVsyncPinned(rightSummaries, mode);
     if (leftPinned !== rightPinned) {
@@ -1288,6 +1682,18 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
     } else if ([...leftHashSet][0] !== [...rightHashSet][0]) {
       push("positionHash", [...leftHashSet][0], [...rightHashSet][0], key);
     }
+    const leftPlacements = new Set(leftRungs.map((entry) => entry.initialPlacementSha256));
+    const rightPlacements = new Set(rightRungs.map((entry) => entry.initialPlacementSha256));
+    if (leftPlacements.size > 1 || rightPlacements.size > 1) {
+      push(
+        "initialPlacementSha256 (repeats disagree within an arm)",
+        [...leftPlacements],
+        [...rightPlacements],
+        key,
+      );
+    } else if ([...leftPlacements][0] !== [...rightPlacements][0]) {
+      push("initialPlacementSha256", [...leftPlacements][0], [...rightPlacements][0], key);
+    }
     if (leftSummary.sampleCount !== rightSummary.sampleCount)
       push("sampleCount", leftSummary.sampleCount, rightSummary.sampleCount, key);
     if (leftSummary.repeats !== rightSummary.repeats)
@@ -1307,8 +1713,38 @@ export function checkEquivalence(left: IRunReport, right: IRunReport): IEquivale
       if (delta > 0.05)
         push("triangles (>5% apart)", leftSummary.triangles, rightSummary.triangles, key);
     }
+
+    // PRD-464: on a rung with characters, the two engines must have drawn the same fox. Each arm
+    // already proved its own against `LADDER_FOX_HEIGHT`; this is the half neither can check alone,
+    // because a fox that is 0.5 m on one side and 0.52 m on the other passes both per-arm gates
+    // and is still two different scenes. Measured per rung, so a rung that lost the measurement
+    // names itself rather than failing the whole comparison anonymously.
+    if (isRealisticRung(leftSummary.mode) && ladderRank(leftSummary.mode) >= ladderRank("R3")) {
+      const foxFailure = foxFailureFor(key, leftRungs, rightRungs);
+      if (foxFailure !== undefined) failures.push(foxFailure);
+    }
   }
   return failures;
+}
+
+/** The one fox-parity failure a rung can carry, or undefined when both arms agree. */
+function foxFailureFor(
+  key: string,
+  leftRungs: readonly IRunReportRung[],
+  rightRungs: readonly IRunReportRung[],
+): IEquivalenceFailure | undefined {
+  const measure = (rungs: readonly IRunReportRung[]): IFoxMeasurement | undefined =>
+    rungs.find((rung) => rung.foxMeasurement !== undefined)?.foxMeasurement;
+  const leftFox = measure(leftRungs);
+  const rightFox = measure(rightRungs);
+  const reason = foxParityReason(leftFox, rightFox);
+  if (reason === null) return undefined;
+  return {
+    field: `foxMeasurement (${reason})`,
+    left: leftFox === undefined ? "absent" : `${leftFox.heightM.toFixed(4)} m`,
+    right: rightFox === undefined ? "absent" : `${rightFox.heightM.toFixed(4)} m`,
+    rung: key,
+  };
 }
 
 export function compare(left: IRunReport, right: IRunReport): IComparison {
@@ -1355,20 +1791,19 @@ export function compare(left: IRunReport, right: IRunReport): IComparison {
   }
   const leftSummaries = summarize(left);
   const rightSummaries = summarize(right);
+  // One entry per mode the scene defines, so a mode added to the ladder cannot be quietly absent
+  // from the knee table the markdown renders.
+  const knees = (summaries: readonly IRungSummary[]): Record<RenderMode, number | null> =>
+    Object.fromEntries(RENDER_MODES.map((mode) => [mode, knee(summaries, mode)])) as Record<
+      RenderMode,
+      number | null
+    >;
   return {
     left,
-    leftKnee: {
-      L1: knee(leftSummaries, "L1"),
-      L2: knee(leftSummaries, "L2"),
-      L3: knee(leftSummaries, "L3"),
-    },
+    leftKnee: knees(leftSummaries),
     leftSummaries,
     right,
-    rightKnee: {
-      L1: knee(rightSummaries, "L1"),
-      L2: knee(rightSummaries, "L2"),
-      L3: knee(rightSummaries, "L3"),
-    },
+    rightKnee: knees(rightSummaries),
     rightSummaries,
   };
 }
@@ -1394,6 +1829,10 @@ export function renderArmMarkdown(report: IRunReport): string {
       `- device condition: battery ${report.deviceCondition.batteryPercent}%, ${report.deviceCondition.charging ? "charging" : "discharging"}, thermal ${report.deviceCondition.thermalStatus}, screen ${report.deviceCondition.screenOn ? "on" : "off"}`,
     );
   }
+  if (report.axes !== undefined) {
+    // The matrix cell this row belongs to; Godot reports carry no axes and print no line.
+    lines.splice(6, 0, `- axes: ${renderAxes(report.axes)}`);
+  }
   if (report.provisional !== undefined && report.provisional.length > 0) {
     lines.splice(7, 0, `- provisional: ${report.provisional.join(", ")}`);
   }
@@ -1413,6 +1852,18 @@ export function formatKnee(value: number | null): string {
   return value === null ? "below the first rung" : String(value);
 }
 
+export function renderAxes(axes: IWorkloadAxes): string {
+  return [
+    `geometry ${axes.geometry}`,
+    `material ${axes.material}`,
+    `hierarchy ${axes.hierarchyDepth}`,
+    `visible ${axes.visibleFraction}`,
+    `mutation ${axes.mutationRate}`,
+    `shadow-casters ${axes.shadowCasterShare}`,
+    `passes ${axes.passCount}`,
+  ].join(", ");
+}
+
 export function renderComparisonMarkdown(comparison: IComparison): string {
   const lines = [
     `## ${comparison.left.arm} vs ${comparison.right.arm}`,
@@ -1423,7 +1874,7 @@ export function renderComparisonMarkdown(comparison: IComparison): string {
     `| mode | knee — ${comparison.left.arm} | knee — ${comparison.right.arm} |`,
     "|---|---|---|",
   ];
-  for (const mode of ["L1", "L2", "L3"] as const) {
+  for (const mode of RENDER_MODES) {
     lines.push(
       `| ${mode} | ${formatKnee(comparison.leftKnee[mode])} | ${formatKnee(comparison.rightKnee[mode])} |`,
     );

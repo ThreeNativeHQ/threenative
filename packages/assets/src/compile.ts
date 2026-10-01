@@ -15,6 +15,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { assertBudget, measureBudget, parseBudget } from "./budget.js";
 import type { IAssetBudget, IAssetRuntimeDecoderCapabilities } from "./budget.js";
+import {
+  type IModelDedupeSummary,
+  formatModelDedupe,
+  groupModelSources,
+} from "./content/model-dedupe.js";
 import { formatHealthReport, runHealthReport } from "./health.js";
 import type { IAssetHealthInput, IAssetHealthReport } from "./health.js";
 import {
@@ -36,6 +41,11 @@ import {
   blenderImportPass,
   needsBlenderImport,
 } from "./passes/blender-import.js";
+import type {
+  IModelCompactInstanceOptions,
+  IModelCompactOptions,
+  IModelCompactSummary,
+} from "./passes/compact.js";
 import { globMatch } from "./passes/glob.js";
 import { lightmapPass } from "./passes/lightmap.js";
 import type { ILightmapPassOptions } from "./passes/lightmap.js";
@@ -50,7 +60,7 @@ import type {
   IModelVirtualOptions,
 } from "./passes/model.js";
 import { createSharedImageStore, unpackGlb } from "./passes/shared-images.js";
-import { texturePass } from "./passes/texture.js";
+import { texturePass, textureResizePass } from "./passes/texture.js";
 import type { ITextureOverride, ITexturePassOptions, TextureSkipReason } from "./passes/texture.js";
 import {
   formatAudioSizes,
@@ -66,6 +76,7 @@ import type {
   ILodJoinedGroupRow,
   ILodJoinedRow,
   ILodRow,
+  IMaterialsRow,
   IModelSizeRow,
   IPassCostAssetRow,
   IPassCostRow,
@@ -77,6 +88,12 @@ import type {
 } from "./report.js";
 import { createPassPool, resolveConcurrency } from "./worker-pool.js";
 import type { PassSpec } from "./worker-protocol.js";
+import {
+  applyProxiesToWorld,
+  cookWorldProxies,
+  formatWorldHlod,
+  readWorldPackage,
+} from "./world/proxy.js";
 
 export type AssetKind = "audio" | "model" | "other" | "texture";
 
@@ -124,6 +141,13 @@ export interface IAssetPass {
   readonly needsRuntimeDecoder?: boolean;
   readonly name: string;
   /**
+   * Input kinds whose bytes this pass can change. The compile hashes only the passes that can
+   * change an asset into that asset's digest, so a model-only option edit does not rename every
+   * texture. `undefined` (the default for a caller-supplied pass) means any kind, which stays
+   * conservative: an unknown pass can change every asset.
+   */
+  readonly appliesTo?: readonly AssetKind[];
+  /**
    * JSON-serializable snapshot of every option that changes this pass's output. Part of the
    * compile cache key: without it, editing a config value (texture quality, quantize bits, an
    * override's codec) leaves the pass name and input hash untouched and the stale output is
@@ -148,7 +172,7 @@ export interface IAssetSourceConfig {
   readonly audio?: IAudioConfig | "none";
   /**
    * The bound on how many workers a bake may use. A direct `concurrency` option overrides it;
-   * absent means the driver's default (`min(4, cores - 1)`). CI boxes and laptops differ, and
+   * absent means the driver's default (cores - 1, bounded by ~2 GB of memory a worker, at most 12). CI boxes and laptops differ, and
    * a 6.8 GB pack does not get to decide the machine's fate.
    */
   readonly concurrency?: number;
@@ -174,6 +198,11 @@ export interface IAssetSourceConfig {
 }
 
 export interface IModelsConfig {
+  /**
+   * Lossless scene-graph compaction (flatten → instance → join) against one protected-node set.
+   * Default true ({@link IModelCompactOptions}); `false` ships the scene graph as authored.
+   */
+  readonly compact?: boolean | IModelCompactOptions;
   /** Generate standard TEXCOORD_1 lightmap UVs. Absent means no lightmap pass. */
   readonly lightmap?: ILightmapPassOptions;
   readonly passes?: IModelPassesOptions;
@@ -284,6 +313,11 @@ export interface IAssetCompileResult {
   readonly skippedCompression: readonly ISkippedReportRow[];
   readonly receipt?: IBakeReceipt;
   readonly report?: IAssetHealthReport;
+  /**
+   * What the model cook saved by cooking content-identical sources once, when this project has
+   * any model source. `cooked` is the number of distinct outputs those sources produced.
+   */
+  readonly dedupe?: IModelDedupeSummary;
   readonly skipped: number;
   readonly written: number;
 }
@@ -323,6 +357,10 @@ interface IAssetManifestEntry {
   readonly simplify?: ISimplifyRow;
   /** Automatic discrete LOD generation, when the effective policy ran (model pass). */
   readonly lod?: ILodRow;
+  /** Lossless scene-graph compaction (PRD-443), when it ran (model pass). */
+  readonly compact?: IModelCompactSummary;
+  /** The cook's material merge, counted either side of it (PRD-458 §5). */
+  readonly materials?: IMaterialsRow;
   /** Extensions the compiled output declares (model pass), sorted. */
   readonly extensions?: readonly string[];
   readonly format?: string;
@@ -344,6 +382,23 @@ interface IAssetManifestEntry {
 interface IAssetManifest {
   readonly entries: Record<string, IAssetManifestEntry>;
   readonly version: 1;
+}
+
+/**
+ * What one cook contributes to the manifest, the receipt, the health report and the size report.
+ *
+ * A source that shares its content with an earlier one is not cooked; it publishes this record
+ * unchanged apart from the bytes its own source weighed, so one output serves both.
+ */
+interface ICookedModel {
+  readonly auxiliary: readonly {
+    readonly bytes: number;
+    readonly path: string;
+    readonly producer: string;
+  }[];
+  readonly entry: IAssetManifestEntry;
+  readonly lightmap: IModelSizeRow["lightmap"] | undefined;
+  readonly measured: Buffer;
 }
 
 interface ICompileLayout {
@@ -409,8 +464,10 @@ const BASISU_EXTENSION = "KHR_texture_basisu";
  * output and a cached `public/` from v7 has no receipt to delete.
  * v9: audio is conditioned and encoded to Ogg Vorbis instead of passing through byte-identical,
  * so every audio output from v8 has the wrong extension and the wrong bytes.
+ * v10: a decoder-free target honours a declared `textures.maxSize`/`models.textures.maxSize` by
+ * resampling to PNG, and the cache digest is per-asset kind instead of one global pass list.
  */
-const PIPELINE_VERSION = 9;
+const PIPELINE_VERSION = 10;
 
 const KIND_BY_EXTENSION: Readonly<Record<string, AssetKind>> = {
   // Converted to GLB by `blenderImportPass` before `modelPass` sees them. Until PRD-346 these four
@@ -459,6 +516,113 @@ function simplifyRow(value: unknown): ISimplifyRow | undefined {
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
   };
+}
+
+function compactRow(value: unknown): IModelCompactSummary | undefined {
+  if (!isRecord(value)) return undefined;
+  const flatten = value.flatten;
+  const instance = value.instance;
+  const join = value.join;
+  if (!isRecord(flatten) || !isRecord(instance) || !isRecord(join)) return undefined;
+
+  if (typeof flatten.enabled !== "boolean" || typeof flatten.reparented !== "number") {
+    return undefined;
+  }
+  if (
+    typeof instance.batches !== "number" ||
+    typeof instance.enabled !== "boolean" ||
+    typeof instance.instances !== "number" ||
+    (instance.reason !== undefined && typeof instance.reason !== "string")
+  ) {
+    return undefined;
+  }
+  if (
+    typeof join.enabled !== "boolean" ||
+    typeof join.primitivesAfter !== "number" ||
+    typeof join.primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  const nodesAfter = value.nodesAfter;
+  const nodesBefore = value.nodesBefore;
+  const primitivesAfter = value.primitivesAfter;
+  const primitivesBefore = value.primitivesBefore;
+  if (
+    typeof nodesAfter !== "number" ||
+    typeof nodesBefore !== "number" ||
+    typeof primitivesAfter !== "number" ||
+    typeof primitivesBefore !== "number"
+  ) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value.removed) || !Array.isArray(value.protected)) return undefined;
+  const removed: string[] = [];
+  for (const name of value.removed) {
+    if (typeof name !== "string") return undefined;
+    removed.push(name);
+  }
+
+  const protectedNodes: IModelCompactSummary["protected"][number][] = [];
+  for (const entry of value.protected) {
+    if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
+    const rule = entry.rule;
+    if (
+      rule !== "allow-list" &&
+      rule !== "animation-ancestor" &&
+      rule !== "animation-target" &&
+      rule !== "regex" &&
+      rule !== "skin-joint"
+    ) {
+      return undefined;
+    }
+    protectedNodes.push({ name: entry.name, rule });
+  }
+
+  return {
+    flatten: { enabled: flatten.enabled, reparented: flatten.reparented },
+    instance: {
+      batches: instance.batches,
+      enabled: instance.enabled,
+      instances: instance.instances,
+      ...(instance.reason === undefined ? {} : { reason: instance.reason }),
+    },
+    join: {
+      enabled: join.enabled,
+      primitivesAfter: join.primitivesAfter,
+      primitivesBefore: join.primitivesBefore,
+    },
+    nodesAfter,
+    nodesBefore,
+    primitivesAfter,
+    primitivesBefore,
+    removed,
+    protected: protectedNodes,
+  };
+}
+
+function materialRow(value: unknown): IMaterialsRow | undefined {
+  if (!isRecord(value)) return undefined;
+  const counts = (key: "distinct" | "materials"): { after: number; before: number } | undefined => {
+    const side = value[key];
+    if (
+      !isRecord(side) ||
+      typeof side.after !== "number" ||
+      typeof side.before !== "number" ||
+      !Number.isFinite(side.after) ||
+      !Number.isFinite(side.before)
+    ) {
+      return undefined;
+    }
+    return { after: side.after, before: side.before };
+  };
+  const distinct = counts("distinct");
+  const materials = counts("materials");
+  if (distinct === undefined || materials === undefined) return undefined;
+  if (!Array.isArray(value.merged) || value.merged.some((name) => typeof name !== "string"))
+    return undefined;
+  return { distinct, materials, merged: value.merged as string[] };
 }
 
 function lodRow(value: unknown): ILodRow | undefined {
@@ -572,6 +736,24 @@ function lodRow(value: unknown): ILodRow | undefined {
     skipped: value.skipped as number,
     trianglesAfter: value.trianglesAfter as number,
     trianglesBefore: value.trianglesBefore as number,
+    // A malformed cutout report is dropped whole, like `joined`: it is a report about the bake.
+    ...(isRecord(value.cutout) && Array.isArray(value.cutout.converted)
+      ? {
+          cutout: {
+            converted: value.cutout.converted.filter(
+              (name): name is string => typeof name === "string",
+            ),
+            kept: Array.isArray(value.cutout.kept)
+              ? value.cutout.kept.filter(
+                  (entry): entry is { name: string; reason: string } =>
+                    isRecord(entry) &&
+                    typeof entry.name === "string" &&
+                    typeof entry.reason === "string",
+                )
+              : [],
+          },
+        }
+      : {}),
   };
 }
 
@@ -809,6 +991,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
     throw new Error('TN_ASSETS_CONFIG_INVALID: assets.models must be "none" or an object.');
   }
   const allowed = [
+    "compact",
     "lightmap",
     "passes",
     "quantize",
@@ -826,6 +1009,7 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   // vocabulary; a malformed value surfaces as TN_ASSETS_CONFIG_* when the registry is built.
   const passes = raw.passes === undefined ? {} : parseModelPasses(raw.passes);
   const quantize = raw.quantize === undefined ? {} : parseModelQuantize(raw.quantize);
+  const compact = raw.compact === undefined ? undefined : parseModelCompact(raw.compact);
   const lightmap = raw.lightmap === undefined ? undefined : parseLightmap(raw.lightmap);
   const simplify = raw.simplify === undefined ? undefined : parseModelSimplify(raw.simplify);
   const textures = raw.textures === undefined ? undefined : parseModelTextures(raw.textures);
@@ -835,12 +1019,108 @@ function parseModelsConfig(raw: unknown): ParsedModelsConfig | undefined {
   }
   return {
     sharedImages: raw.sharedImages !== false,
+    ...(compact === undefined ? {} : { compact }),
     ...(lightmap === undefined ? {} : { lightmap }),
     ...(Object.keys(passes).length === 0 ? {} : { passes }),
     ...(Object.keys(quantize).length === 0 ? {} : { quantize }),
     ...(simplify === undefined ? {} : { simplify }),
     ...(textures === undefined ? {} : { textures }),
     ...(virtual === undefined ? {} : { virtual }),
+  };
+}
+
+const MODEL_COMPACT_KEYS: readonly string[] = [
+  "flatten",
+  "instance",
+  "join",
+  "protectedNames",
+  "protectedPattern",
+];
+
+/**
+ * `true`/absent runs every compaction sub-pass with defaults; `false` is the kill switch; an
+ * object configures the sub-passes and the protected-node rules. Every key is validated here,
+ * because a silently-dropped `protectedNames` is a node the author expected to keep addressable
+ * and would not.
+ */
+function parseModelCompact(raw: unknown): boolean | IModelCompactOptions {
+  if (typeof raw === "boolean") return raw;
+  if (!isRecord(raw)) {
+    throw new Error(
+      "TN_ASSETS_CONFIG_INVALID: assets.models.compact must be a boolean or an object.",
+    );
+  }
+  for (const key of Object.keys(raw)) {
+    if (!MODEL_COMPACT_KEYS.includes(key)) {
+      throw new Error(
+        `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.${key} is not recognised.`,
+      );
+    }
+  }
+  for (const key of ["flatten", "join"] as const) {
+    if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
+      throw new Error(`TN_ASSETS_CONFIG_INVALID: assets.models.compact.${key} must be a boolean.`);
+    }
+  }
+  let instance: boolean | IModelCompactInstanceOptions | undefined;
+  if (raw.instance !== undefined) {
+    if (typeof raw.instance === "boolean") {
+      instance = raw.instance;
+    } else if (isRecord(raw.instance)) {
+      for (const key of Object.keys(raw.instance)) {
+        if (key !== "min")
+          throw new Error(
+            `TN_ASSETS_CONFIG_UNKNOWN_KEY: assets.models.compact.instance.${key} is not recognised.`,
+          );
+      }
+      if (
+        raw.instance.min !== undefined &&
+        (typeof raw.instance.min !== "number" ||
+          !Number.isSafeInteger(raw.instance.min) ||
+          raw.instance.min < 2)
+      )
+        throw new Error(
+          "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance.min must be an integer of at least 2.",
+        );
+      instance = raw.instance.min === undefined ? {} : { min: raw.instance.min };
+    } else {
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.instance must be a boolean or an object.",
+      );
+    }
+  }
+  if (raw.protectedNames !== undefined) {
+    if (
+      !Array.isArray(raw.protectedNames) ||
+      raw.protectedNames.some((name) => typeof name !== "string")
+    )
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedNames must be an array of strings.",
+      );
+  }
+  if (raw.protectedPattern !== undefined) {
+    if (typeof raw.protectedPattern !== "string")
+      throw new Error(
+        "TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern must be a string.",
+      );
+    try {
+      new RegExp(raw.protectedPattern, "iu");
+    } catch {
+      throw new Error(
+        `TN_ASSETS_CONFIG_INVALID: assets.models.compact.protectedPattern is not a valid regular expression: '${raw.protectedPattern}'.`,
+      );
+    }
+  }
+  return {
+    ...(raw.flatten === undefined ? {} : { flatten: raw.flatten as boolean }),
+    ...(instance === undefined ? {} : { instance }),
+    ...(raw.join === undefined ? {} : { join: raw.join as boolean }),
+    ...(raw.protectedNames === undefined
+      ? {}
+      : { protectedNames: raw.protectedNames as readonly string[] }),
+    ...(raw.protectedPattern === undefined
+      ? {}
+      : { protectedPattern: raw.protectedPattern as string }),
   };
 }
 
@@ -1242,6 +1522,33 @@ function parseModelQuantize(raw: unknown): IModelQuantizeOptions {
   return raw as IModelQuantizeOptions;
 }
 
+/**
+ * The effective `models.textures` for a target after capability filtering.
+ *
+ * A target with the KTX2 decoder keeps the configured compression. Without one, an explicitly
+ * declared `maxSize` still has to reach the artifact, so the pass resizes embedded images to
+ * PNG instead of encoding them; `"none"`, absent, and a config with no cap keep shipping the
+ * authored bytes exactly as before. The per-slot overrides ride along for the same reason they do
+ * on the standalone path: a `codec: "none"` slot is a project asking for its authored bytes, and a
+ * cap is a decision about the project's *other* textures.
+ */
+function embeddedTexturesFor(
+  configured: IModelTexturesOptions | "none" | undefined,
+  ktx2: boolean,
+): { readonly textures?: IModelTexturesOptions | "none" } {
+  if (ktx2) return {};
+  if (configured !== undefined && configured !== "none" && configured.maxSize !== undefined) {
+    return {
+      textures: {
+        decoderFree: true,
+        maxSize: configured.maxSize,
+        ...(configured.overrides === undefined ? {} : { overrides: configured.overrides }),
+      },
+    };
+  }
+  return { textures: "none" as const };
+}
+
 function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayout {
   const config: unknown = options.config ?? {};
   if (!isRecord(config)) {
@@ -1299,7 +1606,11 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
   const audio = parseAudioConfig(config.audio);
   const configuredTextures = parseTexturesConfig(config.textures);
   const configuredModels = parseModelsConfig(config.models);
-  const configuredLod = config.lod === undefined ? undefined : parseModelLod(config.lod);
+  // Absent means on with defaults (PRD-458 §4/AC-6): a game that streams a world gets foliage cutout
+  // conversion, an automatic chain and a material merge without declaring anything. `false` /
+  // `"none"` remain the absolute kill switch, and the legacy `models` declarations still translate
+  // against the same policy, so an explicit `simplify` or `virtual: "none"` project is unaffected.
+  const configuredLod = config.lod === undefined ? true : parseModelLod(config.lod);
   const modelCompressionDecoders: readonly ("meshopt" | "KTX2")[] =
     configuredModels === undefined
       ? []
@@ -1317,7 +1628,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
             : {
                 passes: { ...(configuredModels.passes ?? {}), meshopt: false },
               }),
-          ...(runtimeDecoderCapabilities.ktx2 ? {} : { textures: "none" as const }),
+          ...embeddedTexturesFor(configuredModels.textures, runtimeDecoderCapabilities.ktx2),
         };
   const textures = configuredTextures;
   const lightmap = (models as (IModelPassOptions & { lightmap?: ILightmapPassOptions }) | undefined)
@@ -1348,6 +1659,21 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
         options: textures,
       });
     }
+    if (
+      textures !== undefined &&
+      !runtimeDecoderCapabilities.ktx2 &&
+      textures.maxSize !== undefined
+    ) {
+      // The KTX2 pass dropped for this target, but the declared cap is still honoured: the
+      // decoder-free resize pass needs no runtime decoder and runs in its place. The overrides
+      // ride along so a `codec: "none"` glob keeps the authored bytes on this path too.
+      const resize = { maxSize: textures.maxSize, overrides: textures.overrides };
+      registerBuiltin(textureResizePass(resize), {
+        kind: "texture-resize",
+        needsRuntimeDecoder: false,
+        options: resize,
+      });
+    }
     if (lightmap !== undefined) {
       registerBuiltin(lightmapPass(lightmap), {
         kind: "lightmap",
@@ -1371,8 +1697,7 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           : { ...models, vertexLayout: "separate" as const };
       // `assets.lod` is top-level, not under `models`, but it drives the model pass. It rides in
       // the pass options (and its spec) so it is part of the compile cache key.
-      const modelOptionsWithLod =
-        configuredLod === undefined ? modelOptions : { ...modelOptions, lod: configuredLod };
+      const modelOptionsWithLod = { ...modelOptions, lod: configuredLod };
       const pass = modelPass({
         ...modelOptionsWithLod,
         preserveLightmapUv: lightmap !== undefined,
@@ -2083,6 +2408,99 @@ export async function compileAssets(
   if (options.processingOrder === "reversed") logicals.reverse();
 
   /**
+   * PRD-473 AC-4: cook each authored world cell's chunks into one HLOD proxy GLB.
+   *
+   * The proxy and the rewritten world JSON are *virtual* sources: they live only in this overlay,
+   * so the authored tree is never mutated and every chunk file is retained beside it. The proxy is
+   * an ordinary model input — it takes the model pass, the content-addressed output name and the
+   * cache — while the world JSON, classified `other`, publishes the rewritten bytes unchanged.
+   * `cell.proxy` is optional, so a world that declined every cell ships exactly as authored.
+   */
+  const overlay = new Map<string, Buffer>();
+  const logicalSet = new Set(logicals);
+  const isExcluded = (logical: string): boolean =>
+    layout.exclude.some((glob) => globMatch(glob, logical));
+  // Every read is gated on the collected input set: an overlay entry this run generated, or a
+  // logical the source walk actually included. A `../` chunk reference, an excluded chunk, or any
+  // path the walk never produced therefore fails closed instead of reading off disk.
+  const readSource = async (logical: string): Promise<Buffer> => {
+    const overlaid = overlay.get(logical);
+    if (overlaid !== undefined) return overlaid;
+    if (!logicalSet.has(logical)) {
+      throw new Error(
+        `TN_ASSETS_INPUT_UNREADABLE: '${logical}' was not collected under '${layout.sourceRoot}'.`,
+      );
+    }
+    return readInput(layout.sourceRoot, logical);
+  };
+  const worldJsonLogicals = logicals.filter(
+    (logical) => path.extname(logical).toLowerCase() === ".json",
+  );
+  for (const worldLogical of worldJsonLogicals) {
+    let bytes: Buffer;
+    try {
+      bytes = await readSource(worldLogical);
+    } catch {
+      continue;
+    }
+    const world = readWorldPackage(bytes);
+    if (world === undefined) continue;
+    const result = await cookWorldProxies({
+      included: (logical) => logicalSet.has(logical),
+      read: readSource,
+      world,
+      worldLogical,
+    });
+    // A proxy whose own logical is excluded by globs, or already an authored source, is not
+    // written; the cell is reported declined rather than silently skipped.
+    const declined = [...result.declined];
+    const accepted = result.proxies.filter((proxy) => {
+      if (isExcluded(proxy.logical)) {
+        declined.push({ reason: "excluded-proxy", x: proxy.x, z: proxy.z });
+        return false;
+      }
+      if (logicalSet.has(proxy.logical)) {
+        declined.push({ reason: "existing-output", x: proxy.x, z: proxy.z });
+        return false;
+      }
+      return true;
+    });
+    if (accepted.length === 0 && declined.length === 0) continue;
+    console.log(formatWorldHlod(worldLogical, { declined, proxies: accepted }));
+    // A world that gained no proxy ships byte-identical: declines are reported, not rewritten.
+    if (accepted.length === 0) continue;
+    overlay.set(worldLogical, applyProxiesToWorld(world, accepted));
+    for (const proxy of accepted) {
+      overlay.set(proxy.logical, proxy.buffer);
+      logicalSet.add(proxy.logical);
+      logicals.push(proxy.logical);
+    }
+  }
+
+  /**
+   * Content-identical model sources cook once.
+   *
+   * A streamed world package shipped 374 model files for 101 distinct models — the same prop
+   * exported under ten different object names — and every copy paid a full cook and a separate
+   * output, because the output name carries the digest of the *named* bytes. The scan reads each
+   * model source once and keys it on the binary chunk plus the glTF JSON with every `name`
+   * removed, and the lexicographically smallest path in each group is the one that is cooked.
+   *
+   * A source carrying its own `assets.lod` override keeps its own cook: that block is keyed by
+   * source path, so a shared output would silently serve it the canonical member's policy.
+   */
+  const modelSources = logicals.filter((logical) => classify(logical) === "model");
+  const perAssetLod =
+    typeof layout.lod === "object" && layout.lod !== null && layout.lod.overrides !== undefined
+      ? new Set(Object.keys(layout.lod.overrides))
+      : new Set<string>();
+  const canonicalOf = await groupModelSources(
+    layout.sourceRoot,
+    modelSources.filter((logical) => !perAssetLod.has(logical)),
+    readSource,
+  );
+
+  /**
    * The Blender importer joins the chain only when this source tree actually holds something it
    * owns, which is why the walk happens before the pass list is fixed.
    *
@@ -2106,13 +2524,27 @@ export async function compileAssets(
     : layout.passSpecs.filter((spec) => spec.kind !== "blender-import");
 
   const passNames = activePasses.map((pass) => pass.name);
-  const passCacheKeys = activePasses.map((pass) => pass.cacheKey ?? null);
-  const passConfiguration = JSON.stringify({
-    ...(passCacheKeys.some((key) => key !== null) ? { passCacheKeys } : {}),
-    pipelineVersion: PIPELINE_VERSION,
-    passes: passNames,
-    options: activePasses.map((pass) => pass.configuration ?? null),
-  });
+  // Per-kind, so an asset hashes only the passes that can change it. A model-only option edit
+  // (an LOD preset, an audio knob, a quantize bit depth) must not rename every texture; a pass
+  // that does not declare `appliesTo` is assumed able to change any input and stays everywhere.
+  const passConfigurationFor = (kind: AssetKind): string => {
+    const included = activePasses.filter(
+      (pass) => pass.appliesTo === undefined || pass.appliesTo.includes(kind),
+    );
+    const cacheKeys = included.map((pass) => pass.cacheKey ?? null);
+    return JSON.stringify({
+      ...(cacheKeys.some((key) => key !== null) ? { passCacheKeys: cacheKeys } : {}),
+      pipelineVersion: PIPELINE_VERSION,
+      passes: included.map((pass) => pass.name),
+      options: included.map((pass) => pass.configuration ?? null),
+    });
+  };
+  const passConfigurations: Readonly<Record<AssetKind, string>> = {
+    audio: passConfigurationFor("audio"),
+    model: passConfigurationFor("model"),
+    other: passConfigurationFor("other"),
+    texture: passConfigurationFor("texture"),
+  };
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
   const costInputs = new Map<string, IPassCostRecord>();
@@ -2125,6 +2557,8 @@ export async function compileAssets(
   const modelRows: IModelSizeRow[] = [];
   let written = 0;
   let skipped = 0;
+  /** Cooked bytes the content-identical model sources saved by sharing one output. */
+  let dedupeSavedBytes = 0;
   let textureCount = 0;
   let compressedModelCount = 0;
 
@@ -2220,7 +2654,9 @@ export async function compileAssets(
           ? {}
           : { embeddedTextures: entry.embeddedTextures }),
         ...(entry.simplify === undefined ? {} : { simplify: entry.simplify }),
+        ...(entry.compact === undefined ? {} : { compact: entry.compact }),
         ...(entry.lod === undefined ? {} : { lod: entry.lod }),
+        ...(entry.materials === undefined ? {} : { materials: entry.materials }),
         extensions: entry.extensions,
         logicalPath: logical,
         ...(lightmap === undefined ? {} : { lightmap }),
@@ -2253,11 +2689,12 @@ export async function compileAssets(
       ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
-  const processOne = async (logical: string): Promise<void> => {
-    const input = await readInput(layout.sourceRoot, logical);
+  /** One cooked source, published as itself. */
+  const cookOne = async (logical: string): Promise<ICookedModel> => {
+    const input = await readSource(logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(passConfiguration, "utf8")
+      .update(passConfigurations[classify(logical)], "utf8")
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
@@ -2280,7 +2717,12 @@ export async function compileAssets(
       bookkeep(logical, measured, reused, reusable, undefined);
       recordCachedInputs(costInputs, passNames);
       skipped += 1;
-      return;
+      return {
+        auxiliary: reusable,
+        entry: reused,
+        lightmap: undefined,
+        measured,
+      };
     }
     const applied =
       pool === undefined
@@ -2306,8 +2748,10 @@ export async function compileAssets(
             bytesBefore: input.length,
             audio: audioRow(applied.entry.audio),
             embeddedTextures: embeddedTextureRow(applied.entry.embeddedTextures),
+            compact: compactRow(applied.entry.compact),
             simplify: simplifyRow(applied.entry.simplify),
             lod: lodRow(applied.entry.lod),
+            materials: materialRow(applied.entry.materials),
             format: typeof applied.entry.format === "string" ? applied.entry.format : undefined,
             ...(applied.entry.compressionSkipped === "block-size" ||
             applied.entry.compressionSkipped === "not-smaller"
@@ -2350,17 +2794,13 @@ export async function compileAssets(
             validTexels: Number(lightmapMetadata.validTexels),
           }
         : undefined;
-    bookkeep(
-      logical,
-      needsBlenderImport(logical) ? applied.buffer : input,
-      entry,
-      auxiliaryOutputs.map((output) => ({
-        bytes: output.buffer.length,
-        path: output.output,
-        producer: output.role,
-      })),
-      lightmap,
-    );
+    const measured = needsBlenderImport(logical) ? applied.buffer : input;
+    const auxiliary = auxiliaryOutputs.map((output) => ({
+      bytes: output.buffer.length,
+      path: output.output,
+      producer: output.role,
+    }));
+    bookkeep(logical, measured, entry, auxiliary, lightmap);
     const existing = previous.entries[logical];
     if (
       existing !== undefined &&
@@ -2375,7 +2815,7 @@ export async function compileAssets(
       ).every(Boolean)
     ) {
       skipped += 1;
-      return;
+      return { auxiliary, entry, lightmap, measured };
     }
     await recordPendingOutputs([entry.output, ...auxiliaryOutputs.map((output) => output.output)]);
     await writeOutput(layout.outputRoot, entry, applied.buffer);
@@ -2396,9 +2836,61 @@ export async function compileAssets(
       }
     }
     written += 1;
+    return { auxiliary, entry, lightmap, measured };
   };
 
-  const queue = [...logicals];
+  /**
+   * One source: cooked, or the cook it shares with a canonical member of its content group.
+   *
+   * A duplicate never reads its own bytes again and never runs a pass. It publishes the
+   * canonical's entry — the same output URL, the same cooked bytes — with `bytesBefore` measured
+   * against its own source, because what that file weighed is the one number about it that is
+   * its own. Its auxiliary outputs and its health measurement are the canonical's, which is what
+   * sharing one output means: the same embedded images, the same geometry.
+   */
+  const cookedModels = new Map<string, Promise<ICookedModel>>();
+  const processOne = async (logical: string): Promise<void> => {
+    const canonical = canonicalOf.get(logical);
+    if (canonical === undefined) {
+      // Registered before the cook's first await, so a duplicate queued behind it always finds
+      // the cook it reuses.
+      const pending = cookOne(logical);
+      cookedModels.set(logical, pending);
+      await pending;
+      return;
+    }
+    const pending = cookedModels.get(canonical);
+    if (pending === undefined) {
+      throw new Error(
+        `TN_ASSETS_MODEL_DEDUPE_ORDER: '${logical}' is content-identical to '${canonical}', which this cook has not reached; the queue must place every canonical before the members that share it.`,
+      );
+    }
+    const cooked = await pending;
+    dedupeSavedBytes += cooked.entry.bytes;
+    // A generated proxy exists only in the overlay, so its own bytes are the measurement; a real
+    // duplicate is measured from disk.
+    const overlaid = overlay.get(logical);
+    const entry = withFreshLodRuntime(
+      {
+        ...cooked.entry,
+        bytesBefore: overlaid?.length ?? (await stat(path.join(layout.sourceRoot, logical))).size,
+      },
+      logical,
+      layout.lod,
+      layout.lodLegacy,
+    );
+    entries[logical] = entry;
+    bookkeep(logical, cooked.measured, entry, cooked.auxiliary, cooked.lightmap);
+    recordCachedInputs(costInputs, passNames);
+    skipped += 1;
+  };
+
+  // Every canonical is queued before any member that reuses its cook. That is what makes a
+  // duplicate's wait terminate: the runner holding the canonical is never waiting on a duplicate.
+  const queue = [
+    ...logicals.filter((logical) => !canonicalOf.has(logical)),
+    ...logicals.filter((logical) => canonicalOf.has(logical)),
+  ];
   const runnerCount = Math.min(pool === undefined ? 1 : concurrency, queue.length);
   try {
     await Promise.all(
@@ -2457,6 +2949,15 @@ export async function compileAssets(
   for (const line of formatAudioSizes(audioRows)) console.log(line);
   for (const line of formatTextureSizes(textureRows)) console.log(line);
   for (const line of formatModelSizes(modelRows)) console.log(line);
+  const dedupe: IModelDedupeSummary | undefined =
+    modelSources.length === 0
+      ? undefined
+      : {
+          cooked: modelSources.length - canonicalOf.size,
+          savedBytes: dedupeSavedBytes,
+          sources: modelSources.length,
+        };
+  if (dedupe !== undefined) console.log(formatModelDedupe(dedupe));
   if (
     isRecord(options.config) &&
     isRecord(options.config.models) &&
@@ -2506,9 +3007,16 @@ export async function compileAssets(
   const receipt = await writeReceipt(layout.outputRoot, receiptOutputs);
   await rm(pendingReceiptPath, { force: true });
   const concurrencyUsed = pool === undefined ? 1 : Math.min(concurrency, logicals.length);
-  return options.health === true
-    ? { concurrencyUsed, passCosts, receipt, report, skipped, skippedCompression, written }
-    : { concurrencyUsed, passCosts, receipt, skipped, skippedCompression, written };
+  const shared = {
+    concurrencyUsed,
+    ...(dedupe === undefined ? {} : { dedupe }),
+    passCosts,
+    receipt,
+    skipped,
+    skippedCompression,
+    written,
+  };
+  return options.health === true ? { ...shared, report } : shared;
 }
 
 /**
@@ -2536,8 +3044,12 @@ function skippedCompressionRows(
     if (reason === undefined || !layout.builtinRegistry) continue;
     let bytes = 0;
     let files = 0;
+    // Counted per output, not per source: content-identical models share one cooked file, and
+    // this row is about what the build ships.
+    const counted = new Set<string>();
     for (const entry of Object.values(entries)) {
-      if (entry.kind !== kind) continue;
+      if (entry.kind !== kind || counted.has(entry.output)) continue;
+      counted.add(entry.output);
       bytes += entry.bytes;
       files += 1;
     }

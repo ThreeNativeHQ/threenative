@@ -131,14 +131,13 @@ function defaultManifestPath(cwd = process.cwd()) {
   const override = process.env.THREENATIVE_CAPABILITIES_MANIFEST;
   if (override !== void 0 && override.trim().length > 0) return path.resolve(cwd, override);
   for (let directory = path.resolve(cwd); ; directory = path.dirname(directory)) {
-    const installed = path.join(
-      directory,
-      "node_modules",
-      "@threenative",
-      "core",
-      "capabilities.json"
-    );
-    if (existsSync(installed)) return installed;
+    const nodeModules = path.join(directory, "node_modules");
+    const installed = path.join(nodeModules, "@threenative", "core", "capabilities.json");
+    if (existsSync(installed)) {
+      const relative = path.relative(realpathSync(directory), realpathSync(nodeModules));
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        return installed;
+    }
     const parent = path.dirname(directory);
     if (parent === directory) break;
   }
@@ -156,6 +155,9 @@ function manifestError(file, reason) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
 function validateManifest(value, file) {
   if (!isRecord(value) || value.version !== 2 || !Array.isArray(value.entries) || !Array.isArray(value.notOwned)) {
     throw manifestError(
@@ -164,7 +166,7 @@ function validateManifest(value, file) {
     );
   }
   for (const [index, raw] of value.entries.entries()) {
-    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !Array.isArray(raw.requires) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string") || Array.isArray(raw.requires) && !raw.requires.every((requirement) => typeof requirement === "string")) {
+    if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !isStringArray(raw.requires) || raw.deprecated !== void 0 && !isStringArray(raw.deprecated) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
     }
   }
@@ -375,13 +377,25 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     verdict: "none"
   };
 }
-function capabilityDetail(symbol, manifestFile = defaultManifestPath()) {
+function capabilityDetails(symbol, manifestFile = defaultManifestPath(), importPath) {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const manifest = loadCapabilityManifest(manifestFile);
-  const entry = manifest.entries.find((candidate) => candidate.symbol === symbol);
-  if (entry === void 0) throw new Error(`Unknown engine capability '${symbol}'.`);
-  return entry;
+  const matches = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) => candidate.symbol === symbol && (importPath === void 0 || candidate.importPath === importPath)
+  );
+  if (matches.length === 0)
+    throw new Error(
+      `Unknown engine capability '${symbol}'${importPath === void 0 ? "" : ` in '${importPath}'`}.`
+    );
+  return matches;
+}
+function capabilityDetail(symbol, manifestFile = defaultManifestPath(), importPath) {
+  const matches = capabilityDetails(symbol, manifestFile, importPath);
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous engine capability '${symbol}': pass importPath, one of ${matches.map((match) => `'${match.importPath}'`).join(", ")}.`
+    );
+  return matches[0];
 }
 var TOOL_DEFINITIONS = [
   {
@@ -405,10 +419,16 @@ var TOOL_DEFINITIONS = [
   {
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_capability_detail",
-    description: "Inspect one engine capability's import, signature, example, constraints, and overrides.",
+    description: "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     inputSchema: {
       additionalProperties: false,
-      properties: { symbol: { type: "string" } },
+      properties: {
+        importPath: {
+          description: "The search result's importPath; required when two packages export the same symbol.",
+          type: "string"
+        },
+        symbol: { type: "string" }
+      },
       required: ["symbol"],
       type: "object"
     }
@@ -468,8 +488,22 @@ function handleToolCall(params, manifestFile) {
   if (name === "engine_capability_detail") {
     if (typeof argumentsValue.symbol !== "string")
       throw new Error("engine_capability_detail requires a string 'symbol' argument.");
-    const detail = capabilityDetail(argumentsValue.symbol, manifestFile);
-    logToolCall({ symbol: argumentsValue.symbol, tool: name });
+    if (argumentsValue.importPath !== void 0 && typeof argumentsValue.importPath !== "string")
+      throw new Error("engine_capability_detail 'importPath' must be a string when given.");
+    const matches = capabilityDetails(
+      argumentsValue.symbol,
+      manifestFile,
+      argumentsValue.importPath
+    );
+    const detail = matches.length === 1 ? matches[0] : {
+      guidance: `${matches.length} packages export '${argumentsValue.symbol}'. Import the match whose summary fits; pass importPath to get one.`,
+      matches
+    };
+    logToolCall({
+      importPath: argumentsValue.importPath,
+      symbol: argumentsValue.symbol,
+      tool: name
+    });
     return toolText(detail);
   }
   throw new Error(`Unknown engine MCP tool '${String(name)}'.`);
@@ -490,7 +524,7 @@ function handleLine(line, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.3" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.4" }
       });
     }
     if (request.method === "tools/list") {
@@ -526,4 +560,4 @@ if (entryPath !== void 0 && realpathSync(path.resolve(entryPath)) === realpathSy
   }
 }
 
-export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };
+export { ENGINE_MCP_TOOL_NAMES, RELEVANCE_FLOOR, capabilityDetail, capabilityDetails, capabilitySituationTokens, defaultManifestPath, handleLine, loadCapabilityManifest, runServer, searchCapabilities, toolDefinitions };

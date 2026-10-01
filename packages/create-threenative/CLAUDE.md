@@ -30,7 +30,7 @@ output look worse than vanilla.
 
 ## Templates
 
-- `minimal` — no React, no UI folder. Core + physics, and a camera-parented geometry HUD in `src/render/hud.ts` (no DOM readout, so it survives on native).
+- `minimal` — no React, no UI folder. Core + physics: a test arena, a photographed sky and a rigged mannequin, with no HUD.
 - `starter` — adds React 19, Tailwind 4, `src/ui/`. The default.
 - `platformer` — adds `PathFollow3D` steering with avoidance. Nothing in `templates/` imports
   `@threenative/physics/navigation`: its Recast WASM is web/desktop only, and every kit is
@@ -43,17 +43,20 @@ fixed generated `public/icon.png` path after the template copy. Any new placehol
 same treatment in `renderTemplate`. `pnpm budgets` reports each template's LOC but no longer caps
 it.
 
-Reusable workflows live in `agent-files/.agents/skills/` and `agent-files/.claude/skills/`; each
-template links both adapters, and the scaffolder copies them unchanged. Every scaffold also gets
+Reusable workflows live once in `agent-files/.agents/skills/`; each template links both adapters,
+and the scaffolder copies that single copy and symlinks `.claude/skills` into it (falling back to
+a copy only where a symlink is not permitted). Every scaffold also gets
 `ponytail` — the lazy-first skill whose reuse rung *is* the mandatory capability search — and a
 project-scoped hook (`.claude/settings.json`, `.codex/hooks.json`, both launching
 `.claude/hooks/ponytail-context.mjs`) that re-injects its ruleset every session, prompt and
 subagent. The hook is deliberately local to the project: no mode file, no statusline, no
 machine-wide state, `PONYTAIL=off` to opt out, and Codex needs `/hooks` trust before it runs.
 Long recipes live in
-`agent-docs/references/*.md`, not in the templates. The scaffolder copies that bundle to
-`<project>/agent-docs/` with placeholder substitution and fails closed when a template names a
-page it does not ship. Keep each template `AGENTS.md` under 100 lines; `scripts/instruction-budget.ts`
+`agent-docs/references/*.md`, not in the templates. The scaffolder copies nothing: every generated
+project already depends on `create-threenative`, so the instructions link the installed
+`node_modules/create-threenative/agent-docs/references/<page>.md` and the scaffolder fails closed
+when a template names a page this package does not ship. Keep each template `AGENTS.md` under 100
+lines; `scripts/instruction-budget.ts`
 still bounds rendered words, references, and the `CLAUDE.md` mirror. Keep mandatory rules (first-use
 capability search, platform constraints, fail-closed playtest rules) in the root; move detailed
 workflows into a named skill or reference and link its generated path.

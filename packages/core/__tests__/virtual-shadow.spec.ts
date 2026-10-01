@@ -1,23 +1,47 @@
 import {
+  Box3,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   DirectionalLight,
   FloatType,
   HalfFloatType,
+  InstancedMesh,
+  type Material,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
+  type Object3D,
+  type OrthographicCamera,
   PerspectiveCamera,
   Scene,
+  Sphere,
+  SphereGeometry,
+  Vector3,
 } from "three";
 import { float, mix, vec4 } from "three/tsl";
 import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
+  DISCRETE_LOD_SCHEMA_VERSION,
+  DiscreteLodPlugin,
+  TN_DISCRETE_LOD,
+  lodChainOf,
+} from "../src/model-lod.js";
+import {
+  VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_GATE_MARKER,
   VIRTUAL_SHADOW_MARKER,
   VIRTUAL_SHADOW_MOVER_LAYER,
+  VIRTUAL_SHADOW_REFRESH_MARKER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
+import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
+import { WorldImpostorAtlas } from "../src/render/world-impostor.js";
 
 /**
  * The mechanism, without a GPU: level windows snap to their own texel grid, cached levels stay
@@ -45,14 +69,53 @@ const builder = {
   renderer: { shadowMap: { enabled: true } },
 } as unknown as NodeBuilder;
 
-function frameFor(camera: PerspectiveCamera): NodeFrame {
-  return { camera } as unknown as NodeFrame;
+/**
+ * The engine frame clock this harness hands the node, in seconds. It advances a second per frame so
+ * that every `invalidationDelay` is behind us from the second frame on — which is the behaviour the
+ * node had before the delay existed, and so what the tests written against it mean. A test that is
+ * *about* the delay passes its own times instead.
+ */
+let clock = 0;
+
+function frameFor(camera: PerspectiveCamera, time?: number): NodeFrame {
+  // A renderer, because a level only re-renders and only settles its window on a frame that can
+  // draw: a frame with none never holds a window, and a node asked twice renders twice.
+  clock += 1;
+  return { camera, renderer: {}, time: time ?? clock } as unknown as NodeFrame;
 }
 
 function setupNode(light: DirectionalLight, options = {}): VirtualShadowNode {
   const node = new VirtualShadowNode(light, { marker: false, ...options });
   node.setup(builder);
+  // The real render belongs to three's renderer: a level render is what a frame with a renderer
+  // asks for, and this is the draw that is not the node's business under test. The tests that
+  // watch the draw spy on these.
+  stubLevelRenders(node);
   return node;
+}
+
+/** The real render belongs to three's renderer; the draw itself is not what these tests measure. */
+function stubLevelRenders(node: VirtualShadowNode): void {
+  for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () =>
+      undefined;
+  }
+}
+
+/**
+ * Run frames until no level is waiting for the frame's single render.
+ *
+ * The node renders at most one level per frame, finest first, so a fresh node needs one frame per
+ * level before every map holds something. A test about what a steady walk costs starts here; a
+ * test about the scheduling itself counts the frames instead.
+ */
+function settle(node: VirtualShadowNode, camera: PerspectiveCamera): number {
+  let frames = 0;
+  do {
+    node.updateBefore(frameFor(camera));
+    frames += 1;
+  } while (node.stats.deferred > 0 && frames < 16);
+  return frames;
 }
 
 interface IShaderGraphBuilder extends NodeBuilder {
@@ -97,8 +160,12 @@ describe("VirtualShadowNode", () => {
     expect(node.levelLights).toHaveLength(3);
     node.updateBefore(frameFor(camera));
     for (const level of node.levelLights) expect(level.parent).toBe(scene);
-    // Every level renders on its first frame, none was cached.
-    expect(node.stats).toMatchObject({ cached: 0, levels: 3, rendered: 3 });
+    // One level per frame, finest first: the first frame renders the finest and defers the rest.
+    expect(node.stats).toMatchObject({ cached: 2, levels: 3, rendered: 1, deferred: 2 });
+    // The finest is the one whose map a fragment under the camera samples, so it is never the one
+    // held back: the two coarse levels follow, one frame each, until nothing is deferred.
+    expect(settle(node, camera)).toBe(2);
+    expect(node.stats).toMatchObject({ levels: 3, rendered: 1, deferred: 0 });
     node.dispose();
     expect(
       scene.children.filter((child) => child.name.startsWith("VirtualShadowLevel")),
@@ -108,13 +175,19 @@ describe("VirtualShadowNode", () => {
   it("should serve every level from cache while the camera stays inside its texel", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    settle(node, camera);
     camera.position.set(0.02, 5, 0.02);
     node.updateBefore(frameFor(camera));
+    camera.position.set(0.12, 5, 0.12);
+    node.updateBefore(frameFor(camera));
+    // The second frame spent its render on the coarse level the first one deferred; the third has
+    // nothing left to do, which is the state this test is about.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, moved: 0, rendered: 0 });
     const targets = node.levelLights.map((level) =>
       (level as unknown as { target: { position: { clone(): unknown } } }).target.position.clone(),
     );
-    // A texel of the finest level is 2 * 8 / 64 = 0.25 world units; 0.1 stays inside it.
-    camera.position.set(0.12, 5, 0.12);
+    camera.position.set(0.2, 5, 0.2);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, moved: 0, rendered: 0 });
     node.levelLights.forEach((level, index) => {
@@ -127,7 +200,7 @@ describe("VirtualShadowNode", () => {
   it("should invalidate cached levels when a caster is tracked or untracked", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
 
@@ -136,12 +209,14 @@ describe("VirtualShadowNode", () => {
     node.trackCaster(caster);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       movers: 1,
       moverRenders: 2,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
+    settle(node, camera);
 
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
@@ -149,12 +224,14 @@ describe("VirtualShadowNode", () => {
     expect(node.untrackCaster(caster)).toBe(true);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       movers: 0,
       moverRenders: 0,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
+    expect(settle(node, camera)).toBe(1);
   });
 
   it("should copy source shadow settings to cached and mover shadow nodes", () => {
@@ -245,16 +322,39 @@ describe("VirtualShadowNode", () => {
 
   it("should re-render only the level whose window moved by a whole texel", () => {
     const { camera, light } = world();
-    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    // `refreshStep: 0` keeps the one-texel step this measures; the default holds the window still
+    // until the centre has moved a fraction of the extent, which the test below covers.
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64, refreshStep: 0 });
     camera.position.set(0, 5, 0);
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     // 0.3 crosses the finest texel (0.25) but not the coarse one (1.0).
     camera.position.set(0.3, 5, 0);
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ cached: 1, moved: 1, rendered: 1 });
+    expect(node.stats).toMatchObject({ cached: 1, deferred: 0, moved: 1, rendered: 1 });
     // Negative control: a level that never moves is never re-rendered.
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, rendered: 0 });
+  });
+
+  it("should hold a window still until the centre has moved `refreshStep` of its extent", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    camera.position.set(0, 5, 0);
+    settle(node, camera);
+    // The finest extent is 8 m and the default step is an eighth of it, so 0.5 m is a fifth of a
+    // step: the window holds and the level is served from cache.
+    camera.position.set(0.5, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 0, rendered: 0, cached: 2 });
+    // Past the step it re-renders, on the fixed world grid the step is a whole number of texels of.
+    camera.position.set(1.5, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
+  });
+
+  it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
+    const { light } = world();
+    expect(() => setupNode(light, { clipExtents: [8, 32], refreshStep: 0.9 })).toThrow(RangeError);
   });
 
   it("should keep the mover contribution neutral and skip mover renders with no tracked casters", () => {
@@ -278,6 +378,62 @@ describe("VirtualShadowNode", () => {
     expect(moverSpies.every((spy) => spy.mock.calls.length === 0)).toBe(true);
   });
 
+  it("should spend one level render per presented frame, not per render call", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    // Three calls `updateBefore` once per `render()`, and a level render *is* a render, so the draw
+    // the budget grants re-enters this method with a new render id. Every level is due on the first
+    // frame of a fresh node, which is the case that spent three level renders in one presented frame
+    // on `?scene=map-walk`.
+    let reentered = 0;
+    for (const levelNode of [...node.levelNodes, ...node.moverNodes]) {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        if (reentered < 4) {
+          reentered += 1;
+          node.updateBefore(frameFor(camera));
+        }
+      };
+    }
+    node.updateBefore(frameFor(camera));
+    expect(reentered).toBeGreaterThan(0);
+    expect(node.stats).toMatchObject({ deferred: 1, levels: 2, rendered: 1 });
+    // Per level, finest first: the one that took the render, and the one held behind it. No caster
+    // meshes are in this world, so the granted level reports a bill of zero.
+    const noDraws = { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 };
+    expect(node.stats.perLevel).toEqual([
+      {
+        deferred: 0,
+        draws: 0,
+        drawsBy: noDraws,
+        extent: 8,
+        gateHidden: 0,
+        gateScale: 1,
+        invalidated: 0,
+        moved: 1,
+        rendered: 1,
+      },
+      {
+        deferred: 1,
+        draws: 0,
+        drawsBy: noDraws,
+        extent: 32,
+        gateHidden: 0,
+        gateScale: 1,
+        invalidated: 0,
+        moved: 1,
+        rendered: 0,
+      },
+    ]);
+    // The next presented frame spends its single render on the level the first one deferred, and
+    // the frame after that has nothing left to do.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ deferred: 0, rendered: 1 });
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ cached: 2, deferred: 0, rendered: 0 });
+    expect(node.stats.perLevel.every((level) => level.rendered === 0)).toBe(true);
+    node.dispose();
+  });
+
   it("should draw a tracked caster through the mover layer every frame and leave the cached levels alone", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
@@ -290,22 +446,25 @@ describe("VirtualShadowNode", () => {
     camera.position.set(0, 5, 0);
     node.updateBefore(frameFor(camera));
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0 });
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0, deferred: 0 });
     // A step — and a breathing idle would do the same — is a mover-map render, never a level one.
     mover.position.set(2, 0, 2);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ cached: 2, moverRenders: 2, rendered: 0 });
-    // Three frames: the first placed and rendered both levels, the other two served both.
-    expect(node.stats.reuseRatio).toBeCloseTo(4 / 6);
+    // Three frames, two level renders — the second one the frame after the first, because the node
+    // renders one level per frame — and six level serves.
+    expect(node.stats.reuseRatio).toBeCloseTo(6 / 8);
     expect(node.untrackCaster(mover)).toBe(true);
     expect(hoof.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER)).toBe(false);
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({
-      cached: 0,
+      cached: 1,
       invalidated: 2,
       moverRenders: 0,
       movers: 0,
-      rendered: 2,
+      rendered: 1,
+      deferred: 1,
     });
   });
 
@@ -322,13 +481,17 @@ describe("VirtualShadowNode", () => {
   it("should keep explicit tracker invalidation working for existing callers", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.tracker.update("manual", {
       min: { x: 0.2, y: 0, z: -0.8 },
       max: { x: 0.8, y: 2, z: -0.2 },
     });
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1 });
+    // The level the budget skipped stays due on the next frame: the reason it was due is cleared,
+    // and only a sticky flag keeps it in the queue.
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ invalidated: 0, rendered: 1, deferred: 0 });
   });
 
   it("should keep a tracked caster out of the cached level render and put it back afterwards", () => {
@@ -355,11 +518,12 @@ describe("VirtualShadowNode", () => {
     const { camera, light } = world();
     const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
     camera.position.set(0, 5, 0);
-    node.updateBefore(frameFor(camera));
-    node.updateBefore(frameFor(camera));
+    settle(node, camera);
     node.invalidateAll();
     node.updateBefore(frameFor(camera));
-    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 2 });
+    expect(node.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1 });
+    expect(settle(node, camera)).toBe(1);
+    expect(node.stats).toMatchObject({ invalidated: 0, rendered: 1, deferred: 0 });
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ invalidated: 0, rendered: 0 });
   });
@@ -370,6 +534,7 @@ describe("VirtualShadowNode", () => {
     try {
       const node = new VirtualShadowNode(light, { clipExtents: [8], marker: 2 });
       node.setup(builder);
+      stubLevelRenders(node);
       node.updateBefore(frameFor(camera));
       node.updateBefore(frameFor(camera));
       const lines = info.mock.calls
@@ -389,6 +554,7 @@ describe("VirtualShadowNode", () => {
         readVirtualShadowMarker(
           `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
             cached: 0,
+            deferred: 0,
             frame: "2",
             invalidated: 0,
             levels: 1,
@@ -404,6 +570,7 @@ describe("VirtualShadowNode", () => {
         readVirtualShadowMarker(
           `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
             cached: 0,
+            deferred: 0,
             frame: 2,
             invalidated: 0,
             levels: 1,
@@ -411,6 +578,23 @@ describe("VirtualShadowNode", () => {
             moverRenders: 1,
             movers: 1,
             rendered: 1,
+          })}`,
+        ),
+      ).toBeUndefined();
+      // `deferred` is part of the shape, so a marker from a node that does not report it — an
+      // older log read by a newer harness, or one sliced in half — parses as nothing.
+      expect(
+        readVirtualShadowMarker(
+          `${VIRTUAL_SHADOW_MARKER}:${JSON.stringify({
+            cached: 0,
+            frame: 2,
+            invalidated: 0,
+            levels: 1,
+            moved: 1,
+            moverRenders: 1,
+            movers: 1,
+            rendered: 1,
+            reuseRatio: 0,
           })}`,
         ),
       ).toBeUndefined();
@@ -430,5 +614,1234 @@ describe("VirtualShadowNode", () => {
     } finally {
       info.mockRestore();
     }
+  });
+
+  it("should print the marker every 60 frames while ?tnShadowStats=1 is on the URL", () => {
+    const { camera, light } = world();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("location", { search: "?scene=map-walk&tnShadowStats=1" });
+    try {
+      // The URL switch has to work on a launch that silenced the marker, or walking a world with
+      // `marker: false` — which is what the harness passes — could not be measured at all.
+      const node = new VirtualShadowNode(light, { clipExtents: [8], marker: false });
+      node.setup(builder);
+      stubLevelRenders(node);
+      for (let frame = 0; frame < 180; frame += 1) node.updateBefore(frameFor(camera));
+      const lines = info.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith(VIRTUAL_SHADOW_MARKER));
+      // 180 frames at one line per 60 is three, and the last one is the frame itself.
+      expect(lines).toHaveLength(3);
+      expect(readVirtualShadowMarker(lines[2] ?? "")).toMatchObject({
+        byInvalidation: 0,
+        byMove: 1,
+        coalesced: 0,
+        frame: 180,
+        held: 0,
+        rendersTotal: 1,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      info.mockRestore();
+    }
+  });
+});
+
+/**
+ * Invalidation coalescing: a streamed world asks its shadows for a redraw every residency update, and
+ * a cell admitted at the ring edge lands in the coarsest window — the one level render that pays for
+ * the whole ring's wide casters. So a dirty level waits out an `invalidationDelay` scaled by its own
+ * extent before it redraws for an ask, and the cumulative counters say what that cost.
+ */
+describe("VirtualShadowNode invalidation coalescing", () => {
+  /** The cascade the measurement used: delays of 0.25 s, 1 s and 3.33 s. */
+  const CASCADE = { clipExtents: [24, 96, 320], mapSize: 64 };
+
+  /**
+   * One level render per frame, counted per level, so a test can say *which* level redrew. Call it
+   * after the levels have settled: it replaces the draw for every frame from there on.
+   */
+  function countRenders(node: VirtualShadowNode): number[] {
+    const counts = node.levelNodes.map(() => 0);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        counts[index] = (counts[index] as number) + 1;
+      };
+    });
+    return counts;
+  }
+
+  /**
+   * Every level settled on a tight clock, one frame each 0.1 s apart, and the clock left at 0.4 s.
+   * The harness clock steps a second per frame, which is past every delay; the delay is what these
+   * tests are about, so they drive the engine's own `time` themselves.
+   */
+  function settleOnClock(node: VirtualShadowNode, camera: PerspectiveCamera): number {
+    let time = 0;
+    for (let frame = 0; frame < node.levelLights.length + 1; frame += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    return time;
+  }
+
+  /**
+   * A region 250 m out, as `WorldCells` hands one over when a cell is admitted: inside the 640 m
+   * window, outside the 192 m one. Whichever way the clipmap's axes fall, it is over 96 m out on
+   * both, so only the coarse level is ever asked.
+   */
+  const RING_EDGE = { min: { x: 246, y: 0, z: -4 }, max: { x: 254, y: 8, z: 4 } };
+
+  it("should turn 30 streamed invalidations of the coarse level in half a second into one render", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    // A cell streaming in once a frame, half a second's worth.
+    for (let ask = 0; ask < 30; ask += 1) {
+      time += 1 / 60;
+      node.invalidateRegion(RING_EDGE);
+      node.updateBefore(frameFor(camera, time));
+      expect(node.stats).toMatchObject({ held: 1, invalidated: 1, rendered: 0 });
+    }
+    expect(renders[2]).toBe(0);
+    // Its own 3.33 s are what the level waits out, from its last render — so the first frame past
+    // that redraws once, for all thirty asks.
+    for (let step = 0; step < 40 && renders[2] === 0; step += 1) {
+      time += 0.1;
+      node.updateBefore(frameFor(camera, time));
+    }
+    expect(renders).toEqual([0, 0, 1]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(1);
+    expect(node.stats.byInvalidation - before.byInvalidation).toBe(1);
+    // Twenty-nine asks merged into the one already waiting; the thirtieth is the render.
+    expect(node.stats.coalesced - before.coalesced).toBe(29);
+    expect(node.stats.byMove - before.byMove).toBe(0);
+  });
+
+  it("should still render the finest level within a quarter second of an invalidation", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    const renders = countRenders(node);
+    // The finest level rendered at 0.1 s, so its delay runs out at 0.35 s and the first frame at or
+    // after that is its render. The coarse two are 1.2 s and 3.63 s away from their own.
+    const asked = time;
+    let finestAt: number | undefined;
+    for (let step = 0; step < 20; step += 1) {
+      time += 0.05;
+      node.invalidateAll();
+      node.updateBefore(frameFor(camera, time));
+      if (finestAt === undefined && (renders[0] as number) > 0) finestAt = time;
+    }
+    expect(finestAt).toBeDefined();
+    expect((finestAt as number) - asked).toBeLessThan(0.3);
+    // It keeps answering rather than answering once, and the level the measurement is about — the
+    // 3.33 s one, a whole second past the end of this run — has not rendered at all.
+    expect(renders[0]).toBeGreaterThan(1);
+    expect(renders[2]).toBe(0);
+  });
+
+  it("should not delay a render whose window moved", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, { clipExtents: [8, 32], mapSize: 64, refreshStep: 0 });
+    camera.position.set(0, 5, 0);
+    settle(node, camera);
+    const renders = countRenders(node);
+    const before = { ...node.stats };
+    // 0.3 crosses the finest texel (0.25) but not the coarse one (1.0): no invalidation anywhere.
+    camera.position.set(0.3, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
+    expect(renders).toEqual([1, 0]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(1);
+    expect(node.stats.byMove - before.byMove).toBe(1);
+    // An ask arriving on the frame a window moves is answered by that render rather than queued
+    // behind the level's delay: the map it draws is already the new window's.
+    node.invalidateAll();
+    camera.position.set(0.6, 5, 0);
+    node.updateBefore(frameFor(camera));
+    expect(renders).toEqual([2, 0]);
+    expect(node.stats.byMove - before.byMove).toBe(2);
+    expect(node.stats.coalesced - before.coalesced).toBe(1);
+    // And the ask is spent, so the level does not redraw a frame later for the same casters.
+    node.updateBefore(frameFor(camera));
+    expect(renders).toEqual([2, 1]);
+    expect(node.stats.rendersTotal - before.rendersTotal).toBe(3);
+    expect(node.stats.byInvalidation - before.byInvalidation).toBe(1);
+  });
+
+  it("should reproduce today's counts with invalidationDelay 0 and hold the level without it", () => {
+    const { camera, light } = world();
+    camera.position.set(0, 5, 0);
+    // The same cascade twice, one switch off. Both nodes are on the same light: each owns its own
+    // levels, so what the two of them do is comparable frame for frame.
+    const off = setupNode(light, { clipExtents: [8, 32], mapSize: 64, invalidationDelay: 0 });
+    const on = setupNode(light, { clipExtents: [8, 32], mapSize: 64 });
+    expect(on.options.invalidationDelay).toEqual([0.25, 1]);
+    expect(off.options.invalidationDelay).toEqual([0, 0]);
+    for (const node of [off, on]) {
+      for (let frame = 1; frame <= 4; frame += 1) node.updateBefore(frameFor(camera, frame * 0.1));
+    }
+    const offRenders = countRenders(off);
+    const onRenders = countRenders(on);
+    const offBefore = { ...off.stats };
+    const onBefore = { ...on.stats };
+    for (const node of [off, on]) node.invalidateAll();
+    off.updateBefore(frameFor(camera, 0.5));
+    on.updateBefore(frameFor(camera, 0.5));
+    // The same asks and the same per-frame counters; the difference is entirely the coarse level's
+    // 1 s delay, which holds it rather than deferring it behind the frame's budget.
+    expect(off.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 1, held: 0 });
+    expect(on.stats).toMatchObject({ invalidated: 2, rendered: 1, deferred: 0, held: 1 });
+    off.updateBefore(frameFor(camera, 0.6));
+    on.updateBefore(frameFor(camera, 0.6));
+    expect(offRenders).toEqual([1, 1]);
+    expect(onRenders).toEqual([1, 0]);
+    expect(off.stats.rendersTotal - offBefore.rendersTotal).toBe(2);
+    expect(on.stats.rendersTotal - onBefore.rendersTotal).toBe(1);
+  });
+
+  it("should add up: every render is a move or an invalidation, every ask is answered or merged", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, CASCADE);
+    camera.position.set(0, 5, 0);
+    let time = settleOnClock(node, camera);
+    // A walk with a streaming world behind it: the windows keep moving and the levels keep being
+    // asked, so both reasons and both halves of the invalidation accounting are exercised.
+    let asks = 0;
+    for (let step = 0; step < 200; step += 1) {
+      time += 0.05;
+      camera.position.set(step * 0.4, 5, 0);
+      if (step % 3 === 0) node.invalidateAll();
+      node.updateBefore(frameFor(camera, time));
+      asks += node.stats.perLevel.filter((level) => level.invalidated === 1).length;
+    }
+    // Every ask has to be accounted for, so the run has to end with nothing still waiting: a level
+    // still dirty at the end is an ask that has not been answered or merged yet, and the identity
+    // below is only about asks that have been.
+    for (let step = 0; step < 30; step += 1) {
+      time += 0.5;
+      node.updateBefore(frameFor(camera, time));
+    }
+    const { byInvalidation, byMove, coalesced, rendersTotal } = node.stats;
+    expect(rendersTotal).toBe(byMove + byInvalidation);
+    expect(byInvalidation + coalesced).toBe(asks);
+    // Both halves really happened, or the identity above would pass on a node that did nothing.
+    expect(byMove).toBeGreaterThan(0);
+    expect(byInvalidation).toBeGreaterThan(0);
+    expect(coalesced).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The two automatic fixes a level render makes for itself: a light-space depth derived from what can
+ * actually shadow the window, and a caster size gate in texels of that level. Neither takes a game
+ * value, so the world under them is the only thing that decides.
+ */
+describe("VirtualShadowNode derived depth and caster size gate", () => {
+  /** A sun 38 degrees up, over the +z horizon: shadows fall to -z. */
+  const SUN = new Vector3(0, 0.6157, 0.788);
+
+  interface ITestWorld {
+    readonly camera: PerspectiveCamera;
+    readonly casters: readonly Mesh[];
+    readonly light: DirectionalLight;
+    readonly scene: Scene;
+    readonly mass: Mesh;
+    readonly small: Mesh;
+    readonly tall: Mesh;
+    /** A tower just beyond the window's up-sun edge, whose shadow lands back inside it. */
+    readonly upSun: Mesh;
+  }
+
+  /** The bounding-sphere radius of the `4 x 4 x n` boxes standing on the ground. */
+  const TOWER_RADIUS = Math.hypot(2, 2, 2);
+  const TALL_RADIUS = Math.hypot(2, 10, 2);
+
+  /**
+   * A floor of casting tiles, one 500 m floor slab under it, a 4 m caster, a 20 m tower and a
+   * second tower beyond the window's up-sun edge. Every caster is inside the finest window's u/v
+   * box, so the span the level must cover is the union of their own extents and nothing else.
+   */
+  function shadowWorld(): ITestWorld {
+    const { camera, light, scene } = world();
+    camera.position.set(0, 10, 0);
+    light.position.copy(SUN).multiplyScalar(200);
+    light.target.position.set(0, 0, 0);
+    light.target.updateMatrixWorld(true);
+    light.updateMatrixWorld(true);
+    const solid = new MeshStandardMaterial();
+    // One slab the whole world could be: it is how a terrain tile that dwarfs the window reaches
+    // the level, and its own span along the light is 500 m of depth nobody asked for.
+    const mass = new Mesh(new BoxGeometry(500, 2, 500), solid);
+    mass.position.set(0, -1, 0);
+    mass.castShadow = true;
+    scene.add(mass);
+    const tiles: Mesh[] = [];
+    for (let x = -1; x <= 1; x += 1) {
+      for (let z = -1; z <= 1; z += 1) {
+        const tile = new Mesh(new BoxGeometry(8, 2, 8), solid);
+        tile.position.set(x * 8, -1, z * 8);
+        tile.castShadow = true;
+        scene.add(tile);
+        tiles.push(tile);
+      }
+    }
+    const small = new Mesh(new BoxGeometry(4, 4, 4), solid);
+    small.position.set(-10, 2, 0);
+    small.castShadow = true;
+    scene.add(small);
+    const tall = new Mesh(new BoxGeometry(4, 20, 4), solid);
+    tall.position.set(10, 10, 0);
+    tall.castShadow = true;
+    scene.add(tall);
+    const upSun = new Mesh(new BoxGeometry(4, 20, 4), solid);
+    upSun.position.set(0, 10, 24 * Math.SQRT2);
+    upSun.castShadow = true;
+    scene.add(upSun);
+    scene.updateMatrixWorld(true);
+    return {
+      camera,
+      casters: [mass, ...tiles, small, tall, upSun],
+      light,
+      scene,
+      mass,
+      small,
+      tall,
+      upSun,
+    };
+  }
+
+  /** The level's own placeholder light, which is where its shadow camera is placed and aimed. */
+  function levelLight(node: VirtualShadowNode, level: number): Object3D {
+    const light = node.levelLights[level];
+    if (light === undefined) throw new Error(`no level ${String(level)}`);
+    return light;
+  }
+
+  function levelCamera(node: VirtualShadowNode, level: number): OrthographicCamera {
+    return (levelLight(node, level) as unknown as { shadow: DirectionalLight["shadow"] }).shadow
+      .camera;
+  }
+
+  /**
+   * Whether a level's frustum holds a world point, through its own projection and the view the
+   * renderer builds for a directional shadow camera: its light's position, aimed at its target.
+   * That aiming is the renderer's to do, and this harness has no renderer.
+   */
+  function holds(node: VirtualShadowNode, level: number, point: Vector3): boolean {
+    const light = levelLight(node, level) as unknown as DirectionalLight;
+    _aim.position.copy(light.position);
+    _aim.up.set(0, 1, 0);
+    _aim.lookAt(light.target.position);
+    _aim.updateMatrixWorld(true);
+    const p = _projected
+      .copy(point)
+      .applyMatrix4(_view.copy(_aim.matrixWorld).invert())
+      .applyMatrix4(levelCamera(node, level).projectionMatrix);
+    return Math.abs(p.x) <= 1 && Math.abs(p.y) <= 1 && p.z >= -1 && p.z <= 1;
+  }
+  const _aim = new PerspectiveCamera();
+  const _view = new Matrix4();
+  const _projected = new Vector3();
+
+  /** One level render per frame, recording which of the world's casters were visible for each. */
+  function watchCasters(node: VirtualShadowNode, small: Mesh, tall: Mesh): string[] {
+    const seen: string[] = [];
+    stubLevelRenders(node);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        seen.push(`${String(index)}:${small.visible ? "s" : "-"}${tall.visible ? "t" : "-"}`);
+      };
+    });
+    return seen;
+  }
+
+  it("should bracket every caster that can reach the window, and no more of the column", () => {
+    const { camera, casters, light, mass, tall } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    settle(node, camera);
+    // The span the level must cover, derived here from the world's own numbers: the 500 m slab the
+    // window is cut out of, which is only its 2 m of height, and every other caster's own extent.
+    const centre = (node.levelLights[0] as unknown as { target: { position: Vector3 } }).target
+      .position;
+    const side = 24 * Math.SQRT2;
+    const along = (point: Vector3): number => point.clone().sub(centre).dot(SUN);
+    const spans = casters
+      .filter((mesh) => mesh !== mass)
+      .map((mesh) => {
+        const radius = (mesh.geometry.boundingSphere as Sphere).radius;
+        return [along(mesh.position) - radius, along(mesh.position) + radius] as const;
+      });
+    const low = Math.min(
+      (mass.position.y - 1 - centre.y) * 0.6157 - side * 0.788,
+      ...spans.map(([from]) => from),
+    );
+    const high = Math.max(
+      (mass.position.y + 1 - centre.y) * 0.6157 + side * 0.788,
+      ...spans.map(([, to]) => to),
+    );
+    expect(levelCamera(node, 0).far - levelCamera(node, 0).near).toBeCloseTo(high - low, 1);
+    // Everything that can shadow the window is inside it: the ground the window is cut out of, the
+    // tower standing in it, and the tower whose shadow lands in it from beyond the up-sun edge.
+    expect(holds(node, 0, new Vector3(0, 0, 0))).toBe(true);
+    expect(holds(node, 0, new Vector3(10, 10 + TALL_RADIUS, 0))).toBe(true);
+    expect(holds(node, 0, new Vector3(0, 10 + TALL_RADIUS, side))).toBe(true);
+    // And the column stops where the last caster that could reach it does: 20 m of ground below the
+    // window's own, which the fixed 400 m range covered and nothing ever casts into.
+    expect(holds(node, 0, new Vector3(0, -20, -25.6))).toBe(false);
+    node.dispose();
+  });
+
+  it("should widen a level's depth for a caster standing beyond its up-sun edge", () => {
+    const { camera, light, upSun } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    settle(node, camera);
+    const withTower = levelCamera(node, 0).far - levelCamera(node, 0).near;
+    // The same window with the tower just outside its up-sun edge taken away: its shadow lands
+    // inside the window, so the depth that covers the ground alone would drop it.
+    upSun.removeFromParent();
+    node.invalidateAll();
+    settle(node, camera);
+    const withoutTower = levelCamera(node, 0).far - levelCamera(node, 0).near;
+    expect(withTower).toBeGreaterThan(withoutTower);
+    expect(holds(node, 0, new Vector3(0, 10 + TALL_RADIUS, 24 * Math.SQRT2))).toBe(false);
+    node.dispose();
+  });
+
+  it("should drop a sub-texel caster from a coarse level and keep it in the fine one", () => {
+    const { camera, light, small, tall } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    const seen = watchCasters(node, small, tall);
+    settle(node, camera);
+    // Finest first, one render each: the 4 m caster is 6.9 m across, which is more than 1.5 texels
+    // of the 48 m window and less than 1.5 of the 640 m one. The 20 m tower is in every level.
+    expect(seen).toEqual(["0:st", "1:st", "2:-t"]);
+    // Hidden for the level render, put back for the next camera.
+    expect(small.visible && tall.visible).toBe(true);
+    node.dispose();
+  });
+
+  it("should gate an unbundled small caster but never a bundled one (PRD-473)", () => {
+    const { camera, light, scene, small } = shadowWorld();
+    // A twin of the small caster, bundled: a bundle's render list is frozen when it records, so the
+    // gate has to leave a bundled mesh alone while it still drops the identical unbundled one.
+    const bundled = new Mesh(small.geometry, small.material as MeshStandardMaterial);
+    bundled.position.set(0, 2, 0);
+    bundled.castShadow = true;
+    bundled.userData.tnBundled = true;
+    scene.add(bundled);
+    scene.updateMatrixWorld(true);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    const seen: string[] = [];
+    stubLevelRenders(node);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        seen.push(`${String(index)}:${small.visible ? "s" : "-"}${bundled.visible ? "b" : "-"}`);
+      };
+    });
+    settle(node, camera);
+    // The same 6.9 m caster the test above drops from the 640 m level: unbundled it is hidden there,
+    // bundled it stays — and in every level the tower does.
+    expect(seen).toEqual(["0:sb", "1:sb", "2:-b"]);
+    expect(small.visible && bundled.visible).toBe(true);
+    node.dispose();
+  });
+
+  it("should gate a world cluster on its part's radius, not the grid square it spans (PRD-458)", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 64 });
+    // What a `WorldCells` cluster is: one `InstancedMesh` covering a whole grid square, so its own
+    // sphere is 24 m of square. A fern inside it is 0.3 m, and the published scale says so.
+    const fern = new InstancedMesh(new SphereGeometry(0.15, 6, 4), new MeshStandardMaterial(), 64);
+    fern.boundingSphere = new Sphere(new Vector3(0, 1, 0), 24);
+    fern.boundingBox = new Box3(new Vector3(-12, 0, -12), new Vector3(12, 2, 12));
+    fern.castShadow = true;
+    // A 0.15 m part placed at scale 10: 3 m of ground cover under a 48 m grid square.
+    (fern as InstancedMesh & { casterInstanceScale?: number }).casterInstanceScale = 10;
+    fern.position.set(-6, 0, 0);
+    scene.add(fern);
+    scene.updateMatrixWorld(true);
+
+    const seen: string[] = [];
+    stubLevelRenders(node);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        seen.push(`${String(index)}:${fern.visible ? "f" : "-"}`);
+      };
+    });
+    settle(node, camera);
+    // 3 m across is over 1.5 texels of the 48 m window and under 1.5 of the 192 m and 640 m ones, so
+    // it leaves the two coarse levels and stays in the fine one. Gated on its cluster's 48 m sphere
+    // it was kept by all three and submitted a fern draw to two levels that could not resolve a
+    // fragment of it — the whole gate, dropping nothing at all.
+    expect(seen).toEqual(["0:f", "1:-", "2:-"]);
+    expect(fern.visible).toBe(true);
+    node.dispose();
+  });
+
+  it("should take each level's cheaper caster granularity, not a fraction of the ring (PRD-458)", () => {
+    const { camera, light, scene } = shadowWorld();
+    const node = setupNode(light, { clipExtents: [24, 96, 320], mapSize: 2048 });
+    const solid = new MeshStandardMaterial();
+    // One world holding both halves of three keys, as `WorldCells` writes them: 25 cluster squares
+    // of 128 m under the player, and two keys outside the ring, each with two squares and one
+    // key-wide mesh covering its own. A cluster stands in for a square, so its sphere is the
+    // square's centre — the same centre the level's window is measured from.
+    const squares: { x: number; z: number }[] = [];
+    const cluster = (x: number, z: number): void => {
+      const mesh = new Mesh(new BoxGeometry(8, 8, 8), solid);
+      mesh.position.set(x, 4, z);
+      mesh.castShadow = true;
+      mesh.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
+      scene.add(mesh);
+      squares.push({ x, z });
+    };
+    let wides = 0;
+    const wide = (x: number, z: number): void => {
+      const mesh = new Mesh(new BoxGeometry(200, 8, 200), solid);
+      mesh.position.set(x, 4, z);
+      mesh.castShadow = true;
+      mesh.layers.set(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      scene.add(mesh);
+      wides += 1;
+    };
+    for (let x = -2; x <= 2; x += 1) for (let z = -2; z <= 2; z += 1) cluster(x * 128, z * 128);
+    for (const at of [768, -768]) {
+      cluster(at, 0);
+      cluster(at, 128);
+      wide(at, 64);
+    }
+    scene.updateMatrixWorld(true);
+    settle(node, camera);
+
+    // What each level would submit either way: the cluster squares its window covers, against the
+    // key-wide meshes waiting for it. A square inside the window is within a half-diagonal of the
+    // centre whichever way the light is turned, so `extent * sqrt(2)` is the bound that holds.
+    for (const [level, extent] of [24, 96, 320].entries()) {
+      const inWindow = squares.filter(
+        (square) => Math.hypot(square.x, square.z) <= extent * Math.SQRT2,
+      ).length;
+      const cheaper =
+        inWindow < wides ? VIRTUAL_SHADOW_CASTER_LAYER : VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
+      const mask = levelCamera(node, level).layers.mask;
+      const both = (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+      // The 48 m window: 1 square against 3 key-wide meshes, so clusters. The 192 m: 5 against 3,
+      // and the 640 m: 25 against 3, so one mesh per key. The fraction-of-the-ring rule read all
+      // three as 36% of a 768 m ring and clustered even the coarsest, at 29 draws where 3 do.
+      expect(mask & both, `level ${String(level)} took the wrong granularity`).toBe(1 << cheaper);
+    }
+    node.dispose();
+  });
+
+  it("should keep every level's depth off a fixed range when the game pins one", () => {
+    const { camera, light } = shadowWorld();
+    const node = setupNode(light, {
+      clipExtents: [24, 96, 320],
+      lightDistance: 200,
+      depthRange: 400,
+    });
+    settle(node, camera);
+    for (const level of [0, 1, 2]) {
+      const cameraForLevel = levelCamera(node, level);
+      expect(cameraForLevel.near).toBe(1);
+      expect(cameraForLevel.far).toBe(600);
+    }
+    node.dispose();
+  });
+});
+
+describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
+  interface IDraw {
+    /** The level index whose render submitted this draw. */
+    readonly level: number;
+    readonly material: Material;
+    readonly object: Mesh;
+    /**
+     * What three would actually draw: the cached render object is keyed on the object and re-reads
+     * `object.geometry` itself, so the geometry argument is not what reaches the GPU.
+     */
+    readonly submitted: BufferGeometry;
+  }
+
+  type DrawGate = (
+    object: Object3D,
+    scene: Object3D,
+    camera: unknown,
+    geometry: BufferGeometry,
+    material: Material,
+  ) => void;
+
+  /**
+   * A renderer carrying an own-property `setRenderObjectFunction` that wraps whatever it is handed
+   * and then draws through the function it captured when it was installed — which is what
+   * `installDrawHook` in `renderer.ts` puts on a real renderer, and what this walk was measured on:
+   * the function it is handed is never called, so a bias handed to this seam never runs.
+   */
+  function drawHost(): {
+    readonly draws: IDraw[];
+    /** The level whose pass is drawing, so the wrapper's own draw is recorded against it. */
+    level: number;
+    getRenderObjectFunction(): DrawGate | null;
+    setRenderObjectFunction(fn: DrawGate | null): void;
+  } {
+    const draws: IDraw[] = [];
+    let current: DrawGate | null = null;
+    const host = {
+      draws,
+      level: -1,
+      getRenderObjectFunction: () => current,
+      setRenderObjectFunction: (fn: DrawGate | null) => {
+        current = fn === null ? null : installed;
+      },
+    };
+    const installed: DrawGate = (object, _scene, _camera, _geometry, material) => {
+      const mesh = object as Mesh;
+      // What three's own shadow gate reads, and where it reads the geometry from: the cached render
+      // object is keyed on the object and re-reads `object.geometry` itself.
+      if (mesh.castShadow !== true) return;
+      draws.push({ level: host.level, material, object: mesh, submitted: mesh.geometry });
+    };
+    return host;
+  }
+
+  /** Wire each level node to the host, drawing the casters through whatever function is installed. */
+  function watchDraws(
+    node: VirtualShadowNode,
+    host: ReturnType<typeof drawHost>,
+    camera: PerspectiveCamera,
+    casters: readonly Mesh[],
+  ): void {
+    const levels = [...node.levelNodes];
+    for (const levelNode of levels) {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = (frame) => {
+        const seam = frame.renderer as unknown as {
+          getRenderObjectFunction(): DrawGate | null;
+          setRenderObjectFunction(fn: DrawGate | null): void;
+        };
+        host.level = levels.indexOf(levelNode);
+        const found = seam.getRenderObjectFunction();
+        seam.setRenderObjectFunction(() => undefined);
+        // Three draws through the function the renderer now holds, not the one it was handed.
+        const installed = seam.getRenderObjectFunction();
+        if (installed === null) throw new Error("the shadow pass installed no draw function.");
+        for (const mesh of casters)
+          installed(
+            mesh,
+            camera as unknown as Object3D,
+            null,
+            mesh.geometry,
+            mesh.material as Material,
+          );
+        seam.setRenderObjectFunction(found);
+      };
+    }
+  }
+
+  /** A frame with the draw seam on it, which is the only frame a level renders on. */
+  function drawFrame(camera: PerspectiveCamera, host: object): NodeFrame {
+    return { camera, renderer: host, time: 0 } as unknown as NodeFrame;
+  }
+
+  /**
+   * A grid over its own baked three-level chain, registered by the real plugin: the parser is the
+   * only fake part, exactly as the chunk-merge fixture builds one.
+   */
+  async function chained(triangles = 8): Promise<Mesh> {
+    const positions: number[] = [];
+    for (let vertex = 0; vertex < triangles + 1; vertex += 1)
+      positions.push(vertex / triangles, 0, 0, vertex / triangles, 1, 0);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(Float32Array.from(positions), 3));
+    const indices = (count: number): Uint32Array => {
+      const at = new Uint32Array(count * 3);
+      for (let quad = 0; quad < count / 2; quad += 1) {
+        const offset = quad * 6;
+        at[offset] = quad * 2;
+        at[offset + 1] = quad * 2 + 1;
+        at[offset + 2] = quad * 2 + 2;
+        at[offset + 3] = quad * 2 + 1;
+        at[offset + 4] = quad * 2 + 3;
+        at[offset + 5] = quad * 2 + 2;
+      }
+      return at;
+    };
+    geometry.setIndex(new BufferAttribute(indices(triangles), 1));
+    const mesh = new Mesh(geometry, new MeshBasicMaterial());
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations: new Map<object, { meshes: number; primitives: number }>([
+        [mesh, { meshes: 0, primitives: 0 }],
+      ]),
+      getDependency: async (_type: string, index: number) => ({
+        array: index === 0 ? indices(triangles / 2) : indices(triangles / 4),
+      }),
+      json: {
+        meshes: [
+          {
+            primitives: [
+              {
+                extensions: {
+                  [TN_DISCRETE_LOD]: {
+                    absoluteErrors: [0.05, 0.2],
+                    counts: [triangles / 2, triangles / 4],
+                    errors: [0.05, 0.2],
+                    indices: [0, 1],
+                    lod0Triangles: triangles,
+                    schemaVersion: DISCRETE_LOD_SCHEMA_VERSION,
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await plugin.afterRoot({});
+    plugin.attach(mesh, { hysteresis: 0.15, maxPixelError: 1 });
+    return mesh;
+  }
+
+  /** Three levels, one render each: the finest first, so level `n` is drawn on frame `n`. */
+  function renderAllLevels(node: VirtualShadowNode, camera: PerspectiveCamera, host: object): void {
+    for (let frame = 0; frame < node.levelNodes.length; frame += 1)
+      node.updateBefore(drawFrame(camera, host));
+  }
+
+  it("should draw a chained caster with its coarsest chain geometry on the coarse levels only", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[chain.levels.length - 1] as BufferGeometry;
+    expect(chain.levels).toHaveLength(3);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    // Level 0 draws what the main pass draws; 96 m and 320 m windows cannot resolve LOD0, so they
+    // draw the coarsest rung — the 2-triangle level, one draw over the mesh's own. This ran on the
+    // renderer whose `setRenderObjectFunction` ignores the function it is handed, which is why it
+    // holds where the draw-gate seam did not.
+    expect(host.draws.map((draw) => draw.level)).toEqual([0, 1, 2]);
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([mesh.geometry, coarsest, coarsest]);
+    // The mesh was never left on the coarse geometry: the swap lives inside one level's render.
+    expect(mesh.geometry).toBe(chain.levels[0]);
+    node.dispose();
+  });
+
+  it("should put every level back on full detail with shadowLodBias off", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const node = setupNode(light, { clipExtents: [24, 96, 320], shadowLodBias: false });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      mesh.geometry,
+    ]);
+    node.dispose();
+  });
+
+  it("should cast an alpha-tested mesh into the finest level only, and every level an opaque one", () => {
+    const { camera, light, scene } = world();
+    // The two shapes `buildChunkShadowProxies` leaves behind: a cutout that keeps casting itself,
+    // and the position-only proxy that stands in for a chunk's opaque half.
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-8, 2, 0);
+    cutout.castShadow = true;
+    const proxy = new Mesh(new BoxGeometry(64, 2, 64), new MeshBasicMaterial());
+    proxy.position.set(0, -1, 0);
+    proxy.castShadow = true;
+    scene.add(cutout, proxy);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [cutout, proxy]);
+    renderAllLevels(node, camera, host);
+
+    // The trade, stated once: a fence's or a foliage card's shadow ends where the finest level's
+    // window ends, like Unreal's per-primitive shadow cull distance. The opaque proxy is drawn by
+    // every level, so a chunk's own shadow does not end with it.
+    const levelsFor = (object: Mesh): number[] =>
+      host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
+    expect(levelsFor(cutout)).toEqual([0]);
+    expect(levelsFor(proxy)).toEqual([0, 1, 2]);
+    // The coarse levels took the cutout out of the shadow pass for the length of their render and
+    // put it back: the main pass and the next level's map still draw it.
+    expect(cutout.castShadow).toBe(true);
+    expect(proxy.castShadow).toBe(true);
+    node.dispose();
+  });
+
+  it("should keep a marked whole-asset alpha impostor in every coarse level, skipping only the unmarked cutout", () => {
+    const { camera, light, scene } = world();
+    // The three casters one biased window holds: an ordinary cutout card the coarse levels cannot
+    // resolve, the opaque proxy that casts through its silhouette, and the world's whole-asset
+    // impostor quad. The impostor's alpha-tested material looks like the card, but its cutout IS the
+    // coarsest representation, so the biased skip must leave it in. `WorldImpostorSurface` marks its
+    // own material; see `#probe`.
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-8, 2, 0);
+    cutout.castShadow = true;
+    const atlas = new WorldImpostorAtlas(8);
+    const surface = new WorldImpostorSurface({
+      atlas,
+      center: new Vector3(0, 0, 0),
+      radius: 6,
+      source: new MeshBasicMaterial({ alphaTest: 0.5 }),
+    });
+    const whole = new Mesh(surface.geometry, surface.material);
+    whole.position.set(8, 2, 0);
+    whole.castShadow = true;
+    const proxy = new Mesh(new BoxGeometry(64, 2, 64), new MeshBasicMaterial());
+    proxy.position.set(0, -1, 0);
+    proxy.castShadow = true;
+    scene.add(cutout, whole, proxy);
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [cutout, whole, proxy]);
+    renderAllLevels(node, camera, host);
+
+    const levelsFor = (object: Mesh): number[] =>
+      host.draws.filter((draw) => draw.object === object).map((draw) => draw.level);
+    // The unmarked cutout still ends where the finest level's window ends...
+    expect(levelsFor(cutout)).toEqual([0]);
+    // ...but the marked whole-asset impostor casts through every biased level with the opaque proxy.
+    expect(levelsFor(whole)).toEqual([0, 1, 2]);
+    expect(levelsFor(proxy)).toEqual([0, 1, 2]);
+    // Nothing was left disabled: the main pass and the next level's map still draw all three.
+    expect(cutout.castShadow).toBe(true);
+    expect(whole.castShadow).toBe(true);
+    expect(proxy.castShadow).toBe(true);
+    node.dispose();
+    surface.dispose();
+    atlas.dispose();
+  });
+
+  it("should draw both defaults off one walk, and leave the world exactly as authored", async () => {
+    const { camera, light, scene } = world();
+    // The two halves together, which is the shape a streamed chunk leaves behind: a chained mesh
+    // that casts from its coarsest rung and a cutout that casts at all, in one window's walk.
+    const tree = await chained();
+    tree.position.set(12, 0, 0);
+    tree.castShadow = true;
+    const cutout = new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial({ alphaTest: 0.5 }));
+    cutout.position.set(-12, 2, 0);
+    cutout.castShadow = true;
+    scene.add(tree, cutout);
+    const chain = lodChainOf(tree.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[chain.levels.length - 1] as BufferGeometry;
+    const node = setupNode(light, { clipExtents: [24, 96, 320] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [tree, cutout]);
+    renderAllLevels(node, camera, host);
+
+    const drawn = (object: Mesh): { level: number; submitted: BufferGeometry }[] =>
+      host.draws
+        .filter((draw) => draw.object === object)
+        .map((draw) => ({ level: draw.level, submitted: draw.submitted }));
+    // Level 0 is the main pass: both casters, both as authored. Level 1 is the first coarse one,
+    // and it submits the coarsest rung and no cutout — one traverse, two changes.
+    expect(drawn(tree)).toEqual([
+      { level: 0, submitted: tree.geometry },
+      { level: 1, submitted: coarsest },
+      { level: 2, submitted: coarsest },
+    ]);
+    expect(drawn(cutout)).toEqual([{ level: 0, submitted: cutout.geometry }]);
+    // Nothing left changed: the next level's map, the mover maps and the main pass draw the world
+    // the game authored, which is what the walk cost has to be worth.
+    expect(tree.geometry).toBe(chain.levels[0]);
+    expect(tree.castShadow).toBe(true);
+    expect(cutout.castShadow).toBe(true);
+    node.dispose();
+  });
+});
+
+/**
+ * Adaptive refresh: a level whose own render costs a large share of the frame re-renders less often,
+ * up to the widest trail its window can hold without the camera's own view of the level leaving the
+ * map that view is served from. The walk is the one the measurement came from — a 20 m/s flyover at
+ * 60 Hz over the 24 / 96 / 320 cascade, where the finest level is the one a camera re-renders most.
+ */
+describe("VirtualShadowNode adaptive refresh", () => {
+  const CASCADE = { clipExtents: [24, 96, 320], mapSize: 64 };
+  const PERIOD = 1 / 60;
+  const SPEED = 20;
+  const FRAMES = 115;
+  /** Every level's step as configured: an eighth of its own extent. */
+  const BASE = 0.125;
+  /**
+   * The half-width of the region a level serves around the window it was rendered with, as a share of
+   * its extent: the configured guard of 0.9 less its step. What a window can trail by without
+   * leaving the camera outside that region — the margin the widening is capped at — is the rest of
+   * the extent.
+   */
+  const SERVED = 0.775;
+  const SAFE = 1 - SERVED;
+  /** Over the 0.4 share of a 16.7 ms frame by more than twice, so the widening runs to its cap. */
+  const EXPENSIVE_MS = 15;
+
+  interface IWalk {
+    /** Level renders per level over the walk, settle included. */
+    readonly renders: number[];
+    /** The `TN_SHADOW_REFRESH` lines the walk printed. */
+    readonly notes: string[];
+    /** The widest trail each level's rendered window held from the camera, as a share of its extent. */
+    readonly maxTrail: number[];
+  }
+
+  /**
+   * A 20 m/s flyover, with `charges[i]` milliseconds charged to level `i`'s render. The draws are the
+   * clock, so what the node measures around a render is that render's own cost.
+   *
+   * Every frame asserts the two things the widening owes, for every level: the camera is still inside
+   * the region its own level serves (`trail <= extent * guard`), and that region is inside the
+   * window the level rendered (`trail <= extent * (1 - guard)`). The second is the bound the cap is
+   * written from; the first is what a trail past the margin would break, a level that has stopped
+   * serving the ground the player is standing on.
+   */
+  function walk(charges: readonly number[], options: object = {}): IWalk {
+    const { camera, light } = world();
+    const node = setupNode(light, { ...CASCADE, ...options });
+    const clock = { ms: 0 };
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const renders = node.levelNodes.map(() => 0);
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        renders[index] = (renders[index] as number) + 1;
+        clock.ms += charges[index] ?? 0;
+      };
+    });
+    const maxTrail = node.levelNodes.map(() => 0);
+    let time = 0;
+    try {
+      for (let frame = 0; frame < FRAMES; frame += 1) {
+        time += PERIOD;
+        const walked = time * SPEED;
+        camera.position.set(walked, 5, walked);
+        node.updateBefore({
+          camera,
+          renderer: {},
+          time,
+          deltaTime: PERIOD,
+        } as unknown as NodeFrame);
+        const here = node.clipmap.project(camera.position);
+        for (const [index, level] of node.levelLights.entries()) {
+          const centre = (level as unknown as { target: { position: Vector3 } }).target.position;
+          const there = node.clipmap.project(centre);
+          const trail = Math.max(Math.abs(here.u - there.u), Math.abs(here.v - there.v));
+          const extent = node.options.clipExtents[index] as number;
+          const where = `level ${String(index)} at frame ${String(frame)}`;
+          expect(
+            trail,
+            `${where} left the camera outside the region it serves`,
+          ).toBeLessThanOrEqual(extent * SERVED);
+          expect(
+            trail,
+            `${where} uncovered the region it serves from the map it is served out of`,
+          ).toBeLessThanOrEqual(extent * SAFE);
+          maxTrail[index] = Math.max(maxTrail[index] as number, trail / extent);
+        }
+      }
+      return {
+        maxTrail,
+        notes: info.mock.calls
+          .map((call) => String(call[0]))
+          .filter((line) => line.startsWith(VIRTUAL_SHADOW_REFRESH_MARKER)),
+        renders,
+      };
+    } finally {
+      now.mockRestore();
+      info.mockRestore();
+      node.dispose();
+    }
+  }
+
+  /** The trail a `TN_SHADOW_REFRESH` line reports, as a number. */
+  function trailOf(line: string): number {
+    return Number(/ trail=([\d.]+)/u.exec(line)?.[1]);
+  }
+
+  it("should widen an expensive level's trail and re-render it less often over the walk", () => {
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    const today = walk([EXPENSIVE_MS, 0, 0], { adaptiveRefresh: false });
+    // The same walk, the same costs, the same configured steps — and the fine level draws about
+    // half as often, because the coarse two were already too wide to be what a walk re-renders.
+    expect(adapted.renders[0]).toBeGreaterThan(0);
+    expect(adapted.renders[0]).toBeLessThan(today.renders[0] as number);
+    // It widened, and it widened to the margin rather than past it: the cap is what keeps the
+    // camera's view inside the map, so a level four times over the share does not buy four times
+    // the trail.
+    expect(adapted.maxTrail[0]).toBeGreaterThan(BASE);
+    expect(adapted.maxTrail[0]).toBeLessThanOrEqual(SAFE);
+    expect(adapted.notes.length).toBeGreaterThan(0);
+    for (const line of adapted.notes) {
+      expect(line).toMatch(/^TN_SHADOW_REFRESH level=0 width=48 ms=\d+\.\d trail=[\d.]+$/u);
+      expect(trailOf(line)).toBeGreaterThan(BASE);
+      expect(trailOf(line)).toBeLessThanOrEqual(SAFE);
+    }
+    // At most one line a second for the level, so 1.92 s of walk prints two or fewer.
+    expect(adapted.notes.length).toBeLessThanOrEqual(2);
+  });
+
+  it("should leave a cheap level exactly as it was, and say nothing about it", () => {
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    const allCheap = walk([0, 0, 0]);
+    // Levels 1 and 2 are measured every frame and always under the share, so they are stepped with
+    // the number they were configured with and render on exactly today's cadence.
+    expect(adapted.renders.slice(1)).toEqual(allCheap.renders.slice(1));
+    for (const index of [1, 2]) {
+      expect(adapted.maxTrail[index]).toBeLessThanOrEqual(BASE);
+    }
+    // Nothing widened, so nothing is printed: the marker names a level that changed, not every one.
+    expect(adapted.notes.some((line) => / level=1 | level=2 /u.test(line))).toBe(false);
+    expect(allCheap.notes).toEqual([]);
+  });
+
+  it("should keep the camera inside what every level serves, and that inside its map, at every step", () => {
+    // `walk` asserts both bounds on every frame of this walk, so this test is about the walk having
+    // something to assert: a trail past `extent * (1 - guard)` is what leaves a fragment sampling
+    // outside the map it is selected from, and one past `extent * guard` is what leaves the player
+    // standing on a level that no longer serves them.
+    const adapted = walk([EXPENSIVE_MS, 0, 0]);
+    expect(adapted.maxTrail[0]).toBeGreaterThan(BASE);
+    expect(adapted.maxTrail.every((trail) => trail <= SAFE && trail <= SERVED)).toBe(true);
+  });
+
+  it("should count today's renders with adaptiveRefresh off, expensive or not", () => {
+    const off = walk([EXPENSIVE_MS, 0, 0], { adaptiveRefresh: false });
+    const allCheap = walk([0, 0, 0]);
+    const { camera, light } = world();
+    const node = setupNode(light, { ...CASCADE, adaptiveRefresh: false });
+    expect(node.options.adaptiveRefresh).toBe(false);
+    // A level that costs 15 ms a render re-renders exactly as often as one that costs nothing: the
+    // switch is the measurement's own, and without it the step is the configured one.
+    expect(off.renders).toEqual(allCheap.renders);
+    expect(off.maxTrail).toEqual(allCheap.maxTrail);
+    expect(off.notes).toEqual([]);
+    node.dispose();
+  });
+
+  it("should refuse a share of the frame period that is not a share of it", () => {
+    const { light } = world();
+    expect(() => setupNode(light, { expensiveRefreshShare: 0 })).toThrow(/expensiveRefreshShare/u);
+    expect(() => setupNode(light, { expensiveRefreshShare: 1.5 })).toThrow(
+      /TN_VIRTUAL_SHADOW_INVALID/u,
+    );
+    expect(setupNode(light).options.expensiveRefreshShare).toBe(0.4);
+  });
+});
+
+/**
+ * Adaptive caster gate: a level whose own render is over the frame's affordable share raises the
+ * size a caster must be before it draws there, shedding its tiniest props until it is affordable
+ * again and halving back once it is. The gate is a size test only, so a building never trips it, and
+ * a level that is cheap is never touched. Same flyover as adaptive refresh, with a cast test in it.
+ */
+describe("VirtualShadowNode adaptive caster gate", () => {
+  const CASCADE = { clipExtents: [24, 96], mapSize: 64 };
+  const PERIOD = 1 / 60;
+  const SPEED = 20;
+  const FRAMES = 115;
+  /** Over the 0.4 share of a 16.7 ms frame by more than twice. */
+  const EXPENSIVE_MS = 15;
+
+  interface IGateWalk {
+    /** The gate scale each level held at the end of every frame, in order. */
+    readonly scales: number[][];
+    /** The casters each level's gate hid, as reported per frame; zero on a frame it did not render. */
+    readonly hidden: number[][];
+    /** Each level's reported draws per frame; zero on a frame it did not render. */
+    readonly draws: number[][];
+    /** The `TN_SHADOW_GATE` lines the walk printed. */
+    readonly notes: string[];
+    /** The `TN_SHADOW_REFRESH` lines the walk printed. */
+    readonly refreshNotes: string[];
+    /** Whether the tiny caster was ever hidden mid-render, across the whole walk. */
+    readonly smallHidden: boolean;
+    /** Whether the big caster was ever hidden mid-render — it must never be. */
+    readonly bigHidden: boolean;
+  }
+
+  /**
+   * A 20 m/s flyover over a two-level cascade with two casters under it. The 0.8 m box is ~1.39 m
+   * across: over the fine level's 1.125 m base gate, so kept at scale 1, and under its 1.69 m gate at
+   * scale 1.5, so the first over-budget render sheds it. The 20 m box is ~34.6 m across — larger than
+   * the cap's 9 m gate — so it must never be in reach, whatever the scale. `charge` is the fake clock
+   * each level's own render costs; the fine level is the expensive one.
+   */
+  function gateWalk(
+    charge: (frame: number, level: number) => number,
+    options: object = {},
+    delta = PERIOD,
+  ): IGateWalk {
+    const { camera, light, scene } = world();
+    const small = new Mesh(new BoxGeometry(0.8, 0.8, 0.8), new MeshStandardMaterial());
+    small.position.set(0, 0.4, 0);
+    small.castShadow = true;
+    scene.add(small);
+    const big = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial());
+    big.position.set(0, 10, 0);
+    big.castShadow = true;
+    scene.add(big);
+    scene.updateMatrixWorld(true);
+
+    const node = setupNode(light, { ...CASCADE, ...options });
+    const levels = node.levelNodes.length;
+    const clock = { ms: 0 };
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    let frame = 0;
+    let smallHidden = false;
+    let bigHidden = false;
+    node.levelNodes.forEach((levelNode, index) => {
+      (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        if (index === 0) {
+          smallHidden ||= small.visible === false;
+          bigHidden ||= big.visible === false;
+        }
+        clock.ms += charge(frame, index);
+      };
+    });
+
+    const scales: number[][] = Array.from({ length: levels }, () => []);
+    const hidden: number[][] = Array.from({ length: levels }, () => []);
+    const draws: number[][] = Array.from({ length: levels }, () => []);
+    const time = { value: 0 };
+    try {
+      for (frame = 0; frame < FRAMES; frame += 1) {
+        time.value += PERIOD;
+        const walked = time.value * SPEED;
+        camera.position.set(walked, 5, walked);
+        node.updateBefore({
+          camera,
+          renderer: {},
+          time: time.value,
+          deltaTime: delta,
+        } as unknown as NodeFrame);
+        node.stats.perLevel.forEach((stat, index) => {
+          scales[index]?.push(stat.gateScale);
+          hidden[index]?.push(stat.gateHidden);
+          if (stat.rendered === 1) draws[index]?.push(stat.draws);
+        });
+      }
+      const lines = info.mock.calls.map((call) => String(call[0]));
+      return {
+        bigHidden,
+        draws,
+        hidden,
+        notes: lines.filter((line) => line.startsWith(VIRTUAL_SHADOW_GATE_MARKER)),
+        refreshNotes: lines.filter((line) => line.startsWith(VIRTUAL_SHADOW_REFRESH_MARKER)),
+        scales,
+        smallHidden,
+      };
+    } finally {
+      now.mockRestore();
+      info.mockRestore();
+      node.dispose();
+    }
+  }
+
+  it("should raise an expensive level's gate, shed its tiniest caster and never the building", () => {
+    const adapted = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0));
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    // The fine level rose past its base gate, and the tiny caster left its bill; the building never.
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.smallHidden).toBe(true);
+    expect(adapted.bigHidden).toBe(false);
+    // It starts at the full bill and drops to the building alone once the gate passes the tiny one.
+    expect(Math.max(...(adapted.draws[0] as number[]))).toBe(2);
+    expect(Math.min(...(adapted.draws[0] as number[]))).toBe(1);
+    // Today's counts, with the switch off: the tiny caster draws every time.
+    expect((pinned.draws[0] as number[]).every((count) => count === 2)).toBe(true);
+    expect(adapted.notes.length).toBeGreaterThan(0);
+    for (const line of adapted.notes) {
+      expect(line).toMatch(/^TN_SHADOW_GATE level=0 width=48 ms=\d+\.\d scale=[\d.]+ hidden=\d+$/u);
+    }
+  });
+
+  it("should leave a cheap level at scale 1 and count exactly as adaptiveCasterGate off", () => {
+    const adapted = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0));
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    // Level 1 is measured every frame and always under the share, so it is never adapted: scale 1,
+    // and its draws are today's with or without the switch.
+    expect((adapted.scales[1] as number[]).every((scale) => scale === 1)).toBe(true);
+    expect(adapted.draws[1]).toEqual(pinned.draws[1]);
+    expect((adapted.draws[1] as number[]).every((count) => count === 1)).toBe(true);
+    expect(adapted.notes.some((line) => / level=1 /u.test(line))).toBe(false);
+  });
+
+  it("should decay the gate back toward 1 once the render becomes affordable", () => {
+    // Expensive for the first 40 frames, then free: the smoothed cost halves each render, and the
+    // gate halves back toward 1 only once that cost is under half the share.
+    const adapted = gateWalk((frame, level) => (level === 0 && frame < 40 ? EXPENSIVE_MS : 0));
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.scales[0]?.at(-1)).toBe(1);
+  });
+
+  it("should reproduce today's counts exactly with adaptiveCasterGate off", () => {
+    const pinned = gateWalk((_frame, level) => (level === 0 ? EXPENSIVE_MS : 0), {
+      adaptiveCasterGate: false,
+    });
+    expect(pinned.scales.every((level) => level.every((scale) => scale === 1))).toBe(true);
+    // Level 0's base gate keeps both casters and hides neither; level 1's 4.5 m base gate already
+    // hides the tiny one and keeps the building, exactly as before this gate existed.
+    expect((pinned.hidden[0] as number[]).every((count) => count === 0)).toBe(true);
+    expect((pinned.draws[0] as number[]).every((count) => count === 2)).toBe(true);
+    expect((pinned.draws[1] as number[]).every((count) => count === 1)).toBe(true);
+    expect(pinned.notes).toEqual([]);
+  });
+
+  it("should judge the budget against the 60 fps frame, not the frame the level inflated", () => {
+    // The frame reads 50 ms because the level's own 9 ms render is in it. Read against that delta
+    // the budget is 20 ms and 9 ms passes, so nothing widened — the bug. Capped at the 60 fps frame
+    // the budget is 6.7 ms, 9 ms is over it, and the gate rises until the tiny caster leaves the
+    // bill. A 120 Hz frame is stricter still; this is the same level under a long frame.
+    const adapted = gateWalk((_frame, level) => (level === 0 ? 9 : 0), {}, 0.05);
+    const pinned = gateWalk(
+      (_frame, level) => (level === 0 ? 9 : 0),
+      { adaptiveCasterGate: false },
+      0.05,
+    );
+    expect(Math.max(...(adapted.scales[0] as number[]))).toBeGreaterThan(1);
+    expect(adapted.smallHidden).toBe(true);
+    expect(Math.min(...(adapted.draws[0] as number[]))).toBe(1);
+    expect(pinned.scales[0]?.every((scale) => scale === 1)).toBe(true);
+  });
+
+  it("should ignore a level's first cold renders and never adapt from warm-up", () => {
+    // The first two renders of a level compile its shaders and read 60 ms however cheap it is; the
+    // rest cost 2 ms. Seeding the cost with a cold render would raise the gate and widen the trail
+    // for a level that is not expensive at all. Both read the same cost, so the gate standing at 1
+    // across the walk and no refresh line is the whole claim.
+    const perLevel = new Map<number, number>();
+    const cold = (_frame: number, level: number): number => {
+      const seen = (perLevel.get(level) ?? 0) + 1;
+      perLevel.set(level, seen);
+      return level === 0 && seen <= 2 ? 60 : 2;
+    };
+    const adapted = gateWalk(cold);
+    expect(adapted.scales[0]?.every((scale) => scale === 1)).toBe(true);
+    expect(adapted.notes).toEqual([]);
+    expect(adapted.refreshNotes).toEqual([]);
+    expect(adapted.smallHidden).toBe(false);
   });
 });

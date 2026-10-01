@@ -22,7 +22,9 @@ import {
 } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
 import { Matrix4 } from "three";
+import { type IFoliageCutoutSummary, convertFoliageCutout } from "../foliage.js";
 import { TN_VIRTUAL_GEOMETRY } from "../virtual/extension.js";
+import { type ICardLevelSummary, generateCardChain } from "./cards.js";
 import {
   type DiscreteLodSkipReason,
   type LodMinTrianglesScope,
@@ -93,6 +95,7 @@ export interface IModelLodRuntimeOptions {
 
 /** A partial override for one asset; nested objects overlay, they never replace. */
 export interface IModelLodOverride {
+  readonly cutout?: boolean;
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
   readonly preset?: LodPreset;
@@ -105,6 +108,12 @@ export interface IModelLodOverride {
  * re-enable. Resolution is per asset and happens where the asset is known (PRD-377 §3.2, §5).
  */
 export interface IModelLodOptions {
+  /**
+   * Convert eligible `BLEND` foliage to alpha-tested in the cook (PRD-458 §4). Default `true`,
+   * because a needle card exported as `BLEND` is refused a chain by rule and the tree then draws
+   * LOD0 forever. `false` keeps the authored blending; per asset, `cutout` in an override entry.
+   */
+  readonly cutout?: boolean;
   readonly enabled?: boolean;
   readonly generation?: IModelLodGenerationOptions;
   readonly overrides?: Readonly<Record<string, boolean | IModelLodOverride>>;
@@ -113,7 +122,11 @@ export interface IModelLodOptions {
 }
 
 export const LOD_GENERATOR = "threenative-discrete-lod";
-export const LOD_GENERATOR_VERSION = 1;
+/**
+ * Bumped when the *generated levels* change, so a stale cook cache cannot serve the old chain. The
+ * artifact schema stays put: a chain with or without the terminal level reads the same.
+ */
+export const LOD_GENERATOR_VERSION = 3;
 /** Bumped with the output layout so a stale cache entry cannot hide a schema change. */
 export const LOD_ARTIFACT_SCHEMA_VERSION = 1;
 /** The pinned simplifier this artifact's error metric was produced with. */
@@ -135,6 +148,29 @@ export const LOD_ERROR_TARGETS: readonly number[] = [0.002, 0.006, 0.02, 0.06];
 export const LOD_MIN_SAVING = 0.2;
 
 export const DEFAULT_LOD_MAX_LEVELS = 4;
+
+/**
+ * Every chain ends in one terminal coarse level, so a distant instance is never stranded on the
+ * error-target ladder's floor. Measured on machinefall, the coarsest error level kept 87% of LOD0,
+ * so a far pine cost 16k triangles at 285 m and the shadow levels drew tens of millions.
+ *
+ * The terminal level is cut by triangle count rather than error — `max` of this floor and
+ * {@link LOD_TERMINAL_KEEP_RATIO} of LOD0 — and is exempt from the saving gate. A mesh already
+ * under the floor gets no terminal level; there is nothing to gain.
+ */
+export const LOD_TERMINAL_MIN_TRIANGLES = 1500;
+export const LOD_TERMINAL_KEEP_RATIO = 0.05;
+
+/** The triangle target of a chain's terminal coarse level, in triangles. */
+export function terminalLevelTriangles(lod0Triangles: number): number {
+  return Math.max(LOD_TERMINAL_MIN_TRIANGLES, Math.ceil(LOD_TERMINAL_KEEP_RATIO * lod0Triangles));
+}
+
+/**
+ * An effectively unbounded error target, used only for the terminal level: the count binds and the
+ * simplifier reports the error it measured, which is the field the runtime's distance switch reads.
+ */
+const TERMINAL_TARGET_ERROR = 1e9;
 /**
  * Cheap pre-filter floor in triangles, not the benefit gate.
  *
@@ -187,7 +223,14 @@ export interface IModelLodPrimitiveSummary {
   readonly levels: readonly IModelLodLevel[];
   readonly mesh: string;
   readonly primitive: number;
-  readonly strategy: "discrete";
+  /**
+   * Per-level card report, present only when the chain came from card thinning rather than the
+   * triangle reducer (PRD-458 §4). Aligned with `levels`. `cellCoverage` is what the grid guarantees;
+   * `areaCoverage` is the honest un-scaled number, equal to the keep ratio, because `TN_discrete_lod`
+   * is index-only and cannot carry the per-level scale step — see `cards.ts`.
+   */
+  readonly cardLevels?: readonly ICardLevelSummary[];
+  readonly strategy: "discrete" | "cards";
   readonly trianglesBefore: number;
 }
 
@@ -238,6 +281,11 @@ export interface IModelLodJoined {
 
 export interface IModelLodSummary {
   readonly byteOverhead: number;
+  /**
+   * The foliage cutout conversion this asset got (PRD-458 §4). Present whenever the policy ran it,
+   * including when nothing qualified — an empty list is the honest report of "no eligible `BLEND`".
+   */
+  readonly cutout: IFoliageCutoutSummary;
   /** Migration/legacy notes the resolver raised; never a silent winner over an explicit setting. */
   readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
@@ -281,6 +329,8 @@ export interface ILodLegacyFlags {
 }
 
 export interface IResolvedLodPolicy {
+  /** Whether the cook converts eligible `BLEND` foliage to `MASK` before generation (PRD-458 §4). */
+  readonly cutout: boolean;
   readonly diagnostics: readonly ILodDiagnostic[];
   readonly enabled: boolean;
   /** Generation and runtime are separate cache identities (PRD-377 §3.2, §5). */
@@ -401,8 +451,13 @@ export function resolveLodPolicy(
   }
   if (!enabled && reasons.length === 0) reasons.push("disabled");
 
+  // Independent of `enabled`: an asset may keep its authored blending while its neighbours get a
+  // chain, and the global `false` / `"none"` still turns the whole block off.
+  const cutout = !globalOff && (assetBlock?.cutout ?? project?.cutout ?? true);
+
   const generationFingerprint = lodFingerprint({
     algorithm: `${LOD_GENERATOR}/${String(LOD_GENERATOR_VERSION)}`,
+    cutout,
     enabled,
     errorTargets: generation.errorTargets,
     join: generation.join,
@@ -414,6 +469,7 @@ export function resolveLodPolicy(
     toolchain: LOD_TOOLCHAIN,
   });
   return {
+    cutout,
     diagnostics,
     enabled,
     fingerprint: {
@@ -528,10 +584,13 @@ interface IAttributePack {
 /**
  * Packs the non-position attributes the simplifier may weight: normals, tangents, UV0/UV1 and
  * vertex colours. A normalized change of `1/weight` over distance `d` is about a change of `d` in
- * position, so normalized attributes get weight 1.
+ * position, so normalized attributes get weight 1. Application data (`_` semantics) is left out:
+ * its range is the application's own, and every level shares it unchanged.
  */
 function packAttributes(primitive: Primitive, vertexCount: number): IAttributePack {
-  const semantics = primitive.listSemantics().filter((semantic) => semantic !== "POSITION");
+  const semantics = primitive
+    .listSemantics()
+    .filter((semantic) => semantic !== "POSITION" && !semantic.startsWith("_"));
   const accessors = semantics
     .map((semantic) => ({ accessor: primitive.getAttribute(semantic), semantic }))
     .filter(
@@ -563,6 +622,8 @@ function packAttributes(primitive: Primitive, vertexCount: number): IAttributePa
 interface IGeneratedChain {
   readonly absoluteErrors: number[];
   readonly baselineTriangles: number;
+  /** Per-level card report; present only on a card-thinned chain (PRD-458 §4). */
+  readonly cardLevels?: readonly ICardLevelSummary[];
   readonly counts: number[];
   readonly errorScale: number;
   readonly errors: number[];
@@ -619,6 +680,17 @@ async function generateChain(
   if (kept.length === 0) return null;
   const keptSet = new Set(kept);
   const chain = candidates.filter((candidate) => keptSet.has(candidate));
+
+  const previous = chain[chain.length - 1] as (typeof chain)[number];
+  const terminal = terminalLevel(
+    positions,
+    indices,
+    attributes,
+    terminalLevelTriangles(lod0Triangles),
+    previous.triangles,
+    previous.error,
+  );
+  if (terminal !== null) chain.push(terminal);
   return {
     absoluteErrors: chain.map((level) => level.error * scale),
     baselineTriangles: lod0Triangles,
@@ -627,6 +699,233 @@ async function generateChain(
     errors: chain.map((level) => level.error),
     indices: chain.map((level) => level.indices),
     lod0Triangles,
+  };
+}
+
+/**
+ * A position-welded copy of a primitive: compact vertices, plus a map back to LOD0's numbering.
+ */
+interface IWeldedMesh {
+  readonly attributes: Float32Array;
+  readonly indices: Uint32Array;
+  /** Compacted vertex index to the original LOD0 vertex it was welded from. */
+  readonly origin: Uint32Array;
+  readonly positions: Float32Array;
+}
+
+/**
+ * Weld coincident positions into one compact vertex, the form the simplifier can actually reduce.
+ *
+ * An exported card set is often triangle soup: every triangle's corners are its own vertices and
+ * the buffer is not even compact, so the simplifier sees no shared edge and collapses nothing —
+ * `Prune` then removes the whole mesh rather than reduce it. Compacting by position gives it the
+ * topology the artist drew (the quad, the shared stem); {@link IWeldedMesh.origin} maps the
+ * simplified indices back to LOD0's own numbering, so the level stays an index-only view.
+ */
+function weldMesh(
+  positions: Float32Array,
+  indices: Uint32Array,
+  attributes: IAttributePack,
+): IWeldedMesh {
+  const vertexCount = Math.floor(positions.length / 3);
+  const seen = new Map<string, number>();
+  const remap = new Uint32Array(vertexCount);
+  const origin: number[] = [];
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const key = `${positions[vertex * 3]},${positions[vertex * 3 + 1]},${positions[vertex * 3 + 2]}`;
+    const compact = seen.get(key);
+    if (compact === undefined) {
+      seen.set(key, origin.length);
+      remap[vertex] = origin.length;
+      origin.push(vertex);
+    } else remap[vertex] = compact;
+  }
+  const compactPositions = new Float32Array(origin.length * 3);
+  const compactAttributes = new Float32Array(origin.length * attributes.stride);
+  for (let compact = 0; compact < origin.length; compact += 1) {
+    const source = origin[compact] as number;
+    for (let axis = 0; axis < 3; axis += 1)
+      compactPositions[compact * 3 + axis] = positions[source * 3 + axis] as number;
+    for (let slot = 0; slot < attributes.stride; slot += 1)
+      compactAttributes[compact * attributes.stride + slot] = attributes.data[
+        source * attributes.stride + slot
+      ] as number;
+  }
+  const compactIndices = new Uint32Array(indices.length);
+  for (let index = 0; index < indices.length; index += 1)
+    compactIndices[index] = remap[indices[index] as number] as number;
+  return {
+    attributes: compactAttributes,
+    indices: compactIndices,
+    origin: Uint32Array.from(origin),
+    positions: compactPositions,
+  };
+}
+
+/**
+ * One terminal level past the error ladder, cut by triangle count rather than error and exempt from
+ * the saving gate: the far instance needs *some* coarse step to reach, and a ladder that stalls at
+ * 87% of LOD0 never gives it one. It drops the border lock — a level this far out owes no stitch
+ * fidelity — while the target count binds and the measured error is recorded exactly as the
+ * error-target levels' is, so the runtime's distance switch reads it the same way.
+ *
+ * Two passes: `Prune` with the attribute weights when the mesh has real topology, then a position
+ * weld with unweighted attributes for the triangle soup an exporter leaves behind.
+ */
+function terminalLevel(
+  positions: Float32Array,
+  indices: Uint32Array,
+  attributes: IAttributePack,
+  terminalTriangles: number,
+  previousTriangles: number,
+  previousError: number,
+): { error: number; indices: Uint32Array; triangles: number } | null {
+  if (terminalTriangles >= previousTriangles) return null;
+  const target = terminalTriangles * 3;
+  // `Prune` spends whole isolated components and keeps the attribute weights, so a mesh with real
+  // topology reduces without smearing.
+  if (attributes.stride > 0) {
+    const [pruned, pruneError] = MeshoptSimplifier.simplifyWithAttributes(
+      indices,
+      positions,
+      3,
+      attributes.data,
+      attributes.stride,
+      attributes.weights,
+      null,
+      target,
+      TERMINAL_TARGET_ERROR,
+      ["Prune"],
+    );
+    const triangles = Math.floor(pruned.length / 3);
+    // Accept only a prune that actually reached the target: a reduction that stalls above it is
+    // exactly the stall the terminal exists to break, and the weld below is the fallback for it.
+    if (triangles > 0 && triangles <= terminalTriangles && triangles < previousTriangles)
+      return {
+        error: Math.max(pruneError, previousError),
+        indices: Uint32Array.from(pruned),
+        triangles,
+      };
+  }
+  // A triangle soup has no component to spend that is not the whole mesh, so it falls back to a
+  // position weld with the attributes unweighted for this far level only — the seam can no longer
+  // block a collapse it cannot be seen through. The simplified indices map back to LOD0's own.
+  const welded = weldMesh(positions, indices, attributes);
+  let compacted: Uint32Array;
+  let weldedError: number;
+  if (attributes.stride === 0) {
+    [compacted, weldedError] = MeshoptSimplifier.simplify(
+      welded.indices,
+      welded.positions,
+      3,
+      target,
+      TERMINAL_TARGET_ERROR,
+      [],
+    );
+  } else {
+    [compacted, weldedError] = MeshoptSimplifier.simplifyWithAttributes(
+      welded.indices,
+      welded.positions,
+      3,
+      welded.attributes,
+      attributes.stride,
+      new Array<number>(attributes.stride).fill(0),
+      null,
+      target,
+      TERMINAL_TARGET_ERROR,
+      [],
+    );
+  }
+  const triangles = Math.floor(compacted.length / 3);
+  if (triangles <= 0 || triangles >= previousTriangles) return null;
+  const mapped = new Uint32Array(compacted.length);
+  for (let index = 0; index < compacted.length; index += 1)
+    mapped[index] = welded.origin[compacted[index] as number] as number;
+  return {
+    error: Math.max(weldedError, previousError),
+    indices: mapped,
+    triangles,
+  };
+}
+
+/**
+ * The terminal level alone, for a primitive whose error ladder kept nothing.
+ *
+ * `LockBorder` on an all-border shape — every foliage card, a trunk of separate quads — refuses
+ * every error-target collapse, so `generateChain` returns `null` and the primitive was left at LOD0
+ * in every runtime level. The terminal pass is the one that exists for exactly this shape: it drops
+ * the border lock, so a tree's bark and trunk get a coarse step too, not only its needle cards.
+ */
+function generateTerminalChain(primitive: Primitive): IGeneratedChain | null {
+  const position = primitive.getAttribute("POSITION");
+  if (position === null) return null;
+  const positions = positionsOf(primitive);
+  if (positions === null) return null;
+  const vertexCount = position.getCount();
+  const indices = sourceIndices(primitive, vertexCount);
+  const lod0Triangles = Math.floor(indices.length / 3);
+  if (lod0Triangles <= 0) return null;
+  const scale = MeshoptSimplifier.getScale(positions, 3);
+  const attributes = packAttributes(primitive, vertexCount);
+  const terminal = terminalLevel(
+    positions,
+    indices,
+    attributes,
+    terminalLevelTriangles(lod0Triangles),
+    lod0Triangles,
+    0,
+  );
+  if (terminal === null) return null;
+  return {
+    absoluteErrors: [terminal.error * scale],
+    baselineTriangles: lod0Triangles,
+    counts: [terminal.triangles],
+    errorScale: scale,
+    errors: [terminal.error],
+    indices: [terminal.indices],
+    lod0Triangles,
+  };
+}
+
+/**
+ * The card ladder for a primitive the triangle reducer could not improve (PRD-458 §4).
+ *
+ * Two gates, both from the primitive itself rather than from a setting: the material must be `MASK`
+ * (an alpha-tested card is a hole you can see, so a `BLEND` primitive keeps its `BLEND` refusal no
+ * matter how card-shaped its index buffer is), and the index buffer must decompose into cards. The
+ * chain it returns is the same shape as the triangle chain's, so everything downstream — the
+ * attachment, the writer, the runtime, the validation — is the same code path.
+ */
+function generateCardsChain(
+  primitive: Primitive,
+  maxLevels: number,
+  minSaving: number,
+): IGeneratedChain | null {
+  if (primitive.getMaterial()?.getAlphaMode() !== "MASK") return null;
+  const positions = positionsOf(primitive);
+  if (positions === null) return null;
+  const vertexCount = Math.floor(positions.length / 3);
+  const indices = sourceIndices(primitive, vertexCount);
+  const scale = MeshoptSimplifier.getScale(positions, 3);
+  const chain = generateCardChain(
+    positions,
+    indices,
+    maxLevels,
+    minSaving,
+    scale,
+    undefined,
+    terminalLevelTriangles(Math.floor(indices.length / 3)),
+  );
+  if (chain === null) return null;
+  return {
+    absoluteErrors: [...chain.absoluteErrors],
+    baselineTriangles: chain.lod0Triangles,
+    cardLevels: chain.levels,
+    counts: [...chain.counts],
+    errorScale: scale,
+    errors: [...chain.errors],
+    indices: [...chain.indices],
+    lod0Triangles: chain.lod0Triangles,
   };
 }
 
@@ -683,9 +982,14 @@ function meshFlags(document: Document, animated: Set<GltfNode>): Map<Mesh, IMesh
   return flags;
 }
 
-function emptySummary(policy: IResolvedLodPolicy, generatedSeconds: number): IModelLodSummary {
+function emptySummary(
+  policy: IResolvedLodPolicy,
+  generatedSeconds: number,
+  cutout: IFoliageCutoutSummary = { converted: [], kept: [] },
+): IModelLodSummary {
   return {
     byteOverhead: 0,
+    cutout,
     diagnostics: [...policy.diagnostics],
     enabled: policy.enabled,
     errorTargets: [...policy.generation.errorTargets],
@@ -829,6 +1133,12 @@ async function buildJoinedRungs(
   for (const node of nodes) {
     const mesh = node.getMesh();
     if (mesh === null || hasMeshBelow.has(node)) continue;
+    // An `EXT_mesh_gpu_instancing` node draws its mesh once per instance; joining it would
+    // collapse every placed copy onto the batch node's own transform, so it stays authored.
+    if (node.getExtension("EXT_mesh_gpu_instancing") !== null) {
+      reason("boundary-unsafe");
+      continue;
+    }
     if ((meshRefs.get(mesh) ?? 0) > 1) {
       reason("boundary-unsafe");
       continue;
@@ -1011,11 +1321,16 @@ export async function generateDiscreteLod(
   const started = now();
   const policy = resolveLodPolicy(lod, logicalPath, legacy);
   const fingerprint = policy.fingerprint.generation;
-  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000);
+  // Before every early return: a `BLEND` needle card is refused a chain by rule, so the conversion
+  // is what makes one possible at all — and an asset can opt into it with `enabled: false`.
+  const cutout = policy.cutout
+    ? convertFoliageCutout(document)
+    : { converted: [], kept: [] as const };
+  if (!policy.enabled) return emptySummary(policy, (now() - started) / 1000, cutout);
   const joinRequested = policy.generation.join;
   const discrete = policy.generation.maxLevels > 1;
   // The join is orthogonal to the discrete ladder: a game can join with no discrete levels at all.
-  if (!discrete && !joinRequested) return emptySummary(policy, (now() - started) / 1000);
+  if (!discrete && !joinRequested) return emptySummary(policy, (now() - started) / 1000, cutout);
 
   await MeshoptSimplifier.ready;
 
@@ -1064,15 +1379,32 @@ export async function generateDiscreteLod(
       }
       const before = primitiveTriangleCount(primitive);
       trianglesBefore += before;
-      const chain = await generateChain(
+      // A needle card is two triangles, which the triangle reducer cannot cut without punching a
+      // hole, so it declines — and a tree is a bark trunk plus needle cards. When that happens the
+      // cards themselves are the unit to spend (PRD-458 §4), and the level it produces is an
+      // index-only view over the very same vertices, on the primitive's own material.
+      let chain = await generateChain(
         primitive,
         policy.generation.maxLevels,
         policy.generation.errorTargets,
         policy.generation.minSaving,
       );
+      const thinned =
+        chain === null
+          ? generateCardsChain(primitive, policy.generation.maxLevels, policy.generation.minSaving)
+          : null;
+      chain ??= thinned;
+      // A shape the error ladder declines and the card reducer cannot spend — the bark and trunk
+      // beside a tree's cards — still gets its terminal coarse step. Otherwise it sits at LOD0 in
+      // every runtime level and dominates the asset's far triangle count (PRD-473).
+      let strategy: "cards" | "discrete" = thinned === null ? "discrete" : "cards";
       if (chain === null) {
-        // The simplifier could not reach the configured saving at any target: a normal skip, not a
-        // failure, and named distinctly from the cheap pre-filter's `too-small`.
+        chain = generateTerminalChain(primitive);
+        strategy = "discrete";
+      }
+      if (chain === null) {
+        // No reducer could reach the configured saving: a normal skip, not a failure, and named
+        // distinctly from the cheap pre-filter's `too-small`.
         reasons.add("insufficient-reduction");
         skipped.push({
           mesh: mesh.getName(),
@@ -1083,7 +1415,10 @@ export async function generateDiscreteLod(
         continue;
       }
       extension ??= document.createExtension(TNDiscreteLod).setRequired(false);
-      const property = attachDiscreteLod(document, extension, primitive, chain);
+      const property = attachDiscreteLod(document, extension, primitive, {
+        ...chain,
+        strategy,
+      });
       byteOverhead += discreteLodBytes(property);
       levels = Math.max(levels, chain.counts.length);
       const finest = chain.counts[chain.counts.length - 1] ?? before;
@@ -1096,7 +1431,8 @@ export async function generateDiscreteLod(
         })),
         mesh: mesh.getName(),
         primitive: primitiveIndex,
-        strategy: "discrete",
+        ...(chain.cardLevels === undefined ? {} : { cardLevels: chain.cardLevels }),
+        strategy,
         trianglesBefore: before,
       });
     }
@@ -1118,6 +1454,7 @@ export async function generateDiscreteLod(
 
   return {
     byteOverhead,
+    cutout,
     diagnostics: [...policy.diagnostics],
     enabled: true,
     errorTargets: [...policy.generation.errorTargets],

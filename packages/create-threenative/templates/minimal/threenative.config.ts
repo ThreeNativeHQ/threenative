@@ -13,7 +13,9 @@ const config: IThreeNativeConfig = {
     orientation: "landscape", // Mobile viewport orientation.
     fullscreen: true, // Keep the game surface edge to edge.
     keepScreenOn: true, // Do not dim during a play session.
-    maxFps: 60, // Set 120 to opt into a supported high-refresh display mode.
+    // No `maxFps`: the engine targets the display's own refresh rate, capped at 120 on desktop
+    // and web and 60 on mobile, and reports the resolved value in every `TN_FRAME_BUDGET` window.
+    // Set a number to override it, or 0 to remove the ceiling.
   },
   window: {
     title: "__PROJECT_NAME__", // Desktop window title.
@@ -27,6 +29,17 @@ const config: IThreeNativeConfig = {
   },
   nativeEntry: "src/game.ts",
   ui: { renderer: "native" }, // This template draws its HUD in the scene and has no src/ui/.
+  // One asset tree, one compiler, one representation per artifact. Uncomment, then cook:
+  //   threenative build --target android   # cooks defaults.android; --profile <name> beats it
+  // buildProfiles: {
+  //   defaults: { android: "compact" },
+  //   profiles: {
+  //     compact: {
+  //       assets: { textures: { maxSize: 1024 }, models: { textures: { maxSize: 1024 } } },
+  //     } },
+  // },
+  // Contract, byte definitions, the build report:
+  //   node_modules/create-threenative/agent-docs/references/build-profiles.md
   renderer: {
     preferWebGPU: true, // Use WebGPU when the host exposes it.
     // The engine holds the `display.maxFps` budget by scaling the 3D drawing buffer, and reports

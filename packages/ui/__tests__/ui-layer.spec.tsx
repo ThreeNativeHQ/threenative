@@ -1,5 +1,6 @@
 import {
   type IUiStatePublisher,
+  UI_DEV_METRICS_MESSAGE,
   connectUiBridge,
   onUiIntent,
   publishUiState,
@@ -90,6 +91,38 @@ describe("UiLayer", () => {
     expect(renderer.root.findByType("span").props.children).toBe("hull:42");
 
     publisher.stop();
+    gameBridge.close();
+    renderer.unmount();
+    restore();
+  });
+
+  it("shows the scene verdict and no frame rate, so a screenshot cannot be misread", async () => {
+    const restore = installDocument();
+    const gameBridge = connectUiBridge({ end: "game" });
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(createElement(UiLayer, null, createElement("span")));
+      await flush();
+    });
+    expect(renderer.root.findAllByType("output")).toHaveLength(0);
+
+    await act(async () => {
+      // An `fps` field the current game no longer sends, so the check survives an older core: the
+      // rate is the loop's throttled rAF rate and must never reach the screen.
+      gameBridge.post({
+        type: UI_DEV_METRICS_MESSAGE,
+        fps: 42,
+        sceneWarning: "the last window was CPU-bound on scene shape",
+      });
+      await flush();
+    });
+
+    const chip = renderer.root.findByType("output");
+    expect(chip.props.className).toBe("tn-dev-scene-warning");
+    expect(chip.props.children).toBe("the last window was CPU-bound on scene shape");
+    expect(chip.props.style.pointerEvents).toBe("none");
+
     gameBridge.close();
     renderer.unmount();
     restore();

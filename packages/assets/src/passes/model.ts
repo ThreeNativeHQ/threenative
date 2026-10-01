@@ -28,6 +28,7 @@ import {
   type IAssetPassOutput,
   classify,
 } from "../compile.js";
+import { type IMaterialMergeSummary, mergeIdenticalMaterials } from "../foliage.js";
 import { createGltfReader, readGltfDocument } from "../gltf-io.js";
 import { KTX2_ENCODER_VERSION } from "../ktx2-encoder.js";
 import { TNDiscreteLod } from "../lod/extension.js";
@@ -49,6 +50,18 @@ import {
   bakeVirtualGeometry,
 } from "../virtual/bake.js";
 import { TNVirtualGeometry } from "../virtual/extension.js";
+import {
+  type IModelCompactOptions,
+  type IModelCompactSummary,
+  compactModel,
+  compactRequested,
+  composeTrsMatrix,
+  countCompactNodes,
+  countCompactPrimitives,
+  removedNames,
+  resolveCompactOptions,
+  sceneNodeNames,
+} from "./compact.js";
 import {
   type IEmbeddedTextureSummary,
   type IModelTexturesOptions,
@@ -76,6 +89,20 @@ export {
   type IModelTextureOverride,
   type IModelTexturesOptions,
 } from "./model-textures.js";
+
+export {
+  DEFAULT_PROTECTED_PATTERN,
+  buildProtectedSet,
+  compactModel,
+  compactRequested,
+  resolveCompactOptions,
+  type IModelCompactInstanceOptions,
+  type IModelCompactOptions,
+  type IModelCompactSummary,
+  type IModelProtectedNode,
+  type IResolvedCompactOptions,
+  type TModelProtectedRule,
+} from "./compact.js";
 
 /**
  * Optimizes compiled models: dedup → prune → simplify → reorder → quantize → textures →
@@ -134,6 +161,12 @@ export interface IModelSimplifyOptions {
 
 export interface IModelPassOptions {
   readonly passes?: IModelPassesOptions;
+  /**
+   * Lossless scene-graph compaction (flatten → instance → join) against one protected-node set.
+   * Absent means on with defaults; `false` is the kill switch; an object configures the
+   * sub-passes, the protected-name allow-list and the name regex. It never decimates geometry.
+   */
+  readonly compact?: boolean | IModelCompactOptions;
   /** Native WebGPU rejects interleaved vertex attributes; mobile output uses separate buffers. */
   readonly vertexLayout?: "interleaved" | "separate";
   /** Preserve generated TEXCOORD_1 data that is consumed by a runtime-attached lightmap. */
@@ -187,9 +220,12 @@ export interface IModelSimplifySummary {
 }
 
 export interface IModelPassOutputEntry {
+  readonly compact?: IModelCompactSummary;
   readonly embeddedTextures?: IEmbeddedTextureSummary;
   readonly extensions: readonly string[];
   readonly lod?: IModelLodSummary;
+  /** Distinct material count before and after the cook's merge (PRD-458 §5, AC-5). */
+  readonly materials?: IMaterialMergeSummary;
   readonly simplify?: IModelSimplifySummary;
   readonly triangles: number;
   readonly vertices: number;
@@ -198,6 +234,15 @@ export interface IModelPassOutputEntry {
 
 const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
+/** Bumped with the merge signature so a stale compile-cache entry cannot hide a changed merge. */
+const MATERIAL_MERGE_VERSION = 1;
+/**
+ * Bumped with the content-key signature behind `TN_ASSET_MODEL_DEDUPE`, for the same reason and
+ * the same reason it is not `PIPELINE_VERSION`: that constant is hand-maintained, so a change
+ * here would otherwise be invisible to the cache. This one rides the model pass's configuration,
+ * which the compile digest already hashes, so it invalidates model outputs and nothing else.
+ */
+const MODEL_DEDUPE_VERSION = 1;
 
 /** Relative bounding-box tolerance of the self-verify check (PRD: 0.1%). */
 const BBOX_TOLERANCE = 0.001;
@@ -269,6 +314,43 @@ function primitiveTriangles(primitive: GltfPrimitive): number {
   const drawn =
     primitive.getIndices()?.getCount() ?? primitive.getAttribute("POSITION")?.getCount() ?? 0;
   return Math.floor(drawn / 3);
+}
+
+/** Structural view of gltf-transform's `EXT_mesh_gpu_instancing` batch property. */
+interface IInstanceBatch {
+  getAttribute(semantic: string): Accessor | null;
+  listSemantics(): string[];
+}
+
+/** Reads instance `count` from the first batch attribute; 0 when the batch carries none. */
+function instanceCount(batch: IInstanceBatch): number {
+  for (const semantic of batch.listSemantics()) {
+    const attribute = batch.getAttribute(semantic);
+    if (attribute !== null) return attribute.getCount();
+  }
+  return 0;
+}
+
+/** Column-major glTF TRS matrix for one instance: `T * R * S`. */
+function instanceMatrix(batch: IInstanceBatch, index: number): number[] {
+  return composeTrsMatrix(
+    readElement(batch.getAttribute("TRANSLATION"), index, [0, 0, 0]),
+    readElement(batch.getAttribute("ROTATION"), index, [0, 0, 0, 1]),
+    readElement(batch.getAttribute("SCALE"), index, [1, 1, 1]),
+  );
+}
+
+/** Reads one element of an optional instance attribute, or the supplied fallback. */
+function readElement(
+  accessor: Accessor | null,
+  index: number,
+  fallback: readonly number[],
+): number[] {
+  if (accessor === null) return [...fallback];
+  const array = accessor.getArray();
+  const size = accessor.getElementSize();
+  const base = index * size;
+  return fallback.map((_, axis) => array[base + axis] ?? 0);
 }
 
 /**
@@ -414,7 +496,17 @@ export function reachableStats(root: RootOf): IModelStats {
     if (skin !== null) skins.add(skin);
     const mesh = node.getMesh();
     if (mesh !== null) {
-      const worldMatrix = node.getWorldMatrix();
+      const batch = node.getExtension("EXT_mesh_gpu_instancing") as IInstanceBatch | null;
+      // A node carrying EXT_mesh_gpu_instancing draws its mesh once per instance, each with the
+      // instance's own T * R * S; the source node count and world transforms reappear here so the
+      // self-verify compares like with like after an `instance` pass.
+      const instanceMatrices =
+        batch === null
+          ? [node.getWorldMatrix()]
+          : Array.from({ length: instanceCount(batch) }, (_, index) =>
+              multiplyMatrices(node.getWorldMatrix(), instanceMatrix(batch, index)),
+            );
+      const skin = node.getSkin();
       // Bind-pose joint matrices: joint world transform composed with the inverse bind.
       let jointMatrices: number[][] | undefined;
       if (skin !== null) {
@@ -427,26 +519,28 @@ export function reachableStats(root: RootOf): IModelStats {
           return multiplyMatrices(jointWorld, ibm);
         });
       }
-      for (const primitive of mesh.listPrimitives()) {
-        triangles += primitiveTriangles(primitive);
-        const position = primitive.getAttribute("POSITION");
-        if (position === null) continue;
-        vertices += position.getCount();
-        for (let index = 0; index < position.getCount(); index += 1) {
-          const [wx, wy, wz] = evaluateVertex(
-            position,
-            index,
-            primitive.getAttribute("JOINTS_0"),
-            primitive.getAttribute("WEIGHTS_0"),
-            skin !== null ? jointMatrices : undefined,
-            worldMatrix,
-          );
-          minX = Math.min(minX, wx);
-          minY = Math.min(minY, wy);
-          minZ = Math.min(minZ, wz);
-          maxX = Math.max(maxX, wx);
-          maxY = Math.max(maxY, wy);
-          maxZ = Math.max(maxZ, wz);
+      for (const matrix of instanceMatrices) {
+        for (const primitive of mesh.listPrimitives()) {
+          triangles += primitiveTriangles(primitive);
+          const position = primitive.getAttribute("POSITION");
+          if (position === null) continue;
+          vertices += position.getCount();
+          for (let index = 0; index < position.getCount(); index += 1) {
+            const [wx, wy, wz] = evaluateVertex(
+              position,
+              index,
+              primitive.getAttribute("JOINTS_0"),
+              primitive.getAttribute("WEIGHTS_0"),
+              skin !== null ? jointMatrices : undefined,
+              matrix,
+            );
+            minX = Math.min(minX, wx);
+            minY = Math.min(minY, wy);
+            minZ = Math.min(minZ, wz);
+            maxX = Math.max(maxX, wx);
+            maxY = Math.max(maxY, wy);
+            maxZ = Math.max(maxZ, wz);
+          }
         }
       }
     }
@@ -679,6 +773,7 @@ function lodCacheKey(lod: boolean | IModelLodOptions | "none" | undefined): unkn
 
 export function modelPass(options: IModelPassOptions = {}): IAssetPass {
   return {
+    appliesTo: ["model"],
     configuration: {
       passes: {
         dedup: options.passes?.dedup ?? true,
@@ -696,8 +791,18 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // Part of the compile cache key: change the cap or a codec and stale outputs must not
       // be re-served.
       simplify: options.simplify ?? null,
+      // The resolved compaction policy: a sub-pass switch, allow-list or regex edit changes the
+      // output, so it must change the cache key.
+      compact: resolveCompactOptions(options.compact),
       // Generation-only identity; runtime budget edits must not invalidate baked geometry.
       lod: lodCacheKey(options.lod),
+      // The material merge is unconditional and lossless, so the version string is the whole knob:
+      // it moves when the signature does, which invalidates every stale output at once.
+      materials: MATERIAL_MERGE_VERSION,
+      // Unconditional and lossless for the same reason: the cook shares one output between
+      // content-identical sources, so a bake published before this key existed named one output
+      // per copy and must not be re-served as if it had deduped.
+      dedupe: MODEL_DEDUPE_VERSION,
       // `"none"` and "absent" are different cache keys on purpose: absent bakes with defaults.
       virtual:
         options.virtual === "none"
@@ -711,6 +816,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         options.textures === "none"
           ? "none"
           : {
+              decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               maxSize: options.textures?.maxSize ?? null,
               keepSmallerSource: true,
@@ -721,7 +827,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
     name: "model",
     // A mobile compile replaces these two decoder-backed sub-passes in the effective options;
     // geometry rewrites and shared-image emission remain plain glTF and stay enabled there.
-    needsRuntimeDecoder: (options.passes?.meshopt ?? true) || options.textures !== "none",
+    needsRuntimeDecoder:
+      (options.passes?.meshopt ?? true) ||
+      (options.textures !== "none" && options.textures?.decoderFree !== true),
     apply: async (input: Buffer, logicalPath: string): Promise<Buffer | IAssetPassOutput> => {
       if (classify(logicalPath) !== "model") return input;
       const passes = options.passes ?? {};
@@ -746,7 +854,8 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         Object.values(enabled).some(Boolean) ||
         options.simplify !== undefined ||
         lodOptions !== undefined ||
-        virtualOptions !== undefined;
+        virtualOptions !== undefined ||
+        compactRequested(options.compact);
       if (!geometryActive && textureOptions === undefined) return input;
 
       const document = await readDocument(input, logicalPath);
@@ -772,8 +881,35 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // None is reorderable: simplification needs float positions, so it must precede
       // quantize, and texture compression must follow every stage that can drop a material.
       if (enabled.dedup) await dedup()(document);
-      if (enabled.prune)
+      // Lossless compaction runs before `prune`: `join`/`flatten` leave empty nodes behind for
+      // that pass — which the game configures — to remove, and `dedup` has already linked the
+      // duplicate meshes `instance` batches.
+      const namesBeforeCompact = compactRequested(options.compact)
+        ? sceneNodeNames(document)
+        : undefined;
+      let compact = compactRequested(options.compact)
+        ? await compactModel(document, resolveCompactOptions(options.compact))
+        : undefined;
+      if (enabled.prune) {
         await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
+        // The empty nodes `flatten`/`join` left behind are removed by this prune, so the shipped
+        // node count and the list of names it dropped are both measured after it. `flatten`'s own
+        // before/after stays what flatten itself did, not what prune later finished.
+        if (compact !== undefined && namesBeforeCompact !== undefined) {
+          const nodes = countCompactNodes(document);
+          compact = {
+            ...compact,
+            nodesAfter: nodes,
+            primitivesAfter: countCompactPrimitives(document),
+            removed: removedNames(namesBeforeCompact, sceneNodeNames(document)),
+          };
+        }
+      }
+      // Lossless and unconditional: materials that agree on every field that can change a pixel are
+      // one material, and the cook is the only place that knows the full field list (PRD-458 §5).
+      // After `prune` (which drops unreferenced materials) and before the cutout conversion, so the
+      // count the report gives is the one a runtime would have drawn with.
+      const materials = mergeIdenticalMaterials(document);
       if (options.simplify !== undefined) {
         await MeshoptSimplifier.ready;
         await simplify({
@@ -873,9 +1009,11 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       // that produced them.
       if (lod !== undefined && lod.generated > 0) validateDiscreteLod(verified);
       const entry: IModelPassOutputEntry = {
+        ...(compact === undefined ? {} : { compact }),
         ...(embeddedTextures === undefined ? {} : { embeddedTextures }),
         extensions: [...extensions].sort(),
         ...(lod === undefined ? {} : { lod }),
+        materials,
         ...(options.simplify === undefined
           ? {}
           : {
@@ -939,6 +1077,7 @@ function sharedSettings(
       textureOptions === undefined
         ? "none"
         : {
+            decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             keepSmallerSource: true,
             maxSize: textureOptions.maxSize ?? null,

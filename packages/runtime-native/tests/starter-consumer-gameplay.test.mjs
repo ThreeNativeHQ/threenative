@@ -45,6 +45,36 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     };
   }
 
+  /** A scaffolded consumer project: built artifact, config, the gate's scenario, installed runner. */
+  function desktopConsumerProject() {
+    const project = makeTempDirSync('starter-consumer-gameplay-');
+    const executableName = process.platform === 'win32' ? 'my-game.exe' : 'my-game';
+    mkdirSync(join(project, 'dist-native'), { recursive: true });
+    writeFileSync(join(project, 'dist-native', executableName), 'built consumer');
+    writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'my-game' }));
+    writeFileSync(
+      join(project, 'threenative.config.ts'),
+      'export default { app: { id: "com.threenative.my-game" } };\n',
+    );
+    mkdirSync(join(project, 'playtests'), { recursive: true });
+    writeFileSync(
+      join(project, scenario),
+      JSON.stringify({ assert: { movement: { entity: 'player' } }, steps: [] }),
+    );
+    const runner = join(
+      project,
+      'node_modules',
+      '@threenative',
+      'playtest',
+      'dist',
+      'runner',
+      'cli.js',
+    );
+    mkdirSync(join(runner, '..'), { recursive: true });
+    writeFileSync(runner, '// installed consumer runner');
+    return project;
+  }
+
   test('should reject target qualification when the artifact hash / application ID differs from the built consumer', () => {
     assert.throws(
       () => qualifyConsumerTargetRow(consumerRow({ artifactHash: 'b'.repeat(64) }), builtConsumer),
@@ -195,32 +225,7 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
   });
 
   test('records a desktop consumer row through the injected runner without a display', () => {
-    const project = makeTempDirSync('starter-consumer-gameplay-');
-    const executableName = process.platform === 'win32' ? 'my-game.exe' : 'my-game';
-    mkdirSync(join(project, 'dist-native'), { recursive: true });
-    const artifact = join(project, 'dist-native', executableName);
-    writeFileSync(artifact, 'built consumer');
-    writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'my-game' }));
-    writeFileSync(
-      join(project, 'threenative.config.ts'),
-      'export default { app: { id: "com.threenative.my-game" } };\n',
-    );
-    mkdirSync(join(project, 'playtests'), { recursive: true });
-    writeFileSync(
-      join(project, scenario),
-      JSON.stringify({ assert: { movement: { entity: 'player' } }, steps: [] }),
-    );
-    const runner = join(
-      project,
-      'node_modules',
-      '@threenative',
-      'playtest',
-      'dist',
-      'runner',
-      'cli.js',
-    );
-    mkdirSync(join(runner, '..'), { recursive: true });
-    writeFileSync(runner, '// installed consumer runner');
+    const project = desktopConsumerProject();
 
     const calls = [];
     const { expected, row } = verifyStarterConsumerGameplay({
@@ -252,6 +257,7 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
     assert.equal(expected.artifactHash, row.artifactHash);
     assert.match(calls[0].join(' '), /--target desktop/u);
     assert.match(calls[0].join(' '), /--executable/u);
+    assert.match(calls[0].join(' '), /--no-screenshots/u);
     const recorded = JSON.parse(
       readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
     );
@@ -282,5 +288,79 @@ describe('PRD-366 phase 2 — distributed consumer gameplay qualification', () =
         }),
       /TN_STARTER_CONSUMER_ARTIFACT_MISMATCH/u,
     );
+  });
+
+  // Linux arm64 CI, run 36353739871: the runner exited 2 with a 0-byte stdout and its real cause on
+  // stderr. Reading stdout first reported "emitted no JSON report" and threw the diagnosis away.
+  test('reports the runner failure it actually got when a nonzero exit left no stdout report', () => {
+    const project = desktopConsumerProject();
+
+    assert.throws(
+      () =>
+        verifyStarterConsumerGameplay({
+          applicationId: builtApplicationId,
+          project,
+          runner: () => ({
+            status: 2,
+            stderr: `${JSON.stringify({
+              diagnostics: [
+                {
+                  code: 'TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE',
+                  message: 'request timed out',
+                  severity: 'error',
+                },
+              ],
+              pass: false,
+            })}\n`,
+            stdout: '',
+          }),
+          target: 'desktop',
+        }),
+      /TN_STARTER_CONSUMER_RUNNER_FAILED.*TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE.*request timed out/su,
+    );
+
+    const recorded = JSON.parse(
+      readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
+    );
+    assert.equal(recorded[0].pass, false);
+    assert.match(recorded[0].failures[0], /TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE/u);
+  });
+
+  // CI run 36866893285, both scaffolded-starter lanes (linux-x64 and linux-arm64): the desktop
+  // gate passed 300 frames, then the consumer run exited 1 and reported
+  // `RUNNER_FAILED: no JSON failure report; stderr: (empty)`. Exit 1 is a FAILED ASSERTION and the
+  // report naming it is on stdout; only exit 2 puts its reason on stderr. So the status check ran
+  // before the report, discarded the report, and printed nothing about what failed.
+  test('names the failing assertion when exit 1 carries its report on stdout', () => {
+    const project = desktopConsumerProject();
+
+    assert.throws(
+      () =>
+        verifyStarterConsumerGameplay({
+          applicationId: builtApplicationId,
+          project,
+          runner: () => ({
+            status: 1,
+            stderr: '',
+            stdout: `${JSON.stringify({
+              assertionResults: [
+                { id: 'diagnostics', pass: true },
+                { id: 'movement.axisDelta', pass: false },
+              ],
+              diagnostics: [],
+              pass: false,
+              target: 'desktop',
+            })}\n`,
+          }),
+          target: 'desktop',
+        }),
+      /TN_STARTER_CONSUMER_ASSERTION_FAILED.*movement\.axisDelta/u,
+    );
+
+    const recorded = JSON.parse(
+      readFileSync(join(project, 'artifacts', 'native', 'consumer-targets.json'), 'utf8'),
+    );
+    assert.equal(recorded[0].pass, false);
+    assert.match(recorded[0].failures[0], /movement\.axisDelta/u);
   });
 });
