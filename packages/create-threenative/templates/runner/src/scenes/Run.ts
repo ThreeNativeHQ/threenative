@@ -8,8 +8,8 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
-import { type PerspectiveCamera, Vector3 } from "three";
-import { Runner } from "../entities/Runner.js";
+import { type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { type IRunnerModel, Runner } from "../entities/Runner.js";
 import type { RunnerPhysics } from "../physics.js";
 import { chaseRunner, setupCamera } from "../render/camera.js";
 import { createDustTrail } from "../render/dust.js";
@@ -31,12 +31,32 @@ const ACCELERATION = 0.25;
 export class Run extends Scene<GameState, RunnerPhysics> {
   static override readonly initialState = INITIAL_STATE;
 
+  #model: IRunnerModel | undefined;
+  #sky: Texture | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    [this.#model, this.#sky] = await Promise.all([
+      ctx.assets.model<IRunnerModel>("mannequin.glb"),
+      ctx.assets.texture("sky.jpg"),
+    ]);
+  }
+
   override enter(ctx: GameCtx): SceneFrame<GameState, RunnerPhysics> {
-    setupSky(ctx.scene);
-    const sun = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+    if (this.#model === undefined || this.#sky === undefined)
+      throw new Error("Run.enter ran before load() loaded mannequin.glb and sky.jpg.");
+    setupSky(ctx.scene, this.#sky);
+    const { key } = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
     // isMobile() arrives as an argument because src/render/ imports no framework package: the
     // platform decision is made here, in portable game code.
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { godraysLight: sun, mobile: isMobile() });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      godraysLight: key,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);
     ctx.add(camera);
@@ -55,7 +75,7 @@ export class Run extends Scene<GameState, RunnerPhysics> {
       random: () => ctx.random(),
     };
     const track = new Track(chunkContext);
-    const runner = new Runner(ctx);
+    const runner = new Runner(ctx, this.#model);
     ctx.entities.add("player", runner);
 
     const dust = ctx.add(new GPUParticles3D(createDustTrail()));

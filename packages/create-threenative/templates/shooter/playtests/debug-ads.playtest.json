@@ -1,0 +1,58 @@
+{
+  "name": "debug-ads",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "aim",
+      "press": "KeyF",
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "hold",
+      "waitTicks": 20,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "timeRemaining",
+        "changed": true
+      }
+    ],
+    "components": [
+      {
+        "entity": "rifle",
+        "component": "opticScreen",
+        "path": "x",
+        "gte": 0.48,
+        "lte": 0.52,
+        "allowTrivial": "aiming optics centre is a calibrated constant of the rifle viewmodel"
+      },
+      {
+        "entity": "rifle",
+        "component": "opticScreen",
+        "path": "y",
+        "gte": 0.48,
+        "lte": 0.52,
+        "allowTrivial": "aiming optics centre is a calibrated constant of the rifle viewmodel"
+      }
+    ]
+  }
+}

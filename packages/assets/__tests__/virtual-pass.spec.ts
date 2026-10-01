@@ -5,6 +5,7 @@ import { TorusKnotGeometry } from "three";
 import { describe, expect, it } from "vitest";
 import { modelPass } from "../src/passes/model.js";
 import { formatModelSizes } from "../src/report.js";
+import { bakeVirtualGeometry } from "../src/virtual/bake.js";
 import {
   NO_GROUP,
   ROOT_PARENT_ERROR,
@@ -199,6 +200,24 @@ describe("the virtual-geometry pass", () => {
     expect(roots).toBe(1);
     expect(level0).toBeGreaterThan(100);
   }, 300_000);
+
+  it("leaves a skinned primitive whole: a cluster cut cannot be skinned", async () => {
+    // The loader swaps a baked primitive for a `ClusteredMesh`, which is a plain `Mesh`: the skin
+    // is gone and cloning the rig throws. Skinned bodies ship as authored.
+    const document = await readBack(await denseGlb(), false);
+    const primitive = document.getRoot().listMeshes()[0]?.listPrimitives()[0];
+    const count = primitive?.getAttribute("POSITION")?.getCount() ?? 0;
+    primitive?.setAttribute(
+      "JOINTS_0",
+      document
+        .createAccessor()
+        .setType("VEC4")
+        .setArray(new Uint8Array(count * 4)),
+    );
+    const summary = await bakeVirtualGeometry(document, {});
+    expect(summary.primitives).toBe(0);
+    expect(summary.skipped).toBe(1);
+  });
 
   it("AC8 — a reader that has never heard of the extension gets the source mesh", async () => {
     const { buffer } = await compile(true);

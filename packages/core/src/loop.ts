@@ -222,6 +222,15 @@ export class FixedStepLoop {
   runtimeDiagnosticsSeries(): readonly IRenderPerformanceSample[] {
     return this.#renderPerformanceSamples.map((sample) => ({ ...sample }));
   }
+  /**
+   * Forget the render samples taken so far. The game calls it once, when the world first draws:
+   * the frames before it are the boot — held behind the startup compile, drawing nothing — and a
+   * steady-state window that keeps them fails `maxDrawCalls` closed on frames that have no draw
+   * count and puts seconds of compile into the frame-time percentile.
+   */
+  clearRuntimeDiagnostics(): void {
+    this.#renderPerformanceSamples = [];
+  }
   /** The frame budget this loop feeds, when one is installed. */
   get budget(): FrameBudget | undefined {
     return this.#budget;

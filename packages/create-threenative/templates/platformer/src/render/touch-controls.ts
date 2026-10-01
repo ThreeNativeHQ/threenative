@@ -9,7 +9,7 @@ import {
   RingGeometry,
   Vector2,
 } from "three";
-import { palette } from "./palette.js";
+import { C, palette } from "./palette.js";
 import {
   BUTTON_RADIUS,
   type ITouchInput,
@@ -68,7 +68,10 @@ export class TouchControls {
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = overlayMaterial(palette.shadow, 0.28);
+    // Ink, not white: this route is bright sky, bright grass and pale stone almost everywhere a
+    // thumb lands, and a white control at low opacity has nothing to contrast against. A dark ring
+    // reads on light art and on dark art alike, and the gold fill says which one is pressed.
+    this.#idleMaterial = overlayMaterial(C.ink, 0.3);
     this.#activeMaterial = overlayMaterial(palette.accent, 0.58);
     this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);

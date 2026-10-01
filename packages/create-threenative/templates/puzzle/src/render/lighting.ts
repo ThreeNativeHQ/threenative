@@ -1,55 +1,55 @@
-import {
-  AmbientLight,
-  DirectionalLight,
-  HemisphereLight,
-  PCFSoftShadowMap,
-  type Scene,
-} from "three";
-import { palette } from "./palette.js";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// A dark room with two warm lamps in it (authored with the props themselves, in `vault.ts`). The
+// whole read of this picture is that the *ambient* is almost nothing and every bright surface is
+// bright because a named source is pointing at it, so the temptation to raise the fill until the
+// crates are comfortably visible has to be resisted: the moment the floor stops being near-black
+// the picture stops being a vault.
+import { DirectionalLight, HemisphereLight, PCFSoftShadowMap, type Scene } from "three";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-/**
- * Key, fill, rim, ambient — named, so each one can be changed on its own.
- *
- * An indoor contraption room lives or dies on contact shadows: the player has to see that a crate
- * is *on* the floor and that the ball is *touching* the ramp, or every physical judgement becomes
- * a guess. So the key is hard, with a tight shadow frustum.
- *
- * It is also nearly overhead, and that was a fix rather than a preference. A key at fifteen
- * degrees off the horizon threw the left wall across half the play area, and the first capture
- * had a black floor on one side and a legible one on the other — the room looked broken. In an
- * interior with walls this tall, the key belongs above the room and the fill has to be strong
- * enough that its shadow still has a readable floor inside it.
- *
- * Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
- * the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
- * rendering a black pass.
- */
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+/** Returns the key light: the godrays stage raymarches a shadow map and refuses a shadowless one. */
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): DirectionalLight {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  scene.add(new HemisphereLight(palette.skyLow, palette.floor, 2.4));
 
-  const key = new DirectionalLight(0xfff2dd, 3);
-  key.position.set(-4, 24, 7);
+  // Sky above, floor bounce below, both cold and both very quiet.
+  scene.add(new HemisphereLight(0x33456a, 0x171d29, 0.6));
+
+  // The key. Warm, high, and from the lantern side, so crate tops catch a little of the same
+  // colour the plaster does and the shadows all fall the same way.
+  const key = new DirectionalLight(0xf4e8da, 0.8);
+  key.position.set(-7, 15, 5);
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 70;
-  key.shadow.camera.left = -18;
-  key.shadow.camera.right = 18;
-  key.shadow.camera.top = 18;
-  key.shadow.camera.bottom = -18;
+  const size = mobile ? 1024 : 2048;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 46;
+  // The extent covers the whole room and nothing else: the vault is 16 x 11 metres and a shadow
+  // camera any wider spends its texels outside the walls.
+  const extent = 10;
+  key.shadow.camera.left = -extent;
+  key.shadow.camera.right = extent;
+  key.shadow.camera.top = extent;
+  key.shadow.camera.bottom = -extent;
+  key.shadow.bias = -0.0006;
+  // Rounded geometry self-shadows at grazing angles without this, and the bias alone would have
+  // to grow big enough to detach the contact shadow under every crate.
   key.shadow.normalBias = 0.035;
   scene.add(key);
 
-  // Cool, from behind and low: it separates the steel and the wall tops from the dark beyond the
-  // room without adding a second set of shadows to read.
-  const rim = new DirectionalLight(palette.skyLow, 1.3);
-  rim.position.set(9, 5, -14);
+  // The rim: cold, low and shadowless, from the far corner the lanterns never reach. A crate's
+  // shadowed side is otherwise the same black as the floor it stands on, and the pile stops
+  // reading as forty separate boxes.
+  const rim = new DirectionalLight(0x5f7fb0, 0.24);
+  rim.position.set(9, 5, -7);
   scene.add(rim);
-  scene.add(new AmbientLight(palette.skyLow, 0.5));
 
   return key;
 }

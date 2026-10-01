@@ -2,44 +2,65 @@
   "name": "racing-boost-expires",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
     {
       "kind": "input",
-      "label": "cross-boost-pad",
+      "label": "throttle",
       "press": "ArrowUp",
-      "holdTicks": 130,
+      "holdTicks": 186,
       "release": false
     },
     {
       "kind": "input",
-      "label": "take-the-corner",
-      "press": ["ArrowUp", "ArrowRight"],
-      "holdTicks": 42,
-      "release": true
+      "label": "boost",
+      "press": ["ArrowUp", "Space"],
+      "holdTicks": 8,
+      "release": false
     },
     {
       "kind": "input",
       "label": "let-boost-expire",
       "press": "ArrowUp",
-      "holdTicks": 150,
+      "holdTicks": 206,
       "release": true
     }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
     "resources": [
-      { "id": "state", "path": "boostUses", "gte": 1, "changed": true },
-      { "id": "state", "path": "boostPeakSpeed", "gte": 9.01, "changed": true },
+      {
+        "id": "state",
+        "path": "boostUses",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "boostPeakSpeed",
+        "gte": 19,
+        "changed": true
+      },
       {
         "id": "state",
         "path": "boostActive",
         "equals": false,
         "allowTrivial": "The boost scenario waits for the temporary boost to end; false is the intentional final held state after speed was proven."
       },
-      { "id": "state", "path": "speedAfterBoost", "equals": 9, "changed": true }
+      {
+        "id": "state",
+        "path": "speedAfterBoost",
+        "gte": 19,
+        "changed": true
+      }
     ]
   }
 }

@@ -75,6 +75,11 @@ export class ReportingAndroidDriver {
 function playtestConfig({ adbPath, device, endpoint, scenarioPath, artifactDirectory }) {
   return {
     adbPath,
+    // The same declared acceptance `--allow-software` / `TN_PLAYTEST_ALLOW_SOFTWARE=1` already
+    // expresses on the CLI, read here because this proof calls the runner API directly. The
+    // emulator lane is configured `-gpu swiftshader_indirect` and says so in its workflow; a local
+    // run on real hardware leaves the variable unset and still fails closed.
+    allowSoftwareAdapter: process.env.TN_PLAYTEST_ALLOW_SOFTWARE === '1',
     android: { activity: ACTIVITY_CLASS, packageName: 'com.threenative.game' },
     artifactDirectory,
     device,

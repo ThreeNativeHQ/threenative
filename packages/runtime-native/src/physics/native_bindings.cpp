@@ -19,6 +19,7 @@ struct SimulationOwner {
   TnPhysicsSimulation *simulation = nullptr;
   uint32_t nextId = 0;
   uint32_t nextJointId = 0;
+  uint32_t nextVehicleId = 0;
 
   ~SimulationOwner() { dispose(); }
 
@@ -449,6 +450,44 @@ bool readBodyIdProperty(js::Engine *engine, js::JSValueHandle object,
   return true;
 }
 
+/// Read the vehicle options the TypeScript seam hands over. The wheels are already flattened
+/// into a Float32Array by the seam — twelve floats per wheel, in the order the C ABI documents —
+/// so the binding never has to walk a wheel object's optional fields.
+bool parseVehicleOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
+                         TnPhysicsVehicleOptions &options,
+                         const float *&wheels, uint32_t &wheelFloats) {
+  if (!engine->isObject(value))
+    return false;
+  uint32_t bodyId = 0;
+  if (!readBodyIdProperty(engine, value, "bodyId", bodyId) ||
+      !readVector(engine, value, "axle", options.axle_x, options.axle_y,
+                  options.axle_z))
+    return false;
+  const auto forwardAxis = engine->getProperty(value, "forwardAxis");
+  if (!engine->isNumber(forwardAxis) || !std::isfinite(engine->toNumber(forwardAxis)))
+    return false;
+  const double axis = engine->toNumber(forwardAxis);
+  if (axis != 0.0 && axis != 2.0)
+    return false;
+  const auto records = engine->getProperty(value, "wheels");
+  if (!isTypedArray(engine, records, "Float32Array"))
+    return false;
+  size_t bytes = 0;
+  auto *data =
+      static_cast<const float *>(engine->getArrayBufferData(records, &bytes));
+  if (data == nullptr || bytes % sizeof(float) != 0 ||
+      bytes / sizeof(float) <
+          static_cast<size_t>(TN_PHYSICS_VEHICLE_WHEEL_WIDTH))
+    return false;
+  options = {id, bodyId, static_cast<uint32_t>(axis), options.axle_x,
+             options.axle_y, options.axle_z,
+             static_cast<uint32_t>(bytes / sizeof(float) /
+                                   TN_PHYSICS_VEHICLE_WHEEL_WIDTH)};
+  wheels = data;
+  wheelFloats = static_cast<uint32_t>(bytes / sizeof(float));
+  return true;
+}
+
 bool readOptionalVector(js::Engine *engine, js::JSValueHandle object,
                         const char *name, float &x, float &y, float &z) {
   const auto value = engine->getProperty(object, name);
@@ -622,6 +661,107 @@ js::JSValueHandle makeSimulationObject(
                 !tn_physics_configure_character(owner->simulation, &options)) {
               return fail(engine, "character controller options are invalid");
             }
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "createVehicle",
+      engine->newFunction(
+          "createVehicle",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            if (args.empty() || owner->nextVehicleId > kMaxExactFloatId)
+              return fail(engine, "createVehicle requires options and an available id");
+            TnPhysicsVehicleOptions options{};
+            const float *wheels = nullptr;
+            uint32_t wheelFloats = 0;
+            if (!parseVehicleOptions(engine, args[0], owner->nextVehicleId,
+                                     options, wheels, wheelFloats))
+              return fail(engine, "vehicle options are invalid");
+            const int32_t id = tn_physics_create_vehicle(owner->simulation, &options, wheels);
+            if (id < 0)
+              return fail(engine,
+                          "TN_VEHICLE_INVALID: the chassis is missing, is not dynamic, or the "
+                          "wheels are malformed.");
+            owner->nextVehicleId += 1;
+            return engine->newNumber(id);
+          }));
+  engine->setProperty(
+      simulation, "setVehicleInput",
+      engine->newFunction(
+          "setVehicleInput",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float engineForce = 0.0f;
+            float brake = 0.0f;
+            float steering = 0.0f;
+            if (!parseBodyIdArgument(engine, args, id) || args.size() < 2 ||
+                !engine->isObject(args[1]) ||
+                !readFiniteNumber(engine, args[1], "engineForce", engineForce) ||
+                !readFiniteNumber(engine, args[1], "brake", brake) ||
+                !readFiniteNumber(engine, args[1], "steering", steering))
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: vehicle input needs a finite engineForce, brake "
+                          "and steering.");
+            if (!tn_physics_set_vehicle_input(owner->simulation, id, engineForce,
+                                              brake, steering))
+              return fail(engine, "TN_VEHICLE_UNKNOWN: the vehicle left the backend.");
+            return engine->newUndefined();
+          }));
+  engine->setProperty(
+      simulation, "readVehicleState",
+      engine->newFunction(
+          "readVehicleState",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            if (!parseBodyIdArgument(engine, args, id) || args.size() < 2 ||
+                !isTypedArray(engine, args[1], "Float32Array"))
+              return fail(engine, "readVehicleState requires an id and a Float32Array");
+            size_t bytes = 0;
+            auto *data = static_cast<float *>(
+                engine->getArrayBufferData(args[1], &bytes));
+            if (bytes % sizeof(float) != 0)
+              return fail(engine, "vehicle state buffer is malformed");
+            const int32_t count = tn_physics_read_vehicle_state(
+                owner->simulation, id, data, bytes / sizeof(float));
+            if (count < 0)
+              return fail(engine,
+                          "TN_VEHICLE_UNKNOWN: the vehicle left the backend or the buffer is too "
+                          "small.");
+            return engine->newNumber(count);
+          }));
+  engine->setProperty(
+      simulation, "resetVehicle",
+      engine->newFunction(
+          "resetVehicle",
+          [engine, owner](void *, const std::vector<js::JSValueHandle> &args) {
+            if (owner->simulation == nullptr)
+              return fail(engine, "physics simulation is disposed");
+            uint32_t id = 0;
+            float x = 0.0f;
+            float y = 0.0f;
+            float z = 0.0f;
+            float yaw = 0.0f;
+            if (!parseBodyIdArgument(engine, args, id) || args.size() < 3 ||
+                !engine->isObject(args[1]) ||
+                !readFiniteNumber(engine, args[1], "x", x) ||
+                !readFiniteNumber(engine, args[1], "y", y) ||
+                !readFiniteNumber(engine, args[1], "z", z) ||
+                !engine->isNumber(args[2]))
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: a respawn needs a finite position and yaw.");
+            const double yawNumber = engine->toNumber(args[2]);
+            if (!std::isfinite(yawNumber) || yawNumber < -std::numeric_limits<float>::max() ||
+                yawNumber > std::numeric_limits<float>::max())
+              return fail(engine,
+                          "TN_PHYSICS_NON_FINITE: a respawn needs a finite position and yaw.");
+            yaw = static_cast<float>(yawNumber);
+            if (!tn_physics_reset_vehicle(owner->simulation, id, x, y, z, yaw))
+              return fail(engine, "TN_VEHICLE_UNKNOWN: the vehicle left the backend.");
             return engine->newUndefined();
           }));
   engine->setProperty(

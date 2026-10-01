@@ -1,51 +1,42 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+//
+// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
+// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
+// The same image is the background, the environment light every surface reflects and is filled by,
+// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
-  BackSide,
-  BufferAttribute,
-  Color,
-  Fog,
-  MathUtils,
-  Mesh,
-  MeshBasicMaterial,
+  EquirectangularReflectionMapping,
+  FogExp2,
+  SRGBColorSpace,
   type Scene,
-  SphereGeometry,
+  type Texture,
+  Vector3,
 } from "three";
 import { palette } from "./palette.js";
 
 /**
- * A dusk gradient, and it is doing work.
- *
- * The horizon is the only thing on screen that does not move, so it is what tells the player they
- * are travelling forward rather than the track sliding underneath them. Warm at the bottom, deep
- * at the top, and the fog is tuned to hand the far chunks over to it rather than to a grey wash.
+ * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
+ * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
+ * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
  */
-export function setupSky(scene: Scene): void {
-  const top = new Color(palette.skyHigh);
-  const bottom = new Color(palette.skyLow);
-  scene.background = top;
-  // Far, on purpose. A near fog plane turned the whole track into the horizon's orange and
-  // left nothing on screen that was not sky.
-  scene.fog = new Fog(palette.skyHigh, 90, 260);
+const SKY_RANGE = 2.5;
 
-  const radius = 160;
-  const geometry = new SphereGeometry(radius, 24, 12);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const color = new Color();
-  for (let index = 0; index < positions.count; index += 1) {
-    // The warm band is confined to just above the horizon. Spread across the whole dome it
-    // filled four-fifths of the frame with one saturated orange.
-    const height = MathUtils.clamp((positions.getY(index) / radius + 0.01) / 0.1, 0, 1);
-    color.copy(bottom).lerp(top, height);
-    colors.set([color.r, color.g, color.b], index * 3);
-  }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
+/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-  const dome = new Mesh(
-    geometry,
-    // `fog: false` because the dome is the horizon; fogging it collapses the gradient above back
-    // into one flat wash, and then nothing on screen is stationary.
-    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
-  );
-  dome.frustumCulled = false;
-  scene.add(dome);
+export function setupSky(scene: Scene, sky: Texture): void {
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  scene.background = sky;
+  scene.backgroundIntensity = SKY_RANGE;
+  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+  // misses, and a sky to reflect, sharper as roughness drops.
+  scene.environment = sky;
+  scene.environmentIntensity = SKY_RANGE;
+  // The track runs to a hundred-odd metres of fog, and the ground goes into the photograph by a
+  // kilometre, so the far chunks hand over to the sky rather than ending at a line. The colour is
+  // the photograph's own horizon, so the fade lands where the sky is.
+  scene.fog = new FogExp2(palette.horizon, 0.003);
 }

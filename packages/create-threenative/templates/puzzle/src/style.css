@@ -4,14 +4,13 @@
 @source "./";
 
 @theme {
-  --color-ink: #07131d;
-  --color-panel: #0d2430;
-  --color-line: #1d4a58;
-  --color-lume: #f5c451;
-  --color-win: #79e0b2;
-  --color-danger: #ff7182;
-  --color-text: #c1dce2;
-  --color-muted: #6c9aa5;
+  --color-ink: #0a0e16;
+  --color-panel: #161d2a;
+  --color-line: #2f4356;
+  --color-lume: #47dcf5;
+  --color-warn: #ffdda1;
+  --color-text: #e8e2d4;
+  --color-dim: #7e8ea3;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

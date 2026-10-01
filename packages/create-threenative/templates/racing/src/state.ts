@@ -11,6 +11,8 @@ export function resolveRaceStatus(
 }
 
 export type GameState = {
+  /** True while the closed-loop demo driver has the wheel. A scenario asserts it drove. */
+  autopilot: boolean;
   /** Set from the UI\'s pause and resume intents, and read back by the menu. */
   paused: boolean;
   /** True once the UI layer has rendered and published its interactive rectangles. */

@@ -20,10 +20,14 @@ Three.js source in this project, yours to rewrite or delete.
 - `postprocessing.ts` — the editable presets and `setupPost` delegation.
 - `worldEnvironment.ts` — the editable Godot-named render chain: tone mapping/exposure and
   optional TSL stages, with `createRenderChain` reporting applied or refused stages.
-- `scenery.ts` — `createScenery`, the collider-free half of the world: columns under ledges,
-  spires in the middle distance, an unlit ridge on the horizon. **Keep something in all three
-  bands.** A lit floor alone in black reads as a test fixture no matter how good the floor
-  is, and it is the single cheapest thing to fix in a first screenshot.
+- `materials.ts` — `floorMaterial`, `structureMaterial` and `propMaterial`, over a `DataTexture`
+  metre grid and a grain normal map. **Two greys and one saturated colour is the whole rule:**
+  light grid where the player walks, dark grid on sides and structure, and a single saturated
+  hue reserved for what they can touch. A lit floor alone in black reads as a test fixture no
+  matter how good the floor is, and the darkest band is the cheapest thing to fix in a first
+  screenshot.
+- `arena.ts` — the ground, the walls and one platform builder. **Keep something in all three
+  depth bands:** the ground the player stands on, the dark mass behind it, and the sky above.
 
 ## Traps
 

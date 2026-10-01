@@ -1,60 +1,41 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
-// The atmosphere object is mechanism; this file owns the mesh, material, and exposure.
-import { BackSide, Color, Mesh, type Scene, SphereGeometry } from "three";
-import { cameraPosition, normalize, positionWorld } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
-import type { Node } from "three/webgpu";
+//
+// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
+// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
+// The same image is the background, the environment light every surface reflects and is filled by,
+// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
+import {
+  EquirectangularReflectionMapping,
+  FogExp2,
+  SRGBColorSpace,
+  type Scene,
+  type Texture,
+  Vector3,
+} from "three";
 import { palette } from "./palette.js";
 
-type AtmosphereLike = {
-  radiance(direction: unknown): unknown;
-};
+/**
+ * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
+ * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
+ * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
+ */
+const SKY_RANGE = 2.5;
 
-export function setupSky(scene: Scene, atmosphere?: AtmosphereLike): void {
-  const top = new Color(palette.skyHigh);
-  if (atmosphere === undefined) {
-    scene.background = top;
-    scene.fog = null;
-    return;
-  }
+/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-  // Outside the deliberately kilometre-scale atmosphere probe in Play.ts, and **inside** the
-  // camera's far plane. The view-space depth remains metres, so the package can apply its
-  // supplied 1/km coefficients.
-  //
-  // The radius was 20 000 against `camera.far = 20_000`, which leaves the `BackSide` hemisphere
-  // sitting exactly on the far plane. Pulled in to 16 000 it has room; measured, this was not
-  // what was making the sky black — see the multiplier below — but a dome flush with the far
-  // plane is one renderer tolerance away from being clipped, so it stays pulled in.
-  const geometry = new SphereGeometry(16_000, 24, 12);
-  const material = new MeshBasicNodeMaterial({
-    fog: false,
-    side: BackSide,
-    toneMapped: false,
-  });
-  const viewDirection = normalize(positionWorld.sub(cameraPosition));
-  // Exposure for the dome alone.
-  //
-  // 24 was authored when this template had no post chain, so the dome's radiance landed straight
-  // in the frame; the chain now exposes the pass at 1.15 and tone-maps it with ACES. A previous
-  // pass measured 203 of 255 at 24 and 25 at 1.5, and chose 1.5 because it matched "this
-  // template's last good baseline" of 22. That baseline was the problem: **22 of 255 is not a
-  // sky**, it is a black rectangle above the horizon, and it is what the smallest template showed
-  // a new project on its first frame with a sun fifty degrees up and a correctly-scattering
-  // atmosphere behind it.
-  //
-  // 8 lands the daytime sky around a hundred, which is a sky. Raising it further starts to blow
-  // the horizon out under ACES. This multiplier scales the dome and nothing else — the
-  // in-scattering `aerialPerspective` receives in postprocessing.ts comes from its own call and
-  // is unaffected, so this cannot double-count the way the old note feared.
-  material.colorNode = (atmosphere.radiance(viewDirection) as Node<"vec3">).mul(8);
-  const dome = new Mesh(geometry, material);
-  // The dome is authored at the origin and never moves; freeze only this known-static render
-  // object, leaving gameplay transforms under user control.
-  dome.updateMatrix();
-  dome.matrixAutoUpdate = false;
-  dome.frustumCulled = false;
-  scene.background = null;
-  scene.fog = null;
-  scene.add(dome);
+export function setupSky(scene: Scene, sky: Texture): void {
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  scene.background = sky;
+  scene.backgroundIntensity = SKY_RANGE;
+  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+  // misses, and a sky to reflect, sharper as roughness drops.
+  scene.environment = sky;
+  scene.environmentIntensity = SKY_RANGE;
+  // Almost nothing inside the arena (1.4% at 30 m), and the ground plane gone into the horizon by
+  // a kilometre — so the floor meets the sky instead of ending at a line.
+  scene.fog = new FogExp2(palette.horizon, 0.003);
 }

@@ -945,6 +945,20 @@ export async function warmUpScene(
     }
     return passResult;
   };
+  // `render()` only submits the hidden frame. A driver compiles a pipeline the first time the GPU
+  // executes it, so returning here handed that compile to the first frame the player sees: 150 ms
+  // for one template's post chain. Wait for the queue to drain, inside the same budget as the rest.
+  const settleGpu = async (): Promise<void> => {
+    if (passResult === undefined) return;
+    const queue = (
+      renderer.raw as
+        | { backend?: { device?: { queue?: { onSubmittedWorkDone?: () => Promise<unknown> } } } }
+        | undefined
+    )?.backend?.device?.queue;
+    if (typeof queue?.onSubmittedWorkDone !== "function") return;
+    const drained = Promise.resolve().then(() => queue.onSubmittedWorkDone?.());
+    await within(drained, Math.max(0, startedAt + budgetMs - now()), yieldFrame, now);
+  };
   const withPasses = (report: IWarmUpReport): IWarmUpReport =>
     passResult === undefined
       ? report
@@ -966,6 +980,7 @@ export async function warmUpScene(
       const finished = await within(invokeCompile(scene), budgetMs, yieldFrame, now);
       options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
       renderWarmPassesOnce();
+      await settleGpu();
       return finish(
         withPasses({
           compiled: finished ? 1 : 0,
@@ -986,6 +1001,7 @@ export async function warmUpScene(
       remaining > 0 ? await within(invokeCompile(scene), remaining, yieldFrame, now) : false;
     options.onProgress?.({ done: finished ? 1 : 0, total: 1 });
     renderWarmPassesOnce();
+    await settleGpu();
     return finish(
       withPasses(
         withComputeReport(
@@ -1064,6 +1080,7 @@ export async function warmUpScene(
   }
 
   renderWarmPassesOnce();
+  await settleGpu();
   const report: IWarmUpReport = {
     compiled,
     pipelines: candidates,

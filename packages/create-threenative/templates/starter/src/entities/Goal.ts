@@ -1,48 +1,45 @@
 import { type ICtx, SoftBody3D } from "@threenative/core";
 import { Area3D, CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { type BufferGeometry, type Material, Matrix4, Mesh } from "three";
+import { type BufferGeometry, Matrix4, Mesh } from "three";
+import { platform } from "../render/arena.js";
+import { propMaterial } from "../render/materials.js";
 import { tessellatePennant } from "../render/pennant.js";
-import { block, tube } from "../render/shapes.js";
+import { tube } from "../render/shapes.js";
 import type { GameState } from "../state.js";
 
 /**
- * The far side of the gap: a fixed island, a flagpole, and the pennant the packaged glTF
+ * The far side of the gap: a fixed deck, a flagpole, and the pennant the packaged glTF
  * proof asset is cut from. Landing anywhere on it ends the run.
  *
- * The island top sits below the ledge on purpose. A same-height landing has to be jumped
+ * The deck top sits below the ledge on purpose. A same-height landing has to be jumped
  * within a couple of frames of the edge; dropping 0.4 m widens that window to about half
- * a second, which is what makes coyote time feel generous instead of decorative. Its visual
- * slab is shallow because the waterline sits just below the top, so the far island reads as
- * a sandbar rather than a submerged rectangular block.
+ * a second, which is what makes coyote time feel generous instead of decorative. The deck is
+ * the same light-grid plate over a dark-grid base as the near platform, so the far side reads
+ * as more of the same ground and the gap between them stays legible as a gap.
  */
 export const ISLAND = { depth: 2.6, height: 0.1, top: -0.4, width: 3, x: 7.9, z: 0 } as const;
 const POLE = { height: 2.4, radius: 0.05, x: 8.4, z: -0.5 } as const;
 const PENNANT_SCALE = 0.55;
-
-export interface IGoalMaterials {
-  /** The island itself: the same ground the ledge is made of, across the gap. */
-  readonly floor: Material;
-  /** The pole. The accent role, and the only warm thing on the far side. */
-  readonly goal: Material;
-  /** The sandbar's beach rim and the flank below it. */
-  readonly shore: Material;
-}
 
 export class Goal {
   /** The whole marker, so a playtest `visibility` row can ask whether it is on screen. */
   readonly mesh: SoftBody3D;
   readonly pennant: SoftBody3D;
   readonly area: Area3D;
-  readonly #body: RigidBody3D;
+  readonly #bodies: RigidBody3D[] = [];
 
-  constructor(ctx: ICtx<GameState, IPhysicsContext>, materials: IGoalMaterials, pennant: Mesh) {
+  constructor(ctx: ICtx<GameState, IPhysicsContext>, pennant: Mesh) {
     // Children carry world coordinates and the group stays at the origin: a physics body
     // reads its object's own transform, and a nested offset would silently desync them.
-    const island = block(ISLAND.width, ISLAND.height, ISLAND.depth, materials.floor, {
-      radius: 0.16,
-    });
-    island.position.set(ISLAND.x, ISLAND.top - ISLAND.height / 2, ISLAND.z);
-    const pole = tube(POLE.radius, POLE.radius, POLE.height, materials.goal);
+    const { base, plate: deck } = platform(
+      ISLAND.width,
+      ISLAND.depth,
+      ISLAND.top,
+      ISLAND.x,
+      ISLAND.z,
+      0.05,
+    );
+    const pole = tube(POLE.radius, POLE.radius, POLE.height, propMaterial);
     pole.position.set(POLE.x, ISLAND.top + POLE.height / 2, POLE.z);
     // The proof triangle points +x once it is turned on its side, which is a pennant. Its
     // hoist edge lands on the pole; the rest of it flies clear.
@@ -67,26 +64,22 @@ export class Goal {
     });
     this.pennant.name = "finish-flag-cloth";
     this.mesh = this.pennant;
-    // A sand rim and a flank, so the far side is a sandbar and not a green rectangle floating on
-    // the water. Left bare it was the one piece of the coast with a hard cut edge and no shore,
-    // and it read as unfinished next to the main island's beach.
-    const rim = block(ISLAND.width + 0.7, 0.09, ISLAND.depth + 0.7, materials.shore, {
-      radius: 0.3,
-    });
-    rim.position.set(ISLAND.x, ISLAND.top - ISLAND.height - 0.02, ISLAND.z);
-    const flank = block(ISLAND.width + 0.35, 0.5, ISLAND.depth + 0.35, materials.shore, {
-      radius: 0.24,
-    });
-    flank.position.set(ISLAND.x, ISLAND.top - ISLAND.height - 0.3, ISLAND.z);
-    this.mesh.add(island, rim, flank, pole);
+    this.mesh.add(deck, base, pole);
     ctx.add(this.mesh);
 
-    this.#body = new RigidBody3D({
-      object: island,
-      physics: ctx.physics,
-      shape: CollisionShape3D.fromMesh(island),
-      type: "fixed",
-    });
+    // Two fixed bodies, one per solid: the plate is what a landing lands on, and the base is
+    // what a body still falling past the deck's flank hits instead of passing through. Both are
+    // trimeshes, so the collider is the grid the player can see.
+    for (const mesh of [deck, base]) {
+      this.#bodies.push(
+        new RigidBody3D({
+          object: mesh,
+          physics: ctx.physics,
+          shape: CollisionShape3D.fromMesh(mesh, "trimesh"),
+          type: "fixed",
+        }),
+      );
+    }
     // Tall enough to catch a landing, shallow enough that a body still falling past the
     // island's flank in the gap is metres below it and never trips the finish.
     this.area = new Area3D({
@@ -118,7 +111,7 @@ export class Goal {
 
   dispose(): void {
     this.area.dispose();
-    this.#body.dispose();
+    for (const body of this.#bodies) body.dispose();
     this.mesh.removeFromParent();
   }
 }

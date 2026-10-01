@@ -1,0 +1,7 @@
+{
+  "name": "tower-defense",
+  "title": "Tower defense",
+  "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",
+  "genre": "strategy",
+  "kit": true
+}

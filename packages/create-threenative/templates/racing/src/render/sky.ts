@@ -1,48 +1,56 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
+// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
+// The same image is the background, the environment light every surface reflects and is filled by,
+// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
-  BackSide,
-  BufferAttribute,
   Color,
-  Fog,
-  MathUtils,
-  Mesh,
-  MeshBasicMaterial,
+  EquirectangularReflectionMapping,
+  FogExp2,
+  SRGBColorSpace,
   type Scene,
-  SphereGeometry,
+  type Texture,
+  Vector3,
 } from "three";
 import { palette } from "./palette.js";
 
-export function setupSky(scene: Scene): void {
-  const top = new Color(palette.skyHigh);
-  const bottom = new Color(palette.skyLow);
-  scene.background = top;
-  // Fog starts well past the trackside furniture. At the old `36` the grandstands on the far side
-  // of the circuit were already half dissolved, which is why the infield read as one flat wash
-  // instead of a place with things in it.
-  scene.fog = new Fog(bottom, 70, 230);
+/**
+ * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
+ * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
+ * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
+ */
+const SKY_RANGE = 2.5;
 
-  // A vertical gradient, not a flat fill. This dome used to be one solid colour, and a blind score
-  // of the first frame read it as exactly that: the sky sampled CEE6EA byte-identical at four
-  // different heights.
-  // Sky is most of the frame, so a flat one costs more than anything else here. Edit or delete
-  // this — it is your file.
-  const radius = 260;
-  const geometry = new SphereGeometry(radius, 24, 12);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const color = new Color();
-  for (let index = 0; index < positions.count; index += 1) {
-    const height = MathUtils.clamp((positions.getY(index) / radius + 0.2) / 0.65, 0, 1);
-    color.copy(bottom).lerp(top, height);
-    colors.set([color.r, color.g, color.b], index * 3);
+/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+
+/**
+ * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
+ *
+ * The second argument is optional because `Race.load()` does not wait for the JPEG: the scene has
+ * to enter on the first frame or the playtest bridge describes nothing. Passing `undefined` here is
+ * the fallback the scene starts in, and calling it again with the texture is the swap.
+ */
+export function setupSky(scene: Scene, sky?: Texture): void {
+  if (sky === undefined) {
+    scene.background = new Color(palette.skyHigh);
+    scene.environment = null;
+    scene.environmentIntensity = 0;
+  } else {
+    sky.mapping = EquirectangularReflectionMapping;
+    sky.colorSpace = SRGBColorSpace;
+    scene.background = sky;
+    scene.backgroundIntensity = SKY_RANGE;
+    // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+    // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+    // misses, and a sky to reflect, sharper as roughness drops.
+    scene.environment = sky;
+    scene.environmentIntensity = SKY_RANGE;
   }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-
-  const dome = new Mesh(
-    geometry,
-    // `fog: false` because the dome is the horizon; fogging it collapses the gradient above back
-    // into the single wash this replaced.
-    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
-  );
-  dome.frustumCulled = false;
-  scene.add(dome);
+  // Nothing inside the circuit (2.4% at 40 m), and the ground gone into the horizon by a kilometre
+  // — so the treeline meets the sky instead of ending at a line.
+  scene.fog = new FogExp2(palette.horizon, 0.0024);
 }

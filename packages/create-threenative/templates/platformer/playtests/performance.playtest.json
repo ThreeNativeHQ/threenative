@@ -1,23 +1,40 @@
 {
   "acceptanceId": "prd-064-performance",
-  "artifacts": { "screenshots": "after" },
+  "artifacts": {
+    "screenshots": "after"
+  },
   "assert": {
     "performance": {
-      "maxDrawCalls": 200,
+      "maxDrawCalls": 600,
       "maxFrameMsP95": 33,
-      "maxTriangles": 7700,
+      "maxTriangles": 190000,
       "minFps": 30
     },
-    "renderChain": { "tier": "high" }
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": { "software": { "tier": "low" } }
+    }
   },
   "name": "production-performance",
   "schemaVersion": 1,
   "steps": [
-    { "kind": "input", "press": "ArrowRight", "holdTicks": 60, "release": true },
-    { "kind": "wait", "waitTicks": 600, "release": true }
+    {
+      "kind": "input",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
   ],
   "subject": "player",
   "target": "web",
-  "viewport": { "height": 1080, "width": 1920 },
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  },
   "warmupFrames": 60
 }

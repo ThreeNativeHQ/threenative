@@ -1,37 +1,54 @@
-import { AmbientLight, DirectionalLight, PCFSoftShadowMap, type Scene } from "three";
-import { palette } from "./palette.js";
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// One sun. The sky image in `sky.ts` is the fill light — its environment reaches every face the
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
+// The torch point lights in `dungeon.ts` are the only other sources, and they carry no shadows.
+import { DirectionalLight, Object3D, PCFSoftShadowMap, type Scene } from "three";
+import { DUNGEON_CENTRE } from "./dungeon.js";
+import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-// Returns the key light: `WorldEnvironment`'s godrays stage raymarches against a shadow map, so
-// the scene hands the sun to `setupPost` and a shadowless light is refused by name instead of
-// rendering a black pass.
-export function setupLighting(scene: Scene, renderer: ShadowRenderer): DirectionalLight {
+/** Half the shadow camera's box, in metres. The dungeon is 36 x 12, so 24 covers it and its sky. */
+const EXTENT = 24;
+
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight } {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // Warm, but not the accent itself: keyed with the trim colour, the stone, the hero and the loot
-  // all took the same gold cast and the dungeon lost every distinction between them.
-  const key = new DirectionalLight(0xffe0b0, 2.6);
+  // Warm white, matched by eye to the photographed midday sun against its own sky.
+  const key = new DirectionalLight(0xfff1e0, 4.5);
   key.name = "key-light";
-  key.position.set(-8, 12, 6);
+  key.position.copy(SUN_DIRECTION).multiplyScalar(40);
+  // A directional light aims at its target, and the default target sits on the world origin — six
+  // metres west of the middle of this dungeon, which pushed the far rooms out of the shadow map.
+  const target = new Object3D();
+  target.name = "key-light-target";
+  target.position.set(DUNGEON_CENTRE, 0, 0);
+  scene.add(target, key);
+  key.target = target;
   key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 70;
-  key.shadow.camera.left = -24;
-  key.shadow.camera.right = 24;
-  key.shadow.camera.top = 20;
-  key.shadow.camera.bottom = -20;
-  key.shadow.bias = -0.0008;
-  key.shadow.normalBias = 0.04;
-  scene.add(key);
-
-  const rim = new DirectionalLight(palette.player, 0.9);
-  rim.name = "rim-light";
-  rim.position.set(12, 6, -12);
-  scene.add(rim);
-  scene.add(new AmbientLight(0x6a5a48, 1.5));
-
-  return key;
+  // One map fitted to the dungeon: 4096² over 48 m is under a centimetre a texel, so every shadow
+  // has the same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here
+  // their level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 90;
+  key.shadow.camera.left = -EXTENT;
+  key.shadow.camera.right = EXTENT;
+  key.shadow.camera.top = EXTENT;
+  key.shadow.camera.bottom = -EXTENT;
+  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.005;
+  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
+  // shadow map, so `setupPost` needs the light itself.
+  return { key };
 }

@@ -52,7 +52,6 @@ import {
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
 import {
-  type ISceneWarning,
   describeSceneShape,
   describeSceneWarning,
   formatSceneWarning,
@@ -164,9 +163,11 @@ export interface IGamePluginRuntime {
   /**
    * Hold start-scene entry until `gate` settles.
    *
-   * The returned promise settles after `Scene.enter()` has run. A runner can therefore release the
-   * gate after applying pre-entry setup, then await the returned promise before describing
-   * entity-derived capabilities. The frame loop remains held throughout.
+   * The returned promise settles after the scene that owns the world has entered: the start scene
+   * unless it navigated out of its own `enter()`, in which case it is the scene it navigated to,
+   * loaded and entered. A runner can therefore release the gate after applying pre-entry setup,
+   * then await the returned promise before describing entity-derived capabilities — the entities
+   * they read are the ones the world actually has. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
   readonly observations: IGameRuntimeObservations;
@@ -706,6 +707,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
+  /**
+   * The scene a `goto()` is loading right now, or undefined when none is.
+   *
+   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
+   * reader that needs the world's entities has to wait for this rather than for the scene it
+   * navigated from. The playtest handshake reads exactly that.
+   */
+  #pendingSceneEnter: Promise<void> | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -856,10 +865,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#scene = scene;
     this.#sceneName = name;
     const loaded = scene.load(ctx);
-    if (loaded === undefined) {
-      return this.#enterTransitionScene(scene, ctx);
-    }
-    return Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const transition =
+      loaded === undefined
+        ? this.#enterTransitionScene(scene, ctx)
+        : Promise.resolve(loaded).then(() => this.#enterTransitionScene(scene, ctx));
+    const settled = (): void => {
+      if (this.#pendingSceneEnter === transition) this.#pendingSceneEnter = undefined;
+    };
+    // Handled here as well as by the caller: a start scene that navigates inside `enter()` throws
+    // its transition away, and the gate below still has to learn that no world arrived.
+    void transition.then(settled, settled);
+    this.#pendingSceneEnter = transition;
+    return transition;
   }
 
   #enterScene(scene: Scene<TState, TPhysics>, ctx: ICtx<TState, TPhysics>): boolean {
@@ -1383,9 +1400,6 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // A plan and a measurement that disagree is the finding; one number pretending to be both
     // is how an optimizer reports a win it did not deliver.
     let lastWorldDrawCalls: number | undefined;
-    // The last verdict, so `doctor` and the dev chip read the same one the log printed rather than
-    // recomputing it from a different window.
-    let lastSceneWarning: ISceneWarning | undefined;
     // Completion on the last frame must not make an otherwise compiling window look clean.
     let compilingInWindow = false;
     let lastCompileCount = renderer.compileCount;
@@ -1457,8 +1471,23 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
                 describeSceneShape(reported, this.#cameraCull?.report),
                 target.targetFps,
               );
-              lastSceneWarning = warning;
               if (warning !== undefined) console.warn(formatSceneWarning(warning));
+              // The same sentence goes to the UI on a dev launch, so a human watching the window
+              // and an agent reading the log are told the same thing at the same time. No frame
+              // rate rides it: the loop's own rAF rate reads throttled under a compositor or a
+              // virtual display, so a number drawn from it lies in exactly the sessions where
+              // somebody is trying to measure.
+              if (
+                devMetricsEnabled &&
+                warning !== undefined &&
+                this.#uiBridge?.hasPeer() === true
+              ) {
+                const verdict = describeSceneWarning(warning);
+                if (verdict !== postedVerdict) {
+                  postedVerdict = verdict;
+                  this.#uiBridge.post({ type: UI_DEV_METRICS_MESSAGE, sceneWarning: verdict });
+                }
+              }
               if (scaler === undefined) return;
               // **Not while the world is still arriving.** The scaler judges the game by closed
               // frame-budget windows, and the windows that close during a launch are not the game:
@@ -1538,33 +1567,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const geometryCapture = new GeometryCapture();
     this.#geometryCapture = geometryCapture;
     const budgetNow = (): number => globalThis.performance?.now() ?? Date.now();
-    // Dev metrics are decided once per launch, and counted here rather than timed: a chip that
-    // changed every frame would be unreadable, and a timer would be a second clock.
+    // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
+    // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
+    // say nothing new.
     const devMetricsEnabled = isDevLaunch();
-    let devMetricsFrames = 0;
+    let postedVerdict: string | undefined;
     const gameLoop = new FixedStepLoop({
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
       ...(spans === undefined ? {} : { spans }),
       maxSteps: this.#config.maxSteps,
       onRender: () => {
-        // A dev launch also reports the rate it is running at, for the UI's own frame-rate chip.
-        // Four times a second is a readable number and no measurable cost; the loop's own smoothed
-        // rate is the measurement, not a second one taken here.
-        if (devMetricsEnabled && this.#uiBridge?.hasPeer() === true) {
-          devMetricsFrames += 1;
-          if (devMetricsFrames >= 15) {
-            devMetricsFrames = 0;
-            // The scene verdict rides the same message as the frame rate, so a human watching the
-            // window and an agent reading the log are told the same thing at the same time.
-            this.#uiBridge.post({
-              type: UI_DEV_METRICS_MESSAGE,
-              fps: gameLoop.fps,
-              ...(lastSceneWarning === undefined
-                ? {}
-                : { sceneWarning: describeSceneWarning(lastSceneWarning) }),
-            });
-          }
-        }
         observeCompilation();
         // The engine owns this requestAnimationFrame loop instead of delegating to Three's
         // setAnimationLoop(). Three's renderer therefore cannot reset its frame counters for us;
@@ -1819,6 +1831,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
+            if (!worldRendered) gameLoop.clearRuntimeDiagnostics();
             worldRendered = true;
           }
           if (this.#renderMetricsEnabled) {
@@ -2002,7 +2015,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     try {
       this.#enterScene(scene, ctx);
       timeline.enteredMs ??= now();
-      for (const startGate of startGates) startGate.resolveEntered();
+      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
+      // run a world that is still in `load()`, and the entity registry is empty until it enters.
+      // Releasing the gate there described a game that had not been built yet, so every
+      // entity-derived capability was read off nothing. The gate follows the scene that entered.
+      const worldEntered = this.#pendingSceneEnter;
+      const entered = (): void => {
+        for (const startGate of startGates) startGate.resolveEntered();
+      };
+      if (worldEntered === undefined) entered();
+      else
+        void worldEntered.then(entered, (error: unknown) => {
+          for (const startGate of startGates) startGate.rejectEntered(error);
+        });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);

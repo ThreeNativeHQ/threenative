@@ -412,7 +412,9 @@ export class VirtualGeometryPlugin {
     const swaps: { clustered: ClusteredMesh; plain: Mesh }[] = [];
     for (const [object, association] of this.parser.associations) {
       const plain = object as Mesh;
-      if (plain.isMesh !== true) continue;
+      // Files baked before the bake learned to skip skinned bodies still carry the extension.
+      if (plain.isMesh !== true || (plain as { isSkinnedMesh?: boolean }).isSkinnedMesh === true)
+        continue;
       const { meshes, primitives } = association;
       if (meshes === undefined || primitives === undefined) continue;
       const def = this.parser.json.meshes?.[meshes]?.primitives?.[primitives]?.extensions?.[

@@ -1,0 +1,85 @@
+{
+  "name": "tower-defense-defeat",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "faster",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "fastest",
+      "press": "KeyG",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "auto",
+      "press": "KeyN",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "launch",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "the-line-breaks",
+      "waitTicks": 9000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "status",
+        "equals": "LOST",
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "lives",
+        "equals": 0,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "speed",
+        "equals": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "leaks",
+        "gte": 25,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "spent",
+        "equals": 0,
+        "allowTrivial": "The defeat scenario builds nothing: the free Sentry alone must lose, and zero spent is the held invariant, not the transition proof."
+      }
+    ]
+  }
+}

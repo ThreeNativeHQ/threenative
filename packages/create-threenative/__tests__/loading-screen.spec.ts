@@ -21,10 +21,6 @@ import {
   loading as actionLoading,
   createLoadingScreen as createActionLoadingScreen,
 } from "../templates/action-rpg/src/render/loading.js";
-import {
-  createLoadingScreen as createDefenseLoadingScreen,
-  loading as defenseLoading,
-} from "../templates/defense/src/render/loading.js";
 import { createLoadingScreen, loading } from "../templates/platformer/src/render/loading.js";
 import {
   createLoadingScreen as createRacingLoadingScreen,
@@ -42,6 +38,10 @@ import {
   createLoadingScreen as createStarterLoadingScreen,
   loading as starterLoading,
 } from "../templates/starter/src/render/loading.js";
+import {
+  createLoadingScreen as createDefenseLoadingScreen,
+  loading as defenseLoading,
+} from "../templates/tower-defense/src/render/loading.js";
 
 const templateRoot = path.resolve("packages/create-threenative/templates");
 type LoadingWarmup = { readonly status: "complete" | "incomplete" | "unavailable" };

@@ -1,9 +1,8 @@
-import type { ICtx } from "@threenative/core";
+import { type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { Area3D, CollisionShape3D } from "@threenative/physics";
-import { type Group, MathUtils } from "three";
+import { type AnimationClip, Group, MathUtils, type Object3D } from "three";
 import { type IRunnerConventions, prepareRunnerConventions } from "../conventions.js";
 import { OBSTACLE_LAYER, type RunnerPhysics } from "../physics.js";
-import { runner as runnerMesh } from "../render/shapes.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 import { LANE_X } from "../track.js";
@@ -16,6 +15,19 @@ const GRAVITY = -19;
 /** Within this many metres of an obstacle's centre and still alive: a near miss. */
 const NEAR_MISS = 1.5;
 
+/** The clips `assets/mannequin.glb` ships, by the name this file plays them under. */
+const CLIPS = {
+  jog: "Jog_Fwd_Loop",
+  jumpStart: "Jump_Start",
+  jumpLoop: "Jump_Loop",
+  jumpLand: "Jump_Land",
+} as const;
+
+export interface IRunnerModel {
+  readonly scene: Object3D;
+  readonly animations: readonly AnimationClip[];
+}
+
 /**
  * The player.
  *
@@ -23,9 +35,14 @@ const NEAR_MISS = 1.5;
  * solver makes both worse. What *is* physics is the collision — the runner carries an `Area3D`
  * that scans the obstacle layer, so a hit is an overlap the engine reports rather than a distance
  * check this file would have to keep in sync with the obstacle geometry.
+ *
+ * The figure is `assets/mannequin.glb`, the same CC0 mannequin the `minimal` arena opens on.
+ * Swap in any rigged glTF with the same clip roles by editing `CLIPS`; `requiredClips` fails the
+ * load, by name, if one is missing.
  */
 export class Runner {
   readonly mesh: Group;
+  readonly character: SkeletalMesh3D;
   readonly tags = ["player", "runner"];
   readonly hitbox: Area3D;
   #conventions: IRunnerConventions;
@@ -35,10 +52,24 @@ export class Runner {
   #crashed = false;
   #nearMisses = 0;
 
-  constructor(ctx: GameCtx) {
-    this.mesh = runnerMesh();
+  constructor(ctx: GameCtx, model: IRunnerModel) {
+    this.mesh = new Group();
     this.mesh.name = "player";
-    this.#conventions = prepareRunnerConventions(this.mesh);
+    this.character = new SkeletalMesh3D({
+      source: model.scene,
+      clips: model.animations,
+      requiredClips: Object.values(CLIPS),
+      strideRoot: this.mesh,
+    });
+    const figure = this.character.root;
+    figure.traverse((object) => {
+      object.castShadow = true;
+    });
+    // The model faces +Z; the track runs toward -Z, so turn the figure to face down it.
+    figure.rotation.y = Math.PI;
+    this.mesh.add(figure);
+    this.#conventions = prepareRunnerConventions(figure);
+    this.character.play(CLIPS.jog);
     ctx.add(this.mesh);
     this.hitbox = new Area3D({
       collisionLayer: 0,
@@ -91,21 +122,37 @@ export class Runner {
     this.#lane = MathUtils.clamp(this.#lane, 0, LANE_X.length - 1);
 
     const stickJump = (touch?.move.y ?? 0) > 0.65;
-    if ((ctx.input.justPressed("jump") || stickJump) && !this.airborne) this.#vertical = JUMP_SPEED;
+    const jumped = (ctx.input.justPressed("jump") || stickJump) && !this.airborne;
+    if (jumped) this.#vertical = JUMP_SPEED;
+    const wasAirborne = this.airborne;
     this.#height = Math.max(0, this.#height + this.#vertical * dt);
     this.#vertical = this.#height > 0 ? this.#vertical + GRAVITY * dt : 0;
+    this.#animate(jumped, wasAirborne);
 
     const targetX = LANE_X[this.#lane] ?? 0;
     const blend = Math.min(1, Math.max(0, dt) * LANE_BLEND);
     this.mesh.position.x += (targetX - this.mesh.position.x) * blend;
+    this.mesh.position.y = this.#height;
     this.mesh.position.z = -distance;
     this.mesh.rotation.z = (targetX - this.mesh.position.x) * 0.35;
     this.#conventions.applyGrounding(this.#height, dt);
+    this.character.update(dt);
     this.hitbox.setPosition({
       x: this.mesh.position.x,
       y: this.#height + 0.7,
       z: this.mesh.position.z,
     });
+  }
+
+  /** Picks a clip from what the runner is doing: run, take off, hang, land, run again. */
+  #animate(jumped: boolean, wasAirborne: boolean): void {
+    if (jumped) this.character.play(CLIPS.jumpStart, { fade: 0.08, mode: "once" });
+    else if (this.airborne && this.character.finished)
+      this.character.play(CLIPS.jumpLoop, { fade: 0.15 });
+    else if (wasAirborne && !this.airborne)
+      this.character.play(CLIPS.jumpLand, { fade: 0.06, mode: "once" });
+    else if (!this.airborne && this.character.finished)
+      this.character.play(CLIPS.jog, { fade: 0.2 });
   }
 
   /** True when the runner is beside, rather than on top of, an obstacle at `x` on this stretch. */

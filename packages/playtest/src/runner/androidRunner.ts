@@ -47,6 +47,7 @@ import {
 import { withTargetAbortSignal } from "./deviceSignal.js";
 import { buildReport, playtestStepDrivesMovement, writeObservationArtifacts } from "./runner.js";
 import { analyzeFramebufferCoverageRecording } from "./videoAnalysis.js";
+import { nativeCaptureProvenance } from "../evaluators/adapter-class.js";
 import {
   accumulatedPathLength,
   appendPosition,
@@ -244,8 +245,8 @@ async function runDevicePlaytestInternal(
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
-        acceptCompileSettled: config.allowSoftwareAdapter === true,
         bridge: attached,
+        declaredSoftware: config.allowSoftwareAdapter === true,
         // A device host can die mid-launch, and its mailbox then simply stops answering. Without
         // this the wait reads that as a slow loading gate and burns its whole deadline; with it
         // the report names the exit and carries the console tail that says why.
@@ -533,7 +534,11 @@ async function runDevicePlaytestInternal(
       undefined,
       labeledSamples,
       framebufferCoverage,
-      undefined,
+      // The adapter this machine reported, read by the engine's own `adapter.info` probe and
+      // carried in the census snapshot. Without it a device run reached `capture === undefined`,
+      // so every `assert.renderChain.perAdapter` failed closed on a run that had a real adapter —
+      // the flat expectation was used against a tier the software branch would have accepted.
+      nativeCaptureProvenance(after?.pipelineCensus ?? before?.pipelineCensus, target.name, scenario.viewport),
       undefined,
       movementSamples,
       setupApplication,
@@ -560,7 +565,10 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
-      if (diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT") {
+      if (
+        diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
+        diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"
+      ) {
         // A timed-out operation must say what stopped answering: a host whose process exited is
         // a crash with evidence in its console tail, not a generic timeout (PRD-167).
         const hostAlive = await target.driver.isAlive().catch(() => undefined);

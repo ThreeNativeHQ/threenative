@@ -1,56 +1,50 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
+//
+// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
+// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
+// The same image is the background, the environment light every surface reflects and is filled by,
+// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
-  BackSide,
-  BufferAttribute,
-  Color,
-  type ColorRepresentation,
-  Fog,
-  MathUtils,
-  Mesh,
-  MeshBasicMaterial,
+  EquirectangularReflectionMapping,
+  FogExp2,
+  SRGBColorSpace,
   type Scene,
-  SphereGeometry,
+  type Texture,
+  Vector3,
 } from "three";
 import { palette } from "./palette.js";
 
-type SkyOptions = { readonly bottom: ColorRepresentation; readonly top: ColorRepresentation };
+/**
+ * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
+ * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
+ * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
+ */
+const SKY_RANGE = 2.5;
 
-export function setupSky(scene: Scene, options?: SkyOptions): void {
-  const resolved = options ?? { bottom: palette.skyLow, top: palette.skyHigh };
-  if (resolved.top === undefined || resolved.bottom === undefined)
-    throw new TypeError("setupSky requires both top and bottom colors.");
+/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
-  const top = new Color(resolved.top);
-  const bottom = new Color(resolved.bottom);
-  const radius = 90;
-  const geometry = new SphereGeometry(radius, 24, 12);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const color = new Color();
-  for (let index = 0; index < positions.count; index += 1) {
-    const height = MathUtils.clamp((positions.getY(index) / radius + 0.2) / 0.65, 0, 1);
-    color.copy(bottom).lerp(top, height);
-    colors.set([color.r, color.g, color.b], index * 3);
+export function setupSky(scene: Scene, sky: Texture, software = false): void {
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  scene.background = sky;
+  scene.backgroundIntensity = SKY_RANGE;
+  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+  // misses, and a sky to reflect, sharper as roughness drops.
+  //
+  // Not on a software adapter. PMREM-filtering a 4096x2048 photo keeps a CPU rasteriser's GPU
+  // process busy past its watchdog and the next pipeline compiles die with the device (measured on
+  // four cores: a 28 s hitch and two failed pipelines with it on, 37 pipelines in 11 s with it
+  // off). That lane is not render evidence, so it gives up the fill light.
+  if (!software) {
+    scene.environment = sky;
+    scene.environmentIntensity = SKY_RANGE;
   }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  const dome = new Mesh(
-    geometry,
-    // The dome is radius 90 and the fog below ends at 180, so without `fog: false` the whole
-    // dome sits past the far plane and renders as one flat fog-coloured wash — the gradient
-    // authored just above never reaches the screen.
-    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
-  );
-  // The dome is authored at the origin and never moves; freeze only this
-  // known-static render object, leaving gameplay transforms under user control.
-  dome.updateMatrix();
-  dome.matrixAutoUpdate = false;
-  dome.frustumCulled = false;
-  scene.background = top;
-  // Fog starting 18 units out washes the mid-ground, which is where a platformer puts the next
-  // jump. A blind judge marked a build down for exactly that in round 9: "the distance fogs to
-  // near-white". Push the near plane past the playable middle distance and fade toward the
-  // horizon instead. Tune both numbers to your level — this is your file.
-  scene.fog = new Fog(bottom, 70, 180);
-  scene.add(dome);
+  // Almost nothing inside the arena (1.4% at 30 m), and the ground gone into the horizon by a
+  // kilometre — so the floor meets the sky instead of ending at a line. The colour is the
+  // photograph's own horizon, sampled from the same HDR, so the fade lands where the sky is.
+  scene.fog = new FogExp2(palette.skyLow, 0.003);
 }

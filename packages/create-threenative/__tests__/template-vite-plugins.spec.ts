@@ -72,6 +72,28 @@ describe("template vite configs", () => {
     expect(unwired).toEqual([]);
   });
 
+  it("holds every dev server that cooks assets until the first cook settles", async () => {
+    // A fresh scaffold's `public/` holds only the icon and favicon, so until the dev pipeline
+    // cooks `assets/` into it every request answers from the source fallback and
+    // `/assets.manifest.json` 404s. The cook is ~19 s on a cold project, and Vite was ready in
+    // 431 ms, so the page loaded inside the cook window and the `via` marker read "source" for
+    // every resource — a manifest assertion failing on a boot race, reported 2026-10-01 on
+    // template-nonvisual (starter 1/3) with every other assertion in the scenario green.
+    const ungated: string[] = [];
+    for (const root of [TEMPLATE_ROOT, path.resolve("examples")]) {
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const file = path.join(root, entry.name, "vite.config.ts");
+        const source = await readFile(file, "utf8").catch(() => null);
+        if (source === null || !source.includes("watchAssets(")) continue;
+        const gated =
+          /async configureServer\(server\)/.test(source) && source.includes("await handle.ready");
+        if (!gated) ungated.push(path.relative(process.cwd(), file));
+      }
+    }
+    expect(ungated).toEqual([]);
+  });
+
   it("passes the project asset config to every dev asset watcher", async () => {
     const unconfigured: string[] = [];
     for (const template of await templates()) {

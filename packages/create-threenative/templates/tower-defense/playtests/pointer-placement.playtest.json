@@ -1,0 +1,128 @@
+{
+  "name": "tower-defense-pointer-placement",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "arm",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hover",
+      "pointerPosition": {
+        "x": 0.53917,
+        "y": 0.42127
+      },
+      "waitTicks": 5,
+      "release": true,
+      "screenshot": "hovered"
+    },
+    {
+      "kind": "input",
+      "label": "clear-hover",
+      "pointerPosition": {
+        "x": 0.01,
+        "y": 0.01
+      },
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "touch-held",
+      "pointers": [
+        {
+          "buttons": 1,
+          "id": 1,
+          "x": 0.53917,
+          "y": 0.42127
+        }
+      ],
+      "waitTicks": 2,
+      "release": false,
+      "screenshot": "touch-held"
+    },
+    {
+      "kind": "input",
+      "label": "release",
+      "pointers": [],
+      "waitTicks": 1,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "placed",
+      "waitTicks": 3,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "spent",
+        "atSteps": [
+          {
+            "label": "hover",
+            "equals": 0
+          },
+          {
+            "label": "touch-held",
+            "equals": 0
+          },
+          {
+            "label": "placed",
+            "equals": 100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "atSteps": [
+          {
+            "label": "hover",
+            "equals": 1
+          },
+          {
+            "label": "placed",
+            "equals": 2
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "battle",
+        "component": "hoverPad",
+        "atSteps": [
+          {
+            "label": "hover",
+            "equals": 6
+          },
+          {
+            "label": "clear-hover",
+            "equals": -1
+          }
+        ]
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "before-after"
+  }
+}

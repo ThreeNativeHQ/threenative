@@ -22,13 +22,23 @@ export function setupPost(
   environment: {
     godraysLight?: DirectionalLight;
     mobile?: boolean;
+    /** The renderer named a software adapter; this game's answer is its `low` tier. */
+    software?: boolean;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
   } = {},
 ): void {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
+  const tier = resolveQualityTier({
+    mobile: environment.mobile,
+    software: environment.software,
+    tier: environment.tier,
+  });
   const source = environment.tier === undefined ? "platform" : "override";
-  console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
+  console.info(
+    `TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} software=${
+      environment.software === true
+    } source=${source}`,
+  );
   const world = new WorldEnvironment(qualityPreset(tier));
   world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
 }

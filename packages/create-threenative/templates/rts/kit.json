@@ -1,0 +1,7 @@
+{
+  "name": "rts",
+  "title": "Real-time strategy",
+  "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
+  "genre": "rts",
+  "kit": true
+}

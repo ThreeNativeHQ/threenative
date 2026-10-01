@@ -15,10 +15,11 @@
 // `unmeasured` rather than guessing, and your scene is not that scene: read `TN_FRAME_BUDGET`
 // back after you change a tier.
 //
-// One cost that is **not** a stage here and outweighs most of them: the prefiltered reflection
-// probe on `scene.environment`, measured at **~6.3 ms of an 18-19 ms Pixel 8 frame**. It is set
-// in `sky.ts`, not in this file.
-//
+// **This template runs no SSGI and no SSR at any tier, and both are measurements rather than
+// tastes.** Forty-five simulated bodies are already the frame's budget, and SSGI is the most
+// expensive stage in the reference ablation by a factor of two (~9.2 ms of a 14.7 ms frame with
+// its two denoise passes); in a room this dark, one bounce of indirect light off a flagstone floor
+// buys nothing the three lanterns do not already put there.
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -49,7 +50,7 @@ function isQualityTier(value: string): value is QualityTier {
  * turned out to have no effect.
  */
 export function resolveQualityTier(
-  request: { readonly mobile?: boolean; readonly tier?: string } = {},
+  request: { readonly mobile?: boolean; readonly software?: boolean; readonly tier?: string } = {},
 ): QualityTier {
   const requested = request.tier;
   if (requested !== undefined) {
@@ -60,100 +61,90 @@ export function resolveQualityTier(
     }
     return requested;
   }
+  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
+  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
+  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
+  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
+  // `tier` above still wins over it.
+  if (request.software === true) return "low";
   return request.mobile === true ? "low" : "high";
 }
 
 /**
- * What a desktop gets: this template's shipped desktop look, unchanged.
+ * The look every tier shares: the tone curve, a corner falloff, and bloom over a high threshold.
  *
- * The whole chain measured 12.5 ms of a 14.7 ms GPU frame in the reference ablation, and SSGI
- * with its denoiser is ~9.2 ms of that.
+ * Bloom is the one stage this look cannot do without. Exactly two things in the vault emit — the
+ * three lantern flames and the seal — and a threshold high enough to clear them and nothing lit
+ * is what keeps the glow on the two warm sources and off the forty crates.
+ */
+const shared: IWorldEnvironmentOptions = {
+  // ~4.6 ms in the ablation named above, at that scene's own strength.
+  bloomEnabled: true,
+  bloomRadius: 0.42,
+  bloomStrength: 0.5,
+  // High, on purpose: the lantern flames and the seal plate clear it and nothing lit does.
+  bloomThreshold: 0.85,
+  exposure: 1.06,
+  tonemapMode: "aces",
+  vignetteAmount: 0.34,
+};
+
+/**
+ * What a desktop gets.
+ *
+ * Contact occlusion, because a pile of forty crates is nothing but contacts, and a sharpen pass,
+ * because RCAS is what puts the edge back on the plank braces the occlusion pass softens.
  */
 const high: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.42,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  // The two full-resolution denoise passes over the AO and GI terms: ~1.9 ms. Only worth running
-  // when SSGI is on — its noise is what they clean up.
-  denoiseEnabled: true,
-  // SSGI, the screen-space indirect-light gather: ~7.3 ms alone, ~9.2 ms with the two denoise
-  // passes it feeds. The largest stage in the chain by a factor of two, of a 14.7 ms frame.
-  // Dropping this pair is what `medium` is.
-  ssgiEnabled: true,
-  ssgiRadius: 18,
-  ssgiQuality: "medium",
-  // Half the frame in each axis, so a quarter of the pixels. Full-res SSGI cost 14.4 ms
-  // of a 39.7 ms frame on an RTX 2080; this is the same gather over a quarter of the work,
-  // and it measured *sharper* because the scaler spends what it hands back on resolution.
-  // `worldEnvironment.ts` explains why it takes a wrapper instead of a property.
-  ssgiResolutionScale: 0.5,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as "reflections
-  // are on and do nothing" — the ray dies a metre from where it started.
-  ssrMaxDistance: 44,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.5,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
+  ...shared,
+  // Contact scale, in metres. A crate is 0.92 m, so half a metre gathers the crease where two
+  // crates meet and the shadow where one meets the floor, and no further.
+  // unmeasured in that ablation — it is not one of the five stages it measured.
+  gtaoEnabled: true,
+  gtaoRadius: 0.5,
+  gtaoResolutionScale: 0.5,
+  gtaoSamples: 12,
+  gtaoScale: 1.25,
+  // unmeasured in that ablation, as with GTAO. RCAS is a radius: 0.95 is nearly full sharpening.
   sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.3,
-  tonemapMode: "aces",
+  sharpenStrength: 0.95,
 };
 
-/**
- * `high` minus the gather and its denoiser — the single change in this chain measured to give
- * back most of the frame: **14.7 ms -> 5.5 ms of GPU** in the reference ablation. Reflections,
- * bloom and the sharpener stay, so it is recognisably the same look.
- */
+/** A machine between the two: the same look with a cheaper occlusion gather. */
 const medium: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
-  bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.42,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  // Screen-space reflections: ~4.1 ms.
-  ssrEnabled: true,
-  // `SSRNode` defaults this to **1 world unit**, which on a scene this size reads as "reflections
-  // are on and do nothing" — the ray dies a metre from where it started.
-  ssrMaxDistance: 44,
-  // A reflection carries almost no high-frequency detail, so half resolution costs a quarter of
-  // the rays and is very hard to see in the result.
-  ssrResolutionScale: 0.5,
-  // RCAS sharpen: unmeasured — never ablated on its own here. It puts back the micro-detail the
-  // denoiser and the half-resolution reflection take out, so it earns its cost only on a tier
-  // that runs one of them.
-  sharpenEnabled: true,
-  // **0 is maximum sharpening and 2 is none** — it is a radius, not a gain.
-  sharpenStrength: 0.3,
-  tonemapMode: "aces",
+  ...shared,
+  bloomRadius: 0.38,
+  bloomStrength: 0.56,
+  bloomThreshold: 0.84,
+  exposure: 1.05,
+  // unmeasured, as at `high`; this tier is the same gather at fewer samples.
+  gtaoEnabled: true,
+  gtaoRadius: 0.45,
+  gtaoResolutionScale: 0.4,
+  gtaoSamples: 8,
+  gtaoScale: 1.2,
+  sharpenEnabled: false,
+  vignetteAmount: 0.3,
 };
 
 /**
- * What a phone gets: this template's shipped mobile look, unchanged. Bloom and the tone curve,
- * nothing screen-space. The ablation's floor — every stage off — was 2.2 ms.
+ * What a phone gets: bloom and a vignette, no screen-space gather at all. The occlusion is the
+ * first thing to go — forty simulated bodies are already the frame's budget on a phone.
  */
 const low: IWorldEnvironmentOptions = {
-  // Strength, radius and threshold are a look decision already tuned to this scene's palette.
-  // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
-  // to be.
+  // The chain's own quality tier, separate from which stages this preset enables: without it
+  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
+  // paid for the high chain's denoise and slice counts.
+  renderChainTier: "low",
+  // ~4.6 ms in the ablation named above, at that scene's own strength.
   bloomEnabled: true,
-  bloomRadius: 0.5,
-  bloomStrength: 0.42,
-  bloomThreshold: 0.2,
-  exposure: 1.15,
-  tonemapMode: "aces",
+  bloomRadius: 0.32,
+  bloomStrength: 0.48,
+  bloomThreshold: 0.86,
+  exposure: 1.04,
+  gtaoEnabled: false,
+  sharpenEnabled: false,
+  vignetteAmount: 0.28,
 };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
