@@ -100,6 +100,21 @@ export type {
  * @example const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
  */
 export { softBodyCollision } from "./softbody-collision.js";
+/**
+ * Drive a snow surface from real solved physics contacts.
+ * @situation leave footprints and tracks where physical bodies actually touch snow
+ * @situation let a dropped or pushed sphere carve and settle into deformable snow
+ * @situation make a crate, capsule or ball compress the surface it rests on
+ * @situation deform snow under a character's feet at the fixed physics step
+ * @constraint register `rapier()` before attaching, and call `step` once per fixed step after the physics step
+ * @constraint automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
+ * @override loadScale, supportNormal, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
+ * @requires @threenative/core/world SnowField as the surface it deforms
+ * @example const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });
+ * afterPhysics(ctx, (dt) => snowPhysics.step(dt));
+ */
+export { attachSnowPhysics, boxFootprint, capsuleFootprint } from "./snow.js";
+export type { ISnowPhysicsBinding, ISnowPhysicsOptions } from "./snow.js";
 export type {
   IIntersectPointOptions,
   IIntersectRayOptions,

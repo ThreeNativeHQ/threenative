@@ -16,6 +16,15 @@ export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
 
 /** One record is logical body id and a sleeping flag encoded as 0 or 1. */
 export const PHYSICS_SLEEP_STATE_STRIDE = 2;
+
+/**
+ * One solved contact record.
+ *
+ * `[collider id, world x, y, z, normal x, y, z, impulse]`. The normal points from the read
+ * target toward the touching collider; the impulse is the step's accumulated normal impulse in
+ * newton-seconds, not a measured force. Divide it by the step to estimate load, and say so.
+ */
+export const PHYSICS_CONTACT_STRIDE = 8;
 /** Caps native query buffers while remaining exactly representable by the native ABI. */
 export const MAX_PHYSICS_QUERY_RESULTS = 1024;
 
@@ -239,6 +248,28 @@ export interface IPhysicsSimulation {
    * the same tick, or copy the fields out before the step advances.
    */
   areaIntersections?(id: number): ReadonlySet<number>;
+  /**
+   * Persistent solved contacts between one target collider and a set of candidate colliders.
+   *
+   * Collision start/stop events say a pair began touching; they carry no point, normal or load,
+   * so a contact that persists cannot be observed through them. This reads the narrow phase's
+   * solved manifolds directly, which is what a deformation or support consumer needs.
+   *
+   * Records are `PHYSICS_CONTACT_STRIDE` floats each, written from index 0. Returns the record
+   * count, or throws when `buffer` is too small rather than truncating a contact away.
+   * Optional: a backend with no narrow-phase access omits it, and a caller that needs contacts
+   * must fail closed instead of assuming support.
+   */
+  readContacts?(
+    target: IPhysicsColliderHandle,
+    colliders: Uint32Array,
+    buffer: Float32Array,
+  ): number;
+  /**
+   * Replace a collider's shape in place, keeping its handle, owning body, filters and scene
+   * cleanup. Recreating a collider instead leaves every recorded identity stale.
+   */
+  setColliderShape?(collider: IPhysicsColliderHandle, shape: IPhysicsShapeDescriptor): void;
   drainCollisionEvents(buffer: Uint32Array): number;
   dispose(): void;
 }
@@ -1237,6 +1268,58 @@ export function createWebPhysicsSimulation(
         areaIntersectionMask = 0;
       }
       return current;
+    },
+    readContacts: (target, colliders, buffer) => {
+      requireLive();
+      if (!(buffer instanceof Float32Array))
+        throw new Error("IPhysicsSimulation.readContacts requires a Float32Array buffer.");
+      const targetCollider = options.world.getCollider(target.id);
+      if (targetCollider === undefined)
+        throw new Error(`IPhysicsSimulation contact target ${String(target.id)} is not a live collider.`);
+      const capacity = Math.floor(buffer.length / PHYSICS_CONTACT_STRIDE);
+      if (capacity < 1) throw new Error("IPhysicsSimulation contact buffer is too small.");
+      let count = 0;
+      for (let index = 0; index < colliders.length; index += 1) {
+        const otherId = colliders[index] as number;
+        if (otherId === target.id) continue;
+        const other = options.world.getCollider(otherId);
+        if (other === undefined) continue;
+        // A heightfield reports one candidate manifold per touched sub-shape and most carry no
+        // solver contact at all, so the manifold list is scanned and only solved ones are kept.
+        options.world.contactPair(targetCollider, other, (manifold, flipped) => {
+          const solved = manifold.numSolverContacts();
+          if (solved === 0) return;
+          const normal = manifold.normal();
+          const nx = flipped ? -normal.x : normal.x;
+          const ny = flipped ? -normal.y : normal.y;
+          const nz = flipped ? -normal.z : normal.z;
+          for (let contact = 0; contact < solved; contact += 1) {
+            if (count >= capacity)
+              throw new Error(
+                `IPhysicsSimulation contact buffer holds ${String(capacity)} records; the solver produced more.`,
+              );
+            const offset = count * PHYSICS_CONTACT_STRIDE;
+            const point = manifold.solverContactPoint(contact);
+            buffer[offset] = otherId;
+            buffer[offset + 1] = point.x;
+            buffer[offset + 2] = point.y;
+            buffer[offset + 3] = point.z;
+            buffer[offset + 4] = nx;
+            buffer[offset + 5] = ny;
+            buffer[offset + 6] = nz;
+            buffer[offset + 7] = manifold.contactImpulse(contact);
+            count += 1;
+          }
+        });
+      }
+      return count;
+    },
+    setColliderShape: (collider, shape) => {
+      requireLive();
+      const target = options.world.getCollider(collider.id);
+      if (target === undefined)
+        throw new Error(`IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`);
+      target.setShape(createWebPhysicsShape(options.rapier, shape).shape);
     },
     drainCollisionEvents: (buffer) => {
       requireLive();
