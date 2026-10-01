@@ -43,18 +43,33 @@ function RainInterface() {
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
+  /** Photosensitivity mode; the intent itself also takes automatic lightning down. */
+  const setSafeMode = useCallback((on: boolean) => send("setSafe", on), [send]);
+
   /**
-   * Photosensitivity mode. Turning it on also takes automatic lightning down, because a reader who
-   * asked for no flashes must not get them from the sky on their own.
+   * The status line, said on what the game reports rather than on what a control asked for: a
+   * shortcut from the game's input map and a click on the panel change the same state, so both are
+   * announced the same way, and a strike reads its distance and delay off the strike itself.
    */
-  const setSafeMode = useCallback(
-    (on: boolean) => {
-      send("setSafe", on);
-      if (on) send("setAutoLightning", false);
-      say(on ? "LIGHTNING DISABLED · photosensitivity mode" : "Lightning flashes enabled");
-    },
-    [say, send],
-  );
+  const previous = useRef<GameState | undefined>(undefined);
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = state;
+    if (state === undefined || before === undefined) return;
+    const soundOn = state.audioEnabled && !state.muted;
+    if (state.safe !== before.safe)
+      say(state.safe ? "LIGHTNING DISABLED · photosensitivity mode" : "Lightning flashes enabled");
+    if (state.paused !== before.paused)
+      say(state.paused ? "SIMULATION PAUSED" : "SIMULATION RESUMED");
+    if (soundOn !== (before.audioEnabled && !before.muted))
+      say(soundOn ? "Stereo rain, wind and distance-delayed thunder enabled" : "Sound muted");
+    if (state.strikes > before.strikes) {
+      const { delay, metres } = state.lastStrike;
+      say(
+        `LIGHTNING · ${(metres / 1000).toFixed(2)} km${soundOn ? ` · thunder in ${delay.toFixed(1)} s` : ""}`,
+      );
+    }
+  }, [say, state]);
 
   const toggleAutoLightning = useCallback(() => {
     if (state?.safe === true) {
@@ -65,22 +80,16 @@ function RainInterface() {
   }, [say, send, state?.autoLightning, state?.safe]);
 
   /**
-   * The keyboard, and only the keys the engine's input map does not already own. `W A S D`, `Q E`,
-   * `Shift`, `R` and `L` are the game's input map, so sending an intent from here as well would
-   * strike twice per press and reset the view twice.
+   * The keyboard, and only the keys that are browser APIs. Everything else — `W A S D`, `Q E`,
+   * `Shift`, `R`, `L`, `X`, `H`, `M` and `Space` — is the game's input map, which a native host
+   * delivers too; handling them here as well would act twice per press.
    */
   useEffect(() => {
     if (state === undefined) return;
     const actions: Record<string, () => void> = {
       KeyF: () => void toggleFullscreen(say),
-      KeyH: () => send(state.uiHidden ? "showUi" : "hideUi"),
       KeyP: () => {
         void captureScene(say).catch((why: Error) => say(`Scene image failed: ${why.message}`));
-      },
-      KeyX: () => setSafeMode(!state.safe),
-      Space: () => {
-        send(state.paused ? "resume" : "pause");
-        say(state.paused ? "SIMULATION RESUMED" : "SIMULATION PAUSED");
       },
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -100,7 +109,7 @@ function RainInterface() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [say, send, setSafeMode, state]);
+  }, [say, send, state]);
 
   /**
    * Tab visibility, held in the UI realm because `document` is a browser API: this is the only

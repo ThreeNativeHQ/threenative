@@ -17,6 +17,7 @@ import {
   type Weather,
   easeWeather,
   flashAt,
+  intentPatch,
   thunderDelay,
 } from "../state.js";
 
@@ -157,8 +158,32 @@ export class Coast extends Scene<GameState> {
       audio.queueStrike({ at: pendingThunderAt, metres });
     };
 
+    /**
+     * The keyboard shortcuts, through the same validated door the panel's controls use, so a key
+     * and a click cannot disagree about what photosensitivity mode or sound means.
+     */
+    const readKeys = (frameCtx: WeatherCtx): void => {
+      const input = frameCtx.input;
+      const ui = frameCtx.state.getState();
+      let patch: Partial<GameState> = {};
+      if (input.justPressed("safe"))
+        patch = { ...patch, ...intentPatch("setSafe", !ui.safe, ui.target) };
+      if (input.justPressed("hideUi")) patch.uiHidden = !ui.uiHidden;
+      if (input.justPressed("sound")) {
+        const on = ui.audioEnabled && !ui.muted;
+        patch.audioEnabled = true;
+        patch.muted = on;
+      }
+      if (input.justPressed("pause")) {
+        patch.paused = !ui.paused;
+        audio.setSilenced(patch.paused);
+      }
+      if (Object.keys(patch).length > 0) frameCtx.state.set(patch);
+    };
+
     /** Read the intent the UI sent between frames, before anything is derived from it. */
     const readIntent = (frameCtx: WeatherCtx): GameState => {
+      readKeys(frameCtx);
       const ui = frameCtx.state.getState();
       // Both resets come through the same door, and each one is a fresh request: the flag is
       // consumed and cleared below, never latched, so a second reset still lands.

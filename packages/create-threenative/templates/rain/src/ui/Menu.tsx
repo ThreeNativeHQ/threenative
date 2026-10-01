@@ -221,10 +221,7 @@ export function Menu({
           className="strike-button"
           data-tn-interactive
           disabled={state.safe}
-          onClick={() => {
-            send("strike");
-            say("LIGHTNING · triggered");
-          }}
+          onClick={() => send("strike")}
           type="button"
         >
           <svg aria-hidden="true" viewBox="0 0 12 18">
@@ -351,6 +348,9 @@ export function Menu({
             </span>
             <span>
               <kbd>X</kbd> Disable flashes
+            </span>
+            <span>
+              <kbd>M</kbd> Sound on / mute
             </span>
           </div>
           <p className="warning">

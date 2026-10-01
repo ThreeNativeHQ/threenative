@@ -289,7 +289,6 @@ export function Hud({ send, say, panelOpen, setPanelOpen, state, toast, toastVis
                 }
                 send("setAudioEnabled", true);
                 send("setMuted", false);
-                say("Stereo rain, wind and distance-delayed thunder enabled");
               }}
               type="button"
             >

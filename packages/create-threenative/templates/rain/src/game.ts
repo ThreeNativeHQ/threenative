@@ -27,7 +27,15 @@ const game = defineGame<GameState>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
+    // The study's own shortcuts live here, in the game's input map, rather than in a browser
+    // keydown listener: on a native host the interface is a web view that never has keyboard
+    // focus, so a shortcut only the UI realm hears is a shortcut native players do not have.
+    // F (fullscreen) and P (save image) stay in the UI realm because both are browser APIs.
+    hideUi: { keys: ["KeyH"] },
+    pause: { keys: ["Space"] },
     resetCamera: { keys: ["KeyR"] },
+    safe: { keys: ["KeyX"] },
+    sound: { keys: ["KeyM"] },
     strike: { keys: ["KeyL"] },
   },
   plugins: [playtest()],
