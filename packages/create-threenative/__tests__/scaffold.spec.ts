@@ -164,22 +164,24 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
-  // Recomputed 2026-10-01, twice: the first pass gave each template's quality.ts a software
-  // adapter policy; the second found that ten of eleven setupPost callers never forwarded the
-  // adapter fact to it, so those same ten trees moved again by their own bytes. `starter` is
-  // unchanged in both, because its setupPost hands the whole environment to createAdaptiveQuality.
+  // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
+  // the first gave each quality.ts a software adapter policy; the second found ten of eleven
+  // setupPost callers never forwarded the adapter fact to it; the third found no template but
+  // `starter` set `renderChainTier`, so a low preset still ran the high render chain. The same ten
+  // trees move on each of the last two. `starter` is unchanged throughout — its setupPost hands the
+  // whole environment to createAdaptiveQuality and its quality.ts already carried the chain tier.
   // Values measured through createProject by the spec that asserts them, not by hand.
-  "action-rpg": "81a8e56dc5c17d4a4c9fd25307add84a44ec667258bea9c43f96aaefaa64e4bb",
-  minimal: "4219e35319c4783787d80331e1268d0ff8cbf8cc96bc13c26f707a897fcf0361",
-  platformer: "7b4bb63e6295bb48970950a2563dbd92a9b1751dcb257d002eb35bdf87443b92",
-  puzzle: "85e4db3716adaa633e2989ceb4b63815ab2cbd4277705ba958d0767d1c364cd1",
-  racing: "5859455e03d37f8d20e4e3a6846825fbd0ca007d271257d5477111bba4a38e6d",
-  rts: "84fc8eec66f3ef4cd470610b75c4a4f4d2331aa1014faf46311fc170b3937ea5",
-  runner: "d3757048af1bd494c436d94771576aa3659e4d81ab568f49bbda43ae222fcc5d",
-  sailing: "59720b73556c0bef0f468c472631cf14fb3c34d5fa8918c7db45d3babfa75e27",
-  shooter: "279e4fe703c242ec52137220c34e2f9b04a729a92b0028e15ab14d6b630fbec7",
+  "action-rpg": "b1b2dbf0c28708c6c68585e795413675a54b1dacadbd1015411ac17b1c67eba0",
+  minimal: "03d260f37b6596e4d08d2112608f4fc5bb2d99b6fe38d734400b3f2f253d7a40",
+  platformer: "652251e10a5f74b7d9a6858313e7dd1ad429fcae976bce79604cd8531003946d",
+  puzzle: "f35e1d6aca4c44ab2788651afb717eb861bd8ec401c3d19655e6832de139ae06",
+  racing: "914c62bf6ce97e535bed60d66ea8485ca1c7262667a1c50060c5b338f35eec8d",
+  rts: "2680a13043b6da20fb790a4d7fb629e193df65306fd9c7816b45941969a4cbb6",
+  runner: "e889bfbf16f132921ab3ea93f62238fefe3ed47e0bb44ba35d4f73087ee767b9",
+  sailing: "ba07cd4a766baedc29be7f088e12ec7db327cb059eed36d8bfc35bd311eb1cc5",
+  shooter: "1e9e44e2fb173d56bbf6ae4035a16210b27b4116a1f22f446a06c40b10a38ce3",
   starter: "47f40062a7a7dea1c0c461401c3831585302e7bd7249daf043fb208a42a006cd",
-  "tower-defense": "dfe363fafb84bb16f05b9e8ee1baeb5ce1890b9fd716daa83508d6d52ed21291",
+  "tower-defense": "a61876346b8a1a197206bbbc858a07e70ba7e0d7fdc99a3b6feac252bb4ff3dc",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

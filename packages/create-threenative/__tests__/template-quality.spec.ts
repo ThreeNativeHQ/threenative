@@ -185,6 +185,23 @@ describe("template quality tiers", () => {
     }
   });
 
+  // The tier the game picks and the tier the renderer's chain runs at are two separate settings, and
+  // a preset that names only the first leaves the chain at its own `high` default. Found by a real
+  // forced-SwiftShader run on `minimal`: TN_QUALITY_TIER said `low`, and the run still reported
+  // `renderChain.tier: "high"`, because no template but `starter` set `renderChainTier` — so the low
+  // preset paid for the high chain's denoise and slice counts. Every fixture asserting
+  // `perAdapter.software: {tier: "low"}` was green anyway, because those are read off the tier the
+  // game chose rather than off the chain that ran.
+  it("should carry the chain's own tier in every template's low preset", async () => {
+    for (const name of names) {
+      const { qualityPreset } = await load(name);
+      expect(
+        qualityPreset("low").renderChainTier,
+        `${name}: low preset leaves the render chain on its high default`,
+      ).toBe("low");
+    }
+  });
+
   it("should differ between low and high in at least one enabled stage", async () => {
     for (const name of names) {
       const { qualityPreset } = await load(name);

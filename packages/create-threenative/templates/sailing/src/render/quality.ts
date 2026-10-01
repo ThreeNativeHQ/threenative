@@ -119,6 +119,10 @@ const medium: IWorldEnvironmentOptions = {
  * What a phone gets: this template's shipped mobile look, unchanged.
  */
 const low: IWorldEnvironmentOptions = {
+  // The chain's own quality tier, separate from which stages this preset enables: without it
+  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
+  // paid for the high chain's denoise and slice counts.
+  renderChainTier: "low",
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.

@@ -102,7 +102,7 @@ const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
  * 2,300-mesh level the per-object cost of GTAO is the part that does not scale down, so this tier
  * drops it rather than the effects on top of it.
  */
-const low: IWorldEnvironmentOptions = shared;
+const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 

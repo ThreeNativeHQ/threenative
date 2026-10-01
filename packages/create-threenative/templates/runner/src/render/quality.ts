@@ -100,7 +100,7 @@ const high: IWorldEnvironmentOptions = {
 const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8 };
 
 /** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
-const low: IWorldEnvironmentOptions = shared;
+const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 

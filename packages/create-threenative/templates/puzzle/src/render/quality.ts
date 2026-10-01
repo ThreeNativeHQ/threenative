@@ -132,6 +132,10 @@ const medium: IWorldEnvironmentOptions = {
  * first thing to go — forty simulated bodies are already the frame's budget on a phone.
  */
 const low: IWorldEnvironmentOptions = {
+  // The chain's own quality tier, separate from which stages this preset enables: without it
+  // the renderer keeps its `high` default at every tier, so a CPU adapter's low preset still
+  // paid for the high chain's denoise and slice counts.
+  renderChainTier: "low",
   // ~4.6 ms in the ablation named above, at that scene's own strength.
   bloomEnabled: true,
   bloomRadius: 0.32,
