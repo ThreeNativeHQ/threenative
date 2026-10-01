@@ -843,7 +843,14 @@ async function readWebGpuAdapterIdentity(raw: RendererInstance): Promise<string 
 }
 
 /** The per-stage texture limits worth raising past WebGPU's portable defaults (16 each). */
-const TEXTURE_LIMITS = ["maxSampledTexturesPerShaderStage", "maxSamplersPerShaderStage"] as const;
+/** Each texture limit a device is granted by default, whatever the adapter supports. */
+const TEXTURE_LIMITS = {
+  maxSampledTexturesPerShaderStage: 16,
+  maxSamplersPerShaderStage: 16,
+  // three stores every morph target of a mesh as one layer of a texture array: a MetaHuman head
+  // carries 821, and past the default 256 the mesh never draws.
+  maxTextureArrayLayers: 256,
+} as const;
 
 /**
  * The adapter's own texture limits, as `requiredLimits` for the device three creates.
@@ -864,9 +871,9 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
     const limits = isObject(adapter) && isObject(adapter.limits) ? adapter.limits : undefined;
     if (limits === undefined) return {};
     const requiredLimits: Record<string, number> = {};
-    for (const key of TEXTURE_LIMITS) {
+    for (const [key, portable] of Object.entries(TEXTURE_LIMITS)) {
       const value = (limits as Record<string, unknown>)[key];
-      if (typeof value === "number" && value > 16) requiredLimits[key] = value;
+      if (typeof value === "number" && value > portable) requiredLimits[key] = value;
     }
     return Object.keys(requiredLimits).length === 0 ? {} : { requiredLimits };
   } catch {

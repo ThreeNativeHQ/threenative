@@ -994,6 +994,32 @@
       ]
     },
     {
+      "name": "openriglogic",
+      "version": "7b9e7a88898f51f29aa308acb4877276f27e1507",
+      "source": {
+        "repository": "EpicGames/OpenRigLogic",
+        "revision": "7b9e7a88898f51f29aa308acb4877276f27e1507"
+      },
+      "license": {
+        "spdx": "MIT",
+        "evidence": {
+          "url": "https://github.com/EpicGames/OpenRigLogic/blob/7b9e7a88898f51f29aa308acb4877276f27e1507/LICENSE"
+        }
+      },
+      "payloads": [
+        {
+          "id": "openriglogic-source",
+          "url": "https://codeload.github.com/EpicGames/OpenRigLogic/tar.gz/7b9e7a88898f51f29aa308acb4877276f27e1507",
+          "sha256": "98722cd4468698e9b992cb23f5383f457d7f9834ecd1b4ac8bd80225e99e1667",
+          "bytes": 1037412,
+          "targets": [
+            "desktop-metahuman"
+          ],
+          "bootstrap": "two-run-fetch-2026-09-28"
+        }
+      ]
+    },
+    {
       "name": "gradle-wrapper",
       "version": "8.13.0",
       "source": {

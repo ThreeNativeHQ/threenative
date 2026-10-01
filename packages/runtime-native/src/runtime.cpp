@@ -27,6 +27,9 @@
 #if TN_ENABLE_NATIVE_PHYSICS
 #include "mystral/physics/native_bindings.h"
 #endif
+#if TN_ENABLE_METAHUMAN
+#include "metahuman/native_bindings.h"
+#endif
 #include "storage/local_storage.h"
 #include "mystral/pump_silence.h"
 #include "mystral/cold_start.h"
@@ -774,6 +777,13 @@ public:
 #if TN_ENABLE_NATIVE_PHYSICS
         if (!physics::initializeNativePhysicsBindings(jsEngine_.get())) {
             std::cerr << "[Mystral] Failed to initialize native physics bindings" << std::endl;
+            return false;
+        }
+#endif
+
+#if TN_ENABLE_METAHUMAN
+        if (!metahuman::initializeNativeMetaHumanBindings(jsEngine_.get())) {
+            std::cerr << "[Mystral] Failed to initialize native metahuman bindings" << std::endl;
             return false;
         }
 #endif

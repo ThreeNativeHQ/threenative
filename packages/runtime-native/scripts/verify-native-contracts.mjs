@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   buildNativeTarget,
+  configureMetaHumanVerificationBuild,
   configurePhysicsVerificationBuild,
   configureVideoVerificationBuild,
   desktopBuildDirectory,
@@ -18,6 +19,7 @@ import {
 
 const temporaryDirectoryArgument = "$THREENATIVE_TEMPORARY_DIRECTORY";
 const physicsTarget = "threenative-physics-actuation-bindings-test";
+const metahumanTarget = "threenative-metahuman-bindings-test";
 const videoTarget = "threenative-video-recorder-state-test";
 
 export const executionContracts = {
@@ -106,6 +108,9 @@ export const executionContracts = {
   },
   "threenative-physics-actuation-bindings-test": {
     invocations: [{ args: [], passLine: "native physics actuation bindings passed" }],
+  },
+  "threenative-metahuman-bindings-test": {
+    invocations: [{ args: [], passLine: "native metahuman bindings passed" }],
   },
   "threenative-rt-handle-allocation-test": {
     invocations: [{ args: [], passLine: "raytracing handle allocation contract passed" }],
@@ -366,6 +371,7 @@ export function verifyNativeContracts() {
   const cmake = resolveCmake();
   const shippingBuildDirectory = desktopBuildDirectory();
   let physicsBuildDirectory;
+  let metahumanBuildDirectory;
   let videoBuildDirectory;
   const temporaryDirectory = mkdtempSync(join(tmpdir(), "threenative-shutdown-lifetime-"));
   try {
@@ -374,11 +380,15 @@ export function verifyNativeContracts() {
         if (target === physicsTarget && physicsBuildDirectory === undefined) {
           physicsBuildDirectory = configurePhysicsVerificationBuild(cmake);
         }
+        if (target === metahumanTarget && metahumanBuildDirectory === undefined) {
+          metahumanBuildDirectory = configureMetaHumanVerificationBuild(cmake);
+        }
         if (target === videoTarget && videoBuildDirectory === undefined) {
           videoBuildDirectory = configureVideoVerificationBuild(cmake);
         }
         let buildDirectory = shippingBuildDirectory;
         if (target === physicsTarget) buildDirectory = physicsBuildDirectory;
+        if (target === metahumanTarget) buildDirectory = metahumanBuildDirectory;
         if (target === videoTarget) buildDirectory = videoBuildDirectory;
         buildNativeTarget(cmake, buildDirectory, target);
       },
@@ -391,6 +401,7 @@ export function verifyNativeContracts() {
       runTarget(target, args) {
         let buildDirectory = shippingBuildDirectory;
         if (target === physicsTarget) buildDirectory = physicsBuildDirectory;
+        if (target === metahumanTarget) buildDirectory = metahumanBuildDirectory;
         if (target === videoTarget) buildDirectory = videoBuildDirectory;
         const resolvedArgs = args.map((argument) =>
           argument === temporaryDirectoryArgument ? temporaryDirectory : argument,

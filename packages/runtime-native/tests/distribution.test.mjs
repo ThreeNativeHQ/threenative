@@ -2,7 +2,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { promisify } from 'node:util';
@@ -209,6 +209,35 @@ test('an unpublished release records the gap and finishes the consumer install',
   assert.equal(status.ok, false);
   assert.match(status.reason, /linux-x64/);
   assert.match(result.stderr, /no prebuilt release is published/iu);
+});
+
+test('the install hook runs when invoked through a symlinked package path', async () => {
+  // pnpm installs a package as a symlink into its store, so `node node_modules/<pkg>/scripts/...`
+  // names a path whose real file differs. The hook must still run, not exit 0 having done nothing.
+  const root = makeTempDirSync('threenative-prebuilt-symlink-');
+  roots.push(root);
+  const real = join(root, 'store', 'runtime-native');
+  mkdirSync(join(real, 'scripts'), { recursive: true });
+  writeFileSync(
+    join(real, 'package.json'),
+    `${JSON.stringify({ name: '@threenative/runtime-native', version: '0.3.0' })}\n`,
+  );
+  writeFileSync(
+    join(real, 'scripts', 'install-prebuilt.mjs'),
+    readFileSync(join(import.meta.dirname, '..', 'scripts', 'install-prebuilt.mjs')),
+  );
+  const linked = join(root, 'node_modules', 'runtime-native');
+  mkdirSync(join(root, 'node_modules'), { recursive: true });
+  symlinkSync(real, linked, 'dir');
+  await run(process.execPath, [join(linked, 'scripts', 'install-prebuilt.mjs')], {
+    cwd: root,
+    env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: join(root, 'absent-lock.json') },
+  });
+  // The pre-fix guard compared the symlinked argv path with the real module URL, skipped the
+  // install entirely and wrote no status: that missing file is the red.
+  const status = JSON.parse(readFileSync(join(real, 'prebuilt', 'install-status.json'), 'utf8'));
+  assert.equal(status.ok, false);
+  assert.match(status.reason, /no prebuilt release manifest exists/iu);
 });
 
 test('exports the complete prebuilt key table consumed by release packaging', () => {
