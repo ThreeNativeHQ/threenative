@@ -3919,6 +3919,50 @@
     {
       "aliases": [],
       "constraints": [
+        "register `rapier()` before attaching, and call `step` once per fixed step after the physics step",
+        "the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach",
+        "automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint"
+      ],
+      "example": "const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });\nafterPhysics(ctx, (dt) => snowPhysics.step(dt));",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [
+        "loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour"
+      ],
+      "package": "@threenative/physics",
+      "requires": ["@threenative/core/world SnowField as the surface it deforms"],
+      "signature": "export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBinding { … }",
+      "situations": [
+        "leave footprints and tracks where physical bodies actually touch snow",
+        "let a dropped or pushed sphere carve and settle into deformable snow",
+        "make a crate, capsule or ball compress the surface it rests on"
+      ],
+      "summary": "Drive a `SnowField` from real solved contacts. The binding creates the snow surface collider from the field's own canonical samples and keeps it in step with them, so a body lands on the surface a query would report. Each fixed step it reads the solver's persistent contacts — not collision start/stop events, which carry no point or load — deforms the snow only where a contact is supported and loaded downward, then republishes the surface before the next step. Airborne bodies, side contacts and unrelated colliders never deform anything. A dropped sphere settles on the surface it made; a pushed one rotates and carves a connected track without its transform being copied anywhere. Footprints come from the body's own collision shape and orientation unless the game supplies one. Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which estimates a contact force and is not measured. `observe().loadProvenance` says so.",
+      "supersedes": [],
+      "symbol": "attachSnowPhysics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint"
+      ],
+      "example": "const footprint = boxFootprint(0.4, 0.25);",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootprint { … }",
+      "situations": [
+        "let a crate, platform or plank press a rectangular pit into snow",
+        "imprint a box's own footprint rather than a circle around it"
+      ],
+      "summary": "A rectangular contact: the face a box rests on, in the contact's own frame. Coverage is full across the face and fades just outside it; the bank rises beyond that.",
+      "supersedes": [],
+      "symbol": "boxFootprint"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing",
         "generated bodies use trimesh geometry and world-space instance transforms"
       ],
@@ -3949,6 +3993,23 @@
       "summary": "Float a rigid body on a game-owned height source with fixed-step force ordering.",
       "supersedes": [],
       "symbol": "Buoyancy3D"
+    },
+    {
+      "aliases": [],
+      "constraints": ["radius and halfHeight are metres and never grow with load"],
+      "example": "const footprint = capsuleFootprint(0.5, 0.2);",
+      "importPath": "@threenative/physics",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootprint { … }",
+      "situations": [
+        "let a fallen capsule, limb or barrel leave a linear imprint in snow",
+        "give a capsule a shape-appropriate snow contact instead of a sphere's dot"
+      ],
+      "summary": "A stadium contact: a rectangle of half-length `halfHeight` and half-width `radius`, capped by two half-discs of `radius`. The shape a capsule lies on, so a knocked-over body sinks along a line instead of at a point. Coverage is full across the body's own width and fades just outside it, so the body's edge never rests on a half-pressed rim; the bank rises beyond that.",
+      "supersedes": [],
+      "symbol": "capsuleFootprint"
     },
     {
       "aliases": [

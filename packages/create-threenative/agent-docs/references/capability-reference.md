@@ -3089,6 +3089,39 @@ export class Area3D { … }
 const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
 ```
 
+### `attachSnowPhysics`
+
+`function` — Drive a `SnowField` from real solved contacts. The binding creates the snow surface collider from the field's own canonical samples and keeps it in step with them, so a body lands on the surface a query would report. Each fixed step it reads the solver's persistent contacts — not collision start/stop events, which carry no point or load — deforms the snow only where a contact is supported and loaded downward, then republishes the surface before the next step. Airborne bodies, side contacts and unrelated colliders never deform anything. A dropped sphere settles on the surface it made; a pushed one rotates and carves a connected track without its transform being copied anywhere. Footprints come from the body's own collision shape and orientation unless the game supplies one. Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which estimates a contact force and is not measured. `observe().loadProvenance` says so.
+
+```ts
+export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBinding { … }
+```
+
+- **Use when:** leave footprints and tracks where physical bodies actually touch snow · let a dropped or pushed sphere carve and settle into deformable snow · make a crate, capsule or ball compress the surface it rests on
+- **Constraints:** register `rapier()` before attaching, and call `step` once per fixed step after the physics step · the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach · automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
+- **Requires:** @threenative/core/world SnowField as the surface it deforms
+- **Overrides:** loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
+
+```ts
+const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });
+afterPhysics(ctx, (dt) => snowPhysics.step(dt));
+```
+
+### `boxFootprint`
+
+`function` — A rectangular contact: the face a box rests on, in the contact's own frame. Coverage is full across the face and fades just outside it; the bank rises beyond that.
+
+```ts
+export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootprint { … }
+```
+
+- **Use when:** let a crate, platform or plank press a rectangular pit into snow · imprint a box's own footprint rather than a circle around it
+- **Constraints:** halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint
+
+```ts
+const footprint = boxFootprint(0.4, 0.25);
+```
+
 ### `buildStaticColliders`
 
 `function` — Build fixed trimesh bodies from the meshes a game authored in a scene root.
@@ -3118,6 +3151,21 @@ export class Buoyancy3D { … }
 
 ```ts
 new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
+```
+
+### `capsuleFootprint`
+
+`function` — A stadium contact: a rectangle of half-length `halfHeight` and half-width `radius`, capped by two half-discs of `radius`. The shape a capsule lies on, so a knocked-over body sinks along a line instead of at a point. Coverage is full across the body's own width and fades just outside it, so the body's edge never rests on a half-pressed rim; the bank rises beyond that.
+
+```ts
+export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootprint { … }
+```
+
+- **Use when:** let a fallen capsule, limb or barrel leave a linear imprint in snow · give a capsule a shape-appropriate snow contact instead of a sphere's dot
+- **Constraints:** radius and halfHeight are metres and never grow with load
+
+```ts
+const footprint = capsuleFootprint(0.5, 0.2);
 ```
 
 ### `CharacterBody3D`

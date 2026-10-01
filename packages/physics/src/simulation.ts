@@ -18,11 +18,12 @@ export const PHYSICS_COLLISION_EVENT_STRIDE = 4;
 export const PHYSICS_SLEEP_STATE_STRIDE = 2;
 
 /**
- * One solved contact record.
+ * One solved contact manifold.
  *
- * `[collider id, world x, y, z, normal x, y, z, impulse]`. The normal points from the read
- * target toward the touching collider; the impulse is the step's accumulated normal impulse in
- * newton-seconds, not a measured force. Divide it by the step to estimate load, and say so.
+ * `[collider id, world x, y, z, normal x, y, z, impulse]`. The point is the mean of the
+ * manifold's solver contacts and the normal points from the read target toward the touching
+ * collider. The impulse is the step's summed normal impulse in newton-seconds, not a measured
+ * force: divide it by the step to estimate load, and say so.
  */
 export const PHYSICS_CONTACT_STRIDE = 8;
 /** Caps native query buffers while remaining exactly representable by the native ABI. */
@@ -255,10 +256,11 @@ export interface IPhysicsSimulation {
    * so a contact that persists cannot be observed through them. This reads the narrow phase's
    * solved manifolds directly, which is what a deformation or support consumer needs.
    *
-   * Records are `PHYSICS_CONTACT_STRIDE` floats each, written from index 0. Returns the record
-   * count, or throws when `buffer` is too small rather than truncating a contact away.
-   * Optional: a backend with no narrow-phase access omits it, and a caller that needs contacts
-   * must fail closed instead of assuming support.
+   * One `PHYSICS_CONTACT_STRIDE` record per solved manifold, written from index 0. Returns the
+   * total record count; when that exceeds the buffer's capacity only the first records were
+   * written, and the caller must grow the buffer and read again before the next step. A sleeping
+   * body was not solved and reports nothing. Optional: a backend with no narrow-phase access
+   * omits it, and a caller that needs contacts must fail closed instead of assuming support.
    */
   readContacts?(
     target: IPhysicsColliderHandle,
@@ -267,7 +269,8 @@ export interface IPhysicsSimulation {
   ): number;
   /**
    * Replace a collider's shape in place, keeping its handle, owning body, filters and scene
-   * cleanup. Recreating a collider instead leaves every recorded identity stale.
+   * cleanup. Recreating a collider instead leaves every recorded identity stale. Bodies sleeping
+   * on the old shape must wake, since the new one may no longer support them.
    */
   setColliderShape?(collider: IPhysicsColliderHandle, shape: IPhysicsShapeDescriptor): void;
   drainCollisionEvents(buffer: Uint32Array): number;
@@ -643,6 +646,7 @@ export function createWebPhysicsShape(
       shape.columns - 1,
       shape.heights,
       shape.scale,
+      rapier.HeightFieldFlags.FIX_INTERNAL_EDGES,
     );
   }
   descriptor.setCollisionGroups(interactionGroups(shape.collisionLayer, shape.collisionMask));
@@ -759,6 +763,40 @@ function writeRapierTransformRecord(
   renderBuffer[offset + 5] = rotation.y;
   renderBuffer[offset + 6] = rotation.z;
   renderBuffer[offset + 7] = rotation.w;
+}
+
+/** One `PHYSICS_CONTACT_STRIDE` record summarising a solved manifold. */
+function writeContactRecord(
+  buffer: Float32Array,
+  record: number,
+  colliderId: number,
+  manifold: rapier.TempContactManifold,
+  flipped: boolean,
+): void {
+  const solved = manifold.numSolverContacts();
+  let impulse = 0;
+  for (let point = 0; point < manifold.numContacts(); point += 1)
+    impulse += manifold.contactImpulse(point);
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (let point = 0; point < solved; point += 1) {
+    const world = manifold.solverContactPoint(point);
+    x += world.x;
+    y += world.y;
+    z += world.z;
+  }
+  const normal = manifold.normal();
+  const sign = flipped ? -1 : 1;
+  const offset = record * PHYSICS_CONTACT_STRIDE;
+  buffer[offset] = colliderId;
+  buffer[offset + 1] = x / solved;
+  buffer[offset + 2] = y / solved;
+  buffer[offset + 3] = z / solved;
+  buffer[offset + 4] = normal.x * sign;
+  buffer[offset + 5] = normal.y * sign;
+  buffer[offset + 6] = normal.z * sign;
+  buffer[offset + 7] = impulse;
 }
 
 /** Web adapter. It is the only implementation that names Rapier's JS objects. */
@@ -1273,53 +1311,40 @@ export function createWebPhysicsSimulation(
       requireLive();
       if (!(buffer instanceof Float32Array))
         throw new Error("IPhysicsSimulation.readContacts requires a Float32Array buffer.");
-      const targetCollider = options.world.getCollider(target.id);
+      if (!(colliders instanceof Uint32Array))
+        throw new Error("IPhysicsSimulation.readContacts requires a Uint32Array of collider ids.");
+      // Seam ids are logical body ids, not Rapier handles: resolve through the registry.
+      const targetCollider = bodies.get(target.id)?.collider;
       if (targetCollider === undefined)
-        throw new Error(`IPhysicsSimulation contact target ${String(target.id)} is not a live collider.`);
+        throw new Error(
+          `IPhysicsSimulation contact target ${String(target.id)} is not a live collider.`,
+        );
       const capacity = Math.floor(buffer.length / PHYSICS_CONTACT_STRIDE);
-      if (capacity < 1) throw new Error("IPhysicsSimulation contact buffer is too small.");
       let count = 0;
       for (let index = 0; index < colliders.length; index += 1) {
         const otherId = colliders[index] as number;
         if (otherId === target.id) continue;
-        const other = options.world.getCollider(otherId);
-        if (other === undefined) continue;
+        const entry = bodies.get(otherId);
+        // A sleeping body was not solved this step, so its stored impulses are not this step's.
+        if (entry === undefined || entry.body.isSleeping()) continue;
         // A heightfield reports one candidate manifold per touched sub-shape and most carry no
-        // solver contact at all, so the manifold list is scanned and only solved ones are kept.
-        options.world.contactPair(targetCollider, other, (manifold, flipped) => {
-          const solved = manifold.numSolverContacts();
-          if (solved === 0) return;
-          const normal = manifold.normal();
-          const nx = flipped ? -normal.x : normal.x;
-          const ny = flipped ? -normal.y : normal.y;
-          const nz = flipped ? -normal.z : normal.z;
-          for (let contact = 0; contact < solved; contact += 1) {
-            if (count >= capacity)
-              throw new Error(
-                `IPhysicsSimulation contact buffer holds ${String(capacity)} records; the solver produced more.`,
-              );
-            const offset = count * PHYSICS_CONTACT_STRIDE;
-            const point = manifold.solverContactPoint(contact);
-            buffer[offset] = otherId;
-            buffer[offset + 1] = point.x;
-            buffer[offset + 2] = point.y;
-            buffer[offset + 3] = point.z;
-            buffer[offset + 4] = nx;
-            buffer[offset + 5] = ny;
-            buffer[offset + 6] = nz;
-            buffer[offset + 7] = manifold.contactImpulse(contact);
-            count += 1;
-          }
+        // solver contact at all, so only manifolds the solver actually used are kept.
+        options.world.contactPair(targetCollider, entry.collider, (manifold, flipped) => {
+          if (manifold.numSolverContacts() === 0) return;
+          if (count < capacity) writeContactRecord(buffer, count, otherId, manifold, flipped);
+          count += 1;
         });
       }
       return count;
     },
     setColliderShape: (collider, shape) => {
       requireLive();
-      const target = options.world.getCollider(collider.id);
-      if (target === undefined)
-        throw new Error(`IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`);
-      target.setShape(createWebPhysicsShape(options.rapier, shape).shape);
+      const entry = bodies.get(collider.id);
+      if (entry === undefined)
+        throw new Error(
+          `IPhysicsSimulation shape target ${String(collider.id)} is not a live collider.`,
+        );
+      entry.collider.setShape(createWebPhysicsShape(options.rapier, shape).shape);
     },
     drainCollisionEvents: (buffer) => {
       requireLive();

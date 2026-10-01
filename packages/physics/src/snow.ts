@@ -4,13 +4,12 @@ import {
   type SnowField,
   snowDiscFootprint,
 } from "@threenative/core/world";
-import type { CollisionShape3D } from "./CollisionShape3D.js";
 import type { IPhysicsColliderHandle } from "./handles.js";
 import type { IPhysicsContext, PhysicsBody3D } from "./plugin.js";
 import {
   type IPhysicsShapeDescriptor,
-  type PhysicsShapeKind,
   PHYSICS_CONTACT_STRIDE,
+  type PhysicsShapeKind,
 } from "./simulation.js";
 
 const ZERO_SAMPLE: ISnowFootprintSample = {
@@ -39,7 +38,8 @@ function positive(value: number, name: string): number {
 /**
  * A stadium contact: a rectangle of half-length `halfHeight` and half-width `radius`, capped by
  * two half-discs of `radius`. The shape a capsule lies on, so a knocked-over body sinks along a
- * line instead of at a point.
+ * line instead of at a point. Coverage is full across the body's own width and fades just
+ * outside it, so the body's edge never rests on a half-pressed rim; the bank rises beyond that.
  * @situation let a fallen capsule, limb or barrel leave a linear imprint in snow
  * @situation give a capsule a shape-appropriate snow contact instead of a sphere's dot
  * @constraint radius and halfHeight are metres and never grow with load
@@ -51,27 +51,18 @@ export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootp
     throw new Error("attachSnowPhysics capsule halfHeight must be a non-negative finite number.");
   const softness = 0.2 * radius;
   return {
-    extent: halfHeight + radius + softness,
+    extent: halfHeight + radius + 2 * softness,
     sample: (x, z) => {
-      // Distance to the capsule's spine: a segment from -halfHeight to +halfHeight on local z.
+      // Distance beyond the body: from the spine, a segment from -halfHeight to +halfHeight on z.
       const along = clamp(z, -halfHeight, halfHeight);
-      const distance = Math.hypot(x, z - along);
-      if (distance >= radius + softness) return ZERO_SAMPLE;
-      const coverage = distance <= radius ? 1 : 1 - smoothstep(radius, radius + softness, distance);
-      const bank = distance > radius ? 1 - (distance - radius) / softness : 0;
-      return {
-        bank,
-        coverage,
-        disturbance: Math.max(coverage, bank * 0.5),
-        relief: 0,
-        shape: 1,
-      };
+      return edgeSample(Math.hypot(x, z - along) - radius, softness);
     },
   };
 }
 
 /**
- * A rectangular contact: the face a box rests on, in the contact's own frame.
+ * A rectangular contact: the face a box rests on, in the contact's own frame. Coverage is full
+ * across the face and fades just outside it; the bank rises beyond that.
  * @situation let a crate, platform or plank press a rectangular pit into snow
  * @situation imprint a box's own footprint rather than a circle around it
  * @constraint halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint
@@ -82,32 +73,158 @@ export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootpri
   positive(halfDepth, "box halfDepth");
   const edge = 0.15 * Math.min(halfWidth, halfDepth);
   return {
-    extent: Math.hypot(halfWidth, halfDepth) + edge,
-    sample: (x, z) => {
-      const inside = Math.max(Math.abs(x) - halfWidth, Math.abs(z) - halfDepth);
-      if (inside > edge) return ZERO_SAMPLE;
-      const coverage = 1 - smoothstep(-edge, edge, inside);
-      return {
-        bank: inside > 0 ? 1 - inside / edge : 0,
-        coverage,
-        disturbance: coverage,
-        relief: 0,
-        shape: 1,
-      };
-    },
+    extent: Math.hypot(halfWidth + 2 * edge, halfDepth + 2 * edge),
+    sample: (x, z) => edgeSample(Math.max(Math.abs(x) - halfWidth, Math.abs(z) - halfDepth), edge),
   };
 }
 
-/** The automatic footprint a supported shape presses, or undefined when there is none. */
-function automaticFootprint(shape: IPhysicsShapeDescriptor): ISnowFootprint | undefined {
-  if (shape.kind === "sphere") return snowDiscFootprint(shape.x);
-  if (shape.kind === "box") return boxFootprint(shape.x, shape.z);
-  if (shape.kind === "capsule") return capsuleFootprint(shape.x, shape.y);
-  return undefined;
+/**
+ * One sample of a solid body's print by its distance `outside` the body's own outline: fully
+ * covered inside, fading to nothing over `edge` beyond it, then a bank over the next `edge`.
+ */
+function edgeSample(outside: number, edge: number): ISnowFootprintSample {
+  if (outside >= 2 * edge) return ZERO_SAMPLE;
+  if (outside >= edge) {
+    const bank = 1 - (outside - edge) / edge;
+    return { bank, coverage: 0, disturbance: bank * 0.5, relief: 0, shape: 1 };
+  }
+  const coverage = outside <= 0 ? 1 : 1 - smoothstep(0, edge, outside);
+  return { bank: 0, coverage, disturbance: coverage, relief: 0, shape: 1 };
 }
 
 /** Shape kinds `attachSnowPhysics` can derive an automatic contact profile for. */
 const SUPPORTED_SHAPES: readonly PhysicsShapeKind[] = ["sphere", "box", "capsule"];
+
+interface IQuaternion {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly w: number;
+}
+
+/** A local unit axis rotated into world space. */
+function rotateAxis(q: IQuaternion, axis: 0 | 1 | 2): [number, number, number] {
+  const { w, x, y, z } = q;
+  if (axis === 0) return [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)];
+  if (axis === 1) return [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)];
+  return [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)];
+}
+
+interface IWatchedBody {
+  readonly body: PhysicsBody3D;
+  readonly shape: IPhysicsShapeDescriptor | undefined;
+  readonly custom: ISnowFootprint | undefined;
+  readonly cache: Map<number, ISnowFootprint>;
+  impulse: number;
+}
+
+/**
+ * The footprint a body presses with its current orientation, where it is centred, and its yaw.
+ *
+ * The footprint is centred under the body, never on the contact centroid: a rocking box touches
+ * one corner at a time, and centring its whole face on that corner would smear the print. A
+ * sphere is a disc whatever its rotation. A box presses whichever face is most nearly facing
+ * down; a capsule presses a stadium whose length is its spine's horizontal projection, so an
+ * upright capsule leaves a disc and a fallen one a trough.
+ */
+function orientedFootprint(
+  watched: IWatchedBody,
+  transform: IBodyPose,
+  cellSize: number,
+): IOrientedFootprint {
+  const { position, rotation } = transform;
+  if (watched.custom !== undefined) {
+    const forward = rotateAxis(rotation, 2);
+    return {
+      footprint: watched.custom,
+      rotation: Math.atan2(forward[0], forward[2]),
+      x: position.x,
+      z: position.z,
+    };
+  }
+  const shape = watched.shape;
+  if (shape === undefined) throw new Error("attachSnowPhysics watched body lost its shape.");
+  if (shape.kind === "box") return boxPrint(watched.cache, shape, transform);
+  if (shape.kind === "capsule") return capsulePrint(watched.cache, shape, transform, cellSize);
+  return {
+    footprint: cached(watched.cache, 0, () => snowDiscFootprint(shape.x)),
+    rotation: 0,
+    x: position.x,
+    z: position.z,
+  };
+}
+
+interface IBodyPose {
+  readonly position: { readonly x: number; readonly z: number };
+  readonly rotation: IQuaternion;
+}
+
+interface IOrientedFootprint {
+  readonly footprint: ISnowFootprint;
+  readonly rotation: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+function cached(
+  cache: Map<number, ISnowFootprint>,
+  key: number,
+  create: () => ISnowFootprint,
+): ISnowFootprint {
+  let footprint = cache.get(key);
+  if (footprint === undefined) {
+    footprint = create();
+    cache.set(key, footprint);
+  }
+  return footprint;
+}
+
+/** A box presses whichever face is most nearly facing down, centred on that face. */
+function boxPrint(
+  cache: Map<number, ISnowFootprint>,
+  shape: IPhysicsShapeDescriptor,
+  { position, rotation }: IBodyPose,
+): IOrientedFootprint {
+  const axes = [rotateAxis(rotation, 0), rotateAxis(rotation, 1), rotateAxis(rotation, 2)];
+  const halves = [shape.x, shape.y, shape.z];
+  let down = 0;
+  for (let axis = 1; axis < 3; axis += 1)
+    if (Math.abs(axes[axis]?.[1] ?? 0) > Math.abs(axes[down]?.[1] ?? 0)) down = axis;
+  const across = down === 0 ? 1 : 0;
+  const along = down === 2 ? 1 : 2;
+  // The resting face's centre, which a tilted box offsets horizontally from its own centre.
+  const normal = axes[down] as [number, number, number];
+  const toFace = (halves[down] as number) * (normal[1] > 0 ? -1 : 1);
+  const axis = axes[across] as [number, number, number];
+  return {
+    footprint: cached(cache, down, () =>
+      boxFootprint(halves[across] as number, halves[along] as number),
+    ),
+    rotation: Math.atan2(-axis[2], axis[0]),
+    x: position.x + normal[0] * toFace,
+    z: position.z + normal[2] * toFace,
+  };
+}
+
+/** A capsule presses a stadium as long as its spine's horizontal projection. */
+function capsulePrint(
+  cache: Map<number, ISnowFootprint>,
+  shape: IPhysicsShapeDescriptor,
+  { position, rotation }: IBodyPose,
+  cellSize: number,
+): IOrientedFootprint {
+  // Rapier's spine runs along the body's local y.
+  const spine = rotateAxis(rotation, 1);
+  const reach = shape.x * Math.hypot(spine[0], spine[2]);
+  // Footprints are cached per half-cell of projected length, so a tumbling capsule reuses them.
+  const key = Math.round(reach / (cellSize / 2));
+  return {
+    footprint: cached(cache, key, () => capsuleFootprint((key * cellSize) / 2, shape.y)),
+    rotation: Math.atan2(spine[0], spine[2]),
+    x: position.x,
+    z: position.z,
+  };
+}
 
 export interface ISnowPhysicsOptions {
   /** The physics context whose solved steps drive the deformation. */
@@ -124,23 +241,51 @@ export interface ISnowPhysicsOptions {
   readonly loadScale?: number;
   /** Smallest contact-normal height that counts as support. Default 0.35. */
   readonly supportNormal?: number;
+  /**
+   * Largest gap, in metres, the live collider may keep from the canonical surface before it is
+   * rebuilt. Default 0.0005. A resting body's print converges geometrically, so rebuilding on
+   * every sub-millimetre change would wake it every step and it would never sleep.
+   */
+  readonly colliderTolerance?: number;
   /** Snowfall deposition in metres per second, forwarded to `SnowField.recover`. Default 0. */
   readonly deposition?: number;
-  /** Wind erosion in metres per second, forwarded to `SnowField.recover`. Default 0. */
+  /** Wind erosion rate, forwarded to `SnowField.recover`. Default 0. */
   readonly wind?: number;
+}
+
+/** What the last consumed step observed, for a registry snapshot or a playtest probe. */
+export interface ISnowPhysicsObservation {
+  /** Solved snow-contact manifolds read in the most recent step. */
+  readonly contacts: number;
+  /** Bodies whose supported, downward-loaded contacts pressed the snow in that step. */
+  readonly supported: number;
+  /** Summed load those bodies pressed with, in newtons. */
+  readonly load: number;
+  /** How `load` was obtained. It is estimated from solver impulses, never measured. */
+  readonly loadProvenance: "solver-impulse-per-step";
+  /** Canonical snow surface version. */
+  readonly version: number;
+  /** Canonical version the live collider was last reconciled with. */
+  readonly colliderVersion: number;
+  /** Largest gap between the collider's source samples and the canonical surface, in metres. */
+  readonly colliderError: number;
 }
 
 export interface ISnowPhysicsBinding {
   /** The generated snow surface collider. Its identity survives every deformation. */
   readonly surface: IPhysicsColliderHandle;
-  /** Canonical surface version the live collider was last built from. */
+  /** Canonical surface version the live collider was last reconciled with. */
   readonly surfaceVersion: number;
-  /** Solved contacts read in the most recent step. */
+  /** Solved contact manifolds read in the most recent step. */
   readonly contacts: number;
-  /** Of those, the ones that were supported and downward-loaded. */
+  /** Bodies that pressed the snow in the most recent step. */
   readonly supported: number;
   /** Snow surface version at the last step this binding ran. */
   readonly version: number;
+  /** Live snowfall deposition in metres per second; checked at the next step. */
+  deposition: number;
+  /** Live wind erosion rate; checked at the next step. */
+  wind: number;
   add(body: PhysicsBody3D, footprint?: ISnowFootprint): void;
   remove(body: PhysicsBody3D): void;
   /**
@@ -149,6 +294,8 @@ export interface ISnowPhysicsBinding {
    * the next one.
    */
   step(deltaTime: number): void;
+  /** The last step's observation, with the collider measured against the canonical surface. */
+  observe(): ISnowPhysicsObservation;
   /** Idempotent cleanup: removes the surface body and forgets every watched body. */
   dispose(): void;
 }
@@ -160,46 +307,55 @@ export interface ISnowPhysicsBinding {
  * it in step with them, so a body lands on the surface a query would report. Each fixed step it
  * reads the solver's persistent contacts — not collision start/stop events, which carry no point
  * or load — deforms the snow only where a contact is supported and loaded downward, then
- * republishes the surface. Airborne bodies, side contacts with scenery and unrelated colliders
- * never deform anything.
+ * republishes the surface before the next step. Airborne bodies, side contacts and unrelated
+ * colliders never deform anything.
  *
  * A dropped sphere settles on the surface it made; a pushed one rotates and carves a connected
- * track without its transform being copied anywhere. Foot profiles come from the body's own
- * collision shape unless the game supplies one.
+ * track without its transform being copied anywhere. Footprints come from the body's own
+ * collision shape and orientation unless the game supplies one.
  *
- * Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which is an
- * approximation of a contact force and is not measured. `loadScale` exists to calibrate it.
+ * Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which
+ * estimates a contact force and is not measured. `observe().loadProvenance` says so.
  * @situation leave footprints and tracks where physical bodies actually touch snow
  * @situation let a dropped or pushed sphere carve and settle into deformable snow
  * @situation make a crate, capsule or ball compress the surface it rests on
  * @constraint register `rapier()` before attaching, and call `step` once per fixed step after the physics step
- * @constraint only a backend exposing persistent solved contacts and in-place shape refresh can attach; native and unknown backends fail closed
+ * @constraint the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach
  * @constraint automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
- * @override loadScale, supportNormal, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
+ * @override loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
  * @requires @threenative/core/world SnowField as the surface it deforms
  * @example const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });
  * afterPhysics(ctx, (dt) => snowPhysics.step(dt));
  */
 export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBinding {
   const simulation = options.physics.simulation;
-  if (typeof simulation.readContacts !== "function" || typeof simulation.setColliderShape !== "function")
+  if (
+    typeof simulation.readContacts !== "function" ||
+    typeof simulation.setColliderShape !== "function" ||
+    typeof simulation.readBodyTransform !== "function"
+  )
     throw new Error(
-      "attachSnowPhysics requires a physics backend with persistent solved contacts and in-place shape refresh; the selected backend provides neither.",
+      "attachSnowPhysics requires a physics backend with persistent solved contacts, in-place shape refresh and body transform reads.",
     );
   const readContacts = simulation.readContacts.bind(simulation);
   const setColliderShape = simulation.setColliderShape.bind(simulation);
+  const readBodyTransform = simulation.readBodyTransform.bind(simulation);
   const snow = options.snow;
   const field = snow.field;
   const loadScale = finiteOr(options.loadScale, 1, "loadScale");
   const supportNormal = clamp(finiteOr(options.supportNormal, 0.35, "supportNormal"), 0, 1);
-  const deposition = Math.max(0, finiteOr(options.deposition, 0, "deposition"));
-  const wind = Math.max(0, finiteOr(options.wind, 0, "wind"));
+  const cellSize = Math.min(snow.cellWidth, snow.cellDepth);
+  const colliderTolerance = finiteOr(options.colliderTolerance, 0.0005, "colliderTolerance");
+  if (colliderTolerance < 0)
+    throw new Error("attachSnowPhysics colliderTolerance must be non-negative.");
 
-  const watched = new Map<number, ISnowFootprint>();
-  let surfaceVersion = -1;
+  const watched = new Map<number, IWatchedBody>();
+  let colliderHeights = field.toColliderHeights();
+  let surfaceVersion = snow.version;
   let contacts = 0;
   let supported = 0;
-  let version = 0;
+  let load = 0;
+  let version = snow.version;
   let disposed = false;
 
   function surfaceDescriptor(): IPhysicsShapeDescriptor {
@@ -207,7 +363,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       collisionLayer: options.collisionLayer ?? 1,
       collisionMask: options.collisionMask ?? 0xffff,
       columns: field.columns,
-      heights: field.toColliderHeights(),
+      heights: colliderHeights,
       kind: "heightfield",
       rows: field.rows,
       // Rapier's heightfield scale is the full extent, and its own axis order is the transposed
@@ -231,14 +387,28 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
   });
   const surface = registration.collider;
   const surfaceBody = registration.body;
-  surfaceVersion = snow.version;
 
-  const contactBuffer = new Float32Array(PHYSICS_CONTACT_STRIDE * 512);
+  let contactBuffer = new Float32Array(PHYSICS_CONTACT_STRIDE * 64);
   let colliderScratch = new Uint32Array(8);
+
+  /** Largest gap between the live collider's samples and the given canonical samples. */
+  function colliderGap(canonical: Float32Array): number {
+    let gap = 0;
+    for (let index = 0; index < canonical.length; index += 1)
+      gap = Math.max(
+        gap,
+        Math.abs((canonical[index] as number) - (colliderHeights[index] as number)),
+      );
+    return gap;
+  }
 
   function refreshSurface(): void {
     if (snow.version === surfaceVersion) return;
-    setColliderShape(surface, surfaceDescriptor());
+    const canonical = field.toColliderHeights();
+    if (colliderGap(canonical) > colliderTolerance) {
+      colliderHeights = canonical;
+      setColliderShape(surface, surfaceDescriptor());
+    }
     surfaceVersion = snow.version;
   }
 
@@ -252,23 +422,78 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     return colliderScratch.subarray(0, index);
   }
 
-  function add(body: PhysicsBody3D, footprint?: ISnowFootprint): void {
-    if (disposed) throw new Error("attachSnowPhysics binding is disposed.");
-    // A character's own collision shape is not part of its public surface, so only bodies that
-    // publish one get an automatic profile; everyone else names the footprint explicitly.
-    const shape = (body as { readonly shape?: CollisionShape3D }).shape;
-    const profile = footprint ?? (shape === undefined ? undefined : automaticFootprint(shape.descriptor));
-    if (profile === undefined) {
-      const kind = shape?.descriptor.kind ?? "unknown";
-      throw new Error(
-        `attachSnowPhysics cannot derive a contact profile for a '${kind}' shape; supported shapes are ${SUPPORTED_SHAPES.join(", ")}. Pass an explicit footprint instead.`,
-      );
+  /** Read every solved manifold, growing the buffer rather than dropping any. */
+  function readAll(ids: Uint32Array): number {
+    let found = readContacts(surface, ids, contactBuffer);
+    if (found * PHYSICS_CONTACT_STRIDE > contactBuffer.length) {
+      contactBuffer = new Float32Array(found * 2 * PHYSICS_CONTACT_STRIDE);
+      found = readContacts(surface, ids, contactBuffer);
+      if (found * PHYSICS_CONTACT_STRIDE > contactBuffer.length)
+        throw new Error("attachSnowPhysics contact count changed between two reads of one step.");
     }
-    watched.set(body.collider.id, profile);
+    return found;
   }
 
-  return {
+  function add(body: PhysicsBody3D, footprint?: ISnowFootprint): void {
+    if (disposed) throw new Error("attachSnowPhysics binding is disposed.");
+    const shape = "shape" in body ? body.shape.descriptor : undefined;
+    if (footprint === undefined && !SUPPORTED_SHAPES.includes(shape?.kind as PhysicsShapeKind))
+      throw new Error(
+        `attachSnowPhysics cannot derive a contact profile for a '${shape?.kind ?? "unknown"}' shape; supported shapes are ${SUPPORTED_SHAPES.join(", ")}. Pass an explicit footprint instead.`,
+      );
+    watched.set(body.collider.id, {
+      body,
+      cache: new Map(),
+      custom: footprint,
+      impulse: 0,
+      shape,
+    });
+  }
+
+  for (const body of options.bodies ?? []) add(body);
+
+  /** Sum each watched body's supported, downward-loaded impulse from the step's manifolds. */
+  function gather(): void {
+    const found = readAll(colliderIds());
+    contacts = found;
+    for (let index = 0; index < found; index += 1) {
+      const offset = index * PHYSICS_CONTACT_STRIDE;
+      const entry = watched.get(contactBuffer[offset] as number);
+      // Only the surface pushing up on a body, with the body pressing back, deforms snow.
+      if (entry === undefined || (contactBuffer[offset + 5] as number) < supportNormal) continue;
+      entry.impulse += Math.max(0, contactBuffer[offset + 7] as number);
+    }
+  }
+
+  function press(deltaTime: number): void {
+    gather();
+    // One contact per body per step, under the body: the load is its whole supported impulse,
+    // spread over its footprint's own area.
+    for (const entry of watched.values()) {
+      if (entry.impulse <= 0) continue;
+      const transform = readBodyTransform(entry.body.body.id);
+      if (transform === undefined) throw new Error("attachSnowPhysics lost a watched body.");
+      const oriented = orientedFootprint(entry, transform, cellSize);
+      const bodyLoad = (entry.impulse / deltaTime) * loadScale;
+      snow.stamp({
+        area: footprintArea(oriented.footprint),
+        duration: deltaTime,
+        footprint: oriented.footprint,
+        load: bodyLoad,
+        rotation: oriented.rotation,
+        x: oriented.x,
+        z: oriented.z,
+      });
+      supported += 1;
+      load += bodyLoad;
+      entry.impulse = 0;
+    }
+  }
+
+  const binding: ISnowPhysicsBinding = {
     add,
+    deposition: finiteOr(options.deposition, 0, "deposition"),
+    wind: finiteOr(options.wind, 0, "wind"),
     get contacts() {
       return contacts;
     },
@@ -284,6 +509,17 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     get version() {
       return version;
     },
+    observe(): ISnowPhysicsObservation {
+      return {
+        colliderError: colliderGap(field.toColliderHeights()),
+        colliderVersion: surfaceVersion,
+        contacts,
+        load,
+        loadProvenance: "solver-impulse-per-step",
+        supported,
+        version: snow.version,
+      };
+    },
     remove(body: PhysicsBody3D): void {
       watched.delete(body.collider.id);
     },
@@ -293,33 +529,10 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
         throw new Error("attachSnowPhysics step requires a positive finite delta time.");
       contacts = 0;
       supported = 0;
-      if (watched.size > 0) {
-        const ids = colliderIds();
-        const found = readContacts(surface, ids, contactBuffer);
-        contacts = found;
-        const capacity = Math.floor(contactBuffer.length / PHYSICS_CONTACT_STRIDE);
-        if (found > capacity)
-          throw new Error("attachSnowPhysics read past its contact buffer.");
-        for (let index = 0; index < found; index += 1) {
-          const offset = index * PHYSICS_CONTACT_STRIDE;
-          const collider = contactBuffer[offset] as number;
-          const footprint = watched.get(collider);
-          if (footprint === undefined) continue;
-          const normalY = contactBuffer[offset + 5] as number;
-          // Only a surface pushing up on the body, and a body pressing down on it, deform snow.
-          if (normalY < supportNormal) continue;
-          const impulse = Math.abs(contactBuffer[offset + 7] as number);
-          if (impulse <= 0) continue;
-          snow.stamp({
-            area: footprintArea(footprint),
-            footprint,
-            load: (impulse / deltaTime) * loadScale,
-            x: contactBuffer[offset + 1] as number,
-            z: contactBuffer[offset + 3] as number,
-          });
-          supported += 1;
-        }
-      }
+      load = 0;
+      if (watched.size > 0) press(deltaTime);
+      const deposition = Math.max(0, finiteOr(binding.deposition, 0, "deposition"));
+      const wind = Math.max(0, finiteOr(binding.wind, 0, "wind"));
       if (deposition > 0 || wind > 0) snow.recover(deltaTime, deposition, wind);
       refreshSurface();
       version = snow.version;
@@ -331,8 +544,8 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
       simulation.removeBody(surfaceBody.id);
     },
   };
+  return binding;
 }
-
 function finiteOr(value: number | undefined, fallback: number, name: string): number {
   if (value === undefined) return fallback;
   if (!Number.isFinite(value)) throw new Error(`attachSnowPhysics ${name} must be finite.`);
