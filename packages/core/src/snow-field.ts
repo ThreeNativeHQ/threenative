@@ -227,6 +227,7 @@ export function snowDiscFootprint(
  * @situation let a pushed sphere carve a connected track and a dropped one settle into a crater
  * @situation store snow deformation that rendered geometry and collision both read
  * @situation reset a snowfield between rounds or change its depth at runtime
+ * @situation show how packed the snow is where people have walked or objects have rested
  * @constraint the field composes onto a Heightfield; construct the terrain first and let this own the surface
  * @constraint zero depth is bare ground: contacts register no indentation at all
  * @constraint out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros

@@ -1662,7 +1662,9 @@
         "update many small visual particles",
         "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
-        "fire a cannonball projectile with cannon smoke particles"
+        "fire a cannonball projectile with cannon smoke particles",
+        "falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard",
+        "kick up a spray of powder snow or dust where a foot or a ball lands"
       ],
       "summary": "Dispatch a game-owned particle surface and process function through a pooled system.",
       "supersedes": [],
@@ -3010,6 +3012,7 @@
       "signature": "export class TracerPool3D { … }",
       "situations": [
         "show where a hitscan round went",
+        "show each round a weapon fires, one tracer per trigger press",
         "draw incoming fire without spawning projectiles"
       ],
       "summary": "Pool travelling bullet-streak meshes for hitscan shots.",
@@ -3724,7 +3727,8 @@
         "leave footprints, tracks and tyre ruts in snow that persist and fill in over time",
         "let a pushed sphere carve a connected track and a dropped one settle into a crater",
         "store snow deformation that rendered geometry and collision both read",
-        "reset a snowfield between rounds or change its depth at runtime"
+        "reset a snowfield between rounds or change its depth at runtime",
+        "show how packed the snow is where people have walked or objects have rested"
       ],
       "summary": "Persistent snow deformation over one canonical heightfield. Snow keeps four channels per cell — indentation, displaced bank, compaction and disturbance — and writes the combined surface (`terrain + depth + bank - indent`) back into the heightfield it was given. Queries, rendered geometry and collider export therefore all read one surface, and no second terrain representation exists. The field is numeric only: it never chooses a boot, a tread, a particle, a material or a camera. Games supply terrain heights, the snow depth, the contact profile and the response coefficients; this class owns the storage, the load-dependent penetration and the bounded recovery. It is a heightfield approximation — not granular snow, displaced-volume conservation, avalanches, melting or a calibrated material law.",
       "supersedes": [],
@@ -3921,6 +3925,7 @@
       "constraints": [
         "register `rapier()` before attaching, and call `step` once per fixed step after the physics step",
         "the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach",
+        "verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it",
         "automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint"
       ],
       "example": "const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });\nafterPhysics(ctx, (dt) => snowPhysics.step(dt));",

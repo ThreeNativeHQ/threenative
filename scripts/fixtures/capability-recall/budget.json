@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.8970588235294118,
+  "recallAtK": 0.9090909090909091,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -61,10 +61,19 @@
     "prd451.capture-mouse",
     "prd451.lod-pixel-scale",
     "prd451.frame-budget",
-    "prd451.merge-parts"
+    "prd451.merge-parts",
+    "snow.footprints",
+    "snow.refill",
+    "snow.compaction",
+    "snow.ball-drop",
+    "snow.ball-roll",
+    "snow.bodies",
+    "snow.snowfall",
+    "snow.powder",
+    "request.snow-glade"
   ],
   "rejectHits": 16,
-  "rowCount": 68,
+  "rowCount": 77,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -133,10 +142,19 @@
     "prd451.capture-mouse",
     "prd451.lod-pixel-scale",
     "prd451.frame-budget",
-    "prd451.merge-parts"
+    "prd451.merge-parts",
+    "snow.footprints",
+    "snow.refill",
+    "snow.compaction",
+    "snow.ball-drop",
+    "snow.ball-roll",
+    "snow.bodies",
+    "snow.snowfall",
+    "snow.powder",
+    "request.snow-glade"
   ],
   "version": 1,
-  "zeroResultRate": 0.07352941176470588,
+  "zeroResultRate": 0.06493506493506493,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

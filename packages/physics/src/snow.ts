@@ -325,6 +325,7 @@ export interface ISnowPhysicsBinding {
  * @situation make a crate, capsule or ball compress the surface it rests on
  * @constraint register `rapier()` before attaching, and call `step` once per fixed step after the physics step
  * @constraint the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach
+ * @constraint verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it
  * @constraint automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
  * @override loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
  * @requires @threenative/core/world SnowField as the surface it deforms

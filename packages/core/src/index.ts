@@ -899,6 +899,8 @@ export type { IGPUReadbackOptions, IGPUReadbackSample } from "./gpu-readback.js"
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
+ * @situation falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard
+ * @situation kick up a spray of powder snow or dust where a foot or a ball lands
  * @constraint geometry, color, and timing remain supplied by the game
  * @example const particles = new GPUParticles3D(particleOptions);
  */
@@ -995,6 +997,7 @@ export { softCircleDataTexture } from "./textures.js";
 /**
  * Pool travelling bullet-streak meshes for hitscan shots.
  * @situation show where a hitscan round went
+ * @situation show each round a weapon fires, one tracer per trigger press
  * @situation draw incoming fire without spawning projectiles
  * @constraint the surface comes from the game; pooling, travel, and fading belong to the engine
  * @constraint update once per frame and dispose with the owning scene

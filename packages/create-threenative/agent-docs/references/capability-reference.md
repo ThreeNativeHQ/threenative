@@ -1284,7 +1284,7 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
 - **Constraints:** geometry, color, and timing remain supplied by the game
 
 ```ts
@@ -2328,7 +2328,7 @@ invalidateStatic(drawbridge);
 export class TracerPool3D { … }
 ```
 
-- **Use when:** show where a hitscan round went · draw incoming fire without spawning projectiles
+- **Use when:** show where a hitscan round went · show each round a weapon fires, one tracer per trigger press · draw incoming fire without spawning projectiles
 - **Constraints:** the surface comes from the game; pooling, travel, and fading belong to the engine · update once per frame and dispose with the owning scene
 
 ```ts
@@ -2923,7 +2923,7 @@ const footprint = snowDiscFootprint(0.25);
 export class SnowField { … }
 ```
 
-- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime
+- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime · show how packed the snow is where people have walked or objects have rested
 - **Constraints:** the field composes onto a Heightfield; construct the terrain first and let this own the surface · zero depth is bare ground: contacts register no indentation at all · out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros
 - **Requires:** @threenative/core/world Heightfield as the canonical terrain and surface
 - **Overrides:** depth, hardness, yieldFraction, maxBank and responseTime name the response coefficients
@@ -3098,7 +3098,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
 ```
 
 - **Use when:** leave footprints and tracks where physical bodies actually touch snow · let a dropped or pushed sphere carve and settle into deformable snow · make a crate, capsule or ball compress the surface it rests on
-- **Constraints:** register `rapier()` before attaching, and call `step` once per fixed step after the physics step · the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach · automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
+- **Constraints:** register `rapier()` before attaching, and call `step` once per fixed step after the physics step · the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach · verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it · automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
 - **Requires:** @threenative/core/world SnowField as the surface it deforms
 - **Overrides:** loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
 
