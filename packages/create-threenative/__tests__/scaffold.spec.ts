@@ -165,7 +165,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop a602467db (PRD-458/473): every template's frame
-  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not.
+  // budget now comes from resolveTargetFps, so ten trees move and `rts` does not; the capability reference (365 -> 368 entries) then moved all eleven, because it ships in every scaffold.
   // Recomputed 2026-10-01, three times, each by a real run that found the previous tree wrong:
   // the first gave each quality.ts a software adapter policy; the second found ten of eleven
   // setupPost callers never forwarded the adapter fact to it; the third found no template but
@@ -180,17 +180,17 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
   // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
   // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  "action-rpg": "ad132576dd89bbef0b56bdb5b687149992b425e81c738243abb0f1efde68d141",
-  minimal: "548385f4ecb3e8f4b2b11351597007852083fdeffa13bb85dd774faac0b0e901",
-  platformer: "c7e49fc623678f3897138cb8374c718fa27212194db021dad0e7feeb35f983e6",
-  puzzle: "10b30f1c46f45b7f26dfa5c1e4e7b839b433c09f1665ccbcfbf6b1a434029b4c",
-  racing: "acccc1ae5dde3f81bc1d90928f423fac10c12e4033c95cce6e17eb80ff05366f",
-  rts: "b13e0f5661a23caf46e1ca3c4b29df28ab6904d6a5157abcc1eca777b4b78a0c",
-  runner: "9a6f22a7aa816dba9787a36b6d8d4c8d0fdd51e723eed54ca438f9886b398a99",
-  sailing: "ea8f2a8fdb527b3217652cdfa2eb576a5ee6ce5f1d86924e26c8bb2abae14f43",
-  shooter: "116116386cec4860c6ada1b3bf95b6f32c574c6fda33c4a431791176035d3343",
-  starter: "87a238c6e188ab0baf5a086011b36b51c353d422435aa892bb306405d31f0fd7",
-  "tower-defense": "b250e2608cf55acd699378a02a274aef39a357296bc1e74ae662145c8b6ba44d",
+  "action-rpg": "e477cb8fe35157325e234e07bcbb3e7b09a69bb43c94ff2f591f7ee02bc30c48",
+  minimal: "62875da8b839633c518a8f52eb66ebb74a421c271f21bf6a0cdce54b83642082",
+  platformer: "b09a698711561333be22eefa98e9d0b454124bda9a9dcb6a72fad3fd156e5ed5",
+  puzzle: "759634702a6da8c8f70203aeaa5ac6d7163fd275920a084fcbfc10477562edc3",
+  racing: "384c151639f267d1fa530fd3f0b71f7cd5a2249b5eb4817598d35050cedbe3c6",
+  rts: "d2c9eaa70d55b4f99943448444e43e107bbaadea1a4162474a35ffb494a94a62",
+  runner: "d52219261507b0949aeb96f0d865adf81f9dddae6a8ee99f050e21e3ec3c6977",
+  sailing: "718fd70cef653ec6ccdf99ea1dc8a0510479974e19d95acdca60ec1411c0fe10",
+  shooter: "0369a3a146585111d7d2355b887ae7a22b5278e17a84d0324949f3c8ad8c1933",
+  starter: "eeca1162735d4cbfb41145c17318c05670b97febeb45a82d6de2fd8c8dc2af4e",
+  "tower-defense": "b87e3a3626c0ef744cf24cf106b1e85a51c010856f2f6acc60f6bf7c65f27246",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
