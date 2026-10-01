@@ -2874,7 +2874,7 @@ const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackI
 export class Heightfield extends Group implements IComputeDriven { … }
 ```
 
-- **Use when:** build terrain geometry and collision from one game-authored height function · generate a terrain a player can walk across · query the same ground height or normal that a player sees and collides with · ask how high the ground is here · build islands and coastlines from terrain
+- **Use when:** build terrain geometry and collision from one game-authored height function · generate a terrain a player can walk across · query the same ground height or normal that a player sees and collides with · ask how high the ground is here · build islands and coastlines from terrain · keep a collider or other copy of a deforming terrain in step without rescanning the whole field (`trackChanges`)
 - **Constraints:** sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output · rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
 - **Overrides:** rows, columns, width, depth, origin, and sampleHeight are explicit on every field
 

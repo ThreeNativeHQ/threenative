@@ -145,6 +145,7 @@ function validateWorldPassBudget(options: IHeightfieldWorldPassOptions): void {
  * @situation query the same ground height or normal that a player sees and collides with
  * @situation ask how high the ground is here
  * @situation build islands and coastlines from terrain
+ * @situation keep a collider or other copy of a deforming terrain in step without rescanning the whole field (`trackChanges`)
  * @constraint sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output
  * @constraint rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
  * @override rows, columns, width, depth, origin, and sampleHeight are explicit on every field
@@ -483,9 +484,11 @@ export class Heightfield extends Group implements IComputeDriven {
    * changed since *it* last looked; comparing the whole field instead costs every sample on every
    * change. Each tracker keeps its own union of the windows `updateHeights` wrote, so two
    * consumers never take each other's changes.
-   * @situation keep a collider or other copy of a deforming terrain in step without rescanning it
-   * @example const changes = field.trackChanges();
+   *
+   * ```ts
+   * const changes = field.trackChanges();
    * const changed = changes.take(); // undefined when nothing was written
+   * ```
    */
   trackChanges(): IHeightfieldChangeTracker {
     const state: { region: IHeightfieldRegionBounds | undefined } = { region: undefined };

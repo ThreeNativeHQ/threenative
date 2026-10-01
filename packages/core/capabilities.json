@@ -3664,7 +3664,8 @@
         "generate a terrain a player can walk across",
         "query the same ground height or normal that a player sees and collides with",
         "ask how high the ground is here",
-        "build islands and coastlines from terrain"
+        "build islands and coastlines from terrain",
+        "keep a collider or other copy of a deforming terrain in step without rescanning the whole field (`trackChanges`)"
       ],
       "summary": "One height buffer shared by world queries, rendered geometry, and a physics heightfield. The game supplies every value, so changing the terrain's shape never requires a package edit. `fromSampler` evaluates that game function exactly once at each vertex and retains only the resulting numbers. Queries interpolate those same numbers instead of evaluating the function again.",
       "supersedes": [],
