@@ -1,31 +1,34 @@
 // The public software-adapter fact, executed on the real native host, driving the template's own
 // quality policy.
 //
-// Three earlier proofs each cover one link and none covers the path a game takes:
-// `adapter_info_test.cpp` reads `navigator.gpu.requestAdapter().info` (the provider), the forced
+// Three earlier proofs each cover one link and none covers the path a game takes: the forced
 // SwiftShader browser run proves the policy answers `low` on a CPU rasteriser, and the desktop STUB
 // unit feeds a synthetic adapter to the classifier. `createRenderer` is internal to core, so the
 // public way to reach the fact is what a game does: `game.start()`, then `ctx.renderer.softwareAdapter`,
 // then the template's `resolveQualityTier`. This runs that on the built host — bundle, launch,
-// observe — and reports the adapter identity from a separate read.
+// observe — and classifies the adapter identity from a separate `requestAdapter()` read.
 //
 // What it does and does not claim: it proves the fact is produced and the policy consumes it on
 // THIS host. A hardware host reports `softwareAdapter: null` and the high tier, which says nothing
 // about a software adapter natively — that half is proven by the browser SwiftShader run. The
-// assertions below are written as the relationship rather than the value, so they hold for either
-// class: whatever the host reports, the tier must be the one that fact selects.
+// assertions are written as the relationship rather than the value, so they hold for either class.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "vitest";
+// The classifier every capture lane already refuses to run without, reused rather than restated: it
+// is what decides software from hardware for a browser run, so the same function decides it here.
+import { softwareAdapterName } from "../../playtest/src/runner/browser.js";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const WORKSPACE = join(ROOT, "..", "..");
 const SMOKE_SRC = join(WORKSPACE, "examples", "native-smoke", "src");
 const ENTRY = join(SMOKE_SRC, "adapter-policy.mjs");
+const FRAMES = 3;
+const IDENTITY_FIELDS = ["architecture", "description", "device", "vendor"];
 
 function findBinary() {
   for (const candidate of [join(ROOT, "build", "tn-linux", "mystral"), join(ROOT, "build", "tn-linux-quickjs", "mystral")]) {
@@ -59,20 +62,56 @@ function buildBundle() {
   return out;
 }
 
-/** Runs the real host on a private display, bounded by the screenshot endpoint, never `xvfb-run`. */
-function runHost(bundle) {
+/**
+ * Runs the real host on a private display and returns its RECEIPT, never its stdout alone.
+ *
+ * The host prints the fixture's marker from `enter()`, before any frame is presented and long
+ * before the screenshot is written, so stdout alone cannot say the run finished: a host that
+ * printed the marker and then died — a lost device, a failed save — carries the same marker as a
+ * clean one. `spawnSync` keeps the child's exit status, which `execFileSync` threw away behind a
+ * catch that returned the partial output as if it were the result. Never `xvfb-run`.
+ */
+function runHost(bundle, screenshotPath) {
   const dir = makeTempDirSync("tn-adapter-policy-run-");
-  const shot = join(dir, "shot.png");
-  try {
-    return execFileSync(
-      "sh",
-      [join(WORKSPACE, "scripts", "xvfb.sh"), "env", "SDL_VIDEODRIVER=x11", findBinary(),
-        "run", bundle, "--screenshot", shot, "--frames", "3"],
-      { cwd: dir, encoding: "utf8", timeout: 120_000 },
-    );
-  } catch (error) {
-    return `${error.stdout ?? ""}\n${error.stderr ?? ""}`;
-  }
+  const shot = screenshotPath ?? join(dir, "shot.png");
+  const child = spawnSync(
+    "sh",
+    [join(WORKSPACE, "scripts", "xvfb.sh"), "env", "SDL_VIDEODRIVER=x11", findBinary(),
+      "run", bundle, "--screenshot", shot, "--frames", String(FRAMES)],
+    { cwd: dir, encoding: "utf8", timeout: 120_000 },
+  );
+  return {
+    error: child.error,
+    output: `${child.stdout ?? ""}\n${child.stderr ?? ""}`,
+    presents: Number(/TN_PRESENTS:(\d+)/u.exec(child.stdout ?? "")?.[1] ?? Number.NaN),
+    screenshot: shot,
+    status: child.status,
+  };
+}
+
+/**
+ * What a finished host run must actually show: it exited clean, it presented the frames it was
+ * asked for, and the capture is on disk and not empty.
+ *
+ * Every clause is a receipt the marker cannot forge. `TN_PRESENTS` is the host's own count of
+ * presented frames; a run that printed the marker from `enter()` and never got there leaves it
+ * absent, which is `NaN` and fails the comparison rather than defaulting to a pass.
+ */
+function assertFinishedRun(run) {
+  assert.equal(run.error, undefined, `the host did not run to a verdict: ${String(run.error)}`);
+  assert.equal(
+    run.status,
+    0,
+    `the host exited ${run.status} — a marker printed before the frames is not a completed run:\n${run.output.slice(-2000)}`,
+  );
+  assert.doesNotMatch(run.output, /TN_NATIVE_ADAPTER_POLICY_FAILED/u, "the fixture failed on the host");
+  assert.match(run.output, new RegExp(`Rendered ${FRAMES} frames`, "u"), "the host reported no frame count");
+  assert.ok(
+    Number.isInteger(run.presents) && run.presents >= FRAMES,
+    `the host presented ${run.presents} of the ${FRAMES} frames it was asked for`,
+  );
+  assert.ok(existsSync(run.screenshot), `the host saved no screenshot at ${run.screenshot}`);
+  assert.ok(statSync(run.screenshot).size > 0, `the screenshot at ${run.screenshot} is empty`);
 }
 
 function observePolicy(output) {
@@ -84,34 +123,55 @@ function observePolicy(output) {
   return JSON.parse(line[1]);
 }
 
-test("native: the public softwareAdapter fact drives the template's quality tier", () => {
-  assert.ok(existsSync(ENTRY), `${ENTRY} is missing`);
-
-  const output = runHost(buildBundle());
-  assert.doesNotMatch(output, /TN_NATIVE_ADAPTER_POLICY_FAILED/u, "the fixture failed on the host");
-  const observed = observePolicy(output);
-
+/**
+ * The relationship between core's public fact and an identity read beside it.
+ *
+ * `softwareAdapterName` is the existing classifier, given the four fields the second read observed.
+ * The fact and the classifier therefore have independent sources — `createRenderer`'s own
+ * `requestAdapter` against the fixture's — and the assertions below are the relationship between
+ * them. An earlier version derived the expected class from the fact it was checking, which made a
+ * corrupted flag its own proof: a `swiftshader` string beside a real NVIDIA identity selected
+ * `software` and `low`, and passed.
+ */
+function assertPolicyFollowsIdentity(observed) {
   // The WebGPU branch is the one that produces the fact; a webgl2 fallback reports no adapter
   // identity at all, and a run that got there proved nothing about adapter.info.
   assert.equal(observed.kind, "webgpu", "the host fell back past the WebGPU renderer");
-  assert.equal(
-    observed.adapterClass,
-    observed.softwareAdapter === null ? "hardware" : "software",
-    "the reported class disagrees with the fact it was read from",
-  );
 
-  // Identity, read independently of the classification, so neither witnesses only itself.
   const identity = observed.identity ?? {};
-  for (const field of ["architecture", "description", "device", "vendor"]) {
+  for (const field of IDENTITY_FIELDS) {
     assert.ok(
       typeof identity[field] === "string" && identity[field].length > 0,
       `adapter.info.${field} was not observed on this host`,
     );
   }
 
+  // The combined identity core builds from those fields and hands the pipeline census: proof the
+  // four reads became one adapter identity on this host, not four unrelated strings.
+  assert.equal(
+    typeof observed.censusIdentity,
+    "string",
+    "the pipeline census recorded no adapter identity on this host",
+  );
+  for (const field of IDENTITY_FIELDS) {
+    assert.ok(
+      observed.censusIdentity.includes(`${field}=`),
+      `the census identity carries no ${field}: ${observed.censusIdentity}`,
+    );
+  }
+
+  const expectedSoftware = softwareAdapterName(identity) ?? null;
+  assert.equal(
+    observed.softwareAdapter,
+    expectedSoftware,
+    `core reported ${JSON.stringify(observed.softwareAdapter)} where the observed identity classifies as ${JSON.stringify(expectedSoftware)}`,
+  );
+  const adapterClass = expectedSoftware === null ? "hardware" : "software";
+  assert.equal(observed.adapterClass, adapterClass, "the reported class disagrees with the observed identity");
+
   // The relationship, not the value: this host is hardware, so `high` is its honest answer and
-  // says nothing about a software adapter natively. Both halves follow from the one fact.
-  assert.equal(observed.policyTier, observed.softwareAdapter === null ? "high" : "low");
+  // says nothing about a software adapter natively. Both halves follow from the observed identity.
+  assert.equal(observed.policyTier, adapterClass === "hardware" ? "high" : "low");
   assert.equal(observed.renderChainTier, observed.policyTier === "low" ? "low" : null);
 
   // The software branch of the same policy, executed natively because it is pure. This is where a
@@ -119,7 +179,56 @@ test("native: the public softwareAdapter fact drives the template's quality tier
   // a game PICKS and the tier the chain RUNS AT are two settings, and only one of them was ever
   // set. (Commit 9515d989c was the same defect found on a browser software rasteriser.)
   assert.deepEqual(observed.softwarePolicy, { renderChainTier: "low", tier: "low" });
+}
+
+/** One host run, shared by the assertions and by both controls, so the suite launches the host once. */
+let sharedRun;
+function hostRun() {
+  if (sharedRun === undefined) sharedRun = runHost(buildBundle());
+  return sharedRun;
+}
+
+test("native: the public softwareAdapter fact drives the template's quality tier", () => {
+  assert.ok(existsSync(ENTRY), `${ENTRY} is missing`);
+
+  const run = hostRun();
+  assertFinishedRun(run);
+  assertPolicyFollowsIdentity(observePolicy(run.output));
 }, 180_000);
+
+test("native: a marker from a host that then exits nonzero is not a completed run", () => {
+  // The first version of this file caught every host error and returned the partial stdout, so a
+  // run that printed the marker and died on the screenshot save reported the marker and passed.
+  // Reproduced against the real host by pointing --screenshot at a directory that does not exist:
+  // exit 1, marker printed, no capture. The receipt check has to reject that shape.
+  const run = hostRun();
+  const crashed = { ...run, output: run.output, screenshot: join(makeTempDirSync("tn-adapter-policy-crash-"), "shot.png"), status: 1 };
+  assert.throws(() => assertFinishedRun(crashed), /exited 1/u);
+
+  // And the same rejection for a run that reported frames it never presented.
+  assert.throws(() => assertFinishedRun({ ...run, presents: 0 }), /presented 0 of the 3 frames/u);
+});
+
+test("native: a softwareAdapter fact that contradicts the observed identity is rejected", () => {
+  // The corrupted flag: a `swiftshader` string beside this host's real NVIDIA identity. An
+  // assertion that derives the expected class from the fact under test calls that software, picks
+  // the low tier, and passes — the fact becomes its own witness.
+  const observed = observePolicy(hostRun().output);
+  assert.equal(observed.softwareAdapter, null, "this host is hardware; the control below needs that");
+  // The whole self-consistent chain a wrong flag produces: the fact, the class it selects, and the
+  // tier that class picks. Every one of those agrees with the others, and none of them agrees with
+  // the identity beside them.
+  assert.throws(
+    () => assertPolicyFollowsIdentity({
+      ...observed,
+      adapterClass: "software",
+      policyTier: "low",
+      renderChainTier: "low",
+      softwareAdapter: "swiftshader",
+    }),
+    /where the observed identity classifies as null/u,
+  );
+});
 
 test("native: the bundle is a real core build, not a stubbed renderer", () => {
   // The whole claim rests on this file being the public core bundle. A fixture that reimplemented

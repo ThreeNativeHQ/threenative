@@ -34,7 +34,7 @@ function readIdentity() {
 
 class AdapterPolicy extends Scene {
   enter(ctx) {
-    const { softwareAdapter } = ctx.renderer;
+    const { pipelineCensus, softwareAdapter } = ctx.renderer;
     // What `Play.ts` passes, computed the same way: the fact is present or it is not.
     const tier = resolveQualityTier({ mobile: false, software: softwareAdapter !== undefined });
     // The same policy asked about a software adapter. It is a pure function of its arguments, so
@@ -44,6 +44,7 @@ class AdapterPolicy extends Scene {
     console.log(
       `TN_NATIVE_ADAPTER_POLICY:${JSON.stringify({
         adapterClass: softwareAdapter === undefined ? "hardware" : "software",
+        censusIdentity: pipelineCensus?.().adapter.identity,
         identity: readIdentity(),
         kind: ctx.renderer.kind,
         policyTier: tier,

@@ -2310,10 +2310,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/timestamp_query_test.cpp)
     target_link_libraries(threenative-timestamp-query-test PRIVATE mystral-runtime)
 
-    add_executable(threenative-adapter-info-test EXCLUDE_FROM_ALL
-        tests/adapter_info_test.cpp)
-    target_link_libraries(threenative-adapter-info-test PRIVATE mystral-runtime)
-
     add_executable(threenative-timer-delivery-test EXCLUDE_FROM_ALL
         tests/timer_delivery_test.cpp)
     target_link_libraries(threenative-timer-delivery-test PRIVATE mystral-runtime)
@@ -2631,7 +2627,6 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_register_contract_test(threenative-pipeline-cache-lifecycle-test)
     tn_register_contract_test(threenative-pipeline-cache-test)
     tn_register_contract_test(threenative-stall-budget-hitch-test)
-    tn_register_contract_test(threenative-adapter-info-test)
     tn_register_contract_test(threenative-timestamp-query-test)
     if(TN_ENABLE_VIDEO)
         tn_register_contract_test(threenative-video-recorder-state-test)

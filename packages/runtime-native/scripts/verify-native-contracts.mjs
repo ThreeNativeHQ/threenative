@@ -173,12 +173,6 @@ export const executionContracts = {
   "threenative-timestamp-query-test": {
     invocations: [{ args: [], passLine: "native timestamp-query bindings contract passed" }],
   },
-  // The adapter identity core's softwareAdapter fact is read from. It reads navigator.gpu's
-  // adapter.info, so a bindings rename would leave the fact empty on native while the web lane
-  // kept working — and an empty identity is what made a run with no adapter classify as hardware.
-  "threenative-adapter-info-test": {
-    invocations: [{ args: [], passLine: "native adapter.info identity contract passed" }],
-  },
   // The rg11b10ufloat-renderable bindings. Needs no display: a raw Dawn oracle is compared
   // against the JS feature surfaces and a render pass into the format must leave the device
   // alive — the pass that was the pre-fix device loss behind three's SSGI target.
