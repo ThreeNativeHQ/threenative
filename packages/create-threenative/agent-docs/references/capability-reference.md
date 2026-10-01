@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -2996,6 +2996,92 @@ scene.add(world);
 world.update();
 ```
 
+## `@threenative/metahuman`
+
+### `assertAssetPath`
+
+`function` — Keeps a caller-supplied asset path inside the asset directory.
+
+```ts
+export function assertAssetPath(path: string): string { … }
+```
+
+- **Use when:** reject a MetaHuman asset path that would read outside the game's asset root
+- **Constraints:** absolute paths, Windows drive letters, backslashes and any `..` segment throw MetaHumanAssetError with TN_MH_PATH_ESCAPE before the path is joined onto a root
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+assertAssetPath("metahuman/specimen.glb");
+```
+
+### `loadMetaHuman`
+
+`function` — Load a prepared MetaHuman head and drive its expression from the browser's WASM evaluator: declared faceboard controls in, joint deltas and morph weights out, applied to an ordinary Three.js object graph.   two characters never write each other's face and nothing is disposed that `ctx.assets` still owns   switch re-evaluates the current controls before the replacement mesh is shown   `dispose()` throw, each with a stable `code`; nothing is clamped or coerced   `diagnostics().backend` reads "native"; the game code does not change
+
+```ts
+loadMetaHuman = (options: ILoadMetaHumanOptions): Promise<IMetaHuman> => createMetaHuman( { … }
+```
+
+- **Use when:** put a MetaHuman head in a browser game without an Unreal import or a baked clip
+- **Constraints:** the model is loaded through the game's own asset loader and cloned per instance, so · the rig's own GUI-to-raw mapping runs; the adapter never re-derives it, and a LOD · an undeclared control, an out-of-domain value, an undeclared LOD and any call after · in a native host that installed the MetaHuman resident the C++ evaluator runs and
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const human = await loadMetaHuman({ assets: ctx.assets, model: "metahuman/head.glb",
+  dna: "metahuman/head.dna", bindings: "metahuman/bindings.json" });
+  human.setControls({ jawOpen: 0.4 });
+// in the scene update, after any body animation
+  human.update();
+```
+
+### `MetaHumanAssetError`
+
+`class` — The rejection every check in this package raises, carrying a stable machine-readable code.
+
+```ts
+export class MetaHumanAssetError extends Error { … }
+```
+
+- **Use when:** branch on why a MetaHuman asset or evaluator call was refused
+- **Constraints:** `code` is part of the public surface; renaming one is a breaking change
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+if (error instanceof MetaHumanAssetError && error.code === "TN_MH_HASH_MISMATCH") refetch();
+```
+
+### `RigEvaluator`
+
+`class` — One MetaHuman head rig over the checksum-verified browser WASM build of the shared OpenRigLogic ABI: faceboard GUI controls in, joint deltas, blend shape weights and animated map weights out.   instantiated, and nothing is fetched from a CDN   evaluator throws instead of reading freed memory   `create` and the WASM is never fetched; `RigEvaluator.backend()` says which one runs
+
+```ts
+export class RigEvaluator implements IRigEvaluator { … }
+```
+
+- **Use when:** drive a prepared MetaHuman head's expression from the browser without an Unreal import
+- **Constraints:** the binary's SHA-256 is checked against the shipped manifest before it is · every returned array is a copy, so no view survives a memory growth; a disposed · a native host that installed the MetaHuman resident gets its C++ evaluator from
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const rig = await RigEvaluator.create(dna); rig.setGuiControls(gui); rig.evaluate(true); rig.jointOutputs();
+```
+
+### `validateMetaHumanAssets`
+
+`function` — Checks one prepared specimen — bindings sidecar, DNA and GLB — against the rig it claims to drive, and returns the bindings only when every name, index, domain and hash holds up.   channels, morph targets or LODs the loaded files do not contain   disk and an index past the end of its array are rejections, each with a stable code   cannot pass a hand-written sidecar the rig cannot drive
+
+```ts
+export function validateMetaHumanAssets(input: IMetaHumanAssetInput): IMetaHumanBindings { … }
+```
+
+- **Use when:** refuse a MetaHuman specimen whose bindings point at joints, nodes, blend shape
+- **Constraints:** fails closed: a missing key, a wrong type, a hash that differs from the bytes on · reads the rig's real names and the GLB's real node, mesh and target counts, so it
+- **Requires:** npm i @threenative/metahuman
+
+```ts
+const bindings = validateMetaHumanAssets({ bindings: parsed, dnaSha256, glbSha256, rig, gltf });
+```
+
 ## `@threenative/physics`
 
 ### `Area3D`
@@ -3008,6 +3094,7 @@ export class Area3D { … }
 
 - **Use when:** detect when an enemy enters a trigger area · react to a player entering a zone
 - **Constraints:** add the area to the physics context before stepping the world
+- **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
 
 ```ts
 const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
@@ -3054,6 +3141,7 @@ export class CharacterBody3D { … }
 
 - **Use when:** move an enemy or player through a level · keep a character from walking through walls
 - **Constraints:** use moveAndSlide inside the physics update
+- **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. CharacterBody3D itself is not deprecated.
 
 ```ts
 const body = new CharacterBody3D({ object: hero, physics: ctx.physics, shape: CollisionShape3D.capsule(0.5, 0.35) });
@@ -3098,6 +3186,7 @@ export class Joint3D { … }
 
 - **Use when:** constrain a rigid body to another body · build a hinge or pin mechanism · swing a pendulum, wrecking ball, or hinged door on a joint
 - **Constraints:** both bodies must belong to the same physics context
+- **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Joint3D itself is not deprecated.
 
 ```ts
 const hinge = Joint3D.hinge({ physics: ctx.physics, bodyA: beam, bodyB: bob, anchorA: { x: 0, y: 0, z: 0 }, anchorB: { x: 0, y: 2.4, z: 0 }, axis: { x: 1, y: 0, z: 0 } });
@@ -3144,6 +3233,7 @@ export class RigidBody3D { … }
 - **Use when:** give a crate or prop physical motion · create a body that collides with a character · fire physical cannonballs that collide with ships or scenery · fire a cannonball projectile with cannon smoke particles · a bullet passes through a wall
 - **Constraints:** register rapier() in the game plugin list before using bodies
 - **Overrides:** continuousCollision: false opts one body out while body.continuousCollision still reports the effective setting
+- **Deprecated:** Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. RigidBody3D itself is not deprecated.
 
 ```ts
 const crate = new RigidBody3D({ object, physics: ctx.physics, shape: CollisionShape3D.box(1, 1, 1), mass: 8 });
@@ -3822,6 +3912,23 @@ export async function connectPlaytestBridgeTransport( transport: IBridgeTranspor
 
 ```ts
 const bridge = await connectPlaytestBridge(page, scenario);
+```
+
+### `decideDisplayStrategy`
+
+`function` — Decide which display a pixel-producing run paints on, the same decision the runner makes.
+
+```ts
+export function decideDisplayStrategy(input: IDisplayDecisionInput): IDisplayStrategy { … }
+```
+
+- **Use when:** judge whether a measured frame rate came from a display that can carry one
+- **Constraints:** a private Xvfb is software, so a rate read there measures the X server
+
+```ts
+import { decideDisplayStrategy } from "@threenative/playtest/runner";
+const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
+if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
 ```
 
 ### `DesktopPlaytestDriver`
@@ -5361,14 +5468,15 @@ renderer: { minimumProjectedPixels: 2 } // in threenative.config.ts
 
 ### `renderer.projection`
 
-`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it.
+`function` — The engine's scene-render projection — an internal mirror that collapses repeated draws, including animated skinned rigs that share a geometry and material into one palette draw per pass — on by default. Set `renderer.projection: false` to decline it, or `projection: { materialChecks: 'everyFrame' }` to keep it and pay for a per-material check on every frame.
 
 ```ts
-renderer.projection?: boolean
+renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }
 ```
 
-- **Use when:** a crowd of animated characters draws slowly · many SkinnedMesh copies of one rig, each its own draw call · the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer
-- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines.
+- **Use when:** a crowd of animated characters draws slowly · many SkinnedMesh copies of one rig, each its own draw call · the game got slower after the projection engaged · turn off the render projection, batching, or the instanced mirror · draw count fell but frame time did not · a multi-second freeze when the mirror first engages · opt out of an engine render optimizer · thousands of props each with their own material, one colour apart · a material edit takes a few frames to show up · check every batched material every frame anyway
+- **Constraints:** Unset is the shipping behaviour: the projection runs. Only an explicit `false` declines it. · An opted-out game builds no mirror and runs no eligibility scan; the authored scene is what renders, so declining costs nothing rather than being re-judged each frame. · TN_RENDER_PROJECTION still reports the verdict, with reasonCode `disabled` rather than one of the measured declines. · `materialChecks: 'spread'` is the default: a bounded slice of the batched materials is proved per frame instead of all of them, so a frame of 4,096 colour-only materials costs 512 checks rather than 4,096. A base-colour edit is never delayed — that write is O(1) per member. · The price of `spread` is staleness on every other material edit: a material that gains a roughness, a map or a define still leaves its group and is drawn exactly, up to `materialCheckStaleFrames` frames later. TN_RENDER_PROJECTION reports that bound; `materialChecks: 'everyFrame'` sets it to 0 and restores the per-member, per-frame check. · Any other `materialChecks` value throws at startup rather than falling back to a default.
+- **Overrides:** renderer.projection: false declines the whole mirror and costs nothing to decline · renderer: { projection: { materialChecks: 'everyFrame' } } proves every batched material every frame instead of the default bounded slice
 
 ```ts
 renderer: { projection: false } // in threenative.config.ts

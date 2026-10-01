@@ -168,6 +168,39 @@ export function configureVideoVerificationBuild(cmake) {
   return configureVerificationBuild(cmake, "contracts-video", [["TN_ENABLE_VIDEO", "ON"]]);
 }
 
+/**
+ * TN_ENABLE_METAHUMAN needs the pinned OpenRigLogic source, which the default desktop set
+ * never fetches, so the optional dependency is acquired here rather than on every build.
+ */
+/**
+ * TN_ENABLE_METAHUMAN needs the pinned OpenRigLogic source, which the default desktop set never
+ * fetches, so the optional dependency is acquired here rather than on every build.
+ */
+function configureMetaHumanBuild(cmake, suffix, cacheVariables) {
+  run(process.execPath, [join(runtimeRoot, "scripts", "download-deps.mjs"), "--only", "openriglogic"], {
+    timeout: 1_800_000,
+  });
+  return configureVerificationBuild(cmake, suffix, cacheVariables);
+}
+
+export function configureMetaHumanVerificationBuild(cmake) {
+  return configureMetaHumanBuild(cmake, "contracts-metahuman", [["TN_ENABLE_METAHUMAN", "ON"]]);
+}
+
+/**
+ * The same rig contract under AddressSanitizer and UBSan, in its own build directory.
+ *
+ * The parser reads untrusted bytes into a C++ rig, so a leak or a bad free shows up only with the
+ * allocator instrumented; a build directory of its own keeps the plain contract proof on the plain
+ * toolchain flags.
+ */
+export function configureMetaHumanSanitizerVerificationBuild(cmake) {
+  return configureMetaHumanBuild(cmake, "asan-metahuman", [
+    ["TN_ENABLE_METAHUMAN", "ON"],
+    ["TN_ENABLE_SANITIZERS", "ON"],
+  ]);
+}
+
 export function configurePhysicsVerificationBuild(cmake) {
   run(process.execPath, [join(runtimeRoot, "scripts", "build-native-physics.mjs"), "--desktop"], {
     timeout: 1_800_000,

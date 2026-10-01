@@ -136,6 +136,7 @@ jobs:
       # BEGIN GENERATED WORKSPACE PUBLISH SET
       #   @threenative/assets
       #   @threenative/core
+      #   @threenative/metahuman
       #   @threenative/physics
       #   @threenative/playtest
       #   @threenative/raw-unreal

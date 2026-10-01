@@ -39,7 +39,7 @@ import {
   setBatchedMeshMatrixWithVelocity,
   setBatchedMeshPreviousMatrix,
 } from "./render/batched-velocity.js";
-import type { ProjectionExactReason } from "./renderProjection.js";
+import type { ProjectionExactReason, ProjectionMaterialChecks } from "./renderProjection.js";
 
 /**
  * The apply-and-restore seam of the render projection (P2-3).
@@ -93,6 +93,23 @@ const PALETTE_BINDING_BYTES = 134_217_728;
  */
 const PER_OBJECT_FRUSTUM_CULLED = true;
 const SORT_BATCH_OBJECTS = false;
+
+/**
+ * How many uniform-batch members the drift sweep may examine in one frame (PRD-462).
+ *
+ * The check is what makes the colour lane's per-frame sync ten times the shared lane's: one
+ * `Object.values` and one compare per member per frame, measured at 1,126 ns a member, which is
+ * 4.61 ms of a 4,096-material frame's 7.5 ms reconcile. Most of those frames are proving that
+ * nothing moved, and a game that animates a material's roughness does so on a handful of frames,
+ * not on all of them. So the sweep visits this many member positions a frame and carries its
+ * cursor across frames: every material is proved within `ceil(members / this)` frames, and the
+ * worst case at L4@4,096 is 8 — reported as `materialCheckStaleFrames`, never assumed.
+ *
+ * 512 is measured, not round: it takes the check from 4.61 ms to ~0.58 ms a frame, which puts
+ * L4@4,096's reconcile (3.5 ms) clearly under Godot's 5.95 ms for the same rung, and a smaller
+ * budget buys nothing a game can see while lengthening the staleness every frame pays for.
+ */
+const MATERIAL_CHECKS_PER_FRAME = 512;
 
 interface IBatch {
   readonly mesh: InstancedMesh;
@@ -285,9 +302,24 @@ export class ProjectionMirror {
   #velocityEnabled: boolean;
   /** Set when a member left a uniform group because its material drifted; read once per frame. */
   #reclassified = false;
+  readonly #materialChecks: ProjectionMaterialChecks;
+  /** Where the drift sweep resumes: the group and the member offset within it. Persists frames. */
+  #sweepGroup = 0;
+  #sweepMember = 0;
+  /** Uniform members the plan holds, which is what the sweep walks and the bound divides. */
+  #sweepTotal = 0;
+  /**
+   * Materials already proved in the sweep in progress, so a material several members share is
+   * compared once per sweep rather than once per member. Bounded by the budget and cleared on
+   * every wrap, which is what makes the sweep's own cost a fixed number rather than a scene's.
+   */
+  readonly #swept = new Set<Material>();
+  /** Materials this frame's sweep found drifted; every member holding one leaves its group. */
+  readonly #drifted = new Set<Material>();
 
-  constructor(velocityEnabled = false) {
+  constructor(velocityEnabled = false, materialChecks: ProjectionMaterialChecks = "spread") {
     this.#velocityEnabled = velocityEnabled;
+    this.#materialChecks = materialChecks;
   }
 
   /** Rebuilds the private mirror when a temporal chain turns per-object history on or off. */
@@ -343,6 +375,103 @@ export class ProjectionMirror {
     return this.#reclassified;
   }
 
+  /** Which per-frame material check this mirror runs, for the report and the verdict line. */
+  get materialChecks(): ProjectionMaterialChecks {
+    return this.#materialChecks;
+  }
+
+  /** The per-frame ceiling on drift checks, or 0 when every material is proved every frame. */
+  get materialChecksPerFrame(): number {
+    return this.#materialChecks === "spread" ? MATERIAL_CHECKS_PER_FRAME : 0;
+  }
+
+  /**
+   * The worst frames a material edit can sit unproved for: one full sweep of the uniform members
+   * at the per-frame budget. 0 in `everyFrame` mode, where every material is proved every frame.
+   */
+  get materialCheckStaleFrames(): number {
+    if (this.#materialChecks === "everyFrame") return 0;
+    return Math.ceil(this.#sweepTotal / MATERIAL_CHECKS_PER_FRAME);
+  }
+
+  /**
+   * Proves a bounded slice of the uniform members' materials, resuming where the last frame stopped.
+   *
+   * The check itself is unchanged — `uniformUnchanged`, whole own-value list, component reads and
+   * `defines` walk. What is bounded is how many members pay for it this frame, and a member whose
+   * material is proved drifted is marked here so the loop below ejects every member holding it, in
+   * this same frame, exactly as an eager per-member check would have.
+   *
+   * Deduplicated per sweep rather than per member: a material sixty-four cubes share is one fact,
+   * and comparing it sixty-four times a sweep is the cost this exists to remove. The cursor walks
+   * member *positions* and wraps, so a scene that grew or shrank mid-sweep still proves every
+   * member it currently holds within `ceil(members / budget)` frames.
+   */
+  #sweepDrift(plan: IProjectionProjectPlan): void {
+    this.#drifted.clear();
+    let total = 0;
+    for (let index = 0; index < plan.batchGroupCount; index += 1) {
+      const group = plan.batchGroups[index] as IProjectionBatchGroup;
+      if ((group as Partial<IProjectionUniformGroup>).uniform === true) total += group.memberCount;
+    }
+    this.#sweepTotal = total;
+    let group = this.#sweepGroup;
+    let member = this.#sweepMember;
+    // A plan that shrank under the cursor leaves it past the end, which is the same thing as a
+    // finished sweep: start the next one from the top.
+    if (group >= plan.batchGroupCount) {
+      group = 0;
+      member = 0;
+      this.#swept.clear();
+    }
+    let budget = MATERIAL_CHECKS_PER_FRAME;
+    while (budget > 0 && group < plan.batchGroupCount) {
+      const candidate = plan.batchGroups[group] as IProjectionBatchGroup;
+      if ((candidate as Partial<IProjectionUniformGroup>).uniform !== true) {
+        group += 1;
+        member = 0;
+        continue;
+      }
+      if (member >= candidate.memberCount) {
+        group += 1;
+        member = 0;
+        continue;
+      }
+      const mesh = candidate.members[member] as Mesh;
+      const material = mesh.material as Material;
+      if (!this.#swept.has(material)) {
+        this.#swept.add(material);
+        if (!uniformUnchanged(material)) this.#drifted.add(material);
+      }
+      member += 1;
+      budget -= 1;
+    }
+    // Step past any group the last visited member exhausted, so a sweep that ends exactly on a
+    // slice boundary leaves the cursor on the next member rather than on a spent group — otherwise
+    // the next frame spends itself walking off the end and every material waits one frame longer
+    // than the bound the report states.
+    while (group < plan.batchGroupCount) {
+      const candidate = plan.batchGroups[group] as IProjectionBatchGroup;
+      if (
+        (candidate as Partial<IProjectionUniformGroup>).uniform === true &&
+        member < candidate.memberCount
+      )
+        break;
+      group += 1;
+      member = 0;
+    }
+    if (group < plan.batchGroupCount) {
+      this.#sweepGroup = group;
+      this.#sweepMember = member;
+      return;
+    }
+    // Off the end: the sweep covered every member, and the next one starts from the top with a
+    // fresh dedupe set rather than re-proving what this sweep just proved.
+    this.#swept.clear();
+    this.#sweepGroup = 0;
+    this.#sweepMember = 0;
+  }
+
   /** Rebuilds exact-lane tallies and scratch from the scan without copying the entry objects. */
   prepare(exactLane: readonly IProjectionExactEntry[], exactLaneCount: number): void {
     this.#exact.clear();
@@ -388,6 +517,9 @@ export class ProjectionMirror {
     // at exactly the wrong granularity.
     this.#projectedObjects = 0;
     this.#reclassified = false;
+    // Before the member loops, because the loops read what it found: a member whose material this
+    // frame's slice proved drifted leaves the group here rather than at the next sweep's turn.
+    if (this.#materialChecks === "spread") this.#sweepDrift(plan);
     for (let index = 0; index < plan.batchGroupCount; index += 1) {
       const group = plan.batchGroups[index] as IProjectionBatchGroup;
       const batch = this.#ensureBatch(group);
@@ -810,6 +942,11 @@ export class ProjectionMirror {
    * shared clone was built from is proved unchanged first: a member that drifted leaves the group
    * rather than draw with a roughness, a map or an alpha that is not its own. That is a
    * reclassification rather than a fallback, so the caller is told and the next frame re-derives it.
+   *
+   * Which frame proves it is the mode's business, not the ejection's. `everyFrame` compares here
+   * for every member; `spread` compares a bounded slice of the members in `#sweepDrift` and reads
+   * its answer here, so a drifted material costs every member holding it the same frame it was
+   * found in, and costs a settled frame nothing.
    */
   #syncBatched(target: IBatch, mesh: Mesh): ProjectionExactReason | undefined {
     const material = mesh.material as Material;
@@ -819,7 +956,13 @@ export class ProjectionMirror {
     // Read before the group comparison below, because a member whose material no longer matches
     // the group is leaving whichever batch it holds: the one it is in would draw it with a
     // roughness, a map or an alpha that is not its own.
-    if (target.uniform && state !== undefined && !uniformUnchanged(material)) {
+    if (
+      target.uniform &&
+      state !== undefined &&
+      (this.#materialChecks === "everyFrame"
+        ? !uniformUnchanged(material)
+        : this.#drifted.size > 0 && this.#drifted.has(material))
+    ) {
       this.#reclassified = true;
       this.#release(mesh);
       return "materialChanged";

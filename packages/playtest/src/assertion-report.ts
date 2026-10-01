@@ -387,7 +387,28 @@ function formatNumber(value: number): string {
 }
 
 export function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return JSON.stringify(sortedKeys(left)) === JSON.stringify(sortedKeys(right));
+}
+
+// Key insertion order is incidental to a published state object, so objects are compared by
+// their keys' names; arrays keep their order. Non-plain objects (Date, class instances with a
+// toJSON) are left to JSON.stringify untouched.
+function sortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortedKeys);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return value;
+  }
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortedKeys(value[key]);
+  }
+  return sorted;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import fs, { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ILadderArm, MeasurementClock } from "../../examples/engine-load-test/src/driver.js";
@@ -16,6 +17,14 @@ import {
   hashWorkloadModuleGraph,
   isBenchmarkWorkloadModule,
 } from "../../examples/engine-load-test/src/identity.js";
+import {
+  LADDER_FOX_HEIGHT,
+  characterPlacement,
+  expectedLadderCounts,
+  foxMeasurementReason,
+  foxParityReason,
+  foxScale,
+} from "../../examples/engine-load-test/src/ladder.js";
 import {
   CULLED_OFFSET_X,
   DEFAULT_AXES,
@@ -54,7 +63,7 @@ import {
   summarize,
 } from "../engine-load-test/report.js";
 import { MINIMUM_BATTERY_PERCENT } from "../engine-load-test/run-android.js";
-import { runCapturing } from "../engine-load-test/run-desktop.js";
+import { KILL_GRACE_MS, runCapturing } from "../engine-load-test/run-desktop.js";
 
 const BEGIN_MARKER = "ENGINE_LOAD_TEST_JSON_BEGIN";
 const END_MARKER = "ENGINE_LOAD_TEST_JSON_END";
@@ -550,9 +559,32 @@ describe("engine load test workload", () => {
     // One flag, not a new project: L4 is L3's shipped-default projection over L1's one-mesh-per-cube
     // authoring, and only the material changes. L2 stays the single batch, L1 the un-projected
     // control, and the projection still runs over L3 and L4 alone.
-    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4"]);
-    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([true, false, true, true]);
-    expect(RENDER_MODES.map(isProjectedRung)).toEqual([false, false, true, true]);
+    // R1-R5 are PRD-464's realistic-scene ladder on top of the same list: authored and projected
+    // rungs like L3, because a ladder row that quietly measured the un-projected scene would be a
+    // different experiment from the one its name states.
+    expect(RENDER_MODES).toEqual(["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4", "R5"]);
+    expect(RENDER_MODES.map(isAuthoredRung)).toEqual([
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(RENDER_MODES.map(isProjectedRung)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
     // Distinct per cube over the whole ladder, and a pure function of the index, so the two arms
     // compute the same colour and no engine has two materials it could pair.
     const colors = Array.from({ length: 16_384 }, (_, index) => uniqueMaterialColor(index));
@@ -571,13 +603,14 @@ describe("engine load test workload", () => {
 
     // Both entries install the projection for L4 as they do for L3; only L3 keeps the two guards
     // that refuse to publish an un-projected frame, because a decline is L4's answer, not a fault.
+    // PRD-464's R1-R5 are L3's authoring, so they keep both guards too.
     for (const entry of ["driver.ts", "native.ts"]) {
       const source = await readFile(
         path.join(process.cwd(), "examples/engine-load-test/src", entry),
         "utf8",
       );
       expect(source).toMatch(/if \(isProjectedRung\((rung\.)?mode\)\)/u);
-      expect(source).toMatch(/if \((rung\.)?mode === "L3"\)/u);
+      expect(source).toMatch(/if \((rung\.)?mode === "L3"( \|\| isRealisticRung\(\1?mode\))?\)/u);
     }
     const game = await readFile(
       path.join(process.cwd(), "examples/engine-load-test/src/game.ts"),
@@ -2259,6 +2292,237 @@ describe("engine load test scorer", () => {
   });
 });
 
+// PRD-464's rung gate. A ladder row is a number about a scene, so a run only publishes one when the
+// scene it claims to have built is the scene it built *and* the frame it drew was not a flat fill.
+// Both engines go through this one parser, so neither can pass the other.
+describe("the realistic-scene ladder gate", () => {
+  const OBJECT_COUNT = 4096;
+
+  /** A rung that built exactly what its name says, with a frame that shows something. */
+  function ladderRung(
+    mode: "R1" | "R2" | "R3" | "R4" | "R5",
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      // L3's projection folds the 4,096 cubes into a handful of instanced draws; R3 adds one draw
+      // per skinned fox on top. Anything near 4,097 would fail the L2 batch rule in `compare`.
+      drawCalls: mode === "R1" || mode === "R2" ? 8 : 58,
+      frameMs: series(12),
+      // R1 and R2 build no characters, so a measurement on them would be a shape error below.
+      ...(mode === "R1" || mode === "R2"
+        ? {}
+        : { foxMeasurement: { heightM: LADDER_FOX_HEIGHT, screenFraction: 0.041 } }),
+      ladder: expectedLadderCounts(mode, OBJECT_COUNT),
+      mode,
+      objectCount: OBJECT_COUNT,
+      positionHash: "aabbccdd",
+      renderCheck: {
+        distinctColors: 24_912,
+        luminanceStdDev: 0.081,
+        maxLuminance: 0.74,
+        sampledPixels: 32_400,
+      },
+      repeat: 0,
+      triangles: 49_176,
+      visibleObjects: 4096,
+      ...overrides,
+    };
+  }
+
+  function ladderReport(
+    rungOverrides: Record<string, unknown> = {},
+    mode: "R1" | "R2" | "R3" | "R4" | "R5" = "R1",
+  ): Record<string, unknown> {
+    return {
+      arm: "tn-web",
+      build: { notes: "", type: "release" },
+      device: { battery: null, label: "desktop-chrome-linux" },
+      display: { height: 720, refreshHz: 60, vsync: false, width: 1280 },
+      driver: { adapter: "test adapter", renderer: "test renderer" },
+      engine: { name: "threenative", version: "workspace" },
+      rungs: [ladderRung(mode, rungOverrides)],
+    };
+  }
+
+  it("accepts a rung whose counts and read-back frame both say what the rung claims", () => {
+    for (const mode of ["R1", "R2", "R3", "R4", "R5"] as const) {
+      const parsed = parseRunReport(
+        ladderReport({ mode, ladder: expectedLadderCounts(mode, OBJECT_COUNT) }, mode),
+      );
+      expect(parsed.rungs[0]?.ladder).toEqual(expectedLadderCounts(mode, OBJECT_COUNT));
+      expect(parsed.rungs[0]?.renderCheck?.luminanceStdDev).toBe(0.081);
+    }
+  });
+
+  it("refuses a rung whose counts do not match the rung it is published under", () => {
+    // R1 published with R3's 50 characters in the scene is the failure this exists for.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "R1", ladder: expectedLadderCounts("R3", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS.*skinnedMeshes|pointLights/u);
+    // A missing count block is a hole in the measurement, not a rung that measured nothing.
+    expect(() => parseRunReport(ladderReport({ ladder: undefined }))).toThrow(
+      /TN_BENCH_MISSING_FIELD|TN_BENCH_BAD_SHAPE/u,
+    );
+    // A string where a count belongs is a wrong count, and fails the same way.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ ladder: { ...expectedLadderCounts("R1", OBJECT_COUNT), pointLights: "8" } }),
+      ),
+    ).toThrow(/TN_BENCH_LADDER_COUNTS/u);
+  });
+
+  it("refuses a character rung whose fox is not a fox", () => {
+    // The bug this exists for: the Khronos Fox is authored in centimetres, so an unscaled import is
+    // a 79 m statue. Every count still matched, the frame was still non-blank, and the published
+    // number was a measurement of a camera full of overdraw rather than of skinning.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 79.03, screenFraction: 0.9 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*79/u);
+    // The tolerance is 5%, so 2% off passes and 6% off does not.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.53, screenFraction: 0.04 } }, "R3"),
+      ),
+    ).toThrow(/TN_BENCH_FOX_SIZE/u);
+    const passes = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.51, screenFraction: 0.04 } }, "R3"),
+    );
+    expect(passes.rungs[0]?.foxMeasurement?.heightM).toBe(0.51);
+    // A character rung that recorded no size is unmeasured, and a size with no height is nonsense.
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: undefined }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE|TN_BENCH_MISSING_FIELD/u,
+    );
+    expect(() => parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5 } }, "R3"))).toThrow(
+      /TN_BENCH_BAD_SHAPE.*screenFraction/u,
+    );
+    // A character covering none of the frame was culled or off-camera: the skinning was never drawn.
+    expect(() =>
+      parseRunReport(ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0 } }, "R3")),
+    ).toThrow(/TN_BENCH_FOX_SIZE.*none of the frame/u);
+    // A size on a rung with no characters is a shape error: R1 and R2 build no fox.
+    expect(() =>
+      parseRunReport(
+        ladderReport({ foxMeasurement: { heightM: 0.5, screenFraction: 0.04 } }, "R1"),
+      ),
+    ).toThrow(/TN_BENCH_BAD_SHAPE/u);
+  });
+
+  it("refuses a comparison whose two engines drew different-sized foxes", () => {
+    // Neither per-arm gate can see this: 0.476 m and 0.524 m are each inside the 5% band around the
+    // target, and the 9.6% between them is only visible once both are in hand.
+    const left = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.476, screenFraction: 0.04 } }, "R3"),
+    );
+    const agree = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.48, screenFraction: 0.04 }, repeat: 1 }, "R3"),
+    );
+    expect(checkEquivalence(left, agree)).toEqual([]);
+    const apart = parseRunReport(
+      ladderReport({ foxMeasurement: { heightM: 0.524, screenFraction: 0.04 } }, "R3"),
+    );
+    const failures = checkEquivalence(left, apart);
+    expect(failures.map((failure) => failure.field).join(" ")).toMatch(/foxMeasurement/u);
+    expect(() => compare(left, apart)).toThrow(/TN_BENCH_NOT_EQUIVALENT/u);
+  });
+
+  it("reads a 0.5 m character out of any import that reports its own height", () => {
+    // The factor is measured, not hardcoded, so an importer that changes its units changes the
+    // answer rather than quietly leaving a 79 m fox in a scene published as 0.5 m ones.
+    expect(foxScale(79.028_933)).toBeCloseTo(0.5 / 79.028_933, 12);
+    expect(() => foxScale(0)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(() => foxScale(Number.NaN)).toThrow(/TN_BENCH_FOX_RAW_HEIGHT/u);
+    expect(foxMeasurementReason({ heightM: 0.5, screenFraction: 0.04 })).toBeNull();
+    expect(foxMeasurementReason(undefined)).toMatch(/no character measurement/u);
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.51, screenFraction: 0.04 },
+      ),
+    ).toBeNull();
+    expect(
+      foxParityReason(
+        { heightM: 0.5, screenFraction: 0.04 },
+        { heightM: 0.6, screenFraction: 0.04 },
+      ),
+    ).toMatch(/apart in height/u);
+  });
+
+  it("puts the characters on the ground, on the cube grid, identically in both engines", () => {
+    // The 10x5 block is spaced at `CUBE_SPACING` so a fox stands in a gap between lattice cells,
+    // and its y is the ground: the old 4.5 m placement put a centimetre-authored fox at head height.
+    for (const index of [0, 9, 10, 49]) {
+      expect(characterPlacement(index).y).toBe(0);
+    }
+    expect(characterPlacement(0).x).toBe(-11.25);
+    expect(characterPlacement(9).x).toBe(11.25);
+    expect(characterPlacement(0).z).toBe(-5);
+    expect(characterPlacement(49).z).toBe(5);
+  });
+
+  it("refuses a rung that drew nothing, and a rung that has no read-back at all", () => {
+    expect(() => parseRunReport(ladderReport({ drawCalls: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    expect(() => parseRunReport(ladderReport({ triangles: 0 }))).toThrow(/TN_BENCH_NOTHING_DRAWN/u);
+    // A rung with no read-back is unmeasured, which is not the same as measured-and-fine.
+    expect(() => parseRunReport(ladderReport({ renderCheck: undefined }))).toThrow(
+      /TN_BENCH_RENDER_CHECK_MISSING/u,
+    );
+  });
+
+  it("refuses a uniform frame: the flat grey an unlit or unwired window renders as", () => {
+    // One colour and no variation at any brightness: exactly what an empty viewport reads back.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 1,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // A frame with plenty of colours that are all the same brightness is uniform too.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 40_000,
+            luminanceStdDev: 0,
+            maxLuminance: 0.3,
+            sampledPixels: 32_400,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+    // And a read-back that returned nothing at all is blank, not unmeasured.
+    expect(() =>
+      parseRunReport(
+        ladderReport({
+          renderCheck: {
+            distinctColors: 0,
+            luminanceStdDev: 0,
+            maxLuminance: 0,
+            sampledPixels: 0,
+          },
+        }),
+      ),
+    ).toThrow(/TN_BENCH_BLANK_FRAME/u);
+  });
+
+  it("refuses a ladder block on an L rung, where it would mean nothing", () => {
+    expect(() =>
+      parseRunReport(
+        ladderReport({ mode: "L1", ladder: expectedLadderCounts("R1", OBJECT_COUNT) }),
+      ),
+    ).toThrow(/only meaningful on a realistic-scene rung/u);
+  });
+});
+
 describe("engine load test equivalence gate", () => {
   it("should refuse a comparison whose scenes hash differently, naming the field", () => {
     const left = ladderReport(24);
@@ -2472,6 +2736,35 @@ describe("engine load test desktop capture", () => {
       runCapturing("sh", ["-c", "echo nothing useful"], { cwd: process.cwd() }),
     ).rejects.toThrow(/TN_BENCH_NO_REPORT/);
   }, 30_000);
+
+  it("should kill a host that never reaches its marker, and leave nothing running", async () => {
+    // The failure this exists for: a smoke run that never finished left `load_test.x86_64`
+    // reparented to init and burning 75% of a core for half an hour, which showed up as a grey
+    // window on the display and as load on every run after it. A timed-out arm must take its whole
+    // process group down: the fixture is a shell, a background sleeper and a foreground sleep, so
+    // signalling only the direct child would leave the sleeper behind — the orphan itself.
+    const pidFile = path.join(os.tmpdir(), `tn-bench-orphan-${process.pid}.pid`);
+    fs.rmSync(pidFile, { force: true });
+    const script = `sleep 300 & echo $! > ${pidFile}; sleep 300`;
+    await expect(
+      runCapturing("sh", ["-c", script], { cwd: process.cwd(), timeoutMs: 1_500 }),
+    ).rejects.toThrow(/TN_BENCH_DESKTOP_TIMEOUT/);
+    const pid = Number(fs.readFileSync(pidFile, "utf8").trim());
+    // Past the SIGTERM grace, so a process that ignored SIGTERM would already have been SIGKILLed.
+    await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 2_000));
+    expect(Number.isInteger(pid)).toBe(true);
+    // `kill -0` on a surviving, reparented process is the orphan. It throws ESRCH only when the
+    // process is gone, which is the observation this whole test exists to make.
+    expect(() => process.kill(pid, 0)).toThrow();
+    fs.rmSync(pidFile, { force: true });
+  }, 30_000);
+
+  it("should give a host a grace period to die before signalling it the hard way", () => {
+    // Godot tears down a Vulkan swapchain and a shadow atlas on the way out, and the observation is
+    // that it did it on SIGTERM and never on SIGKILL. A group stopped with SIGKILL alone skips that
+    // teardown, so the grace is the difference between a clean exit and a grey window.
+    expect(KILL_GRACE_MS).toBeGreaterThanOrEqual(1_000);
+  });
 });
 
 describe("the performance baseline gate", () => {
@@ -2806,11 +3099,14 @@ describe("plain three.js control arm", () => {
       }
     }
     // A control that measures nothing is not a control: the harness it shares with the TN arm is
-    // the only reason the two arms frame the same scene.
+    // the only reason the two arms frame the same scene. `ladder.ts` is in that graph because
+    // `workload.ts` imports its rung names from it; it is constants and pure functions, which is
+    // why the framework-import check above passes for it too.
     expect([...seen].sort()).toEqual([
       "examples/engine-load-test/src/driver.ts",
       "examples/engine-load-test/src/game.ts",
       "examples/engine-load-test/src/identity.ts",
+      "examples/engine-load-test/src/ladder.ts",
       "examples/engine-load-test/src/plain.ts",
       "examples/engine-load-test/src/workload.ts",
     ]);
@@ -3000,8 +3296,15 @@ describe("the completed-work measurement boundary", () => {
       collapseMs: 0,
       collapseStatus: () => "pending",
       dispose: () => {},
+      foxMeasurement: () => undefined,
+      ladderCounts: () => undefined,
       placementBytes: new Uint8Array(8),
       positionHash: "00000000",
+      // The stub draws no pixels; the driver only probes a rung that asked to be a ladder rung, and
+      // this harness never claims to be one.
+      probeFrame: async () => {
+        throw new Error("TN_BENCH_NO_LADDER_RUNG");
+      },
       render: async () => {
         advance(RENDER_MS);
       },

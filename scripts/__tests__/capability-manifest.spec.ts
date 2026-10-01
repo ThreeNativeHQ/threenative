@@ -393,6 +393,55 @@ describe("capability manifest generator", () => {
     );
   });
 
+  it("carries @deprecatedOption into the manifest entry, and omits it when untagged", async () => {
+    const root = await makeTempDir("threenative-capability-deprecated-");
+    temporaryRoots.push(root);
+    await writePackage(
+      root,
+      "core",
+      "@threenative/core",
+      [
+        "/**",
+        " * A fixture capability with one deprecated option.",
+        " * @situation test what the deprecation names",
+        " * @deprecatedOption constructor option `world`; pass `physics` instead",
+        " * @example const capability = new DocumentedCapability();",
+        " */",
+        "export class DocumentedCapability {}",
+        "",
+        "/**",
+        " * A fixture capability with nothing deprecated.",
+        " * @situation test an undeprecated neighbour",
+        " * @example const plain = new PlainCapability();",
+        " */",
+        "export class PlainCapability {}",
+        "",
+        "/**",
+        " * A fixture capability whose class, not an option, is retired.",
+        " * @situation test a class-level deprecation",
+        " * @deprecated use PlainCapability instead",
+        " * @example const retired = new RetiredCapability();",
+        " */",
+        "export class RetiredCapability {}",
+        "",
+      ].join("\n"),
+    );
+
+    const manifest = buildCapabilityManifest(root);
+    const entry = manifest.entries.find((candidate) => candidate.symbol === "DocumentedCapability");
+    const plain = manifest.entries.find((candidate) => candidate.symbol === "PlainCapability");
+    const retired = manifest.entries.find((candidate) => candidate.symbol === "RetiredCapability");
+
+    expect(entry?.deprecated).toEqual(["constructor option `world`; pass `physics` instead"]);
+    // Absent, not an empty list: the entry field is optional and an untagged capability must not
+    // grow a field the manifest schema only reserves for entries that carry a deprecation.
+    expect(plain?.deprecated).toBeUndefined();
+    // The capability tag is `@deprecatedOption` precisely because a bare `@deprecated` on an
+    // export deprecates the whole class in TypeScript and every IDE. It must not reach the
+    // manifest, where it would read as "this capability is retired".
+    expect(retired?.deprecated).toBeUndefined();
+  });
+
   it("leaves supersedes empty rather than undefined when untagged", async () => {
     const root = await makeTempDir("threenative-capability-no-supersedes-");
     temporaryRoots.push(root);

@@ -30,6 +30,8 @@ import {
   readZipEntries,
 } from "../packages/runtime-native/scripts/check-android-16kb-alignment.mjs";
 
+const REPO = path.resolve(import.meta.dirname, "..");
+
 /** `link:` is pnpm's workspace link; `file:` is a local tarball or directory. Neither ships. */
 const LOCAL_SPECIFIER = /(?:^|["'\s:])(?:file|link):/mu;
 
@@ -37,6 +39,16 @@ export const LOCKFILES = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] as
 
 export const REGISTRY_PACKAGE_MANAGERS = ["npm", "pnpm"] as const;
 export type RegistryPackageManager = (typeof REGISTRY_PACKAGE_MANAGERS)[number];
+
+/**
+ * The upgrade proof runs on one manager, and this is why.
+ *
+ * `pnpm-lock.yaml` records `resolution.integrity` for a `file:` tarball, so it is the lockfile that
+ * can say *which bytes* the clean room installed; a second manager would re-prove the same tarball
+ * at double the cost of every scaffold, build and playtest. The post-publish lane still runs npm and
+ * pnpm, because that lane is about the published registry rather than about a candidate.
+ */
+export const UPGRADE_PACKAGE_MANAGERS: readonly RegistryPackageManager[] = ["pnpm"];
 
 export interface IMcpRequest {
   readonly id?: number;
@@ -195,16 +207,40 @@ export function assertSupportedPackageManager(
     );
 }
 
+/**
+ * The tail of a failed child's own output, in the step report.
+ *
+ * `execFileSync` throws with `Command failed: <command>` and, at most, its stderr. pnpm reports
+ * *resolution* failures on stdout, so a failed install used to report the command line and nothing
+ * else — the one sentence a reader needs was thrown away. Bounded: an install prints megabytes.
+ */
+export function childOutputTail(error: unknown, limit = 2_000): string {
+  if (typeof error !== "object" || error === null) return "";
+  const { stderr, stdout } = error as { readonly stderr?: unknown; readonly stdout?: unknown };
+  const text = [stdout, stderr]
+    .map((stream) => (typeof stream === "string" ? stream : String(stream ?? "")))
+    .join("\n")
+    .trim();
+  return text.length > limit ? `...\n${text.slice(-limit)}` : text;
+}
+
 export function realRunner(env: NodeJS.ProcessEnv): CommandRunner {
-  return (command, args, cwd) =>
-    execFileSync(command, [...args], {
-      cwd,
-      encoding: "utf8",
-      env,
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 900_000,
-    });
+  return (command, args, cwd) => {
+    try {
+      return execFileSync(command, [...args], {
+        cwd,
+        encoding: "utf8",
+        env,
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: 900_000,
+      });
+    } catch (error) {
+      const tail = childOutputTail(error);
+      if (tail.length > 0 && error instanceof Error) error.message = `${error.message}\n${tail}`;
+      throw error;
+    }
+  };
 }
 
 interface IMcpFixturePaths {
@@ -404,6 +440,26 @@ export function realMcpRunner(
  */
 export const GAMEPLAY_SCENARIO = "playtests/production-readiness.playtest.json";
 
+/**
+ * PRD-446 phase 3. `starter` and `platformer` both ship this one with five non-empty assertion
+ * families, so the upgrade proof drives the same real web scenario on either template instead of
+ * carrying a per-template list that would drift from what the templates actually ship.
+ */
+export const UPGRADE_SCENARIO = "playtests/survives.playtest.json";
+
+/**
+ * The packed candidate cohort an N-1 install is upgraded onto, keyed by package name.
+ *
+ * Identity is carried by the tarballs, not by the versions. `release.ts` proves the exact cohort is
+ * absent from npm before it packs anything, so a release cohort always has unique versions; a
+ * development cohort may share the `latest` version it upgrades from, and there the lockfile's
+ * recorded SHA-512 is the only claim that survives. Both run.
+ */
+export interface ICandidateCohort {
+  readonly tarballs: Readonly<Record<string, string>>;
+  readonly versions: ReadonlyMap<string, string>;
+}
+
 /** A marker appended to the game's portable entry, so a game-only edit is provably the consumer's. */
 export const GAME_ONLY_EDIT_MARKER = "TN_REGISTRY_GAME_ONLY_EDIT";
 
@@ -432,16 +488,15 @@ export function applyGameOnlyEdit(project: string): string {
 }
 
 /**
- * Require the production-readiness scenario to exist with at least one non-empty assertion family.
+ * Require the named scenario to exist with at least one non-empty assertion family.
  *
  * A scenario that asserts nothing, or a project that shipped without it, is the vacuous green this
  * phase exists to prevent — an installed runner that exits 0 having proven nothing.
  */
-export function assertGameplayScenario(project: string): string {
-  const file = path.join(project, GAMEPLAY_SCENARIO);
+export function assertScenarioAssertions(file: string, subject = "the installed game"): string {
   if (!fs.existsSync(file))
     throw new Error(
-      `TN_REGISTRY_INSTALL_GAMEPLAY_SCENARIO_MISSING: ${file} is absent, so the installed starter cannot be proven playable.`,
+      `TN_REGISTRY_INSTALL_GAMEPLAY_SCENARIO_MISSING: ${file} is absent, so ${subject} cannot be proven playable.`,
     );
   let parsed: unknown;
   try {
@@ -463,6 +518,121 @@ export function assertGameplayScenario(project: string): string {
       `TN_REGISTRY_INSTALL_GAMEPLAY_NO_ASSERTIONS: ${file} declares no non-empty assertion family, so a passing run would prove nothing.`,
     );
   return families.join(", ");
+}
+
+/**
+ * Require every candidate package to be installed at exactly the candidate version.
+ *
+ * The version is a *necessary* condition, never a sufficient one: a cohort in development can
+ * legitimately carry the same version as the registry `latest` it upgrades from, so a tree reading
+ * the right number may still be the old bytes. `assertCandidateIntegrity` is what settles that.
+ */
+export function assertCandidateInstalled(
+  project: string,
+  versions: ReadonlyMap<string, string>,
+): string {
+  if (versions.size === 0)
+    throw new Error(
+      "TN_REGISTRY_UPGRADE_NO_CANDIDATE: the upgrade proof was given no candidate cohort, so it would prove nothing about an upgrade.",
+    );
+  const installed: string[] = [];
+  for (const [name, version] of versions) {
+    const manifest = path.join(project, "node_modules", ...name.split("/"), "package.json");
+    if (!fs.existsSync(manifest))
+      throw new Error(
+        `TN_REGISTRY_UPGRADE_NOT_INSTALLED: ${name} is absent from the upgraded project, so no candidate reached the consumer.`,
+      );
+    const found = (JSON.parse(fs.readFileSync(manifest, "utf8")) as { version?: unknown }).version;
+    if (found !== version)
+      throw new Error(
+        `TN_REGISTRY_UPGRADE_VERSION_MISMATCH: the upgraded project resolved ${name}@${String(found)}, not the candidate ${version}.`,
+      );
+    installed.push(`${name}@${version}`);
+  }
+  return installed.join(", ");
+}
+
+/**
+ * The `integrity` a package manager records for a tarball: the raw SHA-512, base64.
+ *
+ * Byte-for-byte what both managers write for a `file:` tarball — pnpm as
+ * `packages.<name>.resolution.integrity`, npm as `packages["node_modules/<name>"].integrity` — so
+ * the packed candidate and the installed resolution are compared as bytes, not as a version.
+ */
+export function tarballIntegrity(tarball: string): string {
+  return `sha512-${createHash("sha512").update(fs.readFileSync(tarball)).digest("base64")}`;
+}
+
+/**
+ * Every integrity the installed lockfile records for one packed tarball.
+ *
+ * A line-oriented read of the two shapes the managers actually write, each of which puts the
+ * integrity within a line or two of the entry naming the tarball:
+ *
+ * ```yaml
+ * '@threenative/core@file:../../core-0.3.3.tgz':
+ *   resolution: {integrity: sha512-…, tarball: file:../../core-0.3.3.tgz}
+ * ```
+ * ```json
+ * "resolved": "file:../core-0.3.3.tgz",
+ * "integrity": "sha512-…"
+ * ```
+ *
+ * A YAML dependency would be a second opinion on what pnpm's own lockfile means; this reads the
+ * field pnpm writes and reports nothing when it is absent, so the caller fails closed.
+ */
+function lockfileIntegrities(lockfile: string, tarball: string): readonly string[] {
+  const lines = lockfile.split(/\r?\n/u);
+  const name = path.basename(tarball);
+  const found: string[] = [];
+  for (const [index, line] of lines.entries())
+    if (line.includes(name))
+      for (const near of lines.slice(index + 1, index + 4)) {
+        const match = /integrity["']?\s*:\s*["']?(sha512-[A-Za-z0-9+/=]+)/u.exec(near);
+        if (match?.[1] !== undefined) found.push(match[1]);
+      }
+  return found;
+}
+
+/**
+ * Prove the installed tree resolved *these bytes*: the lockfile entry naming each packed tarball
+ * must carry that tarball's SHA-512.
+ *
+ * This is the check a version cannot make, and the one that closes the case the release path can
+ * actually hit — a development cohort sharing the registry `latest` version, where the "upgrade"
+ * resolved the same package twice and proved nothing. The hash is over the tarball, so it survives
+ * re-packing identical bytes and fails on any difference.
+ */
+export function assertCandidateIntegrity(
+  project: string,
+  tarballs: Readonly<Record<string, string>>,
+): string {
+  const lockfiles = LOCKFILES.map((file) => path.join(project, file)).filter((file) =>
+    fs.existsSync(file),
+  );
+  if (lockfiles.length === 0)
+    throw new Error(
+      `TN_REGISTRY_UPGRADE_NO_LOCKFILE: ${project} has none of ${LOCKFILES.join(", ")}, so the installed bytes cannot be identified.`,
+    );
+  const proved: string[] = [];
+  for (const [name, tarball] of Object.entries(tarballs)) {
+    if (!fs.existsSync(tarball))
+      throw new Error(
+        `TN_REGISTRY_UPGRADE_TARBALL_MISSING: ${tarball} was packed for ${name} and is not there to hash.`,
+      );
+    const expected = tarballIntegrity(tarball);
+    const observed = new Set(
+      lockfiles.flatMap((file) => lockfileIntegrities(fs.readFileSync(file, "utf8"), tarball)),
+    );
+    if (!observed.has(expected))
+      throw new Error(
+        `TN_REGISTRY_UPGRADE_INTEGRITY_MISMATCH: the installed lockfile resolved ${name} to ${
+          [...observed].join(", ") || "no recorded integrity"
+        }, not the packed candidate's ${expected}. Those are not the candidate's bytes.`,
+      );
+    proved.push(`${name} ${expected}`);
+  }
+  return proved.join(", ");
 }
 
 /** Require the applied game-only edit to appear in the built output, not only in the source. */
@@ -614,11 +784,19 @@ export function readConsumerTargetRows(project: string): readonly IConsumerTarge
 }
 
 export interface IVerifyRegistryInstallOptions {
+  /**
+   * The packed candidate to upgrade the registry `latest` install onto. Present turns this into the
+   * PRD-446 phase 3 upgrade proof, which claims web only: the native and MCP steps below describe
+   * what the *published* tree offers, and the published tree is proven by the post-publish lane.
+   */
+  readonly candidate?: ICandidateCohort;
   /** Where the clean room is created. Must have no workspace above it. */
   readonly parent?: string;
   readonly mcp?: McpRunner;
   readonly packageManagers?: readonly RegistryPackageManager[];
   readonly run?: CommandRunner;
+  /** Runs `api:surface:check`; an unannounced break refuses the candidate before it is installed. */
+  readonly surfaceCheck?: () => void;
   readonly template?: string;
 }
 
@@ -628,6 +806,13 @@ function step(name: string, work: () => string): IRegistryInstallStep {
   } catch (error) {
     return { detail: error instanceof Error ? error.message : String(error), name, ok: false };
   }
+}
+
+/** Every step after `install`, in run order. The not-run bookkeeping is this list, not a copy. */
+function stepPlan(upgrade: boolean): readonly string[] {
+  return upgrade
+    ? ["lockfile", "surface", "upgrade", "edit", "build", "test", "gameplay"]
+    : ["lockfile", "edit", "build", "test", "gameplay", "doctor", "native", "android", "mcp"];
 }
 
 /** `step` for work that has to await: reading the installed package's ES modules cannot be sync. */
@@ -1035,7 +1220,15 @@ export async function verifyRegistryInstall(
   options: IVerifyRegistryInstallOptions = {},
 ): Promise<IRegistryInstallReport> {
   const template = options.template ?? "starter";
-  const managers = [...new Set(options.packageManagers ?? REGISTRY_PACKAGE_MANAGERS)];
+  const candidate = options.candidate;
+  const plan = stepPlan(candidate !== undefined);
+  const scenario = candidate === undefined ? GAMEPLAY_SCENARIO : UPGRADE_SCENARIO;
+  const managers = [
+    ...new Set(
+      options.packageManagers ??
+        (candidate === undefined ? REGISTRY_PACKAGE_MANAGERS : UPGRADE_PACKAGE_MANAGERS),
+    ),
+  ];
   if (managers.length === 0)
     throw new Error(
       "TN_REGISTRY_INSTALL_NO_PACKAGE_MANAGERS: the clean-room matrix is empty; run npm and pnpm.",
@@ -1092,35 +1285,14 @@ export async function verifyRegistryInstall(
       const scaffold = step(prefix("scaffold"), () => run(command, scaffoldArgs, caseRoot));
       steps.push(scaffold);
       if (!scaffold.ok) {
-        for (const name of [
-          "install",
-          "lockfile",
-          "edit",
-          "build",
-          "test",
-          "gameplay",
-          "doctor",
-          "native",
-          "android",
-          "mcp",
-        ])
+        for (const name of ["install", ...plan])
           notRun(name, "the scaffold step never produced a project.");
         continue;
       }
       const installed = step(prefix("install"), () => run(command, installArgs, project));
       steps.push(installed);
       if (!installed.ok) {
-        for (const name of [
-          "lockfile",
-          "edit",
-          "build",
-          "test",
-          "gameplay",
-          "doctor",
-          "native",
-          "android",
-          "mcp",
-        ])
+        for (const name of plan)
           notRun(
             name,
             "the install step failed to produce an installed project; no script-policy bypass was used.",
@@ -1130,6 +1302,42 @@ export async function verifyRegistryInstall(
       steps.push(
         step(prefix("lockfile"), () => `Checked ${checkLockfile(project)}; no file: or link:.`),
       );
+      if (candidate !== undefined) {
+        const surface = step(prefix("surface"), () => {
+          (options.surfaceCheck ?? (() => void run("pnpm", ["api:surface:check"], REPO)))();
+          return "No public symbol or subpath is removed without a Breaking migration note.";
+        });
+        steps.push(surface);
+        if (!surface.ok) {
+          // A candidate that breaks the published surface without saying so is not an upgrade, it
+          // is a silent break. Nothing of it is installed, so nothing downstream can pass on it.
+          for (const name of plan.slice(plan.indexOf("upgrade")))
+            notRun(name, "the public-surface gate refused this candidate before it was installed.");
+          continue;
+        }
+        const upgrade = step(prefix("upgrade"), () => {
+          for (const [name, version] of candidate.versions)
+            if (candidate.tarballs[name] === undefined)
+              throw new Error(
+                `TN_REGISTRY_UPGRADE_CANDIDATE_INCOMPLETE: ${name}@${version} has no packed tarball to upgrade onto.`,
+              );
+          const tarballs = Object.values(candidate.tarballs);
+          run(command, [...installArgs, ...tarballs], project);
+          // Version first because it names the consumer's mistake; bytes second because the version
+          // cannot tell this candidate from the `latest` it was supposed to replace.
+          const cohort = assertCandidateInstalled(project, candidate.versions);
+          const bytes = assertCandidateIntegrity(project, candidate.tarballs);
+          return `Upgraded ${tarballs.length} package(s) onto the candidate cohort: ${cohort}. Installed bytes: ${bytes}.`;
+        });
+        steps.push(upgrade);
+        if (!upgrade.ok) {
+          // The tree is on whatever the manager resolved, so building and playing it would prove
+          // something about the wrong bytes. Nothing downstream runs.
+          for (const name of plan.slice(plan.indexOf("upgrade") + 1))
+            notRun(name, "the candidate install failed, so no candidate bytes reached this game.");
+          continue;
+        }
+      }
       steps.push(
         step(prefix("edit"), () => `Applied the game-only edit to ${applyGameOnlyEdit(project)}.`),
       );
@@ -1137,7 +1345,10 @@ export async function verifyRegistryInstall(
       steps.push(step(prefix("test"), () => run(command, testCommand, project)));
       steps.push(
         step(prefix("gameplay"), () => {
-          const families = assertGameplayScenario(project);
+          const families = assertScenarioAssertions(
+            path.join(project, scenario),
+            candidate === undefined ? "the installed starter" : `the upgraded ${template}`,
+          );
           const built = assertEditedGameplayInBuild(project);
           // The runner defaults to an already-running `http://127.0.0.1:5173`; nothing here starts
           // one, so the scenario must bring its own dev server the way the template's own test
@@ -1149,7 +1360,7 @@ export async function verifyRegistryInstall(
               : "pnpm dev --host 127.0.0.1 --port $PORT --strictPort";
           const playtestArgs = [
             "--scenario",
-            GAMEPLAY_SCENARIO,
+            scenario,
             "--browser-recipe",
             "webgpu",
             // A GPU-less clean room still has to let Chromium reach a driver: `--headed` under the
@@ -1168,9 +1379,12 @@ export async function verifyRegistryInstall(
             manager === "npm"
               ? run("npx", ["--no-install", "threenative-playtest", ...playtestArgs], project)
               : run(command, ["exec", "threenative-playtest", ...playtestArgs], project);
-          return `Ran ${GAMEPLAY_SCENARIO} (assertions: ${families}); edit present in ${built}. ${output}`;
+          return `Ran ${scenario} (assertions: ${families}); edit present in ${built}. ${output}`;
         }),
       );
+      // The upgrade claim stops at web; `doctor`, the native host and the MCP table describe the
+      // published tree, which the post-publish clean-room lane still runs in full.
+      if (candidate !== undefined) continue;
       steps.push(
         step(prefix("doctor"), () =>
           assertDoctorTargetCensus(

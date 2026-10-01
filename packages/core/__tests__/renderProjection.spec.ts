@@ -2097,7 +2097,7 @@ describe("SceneRenderProjection copies the authored background and environment r
 /**
  * The named opt-out. Projection is an optimizer, and an optimizer a game cannot decline is a tax:
  * a scene whose draw count falls without its frame time following should be able to say so. The
- * option is `enabled: false` on the constructor — `renderer.projection: false` in config — and the
+ * option is `projection: false` on the constructor — `renderer.projection: false` in config — and the
  * contract is that it costs nothing: no mirror, no scan, the authored scene every frame, and a
  * verdict that names the opt-out rather than impersonating one of the measured declines.
  */
@@ -2121,7 +2121,7 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     const meshes = fill(scene, new MeshStandardMaterial(), 300);
     const scanSpy = vi.spyOn(projectionPlan, "scanProjection");
 
-    const projection = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     projection.reconcile();
 
     expect(scanSpy).not.toHaveBeenCalled();
@@ -2144,7 +2144,7 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
 
     const projection = new SceneRenderProjection(scene, {
       minMeshes: 8,
-      enabled: false,
+      projection: false,
       onReport: (report) => reports.push(report),
     });
     projection.reconcile();
@@ -2161,18 +2161,18 @@ describe("SceneRenderProjection honors a game's opt-out", () => {
     const scene = new Scene();
     fill(scene, new MeshStandardMaterial(), 300);
 
-    const off = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const off = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     off.reconcile();
     expect(off.root).toBe(scene);
     expect(off.report.batches).toBe(0);
 
-    const on = new SceneRenderProjection(scene, { minMeshes: 8, enabled: true });
+    const on = new SceneRenderProjection(scene, { minMeshes: 8, projection: true });
     on.reconcile();
     expect(on.root).not.toBe(scene);
     expect(on.report.batches).toBeGreaterThan(0);
     on.dispose();
 
-    const offAgain = new SceneRenderProjection(scene, { minMeshes: 8, enabled: false });
+    const offAgain = new SceneRenderProjection(scene, { minMeshes: 8, projection: false });
     offAgain.reconcile();
     expect(offAgain.root).toBe(scene);
     expect(offAgain.report.batches).toBe(0);

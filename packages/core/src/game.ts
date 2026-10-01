@@ -1046,7 +1046,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
     const projection = new SceneRenderProjection(threeScene, {
-      enabled: this.#config.render?.projection !== false,
+      // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
+      // names the material check beside accepting it, and the projection owns both readings.
+      projection: this.#config.render?.projection,
       velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
       matrixWorld: matrixWorldPass,
     });

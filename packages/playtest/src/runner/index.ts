@@ -29,6 +29,16 @@ export { resolveBrowserArguments } from "./browser.js";
  */
 export { softwareAdapterName } from "./browser.js";
 /**
+ * Decide which display a pixel-producing run paints on, the same decision the runner makes.
+ * @situation judge whether a measured frame rate came from a display that can carry one
+ * @constraint a private Xvfb is software, so a rate read there measures the X server
+ * @example import { decideDisplayStrategy } from "@threenative/playtest/runner";
+ * const lane = decideDisplayStrategy({ env: process.env, platform: "linux" });
+ * if (lane.kind === "private-xvfb") throw new Error("refuse to judge this frame rate");
+ */
+export { decideDisplayStrategy } from "./captureEnvironment.js";
+export type { IDisplayStrategy } from "./captureEnvironment.js";
+/**
  * Compare pointer snapshots and produce down, move, and up transitions.
  * @situation reconcile pointer contacts into down move and up events
  * @constraint returns changes only; the caller dispatches them and retains the next snapshot

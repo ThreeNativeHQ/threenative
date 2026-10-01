@@ -207,7 +207,7 @@ describe("skinned lane of the render projection", () => {
 
   it("drops the whole lane when the game opts out of the projection", () => {
     const { scene } = crowd(8);
-    const projection = new SceneRenderProjection(scene, { enabled: false });
+    const projection = new SceneRenderProjection(scene, { projection: false });
     projection.reconcile();
     expect(projection.root).toBe(scene);
     expect(projection.report.skinnedBatches).toBe(0);
