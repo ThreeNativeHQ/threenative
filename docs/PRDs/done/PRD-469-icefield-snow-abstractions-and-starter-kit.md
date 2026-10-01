@@ -143,6 +143,28 @@ and `-surface-view-1440x900.jpg`; physics proof at
 `physics-sphere-track-native-desktop-1280x720.jpg`; the supplied ICEFIELD document at the same
 three viewports as `reference-icefield-*.jpg`.
 
+## Sandbox demo
+
+**Snow Putt**, a small game built cold on the kit: `sandbox/snow-demo` in the shared sandbox
+repository, commit `08b84cb1ee55691a242aadee463123aa034dc295` (local, not pushed), scaffolded with
+`--template snow` from this branch's packed tarballs. Push the ball into a cup pressed into the
+`SnowField`, within six pushes, before a 90 s clock runs out; the cup and the tee lie are
+`snow.stamp` calls, the ball's roll and crater come from `attachSnowPhysics`.
+
+| Scenario | Target | Result |
+| --- | --- | --- |
+| `playtests/putt-win` | browser WebGPU (NVIDIA Turing) | pass, holed in 2, identical across 3 runs |
+| `playtests/putt-lose` | browser WebGPU | pass: clock runs out (lost, reason time), R opens a fresh round |
+| `survives`, `footsteps`, `weather`, `touch-controls`, `performance` | browser WebGPU | pass |
+| `native-playtests/putt-win` | native Linux desktop | pass 6/6 (holed in 3–5) |
+| `native-playtests/survives` | native Linux desktop | pass |
+
+Friction (the demo's `FRICTION.md`): powder takes no energy from a rolling ball (open engine work,
+see Decisions); `applyForceAtPoint` left its torque behind (fixed, `f2812dd60`); native runs of one
+build vary; the kit's own ball leaves its tee at load. Captures:
+`sandbox-snow-putt-won-webgpu-1280x720.jpg`, `sandbox-snow-putt-mobile-webgpu-390x844.jpg`,
+`sandbox-snow-putt-won-native-desktop-1280x720.jpg` (0.19 MB).
+
 ## Execution Phases
 
 ### Phase 1: Source-derived numerical snow abstractions
