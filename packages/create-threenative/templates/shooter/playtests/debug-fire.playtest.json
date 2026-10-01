@@ -1,0 +1,119 @@
+{
+  "name": "debug-fire",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "shot-1",
+      "press": "Space",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "wait",
+      "label": "settle-1",
+      "release": true,
+      "waitTicks": 6
+    },
+    {
+      "kind": "input",
+      "label": "shot-2",
+      "press": "Space",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "wait",
+      "label": "swing-back",
+      "release": true,
+      "waitTicks": 110
+    },
+    {
+      "kind": "input",
+      "label": "shot-3",
+      "press": "Space",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "input",
+      "label": "reload",
+      "press": "KeyR",
+      "release": true,
+      "holdTicks": 3
+    },
+    {
+      "kind": "wait",
+      "label": "reloading",
+      "release": true,
+      "waitTicks": 60
+    },
+    {
+      "kind": "input",
+      "label": "advance",
+      "press": "KeyW",
+      "release": true,
+      "holdTicks": 60
+    },
+    {
+      "kind": "wait",
+      "label": "settle-2",
+      "release": true,
+      "waitTicks": 10
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 1
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shots",
+        "gte": 3
+      },
+      {
+        "id": "state",
+        "path": "targetsHit",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "gte": 100,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "reloads",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "distanceMoved",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "timeRemaining",
+        "changed": true
+      }
+    ]
+  }
+}

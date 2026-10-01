@@ -3339,6 +3339,22 @@ export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyC
 const cloth = new SoftBody3D(mesh, { ...options, collision: softBodyCollision(wall) });
 ```
 
+### `VehicleBody3D`
+
+`class` — Drive a car on ray-cast suspension instead of faking speed and heading.
+
+```ts
+export class VehicleBody3D extends RigidBody3D { … }
+```
+
+- **Use when:** drive a car, truck or bike around a track · make a vehicle roll over kerbs, brake into a corner or stop at a wall
+- **Constraints:** write engineForce, brake and steering every physics update; a car with no input does not move · suspensionStiffness is a frequency squared, not newtons per metre; 100 is a road car and 20 bottoms out
+- **Overrides:** a wheel ray never hits the chassis it hangs from, and it honours the chassis collision mask · continuousCollision is on for the chassis, so a fast car cannot tunnel through a wall
+
+```ts
+const car = new VehicleBody3D({ object: chassis, physics: ctx.physics, shape: CollisionShape3D.box(1.6, 0.5, 3.6), mass: 900, wheels: [{ position: { x: 0.8, y: -0.15, z: -1.2 }, wheelRadius: 0.34, suspensionRestLength: 0.3, suspensionStiffness: 100, dampingCompression: 2.3, dampingRelaxation: 4.4, wheelFrictionSlip: 10.5, maxSuspensionTravel: 0.3, useAsSteering: true, useAsTraction: false }] });
+```
+
 ## `@threenative/physics/navigation`
 
 ### `NavigationAgent3D`

@@ -193,6 +193,32 @@ async function copyTemplateIcon(target: string, templateRootDirectory: string): 
   await cp(source, destination, { errorOnExist: true, force: false });
 }
 
+/**
+ * Copies each packaged baseline asset — the sky photograph, the mannequin — into the generated
+ * project's `assets/` when, and only when, its source names the file. One copy ships in this
+ * package however many kits use it, and a game that never loads one never carries its bytes.
+ */
+async function copySharedAssets(target: string, templateRootDirectory: string): Promise<void> {
+  const shared = path.join(path.dirname(templateRootDirectory), "template-assets", "assets");
+  if (!existsSync(shared)) return;
+  const source = path.join(target, "src");
+  const texts: string[] = [];
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(file);
+      else if (/\.(?:ts|tsx)$/u.test(entry.name)) texts.push(await readFile(file, "utf8"));
+    }
+  };
+  if (existsSync(source)) await walk(source);
+  for (const name of readdirSync(shared)) {
+    if (!texts.some((text) => text.includes(`"${name}"`))) continue;
+    const destination = path.join(target, "assets", name);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await cp(path.join(shared, name), destination, { errorOnExist: true, force: false });
+  }
+}
+
 function invalidManifest(file: string, reason: string): never {
   throw new Error(`TN_KIT_MANIFEST_INVALID: ${file}: ${reason}`);
 }
@@ -677,6 +703,7 @@ export async function createProject(
   const source = path.join(root, template);
   await cp(source, target, { recursive: true, errorOnExist: true });
   await copyTemplateIcon(target, root);
+  await copySharedAssets(target, root);
   // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
   // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
   if (existsSync(path.join(target, "gitignore"))) {

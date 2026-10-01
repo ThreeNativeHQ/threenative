@@ -1,0 +1,116 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+//
+// The battlefield: a plane displaced by the simulation's own `terrainHeight`, so the art, the
+// navigation grid and every click agree about where the ground is by construction. What the ground
+// *looks* like is `materials.ts`; this file is the ground itself, its water, and the one texture
+// the fog of war lives in.
+import {
+  DataTexture,
+  InstancedMesh,
+  LinearFilter,
+  Mesh,
+  MeshStandardMaterial,
+  Object3D,
+  PlaneGeometry,
+} from "three";
+import type { Game } from "../sim/game.js";
+import { MAP_CELL, POOLS, WORLD, terrainHeight } from "../sim/terrain.js";
+import {
+  createTerrainMaterial,
+  createWaterMaterial,
+  waterDisc,
+  worldMetreUVs,
+} from "./materials.js";
+import { palette } from "./palette.js";
+
+/**
+ * Quads across the map: one every 2 m, which is exactly the simulation's navigation cell, so the
+ * drawn surface and the walkable surface are the same resolution. Measured, not guessed: at 176
+ * segments this plane was 31 000 triangles and cost 5.3 s of boot compile here, against 12 600 and
+ * 2.8 s at 112 — and the heightfield is two octaves of smooth noise, so there is nothing between
+ * the vertices for the extra rings to find.
+ */
+const SEGMENTS = 112;
+
+/**
+ * The plain the battlefield stands on, in metres across and in metres below the map.
+ *
+ * Wide enough that the widest zoom cannot reach its edge: the rig's ground parallelogram reaches
+ * about 195 m from the origin at most, so 800 is four times the reach. Low enough to sit under
+ * every hollow the simulation digs — the deepest pool bed is 1.45 m up, the water 0.18 m up — and
+ * high enough that the terrain's own lowest ground, 0.15 m, never sinks into it.
+ */
+const APRON = 800;
+const APRON_Y = -1.75;
+
+export interface ITerrain {
+  /** Rewrite the fog texture from the simulation's vision arrays. Cheap; not every frame. */
+  readonly updateFog: (game: Game) => void;
+  readonly root: Object3D;
+}
+
+export function createTerrain(): ITerrain {
+  const root = new Object3D();
+
+  const geometry = new PlaneGeometry(WORLD, WORLD, SEGMENTS, SEGMENTS).rotateX(-Math.PI / 2);
+  const position = geometry.getAttribute("position");
+  for (let index = 0; index < position.count; index += 1)
+    position.setY(index, terrainHeight(position.getX(index), position.getZ(index)));
+  geometry.computeVertexNormals();
+  worldMetreUVs(geometry);
+
+  // 102 = never seen, 191 = remembered, 255 = in sight right now.
+  const cells = WORLD / MAP_CELL;
+  const fogBytes = new Uint8Array(cells * cells * 4);
+  const fog = new DataTexture(fogBytes, cells, cells);
+  fog.minFilter = LinearFilter;
+  fog.magFilter = LinearFilter;
+  fog.needsUpdate = true;
+
+  const ground = new Mesh(geometry, createTerrainMaterial(fog));
+  ground.receiveShadow = true;
+  root.add(ground);
+
+  // The plain the battlefield stands on, so no camera angle looks off the map into a void.
+  //
+  // The orthographic rig covers a 228 m x 128 m parallelogram of ground at its widest zoom —
+  // wider than the 224 m map — and an orthographic camera's rays are parallel, so every one of
+  // them meets the ground at the same depth: past the map's rim there is nothing left to hit, and
+  // the background, sampled at the one direction every ray shares, filled the corner of the frame
+  // with a flat grey wedge. One plane, two triangles, below the deepest pool bed so no water is
+  // covered, and the battlefield reads as a plateau over a plain instead of a floating sheet.
+  const plain = new Mesh(
+    new PlaneGeometry(APRON, APRON).rotateX(-Math.PI / 2),
+    new MeshStandardMaterial({ color: palette.cliff, roughness: 1 }),
+  );
+  plain.position.y = APRON_Y;
+  root.add(plain);
+
+  // The pools the simulation refuses to path across: one instanced disc, so four lakes cost one
+  // draw. The matrices never move, so the pool is sized for the world's sites rather than grown.
+  const water = new InstancedMesh(waterDisc(), createWaterMaterial(), POOLS.length);
+  const dummy = new Object3D();
+  POOLS.forEach((pool, index) => {
+    dummy.position.set(pool.x, -0.18, pool.z);
+    dummy.scale.set(pool.rx * 1.04, 1, pool.rz * 1.04);
+    dummy.updateMatrix();
+    water.setMatrixAt(index, dummy.matrix);
+  });
+  water.renderOrder = 1;
+  root.add(water);
+
+  return {
+    root,
+    updateFog: (game) => {
+      const size = game.gridSize;
+      for (let cell = 0; cell < size * size; cell += 1) {
+        const value = game.visible[cell] === 1 ? 255 : game.explored[cell] === 1 ? 191 : 102;
+        fogBytes[cell * 4] = value;
+        fogBytes[cell * 4 + 1] = value;
+        fogBytes[cell * 4 + 2] = value;
+        fogBytes[cell * 4 + 3] = 255;
+      }
+      fog.needsUpdate = true;
+    },
+  };
+}

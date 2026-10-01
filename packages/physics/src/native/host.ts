@@ -12,9 +12,13 @@ import type {
   IPhysicsShapeQuery,
   IPhysicsSimulation,
   IPhysicsVector3,
+  IPhysicsVehicleCreateOptions,
+  IPhysicsVehicleInput,
+  IPhysicsVehicleState,
 } from "../simulation.js";
 import {
   PHYSICS_TRANSFORM_STRIDE,
+  PHYSICS_VEHICLE_WHEEL_STRIDE,
   effectiveContinuousCollision,
   requireFiniteRotation,
   requireFiniteVector,
@@ -27,6 +31,7 @@ import {
   requirePhysicsShapeQuery,
   requirePhysicsSleepStateBuffer,
   requirePhysicsStepInput,
+  requirePhysicsVehicleCreateOptions,
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
@@ -104,6 +109,18 @@ export interface INativeQueryHit {
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
 }
 
+/**
+ * The flat wheel record the C ABI takes: twelve floats per wheel, in the order
+ * `physics_native.h` documents. Flattening here rather than in the binding keeps the optional
+ * `maxSuspensionTravel` decision on the TypeScript side of the seam.
+ */
+export interface INativeVehicleOptions {
+  readonly bodyId: number;
+  readonly forwardAxis: 0 | 2;
+  readonly axle: IPhysicsVector3;
+  readonly wheels: Float32Array;
+}
+
 /** Raw object installed by the C++ runtime. It is wrapped before shared nodes see it. */
 export interface INativeSimulation {
   configureCharacter(
@@ -129,6 +146,11 @@ export interface INativeSimulation {
   readVisibleTransforms(renderBuffer: Float32Array): number;
   readBodySleepStates(buffer: Float32Array): number;
   readCharacterStates(buffer: Float32Array): number;
+  /** Optional so a runtime built before vehicles still fails loudly through the adapter. */
+  createVehicle?(options: INativeVehicleOptions): number;
+  setVehicleInput?(id: number, input: IPhysicsVehicleInput): void;
+  readVehicleState?(id: number, output: Float32Array): number;
+  resetVehicle?(id: number, position: IPhysicsVector3, yaw: number): void;
   readAreaIntersections(buffer: Uint32Array): number;
   /** Optional so old runtimes fail loudly through the adapter instead of reporting no contact. */
   readContacts?(target: number, candidates: Uint32Array, output: Float32Array): number;
@@ -317,6 +339,39 @@ interface IStoredCharacterState {
 }
 
 const NATIVE_CHARACTER_STATE_STRIDE = 6;
+/** Rapier's own default, sent when a game leaves `maxSuspensionTravel` unset. */
+const RAPIER_DEFAULT_MAX_SUSPENSION_TRAVEL = 5;
+const NATIVE_VEHICLE_WHEEL_WIDTH = 12;
+
+/** One vehicle's reusable read record: the speed in slot 0, then the wheels the node reads. */
+interface IStoredVehicle {
+  readonly buffer: Float32Array;
+  readonly state: IPhysicsVehicleState;
+}
+
+function flattenVehicleWheels(options: IPhysicsVehicleCreateOptions): Float32Array {
+  const wheels = new Float32Array(options.wheels.length * NATIVE_VEHICLE_WHEEL_WIDTH);
+  options.wheels.forEach((wheel, index) => {
+    wheels.set(
+      [
+        wheel.position.x,
+        wheel.position.y,
+        wheel.position.z,
+        wheel.wheelRadius,
+        wheel.suspensionRestLength,
+        wheel.suspensionStiffness,
+        wheel.dampingCompression,
+        wheel.dampingRelaxation,
+        wheel.wheelFrictionSlip,
+        wheel.maxSuspensionTravel ?? RAPIER_DEFAULT_MAX_SUSPENSION_TRAVEL,
+        wheel.useAsSteering ? 1 : 0,
+        wheel.useAsTraction ? 1 : 0,
+      ],
+      index * NATIVE_VEHICLE_WHEEL_WIDTH,
+    );
+  });
+  return wheels;
+}
 
 export function createNativePhysicsSimulation(
   raw: INativeSimulation,
@@ -328,6 +383,9 @@ export function createNativePhysicsSimulation(
   const characterIds = new Set<number>();
   const characterState = new Map<number, IStoredCharacterState>();
   const characterStatePresent = new Set<number>();
+  const vehicles = new Map<number, IStoredVehicle>();
+  const vehicleBodies = new Map<number, number>();
+  const dynamicBodies = new Set<number>();
   let characterStates = new Float32Array(48);
   const rayOutput = new Float32Array(8);
   let areaPairs: Uint32Array<ArrayBufferLike> = new Uint32Array(32);
@@ -352,6 +410,12 @@ export function createNativePhysicsSimulation(
     if (handle === undefined)
       throw new Error("TN_NATIVE_PHYSICS_INVALID: query returned an unknown body");
     return handle;
+  };
+  const requireVehicle = (id: number, operation: string): IStoredVehicle => {
+    const record = vehicles.get(id);
+    if (record === undefined)
+      throw new Error(`TN_VEHICLE_UNKNOWN: ${operation} references an unknown vehicle ${id}.`);
+    return record;
   };
   const finiteQueryVector = (
     value: { readonly x: number; readonly y: number; readonly z: number },
@@ -505,6 +569,7 @@ export function createNativePhysicsSimulation(
       const bodyHandleValue = physicsBodyHandle(id, rawHandle, options.entity);
       bodyIds.add(id);
       bodyHandles.set(id, bodyHandleValue);
+      if (options.type === "dynamic") dynamicBodies.add(id);
       if (sensor) {
         areaIntersections.set(id, new Set());
       }
@@ -545,6 +610,7 @@ export function createNativePhysicsSimulation(
       raw.removeBody(id);
       bodyIds.delete(id);
       bodyHandles.delete(id);
+      dynamicBodies.delete(id);
       for (const [jointId, bodies] of jointBodies) {
         if (bodies[0] === id || bodies[1] === id) jointBodies.delete(jointId);
       }
@@ -552,6 +618,13 @@ export function createNativePhysicsSimulation(
       characterIds.delete(id);
       characterState.delete(id);
       characterStatePresent.delete(id);
+      // A vehicle lives and dies with its chassis, so the backend has already dropped the
+      // controller; drop the read record with it rather than answering for a car that is gone.
+      for (const [vehicleId, bodyId] of vehicleBodies) {
+        if (bodyId !== id) continue;
+        vehicleBodies.delete(vehicleId);
+        vehicles.delete(vehicleId);
+      }
       invalidateObservations();
     },
     removeJoint: (id) => {
@@ -754,6 +827,88 @@ export function createNativePhysicsSimulation(
       requirePhysicsEventBuffer(buffer);
       return raw.drainCollisionEvents(buffer);
     },
+    createVehicle: (options) => {
+      requireLive();
+      const requested = requirePhysicsVehicleCreateOptions(options);
+      // The same fail-closed rule as the web adapter: a car on a fixed or missing chassis is a
+      // car that cannot drive, and a silently motionless one reads as broken physics.
+      if (!bodyIds.has(requested.bodyId))
+        throw new Error(
+          `TN_PHYSICS_UNKNOWN_BODY: createVehicle references an unknown body ${requested.bodyId}.`,
+        );
+      if (!dynamicBodies.has(requested.bodyId))
+        throw new Error(
+          `TN_PHYSICS_NOT_DYNAMIC: createVehicle needs a dynamic body; body ${requested.bodyId} is not dynamic.`,
+        );
+      if (raw.createVehicle === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
+      const wheelCount = requested.wheels.length;
+      const id = raw.createVehicle({
+        axle: requested.axle,
+        bodyId: requested.bodyId,
+        forwardAxis: requested.forwardAxis,
+        wheels: flattenVehicleWheels(requested),
+      });
+      if (!Number.isSafeInteger(id) || id < 0)
+        throw new Error("TN_NATIVE_PHYSICS_INVALID: runtime returned an invalid vehicle id");
+      // The speed lands in slot 0 and the per-wheel records follow, so the native call writes
+      // straight into the record the node reads — one buffer, no copy, reused every frame.
+      const buffer = new Float32Array(1 + wheelCount * PHYSICS_VEHICLE_WHEEL_STRIDE);
+      vehicles.set(id, {
+        buffer,
+        state: { speed: 0, wheels: buffer.subarray(1) },
+      });
+      vehicleBodies.set(id, requested.bodyId);
+      return id;
+    },
+    setVehicleInput: (id, input) => {
+      requireLive();
+      if (raw.setVehicleInput === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
+      if (
+        typeof input?.engineForce !== "number" ||
+        typeof input.brake !== "number" ||
+        typeof input.steering !== "number" ||
+        !Number.isFinite(input.engineForce) ||
+        !Number.isFinite(input.brake) ||
+        !Number.isFinite(input.steering)
+      )
+        throw new Error(
+          "TN_PHYSICS_NON_FINITE: vehicle input needs a finite engineForce, brake and steering.",
+        );
+      requireVehicle(id, "setVehicleInput");
+      raw.setVehicleInput(id, input);
+    },
+    readVehicleState: (id) => {
+      requireLive();
+      if (raw.readVehicleState === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
+      const record = requireVehicle(id, "readVehicleState");
+      const count = raw.readVehicleState(id, record.buffer);
+      // The record is sized once from the wheel count, so the only honest answer is all of it.
+      // A short write leaves the tail at whatever the previous frame left there and a longer one
+      // means the ABI moved; either way the wheels the game reads would not be this car's.
+      if (!Number.isSafeInteger(count) || count < 1)
+        throw new Error("TN_VEHICLE_UNKNOWN: the vehicle left the backend.");
+      if (count !== record.buffer.length)
+        throw new Error(
+          `TN_VEHICLE_STATE_SHORT: readVehicleState wrote ${count} of ${record.buffer.length} floats for vehicle ${id}.`,
+        );
+      record.state.speed = record.buffer[0] ?? 0;
+      return record.state;
+    },
+    resetVehicle: (id, position, yaw) => {
+      requireLive();
+      if (raw.resetVehicle === undefined)
+        throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
+      requireVehicle(id, "resetVehicle");
+      requireFiniteVector(position, "vehicle position");
+      if (typeof yaw !== "number" || !Number.isFinite(yaw))
+        throw new Error("TN_PHYSICS_NON_FINITE: vehicle yaw must be a finite number of radians.");
+      raw.resetVehicle(id, position, yaw);
+      // The chassis jumped, so the cached bulk transform read is stale.
+      bodyTransformsDirty = true;
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
@@ -762,6 +917,9 @@ export function createNativePhysicsSimulation(
       bodyTransformRows.clear();
       bodyHandles.clear();
       jointBodies.clear();
+      vehicles.clear();
+      vehicleBodies.clear();
+      dynamicBodies.clear();
       characterIds.clear();
       characterState.clear();
       characterStatePresent.clear();

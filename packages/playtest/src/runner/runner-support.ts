@@ -162,11 +162,13 @@ export function addPreflightDiagnostic(
 
 /**
  * The console cascade a lost WebGPU device leaves behind: core's `TN_DEVICE_LOST` report, three's
- * own `WebGPU Device Lost` line, and the `mapAsync` rejections from the timestamp-query pool once
- * the device is gone. A device loss is one event with several error lines, and they must be read as
- * one so a declared software lane can record it rather than fail on each derived line.
+ * own `WebGPU Device Lost` line, the `mapAsync` rejections from the timestamp-query pool once the
+ * device is gone, and Chromium's `OperationError: Instance dropped in popErrorScope` from three's
+ * WebGPU backend when the fallback adapter's instance is dropped under SwiftShader. A device loss
+ * is one event with several error lines, and they must be read as one so a declared software lane
+ * can record it rather than fail on each derived line.
  */
-const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists/iu;
+const SOFTWARE_DEVICE_LOSS = /TN_DEVICE_LOST|WebGPU Device Lost|A valid external Instance reference no longer exists|Instance dropped in popErrorScope/iu;
 
 function isSoftwareDeviceLossEntry(entry: IRunnerConsoleEntry): boolean {
   return (entry.type === "error" || entry.type === "assert" || entry.type === "pageerror")
@@ -260,6 +262,11 @@ export function buildReport(
   const base: IPlaytestReport = {
     ...(afterPosition === undefined ? {} : { after: { frame: scenario.steps.length, position: afterPosition, ...(afterRotation === undefined ? {} : { rotation: afterRotation }), tick: afterSnapshot?.clock.tick ?? 0 } }),
     ...(beforePosition === undefined ? {} : { before: { frame: 0, position: beforePosition, ...(beforeRotation === undefined ? {} : { rotation: beforeRotation }), tick: beforeSnapshot?.clock.tick ?? 0 } }),
+    // The harness's own `adapter.info` reading, carried on the report the assertions are evaluated
+    // against. An assertion that selects its expectation per adapter class needs the provenance
+    // here, not only in the written artifact — reading it after evaluation meant every such
+    // assertion saw no adapter and failed closed on a run that had a real one.
+    ...(capture === undefined ? {} : { capture }),
     diagnostics,
     diagnosticsPolicy: resolveDiagnosticsPolicy(scenario.assert?.diagnostics, config.target),
     distance,

@@ -1,0 +1,62 @@
+{
+  "name": "flash-retires",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 30,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "sustained-fire",
+      "press": "Space",
+      "holdTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "trigger-up",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "long-after",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rifle",
+        "component": "flashOpacity",
+        "atSteps": [
+          {
+            "label": "long-after",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "enemy-flashes",
+        "component": "peakOpacity",
+        "atSteps": [
+          {
+            "label": "long-after",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "the pool rests at zero and that is exactly the contract: two seconds after the last round, no muzzle flash anywhere may still be lit. The single shared flash this replaces was held open indefinitely by sustained fire from any soldier"
+      }
+    ]
+  }
+}

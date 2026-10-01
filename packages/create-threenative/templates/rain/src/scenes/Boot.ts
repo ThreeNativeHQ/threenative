@@ -109,7 +109,10 @@ export class Coast extends Scene<GameState> {
     alwaysRender(lightning.mesh);
     // Retained, not called and dropped: `update` is where the post pass learns this frame's time,
     // exposure, rain and droplet toggle, and `uRes` is zero until it has run once.
-    const post = setupPost(ctx.renderer, ctx.scene, camera, { mobile: isMobile() });
+    const post = setupPost(ctx.renderer, ctx.scene, camera, {
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     this.#rain = rain;
     this.#post = post;
     this.#lightning = lightning;

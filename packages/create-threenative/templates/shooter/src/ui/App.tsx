@@ -1,21 +1,20 @@
 import type { IGame } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import { DebugOverlay, GameCanvas } from "@threenative/ui";
-import { shooterUi } from "../render/ui.js";
 import type { GameState } from "../state.js";
 import { GameUi } from "./GameUi.js";
 
-/**
- * The web target's page: the canvas, then the same UI every other target renders.
- *
- * `GameCanvas` hosts the renderer and everything after it paints on top; keep the canvas first.
- * The UI itself comes from `GameUi`, unchanged — this file exists only because the web build also
- * has to put a canvas on the page.
- */
 export function App({ game }: { game: IGame<GameState, IPhysicsContext> }) {
   return (
-    <main className={shooterUi.app.root}>
-      <GameCanvas className={shooterUi.app.canvas} game={game} />
+    // GameCanvas hosts the renderer; everything after it in this list paints on
+    // top. Keep the canvas first.
+    // `h-full`, not `h-screen`: `100vh` on mobile Chrome is the tall viewport behind the URL bar,
+    // which sized the canvas 56 px taller than the glass on a Pixel 8 — pixels rendered for nobody,
+    // and a crosshair 28 px below the centre of what the player can see. `#root` is `100dvh`.
+    <main className="relative h-full w-full overflow-hidden bg-ink">
+      <GameCanvas className="absolute inset-0" game={game} />
+      {/* The same tree the web view loads on native, so the browser is not a second UI to keep
+          in step — it is the same one, reached through the same bridge. */}
       <GameUi />
       <DebugOverlay />
     </main>

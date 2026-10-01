@@ -667,6 +667,78 @@ describe("createRenderer", () => {
     }
   });
 
+  // A game cannot ask `navigator.gpu` what it is running on without becoming the thing that has to
+  // know about WebGPU, a platform seam and the driver strings each one uses, so the fact rides on
+  // the renderer it already has. A `swiftshader` adapter running the desktop tier has been measured
+  // losing the device inside its first frame — a tier the game could have chosen differently had
+  // anything told it.
+  it.each([
+    ["architecture", "swiftshader"],
+    ["description", "llvmpipe (LLVM 15.0.7, 256 bits)"],
+    ["device", "Microsoft Basic Render Driver"],
+  ])("names a software adapter reported in %s", async (field, value) => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestAdapter = vi.fn(async () => ({
+      info: { architecture: "", description: "", device: "", vendor: "", [field]: value },
+    }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.softwareAdapter).toBe(value);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("reports no software adapter for a hardware one rather than claiming a proof", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    const requestAdapter = vi.fn(async () => ({
+      info: { architecture: "turing", description: "Acme GPU", device: "gpu-42", vendor: "acme" },
+    }));
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { gpu: { requestAdapter } },
+    });
+
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        webgpuFactory: () => ({
+          backend: { gpu: { requestAdapter } },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+
+      expect(renderer.softwareAdapter).toBeUndefined();
+      expect(renderer.pipelineCensus?.().adapter.identity).toContain("vendor=acme");
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   // A renderer that compiles on first draw needs no warm-up and must not fail one. Throwing here
   // would push a platform branch into every game that calls it.
   it("resolves quietly when the renderer has no compileAsync of its own", async () => {

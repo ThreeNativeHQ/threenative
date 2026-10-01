@@ -1,15 +1,22 @@
-import type { IPlaytestRenderChainAssertion } from "../scenario/schema-base.js";
+import type {
+  IPlaytestRenderChainAssertion,
+  IPlaytestRenderChainExpectation,
+  PlaytestAdapterClass,
+} from "../scenario/schema-base.js";
 import type { IEvaluationContext } from "./context.js";
+import { type IAdapterClassification, classifyAdapter } from "./adapter-class.js";
 
 export function emitRenderChain(ctx: IEvaluationContext): void {
   const assertion = ctx.scenarioAssertions.renderChain;
   if (assertion === undefined) return;
   const observed = ctx.input.report.observations?.renderChain;
+  const selected = selectExpectation(ctx, assertion);
+  const expected = selected.expectation;
 
-  if (assertion.tier !== undefined) {
-    const pass = observed?.tier === assertion.tier;
+  if (expected.tier !== undefined) {
+    const pass = observed?.tier === expected.tier;
     ctx.assertions.push({
-      details: { expected: assertion.tier, observed: observed?.tier },
+      details: { ...selected.provenance, expected: expected.tier, observed: observed?.tier },
       id: "renderChain.tier",
       pass,
     });
@@ -20,7 +27,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
           : "TN_PLAYTEST_RENDER_CHAIN_TIER_FAILED",
         message: observed === undefined
           ? "Render-chain tier was not observed because the TN_RENDER_CHAIN marker was absent."
-          : `Render-chain tier '${observed.tier}' did not match the asserted tier '${assertion.tier}'.`,
+          : `Render-chain tier '${observed.tier}' did not match the asserted tier '${expected.tier}'.`,
         observedRuntimePath: "observations.json/renderChain/tier",
         severity: "error",
         suggestion: "Install the RenderChain through the renderer seam and keep its marker callback connected to the playtest bridge.",
@@ -28,12 +35,13 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
-  const stageAssertion = assertion.stages;
+  const stageAssertion = expected.stages;
   if (stageAssertion !== undefined) {
     const observedStages = observed?.stages;
     if (stageAssertion.includes !== undefined) {
       emitStageCheck(
         ctx,
+        selected.provenance,
         observedStages,
         "includes",
         stageAssertion.includes,
@@ -43,6 +51,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     if (stageAssertion.excludes !== undefined) {
       emitStageCheck(
         ctx,
+        selected.provenance,
         observedStages,
         "excludes",
         stageAssertion.excludes,
@@ -52,6 +61,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     if (stageAssertion.order !== undefined) {
       emitStageCheck(
         ctx,
+        selected.provenance,
         observedStages,
         "order",
         stageAssertion.order,
@@ -60,7 +70,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
-  const contributionAssertion = assertion.contributions;
+  const contributionAssertion = expected.contributions;
   if (contributionAssertion !== undefined) {
     const observedContributions = observed?.contributions;
     const pass = Array.isArray(observedContributions)
@@ -69,6 +79,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
       );
     ctx.assertions.push({
       details: {
+        ...selected.provenance,
         expected: contributionAssertion.graphOutputChanged,
         observed: observedContributions,
       },
@@ -92,7 +103,7 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
     }
   }
 
-  if (assertion.velocity !== undefined) {
+  if (expected.velocity !== undefined) {
     const rejectionFraction = observed?.velocity.rejectionFraction;
     const measurementFrame = observed?.velocity.measurementFrame;
     const hasMeasurement = rejectionFraction !== undefined
@@ -102,10 +113,11 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
       && measurementFrame >= 0;
     const pass = hasMeasurement
       && rejectionFraction !== undefined
-      && rejectionFraction <= assertion.velocity.maxRejectionFraction;
+      && rejectionFraction <= expected.velocity.maxRejectionFraction;
     ctx.assertions.push({
       details: {
-        expected: assertion.velocity.maxRejectionFraction,
+        ...selected.provenance,
+        expected: expected.velocity.maxRejectionFraction,
         measurementFrame,
         observed: rejectionFraction,
       },
@@ -121,31 +133,93 @@ export function emitRenderChain(ctx: IEvaluationContext): void {
           ? "Render-chain velocity rejection was not observed because the TN_RENDER_CHAIN marker was absent."
           : !hasMeasurement
             ? "Render-chain velocity was provisioned without a fresh completed-frame history-rejection measurement."
-            : `Render-chain history rejection fraction ${rejectionFraction ?? "missing"} exceeded the asserted ceiling ${assertion.velocity.maxRejectionFraction}.`,
+            : `Render-chain history rejection fraction ${rejectionFraction ?? "missing"} exceeded the asserted ceiling ${expected.velocity.maxRejectionFraction}.`,
         observedRuntimePath: "observations.json/renderChain/velocity/rejectionFraction",
         severity: "error",
         suggestion: "Publish the temporal stage's measured rejection fraction on the same render-chain marker used for tier reporting.",
       });
     }
   }
+
+  // A scenario that chose a policy per adapter class asked a question this run cannot answer when
+  // the adapter named itself in no known field, and the branches above each failed on their own
+  // terms against the flat fallback. This names the missing observation once. A scenario with no
+  // `perAdapter` made no such choice — its flat expectation was always the expectation — so it is
+  // not failed here.
+  if (assertion.perAdapter !== undefined && selected.classification === undefined) {
+    ctx.assertions.push({
+      details: { ...selected.provenance, expected: Object.keys(assertion.perAdapter) },
+      id: "renderChain.adapterClass",
+      pass: false,
+    });
+    ctx.diagnostics.push({
+      code: "TN_PLAYTEST_RENDER_CHAIN_ADAPTER_UNCLASSIFIED",
+      message: "No adapter.info field named a software rasteriser, so this run is not proven to be either adapter class and was held to the flat render-chain expectation.",
+      observedRuntimePath: "observations.json/capture/adapter",
+      severity: "error",
+      suggestion: "Run on a lane that reports adapter.info, or drop perAdapter and assert one policy for every adapter.",
+    });
+  }
+}
+
+interface ISelectedExpectation {
+  /** The branch key that applied: `perAdapter.software`, `perAdapter.hardware`, or `flat`. */
+  readonly classification: PlaytestAdapterClass | undefined;
+  readonly expectation: IPlaytestRenderChainExpectation;
+  /** Independent of the game: what the harness read out of `adapter.info` itself. */
+  readonly provenance: IAdapterClassification;
+}
+
+/**
+ * Which policy this run is held to.
+ *
+ * The class comes from the harness's own `adapter.info` reading, never from the tier the game
+ * chose — a game that answered `low` on a hardware adapter is a defect, and selecting its
+ * expectation from its own answer would hide exactly that. A `perAdapter` branch replaces the flat
+ * expectation for the classified class and for nothing else; an unclassified adapter falls back to
+ * the flat form and is failed by the `renderChain.adapterClass` row beside it.
+ */
+function selectExpectation(ctx: IEvaluationContext, assertion: IPlaytestRenderChainAssertion): ISelectedExpectation {
+  const flat: IPlaytestRenderChainExpectation = {
+    ...(assertion.tier === undefined ? {} : { tier: assertion.tier }),
+    ...(assertion.stages === undefined ? {} : { stages: assertion.stages }),
+    ...(assertion.contributions === undefined ? {} : { contributions: assertion.contributions }),
+    ...(assertion.velocity === undefined ? {} : { velocity: assertion.velocity }),
+  };
+  const provenance = classifyAdapter(ctx.input.report);
+  const { adapterClass } = provenance;
+  const branch = adapterClass === undefined ? undefined : assertion.perAdapter?.[adapterClass];
+  return {
+    classification: adapterClass,
+    expectation: branch ?? flat,
+    provenance,
+  };
 }
 
 export function renderChainAssertionIsMeaningful(assertion: IPlaytestRenderChainAssertion): boolean {
   return assertion.tier !== undefined
     || assertion.stages !== undefined
     || assertion.contributions !== undefined
-    || assertion.velocity !== undefined;
+    || assertion.velocity !== undefined
+    || Object.values(assertion.perAdapter ?? {}).some(
+      (branch) => branch !== undefined
+        && (branch.tier !== undefined
+          || branch.stages !== undefined
+          || branch.contributions !== undefined
+          || branch.velocity !== undefined),
+    );
 }
 
 function emitStageCheck(
   ctx: IEvaluationContext,
+  provenance: ISelectedExpectation["provenance"],
   observed: string[] | undefined,
   kind: "includes" | "excludes" | "order",
   expected: string[],
   pass: boolean,
 ): void {
   ctx.assertions.push({
-    details: { expected, observed },
+    details: { ...provenance, expected, observed },
     id: `renderChain.stages.${kind}`,
     pass,
   });

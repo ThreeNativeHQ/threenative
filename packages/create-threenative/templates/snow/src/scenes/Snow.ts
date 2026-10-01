@@ -106,7 +106,10 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
     );
-    setupPost(ctx.renderer, ctx.scene, ctx.camera, { mobile });
+    setupPost(ctx.renderer, ctx.scene, ctx.camera, {
+      mobile,
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
     const loading = createLoadingScreen(ctx);
     const camera = ctx.camera as PerspectiveCamera;
     setupCamera(camera);

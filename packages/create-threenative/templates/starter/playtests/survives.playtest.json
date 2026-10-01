@@ -44,7 +44,7 @@
         "lte": 0.01
       },
       {
-        "allowTrivial": "The hero is authored at 1.22 m and normalised down to the template's 1.1 m convention, so the retained factor is below one; either side of one proves normaliseToMetres ran in the generated player.",
+        "allowTrivial": "The packaged mannequin is authored taller than the 1.545 m-to-Head convention it is normalised to, so the retained factor is below one; either side of one proves normaliseToMetres ran in the generated player.",
         "component": "normaliseFactor",
         "entity": "player",
         "lte": 0.99

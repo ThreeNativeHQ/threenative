@@ -502,8 +502,8 @@ jobs:
           script: >-
             adb shell getconf PAGE_SIZE > "$RUNNER_TEMP/android-page-size.txt" 2>
             "$RUNNER_TEMP/android-page-size.err" || echo TN_ADB_PAGE_SIZE_FAILED >>
-            "$RUNNER_TEMP/android-page-size.err";
-            node packages/runtime-native/conformance/run-conformance.mjs --target android
+            "$RUNNER_TEMP/android-page-size.err"; TN_PLAYTEST_ALLOW_SOFTWARE=1 node
+            packages/runtime-native/conformance/run-conformance.mjs --target android
             --device emulator-5554 --reference artifacts/conformance/web
             --out artifacts/conformance/android; status=$?; echo "$status" >
             "$RUNNER_TEMP/conformance-status.txt"; adb logcat -d >
@@ -900,6 +900,10 @@ jobs:
         shell: bash
         run: ccache --show-stats
       - name: Compare the desktop host with browser references
+        # Same hosted-software declaration as the ui-frame gate below: this runner binds Mesa
+        # llvmpipe, so the desktop host reports a software adapter it cannot avoid.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           set +e
           sh scripts/xvfb.sh \
@@ -959,6 +963,10 @@ jobs:
       # Android and iOS attach their own web views from their own hosts (Java/Swift) and keep their
       # own lanes; nothing in this gate applies to them.
       - name: Verify the web UI composites into the game's own frame
+        # The Linux runner has no GPU; its Vulkan ICD is Mesa lavapipe, the llvmpipe software
+        # rasteriser. Declared at this caller rather than assumed for every native target.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: pnpm --filter @threenative/runtime-native native:verify:ui-frame
       - name: Collect bounded desktop performance evidence from the existing binary
         if: always()
@@ -1147,6 +1155,9 @@ jobs:
           set "CC=cl"
           set "CXX=cl"
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
+          rem This runner has no GPU and its adapter reports `Microsoft Basic Render Driver`.
+          rem The acceptance is declared here, in the lane that has none, and stays off macOS.
+          set "TN_PLAYTEST_ALLOW_SOFTWARE=1"
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
@@ -1180,6 +1191,10 @@ jobs:
           runtime="$PWD/packages/runtime-native/build/tn-macos/mystral"
           if [ "${{ matrix.platform }}" = "Windows" ]; then
             runtime="$PWD/packages/runtime-native/build/tn-windows/mystral.exe"
+            # A hosted Windows runner has no GPU and answers `Microsoft Basic Render Driver`.
+            # Only Windows declares it; the macOS leg of this same matrix runs against whatever
+            # the machine actually has and keeps the default fail-closed software-adapter error.
+            export TN_PLAYTEST_ALLOW_SOFTWARE=1
           fi
           pnpm --dir "$target" install --ignore-scripts
           THREENATIVE_RUNTIME_BINARY="$runtime" pnpm --dir "$target" test:native
@@ -1675,6 +1690,10 @@ jobs:
       - name: Install and play the final signed Windows setup, then uninstall it
         if: matrix.platform == 'Windows'
         shell: pwsh
+        # The hosted Windows runner has no GPU: its adapter is `Microsoft Basic Render Driver`. The
+        # acceptance is declared here, at the one caller that knows it, like the other Windows steps.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           $ErrorActionPreference = 'Stop'
           $project = Join-Path $env:RUNNER_TEMP 'threenative-starter-native'
@@ -1837,8 +1856,13 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-starter-native"
           pnpm --dir "$target" install --ignore-scripts
+          # This runner has no GPU: its Vulkan ICD is Mesa lavapipe, the llvmpipe software
+          # rasteriser (see the desktop parity job's own note). The lane declares that here, at the
+          # caller that knows it, instead of teaching the harness that a native target may always
+          # accept a software adapter — a local desktop run on this same machine still fails.
           THREENATIVE_RUNTIME_BINARY="$PWD/packages/runtime-native/build/tn-linux/mystral" \
           TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS=30000 \
+          TN_PLAYTEST_ALLOW_SOFTWARE=1 \
             pnpm --dir "$target" test:native
       # PRD-365 acceptance criterion 1, Linux flavour of the desktop release container: tar.gz, no
       # zip, and the verifier finds the packaged xvfb.sh itself. The debug step above is untouched.

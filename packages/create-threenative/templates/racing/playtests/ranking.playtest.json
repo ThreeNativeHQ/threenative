@@ -6,19 +6,9 @@
   "warmupFrames": 0,
   "subject": "player",
   "steps": [
-    {
-      "kind": "wait",
-      "label": "lap-aware-baseline",
-      "waitTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "advance-on-route",
-      "press": "ArrowUp",
-      "holdTicks": 30,
-      "release": true
-    }
+    { "kind": "wait", "label": "lap-aware-baseline", "waitTicks": 1, "release": true },
+    { "kind": "input", "label": "autopilot", "press": "KeyP", "holdTicks": 2, "release": true },
+    { "kind": "wait", "label": "advance-on-route", "waitTicks": 1200, "release": true }
   ],
   "assert": {
     "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
@@ -31,7 +21,8 @@
           { "label": "advance-on-route", "equals": "lap-ahead" }
         ]
       },
-      { "id": "state", "path": "trackProgress", "gte": 142, "changed": true }
+      { "id": "state", "path": "autopilot", "equals": true },
+      { "id": "state", "path": "trackProgress", "gte": 200, "changed": true }
     ]
   }
 }

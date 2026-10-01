@@ -42,4 +42,12 @@ describe("shipped templates", () => {
     const report = problems.map((p) => `${p.file}: ${p.reason}\n  fix: ${p.fix}`).join("\n");
     expect(report).toBe("");
   });
+
+  // The baseline assets every kit may copy from `template-assets/assets/` meet the same bar.
+  it("the shared baseline assets carry only what the android target can decode", () => {
+    const problems = findAndroidAssetProblems(
+      fileURLToPath(new URL("../template-assets/assets", import.meta.url)),
+    ) as { file: string; reason: string; fix: string }[];
+    expect(problems.map((p) => `${p.file}: ${p.reason}`).join("\n")).toBe("");
+  });
 });

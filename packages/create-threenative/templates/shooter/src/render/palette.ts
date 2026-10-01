@@ -1,12 +1,12 @@
-// Generated for you. Keep the six palette roles coherent when you repaint the arena.
-// Lifted off the floor. The arena tone was `0x22303c` under a dim key, and the deck photographed
-// as near-black with a yellow grid floating on it — the cover, the walls and the ground all
-// collapsed into one value and only the emissive trim survived.
+// Generated for you. Keep these roles coherent when you change the look.
+// Neutral greys carry the light; one saturated blue marks what you can touch.
 export const palette = {
-  skyHigh: 0x3a5578,
-  skyLow: 0x1b2733,
-  arena: 0x374d63,
-  player: 0x64d8cb,
-  hostile: 0xff6b7a,
-  accent: 0xf6c85f,
+  floor: 0xb4b1ae,
+  structure: 0x747578,
+  gridLine: 0x3a3a3c,
+  prop: 0x2a6cf0,
+  /** Touch-control highlight. */
+  accent: 0xffffff,
+  /** The sky photograph's own horizon, measured from its HDR: distance fades into this. */
+  horizon: 0xacb1c1,
 } as const;

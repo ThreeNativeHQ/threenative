@@ -54,12 +54,19 @@ export type {
 export { interactionGroups } from "../collision.js";
 export { RigidBody3D } from "../RigidBody3D.js";
 export type { IRigidBody3DOptions, RigidBodyType } from "../RigidBody3D.js";
+export { VehicleBody3D } from "../VehicleBody3D.js";
+export type {
+  IVehicleBody3DOptions,
+  IVehicleWheel3D,
+  VehicleForwardAxis,
+} from "../VehicleBody3D.js";
 export { rapier } from "../plugin.js";
 export type { PhysicsBody3D, IPhysicsContext, IPhysicsOptions, PhysicsPlugin } from "../plugin.js";
 export {
   MAX_PHYSICS_QUERY_RESULTS,
   PHYSICS_COLLISION_EVENT_STRIDE,
   PHYSICS_TRANSFORM_STRIDE,
+  PHYSICS_VEHICLE_WHEEL_STRIDE,
 } from "../simulation.js";
 export type {
   IPhysicsBodyCreateOptions,
@@ -78,5 +85,8 @@ export type {
   IPhysicsRotation,
   IPhysicsShapeQuery,
   IPhysicsVector3,
+  IPhysicsVehicleCreateOptions,
+  IPhysicsVehicleInput,
+  IPhysicsVehicleState,
   PhysicsJointKind,
 } from "../simulation.js";

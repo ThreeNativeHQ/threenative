@@ -128,7 +128,7 @@ export function spike(
 // `createRandom` the framework already exports — same multiplier, same increment, same
 // sequence. It is gone. Nothing in this folder may import a framework package (that is what
 // keeps `src/render/` portable Three.js), so a scene builds the seeded source and hands it
-// down: see `createScenery` below and its caller in `src/scenes/Play.ts`.
+// down: see `createRandom` in `src/scenes/Play.ts`.
 //
 // Never `Math.random` for anything the world is built from. The world has to be byte-identical
 // on every reload or a screenshot diff cannot tell a bug from a reroll, and `ctx.random` is

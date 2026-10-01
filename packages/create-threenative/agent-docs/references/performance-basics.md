@@ -107,8 +107,11 @@ A GPU that is idle with a slow `render` phase is an object-count problem, not a 
 `residual`, `hostGap`) plus per-pass draws and triangles; `TN_PROJECTION` reports the object census
 (`considered`, `culled`, `exemptShadowCasters`) and the cut's threshold; `TN_RENDER_PROJECTION`
 reports whether the scene batched and, when it did not, the reason. Launching with `DEV_MODE=true`
-puts the frame rate on screen in a corner chip and turns on the engine's dev surfaces (backtick
-opens the object and geometry inspector), so the number is visible while you play instead of after
-you grep. `npx @threenative/playtest perf` turns a log into a windowed report. When the percentile is
+turns on the engine's dev surfaces (backtick opens the object and geometry inspector) and puts the
+scene-shape verdict in a corner chip, so the engine's own finding is on screen while you play instead
+of after you grep. It draws the verdict alone: the loop's rAF rate is throttled under a compositor or
+a virtual display, so a frame rate read off that chip — or off a screenshot — is a number that lies
+exactly when someone is measuring. `npx @threenative/playtest perf` turns a log into a windowed
+report. When the percentile is
 bad but the cause is not obvious, `node_modules/create-threenative/agent-docs/references/trace-a-slow-frame.md` names the function before you
 change a line.

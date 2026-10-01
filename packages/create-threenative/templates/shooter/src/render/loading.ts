@@ -14,14 +14,14 @@ import { palette } from "./palette.js";
 /* BEGIN THREENATIVE LOADING APPEARANCE */
 /** Shooter look and composition; edit this generated source for the launch screen. */
 export const loading = {
-  backgroundColor: palette.skyLow,
+  backgroundColor: palette.horizon,
   backgroundImage: undefined as string | undefined,
   enabled: true,
   fillImage: undefined as string | undefined,
   logoImage: undefined as string | undefined,
   progressColor: palette.accent,
   showStatus: false,
-  trackColor: palette.skyHigh,
+  trackColor: palette.structure,
   bar: { anchorX: 0.5, anchorY: 0.74, height: 10, maxWidth: 520, minWidth: 1, width: 0.6 },
 } as const;
 /* END THREENATIVE LOADING APPEARANCE */

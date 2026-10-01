@@ -95,14 +95,24 @@ export function setupPost(
   scene: Scene,
   camera: Camera,
   environment: {
+    /** The renderer named a software adapter; this game's answer is its `low` tier. */
+    software?: boolean;
     /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
     tier?: QualityTier;
     mobile?: boolean;
   } = {},
 ): IStormPost {
-  const tier = resolveQualityTier({ mobile: environment.mobile, tier: environment.tier });
+  const tier = resolveQualityTier({
+    mobile: environment.mobile,
+    software: environment.software,
+    tier: environment.tier,
+  });
   const source = environment.tier === undefined ? "platform" : "override";
-  console.info(`TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} source=${source}`);
+  console.info(
+    `TN_QUALITY_TIER ${tier} mobile=${environment.mobile === true} software=${
+      environment.software === true
+    } source=${source}`,
+  );
 
   // The private bloom scene: one screen quad and a camera whose projection nothing reads, which is
   // what the demo's full-screen triangle was. The frame's own scene is never added here — the

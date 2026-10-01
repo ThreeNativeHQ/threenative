@@ -119,7 +119,6 @@ const BUDGET_RELATIVE_PATH = path.join("scripts", "fixtures", "capability-recall
 const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
 const TEMPLATE_NAMES = [
   "action-rpg",
-  "defense",
   "minimal",
   "platformer",
   "racing",
@@ -128,6 +127,7 @@ const TEMPLATE_NAMES = [
   "shooter",
   "snow",
   "starter",
+  "tower-defense",
 ] as const;
 const BRIEF_NAMES = [
   "endless-runner",

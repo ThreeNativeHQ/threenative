@@ -1,0 +1,35 @@
+{
+  "name": "round-clock",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "ride",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "timeRemaining",
+        "changed": true,
+        "gte": 100,
+        "lte": 103
+      }
+    ]
+  }
+}

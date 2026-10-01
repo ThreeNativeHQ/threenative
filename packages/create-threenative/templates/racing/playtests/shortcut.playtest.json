@@ -2,25 +2,65 @@
   "name": "racing-shortcut-rejected",
   "schemaVersion": 1,
   "target": "web",
-  "viewport": { "width": 1280, "height": 720 },
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
   "warmupFrames": 10,
   "subject": "player",
-  "artifacts": { "screenshots": "before-after" },
+  "artifacts": {
+    "screenshots": "before-after"
+  },
   "steps": [
     {
       "kind": "input",
-      "label": "drive-directly-at-finish",
-      "press": "ArrowUp",
-      "holdTicks": 100,
+      "label": "autopilot",
+      "press": "KeyP",
+      "holdTicks": 2,
       "release": true
     },
-    { "kind": "wait", "label": "observe-rejection", "waitTicks": 20, "release": true }
+    {
+      "kind": "wait",
+      "label": "cross-the-line",
+      "waitTicks": 148,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "roll-back-over-the-line",
+      "press": "ArrowDown",
+      "holdTicks": 268,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "take-the-line-again",
+      "press": "ArrowUp",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "observe-rejection",
+      "waitTicks": 20,
+      "release": true
+    }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
-    "movement": { "entity": "player", "minDistance": 3 },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    },
     "visual": [
-      { "frameDiff": { "minChangedPixelRatio": 0.01 } },
+      {
+        "frameDiff": {
+          "minChangedPixelRatio": 0.01
+        }
+      },
       {
         "region": {
           "x": 0,
@@ -38,7 +78,12 @@
         "equals": 0,
         "allowTrivial": "The shortcut rejection occurs before a lap completes; zero completed laps is the intentional held race-start invariant."
       },
-      { "id": "state", "path": "shortcutRejects", "gte": 1, "changed": true }
+      {
+        "id": "state",
+        "path": "shortcutRejects",
+        "gte": 1,
+        "changed": true
+      }
     ]
   }
 }

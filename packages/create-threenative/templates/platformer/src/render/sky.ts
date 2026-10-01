@@ -1,47 +1,136 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+//
+// The sky is a photograph: `assets/sky.jpg`, Poly Haven's "Kloofendal 48d Partly Cloudy (Pure Sky)"
+// by Greg Zaal and Jarod Guest, CC0 (https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky).
+// The same image is the background, the environment light every surface reflects and is filled by,
+// and — through `SUN_DIRECTION` — the direction the sun's shadows fall. Swap the file for any
+// equirectangular sky and re-aim `SUN_DIRECTION` at its sun.
 import {
   BackSide,
-  BufferAttribute,
   Color,
-  Fog,
+  EquirectangularReflectionMapping,
+  Float32BufferAttribute,
+  FogExp2,
   Mesh,
   MeshBasicMaterial,
+  SRGBColorSpace,
   type Scene,
   SphereGeometry,
+  type Texture,
+  Vector3,
 } from "three";
 import { palette } from "./palette.js";
 
-function skyDome(): Mesh {
-  const geometry = new SphereGeometry(180, 24, 12);
-  const positions = geometry.getAttribute("position");
-  const colors = new Float32Array(positions.count * 3);
-  const high = new Color(palette.skyHigh);
-  const low = new Color(palette.skyLow);
-  const color = new Color();
-  for (let index = 0; index < positions.count; index += 1) {
-    const height = Math.max(0, Math.min(1, (positions.getY(index) / 180 + 0.18) / 0.58));
-    color.copy(low).lerp(high, height);
-    colors.set([color.r, color.g, color.b], index * 3);
-  }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
-  const mesh = new Mesh(
-    geometry,
-    new MeshBasicMaterial({ fog: false, side: BackSide, toneMapped: false, vertexColors: true }),
-  );
-  // The dome is authored at the origin and never moves; freeze only this
-  // known-static render object, leaving gameplay transforms under user control.
-  mesh.updateMatrix();
-  mesh.matrixAutoUpdate = false;
-  mesh.frustumCulled = false;
-  return mesh;
+/**
+ * How the JPEG was made from the 4k HDR: linear radiance × 0.4, clipped, sRGB-encoded — so white
+ * in the file is 2.5 in the sky. Multiplying back restores the HDR brightness of the clouds; the sun
+ * disk itself is clipped, which is why the sun is a light (`lighting.ts`) and not a texel.
+ */
+const SKY_RANGE = 2.5;
+
+/** Unit vector toward the photographed sun: 47.9° up, measured from the source HDR. */
+export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
+
+export function setupSky(scene: Scene, sky: Texture): void {
+  sky.mapping = EquirectangularReflectionMapping;
+  sky.colorSpace = SRGBColorSpace;
+  scene.background = sky;
+  scene.backgroundIntensity = SKY_RANGE;
+  // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
+  // It is what makes a standard material read as a material: sky-blue fill on faces the sun
+  // misses, and a sky to reflect, sharper as roughness drops.
+  scene.environment = sky;
+  scene.environmentIntensity = SKY_RANGE;
+  // The route runs to x=97 with the backdrop cliffs another 60 m behind them, so this is thin on
+  // purpose: at this density it is under 2% inside the playfield and only reads past the castle.
+  scene.fog = new FogExp2(palette.horizon, 0.003);
 }
 
-export function setupSky(scene: Scene): void {
-  scene.background = new Color(palette.skyHigh);
-  // Fog starting 28 units out reached the playable middle distance and pulled ground, platforms
-  // and props toward the same pale sky colour: a blind score of the first frame measured mean
-  // luminance 0.77, the highest of the seven templates, with the palette collapsed to one value
-  // band. Start it past where the next jump is and let the horizon fade instead. Tune both numbers
-  // to your level — this is your file.
-  scene.fog = new Fog(palette.skyLow, 90, 240);
-  scene.add(skyDome());
+/**
+ * Inside the camera's far plane by a bounding box's diagonal: the playtest's `cameraClearsScene`
+ * measures a mesh by its box, and a box of half-width R reaches 1.73 R.
+ */
+const FLOOR_RADIUS = 480;
+
+/** Radians the floor climbs above the horizon before it has faded out. */
+const RISE = 0.35;
+
+/**
+ * What the world floats in. A photographed sky ends in a flat grey ground disc, and the route has no
+ * ground: everything under the horizon was a white void the fog could not hide. This is the lower
+ * hemisphere, from the fog colour at the horizon to a deeper sky blue straight down, so distant
+ * rock fades into it exactly as it fades into the fog. It climbs 20 degrees past the horizon and
+ * fades out there, so the photograph melts into the haze instead of meeting it at a hard line.
+ * It is not fogged and never writes depth.
+ */
+export function skyFloor(): Mesh {
+  const geometry = new SphereGeometry(
+    FLOOR_RADIUS,
+    32,
+    16,
+    0,
+    Math.PI * 2,
+    Math.PI / 2 - RISE,
+    Math.PI / 2 + RISE,
+  );
+  const horizon = new Color(palette.horizon);
+  const deep = new Color(palette.skyHigh).lerp(horizon, 0.45);
+  const position = geometry.getAttribute("position");
+  const colors: number[] = [];
+  for (let i = 0; i < position.count; i += 1) {
+    const elevation = position.getY(i) / FLOOR_RADIUS;
+    const c = horizon.clone().lerp(deep, Math.min(1, Math.max(0, -elevation) / 0.6));
+    colors.push(c.r, c.g, c.b, elevation <= 0 ? 1 : Math.max(0, 1 - elevation / Math.sin(RISE)));
+  }
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 4));
+  const floor = new Mesh(
+    geometry,
+    new MeshBasicMaterial({
+      depthWrite: false,
+      fog: false,
+      side: BackSide,
+      transparent: true,
+      vertexColors: true,
+    }),
+  );
+  floor.name = "sky-floor";
+  floor.renderOrder = -1;
+  floor.frustumCulled = false;
+  return floor;
+}
+
+/**
+ * The cloud bank, as a list of lobes to instance.
+ *
+ * Eighteen clouds of five to nine squashed lobes is 130-odd separate spheres, and a photograph sky
+ * is a static one — so the scene builds one `InstancedBatch` of a unit sphere from this and never
+ * touches it again. The motion in the sky is the airship in `scenery.ts`, which crosses the frame
+ * in twenty seconds, and the parallax of a fox covering ninety-seven metres.
+ *
+ * This is data, not objects, so the batching stays the scene's decision: `src/render/` is ordinary
+ * Three.js and never reaches back into the framework.
+ */
+export function cloudLobes(
+  rng: () => number,
+): { position: [number, number, number]; scale: [number, number, number] }[] {
+  const lobes: { position: [number, number, number]; scale: [number, number, number] }[] = [];
+  for (let cloud = 0; cloud < 18; cloud += 1) {
+    const scale = 4 + rng() * 6;
+    const count = 5 + Math.floor(rng() * 4);
+    const cx = -140 + rng() * 420;
+    const cy = 16 + rng() * 46;
+    const cz = -70 - rng() * 200;
+    for (let lobe = 0; lobe < count; lobe += 1) {
+      const r = (0.6 + rng() * 0.7) * scale;
+      lobes.push({
+        position: [
+          cx + (lobe - count / 2) * scale * 0.75 + (rng() - 0.5) * scale * 0.4,
+          cy + (rng() - 0.4) * scale * 0.35,
+          cz + (rng() - 0.5) * scale * 0.5,
+        ],
+        scale: [r, r * 0.72, r],
+      });
+    }
+  }
+  return lobes;
 }

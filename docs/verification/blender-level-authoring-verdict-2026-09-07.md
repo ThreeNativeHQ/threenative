@@ -20,7 +20,7 @@ ThreeNative already has considerably more Blender support than the question assu
 
 The server is bundled into core through [the existing launcher](../../packages/core/mcp/blender.mjs). Its README currently lists only the status tool; the executable defines five tools. That documentation undersells what already exists.
 
-The current starter also authors scenery directly in [ordinary Three.js source](../../packages/create-threenative/templates/starter/src/render/scenery.ts). We are comparing two authoring inputs to the same runtime, not replacing ThreeNative with Blender.
+The current starter also authors its world directly in [ordinary Three.js source](../../packages/create-threenative/templates/starter/src/render/arena.ts). We are comparing two authoring inputs to the same runtime, not replacing ThreeNative with Blender.
 
 ## 2. Where Blender is the better tool
 

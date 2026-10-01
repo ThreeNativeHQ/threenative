@@ -1,0 +1,115 @@
+{
+  "name": "tower-defense-placement",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 20,
+  "subject": "camera.main",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "arm-sentry",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "built-sentry",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-mortar",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "built-mortar",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arm-arc",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arc-refused",
+      "press": "KeyB",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "spent",
+        "equals": 260,
+        "atSteps": [
+          {
+            "label": "built-sentry",
+            "equals": 100
+          },
+          {
+            "label": "built-mortar",
+            "equals": 260
+          },
+          {
+            "label": "arc-refused",
+            "equals": 260
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "towers",
+        "equals": 3,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "fundsRejects",
+        "gte": 1,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "credits",
+        "equals": 100,
+        "atSteps": [
+          {
+            "label": "built-sentry",
+            "equals": 260
+          },
+          {
+            "label": "built-mortar",
+            "equals": 100
+          }
+        ]
+      }
+    ]
+  }
+}
