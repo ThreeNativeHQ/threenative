@@ -42,12 +42,6 @@
         "gte": 2,
         "allowTrivial": "The explorer plants boots in the snow on the native host too."
       }
-    ],
-    "renderChain": {
-      "tier": "high",
-      "stages": {
-        "includes": ["bloom"]
-      }
-    }
+    ]
   }
 }

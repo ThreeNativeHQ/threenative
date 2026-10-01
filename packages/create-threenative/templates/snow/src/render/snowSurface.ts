@@ -28,9 +28,9 @@ import { palette } from "./palette.js";
 /** Per-vertex snow state the material reads: indentation (m) and compaction (0..1). */
 const STATE = "snowState";
 /** A window up to this many samples is redrawn at once; wider ones are sliced. */
-const URGENT_CELLS = 40_000;
+const URGENT_CELLS = 12_000;
 /** Rows of a wide window redrawn per frame. */
-const SLICE_ROWS = 24;
+const SLICE_ROWS = 8;
 
 type Bounds = IHeightfieldRegionBounds;
 
@@ -113,7 +113,7 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
 
   // Beyond the playable field the ground keeps going under fresh, untouched snow. Inside the
   // field it ducks under the deformable surface, so the seam at the edge never shows.
-  const outskirtsGeometry = new PlaneGeometry(340, 340, 170, 170);
+  const outskirtsGeometry = new PlaneGeometry(340, 340, 110, 110);
   outskirtsGeometry.rotateX(-Math.PI / 2);
   const ring = outskirtsGeometry.getAttribute("position");
   const half = field.width / 2;
@@ -156,6 +156,13 @@ export function createSnowSurface(snow: SnowField): ISnowSurface {
     };
     field.refreshGeometry(geometry, bounds);
     writeState(bounds);
+    // Upload only the rows that moved: a whole-field upload every frame is megabytes per frame.
+    const first = bounds.row * field.columns;
+    const count = bounds.rows * field.columns;
+    for (const name of ["position", "normal", STATE]) {
+      const attribute = geometry.getAttribute(name) as BufferAttribute;
+      attribute.addUpdateRange(first * attribute.itemSize, count * attribute.itemSize);
+    }
   };
   const collect = (): void => {
     const written = snow.takeDirtyRegion();

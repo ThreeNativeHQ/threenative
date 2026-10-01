@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Group, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Group, Sphere, Vector3 } from "three";
 import type { IComputeDriven } from "./compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "./gpu-readback.js";
 import type { IRendererLike } from "./renderer.js";
@@ -482,6 +482,8 @@ export class Heightfield extends Group implements IComputeDriven {
     const row =
       bounds === undefined ? { count: this.rows, start: 0 } : regionRows(bounds, this.rows);
     const normal = new Vector3();
+    let lowest = Number.POSITIVE_INFINITY;
+    let highest = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < row.count; index += 1) {
       const target = row.start + index;
       const worldZ = this.origin.z - this.depth / 2 + target * this.#cellDepth;
@@ -489,7 +491,10 @@ export class Heightfield extends Group implements IComputeDriven {
         const source = column.start + offset;
         const vertex = target * this.columns + source;
         const worldX = this.origin.x - this.width / 2 + source * this.#cellWidth;
-        position.setY(vertex, this.#height(vertex));
+        const height = this.#height(vertex);
+        position.setY(vertex, height);
+        lowest = Math.min(lowest, height);
+        highest = Math.max(highest, height);
         if (normalAttribute === undefined) continue;
         this.normalAt(worldX, worldZ, normal);
         normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
@@ -497,8 +502,18 @@ export class Heightfield extends Group implements IComputeDriven {
     }
     position.needsUpdate = true;
     if (normalAttribute !== undefined) normalAttribute.needsUpdate = true;
-    geometry.computeBoundingSphere();
-    geometry.computeBoundingBox();
+    // Only heights move, so a windowed refresh grows the existing bounds by the window's own
+    // range instead of walking every vertex again: on a 321-sample field the full recompute cost
+    // two milliseconds for a footprint-sized window. Bounds may stay conservative after a refill.
+    const box = geometry.boundingBox;
+    if (bounds === undefined || box === null) {
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      return;
+    }
+    box.min.y = Math.min(box.min.y, lowest);
+    box.max.y = Math.max(box.max.y, highest);
+    geometry.boundingSphere = box.getBoundingSphere(geometry.boundingSphere ?? new Sphere());
   }
 
   /** The same values transposed once into Rapier's column-major height-matrix order. */

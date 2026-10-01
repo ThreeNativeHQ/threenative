@@ -67,7 +67,7 @@ function forest(materials: SnowMaterials, random: () => number, obstacles: IObst
   const levels = 15;
   const trunkGeometry = new CylinderGeometry(0.07, 0.14, 1, 9);
   const branchGeometry = new ConeGeometry(1, 1, 7, 1);
-  const boughGeometry = new SphereGeometry(1, 8, 5);
+  const boughGeometry = new SphereGeometry(1, 6, 4);
   // Two batches: the trees round the glade cast shadows, the far forest does not. One batch of
   // every bough would put the whole forest — most of a million triangles — into the shadow pass.
   const batches = [true, false].map((near) => {
@@ -97,14 +97,17 @@ function forest(materials: SnowMaterials, random: () => number, obstacles: IObst
     batch.trunks.setMatrixAt(batch.trees, dummy.matrix);
     batch.trees += 1;
     if (Math.hypot(x, z) < 20) obstacles.push({ height, radius: 0.23 * scale, x, z });
-    for (let level = 0; level < levels; level += 1) {
+    // A far tree is seen through haze at a few pixels a bough: every other tier of boughs, scaled
+    // up to cover, reads the same at a third of the triangles.
+    const stride = batch.near ? 1 : 2;
+    for (let level = 0; level < levels; level += stride) {
       const t = level / levels;
       const y = root + 0.75 + t * (height - 0.65);
       const radius = (1 - t) * height * 0.23 + 0.055;
       const around = level > 12 ? 4 : 6;
       for (let index = 0; index < around; index += 1) {
         const angle = (index / around) * Math.PI * 2 + level * 0.72 + tree * 1.37;
-        const reach = radius * (0.8 + random() * 0.3);
+        const reach = radius * (0.8 + random() * 0.3) * (stride === 1 ? 1 : 1.15);
         const dx = Math.cos(angle);
         const dz = Math.sin(angle);
         dummy.position.set(x + dx * reach * 0.53, y - 0.06, z + dz * reach * 0.53);

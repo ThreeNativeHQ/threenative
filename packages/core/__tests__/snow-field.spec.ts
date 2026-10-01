@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
   type ISnowFootprint,
@@ -297,6 +298,33 @@ describe("SnowField canonical surface", () => {
       }
     }
     expect(worst).toBeLessThan(0.001);
+  });
+
+  it("keeps a windowed geometry refresh's bounds around every vertex", () => {
+    // Flat, so the stamp's floor is below every height the bounds were first measured on.
+    const field = Heightfield.fromSampler({
+      columns: 65,
+      depth: 4,
+      origin: { x: 0, z: 0 },
+      rows: 65,
+      sampleHeight: () => 0,
+      width: 4,
+    });
+    const snow = new SnowField({ field, depth: 0.28 });
+    const geometry = field.toGeometry();
+    field.refreshGeometry(geometry);
+    snow.stamp({ area: 0.004, footprint: snowDiscFootprint(0.3), load: 5000, x: 0, z: 0 });
+    field.refreshGeometry(geometry, snow.dirtyRegion);
+    const box = geometry.boundingBox;
+    const sphere = geometry.boundingSphere;
+    if (box === null || sphere === null) throw new Error("refreshGeometry left no bounds");
+    const position = geometry.getAttribute("position");
+    const point = new Vector3();
+    for (let index = 0; index < position.count; index += 1) {
+      point.fromBufferAttribute(position, index);
+      expect(box.containsPoint(point)).toBe(true);
+      expect(sphere.containsPoint(point)).toBe(true);
+    }
   });
 
   it("tracks a monotonic version and the dirty window of the surface it changed", () => {

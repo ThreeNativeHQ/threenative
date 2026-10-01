@@ -3,6 +3,7 @@
 // movement or the footsteps in `src/entities/Explorer.ts`.
 import {
   BoxGeometry,
+  type BufferGeometry,
   CapsuleGeometry,
   CatmullRomCurve3,
   CylinderGeometry,
@@ -14,6 +15,7 @@ import {
   TubeGeometry,
   Vector3,
 } from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { SnowMaterials } from "./materials.js";
 
 type Point = { x: number; y: number; z: number };
@@ -42,6 +44,29 @@ interface ILimb {
 }
 
 type Object3DLike = Group | Mesh;
+
+/** Bake a group's direct child meshes into one mesh per material, keeping child groups. */
+function mergeRigid(group: Group): void {
+  const byMaterial = new Map<Material, BufferGeometry[]>();
+  for (const child of [...group.children]) {
+    if (!(child instanceof Mesh) || Array.isArray(child.material)) continue;
+    child.updateMatrix();
+    const geometry = child.geometry.clone().applyMatrix4(child.matrix);
+    const list = byMaterial.get(child.material) ?? [];
+    list.push(geometry);
+    byMaterial.set(child.material, list);
+    group.remove(child);
+  }
+  for (const [material, geometries] of byMaterial) {
+    const merged = mergeGeometries(geometries);
+    for (const geometry of geometries) geometry.dispose();
+    if (merged === null) throw new Error("ExplorerModel could not merge a rigid part.");
+    const mesh = new Mesh(merged, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+}
 
 const UP = new Vector3(0, 1, 0);
 const scratchA = new Vector3();
@@ -226,6 +251,10 @@ export class ExplorerModel {
         upper: segment(m.pants, 0.113, 0.475),
       });
     }
+    // The torso, hood and boots never bend internally, so each becomes one mesh per material:
+    // dozens of primitives as separate draws cost more than the whole snowfield.
+    for (const group of [torso, head, ...this.#legs.map((leg) => leg.end as Group)])
+      mergeRigid(group);
   }
 
   #place(segment: ISegment, from: Point, to: Point): void {

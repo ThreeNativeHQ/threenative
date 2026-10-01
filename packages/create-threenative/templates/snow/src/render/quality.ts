@@ -21,8 +21,8 @@
 //
 // **This template runs neither SSGI nor SSR at any tier.** Its frame cost is the snow — a dense
 // deforming heightfield mesh and tens of thousands of flakes — not the post chain, and snow is
-// already the brightest thing on screen, so the chain is kept to tonemapping and a faint bloom
-// that lets the sun glints breathe. The rung between the tiers is bloom strength and nothing else.
+// already the brightest thing on screen, so the chain is tonemapping alone at every tier and the
+// sun glints come from the snow material.
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -74,11 +74,11 @@ const high: IWorldEnvironmentOptions = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.14,
-  // Only the glints: at the default 0.2 threshold every lit snow pixel blooms and the whole
-  // glade sinks into a white haze.
-  bloomThreshold: 0.92,
+  // Off. Snow is the brightest thing on screen, and at the default 0.2 threshold every lit
+  // pixel blooms and the glade sinks into a white haze. A 0.92 threshold kept only the glints on
+  // the web but left the native desktop frame blank behind the HUD (Dawn/Vulkan, 2026-10-01), so
+  // the glints live in the snow material's emissive term instead. Turn it back on here.
+  bloomEnabled: false,
   // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
   denoiseEnabled: false,
   exposure: 0.95,
@@ -90,20 +90,16 @@ const high: IWorldEnvironmentOptions = {
 };
 
 /**
- * The rung in between. With no screen-space stage to drop at any tier, the only thing left to
- * move is how hard the sun blooms off the snow, so that is what the three tiers differ by.
- * The saving is **unmeasured** and small by construction — if this template needs to be cheaper,
- * the snow mesh resolution and the flake count are where the frame actually goes.
+ * The rung in between. With no screen-space stage and no bloom at any tier, the post chain is the
+ * same everywhere; what a phone saves is decided in `src/scenes/Snow.ts` (fewer flakes), and the
+ * snow mesh resolution in `src/terrain.ts` is where the frame actually goes.
  */
 const medium: IWorldEnvironmentOptions = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.11,
-  // Only the glints: at the default 0.2 threshold every lit snow pixel blooms and the whole
-  // glade sinks into a white haze.
-  bloomThreshold: 0.92,
+  // Off, as at the high tier.
+  bloomEnabled: false,
   // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
   denoiseEnabled: false,
   exposure: 0.95,
@@ -121,11 +117,8 @@ const low: IWorldEnvironmentOptions = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
   // to be.
-  bloomEnabled: true,
-  bloomStrength: 0.08,
-  // Only the glints: at the default 0.2 threshold every lit snow pixel blooms and the whole
-  // glade sinks into a white haze.
-  bloomThreshold: 0.92,
+  // Off, as at the high tier.
+  bloomEnabled: false,
   exposure: 0.95,
   // Off at every tier — see the note at the top of this file.
   ssgiEnabled: false,

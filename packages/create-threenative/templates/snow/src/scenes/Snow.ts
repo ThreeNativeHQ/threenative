@@ -308,6 +308,8 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       toastId += 1;
     };
     let view = 0;
+    // The scene owns this; state only mirrors it, so a key and the panel never race the bridge.
+    let autoExplore = initial.autoExplore;
     const act = (command: Command): void => {
       const state = ctx.state.getState();
       if (command === "reset") {
@@ -347,8 +349,8 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         view = (view + 1) % VIEWS.length;
         ctx.state.set({ view: VIEWS[view] });
       } else if (command === "auto") {
-        ctx.state.set({ autoExplore: !state.autoExplore });
-        say(state.autoExplore ? "You are in control. Hold Shift to run." : "Auto-explore on.");
+        autoExplore = !autoExplore;
+        say(autoExplore ? "Auto-explore on." : "You are in control. Hold Shift to run.");
       } else if (command === "blizzard") {
         ctx.state.set({ blizzard: !state.blizzard });
         say(
@@ -425,7 +427,6 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       const keys = input.vector("move");
       const sideways = keys.x + (stick?.x ?? 0);
       const forward = keys.y + (stick?.y ?? 0);
-      let autoExplore = state.autoExplore;
       if (autoExplore && Math.hypot(sideways, forward) > 0.1) {
         autoExplore = false;
         say(
