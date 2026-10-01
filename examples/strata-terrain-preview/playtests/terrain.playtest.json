@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain",
+  "subject": "Baked terrain triangles and physics match during a playable 50 metre walk",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 90,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "grounded",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "forest-start"
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyD",
+      "holdTicks": 420,
+      "release": true,
+      "screenshot": "forest-walk"
+    },
+    {
+      "label": "walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 50
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal",
+      "press": "KeyC",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ocean-early",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean-early"
+    },
+    {
+      "kind": "wait",
+      "label": "ocean",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "grounded",
+        "equals": true,
+        "allowTrivial": "The character settles during warmup; grounded must still hold after the walk and scene transition."
+      },
+      {
+        "id": "GameState",
+        "path": "maxContactError",
+        "lte": 0.02,
+        "allowTrivial": "Maximum measured error is a held upper bound; contactSamples separately requires fresh observations during the scenario."
+      },
+      {
+        "id": "GameState",
+        "path": "contactSamples",
+        "gte": 300
+      },
+      {
+        "id": "GameState",
+        "path": "bilinearDifference",
+        "gte": 0.1,
+        "allowTrivial": "The asymmetric triangle fixture runs once after physics startup; its observed difference qualifies the sampling method."
+      },
+      {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      {
+        "id": "GameState",
+        "path": "oceanSteps",
+        "gte": 300
+      },
+      {
+        "id": "GameState",
+        "path": "waveSamples",
+        "gte": 2
+      },
+      {
+        "id": "GameState",
+        "path": "waveRange",
+        "gte": 0.0001
+      },
+      {
+        "id": "GameState",
+        "path": "sampleSlopeRange",
+        "gte": 0.0001
+      }
+    ]
+  }
+}

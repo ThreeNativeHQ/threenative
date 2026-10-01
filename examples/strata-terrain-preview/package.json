@@ -1,0 +1,26 @@
+{
+  "name": "strata-terrain-preview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bake": "node scripts/bake.mjs",
+    "dev": "pnpm bake && vite",
+    "build": "pnpm bake && vite build",
+    "build:desktop": "pnpm bake && node ../../packages/runtime-native/scripts/bundle.mjs --project . --entry src/game.ts --target desktop --output dist/strata-terrain-native.js",
+    "typecheck": "pnpm bake && tsc --noEmit -p tsconfig.json",
+    "test:terrain:web": "node ../../packages/playtest/dist/runner/cli.js playtests/terrain.playtest.json --url http://127.0.0.1:5196 --server-command 'pnpm dev --host 127.0.0.1 --port 5196 --strictPort' --browser-recipe webgpu --headed --artifacts artifacts/playtest/web",
+    "test:terrain:desktop": "pnpm build:desktop && node ../../packages/playtest/dist/runner/cli.js playtests/terrain.playtest.json --target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral --host-arg run --host-arg dist/strata-terrain-native.js --artifacts artifacts/playtest/desktop"
+  },
+  "dependencies": {
+    "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
+    "three": "catalog:"
+  },
+  "devDependencies": {
+    "@threenative/terrain": "workspace:*",
+    "@types/three": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

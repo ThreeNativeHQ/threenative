@@ -4,7 +4,7 @@
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Progress:** 2/9 required boxes verified
+**Progress:** 4/9 required boxes verified
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
@@ -486,21 +486,31 @@ and travel distance through the existing playtest bridge; never hardcode success
 Adapt the existing sailing ocean source; use game-owned atmosphere/lighting and
 material source. Ocean compute advances every frame without reevaluating terrain.
 
-- [ ] AC-3 [local, actor: implementing agent]: Browser WebGPU play exercises the generated hill/road with matching rendered and physical ground. proof: `pnpm --filter strata-terrain-preview test:terrain:web` — Evidence: pending; planned script invokes the existing playtest runner with `--browser-recipe webgpu`, names the adapter, verifies at least 50 m of character travel and maximum vertical mesh/physics contact error of 0.02 m across asymmetric cell interiors, with no missing observations or failed asset loads.
-- [ ] AC-4 [local, actor: implementing agent]: The same baked terrain scenario runs in the Linux native desktop host. proof: `pnpm --filter strata-terrain-preview test:terrain:desktop` — Evidence: pending; planned script builds/packages through existing native tooling and invokes the runner with `--target desktop --executable ...` and required host args; require the same contact/travel observations, at least 300 frames, a nonblank terrain screenshot, and zero runtime errors. This does not claim an FPS or mobile result.
+- [x] AC-3 [local, actor: implementing agent]: Browser WebGPU play exercises the generated hill/road with matching rendered and physical ground. proof: `pnpm --filter strata-terrain-preview test:terrain:web` — Evidence: PASS 2026-09-30 — existing runner with `--browser-recipe webgpu --headed`, NVIDIA/turing RTX 2080, 903 scenario ticks; the resource wait observes at least 50 m of walking (62.94 m in the isolated walk), grounded character, 371 coastal contact samples and maximum error 0.000043 m (isolated walk 609 samples, 0.000057 m). The 17×17 asymmetric fixture includes both cell interiors/diagonal sides and exact edge/corner probes, with measured bilinear-vs-triangle difference 1.5 m. No console, runtime or asset errors; inspected nonblank screenshots are attached on the PR. Walking probes compare identical oblique rays through the rendered and physical surfaces; this is not a claim that Rapier’s near-boundary vertical ray miss is fixed.
+- [x] AC-4 [local, actor: implementing agent]: The same baked terrain scenario runs in the Linux native desktop host. proof: `pnpm --filter strata-terrain-preview test:terrain:desktop` — Evidence: PASS 2026-09-30 — existing native bundler plus `--target desktop --executable ../../packages/runtime-native/build/tn-linux/mystral` and `run dist/strata-terrain-native.js`; 903 scenario ticks, observed 50 m travel wait, grounded character, 371 final ground samples and maximum mesh/physics error 0.000043 m. NVIDIA RTX 2080 host, inspected nonblank terrain/coastal captures, no runtime/console errors. Ocean compute/readback observes changing values after moving its clock update into Scene.update; this does not claim rendered-normal/coast qualification, FPS or mobile results.
 - [ ] AC-9 [local, actor: implementing agent]: The coastal ocean mesh visibly consumes the installed spectral simulation in the game scene. proof: AC-3 and AC-4 scenario runs — Evidence: pending; observe changing wave displacement and normals across recorded times, lit material response, and coast masking on browser and desktop, with no silent substitute or missing compute observations.
 
 Phase 2 work in progress: the preview bakes seeded 512 m / 257-vertex forest
-and coastal worlds before startup, consumes only baked arrays in its game graph,
-and builds through the existing desktop bundler. Preview typecheck and desktop
-bundle pass. The browser run remains unverified: headless Chromium selected
-SwiftShader and lost its WebGPU instance, yielding blank captures; a headed
-hardware-adapter run is pending. No blank image is accepted as visual evidence.
-Raw Rapier also reproduces a vertical-ray miss at z=159.99998474121094 near a
-heightfield grid boundary; walking probes compare identical oblique rays in both
-mesh and physics, while the asymmetric fixture retains exact vertical edge/corner
-checks. This does not claim that the dependency's near-boundary vertical miss is
-fixed. Ocean, native scenario and visual coast qualification remain open.
+and coastal worlds before startup and consumes only baked arrays in its game
+graph. The browser scenario now passes through the installed scene picker on
+NVIDIA/turing; headed capture is required because headless Chromium selected
+SwiftShader and lost its WebGPU instance. A data-URL favicon avoids the unrelated
+browser request error. Browser and desktop artifacts have separate directories.
+Desktop bundling and the shared native scenario pass after moving ocean.advance
+from the render callback into Scene.update, before fixed compute dispatch. The
+first native failure was a game clock-wiring error: deterministic ticks do not
+run beforeRender. The corrected scenario observes 361 spectral compute steps,
+360 readback samples, wave-height range 0.02448 m and CPU sample-slope range
+0.01180, with no runtime errors. Two recorded ocean times allow asynchronous
+readback between tick batches. CPU sample slope variation remains a stale
+readback proxy, not rendered-normal qualification. Coast masking/foam and visible
+normal/sun-response comparisons remain pending; AC-9 stays open.
+
+
+Raw Rapier reproduces a vertical-ray miss at z=159.99998474121094 near a
+heightfield grid boundary. Walking probes compare identical oblique rays in mesh
+and physics; asymmetric fixtures retain exact vertical edge/corner checks. This
+does not claim the dependency's near-boundary vertical miss is fixed.
 
 ### Phase 3: Replaceable starter assets and cold-agent workflow
 
@@ -591,3 +601,11 @@ checks (including all ten pristine scaffold typechecks), documentation links pas
 and the six prescribed documentation suites pass 180 checks. Live editor
 installation/controller instructions and packed editor/scaffold proof remain
 pending; AC-7 stays open until those APIs land.
+
+The updated scaffold-tree snapshot passes all 60 scaffold checks after the
+intentional AGENTS/CLAUDE instruction change. Root typecheck, lint and budgets
+pass; the generated bake is ignored by Biome rather than increasing its input
+size limit. Full refresh on the integrated develop baseline passes 520 unit files / 6,476
+tests (3 files / 12 existing skips), plus workspace builds and package checks.
+The subsequent game clock wiring is covered by the rerun example typecheck and
+shared runtime scenario; no new full-suite verdict is claimed for that edit.
