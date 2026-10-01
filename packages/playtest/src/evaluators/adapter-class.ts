@@ -66,25 +66,29 @@ function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined):
 }
 
 /**
- * The four `adapter.info` fields back out of a native adapter identity, or none.
+ * The `adapter.info` fields back out of a native adapter identity, or none.
  *
  * The renderer builds one string from its own `requestAdapter().info` read and hands it to the
  * pipeline census: `webgpu:` then `field=encodeURIComponent(value)` joined by `|`. Both separators
  * are encoded inside a value, so the split is unambiguous and this is a decode, not a guess.
  *
- * All four keys must be present exactly once and non-blank, which is the same requirement
- * `adapterIdentity` places on a browser capture. A string that is not this shape — an empty
- * identity, a `webgl2` census, a truncated one — yields `undefined`, and the run stays
- * unclassified. There is no partial answer here: three fields out of four would classify a machine
- * from the identity of somebody else.
+ * What has to be accepted is a **non-empty subset** of the four names, because that is what the
+ * writer produces: it omits a field the adapter left empty and emits the identity as soon as one
+ * field is populated. A host whose adapter names only `architecture` and `vendor` writes
+ * `webgpu:architecture=swiftshader|vendor=google`, and requiring the fourth field there refused the
+ * engine's own report — a software native run stayed unclassified and its `low` tier was held to
+ * the flat `high`. One named field is a reading of this machine, which is all a browser capture
+ * asks for too: `adapterIdentity` above scans the same four keys and takes the first non-blank.
  *
- * A repeated key is refused rather than let the last one win. `webgpu:architecture=swiftshader|
- * architecture=turing|description=NVIDIA|device=RTX|vendor=nvidia` is a complete four-field identity
- * by every other rule here, and letting it through reported the *last* `architecture` — so a string
- * that began by naming a CPU rasteriser classified as hardware off the fields that followed it. The
- * key must be one of the four names and not already present, checked before the assignment, and the
- * object is null-prototype so a `__proto__` pair cannot hide from `Object.keys` behind the inherited
- * setter.
+ * Every pair is still checked before it is recorded. The key must be one of the four names and must
+ * not already be there; the value must decode and must not be blank. A repeated key is refused
+ * rather than let the last one win — `webgpu:architecture=swiftshader|architecture=turing|
+ * description=NVIDIA|device=RTX|vendor=nvidia` is a complete four-field identity by every other rule
+ * here, and letting it through reported the *last* `architecture`, so a string that began by naming a
+ * CPU rasteriser classified as hardware off the fields behind it. The record is null-prototype so a
+ * `__proto__` pair cannot hide from `Object.keys` behind the inherited setter, and a key outside the
+ * four is refused rather than recorded as identity. Anything that is not this shape — absent, an
+ * empty identity, a `webgl2` census — yields `undefined` and the run stays unclassified.
  */
 export function adapterFieldsFromIdentity(identity: unknown): Record<string, string> | undefined {
   if (typeof identity !== "string") return undefined;
@@ -107,8 +111,9 @@ export function adapterFieldsFromIdentity(identity: unknown): Record<string, str
     if (value.trim() === "") return undefined;
     fields[key] = value;
   }
-  const complete = Object.keys(fields).sort().join(",");
-  if (complete !== [...ADAPTER_IDENTITY_KEYS].sort().join(",")) return undefined;
+  // Every pair above either recorded a field or refused the whole string, so this can only be the
+  // empty remainder of the prefix — which named no adapter at all.
+  if (Object.keys(fields).length === 0) return undefined;
   return fields;
 }
 

@@ -346,7 +346,10 @@ describe("renderChain perAdapter selection", () => {
       "vendor=google",
     ].join("|");
 
-    function censusReport(identity: unknown): IPlaytestReport {
+    function censusReport(
+      identity: unknown,
+      renderChain: IPlaytestRenderChainObservation = LOW,
+    ): IPlaytestReport {
       return {
         capture: nativeCaptureProvenance(
           { adapter: { identity, thermal: "unavailable" } } as never,
@@ -358,7 +361,7 @@ describe("renderChain perAdapter selection", () => {
         entity: "proof",
         expectMoved: false,
         frames: 2,
-        observations: { console: [], hud: {}, network: [], resources: {}, renderChain: LOW },
+        observations: { console: [], hud: {}, network: [], resources: {}, renderChain },
         trivialityOptOuts: [],
       };
     }
@@ -397,15 +400,45 @@ describe("renderChain perAdapter selection", () => {
       );
     });
 
-    // Malformed, partial, empty or absent provenance is the unclassified answer, which fails a
-    // `perAdapter` scenario closed. A fallback that guessed from those would hand a machine a
-    // hardware verdict from a reading that observed nothing.
+    // The writer omits a field the adapter left empty and emits the identity as soon as one field is
+    // populated, so these are the shapes it really writes. Demanding all four refused the engine's
+    // own report: a software host whose adapter names only `architecture` and `vendor` was left
+    // unclassified, and the `low` tier it honestly produced was held to the flat `high`.
+    it.each<[string, string, "hardware" | "software", IPlaytestRenderChainObservation]>([
+      ["a two-field software identity", "webgpu:architecture=swiftshader|vendor=google", "software", LOW],
+      ["a one-field hardware identity", "webgpu:vendor=nvidia", "hardware", HIGH],
+      ["a three-field hardware identity", "webgpu:architecture=turing|description=NVIDIA|device=RTX", "hardware", HIGH],
+    ])("classifies %s from the report the producer wrote", async (
+      _name,
+      identity,
+      adapterClass,
+      renderChain,
+    ) => {
+      const scenario = await load(SCENARIO(ASSERTION));
+      const native = censusReport(identity, renderChain);
+      const result = evaluateRichPlaytestAssertions({ report: native, scenario });
+
+      expect(native.capture?.adapter).toEqual(
+        Object.fromEntries(identity.slice("webgpu:".length).split("|").map((pair) => pair.split("="))),
+      );
+      expect(result.assertions.filter((row) => row.pass === false)).toEqual([]);
+      expect(result.assertions).toContainEqual(
+        expect.objectContaining({
+          details: expect.objectContaining({ adapterClass }),
+          id: "renderChain.tier",
+          pass: true,
+        }),
+      );
+    });
+
+    // Malformed, empty or absent provenance is the unclassified answer, which fails a `perAdapter`
+    // scenario closed. A fallback that guessed from those would hand a machine a hardware verdict
+    // from a reading that observed nothing.
     it.each([
       ["absent", undefined],
       ["empty", ""],
       ["not this shape", "turing"],
       ["another renderer kind", "webgl2:architecture=turing|description=x|device=y|vendor=nvidia"],
-      ["a missing field", "webgpu:architecture=turing|description=NVIDIA|device=RTX"],
       ["an empty field", "webgpu:architecture=|description=NVIDIA|device=RTX|vendor=nvidia"],
       ["an undecodable value", "webgpu:architecture=%E0%A4%A|description=N|device=R|vendor=nvidia"],
       // A repeated key is the identity that names a CPU rasteriser first and a real GPU second.
