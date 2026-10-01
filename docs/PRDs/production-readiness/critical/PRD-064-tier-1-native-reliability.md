@@ -13,6 +13,12 @@ host, the unmodified platformer's final 1920×1080 paired run failed the web bud
 mean and 110.4 ms p99; native reached 174.06 FPS and 17.30 ms p99, and startup p95 was 1,803 ms.
 Web and native process/artifact identities differed. Tier 1 remains not reached.
 
+**2026-09-30 (PR #361):** the profiler now measures headed WebGPU with no marker server and no
+unresolvable intervals. On the RTX 2080 host, native: 174.06 fps, p99 17.3 ms, cold start p95
+1,803 ms, no slower than web on all four legs, distinct process and artifact identities. **The web
+arm misses its budget:** 35.6 fps mean, p99 110.4 ms against ≥ 60 fps / ≤ 33 ms. The Phase 4
+parity box stays open: Tier 1 is not reached until web holds 60 fps on the judge host.
+
 **Complexity: 6 → MEDIUM mode.** Two red conformance rows, one blocked row decision, one
 unrun emulator matrix, one same-hardware performance proof, one ledger.
 
