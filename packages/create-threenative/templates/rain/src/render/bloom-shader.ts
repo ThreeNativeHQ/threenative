@@ -1,9 +1,6 @@
-// GENERATED FILE — do not edit it. Every line below is the output of Three.js's own GLSL to
-// TSL transpiler, run over tools/tempest-bloom.frag. That .frag file
-// is the source of truth; change it and the generator, never this file.
-//
-//   node tools/generate-shaders.mjs
-//
+// Transcribed once by Three.js's own GLSL to TSL transpiler from tools/tempest-bloom.frag, and maintained
+// here by hand since: `tools/generate-shaders.mjs` regenerates only the coast and cloud shaders.
+// Keep the .frag in step when you change this file.
 //
 // The demo's exact bloom: a 5x5 gaussian at twice the input texel size, masked by a soft-knee
 // luminance threshold and normalised by the weight it actually accumulated — not by 25, so the
@@ -52,7 +49,12 @@ export const tempestBloom = /*@__PURE__*/ Fn(([vUv]: [Node<"vec2">]) => {
           .negate()
           .mul(0.32),
       ).toVar();
-      const s = uScene.sample(vUv.add(vec2(float(j), float(i)).div(uRes).mul(2))).rgb.toVar();
+      // `vUv` is the bloom quad's own geometry uv, bottom-up; the scene it reads is a render target
+      // whose first row is the top of the frame. Unflipped, every highlight blooms mirrored about
+      // the horizon — the lamp's glow hung in the sky above it.
+      const s = uScene
+        .sample(vec2(vUv.x, vUv.y.oneMinus()).add(vec2(float(j), float(i)).div(uRes).mul(2)))
+        .rgb.toVar();
       const l = max(s.r, max(s.g, s.b)).toVar();
       c.addAssign(s.mul(smoothstep(0.7, 1.6, l)).mul(wt));
       w.addAssign(wt);

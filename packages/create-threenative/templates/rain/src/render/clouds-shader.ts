@@ -105,7 +105,7 @@ export const noise2 = /*@__PURE__*/ Fn(([p]: [Node<"vec2">]) => {
 export const fbm2 = /*@__PURE__*/ Fn(([p_immutable]: [Node<"vec2">]) => {
   const p = p_immutable.toVar();
   const v = mul(0.5, noise2(p)).toVar();
-  p.assign(mat2(0.8, -0.6, 0.6, 0.8).mul(p).mul(2.03).add(19.1));
+  p.assign(mat2(0.8, 0.6, -0.6, 0.8).mul(p).mul(2.03).add(19.1));
   v.addAssign(mul(0.25, noise2(p)));
   p.assign(p.mul(2.02).add(9.3));
   v.addAssign(mul(0.125, noise2(p)));

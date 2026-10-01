@@ -51,6 +51,20 @@ const DEFAULTS = {
 };
 
 /**
+ * Applied to every emitted module. GLSL's `mat2(a, b, c, d)` is column-major — `(a, b)` is the first
+ * column — but TSL's `mat2(a, b, c, d)` with constants builds a `Matrix2`, whose constructor takes
+ * row-major arguments. Passed through unchanged, fbm's octave rotation comes out transposed: a
+ * rotation the other way, so every octave after the first lands somewhere else and the terrain's
+ * ridges, the puddles and the cloud shapes all drift from the study's. Swapping the off-diagonal
+ * pair is the transpose back.
+ */
+const MAT2_COLUMN_MAJOR = {
+  what: "a constant mat2 in GLSL's column-major order",
+  find: /mat2\(\s*([^,()]+),\s*([^,()]+),\s*([^,()]+),\s*([^,()]+)\)/g,
+  replace: "mat2($1, $3, $2, $4)",
+};
+
+/**
  * The shaders this generates. `rewrites` are edits to the GLSL text; each one is a rewrite with a
  * named reason, and a rule that matches nothing stops the run. `entryOpen` turns the stage's
  * `main` into the one function the module exports; `entryClose` covers what that function has to
@@ -83,6 +97,7 @@ const SHADERS = [
      * value. The cloud volume has no literal in that position, so it declares none.
      */
     outputRewrites: [
+      MAT2_COLUMN_MAJOR,
       {
         what: "a negated literal with a TSL method call on it",
         find: /- ?((?:\d+\.\d*|\.\d+|\d+))\.(?=[A-Za-z_$])/g,
@@ -138,6 +153,7 @@ const SHADERS = [
     samplers: ["sampler3D"],
     nestedLoop: false,
     outputRewrites: [
+      MAT2_COLUMN_MAJOR,
       {
         // The decoder's own `gl_FragCoord` polyfill reaches for `screenCoordinate.z`, which is not a
         // member of a `vec2` screen coordinate: the fragment depth is its own node, and that is what

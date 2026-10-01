@@ -1,9 +1,6 @@
-// GENERATED FILE — do not edit it. Every line below is the output of Three.js's own GLSL to
-// TSL transpiler, run over tools/tempest-post.frag. That .frag file
-// is the source of truth; change it and the generator, never this file.
-//
-//   node tools/generate-shaders.mjs
-//
+// Transcribed once by Three.js's own GLSL to TSL transpiler from tools/tempest-post.frag, and maintained
+// here by hand since: `tools/generate-shaders.mjs` regenerates only the coast and cloud shaders.
+// Keep the .frag in step when you change this file.
 //
 // The demo's filmic half in one pass: twelve animated refractive beads near the lens edges, a
 // five-tap luma-edge antialias over the warped coordinate, the bloom added, the weather exposure,

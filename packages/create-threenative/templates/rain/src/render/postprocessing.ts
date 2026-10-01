@@ -26,7 +26,7 @@ import {
 } from "three";
 import { convertToTexture, positionGeometry, uv, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, PassNode } from "three/webgpu";
-import { setScene as setBloomScene, tempestBloom } from "./bloom-shader.js";
+import { setScene as setBloomScene, tempestBloom, uRes as uBloomRes } from "./bloom-shader.js";
 import {
   setBloom,
   setScene,
@@ -167,6 +167,9 @@ export function setupPost(
         throw new Error("setupPost: elapsed, exposure and rain must all be finite numbers.");
       }
       uRes.value.set(width, height);
+      // The bright pass reads the full-resolution scene at two of its texels per tap, as the study
+      // did, so it needs the same size; left at zero its kernel divides by zero.
+      uBloomRes.value.set(width, height);
       uTime.value = elapsed;
       uExposure.value = exposure;
       uRain.value = rain;
