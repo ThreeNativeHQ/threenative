@@ -5578,6 +5578,25 @@ export class TerrainEditorDocument { … }
 const document = new TerrainEditorDocument("/project/terrain/world.json"); const snapshot = document.snapshot();
 ```
 
+## `@threenative/terrain/export`
+
+### `exportWorldGLB`
+
+`function` — Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
+
+```ts
+export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }
+```
+
+- **Use when:** export terrain, resolved models and final manual placement transforms as a portable GLB
+- **Constraints:** browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** actual static models, final matrices and baked PBR maps are supplied by the game
+
+```ts
+const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
+```
+
 ## `@threenative/terrain/three`
 
 ### `toGeometry`

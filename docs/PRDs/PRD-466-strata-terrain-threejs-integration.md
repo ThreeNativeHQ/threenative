@@ -510,7 +510,7 @@ does not claim the dependency's near-boundary vertical miss is fixed.
 
 ### Phase 3: Replaceable starter assets and cold-agent workflow
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 
 **Files:** `packages/terrain/starter-assets/`, editable starter source under
 `packages/terrain/starter/`, preview `src/world/terrainAssets.ts` and
@@ -615,3 +615,38 @@ checks and 6,475 unit tests, with one source-hygiene failure because a removed
 tracked palette file had not yet been staged. Staging that deletion fixes the
 index-based scan; its one test then passes. This reports the actual full-command
 failure and targeted repair, not a cached or invented full-command success.
+
+
+Static-world export milestone (2026-10-01): `@threenative/terrain/export`
+uses the installed GLTFExporter for ordinary shared-mesh nodes and embedded byte
+PBR images. The caller supplies canonical terrain, actual static models and final
+grounded placement matrices. Six public guards reject unresolved models/matrices,
+noncanonical geometry, nonpositive/sheared poses, invisible models, unbaked
+shader/displacement surfaces, missing/wrong-role PBR maps, malformed RGBA data,
+object-space/anisotropic normals and missing/stale/incoherent water. DOM-free
+imports remain separate from browser FileReader/canvas encoding. Frozen geometry,
+images and materials prevent source edits from mixing the asynchronous snapshot.
+
+The real renderer exports 100 actual final placement matrices, including saved
+position `[12,100,-4]`, 90-degree yaw, nonuniform scale `[2,.5,1.5]` and grounding
+false. The 1,218,368-byte GLB encodes in 301 ms in the observed run. A temporary
+consumer installs only the packed installed Three.js, loads through GLTFLoader
+and compares every component of all 100 matrices. Four embedded PNG PBR bindings,
+101 meshes, shared model mesh data, no external image/buffer URIs, no required
+instancing extension and no cameras/animations are verified. The vanilla capture
+uses WebGLRenderer on Mesa llvmpipe; producer WebGPU provenance must not be used
+to claim consumer WebGPU or hardware FPS. An ordinary ThreeNative Linux game
+with no terrain authoring imports loads that same GLB through `ctx.assets.model`;
+its actual scene/resource observations and inspected screenshot pass. Eleven
+static decoded-content assertions declare their held-invariant reasons; the frame
+counter must change during the scenario.
+
+This is a bounded interchange proof with 16-pixel test maps, not final starter
+art. The producer first refuses its unresolved river without changing the saved
+revision, then explicitly removes it from the temporary fixture for successful
+static-world proof. Chosen-resolution evaluation/material/deformation baking,
+coherent ocean/river export, the default GUI action, all five realistic starter
+exports and packed-scaffold handoff remain open. The generated API/capability
+snapshots and shipped addon guide now name the explicit `/export` contract.
+Actual vanilla/native/reassignment screenshots are tracked under
+`docs/verification/visuals/strata/` and will be attached to PR #381.

@@ -20,8 +20,14 @@ atomically; malformed writes preserve the previous recipe. Evaluation is synchro
 and belongs in authoring/build jobs. Browser/editor dependencies are absent from
 root and geometry imports. Three.js is a peer, never a bundled second copy.
 
-The recovered `makeExport` GLB/runtime archives contain terrain geometry; a complete
-world export including props, portable PBR images and water is not yet delivered.
+The recovered `makeExport` GLB/runtime archives contain terrain geometry. The separate
+`@threenative/terrain/export` entry exports resolved static worlds through Three.js
+GLTFExporter: the caller supplies final models/matrices, baked UV PBR maps and
+coherent water snapshots. It requires browser FileReader/canvas for encoding,
+embeds images/buffers, excludes model cameras/lights, and uses ordinary shared
+mesh nodes. Missing models/maps, shader deformation or stale water fail by name.
+The default GUI full-world action, chosen-resolution baking and five final starter
+world exports remain pending. See the agent guide for the explicit contract.
 No browser/native terrain-game acceptance result is claimed by these library tests.
 
 See [agent guide](AGENT_GUIDE.md) and [source provenance](THIRD_PARTY_NOTICES.md).

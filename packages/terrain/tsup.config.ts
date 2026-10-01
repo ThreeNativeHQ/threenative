@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     three: "src/three.ts",
+    export: "src/export.ts",
     "editor/server": "src/editor/server.ts",
     "editor/index": "src/editor/index.ts",
     "editor/worker": "src/editor/worker.js",

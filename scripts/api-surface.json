@@ -375,12 +375,13 @@
       "symbols": {}
     },
     "@threenative/terrain": {
-      "exports": [".", "./editor", "./editor/server", "./package.json", "./three"],
+      "exports": [".", "./editor", "./editor/server", "./export", "./package.json", "./three"],
       "symbols": {
         "@threenative/terrain/editor/server#terrainEditor": "export function terrainEditor(options: { … }",
         "@threenative/terrain/editor/server#TerrainEditorDocument": "export class TerrainEditorDocument { … }",
         "@threenative/terrain/editor#mountTerrainEditor": "export async function mountTerrainEditor(options: { … }",
         "@threenative/terrain/editor#TerrainEditorController": "export class TerrainEditorController { … }",
+        "@threenative/terrain/export#exportWorldGLB": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
         "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
         "@threenative/terrain#applyPlacementOverrides": "export function applyPlacementOverrides(state: ITerrainState, value: unknown): ITerrainState { … }",
         "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",

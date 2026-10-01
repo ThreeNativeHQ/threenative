@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 2/9 required boxes verified
+**Progress:** 3/9 required boxes verified
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
@@ -374,7 +374,7 @@ transaction per drag, and consume overrides in bake/export. Preserve recipe
 intent for landforms. Invalidate only affected static/instance data during drag.
 
 - [x] AC-3 [local, actor: implementing agent]: One selected instance is translated/rotated/scaled through actual gizmo interactions. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PASS — a real mesh click selects one durable placement key; actual translate X, rotate Y and nonuniform scale X drags change only that instance, suspend Orbit and save once. Escape saves nothing. Stamp selection reuses the same proxy with a terrain-following footprint; actual translate X/Y, rotate Y and vertical-gain Y drags change the stable recipe layer, rebuild on commit and retain selection. Numeric inputs change anisotropic stamp half-extents and bounded heightmap/paste footprints; layer-list clicks select those stable layers. X/Z rotation controls and handles are disabled with the heightfield-overhang reason; other unsupported rotation handles reject before a gesture. Landform Escape saves nothing and selective undo preserves another actor's layer name and roughness. The full real browser integration and standalone scene scenario pass on WebGPU NVIDIA/turing.
-- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` and `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — public tests cover stable candidates across rejection changes, saved nonuniform transforms, unit quaternion/finite/positive-scale validation, atomic rejection (including explicit null grounding), retained unmatched diagnostics and transform records in `bakeTerrain`. The real browser restores every actual instance pose on reload; an unrelated layer edit retains the override, a stale drag preserves the newer actor edit and retains an explicit reapply draft, and selective undo retains the other actor's layer edit. Unmatched override removal works through the GUI. Installed `GroundSnap` uses the actual model bounds and terrain-triangle query; grounding on reaches clearance below 1e-4 m, while a real Y-handle lift records `grounding: false` and reports 2.5549 m clearance. Complete portable game/GLB consumption and exercised reassignment remain pending; this box stays open.
+- [ ] AC-4 [local, actor: implementing agent]: Manual overrides retain identity after re-evaluation. proof: `pnpm exec vitest run packages/terrain/__tests__/placement-overrides.spec.ts` and `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: PARTIAL — public tests cover stable candidates across rejection changes, saved nonuniform transforms, unit quaternion/finite/positive-scale validation, atomic rejection (including explicit null grounding), retained unmatched diagnostics and transform records in `bakeTerrain`. The real browser restores every actual instance pose on reload; an unrelated layer edit retains the override, a stale drag preserves the newer actor edit and retains an explicit reapply draft, and selective undo retains the other actor's layer edit. Unmatched override removal works through the GUI. Installed `GroundSnap` uses the actual model bounds and terrain-triangle query; grounding on reaches clearance below 1e-4 m, while a real Y-handle lift records `grounding: false` and reports 2.5549 m clearance. GUI reassignment is now exercised: it transfers an unmatched override to the selected fresh durable key, preserves the other override, changes actual position/scale without terrain evaluation, and survives reload. A static export fixture compares all 100 final matrices in vanilla GLTFLoader and loads the same saved position/nonuniform scale in an ordinary Linux receiving game. Complete editor-authored world bake/export with coherent water and final PBR handoff remains pending; this box stays open.
 
 Prop transforms use one ordinary Three.js `TransformControls` proxy around the
 project scene. The measurement mesh is never rendered; updates write only the
@@ -478,3 +478,16 @@ One draft implementation PR targets `develop` from an owning-repository worktree
 Archive only after all nine boxes pass. Planning does not authorize deployment
 or npm publication, and does not claim implemented editor behavior. The overall
 integration also requires PRD-468's camera/environment/import criteria.
+
+
+Export/reassignment follow-up (2026-10-01): the expanded real editor integration
+and standalone scene scenario pass, including explicit orphan reassignment and
+removal, all actual reloaded poses, prior conflict/cancellation/grounding behavior
+and landform operations. The 100-instance revisions draw in 187–199 ms on
+WebGPU NVIDIA/turing. The new renderer export method rejects an accepted revision
+that differs from the actually rendered document, reuses its real geometry and
+final instance matrices, and adds canonical UVs on an owned export copy. The
+separate public encoder needs caller-prepared PBR surfaces and exact-time baked
+water. Successful dry-fixture vanilla/native consumers are described in PRD-466;
+this does not tick the default full-world GUI handoff or AC-8. Reassignment and
+actual export-consumer screenshots join PR #381's development captures.

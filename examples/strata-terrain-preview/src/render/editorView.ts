@@ -9,6 +9,12 @@ import {
 import type { IEditorView, TerrainEditorController } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
 import {
+  type IWorldGLBExport,
+  type IWorldGLBInput,
+  exportWorldGLB,
+} from "@threenative/terrain/export";
+import {
+  BufferAttribute,
   BufferGeometry,
   Color,
   DirectionalLight,
@@ -16,8 +22,10 @@ import {
   HemisphereLight,
   Line,
   LineBasicMaterial,
-  type Mesh,
+  Matrix4,
+  Mesh,
   type MeshStandardMaterial,
+  type Object3D,
   type PerspectiveCamera,
   Vector2,
   Vector3,
@@ -62,6 +70,10 @@ export async function createEditorView(
     inspectSelection(): ReturnType<ReturnType<typeof createPropSelection>["inspect"]>;
     projectPlacement(id: string): [number, number] | undefined;
     inspectHandles(): ReturnType<ReturnType<typeof createPropSelection>["handles"]>;
+    exportCurrentWorld(
+      material: MeshStandardMaterial,
+      water?: IWorldGLBInput["water"],
+    ): Promise<IWorldGLBExport>;
   }
 > {
   let ctx!: ICtx<EditorState>;
@@ -387,6 +399,48 @@ export async function createEditorView(
     },
     inspectHandles() {
       return selection.handles();
+    },
+    async exportCurrentWorld(material, waterSnapshots) {
+      const accepted = await controller.snapshot();
+      if (
+        !terrain ||
+        !mesh ||
+        !props ||
+        !authoring ||
+        accepted.diagnostic ||
+        accepted.revision !== ctx.state.getState().renderedRevision ||
+        JSON.stringify(accepted.document) !== JSON.stringify(authoring) ||
+        renderedRecipe !== JSON.stringify(authoring.recipe)
+      )
+        throw new Error("World export needs the accepted rendered revision");
+      const assets = new Map<string, Object3D>();
+      const transforms = new Map<string, Matrix4>();
+      for (const instance of props.byId.values()) {
+        if (!assets.has(instance.placement.asset)) {
+          const model = new Mesh(instance.mesh.geometry, instance.mesh.material);
+          model.name = instance.placement.asset;
+          assets.set(instance.placement.asset, model);
+        }
+        instance.mesh.updateWorldMatrix(true, false);
+        const matrix = new Matrix4();
+        instance.mesh.getMatrixAt(instance.index, matrix);
+        transforms.set(instance.placement.id, matrix.premultiply(instance.mesh.matrixWorld));
+      }
+      const geometry = mesh.geometry.clone();
+      geometry.setAttribute("uv", new BufferAttribute(bakeMesh(terrain).uvs, 2));
+      try {
+        return await exportWorldGLB({
+          revision: accepted.revision,
+          snapshotTime: elapsed,
+          state: applyPlacementOverrides(terrain, accepted.document.placementOverrides ?? {}),
+          terrain: new Mesh(geometry, material),
+          assets,
+          transforms,
+          ...(waterSnapshots ? { water: waterSnapshots } : {}),
+        });
+      } finally {
+        geometry.dispose();
+      }
     },
     noteRevision(revision, ms): void {
       requestedRevision = revision;

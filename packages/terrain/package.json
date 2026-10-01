@@ -27,6 +27,10 @@
       "types": "./dist/three.d.ts",
       "import": "./dist/three.js"
     },
+    "./export": {
+      "types": "./dist/export.d.ts",
+      "import": "./dist/export.js"
+    },
     "./package.json": "./package.json",
     "./editor/server": {
       "types": "./dist/editor/server.d.ts",

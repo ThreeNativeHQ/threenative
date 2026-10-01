@@ -318,12 +318,56 @@ export async function verifyPropTransforms(session, controller, config) {
     "Other actor keeps this layer edit",
   );
   assert.deepEqual(selectivelyUndone.document.placementOverrides[selected.id], externalPose);
+  const reassignEvaluationRequests = await session.page.evaluate(
+    () => window.strata.evaluationRequests,
+  );
+  const target = beforeTransforms.find((item) => item.id !== selected.id);
+  assert(target);
+  await session.page
+    .getByLabel("Placement", { exact: true })
+    .selectOption(`placement:${target.id}`);
+  await session.page.getByRole("button", { name: "Reassign to selected", exact: true }).click();
+  await session.page.waitForFunction(
+    (revision) => window.strata.view.inspect().renderedRevision !== revision,
+    selectivelyUndone.revision,
+  );
+  const reassigned = await controller.snapshot();
+  assert(!Object.hasOwn(reassigned.document.placementOverrides, "removed-rule:candidate:1:0"));
+  assert.deepEqual(reassigned.document.placementOverrides[target.id], freePose);
+  assert.deepEqual(reassigned.document.placementOverrides[selected.id], externalPose);
+  const actualReassigned = await session.page.evaluate(
+    (id) => window.strata.view.inspectProps().find((item) => item.id === id),
+    target.id,
+  );
+  assert.deepEqual(actualReassigned.transform.position, freePose.position);
+  actualReassigned.transform.scale.forEach((value, index) =>
+    assert(Math.abs(value - freePose.scale[index]) < 1e-4),
+  );
+  assert.equal(
+    await session.page.evaluate(() => window.strata.evaluationRequests),
+    reassignEvaluationRequests,
+  );
+  await session.screenshot("editor-reassigned-override");
+  const removeFixture = await controller.commit({
+    baseRevision: reassigned.revision,
+    document: {
+      ...reassigned.document,
+      placementOverrides: {
+        ...reassigned.document.placementOverrides,
+        "removed-rule:candidate:1:0": freePose,
+      },
+    },
+  });
+  await session.page.waitForFunction(
+    (revision) => window.strata.view.inspect().renderedRevision === revision,
+    removeFixture.revision,
+  );
   await session.page.getByRole("button", { name: "Remove override", exact: true }).click();
   await session.page.waitForFunction(
     (revision) =>
       !window.strata.view.inspectSelection().saving &&
       window.strata.view.inspect().renderedRevision !== revision,
-    selectivelyUndone.revision,
+    removeFixture.revision,
   );
   const persistent = await controller.snapshot();
   assert(!Object.hasOwn(persistent.document.placementOverrides, "removed-rule:candidate:1:0"));

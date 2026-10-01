@@ -143,4 +143,31 @@ Splatmaps are linear data, not color images: use a non-sRGB/NoColorSpace texture
 
 ## Three.js ownership
 
-`@threenative/terrain/three` exports `toGeometry(bakeMesh(state))`. It creates only ordinary indexed geometry using your installed Three.js. Create the mesh/material in your own `src/render/`, register collision through the existing engine API, and dispose the geometry yourself. Baked vertex colours are absent by default; pass an explicit eight-channel sRGB `palette` to `bakeMesh` or `bakeTerrain` when wanted. The addon supplies no palette or material. The legacy `makeExport(..., "glb")` contains terrain only; portable full-world export is separate work and is not yet implemented.
+`@threenative/terrain/three` exports `toGeometry(bakeMesh(state))`. It creates only ordinary indexed geometry using your installed Three.js. Create the mesh/material in your own `src/render/`, register collision through the existing engine API, and dispose the geometry yourself. Baked vertex colours are absent by default; pass an explicit eight-channel sRGB `palette` to `bakeMesh` or `bakeTerrain` when wanted. The addon supplies no palette or material. The legacy `makeExport(..., "glb")` contains terrain only; use the separate static-world encoder below for resolved models and baked surfaces. The default GUI full-world action, chosen-resolution material/deformation baking and five final starter exports remain pending.
+
+
+## Resolved static-world GLB
+
+Import `exportWorldGLB` from `@threenative/terrain/export` in browser authoring source. Its import is DOM-free; encoding requires FileReader and canvas. Root and `/three` remain headless. This entry uses the installed Three.js GLTFExporter rather than a terrain-specific loader format.
+
+```ts
+import { exportWorldGLB } from '@threenative/terrain/export';
+const output = await exportWorldGLB({
+  revision,             // accepted document's 64-character content hash
+  snapshotTime,         // finite seconds, pinned across all baked deformations
+  state,                // evaluated committed recipe with applied override records
+  terrain,              // canonical metre-frame Mesh with UVs and prepared PBR maps
+  assets,               // Map<assetId, Object3D>: actual static models
+  transforms,           // Map<placementId, Matrix4>: actual final grounded root matrices
+  water,                // [{ id, object, time: snapshotTime, staleFrames: 0 }]
+});
+// output.bytes is the self-contained world.glb; persist only after success.
+```
+
+Game source owns all geometry, materials and images. The terrain needs albedo `map`, `normalMap`, `roughnessMap` and `aoMap`; vertex colours alone are insufficient. MeshStandardMaterial metallic/roughness surfaces are supported. Colour/emissive images are sRGB, data maps are NoColorSpace. Supply decoded byte images (at most 16 megapixels); DataTexture images need complete RGBA bytes. Bake alpha into the colour image. Bake displacement, bump/light maps, node shaders, skinning/morphing and wind into the supplied static geometry/material first. Use tangent-space normal maps with equal X/Y scale magnitudes; bake object-space/anisotropic maps first. MeshPhysicalMaterial extensions are outside this bounded encoder's contract.
+
+All final matrices use metres, Y-up, positive scale and no shear. Keys are durable placement IDs, never instance indices; unmatched matrices fail. Ordinary glTF nodes share model mesh data without requiring EXT_mesh_gpu_instancing. Source geometry, images and material values are copied before asynchronous encoding, so later source edits cannot mix the export snapshot. Input objects remain owned by the caller.
+
+Every evaluated water body/river needs its actual baked object at exactly `snapshotTime` with `staleFrames: 0`. A low-resolution or stale ocean CPU height sample does not satisfy this contract. Missing/unbaked content rejects before producing a download; preserve the previous valid export and document. Encoding does not perform the project's material bake, chosen-resolution re-evaluation or ocean readback for you.
+
+`output.report` records revision, resolution, time and placement/water IDs. Model cameras/lights and source userData are excluded. The receiving game supplies its own lighting, sky/environment, fog, exposure, post and live water/wind; GLB does not carry those running systems. A vanilla Three.js GLTFLoader or a normal game model loader can consume the bytes without this addon.
