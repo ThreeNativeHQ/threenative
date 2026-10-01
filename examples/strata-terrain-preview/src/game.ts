@@ -50,7 +50,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
     override enter(ctx: TerrainCtx): void {
       ctx.add(ctx.camera);
       const data = baked[world];
-      const { field, mesh } = createTerrain(data);
+      const { field, mesh } = createTerrain(data, ctx.assets);
       ctx.add(mesh);
       const ground = new RigidBody3D({
         object: mesh,
@@ -74,12 +74,14 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       });
       ctx.scene.background = new Color(0x9dc2d2);
       ctx.scene.fog = new FogExp2(0x9dc2d2, 0.0008);
-      const sun = new DirectionalLight(0xffeed0, 2.8);
+      // 2.8 with a 1.2 hemisphere filled every sunlit surface past 1.0, and nothing here tone maps,
+      // so the ground clipped to a flat warm haze and its albedo detail had nowhere left to live.
+      const sun = new DirectionalLight(0xffeed0, 1.9);
       sun.position.set(-180, 240, 120);
       ctx.add(sun);
       this.#sun = sun;
       ctx.entities.add("sun", { object: sun, debug: () => ({ x: sun.position.x }) });
-      ctx.add(new HemisphereLight(0xbcd4ed, 0x5e6548, 1.2));
+      ctx.add(new HemisphereLight(0xbcd4ed, 0x5e6548, 0.55));
 
       const actor = new Mesh(
         new CapsuleGeometry(0.35, 1.0, 6, 12),

@@ -7,6 +7,9 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - Units are metres; Y is up; canonical heights are row-major Z then X, centred at zero.
 - `scripts/bake.mjs` owns authoring. The game imports baked JSON and never evaluates terrain.
 - Game appearance lives in `src/render/`; the ocean uses installed `SpectralOcean`.
+- The ground's PBR maps are the CC0 starter sets in `packages/terrain/starter-assets/`, served
+  through this example's Vite `publicDir` and loaded by `ctx.assets`; provenance is that folder's
+  `credits.json`, and `src/render/terrain.ts` owns the layer, tile-size and blend choices.
 - Use one `Heightfield` buffer for geometry and existing heightfield collision; do not resample.
 - Ground contacts use actual mesh and physics queries. Bilinear heights are not triangle contacts.
 - WASD/arrows move, Space jumps, C switches forest/coast, L changes sunlight. The player owns its camera.
