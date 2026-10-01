@@ -1,0 +1,13 @@
+# AGENTS.md — @threenative/terrain
+
+Read `/AGENTS.md` first. This optional addon is authoring tooling, not a game runtime.
+
+- Preserve the recovered evaluator, stable semantic IDs, validation and atomic transactions.
+- The root is headless; `/three` creates only ordinary indexed geometry from supplied arrays.
+- Keep renderer, scene, camera, material, DOM, editor and worker code outside both imports.
+- Appearance belongs to game `src/render/`; never add palette, material or lighting defaults.
+- Bake before play. Games own their camera, mesh lifetime and existing physics registration.
+- Keep raw terrain-only exports labelled; they do not prove full-world GLB delivery.
+
+Run `pnpm --filter @threenative/terrain build` and
+`pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts`.

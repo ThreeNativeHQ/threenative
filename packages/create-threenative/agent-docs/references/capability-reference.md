@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/terrain`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -5192,6 +5192,303 @@ function sparkle
 
 ```ts
 sparkle(...)
+```
+
+## `@threenative/terrain`
+
+### `bakeMesh`
+
+`function` — Bakes the recovered indexed top surface and optional vertical skirts into caller-owned arrays.
+
+```ts
+export function bakeMesh( state: ITerrainState, { … }
+```
+
+- **Use when:** bake an authored terrain into portable indexed mesh arrays
+- **Constraints:** no material is chosen; vertex colours exist only with a caller-supplied palette
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** step, chunk bounds, skirtDepth and palette belong to the caller
+
+```ts
+const mesh = bakeMesh(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `bakeTerrain`
+
+`function` — Bakes finite LOD chunks, the same collision samples and resolved placements.
+
+```ts
+export function bakeTerrain( state: ITerrainState, { … }
+```
+
+- **Use when:** prepare terrain arrays and collision before a game starts
+- **Constraints:** collision origin is the southwest corner; engine Heightfield origin is its centre
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** chunkCells, lodSteps, skirtDepth and palette are explicit authoring choices
+
+```ts
+const baked = bakeTerrain(new Terrain({ resolution: 129 }).evaluate(), { chunkCells: 64 });
+```
+
+### `decodeHeightPNG`
+
+`function` — CRC-checked bounded non-interlaced grayscale PNG height decoder.
+
+```ts
+export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }
+```
+
+- **Use when:** import numerical PNG8 or PNG16 terrain elevations
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate()); const heights = await decodeHeightPNG(png);
+```
+
+### `decodeRAW16`
+
+`function` — Validates dimensions and range before decoding numerical height samples.
+
+```ts
+export function decodeRAW16( input: Uint8Array | ArrayBuffer, { … }
+```
+
+- **Use when:** import a RAW16 terrain height buffer with explicit dimensions
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const decoded = decodeRAW16(new Uint8Array(8), { width: 2, height: 2, min: 0, max: 1 });
+```
+
+### `encodeGLB`
+
+`function` — Legacy terrain-only GLB encoding with embedded mesh arrays and no chosen material.
+
+```ts
+export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) { … }
+```
+
+- **Use when:** export baked terrain geometry without engine extensions
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const glb = encodeGLB(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
+```
+
+### `encodeHeightPNG`
+
+`function` — Encodes numerical grayscale PNG16 with embedded elevation range.
+
+```ts
+export async function encodeHeightPNG(state: ITerrainState, options: Partial<IHeightRange> = { … }
+```
+
+- **Use when:** export a terrain heightmap without an eight-bit colour conversion
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const png = await encodeHeightPNG(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `encodeRAW16`
+
+`function` — Encodes finite metre elevations as an explicit-range RAW16 buffer.
+
+```ts
+export function encodeRAW16( values: ArrayLike<number> & Iterable<number>, options: IRaw16Options = { … }
+```
+
+- **Use when:** export terrain heights with a numerical range sidecar
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const raw = encodeRAW16(new Float32Array([0, 1]), { min: 0, max: 1 });
+```
+
+### `encodeSplatPNGs`
+
+`function` — Encodes the eight linear material-weight channels as two RGBA images.
+
+```ts
+export async function encodeSplatPNGs(state: ITerrainState) { … }
+```
+
+- **Use when:** export terrain splat weights as linear data
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const maps = await encodeSplatPNGs(new Terrain({ resolution: 17 }).evaluate());
+```
+
+### `encodeZIP`
+
+`function` — Deterministic store-method ZIP with safe unique relative filenames.
+
+```ts
+export function encodeZIP(files: readonly IExportFile[]) { … }
+```
+
+- **Use when:** archive derived terrain files without another dependency
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const archive = encodeZIP([{ name: "height.raw", bytes: new Uint8Array(8) }]);
+```
+
+### `gradientAt`
+
+`function` — World-space height gradient from the canonical samples.
+
+```ts
+export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }
+```
+
+- **Use when:** measure an authored terrain gradient in metres
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const gradient = gradientAt(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `makeExport`
+
+`function` — Recovered numerical/project exports; GLB/runtime outputs contain terrain only.
+
+```ts
+export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }
+```
+
+- **Use when:** export a terrain recipe and its numerical runtime data
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const terrain = new Terrain({ resolution: 17 }); const file = await makeExport(terrain.evaluate(), terrain.toJSON(), "project");
+```
+
+### `sampleHeight`
+
+`function` — Bilinear query of canonical height samples; triangle sampling is a separate contract.
+
+```ts
+sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid( grid.height, grid.resolution, grid.resolution, x / grid.size + 0.5, z / grid.size + 0.5, )
+```
+
+- **Use when:** query an authored heightfield at world coordinates
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const height = sampleHeight(new Terrain({ resolution: 17 }).evaluate(), 0, 0);
+```
+
+### `slopeAtIndex`
+
+`function` — Slope in degrees at a heightfield sample.
+
+```ts
+export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }
+```
+
+- **Use when:** measure terrain slope for authoring diagnostics
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const slope = slopeAtIndex(new Terrain({ resolution: 17 }).evaluate(), 0);
+```
+
+### `splinePoints`
+
+`function` — Recovered horizontal Catmull–Rom and vertically linear profile sampler.
+
+```ts
+export function splinePoints( points: readonly (readonly [number, number, number])[], step = 3, smooth = true, ): [number, number, number][] { … }
+```
+
+- **Use when:** sample a road or river profile without vertical overshoot
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+const points = splinePoints([[0, 4, 0], [10, 2, 10]], 3, false);
+```
+
+### `Terrain`
+
+`class` — Ordered, stable-ID terrain authoring with synchronous atomic transactions.
+
+```ts
+export class Terrain { … }
+```
+
+- **Use when:** author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter
+- **Constraints:** authoring stays outside the game's steady-play graph; no renderer or physics is created
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** size, resolution, seed and all layer parameters are caller choices
+
+```ts
+const terrain = new Terrain({ size: 512, resolution: 257, seed: 73 }).noise({ id: "hills", amplitude: 35 });
+```
+
+### `TerrainEvaluator`
+
+`class` — Recovered prefix-caching authoring evaluator. Returned buffers belong to the caller.
+
+```ts
+export class TerrainEvaluator { … }
+```
+
+- **Use when:** reuse terrain evaluation prefixes while authoring a finite heightfield
+- **Constraints:** evaluates authoring documents only; games consume pre-baked arrays
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** cacheMB bounds retained prefix data
+
+```ts
+const terrain = new Terrain({ resolution: 17 }); const evaluator = new TerrainEvaluator(); const state = evaluator.evaluate(terrain.toJSON());
+```
+
+### `validateDocument`
+
+`function` — Validates the recovered recipe schema, operation allow-lists and numeric bounds.
+
+```ts
+export function validateDocument(doc: ITerrainDocument): void { … }
+```
+
+- **Use when:** validate a terrain document before accepting an authoring write
+- **Constraints:** authoring data only; the game owns appearance, physics and rendering
+- **Requires:** npm i @threenative/terrain
+
+```ts
+validateDocument(new Terrain({ resolution: 17 }).toJSON());
+```
+
+## `@threenative/terrain/three`
+
+### `toGeometry`
+
+`function` — Converts baked arrays to ordinary geometry using the consumer's installed Three.js.
+
+```ts
+export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }
+```
+
+- **Use when:** put an authored terrain mesh in a game-owned Three.js scene
+- **Constraints:** creates only geometry; the caller owns its material, scene and disposal
+- **Requires:** npm i @threenative/terrain
+- **Overrides:** every surface choice remains in game source
+
+```ts
+const geometry = toGeometry(bakeMesh(new Terrain({ resolution: 17 }).evaluate()));
 ```
 
 ## `@threenative/ueformat`

@@ -374,6 +374,29 @@
       "exports": [],
       "symbols": {}
     },
+    "@threenative/terrain": {
+      "exports": [".", "./package.json", "./three"],
+      "symbols": {
+        "@threenative/terrain/three#toGeometry": "export function toGeometry(mesh: IBakedMesh): BufferGeometry { … }",
+        "@threenative/terrain#bakeMesh": "export function bakeMesh( state: ITerrainState, { … }",
+        "@threenative/terrain#bakeTerrain": "export function bakeTerrain( state: ITerrainState, { … }",
+        "@threenative/terrain#decodeHeightPNG": "export async function decodeHeightPNG( input: Uint8Array | ArrayBuffer, options: IDecodeHeightPngOptions = { … }",
+        "@threenative/terrain#decodeRAW16": "export function decodeRAW16( input: Uint8Array | ArrayBuffer, { … }",
+        "@threenative/terrain#encodeGLB": "export function encodeGLB(input: IBakedMesh | readonly IBakedMesh[]) { … }",
+        "@threenative/terrain#encodeHeightPNG": "export async function encodeHeightPNG(state: ITerrainState, options: Partial<IHeightRange> = { … }",
+        "@threenative/terrain#encodeRAW16": "export function encodeRAW16( values: ArrayLike<number> & Iterable<number>, options: IRaw16Options = { … }",
+        "@threenative/terrain#encodeSplatPNGs": "export async function encodeSplatPNGs(state: ITerrainState) { … }",
+        "@threenative/terrain#encodeZIP": "export function encodeZIP(files: readonly IExportFile[]) { … }",
+        "@threenative/terrain#gradientAt": "export function gradientAt(grid: ISampledGrid, x: number, z: number): [number, number] { … }",
+        "@threenative/terrain#makeExport": "export async function makeExport( state: ITerrainState, recipe: ITerrainDocument, kind: ExportKind, ): Promise<IExportArchive> { … }",
+        "@threenative/terrain#sampleHeight": "sampleHeight = (grid: ISampledGrid, x: number, z: number): number => sampleGrid( grid.height, grid.resolution, grid.resolution, x / grid.size + 0.5, z / grid.size + 0.5, )",
+        "@threenative/terrain#slopeAtIndex": "export function slopeAtIndex(grid: ISampledGrid, i: number): number { … }",
+        "@threenative/terrain#splinePoints": "export function splinePoints( points: readonly (readonly [number, number, number])[], step = 3, smooth = true, ): [number, number, number][] { … }",
+        "@threenative/terrain#Terrain": "export class Terrain { … }",
+        "@threenative/terrain#TerrainEvaluator": "export class TerrainEvaluator { … }",
+        "@threenative/terrain#validateDocument": "export function validateDocument(doc: ITerrainDocument): void { … }"
+      }
+    },
     "@threenative/ueformat": {
       "exports": [".", "./package.json"],
       "symbols": {

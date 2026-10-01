@@ -21,6 +21,9 @@ catalogs:
     '@tailwindcss/vite':
       specifier: 4.3.3
       version: 4.3.3
+    '@types/node':
+      specifier: 20.19.43
+      version: 20.19.43
     '@types/pngjs':
       specifier: 6.0.5
       version: 6.0.5
@@ -33,6 +36,9 @@ catalogs:
     '@types/react-test-renderer':
       specifier: 19.1.0
       version: 19.1.0
+    '@types/three':
+      specifier: 0.185.3
+      version: 0.185.3
     '@vitejs/plugin-react':
       specifier: 6.0.5
       version: 6.0.5
@@ -75,6 +81,9 @@ catalogs:
     three-mesh-bvh:
       specifier: 0.9.14
       version: 0.9.14
+    tsup:
+      specifier: 8.5.1
+      version: 8.5.1
     typescript:
       specifier: 5.9.3
       version: 5.9.3
@@ -961,6 +970,27 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5))
+
+  packages/terrain:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 20.19.43
+      '@types/three':
+        specifier: 'catalog:'
+        version: 0.185.3
+      publint:
+        specifier: 'catalog:'
+        version: 0.3.22
+      three:
+        specifier: 'catalog:'
+        version: 0.185.1(patch_hash=987eb3547d4f28c03a4a8ef1b3900d4158c805821e61e23572fdb248995c4d91)
+      tsup:
+        specifier: 'catalog:'
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
 
   packages/ueformat:
     dependencies:

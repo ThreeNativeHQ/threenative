@@ -1,10 +1,10 @@
 # PRD-466 — Agent-authored Strata terrain through the Three.js contract
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** None
-**Progress:** 0/9 required boxes verified
+**Progress:** 2/9 required boxes verified
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
@@ -34,8 +34,10 @@ for map/screenshot reconstruction. That distinct authoring
 tool is specified in PRD-467. Both PRDs are required for the complete requested
 integration; finishing this runtime/package PRD alone does not finish that goal.
 
-This request authorizes this PRD, not implementation or npm publication. All
-implementation evidence is pending. Complexity is 3 for 11+ implementation files
+The subsequent execution request authorizes implementation in the shared
+PRD-466/467/468 worktree and draft PR #381, with incremental pushes and screenshots of visible milestones attached to
+PR #381. npm
+publication remains outside this execution request. Complexity is 3 for 11+ implementation files
 (mostly recovered supplied modules), 2 for the new authoring module, and 2 for an
 independently packed/released optional addon. No marketplace API is required.
 
@@ -411,6 +413,12 @@ locations when each phase is implemented; no future line numbers are asserted.
 
 ## Decisions
 
+- 2026-09-30 (João, execution steering): Attach rendered screenshots to PR #381 at visible milestones. Newly scaffolded create-threenative projects must ship instructions for the optional terrain editor: installation, controller activation/live URL, shared recipe edits, and baked game/portable GLB handoff. Document executable imports/commands only, and keep ordinary game runtime dependencies optional. Verify the instructions in a fresh scaffold under AC-7 and PRD-467 AC-7.
+
+- 2026-09-30 (implementation): The charter forbids editors/recipe systems and admits packages only for isolated dependencies. The explicitly requested narrow terrain-authoring allowance is now written into the charter; runtime recipes and package-owned appearance remain excluded.
+
+- 2026-09-30 (João): I own the supplied Strata code; use MIT. This explicitly authorizes recovering and distributing the supplied modules under the repository's MIT license; retain source hashes and this ownership grant in the addon provenance notice.
+
 - 2026-09-30 (João): Terrain generation is integrated into ThreeNative and still
   consumed through the Three.js contract; abstractions do the authoring heavy work.
 - 2026-09-30 (João): Starter art is wanted and must be fully replaceable with custom
@@ -442,7 +450,7 @@ locations when each phase is implemented; no future line numbers are asserted.
 
 ### Phase 1: Independent authoring library and Three.js output
 
-**Status:** NOT STARTED
+**Status:** VERIFIED
 
 **Files:** `packages/terrain/package.json`, `src/index.ts`, recovered `src/core/*`,
 `src/three.ts`, public declarations, `AGENT_GUIDE.md`, and
@@ -456,8 +464,8 @@ addon to the normal build/release configuration without making core depend on it
 Document the generator's source ownership and retain any original license notice;
 the supplied HTML alone is not proof of a third-party code license.
 
-- [ ] AC-1 [local, actor: implementing agent]: A public-import Node consumer evaluates the seeded recipe with stable-ID replacement and atomic validation failures. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts` — Evidence: pending; test public exports, deterministic same-resolution arrays, preserved prior recipe after invalid patches, and execution without DOM globals.
-- [ ] AC-2 [local, actor: implementing agent]: Generated terrain is ordinary indexed geometry compatible with the consumer's Three.js identity. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts` — Evidence: pending; use the consumer's `THREE.BufferGeometry`, `Mesh`, custom material, and raycaster on actual generated output; check positions, winding, finite attributes, and disposal ownership.
+- [x] AC-1 [local, actor: implementing agent]: A public-import Node consumer evaluates the seeded recipe with stable-ID replacement and atomic validation failures. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts` — Evidence: public-consumer suite passes 7 tests; deterministic arrays, stable-ID replacement, failed-patch rollback and headless imports verified. A SHA-256 regression preserves supplied noise/hydraulic/thermal output. Direct comparison of supplied Alpine/Coastal/Desert at resolution 33 matches every layer height/splat buffer and final placements/biomes exactly.
+- [x] AC-2 [local, actor: implementing agent]: Generated terrain is ordinary indexed geometry compatible with the consumer's Three.js identity. proof: `pnpm exec vitest run packages/terrain/__tests__/terrain-consumer.spec.ts` — Evidence: the same 7 tests pass with the consumer's `BufferGeometry`, custom magenta material and downward raycaster; upward winding, finite indexed attributes, collision arrays and caller disposal verified. Empty/nonfinite/wrongly typed GLB input fails; explicit palettes are optional and no material is selected by the addon.
 
 ### Phase 2: ThreeNative rendering and matching collision
 
@@ -512,9 +520,31 @@ capability workflow without claiming optional imports exist before installation.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: pending; inspect actual defining views of all five with Temperate first, including coast/ocean; qualify licenses/provenance and each selected starter's 25 MiB cooked budget, with no CDN/marketplace runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
-- [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership.
+- [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.
 
 ## Verification and delivery
+
+Phase 1 implementation: `packages/terrain/src/index.ts` is headless, and
+`packages/terrain/src/three.ts` is the geometry-only consumer entry. The optional
+package is discovered by the existing workspace/release scans; no core dependency
+or custom release list was added. `pnpm --filter @threenative/terrain test` passes
+7 consumer tests and both ordinary/strict publint. The approximately 3,700 typed
+source lines recover the supplied evaluator/codecs rather than duplicate an
+installed system; the geometry adapter is 25 lines and chooses no appearance.
+The kill-switch review retained the supplied algorithms and reused the ordinary
+Three.js geometry classes and package build/release discovery.
+
+Repository integration: `pnpm typecheck`, `pnpm build`, `pnpm lint`,
+`pnpm capabilities:check`, `pnpm budgets` and `pnpm check:docs` pass. The
+`pnpm test` package phase passes after native contract prerequisites were built;
+`pnpm gate:resume` reruns the failed unit phase successfully: 520 files, 6,468
+tests pass; 3 files/12 tests are existing skips. Six prescribed docs suites pass
+180 tests; the changed mirror/CI suites pass 149 tests. The full suite also
+identified the required README package row, generated release comment, scoped
+package test selector and a reasoned waiver for the exact supplied noise
+coefficient; those integration fixes pass 15 targeted tests and retain compatibility. No Strata browser,
+desktop, editor, starter-art or full-world export result is claimed yet.
+
 
 Commands naming the new package, example, tests, and `test:terrain:*` /
 `test:consumer` scripts are **implementation targets**, not shipped commands today.
