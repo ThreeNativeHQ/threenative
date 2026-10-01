@@ -211,10 +211,13 @@ export class CollisionShape3D {
     // A primitive is centred on the body, i.e. on the mesh origin. Geometry whose bounds are not
     // centred there (translated or merged in place) would get a collider displaced from what is
     // drawn — silently, which is how a figure ends up standing on air. Fail closed by name.
+    // The comparison is in metres, so each centre component is scaled by its own axis: the
+    // dimensions above already are, and an unscaled centre accepted a 0.1 m displacement under a
+    // scale of 100 while rejecting a physically centred 1 µm offset under a scale of 1e-6.
     const offset = Math.max(
-      Math.abs(bounds.max.x + bounds.min.x) / 2,
-      Math.abs(bounds.max.y + bounds.min.y) / 2,
-      Math.abs(bounds.max.z + bounds.min.z) / 2,
+      (Math.abs(bounds.max.x + bounds.min.x) / 2) * Math.abs(mesh.scale.x),
+      (Math.abs(bounds.max.y + bounds.min.y) / 2) * Math.abs(mesh.scale.y),
+      (Math.abs(bounds.max.z + bounds.min.z) / 2) * Math.abs(mesh.scale.z),
     );
     if (offset > 1e-4 + 1e-3 * Math.max(width, height, depth))
       throw new Error(
