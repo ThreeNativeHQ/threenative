@@ -1,6 +1,6 @@
 # PRD-470 — the default look reads as a shipped engine
 
-**Status: PHASE 1 NEARLY DONE** · filed 2026-09-28 against `3788ce79e` · owner goal: "make it look like
+**Status: PARTIAL — phases 1 and 3 landed; phase 2's all-template run is blocked on the puzzle lane** · filed 2026-09-28 against `3788ce79e` · owner goal: "make it look like
 Unreal by default — AAA, 'wow, this looks polished'; baseline assets allowed if the library does not
 grow much."
 
@@ -34,18 +34,18 @@ gets clean edges from the same code. No new package, no new dependency, no new a
 - [x] A photo sky (Poly Haven, CC0, 4k JPEG 282 KB) is the background, the environment light and the fog colour; the sun is aimed at the photographed sun. proof: `sky` scenario pass (tt-minimal2, 2026-09-28); capture `minimal-08-ground-bounce.png`
 - [x] A UE-style test arena: light/dark metre-grid materials with world-metre UVs, bevelled walls/deck/ramp/pillar, blue crates, trimesh colliders via `buildStaticColliders`; Quaternius mannequin (CC0, 665 KB) with a follow camera; camera-centred `VirtualShadowNode` on WebGPU. proof: captures `minimal-06..08`; `TN_VIRTUAL_SHADOW` reuse 0.997
 - [x] `worldEnvironment.ts` antialiases (SMAA, Godot `screen_space_aa`) whenever a chain is installed and reports it; GTAO is denoised; shared-source specs updated. proof: `pnpm exec vitest run packages/create-threenative` 777/777 (2026-09-28)
-- [ ] `minimal` playtests green. proof: `TN_TEMPLATE_ONLY=minimal pnpm test:templates`
-  sky, survives, touch-controls pass; `play` re-measured at 104 draws / 69,930 tris (virtual shadow levels), budget raised to 128 / 80,000 — rerun pending.
+- [x] `minimal` playtests green. proof: `TN_TEMPLATE_ONLY=minimal pnpm test:templates` → exit 0, 4/4 scenarios `pass: true` (`play` 660 frames, `sky` 120, `survives`, `minimal-touch-controls`), 0 diagnostics — 2026-09-30, log `/tmp/pr376-main-minimal-done.log`. `play` measures 50–81 draws and 17,536–36,850 triangles, inside the raised 128 / 80,000 budget.
 
 ### Phase 2 — `starter`, the default template, gets the same light
 
-- [ ] Starter is a testing scene like `minimal` (grid arena, photo sky, mannequin) keeping its course, pickups, flag, lives and HUD; island, ocean and painterly stages deleted. proof: capture
-- [ ] `starter` playtests green. proof: `TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path`
+- [x] Starter is a testing scene like `minimal` (grid arena, photo sky, mannequin) keeping its course, pickups, flag, lives and HUD; island, ocean and painterly stages deleted. proof: fresh 1280×720 capture `/tmp/pr376-after/starter.png` (2026-09-30, luminance σ 0.154, 21,174 distinct colours) against the exact pre-PRD baseline `/tmp/pr376-before/starter-baseline-3788ce79e.png` — both handed to the independent judge at the PR
+- [x] `starter` playtests green. proof: `TN_GOLDEN_PATH_TEMPLATES=starter pnpm verify:golden-path` → exit 0, 2026-09-30, log `/tmp/pr376-main-starter-golden.log`: the starter's 23 scenarios all `pass: true` (`starter-look`, `starter-assets`, `starter-cloth-flag`, `starter-goal`, `starter-production-readiness`, …) and the alternate-arm negative control (broken dependency) failed as designed.
 
 ### Phase 3 — the other templates inherit the recipe
 
-- [ ] `shooter` rebuilt from the sandbox `fps-framework` game: its hands kept, every other asset replaced by the shared mannequin, arena and sky. proof: `TN_TEMPLATE_ONLY=shooter pnpm test:templates`
+- [x] `shooter` rebuilt from the sandbox `fps-framework` game: its hands kept, every other asset replaced by the shared mannequin, arena and sky. proof: `TN_TEMPLATE_ONLY=shooter pnpm test:templates` → exit 0, 34/34 scenarios `pass: true` (`aim-alignment`, `crouch-lowers-the-eye`, `enemy-rifle-grip`, `enemy-material-is-not-shared`, `headshot-hits-head`, `survives`, …), 0 diagnostics — 2026-09-30, log `/tmp/pr376-main-shooter.log`; fresh capture `/tmp/pr376-after/shooter.png` against baseline `/tmp/pr376-before/shooter-baseline-3788ce79e.png`
 - [ ] The remaining templates take the environment light and AO; all template playtests green. proof: `pnpm test:templates`
+  Every template already ships the shared `worldEnvironment.ts` recipe (photo sky as `scene.environment` and fog colour, one sun, SMAA/AO stage). Per-template proof at 2026-09-30: `minimal` 4/4 and `shooter` 34/34 green (logs above), `racing` 9/9 + boot green, `rts` 7/7 + boot green, `tower-defense` 11/11 browser scenarios green, `starter` 23/23 golden-path green. Still open: a single `pnpm test:templates` run over **all** templates — the `puzzle` lane is owned by the other CI arm and has not been re-run here.
 - [x] `platformer` becomes the sandbox fox run: the procedural route, fox, walkers and pickups, on the photo sky and one sun, with `buildStaticColliders` for collision and `mergeByMaterial` over the static scenery. proof: 14/14 scaffolded scenarios green, measured 562 draws / 186,016 triangles at 1920x1080 with a 0.5 ms p95 (2026-09-28); `pnpm exec vitest run packages/create-threenative` 796/798 (the two failures are the byte-stable hash the owner recomputes, and `build.spec.ts`'s 60 s default timeout on this machine, which passes at 84 s)
 
 A fresh judge subagent compares blind before/after captures per phase; its verdicts go in the PR
@@ -62,6 +62,4 @@ body, not here (R2).
 - `puzzle` keeps the warden-vault's own look instead of the default one: "for this one you could have used the same look as on the sandbox, it looks better" — owner, 2026-09-28. So it ships the dark lantern-lit room (three wall lanterns, plaster band, flagstone seams, three crate tints, cyan phase ward and seal, bloom over a 0.85 threshold) instead of the photo sky, the metre grid and the one sun. It is the one template that opts out of this PRD's floor; `lit.playtest.json`'s second region's `maxDarkPixelRatio` moved 0.35 → 0.5 with it, because the reference frame itself measures 0.4432 there.
 - 2026-09-30: an independently maintained game port is excluded from this PR entirely — owner decision. Only the shared engine fix it drove (`ae4ce5ce3`, virtual geometry no longer bakes skinned primitives) stays; this batch contains the four remaining PRDs.
 
-## Blocked on
-
-- Native desktop proof of PMREM environment light — `pnpm native:build` lane; run before merge.
+- [x] Native desktop proof of the environment light. proof: the scaffolded `rts` and `tower-defense` templates both set `scene.environment` from the photo sky (`src/render/sky.ts`) and both ran green on the real desktop host — `rts-native-orders` `pass: true` (log `/tmp/pr376-main-rts-native.log`) and the tower-defense native lane `runtime: native`, kills 6, 901 frames, non-blank `after.png` (PRD-474 phase 3) — 2026-09-30. Note: `scene.environment` is the equirectangular sky three prefilters itself (PMREM) on WebGPU/native; no template-specific conformance row for a standalone PMREM node exists.
