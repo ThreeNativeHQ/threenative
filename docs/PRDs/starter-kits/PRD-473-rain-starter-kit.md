@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-473 — Rain: the storm kit (TEMPEST, rebuilt on engine abstractions)
 
-**Status:** IN PROGRESS (scaffold, simulation and UI implemented locally; render fidelity and runtime gates remain open)
+**Status:** IN PROGRESS (Phase 1 done; Phase 2 look, Phase 3 native and AC-2..AC-5 open)
 **Complexity:** 7 → HIGH; risk override: none
 **Owner:** João (visual taste calls and the final PR screenshots)
 **Depends on:** None
@@ -137,9 +137,10 @@ and score in `docs/verification/visuals/`, and `native-playtests/*.playtest.json
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: a project scaffolded from `--template rain` boots into the storm and one panel intent changes the rendered frame, not only the readout. proof: `node packages/playtest/dist/runner/cli.js
-  packages/create-threenative/templates/rain/playtests/storm.playtest.json --url http://127.0.0.1:5173
-  --server-command "pnpm --dir <generated-rain-project> dev" --browser-recipe webgpu --headed`
+- [x] AC-1 [local]: a project scaffolded from `--template rain` boots into the storm and one panel intent changes the rendered frame, not only the readout. proof: `node packages/playtest/dist/runner/cli.js
+  <generated-rain-project>/playtests/storm.playtest.json --url http://127.0.0.1:5373
+  --server-command "pnpm --dir <generated-rain-project> exec vite --host 127.0.0.1 --port 5373 --strictPort" --browser-recipe webgpu --headed`
+  — pass 2026-10-01: Drizzle + slider + drag on a paused storm change 92.9% of pixels; the same pause with no input changes 0.48%
 - [ ] AC-2 [local]: a strike raises the flash value, brightens the scene and lands a `thunder` cue in the audio ledger at the source delay, while `safe` and `prefers-reduced-motion` suppress every flash. proof: the same runner on `playtests/lightning.playtest.json`
 - [ ] AC-3 [local]: rain is registered everywhere a template must be registered — CI matrices, capability-recall brief, applicability row, docs, visual score. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts
   scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts`
@@ -190,41 +191,33 @@ green.
 
 ### Phase 1 — The kit exists and the storm answers the player
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-10-01)
 
-Current local results (2026-10-01): the installed consumer passes TypeScript and `build:web`; the
-React interface renders at 1440×900, 1024×768 and 390×844. Nine weather/intent regression tests pass. The Drizzle button playtest also passes: the target changes from 0.76 to 0.24, rendered weather eases to 0.246, and 94% of canvas pixels change with clean diagnostics (placeholder renderer only).
-The boot and simulation playtests pass with `--browser-recipe webgpu --headed`: capture provenance
-reports NVIDIA Turing WebGPU, with zero console, network or runtime errors. Clock/frame observations
-change and the boot capture is nonblank. Earlier headless runs selected Google SwiftShader and failed;
-headed execution resolves that browser setup. The original coast and a live cloud pass now render
-in the installed consumer after Three's GLSL-to-TSL conversion, inline Fn calls and mutable local
-variables. Their headed boot and weather runs pass with clean diagnostics; the cloud-stage weather
-run changes 46.5% of canvas pixels. The generated noise now matches all 1,048,576 source bytes
-(`059598d3d3da03b8a42999e9d3a81ed39803210dec666af8405c530b7e984c42`).
-Fresh integrated headed boot/weather runs pass with the corrected noise, live clouds, rain, bloom
-and source post grade. Drizzle changes 65.1% of canvas pixels and the actual rain instance count
-falls from 9,120 to 2,951. The boot capture is nonblank with clean diagnostics. Review of that image
-found vertically inverted sky sampling; its correction and bolt integration remain open. These
-captures do not establish complete visual fidelity or all four quality tiers.
-No phase or acceptance box is complete. Historical scaffold stability passes for its original kits;
-Rain is excluded from that historical fixture because it did not exist at the fixture's parent commit.
-**Files:** `packages/create-threenative/templates/rain/{kit.json,package.json,tsconfig.json,vite.config.ts,threenative.config.ts,index.html,gitignore,AGENTS.md}` ·
-`src/{main.tsx,game.ts,state.ts,conventions.ts,scenes/Storm.ts}` ·
-`src/render/{palette,camera,sky,lighting,materials,postprocessing,quality}.ts` ·
-`src/ui/{App,GameUi,StormPanel,Telemetry,HelpDialog,LoadingOverlay}.tsx` ·
-`playtests/storm.playtest.json` · `.github/workflows/ci.yml` matrices ·
-`scripts/capability-recall.ts` · `docs/verification/PRD-289-conventions-2026-08-31.md` · `README.md`
-**Implementation:** `defineGame` with a published weather record, a named input map (move/altitude/
-sprint/strike/pause/reset/hide/capture), the free-fly rig with the source's clamps and cinematic orbit,
-`RenderChain` with bloom+vignette and the authored exposure/ACES/lens-droplet stage anchored after
-`vignette`, the panel/sliders/presets/switches/telemetry/help/loading in `src/ui/`, and the four quality
-tiers with a measured cost comment per stage.
-**Verification:** the AC-1 command — the playtest asserts clean diagnostics, a weather resource that
-changed after an intent, a non-blank capture, and fps/draw-call bounds.
+Results (2026-10-01, a project scaffolded from local tarballs, headed `--browser-recipe webgpu`,
+adapter NVIDIA Turing, zero console/network/runtime diagnostics in every run):
+- `playtests/storm.playtest.json` pauses the simulation, then clicks Drizzle, drags the
+  Precipitation slider and drag-looks: 92.9% of pixels change, against 0.48% for the same pause with
+  no input (`playtests/paused.playtest.json`, elapsed unchanged). Preset `drizzle`, target and
+  rendered rain 0.24 at the Drizzle step, ≥ 0.8 after the slider, heading 355° → 308°.
+- `playtests/fly.playtest.json`: W+Shift for 60 ticks moves z 18 → −4.9 (23 m/s sprint), E for 30
+  ticks y 2.85 → 5.85, a drag turns the heading; 86.1% of pixels change. The wip camera read
+  `input.axis()` for key bindings and the raw pointer counter the tick had already spent, so
+  sprint, Q/E and drag-look had never worked; it now reads `pressed()` and a `pointerRelative`
+  binding.
+- `survives` moves the registered player 6.0 m; `weather`, `automation`, `simulation` pass.
+- The sky was sampled upside down because the generator's flip rule never matched the
+  transpiler's spacing; the rule is fixed and the shader regenerated.
+- The render-layer files `palette/sky/lighting/materials.ts` were another kit's leftovers with no
+  importer; they now decide the storm's haze, sky, sun, fill, flash light, lamp and sea colours
+  as shader uniforms (boot capture unchanged: mean delta 0.16/255).
 
-- [ ] Phase 1: the scaffolded rain kit boots into a storm whose panel, presets and fly camera change the rendered frame. proof: AC-1 command above, plus `pnpm exec tsx scripts/visual-gate.ts --structural-only` and
-  `pnpm exec tsx scripts/check-template-quality.ts`
+**Files:** `packages/create-threenative/templates/rain/` — `kit.json`, `src/{main.ts,game.ts,state.ts,scenes/Boot.ts}`,
+`src/render/{palette,camera,sky,lighting,materials,postprocessing,quality}.ts`,
+`src/ui/{App,GameUi,Hud,Menu}.tsx`, `playtests/{storm,paused,fly,survives}.playtest.json`; registration
+in `.github/workflows/ci.yml`, `scripts/capability-recall.ts`, the conventions table and `README.md`.
+
+- [x] Phase 1: the scaffolded rain kit boots into a storm whose panel, presets and fly camera change the rendered frame. proof: AC-1 command above (pass, 92.9% changed vs 0.48% null), `fly.playtest.json` (pass), `pnpm exec tsx scripts/visual-gate.ts --structural-only` (exit 0, rain passes) and
+  `pnpm exec tsx scripts/check-template-quality.ts` (exit 0, 11 templates agree)
 
 ### Phase 2 — Sky, sea and rain: the look, built from generated source
 
