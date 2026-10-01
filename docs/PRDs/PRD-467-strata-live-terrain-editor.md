@@ -1,10 +1,11 @@
-# PRD-467 — Live terrain editor with persistent individual shape editing
+# PRD-467 — Live terrain editor, shape editing, and spatial surface diagnostics
 
 **Status:** NOT STARTED
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 0/8 required boxes verified
+**Progress:** 0/9 required boxes verified
+**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
 
@@ -13,9 +14,15 @@ click individual shapes, move/rotate/scale them, and use the existing GUI tools
 to polish the result. Agent-first generation and full customization remain the
 primary goal. The final output is a self-contained GLB usable in other games.
 
+Embedded spatial debugging must also help an agent/human reconstruct a location
+from maps/screenshots: inspect the actual terrain surface, register reference
+imagery and landmarks, and receive measurable mismatch feedback. These tools are
+part of the editor and headless inspection path, not a separate verification app.
+
 This is a required companion to [PRD-466](PRD-466-strata-terrain-threejs-integration.md),
 not an optional later feature. Both plans must be verified before claiming the
-whole requested integration is delivered. This request authorizes planning only.
+whole requested integration is delivered, including PRD-468's world controls and
+on-demand imports. This request authorizes planning only.
 Complexity: 3 for 11+ implementation files (mostly recovered editor modules),
 2 for the authoring tool, 2 for worker/revision concurrency, and 2 for the
 addon/consumer build boundary.
@@ -46,11 +53,23 @@ and supports instanced meshes through Three.js's existing raycast path. Installe
 ### One document shared by the agent and GUI
 
 Serve the recovered editor at **`/terrain-editor/`** through the existing preview
-Vite dev server and print the complete URL at startup. The agent authors through
+Vite dev server and print the complete URL at startup. Starting or reusing the
+terrain editor also returns a structured `editorUrl`, project/session identity,
+and current revision; the controller presents that URL as a clickable live-editor
+link to the user. Wait until the route is ready and use the actually bound port,
+never a guessed port or `0.0.0.0` as a viewer address. Reuse an existing configured
+port-forward/viewer URL when running remotely; report missing forwarding or startup
+failure explicitly instead of offering an unreachable link. This does not request
+public deployment. Repeated activation opens the same project and latest document.
+The agent authors through
 the API/JSON operations; driving the editor UI is never required.
 `examples/strata-terrain-preview/terrain/` owns the saved authoring document:
 Strata recipe, procedural shape parameters, and explicit placement overrides.
 It is terrain authoring data, not a new engine scene format or executable JS.
+Reference registrations, control/check points, north/origin metadata, and named
+inspection probes are saved with that document; they are authoring annotations.
+PRD-468 extends the same document with named cameras, environment settings, and
+project-local asset references; it does not introduce another document authority.
 
 Minimal Node/Vite middleware watches complete file saves and broadcasts revision
 notifications via SSE. Agents can atomically save JSON or submit documented
@@ -101,6 +120,8 @@ Use PRD-466's editable realistic terrain/ocean/lighting source in the editor, no
 a separate reduced renderer. The five starter documents appear in the user-requested
 order: Temperate Forest/Grassland, Mountain/Alpine, Desert/Canyon, Coastal/Island,
 Snow/Tundra. They are editable examples, not locked artistic presets.
+Atmosphere/lighting and camera changes from PRD-468 update the running scene
+without dispatching terrain evaluation or resetting the current view.
 
 ### Select and gizmo one object
 
@@ -140,6 +161,7 @@ with a reason; free-standing props retain ordinary full 3D transforms.
 | Surface/population | Material/biome paint, scatter/clear, individual selection, and editable shape parameters. |
 | Paths/water | Road/river controls, carving and water placement, using PRD-466's realistic ocean rendering. |
 | Document | Layer enable/reorder/inspect, undo/redo, import, existing data exports, and the new full-world GLB action. |
+| Spatial inspection | Reference overlay, scale/north grid, terrain probes, contours/heatmaps, profiles, and landmark mismatch feedback through the same saved document. |
 
 The new default world export contains terrain, generated/placed props, manual
 transforms, and portable baked PBR textures. It must not call the supplied
@@ -148,18 +170,104 @@ Shader-driven effects are frozen/baked as specified in PRD-466; live water/wind
 simulation does not travel inside standard GLB. Keep the editable source document
 separately. Export errors preserve it and the previous valid export.
 
+### Embedded geospatial awareness and reconstruction feedback
+
+Reuse supplied `src/editor/topographic.js` height/slope/material modes and contour
+projection, `Terrain.inspect()`, `sampleHeight`, `gradientAt`, and `slopeAtIndex`.
+Existing `Heightfield` queries and `ScenePicker` provide the canonical/rendered
+surface observations. These are discovered mechanisms, not a shipped full GIS
+or automatic map-to-terrain reconstruction system. Extend them in the terrain
+tooling; do not build another scene picker, heightfield, or GIS platform.
+
+| Embedded tool | Feedback useful to both the agent and GUI |
+| --- | --- |
+| Coordinates and reference | Local metre grid, north arrow, origin and extent; top-down map overlay with opacity and saved scale/rotation/translation; labelled control/check points. |
+| Surface probe | X/Z, elevation and datum status, triangle normal/slope/aspect, material/splat weights, biome, and water membership/level where known; distinguish ground from a prop hit. |
+| Surface views | Contours, elevation/slope/material/biome heatmaps with legends, units and range; grid spacing/preview resolution and stale-revision indicator. |
+| Cross-section and region | Draw a transect to inspect distance/elevation/grade; bound a region to inspect min/max/mean elevation and slope, using the actual evaluated surface. |
+| Reconstruction mismatch | Compare named reference landmarks/profiles with the measured world; return horizontal/elevation residuals, maximum/RMS error where defined, tolerances and missing/uncalibrated observations. |
+
+**Coordinate contract.** World geometry remains local metres with Y up. Record
+which local X/Z direction is north (default -Z, explicitly overridable). Preserve
+an optional projected CRS identifier, geospatial origin, source units, and vertical
+datum as metadata; do not put million-metre eastings directly into float32 meshes.
+Unknown datum/scale is unknown, not zero. Do not mix latitude/longitude degrees
+with metres or silently guess a projection. Full CRS reprojection, map services,
+and global geodesy are outside this first local reconstruction tool.
+
+**Calibrate reference imagery.** Import a bounded local image and persist its
+content hash/source metadata. A top-down map can use the smallest 2D similarity
+registration: two distinct known control pairs determine scale/rotation/translation;
+a third independent checkpoint is needed before claiming measured alignment.
+Known map scale/extent/north can supply those constraints directly, but report
+which values are supplied versus inferred. Do not silently mirror the image.
+Residuals at fitted controls alone do not prove accurate reconstruction.
+
+Perspective screenshots remain annotated view references unless explicit camera
+calibration/ground-plane information makes a metric mapping valid. An arbitrary
+screenshot or decorative map has no trustworthy elevation/scale by itself.
+Allow unknown/inferred landmarks so the agent can iterate, but do not present
+their inferred measurements as geospatial truth. No automatic reconstruction,
+world-location lookup, or elevation invention from pixels is promised.
+
+**Measure the surface being used.** A probe identifies document hash/revision,
+evaluation resolution, coordinate frame, units and sample source. At a mesh hit,
+report the actual triangle elevation/normal; when also reporting a bilinear
+heightfield estimate, label it separately and expose the difference. Both supplied
+samplers are bilinear, which can differ inside a nonplanar cell. Aspect is undefined
+on flat ground, and a query outside the terrain fails explicitly rather than
+clamping to an edge and pretending a measurement exists. Water readbacks retain
+their measured time/staleness. Never query newly requested data and label it as
+the older visible scene, or vice versa.
+
+Contours/profiles derive useful default intervals and sample spacing from map
+extent, grid spacing and elevation range, with visible manual overrides. Bound
+query region sizes/profile sample counts. Define each statistic's sampling method
+and distinguish horizontal distance from surface distance; do not promise exact
+continuous-area statistics from a finite grid.
+
+**Agent feedback without UI clicks.** Expose the same read-only point, transect,
+region, and landmark-comparison queries through a documented authoring inspection
+API/local endpoint returning structured JSON. Reuse the headless evaluated arrays
+for queries; a browser is needed only for rendered observations. Return numerical
+values, tolerances, residuals, provenance/unknown flags, diagnostics, and revision
+identity rather than only screenshots or a generic PASS. A saved query can be
+rerun after each semantic patch so the agent can tell whether a ridge, road grade,
+pad elevation, coastline, or landmark fit improved. Invalid/missing observations
+cannot count as zero error. This is feedback for authoring, not a new automatic
+terrain optimizer or evidence-report subsystem.
+
+References, grids, gizmos, heatmaps and debug probes are editor-only and excluded
+from world GLB geometry/textures. Keep optional local-origin/north/georeference
+metadata in namespaced root extras or an authoring sidecar without making a GIS
+plugin necessary for GLTFLoader. Exporting retains metre-scale local geometry and
+the same edited placement transforms; reference images are not embedded by default.
+
+### World controls and asset injection
+
+[PRD-468](PRD-468-strata-world-controls-and-asset-imports.md) owns the controller's
+camera CRUD/focus operations, editable atmosphere/sky/sun/fog/ocean settings, and
+GLB/PBR-image/HDR-environment import through both agent and GUI paths. These are
+required parts of this terrain editor. Reuse this PRD's validated revisions,
+selection IDs, history and live scene; do not create another renderer, upload
+service, scene format or editor. Asset MCP outputs register as project-local
+assets and become available for placement, scatter and material/environment use.
+
 ## Scope and ownership
 
 Browser/dev-server/editor entries under `packages/terrain/editor/` are optional
 tooling excluded from runtime/headless imports. No generic game editor, Studio
-integration, realtime multiplayer authoring, or cloud persistence. PRD-466 carries
+integration, realtime multiplayer authoring, cloud persistence, remote map service,
+automatic photogrammetry, or full GIS/reprojection stack. PRD-466 carries
 the explicit narrow charter allowance for this terrain-only tool. No appearance
 defaults move into core; the editor consumes ordinary Three.js objects and the
 same game-owned render source as the runtime.
 
 ## Acceptance Criteria
 
-AC-1 through AC-7 are phase boxes. AC-8 below proves the saved consumer handoff.
+AC-1 through AC-7 and AC-9 are phase boxes. AC-8 below proves the saved consumer
+handoff. The ninth box covers the newly requested embedded spatial feedback path
+without hiding it in the existing GUI tool claim.
 All are `local`, actor: implementing agent. New scripts/tests are implementation
 targets, not commands that currently exist.
 
@@ -173,6 +281,8 @@ targets, not commands that currently exist.
 | Individual polish | Picker hit → stable key → gizmo proxy → saved override | terrain-only picking and transient instance-index edits | AC-3, AC-4 |
 | Existing GUI | Recovered controls → shared semantic transactions | a separate GUI recipe copy | AC-5, AC-6 |
 | Portable handoff | Saved document → PRD-466 full-world exporter → ordinary game | visual-only edits and terrain-only world exports | AC-7, AC-8 |
+| Spatial feedback | Registered reference/query → evaluated or rendered surface → structured inspector and visible overlay/profile | global min/max only and uncalibrated visual guesses | AC-9 |
+| World controls/import | Shared document → PRD-468 camera/environment/asset operations → same live scene | manual camera-only access and a closed starter asset list | PRD-468 AC-1 through AC-7 |
 
 New locations are proposed. Record actual non-test entry points when implemented;
 do not invent future line numbers.
@@ -184,8 +294,15 @@ do not invent future line numbers.
 - 2026-09-30 (João): Prioritize the five named environments and output a GLB
   easily usable in any game.
 - 2026-09-30 (planning choice): Preserve and extend the supplied editor; keep this
-  independently testable tool in a linked PRD with three phases/eight boxes.
+  independently testable tool in a linked PRD with three phases/about eight boxes.
   Both PRDs remain required for the full outcome; no requirement is deferred away.
+- 2026-09-30 (João): Embed geospatial awareness/debug tools so map/screenshot-based
+  reconstruction gets actual terrain-surface feedback. Calibration uncertainty
+  and numerical residuals must be visible to both the agent and user.
+- 2026-09-30 (João): Activating the terrain editor must offer a usable live-view link.
+- 2026-09-30 (João): Controller camera CRUD/focus, on-demand GLB/image imports, and
+  editable atmosphere/environment are required. Split their separable consumer
+  paths into required PRD-468 to keep this editor checklist bounded; no deferral.
 
 ## Execution Phases
 
@@ -197,7 +314,7 @@ preview Vite config/editor entry/document, `__tests__/editor-document.spec.ts`.
 **Implementation:** Recover UI/worker; attach to the shared document and preview.
 Reuse middleware, file watching, SSE, atomic validation and revision ownership.
 
-- [ ] AC-1 [local, actor: implementing agent]: The open editor renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; actual dev URL, three distinct observed geometry revisions, and simple-edit latency within 2 seconds on the named fixture.
+- [ ] AC-1 [local, actor: implementing agent]: The activation-returned live link opens the current project and renders successive agent revisions without refresh. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; follow the returned `editorUrl` rather than constructing a test URL, verify bound-port/readiness and same-project reuse, observe three distinct geometry revisions, and measure simple-edit latency within 2 seconds on the named fixture. Startup/forwarding failures must not advertise a ready unreachable URL.
 - [ ] AC-2 [local, actor: implementing agent]: Malformed/stale writes cannot replace the valid document. proof: planned `pnpm exec vitest run packages/terrain/__tests__/editor-document.spec.ts` through real middleware — Evidence: pending; conflict/error response, unchanged disk data, path/origin restrictions, valid subsequent recovery, and canceled/stale job rejection.
 
 ### Phase 2: Individual selection and persistent gizmos
@@ -216,14 +333,20 @@ intent for landforms. Invalidate only affected static/instance data during drag.
 
 **Status:** NOT STARTED
 **Files:** recovered tools/inspectors, shared history/export integration, addon
-agent guide, `playtests/terrain-editor.playtest.json`, runner-backed editor script.
+agent guide, `editor/referenceOverlay.ts`, `editor/spatialInspector.ts`,
+`__tests__/spatial-inspection.spec.ts`, `playtests/terrain-editor.playtest.json`,
+runner-backed editor script. New paths are proposed.
 **Implementation:** Wire every supplied tool to the shared document, keep save,
 undo/export coherent across consumers, and exercise real public entry points.
+Add saved reference registration and readonly spatial queries using the existing
+sampling/topographic mechanisms. Keep GUI and agent results on the same revision;
+measure actual surface errors and calibration residuals rather than visual guesses.
 Use the existing harness; no new E2E framework or verification-report file.
 
 - [ ] AC-5 [local, actor: implementing agent]: GUI tool groups edit the shared authoring recipe. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; use controls from each tool group, inspect saved semantic changes, and retain remaining supplied tools wired through the same validated transaction path.
 - [ ] AC-6 [local, actor: implementing agent]: Drag/cancel/undo operate as single edits without losing agent revisions. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; actual interaction, conflict handling, selection retention, and saved revision/file consistency.
 - [ ] AC-7 [local, actor: implementing agent]: Packaged editor tooling stays optional to headless/runtime consumers. proof: planned `pnpm --filter strata-terrain-preview test:consumer` — Evidence: pending; root and `/three` imports exclude DOM/server modules, the editor loads through its tooling entry, and the edited document reaches the full-world GLB export.
+- [ ] AC-9 [local, actor: implementing agent]: Embedded spatial inspection gives calibrated, revision-bound terrain feedback usable for reconstruction. proof: planned `pnpm exec vitest run packages/terrain/__tests__/spatial-inspection.spec.ts` through public inspection/middleware plus `test:terrain:editor` — Evidence: pending; use a known asymmetric terrain and synthetic map with two fit controls plus an independent checkpoint, recover point height within 0.01 m and slope within 0.1 degree, report a deliberately displaced checkpoint's actual residual, and compare GUI/headless profile results. Reject degenerate/out-of-bounds queries, label unscaled/perspective references and unknown datum, distinguish bilinear/triangle values, preserve registration after reload, and keep debug overlays out of the GLB.
 
 ## Verification and delivery
 
@@ -236,5 +359,6 @@ required type/lint/test/build/budget/selected-CI gates after nearest checks.
 Run `pnpm prd:progress` before execution and after phases. Keep results on these
 boxes or the PR; mirrors are regenerated only for changed agent guidance.
 One draft implementation PR targets `develop` from an owning-repository worktree.
-Archive only after all eight boxes pass. Planning does not authorize deployment
-or npm publication, and does not claim implemented editor behavior.
+Archive only after all nine boxes pass. Planning does not authorize deployment
+or npm publication, and does not claim implemented editor behavior. The overall
+integration also requires PRD-468's camera/environment/import criteria.

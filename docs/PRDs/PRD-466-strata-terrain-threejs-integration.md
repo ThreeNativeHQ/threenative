@@ -6,6 +6,7 @@
 **Depends on:** None
 **Progress:** 0/9 required boxes verified
 **Required companion:** [PRD-467 — live terrain editor](PRD-467-strata-live-terrain-editor.md)
+**Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
 
@@ -28,7 +29,8 @@ portable PBR textures. ThreeNative powers authoring/preview but is not required
 to load the GLB. Export portability is a release criterion, not a later adapter.
 
 The user also requires a terrain editor URL that shows agent changes live, with
-individual selection, transform gizmos, and GUI polish. That distinct authoring
+individual selection, transform gizmos, GUI polish, and embedded spatial debugging
+for map/screenshot reconstruction. That distinct authoring
 tool is specified in PRD-467. Both PRDs are required for the complete requested
 integration; finishing this runtime/package PRD alone does not finish that goal.
 
@@ -89,7 +91,8 @@ allowance for the requested optional terrain authoring addon in phase 1. Recipes
 remain authoring documents compiled into ordinary runtime data; they never become
 an engine scene format. The allowance also covers the five requested editable
 terrain starter documents and the terrain-only authoring
-companion in PRD-467, not a general game editor, genre preset system, or ownership
+companions in PRD-467/PRD-468, including world atmosphere/camera controls and
+project asset imports, not a general game editor, genre preset system, or ownership
 of appearance. The charter change is part of the integration's review,
 not an exception a future implementer may silently infer.
 
@@ -138,6 +141,15 @@ These candidates were found with `engine_search_capabilities` and inspected with
 | Procedural props | `createRandom`, `mergeParts`, `InstancedBatch`, `markStatic` from `@threenative/core` | Seed shape variants; merge static parts per material preserving authored UVs/normals; instance shared variants; freeze only genuinely static subtrees. The game supplies every shape and material. `GroundSnap` is only a rendered-model correction, not collider placement. |
 | Baked textures/models | `compileAssets`, `texturePass` from `@threenative/assets`; existing cooked-model LOD | Prepare PBR maps offline, then reuse mipmapped KTX2 cooking and `ctx.assets`. Compressed dimensions must be divisible by four. Cooked GLB LOD applies only when eligible and configured; instancing does not imply automatic LOD. |
 | Lighting and measurement | Existing game-owned `worldEnvironment.ts`/post source, Three.js GTAO/SSR, `FrameBudget` | Use current template stages where they improve the actual image. AO radii are metres; SSR is screen-space and does not supply offscreen reflections. Record main/shadow/reflection costs and real GPU measurements; absence is not zero. |
+
+PRD-468 makes atmosphere, sky/sun direction, haze/fog, exposure, environment images
+and ocean appearance editable live by both the controller and GUI. Reuse
+`Atmosphere.setAtmosphere()` and its validated parameter/LUT mechanisms, plus
+the game-owned `WorldEnvironment` source and its `TN_RENDER_CHAIN` diagnostics.
+`ctx.assets.resolve()` supplies cooked/local paths for installed Three.js
+`HDRLoader`/`EXRLoader`; the ordinary texture loader does not decode HDR skies.
+These mechanisms are discovered, not proof that every chosen effect runs on a
+target. Appearance and full custom replacement remain game-owned.
 
 The realistic ocean is required. Start from the shipped sailing ocean source,
 retain its lit material and displacement-derived normals, then tune wave bands,
@@ -224,6 +236,10 @@ props can share mesh data through ordinary nodes; do not require
 Offer such optimizations only as explicit profiles after the portable path passes.
 Collision and editable recipes are optional sidecars; neither is required to draw
 the GLB, and collision is not invented as a standard GLB guarantee.
+Preserve optional local-origin/north/georeference metadata in root extras or an
+authoring sidecar, using the PRD-467 coordinate contract. Debug grids, probes,
+landmarks, reference overlays and imported reference images stay out of runtime
+geometry/materials; a standard game still loads the GLB without GIS tooling.
 
 GLB captures a static world. Bake shader-driven grass deformation and ocean
 displacement/normals at an explicit export snapshot time into ordinary geometry
@@ -233,6 +249,11 @@ frame. No live FFT/wind/atmosphere/post-processing code is serialized into GLB.
 Report any environment-dependent appearance that a receiving game supplies,
 and any excluded procedural effect. Unsupported unbaked materials fail by name
 rather than exporting a visually empty or terrain-only success.
+Preserve editable environment settings and local HDR sources in the project or
+optional sidecar; standard GLB cannot carry the running atmosphere, fog, exposure
+or post chain. Named authored cameras may be explicitly exported as ordinary
+glTF cameras, while default editor/debug cameras stay excluded. PRD-468 qualifies
+on-demand imported models/textures through this same portable export path.
 
 The GUI and agent call this same export path. A plain Three.js consumer loads the
 file using `GLTFLoader` and renders it without ThreeNative or access to the source
@@ -307,6 +328,12 @@ with their rule/asset name rather than silently showing placeholder trees.
 
 Prepared textures/imported replacements go through `compileAssets` and `ctx.assets`;
 procedural geometry uses the same game-owned materials and `InstancedBatch`.
+PRD-468 adds GUI file import and agent registration of local asset MCP outputs:
+custom GLB models, PBR images and HDR environments are not limited to these starter
+IDs. They are copied/registered under project-owned assets and use the same
+compiler/loader, placement mappings and full-world export. Fab import/download
+tools already exist in the asset MCP; use their returned local GLBs under the
+applicable asset terms instead of adding a second marketplace client.
 Never carry over the supplied viewer's renderer. Cap the cooked starter set at 25 MiB, use at most
 2K source textures, and expose ordinary file replacement/removal. Every custom
 configuration must avoid loading the replaced starter files. This is a bounded
@@ -346,8 +373,9 @@ are caller-owned; disposing the generated geometry does not dispose shared art.
 
 ## Scope limits
 
-The live editor and GUI extension belong to required PRD-467. No marketplace
-integration, caves, navigation generation, volumetric fluid simulation,
+The live editor and GUI extension belong to required PRD-467; world controls and
+on-demand imports belong to required PRD-468. No new marketplace client, caves,
+navigation generation, volumetric fluid simulation,
 infinite-world generation, or seamless mixed-LOD claim. The existing spectral
 ocean surface is in scope. Defer
 `TerrainTiles` integration until a game needs streaming; first prove one finite
@@ -399,6 +427,11 @@ locations when each phase is implemented; no future line numbers are asserted.
   polish are required. PRD-467 replaces the previous editor-rebuild exclusion.
 - 2026-09-30 (João): Deliver the five environment starters in the stated priority
   order, with Temperate Forest/Grassland first; final output is a portable GLB.
+- 2026-09-30 (João): Embed spatial inspection/reference alignment and measurable
+  terrain-surface feedback in PRD-467 to support reconstruction from maps/screenshots.
+- 2026-09-30 (João): Include editable atmosphere/environment, controller camera
+  CRUD/focus and arbitrary supported GLB/image imports; required PRD-468 owns
+  these additional consumer paths while preserving the standard Three.js contract.
 - 2026-09-30 (planning choice): Vegetation search surfaced reusable `mergeParts`,
   `InstancedBatch`, `createRandom`, and static/culling mechanisms, not a dedicated
   installed grass/tree generator. Recover the supplied procedural builders and
@@ -498,5 +531,6 @@ One implementation PR targets `develop`, opened as a draft before phase 1 starts
 Use an owning-repository worktree, update its progress label, and archive this PRD
 only after all nine boxes have current evidence. Overall requested integration
 also requires PRD-467; do not describe a runtime-only delivery as editor completion.
+It also requires PRD-468; live atmosphere/cameras/imports are part of the request.
 Publishing requires its own
 explicit authorization; packing tarballs and exercising a local install do not.
