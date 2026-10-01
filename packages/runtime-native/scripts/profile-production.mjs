@@ -504,10 +504,13 @@ function nativeAssertions(assertions, timeoutMs, hostedSoftware) {
  * choosing the low preset. A hardware adapter that honours a pinned-low profile is the run working
  * as configured, so the expectation the collector writes has to be the tier it asked for.
  *
- * This changes nothing about classification. `perAdapter` is carried through untouched, so a run
- * that IS on a software adapter still takes its own branch, and a hardware run with no profile
- * input is still held to the template's flat `high`. Only the flat fallback moves, and only when the
- * collector pinned it.
+ * It removes `perAdapter` outright rather than leaving the branches beside the pinned tier. The
+ * branches assert the tier an adapter *class* implies, and the collector's pin overrides the class's
+ * preference on this run: a hardware adapter held to `low` would take the software branch's stages
+ * and contributions and fail a workload that did exactly what it was configured to do. What stays
+ * is the flat expectation at the pinned tier, and classification is untouched either way — the run
+ * is still classified from its own `adapter.info` reading, and a hardware run with no profile input
+ * is still held to the template's flat `high`.
  */
 function hostedSoftwareAssertions(assertions, hostedSoftware) {
   if (!hostedSoftware || assertions?.renderChain === undefined) return assertions;

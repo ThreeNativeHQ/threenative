@@ -72,21 +72,32 @@ function adapterIdentity(adapter: Readonly<Record<string, string>> | undefined):
  * pipeline census: `webgpu:` then `field=encodeURIComponent(value)` joined by `|`. Both separators
  * are encoded inside a value, so the split is unambiguous and this is a decode, not a guess.
  *
- * All four keys must be present and non-blank, which is the same requirement `adapterIdentity`
- * places on a browser capture. A string that is not this shape — an empty identity, a `webgl2`
- * census, a truncated one — yields `undefined`, and the run stays unclassified. There is no
- * partial answer here: three fields out of four would classify a machine from the identity of
- * somebody else.
+ * All four keys must be present exactly once and non-blank, which is the same requirement
+ * `adapterIdentity` places on a browser capture. A string that is not this shape — an empty
+ * identity, a `webgl2` census, a truncated one — yields `undefined`, and the run stays
+ * unclassified. There is no partial answer here: three fields out of four would classify a machine
+ * from the identity of somebody else.
+ *
+ * A repeated key is refused rather than let the last one win. `webgpu:architecture=swiftshader|
+ * architecture=turing|description=NVIDIA|device=RTX|vendor=nvidia` is a complete four-field identity
+ * by every other rule here, and letting it through reported the *last* `architecture` — so a string
+ * that began by naming a CPU rasteriser classified as hardware off the fields that followed it. The
+ * key must be one of the four names and not already present, checked before the assignment, and the
+ * object is null-prototype so a `__proto__` pair cannot hide from `Object.keys` behind the inherited
+ * setter.
  */
 export function adapterFieldsFromIdentity(identity: unknown): Record<string, string> | undefined {
   if (typeof identity !== "string") return undefined;
   const prefix = "webgpu:";
   if (!identity.startsWith(prefix)) return undefined;
-  const fields: Record<string, string> = {};
+  const fields: Record<string, string> = Object.create(null);
   for (const pair of identity.slice(prefix.length).split("|")) {
     const separator = pair.indexOf("=");
     if (separator <= 0) return undefined;
     const key = pair.slice(0, separator);
+    if (!(ADAPTER_IDENTITY_KEYS as readonly string[]).includes(key) || Object.hasOwn(fields, key)) {
+      return undefined;
+    }
     let value: string;
     try {
       value = decodeURIComponent(pair.slice(separator + 1));

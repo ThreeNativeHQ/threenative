@@ -408,6 +408,18 @@ describe("renderChain perAdapter selection", () => {
       ["a missing field", "webgpu:architecture=turing|description=NVIDIA|device=RTX"],
       ["an empty field", "webgpu:architecture=|description=NVIDIA|device=RTX|vendor=nvidia"],
       ["an undecodable value", "webgpu:architecture=%E0%A4%A|description=N|device=R|vendor=nvidia"],
+      // A repeated key is the identity that names a CPU rasteriser first and a real GPU second.
+      // Last-one-wins turned that into a hardware verdict off the fields that followed.
+      [
+        "a repeated field that would erase the software name",
+        "webgpu:architecture=swiftshader|architecture=turing|description=NVIDIA|device=RTX|vendor=nvidia",
+      ],
+      [
+        "a repeated field on a native identity that began on a GPU",
+        "webgpu:architecture=turing|architecture=swiftshader|description=N|device=R|vendor=nvidia",
+      ],
+      ["an unknown key beside the four", "webgpu:architecture=swiftshader|description=x|device=y|vendor=google|features=timestamp-query"],
+      ["a __proto__ pair beside the four", "webgpu:architecture=swiftshader|description=x|device=y|vendor=google|__proto__=bogus"],
     ])("leaves a native run with %s identity unclassified, and fails a perAdapter scenario", async (
       _name,
       identity,
