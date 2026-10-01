@@ -1221,6 +1221,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * what a draw submits, and the renderer's own per-draw function is not ours to wrap.
    */
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean): void {
+    // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
     // What a level's own render costs, measured around the draw and smoothed over the reading
     // before it. A mover map is a handful of tracked casters and is never scheduled against, so it
@@ -1847,7 +1848,6 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let moverRenders = 0;
     if (this.#casters.size > 0) {
       for (const level of this.#levels) {
-        // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
         // A mover map draws only the tracked casters on layer 29, in a 256² map over the level's own
         // window, so it keeps full detail: every level's world changes were already put back above.
         if (canRender) this.#renderLevel(frame, level, true);

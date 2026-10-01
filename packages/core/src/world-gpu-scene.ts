@@ -63,6 +63,7 @@ const SLOT_NONE = -1;
  */
 const STORAGE_WORDS = {
   /** `mat4` + `centre` (vec4) + `info` (vec4), so one placement is 96 bytes and one stride. */
+  // quality-allow: the object key is the WGSL type name the kernel reads, so it keeps that spelling.
   // biome-ignore lint/style/useNamingConvention: the key is the WGSL type, spelled as the kernel declares it.
   GpuPlacement: PLACEMENT_WORDS,
   /** `mat4`, one per key: the part's own offset inside the model, the same one the CPU composes. */
@@ -1076,12 +1077,13 @@ const _eye = new Vector3();
  * that has to read a struct member and an atomic's return value. The cast is confined here so the
  * kernel reads as the plain shader it is.
  */
+// quality-allow: the kernel is a typed handle onto three's TSL nodes, which resolve to `any` in 0.185.
 // biome-ignore lint/suspicious/noExplicitAny: three's TSL types refuse the swizzles this kernel reads.
 type Kernel = Record<string, any>;
 
 /** `storage(...)` results reach the kernel through this, once. */
 function nodes(value: unknown): Kernel {
-  return value as unknown as Kernel;
+  return value as Kernel;
 }
 
 /** The launch flag. */

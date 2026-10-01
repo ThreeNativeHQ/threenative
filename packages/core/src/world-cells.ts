@@ -4459,6 +4459,7 @@ export class WorldCells extends Group implements IComputeDriven {
     if (hadOwn) mesh.onBeforeRender = own as typeof mesh.onBeforeRender;
     // Deleted rather than assigned `undefined`: three calls `object.onBeforeRender(...)`
     // unconditionally, and an own `undefined` shadows the prototype's no-op and throws.
+    // quality-allow: the hook must go back to the prototype, which only `delete` can restore.
     // biome-ignore lint/performance/noDelete: restoring the prototype lookup is the point.
     else delete (mesh as Partial<InstancedMesh>).onBeforeRender;
   }

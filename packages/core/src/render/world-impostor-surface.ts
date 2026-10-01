@@ -208,12 +208,13 @@ function mipThresholdNode(
 
 /** The projection's `[3][3]`: zero for perspective, one for orthographic (a shadow camera too). */
 function orthographicNode(): Node<"bool"> {
-  const column = element(cameraProjectionMatrix as never, 3) as unknown as Node<"vec4">;
-  return column.w.greaterThan(0.5) as unknown as Node<"bool">;
+  const column = element(cameraProjectionMatrix as never, 3) as Node<"vec4">;
+  return column.w.greaterThan(0.5) as Node<"bool">;
 }
 
 /** `mat3` of a `mat4` node; the 0.185 typings only accept the conversion overload directly. */
 function asMat3(matrix: Node<"mat4">): Node<"mat3"> {
+  // quality-allow: three types `mat4` and `mat3` nodes as unrelated, so both casts cross via `unknown`.
   return mat3(matrix as unknown as Node<"mat3">) as unknown as Node<"mat3">;
 }
 
@@ -249,9 +250,7 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     (attribute as { isStorageInstancedBufferAttribute?: boolean })
       .isStorageInstancedBufferAttribute === true
   )
-    return storage(attribute as never, "mat4", count).element(
-      instanceIndex,
-    ) as unknown as Node<"mat4">;
+    return storage(attribute as never, "mat4", count).element(instanceIndex) as Node<"mat4">;
   let interleaved = INSTANCE_COLUMNS.get(attribute);
   if (interleaved === undefined) {
     interleaved = new InstancedInterleavedBuffer(attribute.array, 16, 1);
@@ -274,18 +273,18 @@ function instanceMatrixNode(attribute: InstancedBufferAttribute): Node<"mat4"> {
     if (interleaved !== undefined) syncInstanceRanges(attribute, interleaved);
   });
   return mat4(
-    columns[0] as unknown as Node<"vec4">,
-    columns[1] as unknown as Node<"vec4">,
-    columns[2] as unknown as Node<"vec4">,
-    columns[3] as unknown as Node<"vec4">,
-  ) as unknown as Node<"mat4">;
+    columns[0] as Node<"vec4">,
+    columns[1] as Node<"vec4">,
+    columns[2] as Node<"vec4">,
+    columns[3] as Node<"vec4">,
+  ) as Node<"mat4">;
 }
 
 /** `cameraViewMatrix * modelWorldMatrix * instanceMatrix`: asset-space to view-space per instance. */
 function instanceViewMatrixNode(object: Object3D): Node<"mat4"> {
   const attribute = (object as { instanceMatrix?: InstancedBufferAttribute }).instanceMatrix;
   const instance = attribute === undefined ? identityMat4() : instanceMatrixNode(attribute);
-  return cameraViewMatrix.mul(modelWorldMatrix).mul(instance) as unknown as Node<"mat4">;
+  return cameraViewMatrix.mul(modelWorldMatrix).mul(instance) as Node<"mat4">;
 }
 
 /** A `mat4` identity node for a plain, non-instanced mesh. */
@@ -295,7 +294,7 @@ function identityMat4(): Node<"mat4"> {
     vec4(0, 1, 0, 0),
     vec4(0, 0, 1, 0),
     vec4(0, 0, 0, 1),
-  ) as unknown as Node<"mat4">;
+  ) as Node<"mat4">;
 }
 
 /** A node twin of a source material: its class and every value it authored, by reference. */
@@ -399,7 +398,7 @@ export class WorldImpostorSurface {
               float(1),
               select(
                 farDistance.lessThanEqual(
-                  attribute(IMPOSTOR_FAR_CULL_ATTRIBUTE, "float") as unknown as Node<"float">,
+                  attribute(IMPOSTOR_FAR_CULL_ATTRIBUTE, "float") as Node<"float">,
                 ),
                 float(1),
                 float(0),
@@ -538,8 +537,8 @@ function buildFragmentNodes(
       .add(cellX[index] as Node<"float">)
       .toInt();
     uvs.push(uv);
-    colors.push(colorMap.depth(layer).sample(uv).toVar() as unknown as Node<"vec4">);
-    normals.push(normalMap.depth(layer).sample(uv).toVar() as unknown as Node<"vec4">);
+    colors.push(colorMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
+    normals.push(normalMap.depth(layer).sample(uv).toVar() as Node<"vec4">);
   }
 
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
