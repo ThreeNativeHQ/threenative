@@ -1,10 +1,10 @@
 # PRD-469 — ICEFIELD snow abstractions and starter kit
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
-**Progress:** 7/8 required boxes verified
+**Progress:** 8/8 required boxes verified
 
 ## Context
 
@@ -101,6 +101,9 @@ The eight countable criteria live in the owning phases below; this table maps pr
 | AC-5 | local | The generated game demonstrates the same contact/surface contract on native Linux desktop |
 | AC-6 / AC-7 / AC-8 | local | Packed starter works, MCP discovers the abstractions, and repository gates pass |
 
+- [x] Browser WebGPU lane: the packed kit's physics, footsteps, weather and touch scenarios pass on a real GPU adapter. proof: `TN_TEMPLATE_ONLY=snow pnpm test:templates` — exit 0, 7 scenarios, NVIDIA Turing (AC-3, AC-6)
+- [x] Native Linux desktop lane: the same snow-physics contract passes on the native host. proof: `pnpm exec threenative-playtest --scenario native-playtests/snow-physics.playtest.json --target desktop` in the packed `snow-proof` — 4/4 on the merged tree, 5/5 before the merge (AC-5)
+
 Browser and native desktop behavior are required here. Android/iOS use the same portable source/backend seam and receive build checks where their SDKs are available; this PRD makes no mobile runtime claim without a target run. During implementation, record any unavailable required qualification under `Blocked on` with the actual attempted command and missing SDK/device. Build success cannot substitute for physics execution. Do not tick an unreachable proof or mark the PRD complete with a required platform result pending.
 
 ## Integration Ledger
@@ -130,8 +133,8 @@ collider-refresh operations on both backends (`readContacts`, `setColliderShape`
 `tn_physics_read_contacts`/`tn_physics_set_heightfield_shape`), `attachSnowPhysics` with
 `observe()`/`loadOf()`, and the generated snow game's `snow-physics.playtest.json` passing on
 browser WebGPU and on the native Linux desktop host. Phase 3's kit passes all seven packed web
-scenarios and capability discovery is verified through the shipped MCP server; the repository
-gates (AC-8) are the last open box. The rain kit (PRD-473) is merged into this branch.
+scenarios, capability discovery is verified through the shipped MCP server, and the repository
+gates pass on the final branch. The rain kit (PRD-473) is merged into this branch.
 
 Visual record, `docs/verification/PRD-469/` (JPEG, about 0.7 MB for the kit set): the kit at
 `snow-kit-webgpu-1440x900.jpg`, `-1024x768.jpg`, `-390x844-touch.jpg`, `-blizzard-1440x900.jpg`
@@ -171,7 +174,7 @@ three viewports as `reference-icefield-*.jpg`.
 
 ### Phase 3: Discoverable, packed snow starter kit
 
-**Status:** IN PROGRESS — AC-6 and AC-7 verified; AC-8 gates running
+**Status:** COMPLETE
 
 **Files:** `packages/create-threenative/templates/snow/` with portable scene/entities, editable `src/render/`, controls, instructions and playtests; existing scaffold/playtest/look/convention tests and `scripts/visual-gate.ts` template inventory; manifest/reference generators, existing MCP search/server tests and recall corpus. Generated mirrors/manifests follow their generators.
 
@@ -179,7 +182,7 @@ three viewports as `reference-icefield-*.jpg`.
 
 - [x] AC-6 [local, actor: implementation agent]: A packed `--template snow` game boots and plays on browser WebGPU with source-derived footsteps/weather/powder controls and the sphere physics scenario. proof: `TN_TEMPLATE_ONLY=snow pnpm test:templates` — Evidence: exit 0 (2026-10-01, on the rain + snow merge; the kit is byte-identical to the final branch), NVIDIA Turing adapter on every scenario: `snow-real-frame-boot`, `survives`, `snow-footsteps`, `snow-weather`, `snow-touch-controls`, `snow-physics` and `production-performance` all pass. Native re-run on the merged tree: `native-playtests/snow-physics` 4/4 and `survives` exit 0 from a freshly packed `snow-proof`. Captures inspected: see the visual record above.
 - [x] AC-7 [local, actor: implementation agent]: Snow mechanic queries discover the public field/binding through actual MCP search/detail, and returned examples compile against packed exports. proof: `pnpm build && pnpm capabilities:check && pnpm caps:recall` and `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/server.spec.ts packages/engine-mcp/__tests__/capability-examples.spec.ts` — Evidence: `pnpm build` 0; `pnpm capabilities:check` fresh (374 entries, 362/362 package-backed entries resolvable from scaffolds); `pnpm caps:recall` 0 (83 rows, recall 0.916, 9 snow rows); engine-mcp search/server/capability-examples 71/71. In the packed `snow-proof`, the shipped server (`node_modules/@threenative/core/mcp/engine.mjs` over stdio, as its `.mcp.json` launches it) answers "leave footprints in deep snow that stay where the player walked" with `attachSnowPhysics`, `SnowField` first and "drop a heavy ball into powder snow so it sinks and carves a track" with `attachSnowPhysics`, `SnowField`, `GPUParticles3D`, `snowDiscFootprint`; `engine_capability_detail` returns both with their `@threenative/core/world` / `@threenative/physics` imports, and the kit that calls both type-checks and builds against the packed exports.
-- [ ] AC-8 [local, actor: implementation agent]: The completed implementation passes repository checks without changing unrelated games or weakening native/assertion guards. proof: `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets && pnpm check:docs` — Evidence: pending.
+- [x] AC-8 [local, actor: implementation agent]: The completed implementation passes repository checks without changing unrelated games or weakening native/assertion guards. proof: `pnpm typecheck && pnpm lint && pnpm test && pnpm budgets && pnpm check:docs` — Evidence: all exit 0 on `de581effa` (2026-10-01, rain + snow merged). `pnpm test`: root 526 files / 6,567 tests passed (9 skipped), runtime-native 132 files / 1,558 tests; `pnpm budgets` includes the 72 MB evidence cap (docs/verification 67.4 MB before this PRD's 0.77 MB of captures) and the regenerated native coverage report; `pnpm sync:agents --check` and the MCP config check are clean. No other template's scaffold hash moved; no assertion or native guard was relaxed (the powder-resistance attempt that would have widened the kit's roll-ratio band was reverted, see Decisions).
 
 **Verification:** Before runtime claims, scaffold `snow-proof` with the existing local-package overrides and run its browser/native scripts. Check source-independent installation and default-exported native game entry. Run `pnpm sync:agents` and `pnpm sync:mcp` for changed generated instructions/configs. Keep routine results beside these boxes; create no separate verification report. Run `pnpm prd:progress` after each phase; finish the implementation in one PR targeting `develop`, and move this PRD to `done/` only when every required result is verified.
 
