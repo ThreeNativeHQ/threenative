@@ -37,6 +37,7 @@ describe("hosted-software acceptance stays declared at the caller", () => {
     ["Verify the desktop runtime with MSVC", "windows-core"],
     ["Compare the desktop host with browser references", "linux-parity"],
     ["Verify the web UI composites into the game's own frame", "linux-ui-frame"],
+    ["Install and play the final signed Windows setup, then uninstall it", "windows-installed"],
   ])("%s declares it on its hosted-software lane", (name) => {
     expect(step(name)).toContain("TN_PLAYTEST_ALLOW_SOFTWARE");
   });

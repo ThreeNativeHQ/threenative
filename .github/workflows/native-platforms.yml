@@ -1690,6 +1690,10 @@ jobs:
       - name: Install and play the final signed Windows setup, then uninstall it
         if: matrix.platform == 'Windows'
         shell: pwsh
+        # The hosted Windows runner has no GPU: its adapter is `Microsoft Basic Render Driver`. The
+        # acceptance is declared here, at the one caller that knows it, like the other Windows steps.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           $ErrorActionPreference = 'Stop'
           $project = Join-Path $env:RUNNER_TEMP 'threenative-starter-native'
