@@ -51,24 +51,32 @@ function Probe({ values }: { readonly values: readonly number[] }) {
       role="img"
       viewBox={`0 0 ${PROBE_COLUMNS} ${rows}`}
     >
-      {values.map((value, index) => {
-        const shade = Math.max(0, Math.min(1, value / 0.18));
-        const bank = Math.max(0, Math.min(1, -value / 0.045));
-        const r = Math.round(214 - shade * 109 + bank * 33);
-        const g = Math.round(230 - shade * 92 + bank * 21);
-        const b = Math.round(240 - shade * 64 + bank * 15);
-        return (
-          <rect
-            fill={`rgb(${r} ${g} ${b})`}
-            height={1.02}
-            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed grid whose cells never reorder.
-            key={index}
-            width={1.02}
-            x={index % PROBE_COLUMNS}
-            y={Math.floor(index / PROBE_COLUMNS)}
-          />
-        );
-      })}
+      <defs>
+        {/* The grid is coarse; a slight blur reads as a pressed surface rather than pixels. */}
+        <filter id="probe-soften">
+          <feGaussianBlur stdDeviation="0.22" />
+        </filter>
+      </defs>
+      <g filter="url(#probe-soften)">
+        {values.map((value, index) => {
+          const shade = Math.max(0, Math.min(1, value / 0.18));
+          const bank = Math.max(0, Math.min(1, -value / 0.045));
+          const r = Math.round(214 - shade * 109 + bank * 33);
+          const g = Math.round(230 - shade * 92 + bank * 21);
+          const b = Math.round(240 - shade * 64 + bank * 15);
+          return (
+            <rect
+              fill={`rgb(${r} ${g} ${b})`}
+              height={1.02}
+              // biome-ignore lint/suspicious/noArrayIndexKey: a fixed grid whose cells never reorder.
+              key={index}
+              width={1.02}
+              x={index % PROBE_COLUMNS}
+              y={Math.floor(index / PROBE_COLUMNS)}
+            />
+          );
+        })}
+      </g>
     </svg>
   );
 }
@@ -161,7 +169,7 @@ function Toast({ state }: { readonly state: GameState }) {
   return (
     <output
       aria-live="polite"
-      className={`fixed bottom-[100px] left-1/2 z-20 max-w-[85vw] -translate-x-1/2 rounded-[9px] border border-line bg-[rgb(16_35_46/0.88)] px-4 py-3 text-center text-[12px] backdrop-blur-lg transition-opacity max-[850px]:bottom-[84px] ${
+      className={`fixed bottom-[100px] left-1/2 z-20 max-w-[85vw] -translate-x-1/2 rounded-[9px] border border-line bg-[rgb(16_35_46/0.88)] px-4 py-3 text-center text-[12px] backdrop-blur-lg transition-opacity max-[850px]:bottom-[250px] ${
         shown ? "opacity-100" : "opacity-0"
       }`}
     >
@@ -232,7 +240,7 @@ function Hud() {
       {/* Left column: title, then the controls. On a phone the controls live behind the menu. */}
       <section className="absolute bottom-[98px] left-[34px] top-[120px] w-[285px] [@media(max-height:800px)]:top-[92px] [@media(max-height:800px)]:bottom-[84px] overflow-y-auto [scrollbar-width:none] max-[1100px]:w-[264px] max-[850px]:left-4 max-[850px]:right-4 max-[850px]:top-[84px] max-[850px]:w-auto max-[850px]:bottom-[88px]">
         <div
-          className={`mb-6 [text-shadow:0_1px_10px_rgb(16_40_54/0.35)] max-[850px]:mb-3 [@media(max-height:800px)]:mb-3 ${menuOpen ? "max-[850px]:hidden" : ""}`}
+          className={`mb-6 [text-shadow:0_1px_10px_rgb(16_40_54/0.35)] max-[850px]:mb-3 [@media(max-height:800px)]:mb-5 ${menuOpen ? "max-[850px]:hidden" : ""}`}
         >
           <div className="text-[9px] font-medium tracking-[0.28em] text-[#dfedf2]">
             A STUDY IN WINTER
@@ -298,7 +306,7 @@ function Hud() {
       </aside>
 
       <footer className="absolute bottom-[26px] left-[34px] right-[34px] flex items-center justify-between gap-4 max-[850px]:bottom-4 max-[850px]:left-4 max-[850px]:right-4">
-        <div className="min-w-[200px] text-[9px] tracking-[0.2em] text-[#e0ecf1] opacity-80 [text-shadow:0_1px_5px_#264452] max-[1100px]:hidden">
+        <div className="min-w-[200px] text-[9px] tracking-[0.2em] text-[#e0ecf1] opacity-80 [text-shadow:0_1px_5px_#264452] max-[1100px]:invisible max-[850px]:hidden">
           THREENATIVE <span className="text-[#b9d8de]">/</span> SNOW STUDY
         </div>
         <div className="flex items-center gap-4 rounded-full border border-[rgb(210_233_244/0.18)] bg-[rgb(17_35_46/0.59)] px-[18px] py-[11px] text-[11px] text-[#d8e5eb] backdrop-blur-xl max-[850px]:hidden">

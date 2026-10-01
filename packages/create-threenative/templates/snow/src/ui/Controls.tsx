@@ -97,6 +97,7 @@ function Toggle({
 
 function ActionButton({
   children,
+  grow = false,
   label,
   onClick,
   primary = false,
@@ -104,6 +105,8 @@ function ActionButton({
   title,
 }: {
   readonly children: ReactNode;
+  /** Take the row's spare width, so a row of buttons spans its panel. */
+  readonly grow?: boolean;
   readonly label?: string;
   readonly onClick: () => void;
   readonly primary?: boolean;
@@ -114,7 +117,7 @@ function ActionButton({
     <button
       aria-label={label}
       aria-pressed={pressed}
-      className={`flex min-h-11 items-center justify-center gap-2 rounded-[9px] border px-3 text-[11px] backdrop-blur-md transition hover:brightness-110 ${
+      className={`flex min-h-11 items-center justify-center gap-2 rounded-[9px] border px-3 text-[11px] backdrop-blur-md transition hover:brightness-110 ${grow ? "flex-1" : ""} ${
         primary
           ? "border-[rgb(212_251_236/0.7)] bg-aqua/90 text-aqua-ink"
           : "border-line bg-[rgb(20_39_50/0.7)] text-text"
@@ -266,6 +269,16 @@ export function Controls({ state, send }: { readonly state: GameState; readonly 
             onToggle={() => send("set", { key: "compaction", value: !state.compaction })}
             pressed={state.compaction}
           />
+          {state.compaction ? (
+            <p className="mt-1 flex items-center gap-3 text-[10px] text-muted" aria-live="polite">
+              <span className="flex items-center gap-1.5">
+                <i className="h-2.5 w-2.5 rounded-sm bg-[#f2783a]" /> packed
+              </span>
+              <span className="flex items-center gap-1.5">
+                <i className="h-2.5 w-2.5 rounded-sm bg-[#3882ab]" /> fresh powder
+              </span>
+            </p>
+          ) : null}
           <p className="mb-3 mt-1 text-[10px] leading-relaxed text-muted">
             Fresh snow fills tracks over time. The time scale speeds up deposition, never walking or
             falling flakes.
@@ -274,6 +287,7 @@ export function Controls({ state, send }: { readonly state: GameState; readonly 
       </section>
       <div className="flex gap-2">
         <ActionButton
+          grow
           label={state.autoExplore ? "Turn auto-explore off" : "Turn auto-explore on"}
           onClick={() => send("auto")}
           pressed={state.autoExplore}

@@ -50,7 +50,8 @@ export function setupSky(scene: Scene): (storm: number) => void {
   scene.fog = fog;
   return (storm) => {
     fog.color.copy(CLEAR_FOG).lerp(STORM_FOG, storm);
-    fog.density = 0.016 + storm * 0.072;
+    // Thick enough to swallow the far forest, thin enough that the explorer stays readable.
+    fog.density = 0.016 + storm * 0.05;
     material.color.setScalar(1 - storm * 0.3);
   };
 }

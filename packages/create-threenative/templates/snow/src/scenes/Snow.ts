@@ -334,6 +334,20 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     });
     ctx.entities.add("weather", { debug: () => ({ storm: weather.storm, wind: weather.wind }) });
 
+    // The surface view frames the newest print far enough from the explorer to be seen past them.
+    const surfaceTarget = () => {
+      const print =
+        [...recentSteps]
+          .reverse()
+          .find(
+            (step) => Math.hypot(step.x - explorer.position.x, step.z - explorer.position.z) > 1.2,
+          ) ?? lastStep;
+      return {
+        x: print.x,
+        y: snow.heightAt(clampToField(print.x), clampToField(print.z)) + 0.12,
+        z: print.z,
+      };
+    };
     // ---- verbs: one function per action, shared by keys and the HUD ----
     let toastId = 0;
     let toast = "";
@@ -386,6 +400,11 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       } else if (command === "view") {
         view = (view + 1) % VIEWS.length;
         ctx.state.set({ view: VIEWS[view] });
+        if (VIEWS[view] === "surface") {
+          // Look back at the print from beyond it, so the explorer is never between.
+          const print = surfaceTarget();
+          orbit.yaw = Math.atan2(print.x - explorer.position.x, print.z - explorer.position.z);
+        }
       } else if (command === "auto") {
         autoExplore = !autoExplore;
         say(autoExplore ? "Auto-explore on." : "You are in control. Hold Shift to run.");
@@ -457,20 +476,6 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     });
     ctx.beforeRender(() => surface.refresh());
 
-    // The surface view frames the newest print far enough from the explorer to be seen past them.
-    const surfaceTarget = () => {
-      const print =
-        [...recentSteps]
-          .reverse()
-          .find(
-            (step) => Math.hypot(step.x - explorer.position.x, step.z - explorer.position.z) > 1.2,
-          ) ?? lastStep;
-      return {
-        x: print.x,
-        y: snow.heightAt(clampToField(print.x), clampToField(print.z)) + 0.12,
-        z: print.z,
-      };
-    };
     let waypoint = 0;
     let pointer: { x: number; y: number } | undefined;
     return (frameCtx, dt) => {
