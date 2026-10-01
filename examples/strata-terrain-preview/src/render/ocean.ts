@@ -26,6 +26,7 @@ import {
   color,
   float,
   mix,
+  mx_noise_float,
   positionLocal,
   positionWorld,
   smoothstep,
@@ -198,7 +199,12 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const shallow = smoothstep(float(0.5), float(12), depth);
   const water = mix(color(0x5ea7a9), color(0x153e54), shallow);
   const crest = smoothstep(float(1.6), float(3), relativeHeight);
-  const shoreFoam = float(1).sub(smoothstep(float(0.3), float(2.4), depth));
+  // Surf, not a contour. The foam band's width is the swell's: a depth threshold on its own draws a
+  // straight-edged white shape round every tidal flat in the world, which reads as spilled paint
+  // rather than as water breaking, so the band is narrow and its outer edge wanders with a noise at
+  // the scale of a breaking wave.
+  const surf = mx_noise_float(positionWorld.mul(0.35), 3).mul(0.5).add(0.5);
+  const shoreFoam = float(1).sub(smoothstep(float(0.2), float(1.1).add(surf.mul(1.5)), depth));
   const foam = crest.max(shoreFoam);
   material.colorNode = mix(water, color(FOAM), foam);
   material.opacityNode = smoothstep(float(-0.15), float(0.35), depth);

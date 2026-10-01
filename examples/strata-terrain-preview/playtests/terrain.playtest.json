@@ -101,6 +101,47 @@
     },
     {
       "kind": "input",
+      "label": "horizon-sea-view-1",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-2",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-3",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "horizon-sea",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "coastal-horizon-sea"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-player",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "sun-change",
       "press": "KeyL",
       "holdTicks": 2,

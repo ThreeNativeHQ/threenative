@@ -34,22 +34,60 @@ import baked from "./world/baked.json";
  * it is also where the dense grass goes: ground cover is placed around this point, not around the
  * origin, because a meadow is a place rather than a texture.
  */
-const BENCHMARK = {
+/** Every framing the `V` key can hold, whether or not the current world has one for it. */
+type ViewName = "horizon-sea" | "meadow-close" | "overview" | "player";
+
+interface IBenchmarkPose {
+  /** World x and z of the eye, and the height above the terrain under it. */
+  readonly at: readonly [number, number];
+  readonly eye: number;
+  /** World x and z to look at, and the height above the terrain under *that*. */
+  readonly look: readonly [number, number];
+  readonly lookUp: number;
+  /**
+   * An absolute world height to look at instead, for a target with no ground under it: a sea
+   * horizon is a direction, and thirty metres below the surface three hundred metres out is how a
+   * hillside tips its view down far enough for the water to be a band rather than a line.
+   */
+  readonly lookY?: number;
+}
+
+interface IBenchmark {
+  /** Where this world's ground cover is placed. */
+  readonly focus: { readonly x: number; readonly z: number };
+  readonly poses: Readonly<Record<string, IBenchmarkPose>>;
+  /** The order the `V` key walks, and the framings the playtest screenshots. */
+  readonly views: readonly ViewName[];
+}
+
+const BENCHMARK: Record<"coastal" | "forest", IBenchmark> = {
   forest: {
     // Eleven metres along the meadow-close camera's own line of sight, which is what makes the
     // meadow a place the camera is *in* rather than a disc it looks across: the blades that fill the
     // bottom of the frame are the ones this point scatters, and the ones thinning towards the ridge
     // are the same blades a hundred metres further off.
     focus: { x: 186, z: 76 },
-    "meadow-close": { at: [176, 84], eye: 1.7, look: [214, 44], lookUp: 2.2 },
-    overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
+    poses: {
+      "meadow-close": { at: [176, 84], eye: 1.7, look: [214, 44], lookUp: 2.2 },
+      overview: { at: [96, 168], eye: 92, look: [190, 40], lookUp: 8 },
+    },
+    views: ["player", "meadow-close", "overview"],
   },
   coastal: {
     focus: { x: 78, z: -128 },
-    "meadow-close": { at: [56, -108], eye: 1.7, look: [96, -146], lookUp: 2.2 },
-    overview: { at: [150, 60], eye: 110, look: [40, -80], lookUp: 6 },
+    poses: {
+      "meadow-close": { at: [56, -108], eye: 1.7, look: [96, -146], lookUp: 2.2 },
+      overview: { at: [150, 60], eye: 110, look: [40, -80], lookUp: 6 },
+      // Six metres up on the eastern headland, looking out along the coast: sixty metres of hillside
+      // in the foreground, then open water for the four hundred after it, which is the framing that
+      // says whether the sea meets the haze or ends in a line. Eye height rather than standing
+      // height, because the heightfield resolves every two metres and a camera a metre and a half
+      // above it frames its own triangulation.
+      "horizon-sea": { at: [150, 20], eye: 6, look: [450, 65], lookUp: 0, lookY: -30 },
+    },
+    views: ["player", "meadow-close", "overview", "horizon-sea"],
   },
-} as const;
+};
 
 /** The last closed frame-budget window, published into state by the scene. */
 const budget = { drawCalls: 0, frameMs: 0 };
@@ -411,7 +449,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       // Three framings, all fixed in world metres: the one the player walks behind, the eye-height
       // meadow view the rubric asks for, and the overview. They are data rather than a camera rig
       // so a capture at seed 73 is the same picture on every machine.
-      const poses = BENCHMARK[world];
+      const { poses, views } = BENCHMARK[world];
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
@@ -422,9 +460,17 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
           return;
         }
-        const pose = poses[view === "meadow-close" ? "meadow-close" : "overview"];
+        // A view this world has no framing for falls back to its overview rather than throwing:
+        // the cycle can only produce framings the world declares, and this is the last line of
+        // defence against a state that arrived from somewhere else.
+        const pose = poses[view] ?? poses.overview;
+        if (pose === undefined) throw new RangeError(`World '${world}' has no overview framing`);
         ctx.camera.position.copy(at(pose.at[0], pose.at[1], pose.eye));
-        ctx.camera.lookAt(at(pose.look[0], pose.look[1], pose.lookUp));
+        ctx.camera.lookAt(
+          pose.lookY === undefined
+            ? at(pose.look[0], pose.look[1], pose.lookUp)
+            : new Vector3(pose.look[0], pose.lookY, pose.look[1]),
+        );
       });
     }
 
@@ -432,9 +478,9 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       this.#elapsed += dt;
       this.#surfaces?.advance(this.#elapsed);
       if (ctx.input.justPressed("view")) {
-        const order = ["player", "meadow-close", "overview"] as const;
-        const current = order.indexOf(ctx.state.getState().view as (typeof order)[number]);
-        ctx.state.set({ view: order[(current + 1) % order.length] });
+        const cycle = BENCHMARK[world].views;
+        const current = cycle.indexOf(ctx.state.getState().view as ViewName);
+        ctx.state.set({ view: cycle[(current + 1) % cycle.length] ?? "player" });
       }
       this.#ocean?.advance(this.#elapsed);
       if (ctx.input.justPressed("light")) this.#sky?.setSunX(this.#sky.sunX < 0 ? 180 : -180);
