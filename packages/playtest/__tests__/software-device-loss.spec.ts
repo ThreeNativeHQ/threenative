@@ -45,6 +45,11 @@ const deviceLossCascade: IRunnerConsoleEntry[] = [
     text: "THREE.Error resolving queries: AbortError: Failed to execute 'mapAsync' on 'GPUBuffer': A valid external Instance reference no longer exists.",
     type: "error",
   },
+  {
+    source: "browser-console",
+    text: "OperationError: Instance dropped in popErrorScope\n    at http://127.0.0.1:4176/node_modules/.vite/deps/three_webgpu.js?v=fe38ffa0:55823:38",
+    type: "pageerror",
+  },
 ];
 
 const realError: IRunnerConsoleEntry = {
