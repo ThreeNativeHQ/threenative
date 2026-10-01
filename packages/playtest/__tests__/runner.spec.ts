@@ -12,7 +12,9 @@ import {
   type IPlaytestObservationSnapshot,
   type IPlaytestScenario,
 } from "../src/index.js";
+import { classifyAdapter } from "../src/evaluators/adapter-class.js";
 import type { JsonValue } from "../src/protocol.js";
+import type { IPlaytestReport } from "../src/report.js";
 import type { IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { exitCodeForReport } from "../src/runner/cli.js";
 import {
@@ -452,6 +454,10 @@ function reportWithAdapter(
   );
 }
 
+function errorCodes(report: IPlaytestReport): string[] {
+  return report.diagnostics.filter(({ severity }) => severity === "error").map(({ code }) => code);
+}
+
 test.each([
   ["architecture", { architecture: "swiftshader", vendor: "google" }],
   ["description", { description: "llvmpipe (LLVM 17, 256 bits)", vendor: "mesa" }],
@@ -460,6 +466,9 @@ test.each([
   const result = reportWithAdapter(adapter);
 
   expect(result.diagnostics.map(({ code }) => code)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+  // The scenario `reportWithAdapter` builds asserts nothing, so it is red whatever the adapter
+  // says. Asserting only `pass` here would leave this test green with the diagnostic demoted.
+  expect(errorCodes(result)).toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
   expect(result.pass).toBe(false);
 });
 
@@ -476,6 +485,41 @@ test("--allow-software accepts the fallback deliberately", () => {
   );
 
   expect(result.diagnostics.map(({ code }) => code)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+});
+
+// The browser's software adapter is a silent fallback, so it fails. A native host's is not: the
+// host reports its own `adapter.info`, and the hosted device lanes have no hardware to reach for
+// (the emulator is configured `-gpu swiftshader_indirect`, the Linux runners bind llvmpipe, the
+// Windows runner has no GPU and answers `Microsoft Basic Render Driver`). Both of these adapters
+// came out of a real CI failure with every assertion green, which is what a target-blind error here
+// looks like. The fact is still recorded, still labelled, and still carried on the report.
+test.each(["android", "desktop", "ios"] as const)(
+  "a software adapter the %s host reported itself is labelled, not failed",
+  (target) => {
+    const result = reportWithAdapter(
+      { device: "Microsoft Basic Render Driver", vendor: "microsoft" },
+      { ...CONFIG, target },
+    );
+    const diagnostic = result.diagnostics.find(({ code }) => code === "TN_PLAYTEST_SOFTWARE_ADAPTER");
+
+    expect(diagnostic?.severity).toBe("warning");
+    expect(diagnostic?.message).toContain("Microsoft Basic Render Driver");
+    // `reportWithAdapter`'s scenario asserts nothing, so it stays red on
+    // TN_PLAYTEST_SCENARIO_NO_ASSERTIONS. The claim is that the adapter no longer decides it.
+    expect(errorCodes(result)).not.toContain("TN_PLAYTEST_SOFTWARE_ADAPTER");
+  },
+);
+
+test("a software adapter on the desktop host still classifies the run as software", () => {
+  const result = reportWithAdapter(
+    { architecture: "swiftshader", vendor: "google" },
+    { ...CONFIG, target: "desktop" },
+  );
+
+  expect(classifyAdapter(result)).toEqual({
+    adapterClass: "software",
+    softwareAdapter: "swiftshader",
+  });
 });
 
 test("runner carries a supplied HUD observation into the evaluated report", () => {
