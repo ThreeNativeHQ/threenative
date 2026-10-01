@@ -248,7 +248,8 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     // length inside its own crown's shadow: untinted it renders as a black pole with a silhouette.
     // The lift is warm and well under 2, which keeps the plates legible without turning the trunk
     // into a highlight.
-    barkMaterial.colorNode = vec3(1.85, 1.7, 1.55);
+    // A set colorNode replaces `map`, so the lift multiplies the sampled bark instead of standing in for it.
+    barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(1.85, 1.7, 1.55));
   }
   if (bark.normal !== undefined) barkMaterial.normalMap = bark.normal;
   if (bark.roughness !== undefined) barkMaterial.roughnessMap = bark.roughness;
@@ -271,10 +272,12 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them reads
   // as a field of white cutouts.
   if (atlas !== undefined)
-    crownMaterial.colorNode = mix(
-      vec3(0.62, 0.74, 0.58),
-      vec3(0.86, 0.94, 0.78),
-      smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
+    crownMaterial.colorNode = texture(atlas).rgb.mul(
+      mix(
+        vec3(0.8, 0.9, 0.78),
+        vec3(1.35, 1.4, 1.15),
+        smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
+      ),
     );
   crownMaterial.roughness = 0.87;
   sway(crownMaterial, seconds, WIND.amplitude.crown);

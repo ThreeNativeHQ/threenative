@@ -45,6 +45,9 @@ export const VARIANTS = {
 const SPRUCE_CELLS = [ATLAS_CELLS.dense, ATLAS_CELLS.open, ATLAS_CELLS.tip];
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
+/** The share of a boulder's height that sits below the ground. */
+const BOULDER_BURIAL = 0.2;
+
 export type PropRole = "bark" | "crown" | "stone" | "grass" | "petal" | "stem";
 
 export interface IPropPart {
@@ -146,6 +149,13 @@ function preparePose(
       snap.enabled = false;
       snap.apply(model, ground.height, 0);
     }
+  }
+  // A boulder is a rock that is part buried: GroundSnap puts its lowest point on the surface, and on a
+  // slope the downhill side then hangs in the air. Sinking it by a share of its own height closes that.
+  if (grounding && !transform && placement.asset === "boulder" && ground.height !== null) {
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (box) model.position.y -= BOULDER_BURIAL * (box.max.y - box.min.y) * model.scale.y;
   }
   model.updateMatrix();
   if (!new Float32Array(model.matrix.elements).every(Number.isFinite))
