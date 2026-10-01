@@ -42,5 +42,5 @@ export type GameState = {
   toastId: number;
 };
 
-export const PROBE_COLUMNS = 12;
-export const PROBE_ROWS = 16;
+export const PROBE_COLUMNS = 15;
+export const PROBE_ROWS = 20;

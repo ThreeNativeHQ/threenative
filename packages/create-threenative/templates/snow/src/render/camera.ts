@@ -3,10 +3,21 @@ import type { PerspectiveCamera } from "three";
 import type { CameraView } from "../state.js";
 
 export function setupCamera(camera: PerspectiveCamera): void {
-  camera.fov = 43;
+  camera.fov = fieldOfView(camera.aspect);
   camera.near = 0.075;
   camera.far = 500;
   camera.updateProjectionMatrix();
+}
+
+/**
+ * Vertical field of view for an aspect ratio. A portrait phone keeps the landscape view's
+ * horizontal reach rather than its vertical angle, or the explorer fills the screen.
+ */
+export function fieldOfView(aspect: number): number {
+  if (aspect >= 1) return 43;
+  const horizontal = 2 * Math.atan(Math.tan((43 * Math.PI) / 360) * 1.25);
+  const vertical = 2 * Math.atan(Math.tan(horizontal / 2) / aspect);
+  return Math.min(70, (vertical * 180) / Math.PI);
 }
 
 /** Orbit distance and elevation (radians from straight down) for each view. */
@@ -62,6 +73,11 @@ export class OrbitFollow {
     const x = this.#target.x + Math.sin(this.yaw) * sine * this.#radius;
     const z = this.#target.z + Math.cos(this.yaw) * sine * this.#radius;
     const y = this.#target.y + Math.cos(this.#polar) * this.#radius;
+    const fov = fieldOfView(camera.aspect);
+    if (Math.abs(fov - camera.fov) > 0.01) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
     camera.position.set(x, Math.max(y, ground(x, z) + 0.3), z);
     camera.lookAt(this.#target.x, this.#target.y, this.#target.z);
   }

@@ -36,7 +36,7 @@ function Range({ id, label, value, min, max, step, format, send }: IRangeProps) 
         </output>
       </label>
       <input
-        className="snow-range mt-1.5"
+        className="snow-range mt-1.5 max-[850px]:h-11"
         data-tn-interactive
         id={id}
         max={max}
@@ -70,21 +70,26 @@ function Toggle({
   return (
     <div className="flex min-h-11 items-center justify-between text-[11px] text-text">
       <span id="compaction-label">{label}</span>
+      {/* The 44 px button is the hit area; the switch drawn inside it stays small. */}
       <button
         aria-labelledby="compaction-label"
         aria-pressed={pressed}
-        className={`relative h-[22px] w-[38px] rounded-full border transition-colors ${
-          pressed ? "border-aqua bg-aqua/80" : "border-line bg-black/20"
-        }`}
+        className="-mr-2 grid h-11 w-14 place-items-center"
         data-tn-interactive
         onClick={onToggle}
         type="button"
       >
         <span
-          className={`absolute top-[3px] h-[14px] w-[14px] rounded-full bg-text transition-transform ${
-            pressed ? "translate-x-[19px]" : "translate-x-[3px]"
+          className={`relative block h-[22px] w-[38px] rounded-full border transition-colors ${
+            pressed ? "border-aqua bg-aqua/80" : "border-line bg-black/20"
           }`}
-        />
+        >
+          <span
+            className={`absolute top-[3px] left-0 h-[14px] w-[14px] rounded-full bg-text transition-transform ${
+              pressed ? "translate-x-[19px]" : "translate-x-[3px]"
+            }`}
+          />
+        </span>
       </button>
     </div>
   );
@@ -168,7 +173,7 @@ export function Controls({ state, send }: { readonly state: GameState; readonly 
           {([false, true] as const).map((blizzard) => (
             <button
               aria-pressed={state.blizzard === blizzard}
-              className={`flex min-h-10 items-center justify-center gap-2 rounded-md px-1 text-[11px] transition-colors ${
+              className={`flex min-h-10 items-center justify-center gap-2 rounded-md px-1 text-[11px] transition-colors max-[850px]:min-h-11 ${
                 state.blizzard === blizzard ? "bg-aqua text-aqua-ink" : "text-muted hover:text-text"
               }`}
               data-tn-interactive

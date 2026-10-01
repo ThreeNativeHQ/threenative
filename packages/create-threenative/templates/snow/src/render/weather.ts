@@ -102,7 +102,9 @@ function flakeMaterial(
   material.colorNode = vec4(0.95, 0.977, 1, disc.mul(arms).mul(opacity).mul(shown));
   const size = pow(random(13), 3).mul(0.063).add(0.016);
   const widest = distance.mul(MAX_FLAKE_PIXELS).div(pixelScale);
-  material.scaleNode = vec2(size.min(widest).mul(shown));
+  // In a storm each flake streaks along the wind, the study's squashed-disc look made longer.
+  const drawn = size.min(widest).mul(shown);
+  material.scaleNode = vec2(drawn.mul(storm.mul(1.6).add(1)), drawn);
   return material;
 }
 

@@ -92,6 +92,13 @@ function Metric({
 }
 
 function Help({ onClose }: { readonly onClose: () => void }) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
   return (
     <div className="pointer-events-auto fixed inset-0 z-30 grid place-items-center bg-[#05182677] p-4 backdrop-blur-sm">
       <dialog
@@ -131,6 +138,8 @@ function Help({ onClose }: { readonly onClose: () => void }) {
         <button
           className="mt-2 min-h-11 w-full rounded-[7px] bg-aqua text-[12px] text-aqua-ink"
           data-tn-interactive
+          // biome-ignore lint/a11y/noAutofocus: a modal moves focus to its one action.
+          autoFocus
           onClick={onClose}
           type="button"
         >
@@ -172,6 +181,8 @@ function Hud() {
     <div className="pointer-events-none absolute inset-0 select-none text-text">
       {/* Vignette and storm veil: atmosphere only, never in the way of a click. */}
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgb(5_20_31/0.24),transparent_42%),linear-gradient(0deg,rgb(9_24_35/0.46),transparent_18%,transparent_80%,rgb(7_22_32/0.18))]" />
+      {/* A soft scrim under the header and readouts keeps small light text legible over snow. */}
+      <div className="absolute inset-x-0 top-0 h-[210px] bg-[linear-gradient(180deg,rgb(10_26_36/0.42),transparent)]" />
       <div
         className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,rgb(224_239_246/0.23))]"
         style={{ opacity: state.storm * 0.8 }}

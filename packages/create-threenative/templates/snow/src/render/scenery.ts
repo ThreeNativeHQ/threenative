@@ -97,17 +97,15 @@ function forest(materials: SnowMaterials, random: () => number, obstacles: IObst
     batch.trunks.setMatrixAt(batch.trees, dummy.matrix);
     batch.trees += 1;
     if (Math.hypot(x, z) < 20) obstacles.push({ height, radius: 0.23 * scale, x, z });
-    // A far tree is seen through haze at a few pixels a bough: every other tier of boughs, scaled
-    // up to cover, reads the same at a third of the triangles.
-    const stride = batch.near ? 1 : 2;
-    for (let level = 0; level < levels; level += stride) {
+    for (let level = 0; level < levels; level += 1) {
       const t = level / levels;
       const y = root + 0.75 + t * (height - 0.65);
       const radius = (1 - t) * height * 0.23 + 0.055;
-      const around = level > 12 ? 4 : 6;
+      // A far tree keeps every tier, so its silhouette holds, with fewer and wider boughs per tier.
+      const around = level > 12 || !batch.near ? 4 : 6;
       for (let index = 0; index < around; index += 1) {
         const angle = (index / around) * Math.PI * 2 + level * 0.72 + tree * 1.37;
-        const reach = radius * (0.8 + random() * 0.3) * (stride === 1 ? 1 : 1.15);
+        const reach = radius * (0.8 + random() * 0.3) * (batch.near ? 1 : 1.2);
         const dx = Math.cos(angle);
         const dz = Math.sin(angle);
         dummy.position.set(x + dx * reach * 0.53, y - 0.06, z + dz * reach * 0.53);

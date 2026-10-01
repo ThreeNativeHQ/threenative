@@ -66,8 +66,9 @@ export class TouchControls {
 
   constructor(camera: PerspectiveCamera) {
     this.#camera = camera;
-    this.#idleMaterial = overlayMaterial(palette.shadow, 0.34);
-    this.#activeMaterial = overlayMaterial(palette.accent, 0.6);
+    // On white snow a faint ring vanishes: a dark stick ring and an accent knob.
+    this.#idleMaterial = overlayMaterial(palette.floor, 0.6);
+    this.#activeMaterial = overlayMaterial(palette.accent, 0.8);
     this.#moveBase = ringMesh(MOVE_RADIUS, this.#idleMaterial);
     this.#moveKnob = new Mesh(new CircleGeometry(28, 24), this.#activeMaterial);
     this.root.add(this.#moveBase, this.#moveKnob);

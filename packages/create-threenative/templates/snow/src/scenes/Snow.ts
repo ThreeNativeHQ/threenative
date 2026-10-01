@@ -193,6 +193,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     const audio = new SnowAudio(camera, (name) => ctx.assets.audio(name));
     ctx.entities.add("audio", audio.bus);
 
+    const recentSteps: IFootstep[] = [];
     let lastStep: IFootstep = {
       angle: Math.PI,
       penetration: 0,
@@ -205,6 +206,8 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     const explorer = new Explorer(ctx.physics, snow, materials, { x: 0, z: 0 }, (step) => {
       if (step.penetration <= 0) return;
       lastStep = step;
+      recentSteps.push(step);
+      if (recentSteps.length > 8) recentSteps.shift();
       weather.burst(step, step.penetration);
       audio.footstep(step);
     });
@@ -341,6 +344,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     let view = 0;
     // The scene owns this; state only mirrors it, so a key and the panel never race the bridge.
     let autoExplore = initial.autoExplore;
+    let blizzard = initial.blizzard;
     const act = (command: Command): void => {
       const state = ctx.state.getState();
       if (command === "reset") {
@@ -386,11 +390,11 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         autoExplore = !autoExplore;
         say(autoExplore ? "Auto-explore on." : "You are in control. Hold Shift to run.");
       } else if (command === "blizzard") {
-        ctx.state.set({ blizzard: !state.blizzard });
+        blizzard = !blizzard;
         say(
-          state.blizzard
-            ? "Returning to soft snowfall."
-            : "Blizzard building — wind and visibility are changing.",
+          blizzard
+            ? "Blizzard building — wind and visibility are changing."
+            : "Returning to soft snowfall.",
         );
       } else if (command === "mute") {
         audio.setMuted(!audio.muted);
@@ -449,6 +453,20 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     });
     ctx.beforeRender(() => surface.refresh());
 
+    // The surface view frames the newest print far enough from the explorer to be seen past them.
+    const surfaceTarget = () => {
+      const print =
+        [...recentSteps]
+          .reverse()
+          .find(
+            (step) => Math.hypot(step.x - explorer.position.x, step.z - explorer.position.z) > 1.2,
+          ) ?? lastStep;
+      return {
+        x: print.x,
+        y: snow.heightAt(clampToField(print.x), clampToField(print.z)) + 0.12,
+        z: print.z,
+      };
+    };
     let waypoint = 0;
     let pointer: { x: number; y: number } | undefined;
     return (frameCtx, dt) => {
@@ -502,7 +520,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
         dt,
         explorer.position,
         frameCtx.viewport.size.height / (2 * Math.tan((camera.fov * Math.PI) / 360)),
-        state,
+        { ...state, blizzard },
       );
       lights.update(explorer.position, weather.storm);
       stormSky(weather.storm);
@@ -520,11 +538,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       orbit.setView(state.view);
       const target =
         state.view === "surface"
-          ? {
-              x: lastStep.x,
-              y: snow.heightAt(clampToField(lastStep.x), clampToField(lastStep.z)) + 0.12,
-              z: lastStep.z,
-            }
+          ? surfaceTarget()
           : {
               x: explorer.position.x,
               y: explorer.position.y + (state.view === "overhead" ? 0.25 : 0.8),
@@ -535,6 +549,7 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       const { gap, sink } = ballState();
       frameCtx.state.set({
         autoExplore,
+        blizzard,
         ballGap: gap,
         ballLoad: snowPhysics.loadOf(ball),
         ballSink: sink,
