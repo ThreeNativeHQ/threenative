@@ -5395,7 +5395,7 @@ createStormAudio(ctx: ICtx<GameState>): IStormAudio
 ```
 
 - **Use when:** rain hiss, wind bed, thunder, a storm you can hear · delay thunder by the distance it was struck · sound that follows pause, mute and tab visibility · audio that queues strikes instead of cutting each other off
-- **Constraints:** `queueStrike({ at, metres })` queues: a second strike does not overwrite one still crossing the air, and `at` is absolute simulation time, which is what lets a strike survive a freeze. · Two holds, kept apart so neither latches the other: `setSilenced` is the game's own pause intent, `setHidden` is the UI realm or engine lifecycle visibility. The bus is released only when both are clear. · `update(state)` is the frame's truth and is called once per frame after the simulation advances; `debug()` is what a playtest reads back. · The caller owns entity registration, updates and disposal; creating the helper does not register it. · Audio begins only after a user gesture — the bus's unlock error is surfaced rather than swallowed. · The three clips are baked by `tools/make-storm-audio.mjs` from the study's own maths; this file plays them, it does not synthesise them live. · The helper requests the source's compressor settings ahead of master gain: threshold -15 dB, knee 30 dB, ratio 5, attack 0.003 s and release 0.25 s. Full game runtime and native audio proof remain pending. · What has been exercised is this maths and wiring against the engine's real `AudioBus`; no browser build and no native target has run this file, so it claims neither. · This entry describes the Rain starter scaffold's own generated `src/audio/storm.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+- **Constraints:** `queueStrike({ at, metres })` queues: a second strike does not overwrite one still crossing the air, and `at` is absolute simulation time, which is what lets a strike survive a freeze. · Two holds, kept apart so neither latches the other: `setSilenced` is the game's own pause intent, `setHidden` is the UI realm or engine lifecycle visibility. The bus is released only when both are clear. · `update(state)` is the frame's truth and is called once per frame after the simulation advances; `debug()` is what a playtest reads back. · The caller owns entity registration, updates and disposal; creating the helper does not register it. · Audio begins only after a user gesture — the bus's unlock error is surfaced rather than swallowed. · The three clips are baked by `tools/make-storm-audio.mjs` from the study's own maths; this file plays them, it does not synthesise them live. · The helper requests the source's compressor settings ahead of master gain: threshold -15 dB, knee 30 dB, ratio 5, attack 0.003 s and release 0.25 s. · Each thunder voice is a labelled `thunder` cue, so a playtest's `audio` assertion reads it from the runtime ledger; the rain kit's `playtests/lightning.playtest.json` proves one cue after a strike, sounded only once the strike's `distance / 343` delay had passed. · This entry describes the Rain starter scaffold's own generated `src/audio/storm.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
 
 ```ts
 src/audio/storm.ts — register the returned helper, call update(state) after advancing the simulation, and dispose it with the owning scene
@@ -5451,6 +5451,23 @@ renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }
 renderer: { projection: false } // in threenative.config.ts
 ```
 
+## `src/render/lightning.ts`
+
+### `createStormLightning`
+
+`function` — A branching lightning bolt as generated Rain source: `makeBolt(end, random)` walks a 30-segment channel down from the cloud deck with side branches, and one additive camera-facing ribbon draw (gaussian core inside a wide halo) shows it while the caller's flash envelope is above zero. `strike(position, random)` returns where the bolt entered the sky.
+
+```ts
+createStormLightning(scene: Scene, camera: PerspectiveCamera): IStormLightning
+```
+
+- **Use when:** generate branching lightning ribbon geometry · a lightning strike that lights the scene and the clouds · a camera-facing ribbon or beam that stays the same pixel width at any distance · a flash envelope that stutters rather than fades once
+- **Constraints:** Pass the game's seeded random so a strike is reproducible; a non-finite position or random value throws rather than drawing NaN geometry. · The buffers hold the worst case (30 channel segments plus 24 branches of 9) and are allocated once; a strike rewrites them and opens the draw range, never reallocating. · `update(flash)` takes an envelope already gated on photosensitivity mode by the caller; below 0.003 the mesh is hidden. Register it with `alwaysRender`: its quads are projected by its own vertex stage, so its bounds say nothing about where it lands. · It depth-tests against the coast's written depth, so a bolt behind the headland is hidden by it. · This entry describes the Rain starter scaffold's own generated `src/render/lightning.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/render/lightning.ts — the bolt; src/state.ts `flashAt` for the envelope; src/scenes/Boot.ts strike() for the thunder delay
+```
+
 ## `src/render/noise-volume.ts`
 
 ### `createNoiseVolume`
@@ -5468,6 +5485,23 @@ createNoiseVolume(): INoiseVolume
 src/render/noise-volume.ts — edit the seed, the lattices or the channel weights there
 ```
 
+## `src/render/rain.ts`
+
+### `createStormRain`
+
+`function` — Camera-anchored falling rain as generated Rain source: one instanced draw whose vertex stage hashes each drop from its index, wraps it in a 66 × 30 × 66 m cell that follows the camera in 12 m steps, and projects a quad stretched along its own fall — no particle simulation, no texture.
+
+```ts
+createStormRain(scene: Scene, camera: PerspectiveCamera): IStormRain
+```
+
+- **Use when:** rain streaks around the camera · thousands of falling drops in one draw · rain that leans with the wind and lights up in a lightning flash
+- **Constraints:** The drawn count is `round(rainBudget × weather.rain)` for the tier, read back from `geometry.instanceCount` (`instanceCount`), not from the budget. · Stateless by design: a drop's position is a function of its index and the clock, so pausing the clock freezes the rain and nothing accumulates. `GPUParticles3D` is the engine's emitter with lifetimes; reach for it when drops must spawn, live and die. · Register it with `alwaysRender`: the vertex stage places every drop, so the geometry's own bounds do not. · This entry describes the Rain starter scaffold's own generated `src/render/rain.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/render/rain.ts — the drop maths; `STUDY_TIERS` in src/render/quality.ts for the per-tier budget
+```
+
 ## `src/render/world.ts`
 
 ### `createWeatherWorld`
@@ -5479,7 +5513,7 @@ createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld
 ```
 
 - **Use when:** a procedural storm, sea, coastline or open horizon drawn from maths rather than geometry · rain and wind that change how a scene looks without swapping a mesh · a lightning flash that lights the coast and the sky at once · wet reflections on a ground plane · sky that darkens as cloud cover rises
-- **Constraints:** `update` takes `{ elapsed, flash, rainBudget, weather, strike, quality }`: absolute seconds, a flash envelope already gated on the photosensitivity switch by the caller, the strike position in metres, and a quality name of `performance | balanced | high | ultra`. · `quality: "performance"` sets the reflection march to 0 — the 36-step pass is skipped exactly as the source shader's switch does, so a low tier loses reflections, not the coast. · The engine's `Scene` and `PerspectiveCamera` are injected as arguments; the file holds no engine lifetime of its own. `dispose()` removes the quad and disposes the geometry, material and sky texture — the scene does not do it for you. · The quad has `frustumCulled = false`, because its two-metre bounds would otherwise be culled the moment the camera looks along the coast. · The cloud pass is built first and its texture feeds the world shader; `update` also drives the clouds. This world pass contains no particle renderer. · `rainBudget` is accepted and unused, and no particle draw count is claimed for it — the raymarch draws no drop instances. It is kept because the drop pass to come is what will read it. · This entry describes the Rain starter scaffold's own generated `src/render/world.ts`, not a `@threenative/` or three export — there is no installed package to import it from. Appearance lives in that source with no package import at all; nothing in packages/ decides how this storm looks.
+- **Constraints:** `update` takes `{ elapsed, flash, weather, strike, quality }`: absolute seconds, a flash envelope already gated on the photosensitivity switch by the caller, the bolt's entry point in the cloud deck in metres (what the clouds glow around and the coast is lit from), and a quality name of `performance | balanced | high | ultra`. · The tier's cloud resolution share, march steps and reflection switch come from `STUDY_TIERS` in src/render/quality.ts; `performance` skips the 36-step reflection march, so a low tier loses reflections, not the coast. `clouds()` reads back the cloud target the renderer really drew and its steps. · Its colours and lights are uniforms set once from src/render/palette.ts, sky.ts, lighting.ts and materials.ts; the shader itself is generated from tools/tempest-*.frag by tools/generate-shaders.mjs — edit the .frag, not the generated file. · The engine's `Scene` and `PerspectiveCamera` are injected as arguments; the file holds no engine lifetime of its own. `dispose()` removes the quad and disposes the geometry, material and sky texture — the scene does not do it for you. · The quad has `frustumCulled = false`, because its two-metre bounds would otherwise be culled the moment the camera looks along the coast. · The cloud pass is built first and its texture feeds the world shader (sampled with the render-target flip); `update` also drives the clouds. Rain streaks and the bolt are separate draws: `createStormRain`, `createStormLightning`. · This entry describes the Rain starter scaffold's own generated `src/render/world.ts`, not a `@threenative/` or three export — there is no installed package to import it from. Appearance lives in that source with no package import at all; nothing in packages/ decides how this storm looks.
 
 ```ts
 src/render/world.ts — edit the shader there, or the weather it is fed from src/state.ts

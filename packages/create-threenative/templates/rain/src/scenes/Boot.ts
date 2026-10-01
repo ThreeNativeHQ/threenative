@@ -48,12 +48,14 @@ export class Coast extends Scene<GameState> {
   #rain: IStormRain | undefined;
   #post: IStormPost | undefined;
   #lightning: IStormLightning | undefined;
+  #measureClouds: (() => GameState["cloudPass"]) | undefined;
 
   static override readonly initialState: GameState = {
     audioEnabled: false,
     autoLightning: true,
     cameraReset: false,
     cinematic: false,
+    cloudPass: { height: 0, steps: 0, width: 0 },
     droplets: true,
     dropCount: 0,
     elapsed: START_TIME,
@@ -109,6 +111,7 @@ export class Coast extends Scene<GameState> {
     this.#rain = rain;
     this.#post = post;
     this.#lightning = lightning;
+    this.#measureClouds = world.clouds;
     // Registered, so the engine's registry disposes it with the game and `game.ts` can reach it by
     // name for the two holds that arrive outside a frame (the pause intent and tab visibility).
     const audio = ctx.entities.add(STORM_AUDIO_ENTITY, createStormAudio(ctx));
@@ -248,18 +251,27 @@ export class Coast extends Scene<GameState> {
   }
 
   /**
-   * The launch, published from the render hook rather than the simulation frame: a frame is drawn
-   * whether or not the clock moved (a paused or tick-driven run draws without simulating), and the
-   * loading curtain must lift on the frame that shows the storm. First-use compilation settling is
-   * that moment; the stricter `phase === "ready"` also waits for a frame-time window a slow GPU may
-   * never meet.
+   * The launch and the cloud target, published from the render hook rather than the simulation
+   * frame: a frame is drawn whether or not the clock moved (a paused or tick-driven run draws
+   * without simulating), the loading curtain must lift on the frame that shows the storm, and the
+   * cloud target is only resized by the render itself. First-use compilation settling is the
+   * moment the storm is on screen; the stricter `phase === "ready"` also waits for a frame-time
+   * window a slow GPU may never meet.
    */
   override render(ctx: WeatherCtx): void {
     const progress = ctx.startup.progress;
     const ready = ctx.startup.compileSettled || ctx.startup.phase === "ready";
-    const current = ctx.state.getState().loading;
-    if (current.ready === ready && current.progress === progress) return;
-    ctx.state.set({ loading: { progress, ready } });
+    const current = ctx.state.getState();
+    // Read after the frame was drawn, so it is the target the cloud pass really rendered into.
+    const clouds = this.#measureClouds?.() ?? current.cloudPass;
+    const same =
+      current.loading.ready === ready &&
+      current.loading.progress === progress &&
+      current.cloudPass.width === clouds.width &&
+      current.cloudPass.height === clouds.height &&
+      current.cloudPass.steps === clouds.steps;
+    if (same) return;
+    ctx.state.set({ cloudPass: clouds, loading: { progress, ready } });
     ctx.state.flush();
   }
 

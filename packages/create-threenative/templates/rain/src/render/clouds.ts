@@ -48,6 +48,8 @@ export interface ICloudPassOptions {
 export interface ICloudPass {
   /** The node the world shader samples for its sky and its reflections. */
   readonly sky: ReturnType<PassNode["getTextureNode"]>;
+  /** The cloud target as the renderer last sized it, and the march steps it ran: read, not asked. */
+  measured(): { readonly height: number; readonly steps: number; readonly width: number };
   dispose(): void;
   update(options: {
     readonly elapsed: number;
@@ -91,6 +93,11 @@ export function createCloudPass({ camera }: ICloudPassOptions): ICloudPass {
 
   return {
     sky,
+    measured: () => ({
+      height: pass.renderTarget.height,
+      steps: uSteps.value,
+      width: pass.renderTarget.width,
+    }),
     dispose(): void {
       pass.dispose();
       geometry.dispose();

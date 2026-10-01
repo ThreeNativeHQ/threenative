@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9014084507042254,
+  "recallAtK": 0.9041095890410958,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -64,10 +64,12 @@
     "prd451.merge-parts",
     "rain.weather-world",
     "rain.noise-volume",
-    "rain.storm-audio"
+    "rain.storm-audio",
+    "rain.lightning",
+    "rain.streaks"
   ],
   "rejectHits": 16,
-  "rowCount": 71,
+  "rowCount": 73,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -139,10 +141,12 @@
     "prd451.merge-parts",
     "rain.weather-world",
     "rain.noise-volume",
-    "rain.storm-audio"
+    "rain.storm-audio",
+    "rain.lightning",
+    "rain.streaks"
   ],
   "version": 1,
-  "zeroResultRate": 0.07042253521126761,
+  "zeroResultRate": 0.0684931506849315,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

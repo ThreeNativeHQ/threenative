@@ -241,6 +241,8 @@ export type GameState = {
   strikes: number;
   /** The last strike: simulation time, metres from the camera, and its thunder delay in seconds. */
   lastStrike: { at: number; delay: number; metres: number };
+  /** The cloud target the renderer really drew last frame, and the march steps it ran. */
+  cloudPass: { width: number; height: number; steps: number };
   /** The engine's launch: how far first-use compilation has got, and whether the frame is ready. */
   loading: { progress: number; ready: boolean };
   /** The automation's stopped clock: frames still draw, only `stepRequest` advances it. */
