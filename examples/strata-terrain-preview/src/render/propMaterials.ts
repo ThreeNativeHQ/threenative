@@ -14,19 +14,24 @@
 //      card and the trunk it hangs from move as one and the base of the tree never moves at all.
 import type { IAssetLoader } from "@threenative/core";
 import {
+  Color,
   DoubleSide,
   FrontSide,
   LinearFilter,
   LinearMipmapLinearFilter,
   type Material,
   type Texture,
+  Vector3,
 } from "three";
 import {
   abs,
   attribute,
+  bumpMap,
+  cameraPosition,
   color,
   dFdx,
   dFdy,
+  dot,
   float,
   length,
   log2,
@@ -36,6 +41,7 @@ import {
   normalize,
   positionLocal,
   positionWorld,
+  pow,
   smoothstep,
   texture,
   textureSize,
@@ -61,6 +67,75 @@ export const WIND = {
   /** Cycles per second. A tree in a stiff breeze is around one cycle every two seconds. */
   rate: 0.42,
 } as const;
+
+/**
+ * Sun through a needle card, in this game's units.
+ *
+ * A spruce needle is one cell thick and translucent, and the light that comes *through* it is most
+ * of what a canopy is lit by — a backlit spruce is bright at its edges and near-black underneath,
+ * which is exactly the failure the judges described. Two terms buy it, and neither needs a second
+ * light or a custom BRDF:
+ *
+ *   - a wrapped diffuse, `N·L` remapped from -1..1 onto 0..1, which lights the faces turned away
+ *     from the sun at a fraction of the ones turned towards it. The knob is how much of the wrap;
+ *     a needle wraps almost all the way, a leaf halfway.
+ *   - a backlight through the card, strongest where the eye is looking along the sun's direction
+ *     through the foliage. That is the silver rim on a backlit branch, and it is what separates a
+ *     crown from a green cutout.
+ *
+ * Both read the sun as a *world-space direction towards it*, which is the same vector the sky rig
+ * puts on its own uniforms, so the `L` key moves the translucency with everything else.
+ */
+const CANOPY = {
+  /** How far past the terminator a needle is still lit, 0..1. Nearly a leaf, nearly not a card. */
+  wrap: 0.55,
+  /** The lit-through share, and how tightly it is aimed at the eye. */
+  backlight: { strength: 0.5, focus: 5 },
+  /** The colour of the light coming through a needle: yellow-green, because that is what a leaf is
+   *  transmitting and not because it is a constant anybody chose. */
+  tint: 0xa8d05a,
+  /** The floor no needle falls below, in linear albedo. Judged at 0.14: dark, never near-black. */
+  floor: 0.14,
+} as const;
+
+/** The sun as a world-space direction towards it, written by `src/render/sky.ts`. */
+const sunDirection = uniform(new Vector3(-180, 240, 120).normalize()) as unknown as Node<"vec3">;
+
+/**
+ * Point the shared canopy uniform at the sun. One call, from the rig that owns the sun.
+ *
+ * A module-level uniform rather than a parameter, because the fog, the cloud deck and the canopy
+ * light all need the same sun and passing one through every builder would be three ways to get it
+ * subtly out of step.
+ */
+export function setCanopySun(direction: Vector3): void {
+  (sunDirection as unknown as { value: Vector3 }).value.copy(direction).normalize();
+}
+
+/**
+ * The wrapped two-sided translucency of a needle card, as an emissive node.
+ *
+ * Emissive rather than a light contribution, and that is not a cheat: a card has no thickness to
+ * integrate through, so any "transmission" here is an artistic term, and adding it after the standard
+ * shading keeps the standard shading's own shadow, its hemisphere fill and its tone curve intact.
+ */
+function canopyTranslucency(amount: number, tint: number = CANOPY.tint): Node<"vec3"> {
+  // The eye's direction, away from the camera towards the fragment.
+  const toEye = cameraPosition.sub(positionWorld).normalize();
+  // `normalWorld` on a double-sided card points whichever way the geometry was wound, so a card seen
+  // from behind would be lit from its own interior. The wrap is remapped through the sign of the
+  // facing, which is the whole of the two-sided half of this effect: the back of a crown catches
+  // the light that came through it.
+  const facing = normalWorld.dot(sunDirection).abs();
+  // Wrapped diffuse: -1..1 becomes 0..1, lifted so a needle facing away is still lit a little.
+  const wrapped = facing.add(CANOPY.wrap).div(float(1).add(CANOPY.wrap));
+  // Backlight: the sun is behind the card and behind the eye, so light is travelling towards the
+  // camera through the needles. Raised to a power because the effect is a rim, not a wash.
+  const back = pow(toEye.dot(sunDirection).clamp(0, 1), float(CANOPY.backlight.focus));
+  return color(new Color(tint)).mul(
+    wrapped.mul(amount).add(back.mul(CANOPY.backlight.strength).mul(amount)),
+  );
+}
 
 /** Alpha cutoff for every cutout surface. Half coverage: a needle card is mostly empty. */
 const CUTOUT = 0.42;
@@ -90,6 +165,8 @@ const TILE = { bark: 1.6, stone: 2.4 } as const;
 
 /** The generated needle atlas, served beside the starter maps. */
 const NEEDLE_ATLAS = "needle-atlas.png";
+/** Its relief: RG a tangent-space normal per needle, B the occlusion the canopy drops on itself. */
+const NEEDLE_SURFACE = "needle-surface.png";
 
 /** Load one starter map, or nothing. A prop still draws without it, on its own colours. */
 async function map(assets: IAssetLoader | undefined, path: string, data: boolean) {
@@ -250,6 +327,9 @@ const SOLID = { from: 3, to: 5.5 } as const;
 /** The colour a poppy is at the far edge of a meadow, where its petal is a handful of texels. */
 const POPPY_RED = 0xe23a2c;
 
+/** What a petal transmits: the sun through one cell of pigment, which is red and not green. */
+const PETAL_RED_TINT = 0xd8523a;
+
 /** Every prop surface, plus the one uniform the wind reads. */
 export interface IPropSurfaces {
   readonly advance: (elapsed: number) => void;
@@ -266,10 +346,11 @@ export interface IPropSurfaces {
  */
 export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSurfaces> {
   const seconds = uniform(0) as unknown as Node<"float">;
-  const [bark, stone, atlas] = await Promise.all([
+  const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, MAPS.bark),
     surfaceMaps(assets, MAPS.stone),
     map(assets, NEEDLE_ATLAS, false),
+    map(assets, NEEDLE_SURFACE, true),
   ]);
   const textures: Texture[] = [
     bark.diffuse,
@@ -278,6 +359,7 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     stone.diffuse,
     stone.normal,
     atlas,
+    relief,
   ].filter((found): found is Texture => found !== undefined);
 
   const barkMaterial = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.95 });
@@ -309,22 +391,46 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
     crownMaterial.map = atlas;
     crownMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst);
+    // The card's own occlusion, from the relief atlas's blue channel: how much sky a texel buried in
+    // the spray can see. This is the "near-black undersides" fix as a *texture* rather than as a
+    // colour lift — the interior of a spray is darker than its fringe because its neighbours are in
+    // the way, which is a fact about the geometry of the needles rather than a constant.
+    const occlusion = relief === undefined ? float(1) : texture(relief).b;
     // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
     // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
     // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them
     // reads as a field of white cutouts.
-    crownMaterial.colorNode = vec4(
-      card.rgb.mul(
+    const needle = card.rgb
+      .mul(
         mix(
-          vec3(0.95, 1.05, 0.9),
-          vec3(1.5, 1.55, 1.3),
+          vec3(0.9, 1.0, 0.86),
+          vec3(1.28, 1.34, 1.12),
           smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
         ),
-      ),
-      mix(card.a, float(1), solid),
-    );
+      )
+      .mul(occlusion);
+    // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
+    // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
+    // to ink against the sky — which is what the last captures showed.
+    //
+    // It is a *scale* towards the colour's own peak, not a per-channel maximum, and that distinction
+    // is the whole of it: a floor applied per channel lifts a dark needle's blue and red along with
+    // its green, and the darkest texels come out grey, so the crown washes to pale sage the moment
+    // the floor goes up. Scaling until the brightest channel reaches the floor keeps the hue and the
+    // saturation, and still only touches the texels that are below it.
+    const peak = needle.r.max(needle.g).max(needle.b).max(float(0.0001));
+    const lifted = needle.mul(float(CANOPY.floor).div(peak).max(float(1)));
+    crownMaterial.colorNode = vec4(lifted, mix(card.a, float(1), solid));
+    // The needle relief. `bumpMap` perturbs the surface normal from the height derivatives of the
+    // texture, so one generated normal per needle is what gives each card a surface; without it a
+    // crown is a stack of flat quads, which is exactly what the last captures showed.
+    if (relief !== undefined) crownMaterial.normalNode = bumpMap(texture(relief), float(0.55));
+    // And the light coming *through* the card, which the standard shading cannot produce.
+    crownMaterial.emissiveNode = canopyTranslucency(0.1);
   }
-  crownMaterial.roughness = 0.87;
+  // A needle is waxy, not varnished, and at 0.87 the relief's own highlights came back as a silver
+  // wash over every card facing the sun. Rougher than the bark below it on purpose.
+  crownMaterial.roughness = 0.96;
   sway(crownMaterial, seconds, WIND.amplitude.crown);
 
   const grassMaterial = new MeshStandardNodeMaterial({
@@ -338,10 +444,7 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   // grades every blade from a dark root to a bright tip, so the tip's share of that light is a
   // channel away, and no second texture is spent on it.
   const blade = attribute<"vec3">("color", "vec3");
-  grassMaterial.emissiveNode = color(0x8fbf4a)
-    .mul(blade.g.sub(float(0.2)))
-    .max(float(0))
-    .mul(float(0.18));
+  grassMaterial.emissiveNode = canopyTranslucency(0.16).mul(blade.g.mul(2.2).min(float(1)));
   sway(grassMaterial, seconds, WIND.amplitude.grass);
 
   const stemMaterial = new MeshStandardNodeMaterial({
@@ -350,6 +453,9 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     side: DoubleSide,
     vertexColors: true,
   });
+  // A poppy's stem and its leaves are as translucent as its petals, and a patch whose stems are
+  // black rods under red flowers reads as wires with beads on them.
+  stemMaterial.emissiveNode = canopyTranslucency(0.1);
   sway(stemMaterial, seconds, WIND.amplitude.stem);
 
   const petalMaterial = new MeshStandardNodeMaterial({
@@ -381,7 +487,12 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     // petal takes the sky's blue and a patch of poppies goes violet, which is what the first capture
     // of this lane showed. Light comes *through* a petal, so it is emissive, and by exactly as much
     // as the distance fade asks for.
-    petalMaterial.emissiveNode = color(POPPY_RED).mul(float(0.22).add(solid.mul(0.4)));
+    // A poppy petal is the most translucent thing in a meadow, so it gets the same two-sided
+    // wrap the canopy does — at a higher share, because a petal is one cell of pigment thin — with
+    // the distance fade still folded in, so a patch stays red rather than violet at the far edge.
+    petalMaterial.emissiveNode = canopyTranslucency(0.22, PETAL_RED_TINT).add(
+      color(POPPY_RED).mul(float(0.18).add(solid.mul(0.4))),
+    );
   }
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 

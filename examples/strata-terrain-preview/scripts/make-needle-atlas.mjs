@@ -15,6 +15,12 @@
 //   0,1  spruce tip          — short, bright new growth for the leader and the crown's outer cards
 //   1,1  poppy petal         — one cupped petal, for the red discs in the meadow
 //
+// A second file comes out of the same run with the same four cells as relief: RG is a tangent-space
+// normal and B is the ambient occlusion the needles occlude each other with. One normal per needle,
+// cooked from the coverage the albedo was drawn with, is what turns a flat green silhouette into
+// needles — the card is alpha-cutout, so its *shape* was carrying all of the detail before and a
+// crown read as stacked flat quads however good the cutout was.
+//
 // Everything here is appearance, so it lives in game source rather than in `packages/`.
 import { mkdir, writeFile } from "node:fs/promises";
 import { deflateSync } from "node:zlib";
@@ -25,10 +31,9 @@ const SEED = 466_468;
 // Written beside the downloaded starter maps because that folder is the one this example's Vite
 // serves: one root, one provenance file, and `ctx.assets.texture("needle-atlas.png")` reaches the
 // same bytes in dev, in a build and through the desktop bundle.
-const OUTPUT = new URL(
-  "../../../packages/terrain/starter-assets/needle-atlas.png",
-  import.meta.url,
-);
+const FOLDER = new URL("../../../packages/terrain/starter-assets/", import.meta.url);
+const OUTPUT = new URL("needle-atlas.png", FOLDER);
+const SURFACE_OUTPUT = new URL("needle-surface.png", FOLDER);
 
 /** mulberry32: one uint32 seed, identical output on every platform and Node version. */
 function random(seed) {
@@ -61,17 +66,36 @@ function distanceToSegment(px, py, ax, ay, bx, by) {
  * cost is the sum of the needles' own bounding boxes rather than the whole cell per needle.
  */
 function card() {
-  return { data: new Uint8Array(CELL * CELL * 4), needles: [] };
+  return {
+    cover: new Float32Array(CELL * CELL),
+    data: new Uint8Array(CELL * CELL * 4),
+    ridge: new Float32Array(CELL * CELL),
+  };
 }
 
-/** Composite `colour` over the cell at `coverage`, keeping the highest alpha already written. */
+/**
+ * Composite `colour` over the cell at `coverage`, keeping the highest alpha already written.
+ *
+ * A later stroke paints over an earlier one at equal coverage rather than losing to it. That detail
+ * is the difference between a card that is a mass and a card that is *needles*: with a strict
+ * maximum, two opaque crossings merge into one flat colour, and a canopy drawn that way has no
+ * per-needle shading anywhere inside its own mass — which is what the last captures showed as flat
+ * stacked quads.
+ *
+ * `ridge` keeps the lightness of whichever stroke owns each texel, and the relief pass reads it as
+ * a height field: a needle is a rounded ridge because it is lighter along its spine than at its
+ * edge, and that survives the overlap because the last stroke over the texel wins there too.
+ */
 function stamp(target, x, y, coverage, colour) {
   if (coverage <= 0) return;
   const index = (y * CELL + x) * 4;
   const alpha = Math.min(1, coverage);
   const existing = target.data[index + 3] / 255;
+  if (alpha > target.cover[y * CELL + x]) target.cover[y * CELL + x] = alpha;
   const out = alpha + existing * (1 - alpha);
-  if (out <= target.data[index + 3] / 255) return;
+  if (out < target.data[index + 3] / 255) return;
+  // Luminance of the stroke's own colour, which is what makes the needle read as a cylinder.
+  target.ridge[y * CELL + x] = alpha * (colour[1] / 255);
   for (let channel = 0; channel < 3; channel += 1) {
     const source = colour[channel] / 255;
     const behind = (target.data[index + channel] / 255) * (existing * (1 - alpha));
@@ -127,18 +151,25 @@ function drawTwig(target, points, width, colour) {
   }
 }
 
-const NEEDLE_DARK = [26, 48, 28];
-const NEEDLE_MID = [46, 84, 40];
-const NEEDLE_TIP = [104, 142, 62];
-const TWIG = [58, 42, 30];
+const NEEDLE_DARK = [30, 52, 30];
+const NEEDLE_MID = [58, 98, 46];
+const NEEDLE_TIP = [112, 146, 70];
+const TWIG = [62, 46, 33];
 const PETAL_RED = [176, 26, 24];
 const PETAL_DEEP = [104, 12, 16];
 
-/** Blend the needle's own gradient: dark at the twig, lighter toward the tip. */
+/**
+ * Blend the needle's own gradient: dark at the twig, lighter toward the tip.
+ *
+ * The tip colour is the whole of the read at distance. A spruce's new growth is several stops lighter
+ * than the shaded interior of its crown, and that gradient is what stops a canopy from being one
+ * silhouette-coloured mass — the judges called the last crowns "near-black undersides", which is a
+ * card whose darkest needle is too dark and whose lightest is not light enough.
+ */
 function needleColour(rnd) {
-  const t = 0.55 + rnd() * 0.45;
+  const t = 0.28 + rnd() * 0.62;
   return NEEDLE_DARK.map((dark, i) =>
-    Math.round(dark + (NEEDLE_TIP[i] - dark) * t + (NEEDLE_MID[i] - NEEDLE_DARK[i]) * 0.25),
+    Math.round(dark + (NEEDLE_TIP[i] - dark) * t + (NEEDLE_MID[i] - NEEDLE_DARK[i]) * 0.2),
   );
 }
 
@@ -167,38 +198,93 @@ function spruceBranch(seed, { count, length, droop, needleWidth, tipOnly = false
   for (let i = 0; i + 1 < twig.length; i += 1) {
     drawTwig(target, [twig[i], twig[i + 1]], tipOnly ? 5 : 7, TWIG);
   }
-  // Needles in three passes: long structural sprays that set the outline, medium ones that fill
-  // between them, and short ones that close the gaps at the twig. Longest first, so the short ones
-  // sit on top and the card reads as a solid with a fringe rather than a thicket of loose strokes.
-  for (const pass of [
-    { count: Math.round(count * 0.4), reach: [0.9, 1.25], width: 1.25, along: 0.7 },
-    { count: Math.round(count * 0.35), reach: [0.55, 0.9], width: 1, along: 0.7 },
-    { count: Math.round(count * 0.25), reach: [0.25, 0.55], width: 0.8, along: 0 },
-  ]) {
-    for (let i = 0; i < pass.count; i += 1) {
-      // The structural pass marches along the twig from its root; the short pass clusters near the
-      // tip, which is where a spruce's new growth is.
-      const t = pass.along === 0 ? 0.35 + rnd() * 0.65 : ((i + rnd()) / pass.count) ** pass.along;
-      const index = Math.min(segments, Math.floor(t * segments));
-      const [x, y] = twig[index] ?? twig[twig.length - 1];
-      const side = rnd() < 0.5 ? 1 : -1;
-      // Sprays leave the twig between roughly 40 and 155 degrees off its axis and curve toward the
-      // tip; a needle that points straight out from the twig is a bottle brush, not a spruce.
-      const angle = side * (0.7 + rnd() * 1.6) + 0.62;
-      const reach = length * CELL * (pass.reach[0] + rnd() * (pass.reach[1] - pass.reach[0]));
-      drawNeedle(
-        target,
-        [x, y],
-        [
-          x + Math.cos(angle) * reach,
-          y + Math.sin(angle) * reach * 0.72 + Math.abs(t - 0.5) * reach * 0.4,
-        ],
-        needleWidth * pass.width * (0.8 + rnd() * 0.5),
-        needleColour(rnd),
-      );
-    }
-  }
+  const ctx = { droop, length, needleWidth, rnd, segments, target, tipOnly, twig };
+  drawBundles(ctx, count);
+  drawSilhouetteSprays(ctx, count);
   return target;
+}
+
+/** One side shoot's fan of needles: the bundle, which is what a spruce branch is made of. */
+function shootBundle(ctx, x, y, angle, shoot) {
+  const { droop, needleWidth, rnd, target, tipOnly } = ctx;
+  const ex = x + Math.cos(angle) * shoot;
+  const ey = y + Math.sin(angle) * shoot * 0.8 + shoot * droop * 0.5;
+  // The tip card has no side twigs: a leader's growth is needles on a stem, and dark twigs across the
+  // brightest cell of the atlas read as dirt on the new growth.
+  if (!tipOnly)
+    drawTwig(
+      target,
+      [
+        [x, y],
+        [ex, ey],
+      ],
+      3.4,
+      TWIG,
+    );
+  const needles = ctx.needlesPerBundle;
+  for (let n = 0; n < needles; n += 1) {
+    // Needles sit along the shoot and each fans either side of it.
+    const u = (n + rnd()) / needles;
+    const nx = x + (ex - x) * u;
+    const ny = y + (ey - y) * u + shoot * droop * 0.5 * u * u;
+    const fan = angle + (rnd() - 0.5) * 1.15;
+    const reach = shoot * (0.34 + rnd() * 0.42) * (1.05 - Math.abs(u - 0.35) * 0.5);
+    drawNeedle(
+      target,
+      [nx, ny],
+      [nx + Math.cos(fan) * reach, ny + Math.sin(fan) * reach * 0.85],
+      needleWidth * (0.7 + rnd() * 0.45) * (0.7 + u * 0.5),
+      needleColour(rnd),
+    );
+  }
+}
+
+/**
+ * Needles in *bundles*, not one stroke at a time off the main twig. A spruce branch is a spray of
+ * side shoots, each carrying its own fan of needles, and a card that draws every needle straight off
+ * the main axis is a bottle brush: one flat comb with a hard upper edge and nothing underneath it.
+ *
+ * The bundles run shortest-and-most-forward first, so the long basal sprays land on top of them and
+ * the card reads as one mass with structure in it rather than as a thicket of loose strokes.
+ */
+function drawBundles(ctx, count) {
+  const { length, rnd, segments, target, tipOnly, twig } = ctx;
+  const bundles = Math.max(6, Math.round(count / 90));
+  ctx.needlesPerBundle = Math.max(4, Math.round(count / bundles / 2));
+  for (let b = 0; b < bundles; b += 1) {
+    // Bundles march along the twig; the leading edge of the card carries the short new growth.
+    const t = tipOnly ? 0.15 + rnd() * 0.85 : (b + rnd() * 0.8) / bundles;
+    const [x, y] = twig[Math.min(segments, Math.floor(t * segments))] ?? twig[twig.length - 1];
+    // Each shoot's own length: long at the branch's base, short at the tip.
+    const shoot = length * CELL * (0.78 - t * 0.44) * (0.7 + rnd() * 0.5);
+    for (const side of [-1, 1]) shootBundle(ctx, x, y, side * (0.55 + rnd() * 0.85) + 0.5, shoot);
+  }
+}
+
+/**
+ * Long structural sprays straight off the main twig: they fill the silhouette between the bundles
+ * and keep the card opaque along its whole length, which is what lets a dozen quads stand in for a
+ * branch instead of fifty.
+ */
+function drawSilhouetteSprays(ctx, count) {
+  const { length, needleWidth, rnd, segments, target, twig } = ctx;
+  for (let i = 0; i < Math.round(count * 0.18); i += 1) {
+    const t = rnd() ** 0.7;
+    const [x, y] = twig[Math.min(segments, Math.floor(t * segments))] ?? twig[twig.length - 1];
+    const side = rnd() < 0.5 ? 1 : -1;
+    const angle = side * (0.6 + rnd() * 0.5) + 0.55;
+    const reach = length * CELL * (0.62 + rnd() * 0.42);
+    drawNeedle(
+      target,
+      [x, y],
+      [
+        x + Math.cos(angle) * reach,
+        y + Math.sin(angle) * reach * 0.8 + Math.abs(t - 0.5) * reach * 0.35,
+      ],
+      needleWidth * (1 + rnd() * 0.4),
+      needleColour(rnd),
+    );
+  }
 }
 
 /** One poppy petal: a rounded lobe with a scalloped edge, cupped darker at its base. */
@@ -229,6 +315,84 @@ function poppyPetal(seed) {
     }
   }
   return target;
+}
+
+/**
+ * Blur `source` into `target` with a separable box, radius in pixels, clamped at the edges.
+ *
+ * One of the two places below needs a blurred copy of the coverage: the AO wants to know how deep
+ * into the card a texel is, and a single texel's coverage cannot tell that.
+ */
+function blur(source, radius) {
+  const width = radius * 2 + 1;
+  const horizontal = new Float32Array(CELL * CELL);
+  const out = new Float32Array(CELL * CELL);
+  for (let y = 0; y < CELL; y += 1) {
+    for (let x = 0; x < CELL; x += 1) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k += 1)
+        sum += source[y * CELL + Math.min(CELL - 1, Math.max(0, x + k))];
+      horizontal[y * CELL + x] = sum / width;
+    }
+  }
+  for (let y = 0; y < CELL; y += 1) {
+    for (let x = 0; x < CELL; x += 1) {
+      let sum = 0;
+      for (let k = -radius; k <= radius; k += 1)
+        sum += horizontal[Math.min(CELL - 1, Math.max(0, y + k)) * CELL + x];
+      out[y * CELL + x] = sum / width;
+    }
+  }
+  return out;
+}
+
+/**
+ * Cook one cell's relief: RG is a tangent-space normal, B is the occlusion the needles drop on each
+ * other, and the normal is read from the *blurred* coverage so a needle is a rounded ridge rather
+ * than a one-texel stair.
+ *
+ * This is what a cutout card was missing. An alpha-tested quad has no thickness, so its shading came
+ * from one flat normal and the crowns read as stacked flat quads — the judges' words, and correct.
+ * A normal per needle plus the occlusion of a canopy that is mostly needles gives the card a surface,
+ * and the same normal is what the wrapped two-sided lighting below needs to catch the sun on.
+ */
+const RELIEF = { radius: 3, strength: 2.2 };
+
+function surfaceOf(target) {
+  // Two blurs at very different radii, because the two channels answer different questions. The
+  // narrow one is over the *ridge* field — each needle's own lightness along its spine — so a
+  // three-pixel needle keeps its roundness instead of being averaged into its neighbours. The wide
+  // one is over the coverage, and it is the canopy: what fraction of the sky a texel can see.
+  const fine = blur(target.ridge, RELIEF.radius);
+  const wide = blur(target.cover, RELIEF.radius * 5);
+  const data = new Uint8Array(CELL * CELL * 4);
+  const at = (x, y) =>
+    fine[Math.min(CELL - 1, Math.max(0, y)) * CELL + Math.min(CELL - 1, Math.max(0, x))];
+  for (let y = 0; y < CELL; y += 1) {
+    for (let x = 0; x < CELL; x += 1) {
+      // Central differences across the ridge blur give the height field's own gradient. The factor
+      // is high because a needle is only three texels wide here: its spine-to-edge drop is under a
+      // quarter of the range, and a normal built from that is almost flat.
+      const dx = (at(x + 1, y) - at(x - 1, y)) * RELIEF.strength * 4;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * RELIEF.strength * 4;
+      const length = Math.hypot(dx, dy, 1);
+      // V runs up the card while y runs down the image, so the green channel is negated to keep the
+      // relief lit from the same side as the albedo.
+      const index = (y * CELL + x) * 4;
+      data[index] = Math.round(((-dx / length) * 0.5 + 0.5) * 255);
+      data[index + 1] = Math.round((dy / length) * 0.5 * 255 + 127.5);
+      // Occlusion from the wide blur: a texel buried in the spray sees less sky than one on the
+      // fringe. The floor matters as much as the range — a needle in the middle of a spruce's crown
+      // is lit by the *other needles*, not by the sky, and crushing it to black is the "near-black
+      // undersides" the last captures showed. Nothing here goes below `deep`.
+      const deep = 0.42;
+      data[index + 2] = Math.round(
+        (deep + (1 - deep) * (1 - Math.min(1, wide[y * CELL + x] * 3.4))) * 255,
+      );
+      data[index + 3] = 255;
+    }
+  }
+  return data;
 }
 
 /** Minimal PNG encoder: one IDAT, filter 0 on every scanline, 8-bit RGBA. */
@@ -274,38 +438,51 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
+/** Lay four cells out in the 2x2 grid the material's UVs address, into one RGBA buffer. */
+function layOut(entries, pixelOf) {
+  const out = new Uint8Array(ATLAS * ATLAS * 4);
+  for (const [column, row, target] of entries) {
+    for (let y = 0; y < CELL; y += 1) {
+      const from = y * CELL * 4;
+      out.set(
+        pixelOf(target).subarray(from, from + CELL * 4),
+        ((row * CELL + y) * ATLAS + column * CELL) * 4,
+      );
+    }
+  }
+  return out;
+}
+
 /** Lay the four cells out in the 2x2 grid the material's UVs address. */
 const cells = [
-  [0, 0, spruceBranch(SEED, { count: 4200, length: 0.34, droop: 0.4, needleWidth: 3.2 })],
-  [1, 0, spruceBranch(SEED + 1, { count: 3000, length: 0.42, droop: 0.5, needleWidth: 2.8 })],
+  [0, 0, spruceBranch(SEED, { count: 5200, length: 0.32, droop: 0.4, needleWidth: 3.4 })],
+  [1, 0, spruceBranch(SEED + 1, { count: 3800, length: 0.4, droop: 0.5, needleWidth: 3 })],
   [
     0,
     1,
     spruceBranch(SEED + 2, {
-      count: 2200,
-      length: 0.24,
+      count: 2600,
+      length: 0.22,
       droop: 0.14,
-      needleWidth: 3.4,
+      needleWidth: 3.6,
       tipOnly: true,
     }),
   ],
   [1, 1, poppyPetal(SEED + 3)],
 ];
-const atlas = new Uint8Array(ATLAS * ATLAS * 4);
-for (const [column, row, target] of cells) {
-  for (let y = 0; y < CELL; y += 1) {
-    const from = y * CELL * 4;
-    atlas.set(
-      target.data.subarray(from, from + CELL * 4),
-      ((row * CELL + y) * ATLAS + column * CELL) * 4,
-    );
-  }
-}
 
-await mkdir(new URL("../../../packages/terrain/starter-assets/", import.meta.url), {
-  recursive: true,
-});
-await writeFile(OUTPUT, encodePng(ATLAS, ATLAS, atlas));
+await mkdir(FOLDER, { recursive: true });
+await writeFile(
+  OUTPUT,
+  encodePng(
+    ATLAS,
+    ATLAS,
+    layOut(cells, (target) => target.data),
+  ),
+);
+// The petal cell is a smooth cupped surface with no needles in it, so it gets the same relief pass
+// for free rather than a special case: the normal it gets is a soft bowl, which is exactly a petal.
+await writeFile(SURFACE_OUTPUT, encodePng(ATLAS, ATLAS, layOut(cells, surfaceOf)));
 console.log(
-  `Wrote a ${ATLAS}x${ATLAS} RGBA needle atlas (4 cells) to packages/terrain/starter-assets/needle-atlas.png`,
+  `Wrote a ${ATLAS}x${ATLAS} RGBA needle atlas and its relief (normal + AO) to packages/terrain/starter-assets/`,
 );

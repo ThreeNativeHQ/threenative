@@ -10,8 +10,8 @@
   "resolution": "1K (1024x1024) JPEG, the upstream files byte for byte",
   "preprocessing": "none. Every file is the upstream 1K JPG, verified byte-identical by sha256, at a dimension that is a multiple of 4 and at most 2048 so the same set can be recooked to BC7.",
   "servedTo": "examples/strata-terrain-preview (vite publicDir), loaded through ctx.assets.texture()",
-  "cookedBytes": 20141510,
-  "cookedMiB": 19.21,
+  "cookedBytes": 21318168,
+  "cookedMiB": 20.33,
   "cookedBudgetMiB": 25,
   "sampledTexturesInGroundMaterial": 14,
   "sampledTextureLimitPerStage": 16,
@@ -509,15 +509,26 @@
   ],
   "generated": {
     "needle-atlas.png": {
-      "what": "A 2x2 RGBA atlas: three spruce branch cards and one poppy petal, on a hard alpha edge",
+      "what": "A 2x2 RGBA atlas: three spruce branch cards (needles drawn as bundles of side shoots at several angles, lighter tips, dark twig) and one poppy petal, on a hard alpha edge",
       "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
       "seed": 466468,
       "command": "node scripts/make-needle-atlas.mjs",
-      "bytes": 167208,
+      "bytes": 321934,
       "dimensions": "1024x1024 (4 cells of 512x512)",
       "preprocessing": "none. Drawn from a seeded PRNG and deflated as PNG by the script itself: no image library, no upload, byte-identical on every run.",
-      "sha256": "55f9ca7057315bcdf6745cfd325676cdf5a1cb5ec23bb6eba5f7c9243f792544",
+      "sha256": "d2f1fd6eb3f87083a1c72a07add0c485f477b7b5e64e1d9db0108298c75eae50",
       "why": "A photograph of foliage does not give a card with the twig down the middle and needles fanning off both sides, which is what makes an alpha-cutout branch read as a branch from every angle."
+    },
+    "needle-surface.png": {
+      "what": "The same four cells as relief: RG a tangent-space normal cooked from the albedo's own per-needle ridge field, B the ambient occlusion the canopy drops on itself",
+      "generator": "examples/strata-terrain-preview/scripts/make-needle-atlas.mjs",
+      "seed": 466468,
+      "command": "node scripts/make-needle-atlas.mjs",
+      "bytes": 1021932,
+      "dimensions": "1024x1024 (4 cells of 512x512)",
+      "preprocessing": "none. Cooked from the coverage and ridge the same run recorded while drawing the albedo, and deflated as PNG by the script itself: no image library, byte-identical on every run.",
+      "sha256": "45d236f6b61f745753fd86b06b0c27d451ae118c9f0164ce44dda51f297ecbf5",
+      "why": "An alpha-tested quad has no thickness, so a crown built from cards had exactly one flat normal per card and read as stacked flat quads. A normal per needle plus the spray's own occlusion is what makes a card a mass of needles rather than a silhouette."
     }
   }
 }

@@ -44,6 +44,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
+import { setCanopySun } from "./propMaterials.js";
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and
@@ -264,6 +265,8 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
     // The sky's sun disc, its brightest quadrant and the cloud deck's lighting all follow the light.
     daylight.sky.sunPosition.value.copy(sun.position).normalize();
     (sunDirection as unknown as { value: Vector3 }).value.copy(sun.position).normalize();
+    // And so does the light coming through the needles, which reads the same vector.
+    setCanopySun(sun.position);
   }
   setSunX(SUN.direction.x);
   return {

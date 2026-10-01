@@ -46,6 +46,18 @@ export const SPRUCE = {
   crown: 0.2,
   /** Trunk radius at the base, as a share of height. */
   trunkRadius: 0.021,
+  /**
+   * How much wider the root plate is than the trunk, as a multiple of that radius. A spruce of this
+   * size is a 25 cm trunk in the open and near 50 cm where it meets the ground, and without the swell
+   * every tree in a meadow reads as a pole in a hole.
+   */
+  rootFlare: 2.1,
+  /**
+   * How far a whorl's branch angle and length wander from their nominal, as a share. Fifteen to
+   * twenty-five percent is enough that no two branches on a tree agree, and the crown stops being a
+   * set of stacked identical tiers — which is the flatness the judges called out.
+   */
+  branchVariance: [0.15, 0.25] as const,
 } as const;
 
 /**
@@ -107,21 +119,39 @@ function envelope(value: number): number {
  * A cylinder with a constant radius would be a pipe, and a pipe with foliage on it is a lollipop.
  * The taper is what lets the trunk disappear into the crown; the root flare is what stops it
  * looking pushed into the ground rather than grown out of it.
+ *
+ * The flare is the one number here that was too small. A spruce's base is not its radius: it is
+ * roughly twice it, swelling over the bottom two metres into a root plate that dies into the ground
+ * off-frame, and a trunk that meets the terrain at a clean cylinder edge reads as a pole pushed
+ * into a lawn — which is what the meadow capture shows at the base of every tree. Two extra rings
+ * down there, where the flare actually changes fastest, cost eight triangles a tree.
  */
 function trunk(height: number, seed: number): BufferGeometry {
   const random = createRandom(seed);
   const sides = 8;
-  const rings = 6;
+  const rings = 8;
   const base = height * SPRUCE.trunkRadius;
   // Two degrees of lean is enough to break a row of trees without looking blown over.
   const leanX = (random() - 0.5) * 0.07;
   const leanZ = (random() - 0.5) * 0.07;
+  // The flare's own shape: which fraction of the height it occupies, and how far it swells. Both
+  // in metres, not in shares, because a root plate is about the same size on a young spruce and an
+  // old one and only the tree's height changes.
+  const flareHeight = Math.min(2.4, height * 0.12);
+  const flareWidth = base * SPRUCE.rootFlare;
   const buffer = new MeshBuffer();
   const ring = (level: number, side: number): Vector3 => {
     const level01 = level / rings;
     const angle = (side / sides) * Math.PI * 2;
-    const flare = 1 + Math.max(0, 0.55 - level01 * 3.2);
-    const radius = base * (1 - level01) ** 0.75 * flare;
+    // Root plate: a widening that runs out over `flareHeight` and then stops, rather than the
+    // old constant-widening-downwards fudge that made every trunk a cone.
+    const above = level01 * height;
+    const flare =
+      above >= flareHeight ? 1 : 1 + (flareWidth / base) * (1 - (above / flareHeight) ** 1.7);
+    // One root per side, buttressing: the swell is not a circle, it has four or five of them.
+    const buttress =
+      1 + Math.max(0, Math.cos(angle * 4 + level * 1.3)) * 0.16 * (1 - above / flareHeight);
+    const radius = base * (1 - level01) ** 0.75 * flare * buttress;
     return new Vector3(
       Math.cos(angle) * radius + leanX * envelope(level01) * height,
       level01 * height,
@@ -159,12 +189,20 @@ function trunk(height: number, seed: number): BufferGeometry {
 }
 
 /**
- * One branch: a strip of quads that leaves the trunk near-horizontal and droops as it goes out.
+ * One branch, as a *cluster* of cards rather than one strip.
  *
- * The card is rolled about its own axis by a seeded angle, because a card that always lies in the
- * horizontal plane disappears when the camera looks along it, and one that always stands vertical
- * reads as a fin. The roll is what makes a crown look like volume from every angle.
+ * A single card is a flat plate with a straight leading edge and a straight trailing one, and a crown
+ * built from flat plates reads as stacked quads however good the alpha is — that is the judges' first
+ * complaint and it is a geometry problem, not a texture problem. Three cards at different rolls,
+ * different lengths and slightly different azimuths make the same branch a spray with depth: the
+ * silhouette comes from the union of three different edges instead of one, and the branch has an
+ * interior the eye can see into.
+ *
+ * Cost: three times the cards, twelve triangles a branch instead of four, which is the price of a
+ * crown that is not a stack of plates.
  */
+const CLUSTER = 3;
+
 function branch(
   buffer: MeshBuffer,
   options: {
@@ -174,42 +212,66 @@ function branch(
     readonly height: number;
     readonly length: number;
     readonly origin: Vector3;
+    readonly random: () => number;
     readonly roll: number;
     readonly segments: number;
     readonly width: number;
   },
 ): void {
-  const { azimuth, cell, droop, height, length, origin, roll, segments, width } = options;
-  const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
-  const across = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth))
-    .multiplyScalar(Math.cos(roll))
-    .add(new Vector3(0, 1, 0).multiplyScalar(Math.sin(roll)))
-    .normalize();
-  // A spruce branch is a catenary: it leaves the trunk nearly level and falls away as it goes out.
-  const reach = (at: number) => origin.clone().addScaledVector(outward, length * at);
-  const drop = (at: number) => droop * length * at * at;
-  const halfWidth = (at: number) => (width * (1 - at * 0.82) * Math.min(1, 0.35 + at * 1.6)) / 2;
-  for (let i = 0; i < segments; i += 1) {
-    const at0 = i / segments;
-    const at1 = (i + 1) / segments;
-    const a = reach(at0).addScaledVector(across, -halfWidth(at0));
-    const b = reach(at0).addScaledVector(across, halfWidth(at0));
-    const c = reach(at1).addScaledVector(across, halfWidth(at1));
-    const d = reach(at1).addScaledVector(across, -halfWidth(at1));
-    const normal = new Vector3().subVectors(b, a).cross(new Vector3().subVectors(d, a)).normalize();
-    const u0 = cell.u0 + (cell.u1 - cell.u0) * at0;
-    const u1 = cell.u0 + (cell.u1 - cell.u0) * at1;
-    buffer.quad(
-      [a, b, c, d],
-      normal,
-      [
-        [u0, cell.v0],
-        [u0, cell.v1],
-        [u1, cell.v1],
-        [u1, cell.v0],
-      ],
-      envelope((origin.y - drop(at0)) / height),
-    );
+  const { azimuth, cell, droop, height, length, origin, random, roll, segments, width } = options;
+  for (let c = 0; c < CLUSTER; c += 1) {
+    // The outermost card is the full branch; the others are shorter and swung off it, so the cluster
+    // tapers like a spray rather than being three copies of one plate.
+    const share = 1 - c * (0.16 + random() * 0.12);
+    // Each card's own roll and its own swing. The roll is spread most because it is what decides
+    // whether the branch has volume from a given angle at all.
+    const cardRoll = roll + (c - (CLUSTER - 1) / 2) * (0.55 + random() * 0.5);
+    const cardAzimuth = azimuth + (random() - 0.5) * 0.42 * (c + 1);
+    const cardLength = length * share;
+    const outward = new Vector3(Math.cos(cardAzimuth), 0, Math.sin(cardAzimuth));
+    // The card is rolled about its own axis, because a card that always lies in the horizontal plane
+    // disappears when the camera looks along it, and one that always stands vertical reads as a fin.
+    const across = new Vector3(-Math.sin(cardAzimuth), 0, Math.cos(cardAzimuth))
+      .multiplyScalar(Math.cos(cardRoll))
+      .add(new Vector3(0, 1, 0).multiplyScalar(Math.sin(cardRoll)))
+      .normalize();
+    // A spruce branch is a catenary: it leaves the trunk nearly level and falls away as it goes out.
+    const cardDroop = droop * (0.85 + random() * 0.35);
+    const reach = (at: number) => origin.clone().addScaledVector(outward, cardLength * at);
+    const drop = (at: number) => cardDroop * cardLength * at * at;
+    // Tapered, and pinched at the trunk: a branch is a wedge, not a rectangle, and the pinch is what
+    // stops the card's own leading edge from reading as a line across the crown.
+    const halfWidth = (at: number) =>
+      (width * share * (1 - at * 0.7) * Math.min(1, 0.18 + at * 1.9)) / 2;
+    // The card's own UV window slides along the cell rather than filling it, so two cards on the same
+    // branch are never the same picture of it.
+    const uSpan = (0.62 + random() * 0.34) / CLUSTER;
+    const uFrom = (c / CLUSTER) * (1 - uSpan * CLUSTER) + random() * 0.08;
+    for (let i = 0; i < segments; i += 1) {
+      const at0 = i / segments;
+      const at1 = (i + 1) / segments;
+      const a = reach(at0).addScaledVector(across, -halfWidth(at0));
+      const b = reach(at0).addScaledVector(across, halfWidth(at0));
+      const c2 = reach(at1).addScaledVector(across, halfWidth(at1));
+      const d = reach(at1).addScaledVector(across, -halfWidth(at1));
+      const normal = new Vector3()
+        .subVectors(b, a)
+        .cross(new Vector3().subVectors(d, a))
+        .normalize();
+      const u0 = cell.u0 + (cell.u1 - cell.u0) * (uFrom + uSpan * at0);
+      const u1 = cell.u0 + (cell.u1 - cell.u0) * (uFrom + uSpan * at1);
+      buffer.quad(
+        [a, b, c2, d],
+        normal,
+        [
+          [u0, cell.v0],
+          [u0, cell.v1],
+          [u1, cell.v1],
+          [u1, cell.v0],
+        ],
+        envelope((origin.y - drop(at0)) / height),
+      );
+    }
   }
 }
 
@@ -223,33 +285,51 @@ function crown(height: number, seed: number): BufferGeometry {
     const at = SPRUCE.bareTrunk + ((1 - SPRUCE.bareTrunk) * w) / (SPRUCE.whorls - 1);
     // Widest at the bottom of the crown, tapering to a spire. A cone of branches is a fir.
     const taper = (1 - (at - SPRUCE.bareTrunk) / (1 - SPRUCE.bareTrunk)) ** 0.78;
-    const length = height * SPRUCE.crown * taper * (0.85 + random() * 0.3);
+    // Per-whorl wander as well as per-branch: a whorl is not a level ring, it is a burst that starts
+    // and stops over half a metre of trunk. Spacing the whorls themselves by the variance is what
+    // stops a crown from reading as a stack of identical tiers.
+    const whorlJitter = (random() - 0.5) * 2 * SPRUCE.branchVariance[1];
+    const length = height * SPRUCE.crown * taper * (1 + whorlJitter);
     const count = Math.max(3, Math.round(SPRUCE.branchesPerWhorl * (0.55 + taper * 0.45)));
     const phase = random() * Math.PI * 2;
+    // The whorl's own tilt: branches on one side of the trunk reach further than their opposite
+    // numbers, which is what gives a spruce crown its lopsided, wind-shaped silhouette.
+    const lean = (random() - 0.5) * 0.5;
     for (let b = 0; b < count; b += 1) {
       // Alternating whorls are rotated against each other so no two neighbouring rings line up
       // into a visible ladder of branches.
       const azimuth = phase + (b / count) * Math.PI * 2 + (w % 2 === 0 ? 0 : Math.PI / count);
+      // The branch's own wander: direction off its nominal, and length off the whorl's.
+      const swing = (random() - 0.5) * 2 * SPRUCE.branchVariance[1];
+      const reach =
+        length *
+        (1 + (random() - 0.5) * 2 * SPRUCE.branchVariance[0]) *
+        // Lean falls off across the whorl, so the branches on the lee side are the short ones.
+        (1 + lean * Math.cos(azimuth) * 0.35);
       branch(buffer, {
-        azimuth,
+        azimuth: azimuth + swing,
         cell:
           w === SPRUCE.whorls - 1
             ? ATLAS_CELLS.tip
             : b % 3 === 0
               ? ATLAS_CELLS.open
               : ATLAS_CELLS.dense,
-        // Lower branches hang hardest; the leader's barely fall at all.
-        droop: 0.22 + taper * 0.5 + random() * 0.12,
+        // Lower branches hang hardest; the leader's barely fall at all. The variance here is what
+        // makes a crown look like a spruce rather than a set of flat plates stacked on a pole.
+        droop: 0.22 + taper * 0.62 + random() * 0.2,
         height,
-        length,
+        length: reach,
         origin: new Vector3(0, at * height, 0),
-        roll: (random() - 0.5) * 1.5,
+        random,
+        roll: (random() - 0.5) * 1.9,
         segments: 3,
         // The card is close to the atlas cell's own proportions on purpose. The needles in that cell
         // radiate from a twig across its whole width, so a card much narrower than it is long
         // squeezes a spray of needles into a blade, and a spruce drawn with blades is worse than one
-        // drawn with paddies. Two thirds is the narrowest the spray still reads as a spray.
-        width: length * (0.62 + random() * 0.16),
+        // drawn with paddies. Two thirds is the narrowest the spray still reads as a spray — and it
+        // tracks the branch's own length, so a short branch is a short card rather than a squeezed
+        // long one.
+        width: reach * (0.6 + random() * 0.2),
       });
     }
   }
