@@ -531,7 +531,10 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // shared agent-doc and manifest bytes those edits touch. Puzzle and runner do not move.
   // Recomputed 2026-10-01 for the allocation-free ordinary frame: `src/sim/` and `src/render/army.ts`
   // lost their per-step arrays, point objects and closures, so only this tree moves.
-  rts: "fcc7f82e563e4bfdbb21e5bbbc13c22a2107fa91dab27d0c15c968e155df9490",
+  // Recomputed again the same day, after the event-step exclusion came out of the cost gate and the
+  // frames that fight were measured too: `src/sim/` gave up the rest of its per-frame objects, so
+  // still only this tree moves.
+  rts: "83c3badf06672065e4a16072cc40f6252a91db5a67e61117619e725d3baa0d3b",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
