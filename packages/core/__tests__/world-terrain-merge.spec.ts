@@ -140,17 +140,19 @@ function triangleKeys(
 }
 
 describe("TerrainTiles merge", () => {
-  it("reads mergeTiles from the option, the environment, the query string and the global, off by default", () => {
+  it("merges by default and reads an opt-out from the environment, the query string and the global", () => {
     const previousEnv = process.env.TN_TERRAIN_MERGE;
     const previousSearch = (globalThis as { location?: Location }).location?.search;
     const previousGlobal = (globalThis as { __tnTerrainMerge?: unknown }).__tnTerrainMerge;
     try {
       for (const [env, search, global, expected] of [
-        [undefined, "", undefined, false],
+        [undefined, "", undefined, true],
         ["1", "", undefined, true],
         ["0", "", undefined, false],
-        [undefined, "?tnTerrainMerge=1", undefined, true],
+        ["false", "", undefined, false],
         [undefined, "?tnTerrainMerge=0", undefined, false],
+        [undefined, "?tnTerrainMerge=1", undefined, true],
+        [undefined, "", 0, false],
         [undefined, "", 1, true],
       ] as const) {
         if (env === undefined) Reflect.deleteProperty(process.env, "TN_TERRAIN_MERGE");

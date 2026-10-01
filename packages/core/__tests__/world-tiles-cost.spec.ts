@@ -24,18 +24,33 @@ import { Heightfield } from "../src/world.js";
  */
 const bench = process.env.TN_BENCH === "1";
 
+/** The name a merged super-tile carries; an unmerged tile has no name of its own. */
+const BLOCK_PREFIX = "tn-terrain-block:";
+
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.017) * 12 + Math.cos(z * 0.013) * 9 + Math.sin((x + z) * 0.007) * 4;
 
-/** Every resident tile's rendered positions, so "unchanged" is a number and not a claim. */
+/**
+ * Every position the main pass submits for terrain levels, so "unchanged" is a number and not a
+ * claim. Keyed by the mesh that carries it: a merged super-tile under its own block name, a tile
+ * that draws its own level under the tile key.
+ */
 function renderedPositions(tiles: TerrainTiles): Record<string, Float32Array> {
   const rendered: Record<string, Float32Array> = {};
+  const record = (key: string, mesh: Mesh): void => {
+    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+  };
+  // A named child is a merged super-tile; the unnamed ones are the stitch bridges, which are not
+  // terrain levels and were never part of this record.
+  for (const child of tiles.children)
+    if (child instanceof Mesh && child.name.startsWith(BLOCK_PREFIX)) record(child.name, child);
   for (const key of tiles.residentKeys) {
     const tile = tiles.getTile(key);
     if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
-    const mesh = tile.lod.levels.find(({ object }) => object.visible)?.object;
-    if (!(mesh instanceof Mesh)) throw new Error(`Missing visible LOD for tile '${key}'.`);
-    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+    for (const level of tile.lod.levels) {
+      const mesh = level.object;
+      if (mesh instanceof Mesh && mesh.visible) record(key, mesh);
+    }
   }
   return rendered;
 }
@@ -64,12 +79,26 @@ function ring(
   for (let frame = 0; frame < 4; frame += 1) tiles.process();
   tiles.follow({ x: 0, z: 0 });
   tiles.process();
+  // A third settle: the super-tile blocks rebuild one per frame, so the ring is only settled once
+  // the last dirty block is built.
+  let rebuilds = tiles.terrainTiles.rebuilds;
+  for (let frame = 0; frame < 64; frame += 1) {
+    tiles.follow({ x: 0, z: 0 });
+    tiles.process();
+    if (tiles.terrainTiles.rebuilds === rebuilds) break;
+    rebuilds = tiles.terrainTiles.rebuilds;
+  }
   return tiles;
 }
 
-/** A settled ring's stitch bridge, which is the only child of the tiles group that is a bare mesh. */
+/**
+ * A settled ring's stitch bridge: the only child of the tiles group that is a bare, unnamed mesh,
+ * where a merged super-tile is a bare mesh with a block name.
+ */
 function bridgeOf(tiles: TerrainTiles): Mesh {
-  const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+  const bridge = tiles.children.find(
+    (child): child is Mesh => child instanceof Mesh && !child.name.startsWith(BLOCK_PREFIX),
+  );
   if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
   return bridge;
 }

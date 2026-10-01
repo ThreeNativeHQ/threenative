@@ -121,10 +121,13 @@ export interface IWorldTilesOptions {
    */
   readonly validate?: boolean;
   /**
-   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, rebuilt from the
-   * resident tiles through the admission budget. It changes how many draws the main pass submits,
-   * never how the ground looks — a merged vertex lands on the world position its tile's vertex did.
-   * Off by default; `mergeTiles: true`, `?tnTerrainMerge=1` or `TN_TERRAIN_MERGE=1` turns it on.
+   * Merge settled same-LOD terrain tiles into super-tiles: one mesh per K×K block, one block rebuilt
+   * per frame. It changes how many draws the main pass submits, never how the ground looks — a merged
+   * vertex lands on the world position its tile's vertex did, on the same game-owned `surface`.
+   *
+   * On by default, like `validate`'s measurements are off by default only because they cost a
+   * measurement a frame. `mergeTiles: false`, `?tnTerrainMerge=0` or `TN_TERRAIN_MERGE=0` turns it
+   * off for a run; a block's bytes are charged to `residentByteBudget` either way the block exists.
    */
   readonly mergeTiles?: boolean;
   /** Explicit game-owned measurement region used by the topology evaluator. */
@@ -215,25 +218,25 @@ const TERRAIN_TILE_MARKER_MS = 5_000;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 
 /**
- * Whether `TN_TERRAIN_MERGE` asks for terrain tile merging on this launch.
+ * Whether this launch asked for terrain tile merging to be turned off.
  *
- * Off by default: the merge exists to cut the main pass's terrain draws on a wide streamed ring, and
- * a run that never asked for it must submit exactly the meshes it always did. Read the three ways
- * every other launch switch is: a native launch sets the environment variable, a browser asks with
- * the query string, and a test or harness sets the global. Only `1` and `true` count, so an old URL
- * that never mentioned the switch stays off.
+ * The merge is on by default, so this only has to hear the three ways every other launch switch is
+ * read: a native launch sets the environment variable, a browser asks with the query string, and a
+ * test or harness sets the global. Only `0` and `false` count, so a URL that never mentioned the
+ * switch — or one that still carries the `=1` that used to ask for the merge — stays on.
  */
-function terrainMergeRequested(): boolean {
+function terrainMergeOptedOut(): boolean {
   const host = globalThis as { process?: { env?: Record<string, unknown> } } & Record<
     string,
     unknown
   >;
   const fromEnv = host.process?.env?.[TERRAIN_MERGE_FLAG];
-  if (fromEnv === "1" || fromEnv === "true") return true;
+  if (fromEnv === "0" || fromEnv === "false") return true;
   const query = globalThis.location?.search;
-  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:1|true)(?:&|$)/u.test(query)) return true;
+  if (typeof query === "string" && /[?&]tnTerrainMerge=(?:0|false)(?:&|$)/u.test(query))
+    return true;
   return (
-    host.__tnTerrainMerge === true || host.__tnTerrainMerge === 1 || host.__tnTerrainMerge === "1"
+    host.__tnTerrainMerge === false || host.__tnTerrainMerge === 0 || host.__tnTerrainMerge === "0"
   );
 }
 
@@ -1805,7 +1808,7 @@ function setManualLodLevel(lod: LOD, level: number): void {
  * @constraint sampleHeight and surface are required game choices; no landform or surface preset is installed
  * @constraint residentTileBudget and residentByteBudget are hard caps; a tile that cannot fit throws
  * @constraint seam gap, LOD pop and the rendered-vertex finiteness scan are measurements that are off by default; TN_TERRAIN_VALIDATE=1, ?tnTerrainValidate=1 or validate: true runs them, and maxSeamGap, maxVisualSeamGap and maxLodPop report undefined while they are off
- * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, validate, and budgets
+ * @override tileSize, tileResolution, lodFactors, lodDistances, skirtDepth, streamRadius, colliderRadius, mergeTiles, validate, and budgets
  * @example const tiles = new TerrainTiles({ sampleHeight, surface: gameSurface(), tileSize: 256, tileResolution: 129, residentTileBudget: 25, residentByteBudget: 32_000_000 });
  */
 export class TerrainTiles extends Object3D implements IComputeDriven {
@@ -1907,7 +1910,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     if (options.surface === undefined || options.surface === null)
       throw new Error("TerrainTiles surface is required and must be game-owned.");
     this.#validate = options.validate ?? terrainValidationRequested();
-    this.#mergeTiles = options.mergeTiles ?? terrainMergeRequested();
+    this.#mergeTiles = options.mergeTiles ?? !terrainMergeOptedOut();
     this.#sampleHeight = options.sampleHeight;
     if (typeof options.sampleHeight !== "function")
       throw new Error("TerrainTiles sampleHeight is required.");
