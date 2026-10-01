@@ -1,4 +1,5 @@
 import {
+  type IHeightfieldRegionBounds,
   type ISnowFootprint,
   type ISnowFootprintSample,
   type SnowField,
@@ -11,6 +12,22 @@ import {
   PHYSICS_CONTACT_STRIDE,
   type PhysicsShapeKind,
 } from "./simulation.js";
+
+/** The smallest window covering both. */
+function unionBounds(
+  current: IHeightfieldRegionBounds | undefined,
+  next: IHeightfieldRegionBounds,
+): IHeightfieldRegionBounds {
+  if (current === undefined) return next;
+  const column = Math.min(current.column, next.column);
+  const row = Math.min(current.row, next.row);
+  return {
+    column,
+    columns: Math.max(current.column + current.columns, next.column + next.columns) - column,
+    row,
+    rows: Math.max(current.row + current.rows, next.row + next.rows) - row,
+  };
+}
 
 const ZERO_SAMPLE: ISnowFootprintSample = {
   bank: 0,
@@ -356,6 +373,11 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
 
   const watched = new Map<number, IWatchedBody>();
   let colliderHeights = field.toColliderHeights();
+  // The window that may differ from the installed collider: everything written since the last
+  // rebuild. Comparing only it is what keeps a resting body from costing a whole-field scan per
+  // step (measured: 1.0 of 1.3 ms per step on a 401-sample field).
+  const changes = field.trackChanges();
+  let unsynced: IHeightfieldRegionBounds | undefined;
   let surfaceVersion = snow.version;
   let contacts = 0;
   let supported = 0;
@@ -407,12 +429,26 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     return gap;
   }
 
+  /** Largest gap between the live collider and the canonical surface inside one window. */
+  function windowGap(window: IHeightfieldRegionBounds): number {
+    let gap = 0;
+    const rows = field.rows;
+    for (let column = window.column; column < window.column + window.columns; column += 1) {
+      for (let row = window.row; row < window.row + window.rows; row += 1) {
+        const installed = colliderHeights[column * rows + row] as number;
+        gap = Math.max(gap, Math.abs(field.colliderHeight(row, column) - installed));
+      }
+    }
+    return gap;
+  }
+
   function refreshSurface(): void {
-    if (snow.version === surfaceVersion) return;
-    const canonical = field.toColliderHeights();
-    if (colliderGap(canonical) > colliderTolerance) {
-      colliderHeights = canonical;
+    const changed = changes.take();
+    if (changed !== undefined) unsynced = unionBounds(unsynced, changed);
+    if (unsynced !== undefined && windowGap(unsynced) > colliderTolerance) {
+      colliderHeights = field.toColliderHeights();
       setColliderShape(surface, surfaceDescriptor());
+      unsynced = undefined;
     }
     surfaceVersion = snow.version;
   }
@@ -551,6 +587,7 @@ export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBin
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      changes.dispose();
       watched.clear();
       simulation.removeBody(surfaceBody.id);
     },

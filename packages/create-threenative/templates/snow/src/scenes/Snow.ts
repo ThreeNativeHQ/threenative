@@ -30,7 +30,14 @@ import { createSnowSurface } from "../render/snowSurface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { createWeather } from "../render/weather.js";
 import { type CameraView, type GameState, PROBE_COLUMNS, PROBE_ROWS } from "../state.js";
-import { FIELD_SIZE, createSnowfield } from "../terrain.js";
+import {
+  EXPLORER_LAYER,
+  FIELD_SIZE,
+  SNOW_LAYER,
+  WALK_LAYER,
+  createSnowfield,
+  walkSurface,
+} from "../terrain.js";
 
 export type GameCtx = ICtx<GameState, IPhysicsContext>;
 
@@ -158,7 +165,28 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       });
 
     // The snow binding owns the surface collider and presses solved contacts into the field.
-    const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow });
+    const snowPhysics = attachSnowPhysics({
+      collisionLayer: SNOW_LAYER,
+      physics: ctx.physics,
+      snow,
+    });
+    // The explorer walks on a coarse copy of the ground plus fresh snow; only it collides with it.
+    const walk = (depth: number) => {
+      const field = walkSurface(depth);
+      return new RigidBody3D({
+        collisionLayer: WALK_LAYER,
+        collisionMask: EXPLORER_LAYER,
+        physics: ctx.physics,
+        position: { x: 0, y: 0, z: 0 },
+        shape: CollisionShape3D.heightfield(field.rows, field.columns, field.toColliderHeights(), {
+          x: FIELD_SIZE,
+          y: 1,
+          z: FIELD_SIZE,
+        }),
+        type: "fixed",
+      });
+    };
+    let walkBody = walk(snow.depth);
 
     const ballObject = createBall(materials, BALL_RADIUS);
     ballObject.position.set(2.2, snow.heightAt(2.2, -2) + BALL_RADIUS + 0.05, -2);
@@ -497,6 +525,8 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       const state = frameCtx.state.getState();
       if (state.depth !== snow.depth) {
         snow.setDepth(state.depth);
+        walkBody.dispose();
+        walkBody = walk(snow.depth);
         surface.outskirts.position.y = snow.depth - startDepth;
       }
       snow.hardness = state.hardness;

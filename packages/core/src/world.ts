@@ -8,6 +8,7 @@ import {
   createWorldGpuPasses,
   simulateWorldPassesCpu,
 } from "./world-passes.js";
+import { unionBounds } from "./world-region.js";
 
 export interface IHeightfieldOrigin {
   readonly x: number;
@@ -25,6 +26,14 @@ export interface IHeightfieldOptions {
 }
 
 /** A rectangular window of a heightfield's canonical samples, in grid indices. */
+/** Hands out the union of every window `updateHeights` wrote since the last `take`. */
+export interface IHeightfieldChangeTracker {
+  /** The changed window since the previous take, or undefined when nothing changed. */
+  take(): IHeightfieldRegionBounds | undefined;
+  /** Stop tracking. Idempotent. */
+  dispose(): void;
+}
+
 export interface IHeightfieldRegionBounds {
   /** First column (x index), inclusive. */
   readonly column: number;
@@ -152,6 +161,7 @@ export class Heightfield extends Group implements IComputeDriven {
   readonly #cellDepth: number;
   readonly #cellWidth: number;
   readonly #colliderHeights: Float32Array;
+  readonly #trackers = new Set<{ region: IHeightfieldRegionBounds | undefined }>();
   readonly #heights: Float32Array;
   readonly #minimumX: number;
   readonly #minimumZ: number;
@@ -456,7 +466,54 @@ export class Heightfield extends Group implements IComputeDriven {
         );
       }
     }
+    const written = {
+      column: column.start,
+      columns: column.count,
+      row: row.start,
+      rows: row.count,
+    };
+    for (const tracker of this.#trackers) tracker.region = unionBounds(tracker.region, written);
     this.#version += 1;
+  }
+
+  /**
+   * Follow which samples change, independently of every other follower.
+   *
+   * A consumer that mirrors the surface — a collider, a GPU copy, a cache — needs the window that
+   * changed since *it* last looked; comparing the whole field instead costs every sample on every
+   * change. Each tracker keeps its own union of the windows `updateHeights` wrote, so two
+   * consumers never take each other's changes.
+   * @situation keep a collider or other copy of a deforming terrain in step without rescanning it
+   * @example const changes = field.trackChanges();
+   * const changed = changes.take(); // undefined when nothing was written
+   */
+  trackChanges(): IHeightfieldChangeTracker {
+    const state: { region: IHeightfieldRegionBounds | undefined } = { region: undefined };
+    this.#trackers.add(state);
+    return {
+      take: () => {
+        const region = state.region;
+        state.region = undefined;
+        return region;
+      },
+      dispose: () => {
+        this.#trackers.delete(state);
+      },
+    };
+  }
+
+  /** The collider sample at `row`, `column`: what `toColliderHeights()` holds there, without a copy. */
+  colliderHeight(row: number, column: number): number {
+    if (
+      !Number.isInteger(row) ||
+      !Number.isInteger(column) ||
+      row < 0 ||
+      column < 0 ||
+      row >= this.rows ||
+      column >= this.columns
+    )
+      throw new Error(`Heightfield sample ${row},${column} is outside the field.`);
+    return this.#colliderHeights[column * this.rows + row] as number;
   }
 
   /**

@@ -4,7 +4,7 @@ import { Object3D } from "three";
 import { BOOT_AREA, bootPrint } from "../render/bootPrint.js";
 import { ExplorerModel, type IFootPose } from "../render/explorer.js";
 import type { SnowMaterials } from "../render/materials.js";
-import { terrainHeight } from "../terrain.js";
+import { EXPLORER_LAYER, SNOW_LAYER, terrainHeight } from "../terrain.js";
 
 /** One planted boot: where, how it was turned, and how far it sank. */
 export interface IFootstep {
@@ -97,6 +97,9 @@ export class Explorer {
       maxSlopeClimbAngle: 0.8,
       object: anchor,
       physics,
+      // Stands on the coarse walk surface, never the 6 cm snow collider (see `WALK_SAMPLES`).
+      collisionLayer: EXPLORER_LAYER,
+      collisionMask: 0xffff & ~SNOW_LAYER,
       pushesDynamicBodies: true,
       shape: CollisionShape3D.capsule(HALF_HEIGHT, RADIUS),
       snapToGround: 0.3,
