@@ -1,7 +1,7 @@
 # PRD-471 — an RTS template, ported from AstraCraft
 
-**Status: all phases landed 2026-09-28** · only the native desktop run in `## Blocked on` is left ·
-filed 2026-09-28 against `73fe6245d` · owner: "we have this for a RTS template (should be refactored
+**Status: done 2026-09-30 — all phases landed and the native desktop run is green** · filed
+2026-09-28 against `73fe6245d` · owner: "we have this for a RTS template (should be refactored
 for our engine)".
 
 ## Why
@@ -45,7 +45,8 @@ simulation step. Worldgen is seeded (mulberry32) with exactly one `Math.random` 
 
 - [x] `templates/rts` with `kit.json`, AGENTS.md (< 100 lines) and playtests for select, gather, build, train, fight and an AI attack. proof: `TN_TEMPLATE_ONLY=rts pnpm test:templates` — 7 of 7 scenarios green and the `rts-real-frame-boot` gate green (three consecutive runs, see the sub-box): `survives` (150 ticks), `rts-orders` (642), `rts-build` (280), `rts-train` (296), `rts-attack` (3660), `rts-ai-attack` (2520), 0 triviality opt-outs across all six. `battlefield-performance` went green in the last phase-3 pass; the cause is in `## Decisions`. The AGENTS.md is 97 lines (99 in its generated mirror) and 1524/3574 words
   - [x] `battlefield-performance` green. proof: `flock /tmp/threenative-capture.lock env TN_TEMPLATE_ONLY=rts pnpm test:templates` three consecutive runs, all 7 scenarios and `rts-real-frame-boot` green each time (exit 0), 1920x1080, load 2.7-7.1, ceilings unchanged. Two causes, one per layer. Engine: the diagnostics series began at plugin setup, so 34 held boot frames with no draw count failed `maxDrawCalls`/`maxTriangles` closed and the compile sat in the p95; `packages/core` now clears it once when the world first draws (`FixedStepLoop.clearRuntimeDiagnostics`, `loop.spec.ts`). Template: `army.ts` re-uploaded every instanced mesh whole (8 KB x ~45 a frame) and, at the harness's uncapped frame rate, that backlog was a ~120 ms stall every ~30 frames inside `queue.writeBuffer` (CPU profile: 1001 of 2046 ms); only the live prefix goes up now. p95 before 58.6-85.5 ms (five runs); after 12.8 / 13.1 / 13.9 ms with 3-5 of 230-238 frames over 33 ms (11 allowed), 0 frames without draw counts; engine change alone 17.1-17.4 ms with 6 of 8 allowed. Web only: the native series is the same JS loop but not run here
-- [x] Scaffold specs and hashes include the kit. proof: `pnpm exec vitest run packages/create-threenative` — 789/790, the one red being this kit's byte-stable scaffold hash in `scaffold.spec.ts`, which the owner recomputes. Every other gate that names templates derives its list from the directories on disk (`test-support/templates.ts`), and `.github/workflows/ci.yml` already runs the kit in the per-template matrix
+- [x] Scaffold specs and hashes include the kit. proof: `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts -t byte-stable` — 1 passed (all ten template trees byte-stable, the `rts` hash `0c69cab4…` included), 2026-09-30. Every other gate that names templates derives its list from the directories on disk (`test-support/templates.ts`), and `.github/workflows/ci.yml` already runs the kit in the per-template matrix
+- [x] The native desktop host runs the kit. proof: a scaffolded `rts` built for desktop and run with `--target desktop --executable …/rts` on scenario `rts-native-orders` reports `runtime: native`, `pass: true` — `F2` selects the army (`selection.order` `idle`), `KeyH` puts the selection on `hold`, so `component.selection.order` and `state.selectionOrder` both read `hold` at the `ordered` step, 204 ticks, 0 diagnostics, non-blank `after.png` (1280×720, luma σ 21.77) — log `/tmp/pr376-main-rts-native.log`, capture `/tmp/pr376-main-rts-native-after.png`, 2026-09-30
 - 2026-09-29, phase 3: `battlefield-performance` went green with the ceilings unchanged, and the entry above is superseded: its
   "presentation rate" reading was wrong. The series held the boot (frames with no draw count failed `maxDrawCalls` closed) and the
   p95 tail was a queue stall from whole-buffer instance uploads, not the virtual display. See the sub-box in phase 3.
@@ -96,6 +97,3 @@ simulation step. Worldgen is seeded (mulberry32) with exactly one `Math.random` 
   background — one direction, one flat colour — filled the corner of the frame with a pale grey
   wedge. The sky photograph is now the light and the environment, not a backdrop: at every zoom the
   frame is ground. `ZOOM_RANGE.far` and the apron's size are a pair; the kit's AGENTS.md says so.
-## Blocked on
-
-- Native desktop run of the kit — `pnpm native:build` lane, before merge.

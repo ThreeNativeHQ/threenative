@@ -41,7 +41,7 @@ name it are renamed to `tower-defense` in the same change. The old template stay
 
 ### Phase 1 — rename and headless rules
 
-- [x] `templates/defense` becomes `templates/tower-defense`; every spec, script, fixture, CI entry and README line that names it follows. proof: `rg "templates/defense"` outside `docs/PRDs/done` and frozen evidence is empty; `pnpm exec vitest run packages/create-threenative scripts/__tests__/visual-gate.spec.ts scripts/__tests__/capability-recall.spec.ts` 866 tests green; `pnpm exec tsx scripts/check-template-conventions.ts` resolves the `tower-defense` row (its remaining findings name `adventure` and `shooter`, and fail identically on the PR head) — 2026-09-29
+- [x] `templates/defense` becomes `templates/tower-defense`; every spec, script, fixture, CI entry and README line that names it follows. proof: `rg "templates/defense"` outside `docs/PRDs/done` and frozen evidence is empty; `pnpm exec vitest run packages/create-threenative scripts/__tests__/visual-gate.spec.ts scripts/__tests__/capability-recall.spec.ts` 866 tests green; `pnpm exec tsx scripts/check-template-conventions.ts` resolves the `tower-defense` row (its remaining findings name `shooter`, and fail identically on the PR head) — 2026-09-29
 - [x] Balance, economy, waves and level scaling are pure modules pinned to Bastion's numbers: 360 credits, 25 lives, 12 waves of `7+2n`, HP scale `1+(n-1)·0.2+(n-1)²·0.023`, four towers (100/160/190/120), upgrade `0.85×`/`1.3×`, sell `floor(0.65×invested)`, wave bonus `55+10n (+25 no leak)`, Titans on 6 and 12. proof: `packages/create-threenative/__tests__/tower-defense.spec.ts`, 26 tests green — 2026-09-29. It also pins a real race: the director cleared a wave in the very update that released its last enemy, because the scene counts the living before stepping it.
 
 ### Phase 2 — the game plays and looks right
@@ -58,7 +58,7 @@ name it are renamed to `tower-defense` in the same change. The old template stay
 ### Phase 3 — gates
 
 - [x] Scaffold hash, the 100-line instruction cap, the palette rule (six roles, one accent), the capability-recall corpus and the render-file gate pass. proof: `scaffold.spec.ts`, `template.spec.ts`, `visual-gate.spec.ts`, `pnpm caps:recall`, `check-template-quality`, `sync-mcp-configs --check` — 2026-09-29
-- [x] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — `budgets ok: 12 framework packages, 20 example workspaces, … 11 templates ship src/render/quality.ts …` after the adventure removal and the shooter `AnimationPlayer` table-line fix, 2026-09-30.
+- [x] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — `budgets ok: 12 framework packages, 20 example workspaces, … 11 templates ship src/render/quality.ts …` after the shooter `AnimationPlayer` table-line fix, 2026-09-30.
 - [x] The look gallery is current. proof: `/home/joao/Pictures/threenative-aaa-look/` holds a fresh `tower-defense.png` and the stale `defense.png` is gone; sailing, shooter and starter were retaken by hand after the delegated arm timed out on queue contention, the others by the arm — 2026-09-29
 - [x] Native. proof: a scaffolded tower-defense built for desktop (`pnpm build:desktop` with `THREENATIVE_RUNTIME_BINARY` at the locally built Linux host) and run with `--target desktop --executable dist-native/tower-defense` reports `runtime: native`, `status` PLAYING, `kills` 6, `wave` 1 and `tower.0.shots` 24 at 901 frames with a non-blank `after.png`, 2026-09-30.
 
