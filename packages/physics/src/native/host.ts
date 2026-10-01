@@ -817,8 +817,15 @@ export function createNativePhysicsSimulation(
         throw new Error("TN_NATIVE_PHYSICS_VEHICLE_MISSING: runtime ABI is too old");
       const record = requireVehicle(id, "readVehicleState");
       const count = raw.readVehicleState(id, record.buffer);
+      // The record is sized once from the wheel count, so the only honest answer is all of it.
+      // A short write leaves the tail at whatever the previous frame left there and a longer one
+      // means the ABI moved; either way the wheels the game reads would not be this car's.
       if (!Number.isSafeInteger(count) || count < 1)
         throw new Error("TN_VEHICLE_UNKNOWN: the vehicle left the backend.");
+      if (count !== record.buffer.length)
+        throw new Error(
+          `TN_VEHICLE_STATE_SHORT: readVehicleState wrote ${count} of ${record.buffer.length} floats for vehicle ${id}.`,
+        );
       record.state.speed = record.buffer[0] ?? 0;
       return record.state;
     },

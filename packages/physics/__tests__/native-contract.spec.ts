@@ -862,4 +862,37 @@ describe("native physics contract", () => {
     native.removeBody(0);
     expect(() => native.readVehicleState?.(id)).toThrow(/TN_VEHICLE_UNKNOWN/);
   });
+
+  // The record is sized from the wheel count, so anything other than all of it is a broken read.
+  // A one-wheel write into a four-wheel record used to pass and hand the game three stale wheels.
+  it("refuses a vehicle state that does not fill the wheel record", () => {
+    const withCount = (count: number, written = 4) =>
+      createNativePhysicsSimulation(
+        {
+          createBody: () => 0,
+          createVehicle: () => 4,
+          readVehicleState: (_id: number, output: Float32Array) => {
+            output.fill(0, 0, Math.min(written, output.length));
+            return count;
+          },
+        } as unknown as INativeSimulation,
+        "0.30.0",
+      );
+
+    for (const count of [1, 2, 3, 5, 12]) {
+      const native = withCount(count);
+      native.createBody(bodyOptions());
+      const id = native.createVehicle?.({
+        ...vehicleOptions,
+        wheels: [frontLeft, frontLeft, frontLeft, frontLeft],
+      }) as number;
+      expect(() => native.readVehicleState?.(id)).toThrow(/TN_VEHICLE_STATE_SHORT/);
+    }
+
+    // -1 is the runtime's own "unknown vehicle or short buffer", which stays TN_VEHICLE_UNKNOWN.
+    const gone = withCount(-1);
+    gone.createBody(bodyOptions());
+    const goneId = gone.createVehicle?.(vehicleOptions) as number;
+    expect(() => gone.readVehicleState?.(goneId)).toThrow(/TN_VEHICLE_UNKNOWN/);
+  });
 });
