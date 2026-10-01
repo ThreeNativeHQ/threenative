@@ -373,7 +373,7 @@ void BiquadFilterNode::process(float* output, size_t numFrames, int numChannels)
     const float q = std::max(q_.valueAtTime(startTime), 0.0001f);
     const double nyquist = sampleRate * 0.5;
     const double f0 = std::clamp(static_cast<double>(hz), 1.0, std::max(nyquist - 1.0, 1.0));
-    const double w0 = 2.0 * M_PI * f0 / sampleRate;
+    const double w0 = 2.0 * 3.14159265358979323846 * f0 / sampleRate;
     const double alpha = std::sin(w0) / (2.0 * static_cast<double>(q));
     const double a0 = 1.0 + alpha;
     const double b0 = ((1.0 - std::cos(w0)) / 2.0) / a0;
