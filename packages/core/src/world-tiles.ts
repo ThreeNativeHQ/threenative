@@ -209,7 +209,7 @@ const LOD_TRANSITION_FRAMES = 3;
 /** Tiles per side in a merged super-tile block. Small, because a block is culled as one object. */
 const TERRAIN_MERGE_BLOCK = 4;
 const TERRAIN_MERGE_FLAG = "TN_TERRAIN_MERGE";
-const TERRAIN_MERGE_MARKER_MS = 5_000;
+const TERRAIN_TILE_MARKER_MS = 5_000;
 const BRIDGE_COORDINATE_EPSILON = 1e-4;
 
 /**
@@ -1839,7 +1839,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
   /** Tile key -> block key currently hiding it, so a settled member is not drawn twice. */
   readonly #mergedMembers = new Map<string, string>();
   #blockRebuilds = 0;
-  #mergeToldAt = Number.NEGATIVE_INFINITY;
+  #tilesToldAt = Number.NEGATIVE_INFINITY;
   readonly #mergeTiles: boolean;
   // The last `follow` ran out of admission budget before it wanted everything, so the next one
   // has to run even if the follow point has not moved. Cleared at the top of `follow`.
@@ -1992,11 +1992,13 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * What the main pass submits for terrain levels right now: `tiles` surfaces, held as `blocks`
    * merged super-tiles plus one mesh each for the tiles that are not merged (a lone block member or
    * a tile mid LOD morph). `draws` is `blocks` plus those individual meshes, so with the merge off
-   * it is exactly the number of visible level meshes — the census the merge exists to cut. `rebuilds`
-   * counts the block geometries built over this residency owner's life.
+   * it is exactly the number of visible level meshes — the census the merge exists to cut. `blending`
+   * counts the resident tiles mid LOD morph, which are always among the individual meshes.
+   * `rebuilds` counts the block geometries built over this residency owner's life.
    */
   get terrainTiles(): {
     readonly blocks: number;
+    readonly blending: number;
     readonly draws: number;
     readonly rebuilds: number;
     readonly tiles: number;
@@ -2009,6 +2011,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     const blocks = this.#blocks.size;
     return {
       blocks,
+      blending: this.blendingTiles,
       draws: individual + blocks,
       rebuilds: this.#blockRebuilds,
       tiles: individual + merged,
@@ -2214,7 +2217,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#seamPass();
     if (lodFrame !== undefined) this.#recordLodPopAfterReconciliation(lodFrame);
     this.#recordPeaks();
-    this.#reportMergeMarker();
+    this.#reportTileMarker();
   }
 
   debug(): Record<string, unknown> {
@@ -2270,6 +2273,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       residentTileBudget: this.residentTileBudget,
       topologyBytes: this.#topologyBytes,
       lodTransitions: this.#lodTransitions,
+      terrainTiles: this.terrainTiles,
       maxLodPop: this.maxLodPop,
       stitchedEdges: this.#stitchedEdges,
       skirtVertexCount: [...this.#resident.values()].reduce(
@@ -3016,16 +3020,19 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     return typeof host.performance?.now === "function" ? host.performance.now() : Date.now();
   }
 
-  /** `TN_TERRAIN_MERGE`, every `TERRAIN_MERGE_MARKER_MS` while the merge is on. */
-  #reportMergeMarker(): void {
-    if (!this.#mergeTiles) return;
+  /**
+   * `TN_TERRAIN_TILES`, every `TERRAIN_TILE_MARKER_MS`, with the merge on or off: the same census
+   * before and after is the only way to read what the merge cut.
+   */
+  #reportTileMarker(): void {
     const now = this.#now();
-    if (now - this.#mergeToldAt < TERRAIN_MERGE_MARKER_MS) return;
-    this.#mergeToldAt = now;
+    if (now - this.#tilesToldAt < TERRAIN_TILE_MARKER_MS) return;
+    this.#tilesToldAt = now;
     const stats = this.terrainTiles;
     console.info(
-      `TN_TERRAIN_MERGE tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} ` +
-        `draws=${String(stats.draws)} rebuilds=${String(stats.rebuilds)}`,
+      `TN_TERRAIN_TILES tiles=${String(stats.tiles)} blocks=${String(stats.blocks)} ` +
+        `draws=${String(stats.draws)} blending=${String(stats.blending)} ` +
+        `rebuilds=${String(stats.rebuilds)}`,
     );
   }
 

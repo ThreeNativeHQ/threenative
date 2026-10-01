@@ -27,6 +27,22 @@ function blockMeshes(tiles: TerrainTiles): Mesh[] {
   );
 }
 
+/** Every visible terrain level mesh and block mesh: the tiles the main pass would submit. */
+function submittedMeshes(tiles: TerrainTiles): number {
+  const levels = new Set<unknown>();
+  for (const key of tiles.residentKeys) {
+    const tile = tiles.getTile(key);
+    if (tile === undefined) continue;
+    for (const level of tile.lod.levels) levels.add(level.object);
+  }
+  let submitted = 0;
+  tiles.traverseVisible((object) => {
+    if (object instanceof Mesh && (object.name.startsWith(BLOCK_PREFIX) || levels.has(object)))
+      submitted += 1;
+  });
+  return submitted;
+}
+
 function blockKey(mesh: Mesh): { lod: number; blockX: number; blockZ: number } {
   const key = mesh.name.slice(BLOCK_PREFIX.length);
   const [lod, cell] = key.split(":");
@@ -117,6 +133,27 @@ describe("TerrainTiles merge", () => {
       Reflect.deleteProperty(globalThis, "__tnTerrainMerge");
       if (previousGlobal !== undefined)
         (globalThis as { __tnTerrainMerge?: unknown }).__tnTerrainMerge = previousGlobal;
+    }
+  });
+
+  it("reports the tile census beside the lodTransitions stat, counting the meshes it submits", () => {
+    for (const mergeTiles of [false, true]) {
+      const tiles = terrain(mergeTiles);
+      try {
+        tiles.follow({ x: 16, z: 16 });
+        const stat = tiles.debug().terrainTiles as {
+          blending: number;
+          blocks: number;
+          draws: number;
+          tiles: number;
+        };
+        expect(stat.draws).toBe(submittedMeshes(tiles));
+        expect(stat.tiles).toBe(tiles.residentTileCount);
+        expect(stat.blending).toBe(tiles.blendingTiles);
+        expect(stat.blocks).toBe(mergeTiles ? 1 : 0);
+      } finally {
+        tiles.dispose();
+      }
     }
   });
 
