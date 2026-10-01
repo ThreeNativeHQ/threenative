@@ -491,3 +491,24 @@ separate public encoder needs caller-prepared PBR surfaces and exact-time baked
 water. Successful dry-fixture vanilla/native consumers are described in PRD-466;
 this does not tick the default full-world GUI handoff or AC-8. Reassignment and
 actual export-consumer screenshots join PR #381's development captures.
+
+Spatial inspection (2026-10-01, AC-9): `packages/terrain/src/editor/spatialInspector.ts`
+answers read-only point, profile and saved-reference queries from the evaluated
+arrays, labels `bilinear-heightfield` and `evaluated-triangle` separately with
+their difference, and rejects non-finite, malformed and out-of-extent queries.
+A top-down reference registers through the smallest 2D similarity from two
+distinct controls; the synthetic 0.5 m/px, 30° sheet reports
+`scaleMetresPerPixel` 0.5 and `rotationDegrees` 30, control residuals below
+1e-9 m, and its deliberately displaced checkpoint residual of 5.000000 m against
+a 1 m tolerance, so `calibrated` stays false. Perspective screenshots, one-control
+maps and unknown datums are labelled and never fitted. References are stored beside
+the recipe in the authoring document, reload with it, and reach neither the
+evaluated state nor the GLB, whose JSON carries one node and no landmark names.
+`packages/terrain/__tests__/spatial-inspection.spec.ts` (5 cases) runs through the
+public inspection API, the real Vite middleware and `TerrainEditorController`:
+`pnpm exec vitest run packages/terrain` passes 6 files / 35 tests. The editor lane's
+`window.strata.inspect` profile and the headless `api/inspect` profile are asserted
+equal on one rendered revision by `pnpm --filter strata-terrain-preview test:terrain:editor`,
+which exits 0 on WebGPU NVIDIA/turing with 100-prop revisions drawing in 120–146 ms;
+root `pnpm typecheck` and `pnpm lint` exit 0. Region statistics and a rendered
+map/grid overlay are not part of this milestone.
