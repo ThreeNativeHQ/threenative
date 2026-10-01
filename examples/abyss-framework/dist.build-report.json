@@ -2,13 +2,13 @@
   "artifact": {
     "kind": "directory",
     "name": "dist",
-    "sha256": "06c7bb1822000079ffdef980cecab5fb724f6bc10125c2c7ccc3385797138b9b"
+    "sha256": "279c9028a54c8fa7ef092c5ef7e3a3b43ab38e9600cc6bcd0e2c1243691701a7"
   },
   "measured": {
-    "artifactBytes": 12362143,
-    "packagedAssetBytes": 771728
+    "artifactBytes": 12563552,
+    "packagedAssetBytes": 786109
   },
-  "manifestSha256": "4a4cf593b08ca921c69f1a56e4063b438e38c9d57d5f5724ce63eb60f275dbfc",
+  "manifestSha256": "e96b9804e18d941afd1774ff628452ab4db9c199a7230ee00cba306cf58ad036",
   "performanceBudget": null,
   "profile": null,
   "schemaVersion": 1,

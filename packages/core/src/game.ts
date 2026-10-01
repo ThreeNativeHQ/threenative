@@ -99,6 +99,7 @@ import {
   staticRoots,
   staticTransformCensus,
 } from "./static-transform.js";
+import { resolveTargetFps } from "./target-fps.js";
 import {
   type IUiBridge,
   UI_DEV_METRICS_MESSAGE,
@@ -318,8 +319,6 @@ export type GamePlugin<
   TPhysics = undefined,
 > = GamePluginFunction<TState, TPhysics> | IGamePluginHooks<TState, TPhysics>;
 
-/** The `display.maxFps` a game gets when its config does not name one. */
-const DEFAULT_TARGET_FPS = 60;
 /**
  * The global a native host reads to know the world is on screen. Named here rather than written
  * inline so the host and the framework agree on one spelling.
@@ -1240,6 +1239,12 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
+    // The GPU-selected main-pass tally, registered by whichever streamed world is added to the
+    // scene. The frame budget reads it once per window; a world with no sample reports undefined, so
+    // the window carries nothing rather than a zero no frame selected.
+    let gpuTallyProvider:
+      | (() => { readonly instances: number; readonly triangles: number } | undefined)
+      | undefined;
     const ctx: ICtx<TState, TPhysics> = {
       add: (object) => {
         // Narrowed through a plain `Object3D` rather than the type parameter: a type guard applied
@@ -1256,6 +1261,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (activeRenderer === undefined)
             throw new Error("Cannot add a compute-driven object before the game starts.");
           this.#computeDriven.add(node, activeRenderer);
+        }
+        // A streamed world that can say what the GPU selected, so `TN_FRAME_BUDGET` reports the
+        // GPU-selected main-pass count beside its pass record. The tally is asked for only when the
+        // frame budget is on: with it off and no validation, the world adds no readback at all.
+        const tallySource = node as {
+          enableGpuSceneTally?: () => void;
+          gpuSceneTally?: () =>
+            | { readonly instances: number; readonly triangles: number }
+            | undefined;
+        };
+        if (typeof tallySource.gpuSceneTally === "function") {
+          gpuTallyProvider = tallySource.gpuSceneTally.bind(node);
+          if (this.#config.frameBudget !== false) tallySource.enableGpuSceneTally?.();
         }
         return object;
       },
@@ -1348,10 +1366,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     this.#sceneName = bootSceneName;
     // The scaler exists only when the game asked for one. A pinned number leaves this undefined,
     // which is what makes "pinned" a guarantee rather than a preference the loop may overrule.
+    // `maxFps: 0` removes the ceiling, and a scaler with no budget is not a scaler with a loose
+    // one, so an uncapped game simply does not get adaptive scaling.
+    const initialTarget = resolveTargetFps(this.#config, getPlatform());
+    let heldTargetFps = initialTarget.targetFps;
     const scaler =
-      renderer.surface().scaleSource === "auto"
-        ? new ResolutionScaler({ targetFps: this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS })
+      renderer.surface().scaleSource === "auto" && initialTarget.targetFps > 0
+        ? new ResolutionScaler({ targetFps: initialTarget.targetFps })
         : undefined;
+    // The panel's own rate, once a window of presented frames can say it. The native host's
+    // present counter is the only series there that counts displays rather than loop iterations;
+    // on the web one rAF callback is one vblank, so the median presented interval is the period.
+    let measuredRefreshHz: number | undefined;
     // The world pass's own draw-call count, kept from the last frame of the window so the
     // projection line can report what the renderer was handed beside what the plan predicted.
     // A plan and a measurement that disagree is the finding; one number pretending to be both
@@ -1381,6 +1407,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               observeCompilation();
               const compileObserved = compilingInWindow;
               compilingInWindow = false;
+              // The display's own rate, read once per window from the cadence the loop already
+              // measured: the host's present counter where there is one, else the median presented
+              // interval, which on the web is the vblank period because rAF is the presentation.
+              measuredRefreshHz =
+                reported.presentedFps ??
+                (reported.presented.p50 > 0 ? 1_000 / reported.presented.p50 : undefined);
+              const target = resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz);
+              if (
+                scaler !== undefined &&
+                target.targetFps > 0 &&
+                target.targetFps !== heldTargetFps
+              ) {
+                heldTargetFps = target.targetFps;
+                scaler.retarget(heldTargetFps);
+              }
               renderer.observeRenderChainBudget?.(reported);
               const projection = this.#projection;
               // Printed every window, projecting or declined. `TN_RENDER_PROJECTION` says once
@@ -1414,7 +1455,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               const warning = sceneWarning(
                 reported,
                 describeSceneShape(reported, this.#cameraCull?.report),
-                this.#config.display?.maxFps ?? DEFAULT_TARGET_FPS,
+                target.targetFps,
               );
               lastSceneWarning = warning;
               if (warning !== undefined) console.warn(formatSceneWarning(warning));
@@ -1442,6 +1483,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // resolution it is not drawing at. The window carries it in both pinned and auto
             // modes: turning the convention off does not turn its measurement off.
             readGpuAgeFrames: () => renderer.gpuFrameAge?.(),
+            // The world's own count of what the GPU selected, not `info.render.triangles`' upper
+            // bound over mesh capacity. Absent until the world's first tally lands.
+            readGpuTally: () => gpuTallyProvider?.(),
+            // The resolved budget rides the window rather than a marker of its own, so a harness
+            // reads the target and the frames it was judged against out of one line. It lags the
+            // window by one, because the window is built before this callback runs.
+            readTarget: () => resolveTargetFps(this.#config, getPlatform(), measuredRefreshHz),
             readSurface: () => {
               observeCompilation();
               return {
@@ -1568,7 +1616,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           const computeStart = frameBudget === undefined ? 0 : budgetNow();
           beginSpan(SPANS.compute);
           try {
-            this.#computeDriven.processRender(this.#renderer);
+            // The render camera comes with it, because a render-cadence consumer that culls by the
+            // view — a streamed world's main batches — has to be driven from here and not from a draw
+            // three skips for a mesh that is hidden because it has nothing to draw.
+            this.#computeDriven.processRender(this.#renderer, camera);
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1746,6 +1797,26 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // resolved frame id so a resolve still in flight is counted stale, not measured twice.
           const gpuSample = renderer.gpuFrameSample?.();
           frameBudget?.addGpuMs(gpuSample?.ms, gpuSample?.frame);
+          // The one summed render timestamp split by pass: main and shadow come from the pass
+          // recorder's per-uid query results, and everything else in that pool (post chain,
+          // reflections, HUD) is the remainder. Compute is its own pool.
+          const gpuSplit =
+            gpuSample === undefined || gpuSample.frame === undefined
+              ? undefined
+              : renderPassBudget?.gpuPassMs(gpuSample.frame);
+          if (gpuSplit !== undefined && gpuSample !== undefined) {
+            const computeMs = renderer.gpuComputeMs?.();
+            frameBudget?.addGpuBucketMs({
+              main: gpuSplit.main,
+              shadow: gpuSplit.shadow,
+              other: Math.max(0, gpuSample.ms - gpuSplit.main - gpuSplit.shadow),
+              ...(computeMs === undefined ? {} : { compute: computeMs }),
+            });
+          }
+          // The main pass's own GPU series, for the adaptive LOD control loop: the frame budget's
+          // `gpuMain` bucket is the record, and this is the same number smoothed on the renderer so
+          // a world holding only the renderer can read it. Fed every frame, fresh or not.
+          renderer.noteGpuMainMs?.(gpuSplit?.main, gpuSample?.frame);
           if (!depthCoupledOutput && this.#sceneEntered) this.#scene?.render(ctx);
           if (this.#sceneEntered) {
             worldRendered = true;

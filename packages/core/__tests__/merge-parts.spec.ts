@@ -58,6 +58,32 @@ describe("mergeParts", () => {
     return geometry;
   }
 
+  it("should merge a cooked (quantized uv) part with a float part at the values three draws", () => {
+    const cooked = new BoxGeometry(1, 1, 1);
+    const uv = cooked.getAttribute("uv");
+    const quantized = new Uint16Array(uv.count * 2);
+    for (let index = 0; index < quantized.length; index += 1)
+      quantized[index] = Math.round((uv.array[index] as number) * 65535);
+    cooked.setAttribute("uv", new BufferAttribute(quantized, 2, true));
+    const plain = new BoxGeometry(2, 2, 2);
+
+    // The control: the refusal a cooked chunk hit on the 2 km map.
+    expect(mergeGeometries([cooked.toNonIndexed(), plain.toNonIndexed()], false)).toBeNull();
+
+    const merged = mergeParts([{ geometry: cooked }, { geometry: plain }], {
+      label: "cooked",
+      preserve: ["uv", "normal"],
+    });
+    const out = merged.getAttribute("uv");
+    expect(out.array).toBeInstanceOf(Float32Array);
+    // Both parts are indexed, so the merge is too and the first part's vertices are the source's own,
+    // in its order — read from the indexed input, not from its de-indexed expansion.
+    expect(merged.index).not.toBeNull();
+    const first = cooked.getAttribute("uv");
+    for (let index = 0; index < first.count; index += 1)
+      expect(out.getX(index)).toBeCloseTo(first.getX(index), 4);
+  });
+
   it("should merge a non-indexed extrusion with an indexed box (PRD-277 AC4)", () => {
     const extrusion = extruded();
     const box = new BoxGeometry(1, 1, 1);
@@ -106,7 +132,7 @@ describe("mergeParts", () => {
     const merged = mergeParts(parts, { label: "banner" });
 
     const colors = merged.getAttribute("color");
-    const perPart = new BoxGeometry(1, 1, 1).toNonIndexed().getAttribute("position").count;
+    const perPart = new BoxGeometry(1, 1, 1).getAttribute("position").count;
     expect(colors.itemSize).toBe(3);
     expect(colors.count).toBe(perPart * tones.length);
     tones.forEach((tone, index) => {
@@ -160,8 +186,7 @@ describe("mergeParts", () => {
       expect(Object.keys(merged.morphAttributes)).toEqual([]);
       expect(merged.morphTargetsRelative).toBe(false);
       expect(merged.getAttribute("position").count).toBe(
-        morphed.toNonIndexed().getAttribute("position").count +
-          plain.toNonIndexed().getAttribute("position").count,
+        morphed.getAttribute("position").count + plain.getAttribute("position").count,
       );
     }
 
@@ -334,7 +359,9 @@ describe("mergeByMaterial", () => {
     expect(merged).toHaveLength(3);
     expect(merged.map((mesh) => mesh.material)).toEqual([hull, deck, mast]);
     for (const mesh of merged) {
-      expect(mesh.geometry.getAttribute("position").count).toBe(3 * 36);
+      // Three boxes merge indexed: 24 vertices each, not the 36 a de-indexed merge would upload.
+      expect(mesh.geometry.getAttribute("position").count).toBe(3 * 24);
+      expect(mesh.geometry.index).not.toBeNull();
       // Box corners sit at ±0.5 and the first piece is placed at (10, 1, 2), so the first merged
       // vertex reads 10.5 — the placement is in the buffer, not on a node.
       expect(mesh.geometry.getAttribute("position").getX(0)).toBeCloseTo(10.5, 5);
@@ -378,7 +405,7 @@ describe("mergeByMaterial", () => {
       skip: (mesh) => mesh.name === "radar",
     });
 
-    expect(merged?.geometry.getAttribute("position").count).toBe(2 * 36);
+    expect(merged?.geometry.getAttribute("position").count).toBe(2 * 24);
     expect(merged?.geometry.getAttribute("uv")).toBeDefined();
   });
 
@@ -413,6 +440,146 @@ describe("mergeByMaterial", () => {
 
     const [merged] = mergeByMaterial(root, { label: "crew" });
 
-    expect(merged?.geometry.getAttribute("position").count).toBe(36);
+    expect(merged?.geometry.getAttribute("position").count).toBe(24);
+  });
+
+  /**
+   * The 228.8 MB the browser walk measured: 826 buffers created out of `createAttribute`, every one
+   * of them a merged chunk's first draw, because the bake de-indexed everything. These are the four
+   * facts that cut it.
+   */
+  describe("upload size", () => {
+    /** A grid with `triangles` triangles over `tris / 2 + 1` vertices, so vertex count is tunable. */
+    function grid(triangles: number): BufferGeometry {
+      const quads = triangles / 2;
+      const positions = new Float32Array((quads + 1) * 2 * 3);
+      for (let vertex = 0; vertex <= quads; vertex += 1) {
+        const at = vertex / quads;
+        positions.set([at, 0, at, at, 1, at], vertex * 6);
+      }
+      const geometry = new BufferGeometry();
+      geometry.setAttribute("position", new BufferAttribute(positions, 3));
+      geometry.setAttribute(
+        "normal",
+        new BufferAttribute(new Float32Array((quads + 1) * 2 * 3), 3),
+      );
+      geometry.setAttribute("uv", new BufferAttribute(new Float32Array((quads + 1) * 4), 2));
+      // 16-bit: each part names its own vertices, so the merge crossing 65,535 is the widen's job.
+      const indices = new Uint16Array(triangles * 3);
+      for (let quad = 0; quad < quads; quad += 1) {
+        const at = quad * 6;
+        indices[at] = quad * 2;
+        indices[at + 1] = quad * 2 + 1;
+        indices[at + 2] = quad * 2 + 2;
+        indices[at + 3] = quad * 2 + 1;
+        indices[at + 4] = quad * 2 + 3;
+        indices[at + 5] = quad * 2 + 2;
+      }
+      geometry.setIndex(new BufferAttribute(indices, 1));
+      return geometry;
+    }
+
+    it("should merge an all-indexed group indexed, at the parts' own vertex counts", () => {
+      const box = new BoxGeometry(1, 1, 1);
+      const sphere = new BoxGeometry(2, 2, 2);
+      const merged = mergeParts([{ geometry: box }, { geometry: sphere }], {
+        label: "indexed",
+        preserve: ["uv", "normal"],
+      });
+
+      expect(merged.index).not.toBeNull();
+      // 24 + 24 vertices, not 36 + 36: the index survives, so the merged buffer is a third smaller.
+      expect(merged.getAttribute("position").count).toBe(
+        box.getAttribute("position").count + sphere.getAttribute("position").count,
+      );
+      expect(merged.getAttribute("position").count).toBeLessThan(
+        box.toNonIndexed().getAttribute("position").count +
+          sphere.toNonIndexed().getAttribute("position").count,
+      );
+      // Every part's indices still name its own vertices, offset into the merged vertex range.
+      const indices = merged.getIndex();
+      const first = box.getIndex();
+      const offset = box.getAttribute("position").count;
+      for (let at = 0; at < (first?.count ?? 0); at += 1)
+        expect(indices?.getX((first?.count ?? 0) + at)).toBe((first?.getX(at) ?? 0) + offset);
+    });
+
+    it("should still merge a mixed group non-indexed", () => {
+      const merged = mergeParts(
+        [{ geometry: extruded() }, { geometry: new BoxGeometry(1, 1, 1) }],
+        {
+          label: "mixed",
+        },
+      );
+
+      expect(merged.index).toBeNull();
+    });
+
+    it("should widen the index past 65,535 vertices", () => {
+      // 40,000 triangles over 20,001 vertices each: two of them cross 65,535 and must stay readable.
+      const merged = mergeParts([{ geometry: grid(40_000) }, { geometry: grid(40_000) }], {
+        label: "wide",
+        preserve: ["normal", "uv"],
+      });
+
+      expect(merged.getAttribute("position").count).toBe(80_004);
+      const wide = merged.getIndex();
+      expect(wide?.array).toBeInstanceOf(Uint32Array);
+      expect(wide?.getX((wide?.count ?? 1) - 1)).toBeGreaterThan(65_535);
+    });
+
+    it("should split a material group that crosses the vertex budget, each part under it", () => {
+      const hull = surface("hull");
+      const root = new Group();
+      // 400 pieces of 204 vertices: one 81,600-vertex group under a 4,000-vertex budget is twenty-two
+      // meshes, and every one of them still draws with the game's own material.
+      const perPart = grid(200).getAttribute("position").count;
+      for (let part = 0; part < 400; part += 1) {
+        const mesh = new Mesh(grid(200), hull);
+        mesh.position.set(part, 0, 0);
+        root.add(mesh);
+      }
+
+      const merged = mergeByMaterial(root, { label: "yard", maxGroupVertices: 4_000 });
+
+      expect(merged.length).toBeGreaterThan(1);
+      for (const mesh of merged) {
+        expect(mesh.material).toBe(hull);
+        // Every part lands in a group whole: one over-budget group is not an excuse to drop a part.
+        expect(mesh.geometry.getAttribute("position").count).toBeLessThanOrEqual(4_000);
+        expect(mesh.geometry.getAttribute("position").count % perPart).toBe(0);
+      }
+      expect(
+        merged.reduce(
+          (total, mesh) => total + (mesh.geometry.getAttribute("position").count ?? 0),
+          0,
+        ),
+      ).toBe(400 * perPart);
+    });
+
+    it("should not expand an instanced shape past 2,048 triangles, however small the group is", () => {
+      const hull = surface("hull");
+      const root = new Group();
+      const small = new InstancedMesh(new BoxGeometry(1, 1, 1), hull, 2);
+      const detailed = new InstancedMesh(grid(2_400), hull, 2);
+      small.setMatrixAt(0, new Matrix4());
+      small.setMatrixAt(1, new Matrix4().makeTranslation(5, 0, 0));
+      detailed.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, 5));
+      detailed.setMatrixAt(1, new Matrix4().makeTranslation(5, 0, 5));
+      root.add(small, detailed);
+
+      const merged = mergeByMaterial(root, {
+        expandInstancedUnderTriangles: 1_000_000,
+        label: "props",
+      });
+
+      // The 12-triangle box repeats into the merge; the 2,400-triangle prop stays one instanced draw.
+      const kept = merged.filter((mesh) => mesh instanceof InstancedMesh);
+      expect(kept).toHaveLength(1);
+      expect((kept[0] as InstancedMesh).geometry.index?.count).toBe(2_400 * 3);
+      const baked = merged.filter((mesh) => !(mesh instanceof InstancedMesh));
+      expect(baked).toHaveLength(1);
+      expect(baked[0]?.geometry.getAttribute("position").count).toBe(2 * 24);
+    });
   });
 });

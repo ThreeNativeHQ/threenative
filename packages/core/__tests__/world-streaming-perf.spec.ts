@@ -107,6 +107,9 @@ async function makeWorld(): Promise<{
     follow,
     loadModel: async () => model(),
     ring: 1,
+    // Both halves stream: the caster clusters are keys too, and one that re-mints costs the same
+    // node build twice.
+    shadows: { cast: true },
     surface,
     url: "/world/world.json",
   });
@@ -131,8 +134,7 @@ function settle(world: WorldCells, limit = 4000): void {
 function batches(world: WorldCells): Map<string, InstancedMesh> {
   const meshes = new Map<string, InstancedMesh>();
   world.traverse((object) => {
-    if (object instanceof InstancedMesh && !object.name.endsWith(":caster"))
-      meshes.set(object.name, object);
+    if (object instanceof InstancedMesh) meshes.set(object.name, object);
   });
   return meshes;
 }
@@ -209,6 +211,7 @@ describe("WorldCells streaming performance", () => {
   it("draws only live records, and never gives one key a second mesh across a residency cycle", async () => {
     const { follow, world } = await makeWorld();
     const seen = new Set<string>();
+    const uuidByKey = new Map<string, string>();
     const reminted: string[] = [];
     let now = 0;
 
@@ -222,13 +225,18 @@ describe("WorldCells streaming performance", () => {
         world.update();
         if (frame % 4 === 0) await flush(1);
         for (const [name, mesh] of batches(world)) {
-          if (seen.has(mesh.uuid)) {
-            if (!seen.has(name)) reminted.push(name);
-            seen.add(name);
+          // A key keeps one uuid for the whole walk, on the main half and on the caster clusters
+          // alike: a second mesh is a node three built twice, in the main pass and in every shadow
+          // pass. Compared frame by frame, because `grow` swaps a fresh mesh in under the same name
+          // inside a settle — two quiescent snapshots never see it.
+          const held = uuidByKey.get(name);
+          if (held !== undefined) {
+            if (held !== mesh.uuid) reminted.push(name);
             continue;
           }
+          uuidByKey.set(name, mesh.uuid);
+          if (seen.has(mesh.uuid)) reminted.push(`${name} took a mesh another key already had`);
           seen.add(mesh.uuid);
-          seen.add(name);
           // A prewarmed batch is minted empty and only filled when a placement wants the key, so
           // `count` 0 is a mesh waiting rather than a hole.
           if (mesh.count === 0) continue;
@@ -366,17 +374,50 @@ describe("WorldCells streaming performance", () => {
     const { follow, world } = await makeWorld();
     settle(world);
     const before = world.stats();
-    // A follow point that has not moved cannot change a level or cull answer, so every refilter it
-    // does queue is the unchanged kind.
+    // A walk in 0.25 m updates, 7.5 m in all: the refilter pass runs on its own 2 m step, not on
+    // every update, so the ring is refiltered a handful of times and not thirty.
     for (let frame = 0; frame < 30; frame += 1) {
       follow.position.x += 0.25;
       world.update();
       await flush(1);
     }
     const after = world.stats();
+    // It did run, and it queued real work: at a 2 m step a placement can cross a level or cull
+    // boundary, which is the whole reason the step exists — a scan every half metre spent its cost
+    // re-deriving brackets for the same answer, and still let a switch land as late as the scan.
     expect(after.rebuilds).toBeGreaterThan(before.rebuilds);
-    expect(after.unchanged).toBeGreaterThan(0);
+    // Fewer refilters than updates, and the unchanged share is still a share of the refilters.
+    expect(after.rebuilds - before.rebuilds).toBeLessThan(30);
     expect(after.unchanged).toBeLessThanOrEqual(after.rebuilds);
+    world.dispose();
+  });
+
+  // The step has to be a gate on the *pass*, not only on the answer it reaches. The per-batch
+  // hysteresis is `threshold / 8`, so a walk inside the step still finds nothing stale — while a
+  // pass that ran anyway walked every resident cell, derived both distance brackets per batch,
+  // allocated the stale list and sorted it, to reach that same nothing (~60 ms on the 2 km map).
+  // `rebuilds` cannot tell those two frames apart: only the pass count can.
+  it("does not touch the cell loop for ten updates inside the refilter step", async () => {
+    const { follow, world } = await makeWorld();
+    settle(world);
+    const before = world.stats();
+    const start = follow.position.x;
+    for (let frame = 0; frame < 10; frame += 1) {
+      follow.position.x = start + frame * 0.19;
+      world.update();
+      await flush(1);
+    }
+    const inside = world.stats();
+    // Ten updates, 1.9 m in total, and not one of them reached a cell: `rebuilds` already said
+    // nothing was rebuilt, and `refilters` says the ring was never walked to find that out.
+    expect(inside.rebuilds).toBe(before.rebuilds);
+    expect(inside.refilters).toBe(before.refilters);
+
+    // Past the 2 m step the pass runs, because that is the only thing the step buys.
+    follow.position.x = start + 2.4;
+    world.update();
+    const past = world.stats();
+    expect(past.refilters).toBe(before.refilters + 1);
     world.dispose();
   });
 });
@@ -455,7 +496,18 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
     return built;
   }
 
-  const frame = { camera: new PerspectiveCamera(), renderer: {} } as never;
+  // The engine frame clock, four seconds per read: past every `invalidationDelay` of the 24 / 96 /
+  // 320 cascade on the very first frame. This suite is about *which* levels an invalidation asks,
+  // and a coarse enough clock keeps the delay from ever being the reason one of them is not due.
+  let clock = 0;
+  const frame = {
+    camera: new PerspectiveCamera(),
+    renderer: {},
+    get time(): number {
+      clock += 4;
+      return clock;
+    },
+  } as never;
 
   it("gives every level its own step, so the fine one re-renders a walking camera far less", () => {
     const perLevel = node([0.25, 0.125, 0.125]);
@@ -484,8 +536,13 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
 
   it("invalidates only the levels whose window covers the region, and nothing when it is unchanged", () => {
     const built = node(0.125);
+    // One level per frame, finest first, so the node needs a few frames to map all three before a
+    // steady walk is the thing under test.
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ moved: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ moved: 3, rendered: 1, deferred: 2 });
+    while (built.stats.deferred > 0) built.updateBefore(frame);
+    built.updateBefore(frame);
+    expect(built.stats).toMatchObject({ rendered: 0, deferred: 0 });
 
     // A corner the coarsest window reaches and the two fine ones do not.
     built.invalidateRegion({
@@ -503,10 +560,13 @@ describe("VirtualShadowNode per-level refresh and region invalidation", () => {
     // A region at the camera redraws every window, and `invalidateAll` still redraws them all.
     built.invalidateRegion({ max: { x: 1, y: 1, z: 1 }, min: { x: -1, y: -1, z: -1 } });
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 1, deferred: 2 });
+    while (built.stats.deferred > 0) built.updateBefore(frame);
+    built.updateBefore(frame);
+    expect(built.stats).toMatchObject({ rendered: 0, deferred: 0 });
     built.invalidateAll();
     built.updateBefore(frame);
-    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 3 });
+    expect(built.stats).toMatchObject({ invalidated: 3, rendered: 1, deferred: 2 });
     built.dispose();
   });
 });

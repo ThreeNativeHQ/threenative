@@ -13,7 +13,9 @@ const config: IThreeNativeConfig = {
     orientation: "landscape",
     fullscreen: true,
     keepScreenOn: true,
-    maxFps: 60,
+    // No `maxFps`: the engine targets the display's own refresh rate, capped at 120 on desktop
+    // and web and 60 on mobile, and reports the resolved value in every `TN_FRAME_BUDGET` window.
+    // Set a number to override it, or 0 to remove the ceiling.
   },
   window: {
     title: "__PROJECT_NAME__",

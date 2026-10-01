@@ -108,4 +108,54 @@ describe("render pass budget", () => {
     >[0];
     expect(RenderPassBudget.install(raw)).toBeUndefined();
   });
+
+  it("attributes resolved per-pass GPU time to main and shadow, not the parent", () => {
+    // Three allocates one timestamp uid per render pass at `beginRenderPass`, and renders shadow
+    // passes before the colour pass, so the nested render's uid lands first. The pool is three's
+    // own shape: `queryOffsets` is allocation order, `timestamps` fills in on the async resolve.
+    const pool = {
+      queryOffsets: new Map<string, number>(),
+      timestamps: new Map<string, number>(),
+    };
+    const frame = 7;
+    let allocation = 0;
+    const calls = { value: 0 };
+    interface IFakeGpuRenderer {
+      backend: {
+        timestampQueryPool: {
+          render: { queryOffsets: Map<string, number>; timestamps: Map<string, number> };
+        };
+      };
+      info: { render: { calls: number; drawCalls: number; triangles: number } };
+      render(scene: IFakeScene, camera: object): void;
+    }
+    const raw: IFakeGpuRenderer = {
+      backend: { timestampQueryPool: { render: pool } },
+      info: { render: { calls: 0, drawCalls: 0, triangles: 0 } },
+      render: (scene: IFakeScene, _camera: object): void => {
+        for (const child of scene.nested ?? []) raw.render(child, {});
+        allocation += 1;
+        pool.queryOffsets.set(
+          `r:${calls.value}:${allocation}:f${frame}`,
+          pool.queryOffsets.size * 2,
+        );
+        raw.info.render.drawCalls += scene.submissions.draws;
+        raw.info.render.triangles += scene.submissions.triangles;
+      },
+    };
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    budget.beginFrame();
+    raw.render({ ...MAIN, submissions: { draws: 10, triangles: 100 }, nested: [SHADOW] }, {});
+    // Nothing resolves until three's pool has been read back.
+    expect(budget.gpuPassMs(frame)).toBeUndefined();
+    const uids = [...pool.queryOffsets.keys()];
+    expect(uids).toHaveLength(2);
+    const [shadowUid, mainUid] = uids;
+    if (shadowUid === undefined || mainUid === undefined)
+      throw new Error("fake backend allocated fewer than two timestamp uids");
+    pool.timestamps.set(shadowUid, 2.25); // nested shadow, allocated first
+    pool.timestamps.set(mainUid, 5.5); // main
+    // Main must not absorb the shadow's pass: the split is 5.5 and 2.25, not 7.75 and 0.
+    expect(budget.gpuPassMs(frame)).toEqual({ main: 5.5, shadow: 2.25 });
+  });
 });

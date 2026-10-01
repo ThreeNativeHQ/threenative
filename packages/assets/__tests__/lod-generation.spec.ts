@@ -3,20 +3,29 @@ import path from "node:path";
 import { Document, type GLTF, type Node as GltfNode, Logger, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
-import { TorusKnotGeometry } from "three";
+import { PlaneGeometry, TorusKnotGeometry } from "three";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { compileAssets } from "../src/index.js";
 import { authoredLodName } from "../src/lod/eligibility.js";
-import { type DiscreteLod, TNDiscreteLod, TN_DISCRETE_LOD } from "../src/lod/extension.js";
+import {
+  type DiscreteLod,
+  LOD_SCHEMA_VERSION,
+  TNDiscreteLod,
+  TN_DISCRETE_LOD,
+} from "../src/lod/extension.js";
 import {
   DEFAULT_LOD_MIN_TRIANGLES,
   type IModelLodOptions,
   type IModelLodSummary,
   LOD_ERROR_TARGETS,
+  LOD_GENERATOR_VERSION,
   LOD_MIN_SAVING,
+  LOD_TERMINAL_KEEP_RATIO,
+  LOD_TERMINAL_MIN_TRIANGLES,
   resolveLodPolicy,
   selectDiscreteLevels,
+  terminalLevelTriangles,
 } from "../src/lod/generate.js";
 import { modelPass } from "../src/passes/model.js";
 import { TNVirtualGeometry } from "../src/virtual/extension.js";
@@ -348,6 +357,122 @@ async function rawGlb(spec: {
   return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
 }
 
+/**
+ * `patches` disconnected flat open grids in one primitive. LockBorder can only reduce each patch to
+ * its boundary ring — the interior collapses to nothing — so the error ladder stalls at
+ * `patches * 4 * segments` triangles and a terminal level is the only way below it. Coplanar, so no
+ * geometric error, which is exactly the case the terminal level exists for.
+ */
+async function patchesGlb(patches: number, segments: number, size = 0.4): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+  const columns = Math.ceil(Math.sqrt(patches));
+  for (let patch = 0; patch < patches; patch += 1) {
+    const geometry = new PlaneGeometry(size, size, segments, segments);
+    geometry.rotateX(-Math.PI / 2);
+    geometry.translate((patch % columns) * size * 1.2, 0, Math.floor(patch / columns) * size * 1.2);
+    const offset = positions.length / 3;
+    for (const value of geometry.attributes.position?.array ?? []) positions.push(value as number);
+    for (const value of geometry.attributes.normal?.array ?? []) normals.push(value as number);
+    for (const index of geometry.index?.array ?? []) indices.push((index as number) + offset);
+  }
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(positions))
+        .setBuffer(buffer),
+    )
+    .setAttribute(
+      "NORMAL",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(Float32Array.from(normals))
+        .setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from(indices))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("rock"));
+  scene.addChild(
+    document.createNode("patches").setMesh(document.createMesh("patches").addPrimitive(primitive)),
+  );
+  return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+}
+
+/** A hand-built one-level chain, the shape every chain had before the terminal level existed. */
+async function oldChainGlb(): Promise<Buffer> {
+  const document = new Document();
+  const buffer = document.createBuffer();
+  const scene = document.createScene();
+  const primitive = document
+    .createPrimitive()
+    .setAttribute(
+      "POSITION",
+      document
+        .createAccessor()
+        .setType("VEC3")
+        .setArray(new Float32Array(4 * 3))
+        .setBuffer(buffer),
+    )
+    .setIndices(
+      document
+        .createAccessor()
+        .setType("SCALAR")
+        .setArray(Uint32Array.from([0, 1, 2, 0, 2, 3]))
+        .setBuffer(buffer),
+    )
+    .setMaterial(document.createMaterial("rock"));
+  const extension = document.createExtension(TNDiscreteLod).setRequired(false);
+  const property = extension
+    .createDiscreteLod()
+    .setStrategy("discrete")
+    .setBaselineTriangles(2)
+    .setLod0Triangles(2)
+    .setErrorScale(1)
+    .setCounts([1])
+    .setErrors([0.1])
+    .setAbsoluteErrors([0.1])
+    .setSharedVertexBuffers(true);
+  property.addIndices(
+    document
+      .createAccessor()
+      .setType("SCALAR")
+      .setArray(Uint32Array.from([0, 1, 2]))
+      .setBuffer(buffer),
+  );
+  primitive.setExtension(TN_DISCRETE_LOD, property);
+  extension.setMetadata({
+    generator: "old",
+    generationFingerprint: "old",
+    schemaVersion: LOD_SCHEMA_VERSION,
+    sourceDigest: "old",
+    sourcePath: "old.glb",
+    toolchain: "old",
+  });
+  scene.addChild(
+    document.createNode("old").setMesh(document.createMesh("old").addPrimitive(primitive)),
+  );
+  return Buffer.from(
+    await new NodeIO()
+      .setLogger(SILENT)
+      .registerExtensions([...ALL_EXTENSIONS, TNDiscreteLod])
+      .writeBinary(document),
+  );
+}
+
 async function readWithLod(root: Buffer): Promise<Document> {
   await MeshoptDecoder.ready;
   const io = new NodeIO()
@@ -552,13 +677,20 @@ describe("automatic discrete LOD generation", () => {
       tight.primitives[0]?.levels[0]?.error ?? 0,
     );
 
-    // A saving rule nothing can satisfy leaves the primitive with no accepted level.
+    // A saving rule the error ladder cannot satisfy still leaves the primitive its one terminal
+    // coarse level: the terminal is exempt from the saving gate by design (PRD-473), so it does not
+    // strand a far instance at LOD0 just because no error-target level paid enough.
     const unsatisfiable = await cook(await mediumGlb(), {
       lod: { generation: { maxLevels: 4, errorTargets: [0.06], minSaving: 0.99 } },
       virtual: "none",
     });
-    expect(unsatisfiable.generated).toBe(0);
-    expect(unsatisfiable.reasons).toContain("insufficient-reduction");
+    expect(unsatisfiable.generated).toBe(1);
+    expect(unsatisfiable.reasons).not.toContain("insufficient-reduction");
+    expect(unsatisfiable.primitives[0]?.levels).toHaveLength(1);
+    const terminal = unsatisfiable.primitives[0]?.levels[0];
+    expect(terminal?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+      Math.max(1_500, Math.ceil(0.05 * (unsatisfiable.primitives[0]?.trianglesBefore ?? 0))),
+    );
   }, 240_000);
 
   it("does not generate when the policy is off", async () => {
@@ -637,8 +769,10 @@ describe("automatic discrete LOD generation", () => {
       },
       { build: () => smallGlb({ joints: true }), reason: "deforming" },
       { build: () => smallGlb({ morph: true }), reason: "deforming" },
+      // `MASK` used to be declined here too, and no longer is: an alpha-tested card draws a subset
+      // of LOD0's fragments, so a chain keeps its silhouette. `foliage-lod.spec.ts` proves the
+      // foliage half; `BLEND` is still refused, because a simplified blended card is a hole.
       { build: () => smallGlb({ alpha: "BLEND" }), reason: "material-unsupported" },
-      { build: () => smallGlb({ alpha: "MASK" }), reason: "material-unsupported" },
       { build: () => smallGlb({ name: "hull_LOD1" }), reason: "authored-lod" },
       {
         // Edge (0,1) is shared by three triangles: a non-manifold fan. A tiny floor is needed so
@@ -868,6 +1002,159 @@ describe("discrete LOD artifact rules", () => {
     expect(authoredLodName("hull")).toBe(false);
     expect(authoredLodName("lodestone")).toBe(false);
   });
+});
+
+describe("terminal coarse level (PRD-473)", () => {
+  /**
+   * A realistic tree-soup fixture: `cards` separate open quads (two triangles each), every triangle
+   * carrying its own three vertices and a duplicated UV seam on the shared edge. This is how a
+   * machinefall trunk exports — no shared vertices, so LockBorder refuses every error collapse and
+   * the simplifier sees no component to spend — and it is opaque, so the needle-card reducer
+   * declines it too. Before this fix it shipped no chain at all and every runtime level drew LOD0.
+   */
+  async function seamCardSoupGlb(cards: number): Promise<Buffer> {
+    const document = new Document();
+    const buffer = document.createBuffer();
+    const scene = document.createScene();
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    let seed = 987_654_321;
+    const random = (): number => {
+      seed = (seed * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
+      return seed / 0x7f_ff_ff_ff;
+    };
+    for (let card = 0; card < cards; card += 1) {
+      const cx = (random() * 2 - 1) * 20;
+      const cy = (random() * 2 - 1) * 20;
+      const cz = (random() * 2 - 1) * 20;
+      const half = 0.05;
+      // Two triangles as a quad, with the diagonal corners duplicated: triangle soup, and the
+      // shared edge appears twice with different UVs (the seam the simplifier must ignore here).
+      const corners = [
+        [cx - half, cy - half, cz, 0, 0],
+        [cx + half, cy - half, cz, 1, 0],
+        [cx + half, cy + half, cz, 1, 1],
+        [cx - half, cy - half, cz, 0, 0],
+        [cx + half, cy + half, cz, 1, 1],
+        [cx - half, cy + half, cz, 0, 1],
+      ];
+      for (const corner of corners) {
+        positions.push(corner[0] as number, corner[1] as number, corner[2] as number);
+        uvs.push(corner[3] as number, corner[4] as number);
+      }
+      const base = card * 6;
+      indices.push(base, base + 1, base + 2, base + 3, base + 4, base + 5);
+    }
+    const primitive = document
+      .createPrimitive()
+      .setAttribute("POSITION", accessor(document, buffer, "VEC3", Float32Array.from(positions)))
+      .setAttribute("TEXCOORD_0", accessor(document, buffer, "VEC2", Float32Array.from(uvs)))
+      .setIndices(accessor(document, buffer, "SCALAR", Uint32Array.from(indices)))
+      .setMaterial(document.createMaterial("trunk").setAlphaMode("OPAQUE"));
+    scene.addChild(
+      document.createNode("trunk").setMesh(document.createMesh("trunk").addPrimitive(primitive)),
+    );
+    return Buffer.from(await new NodeIO().registerExtensions(ALL_EXTENSIONS).writeBinary(document));
+  }
+
+  it("gives an opaque card soup a terminal level the error ladder and card reducer both decline", async () => {
+    // 8,000 quads = 16,000 triangles, matching the real machinefall trees. The error ladder keeps
+    // nothing (LockBorder on an all-border soup) and the card reducer refuses OPAQUE, so only the
+    // welded terminal pass can bring the last level to the target.
+    const input = await seamCardSoupGlb(8_000);
+    const summary = await cook(input, { lod: GENERATE, virtual: "none" });
+    expect(summary.generated).toBe(1);
+    const entry = summary.primitives[0];
+    if (entry === undefined) throw new Error("no primitive");
+    expect(entry.trianglesBefore).toBe(16_000);
+    expect(entry.strategy).toBe("discrete");
+    const target = Math.max(
+      LOD_TERMINAL_MIN_TRIANGLES,
+      Math.ceil(LOD_TERMINAL_KEEP_RATIO * 16_000),
+    );
+    const terminal = entry.levels.at(-1);
+    expect(entry.levels.length).toBeGreaterThanOrEqual(1);
+    expect(terminal?.triangles ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(target);
+    expect(terminal?.triangles ?? 0).toBeGreaterThan(0);
+    // The terminal's error is still recorded, so the runtime can place its switch from it.
+    expect(terminal?.error ?? 0).toBeGreaterThan(0);
+    expect(terminal?.absoluteError ?? 0).toBeGreaterThan(0);
+
+    // The welded terminal is deterministic: the same bytes bake the same chain.
+    const again = await cook(input, { lod: GENERATE, virtual: "none" });
+    expect(again.primitives[0]?.levels).toEqual(entry.levels);
+  }, 240_000);
+
+  it("ends an open mesh's chain at max(1500, 5%) and leaves the error levels alone", async () => {
+    // 16 patches x 24 segments: 18,432 triangles, and LockBorder can only reach the 1,536-triangle
+    // boundary ring. The target of 1,500 is below that, so this is exactly the chain that used to
+    // stall at 8% saved.
+    const input = await patchesGlb(16, 24);
+    const summary = await cook(input, { lod: GENERATE, virtual: "none" });
+    expect(summary.generated).toBe(1);
+    const entry = summary.primitives[0];
+    if (entry === undefined) throw new Error("no primitive");
+    const lod0 = entry.trianglesBefore;
+    expect(lod0).toBe(18_432);
+    const target = Math.max(LOD_TERMINAL_MIN_TRIANGLES, Math.ceil(LOD_TERMINAL_KEEP_RATIO * lod0));
+    expect(target).toBe(1_500);
+
+    const levels = entry.levels;
+    const terminal = levels.at(-1);
+    expect(levels.length).toBeGreaterThanOrEqual(2);
+    expect(terminal?.triangles ?? 0).toBeLessThanOrEqual(target);
+    expect(terminal?.triangles ?? 0).toBeGreaterThan(0);
+    expect(levels[0]?.triangles).toBe(16 * 4 * 24);
+    for (let index = 1; index < levels.length; index += 1) {
+      expect(levels[index]?.triangles).toBeLessThan(levels[index - 1]?.triangles ?? 0);
+      expect(levels[index]?.error).toBeGreaterThanOrEqual(levels[index - 1]?.error ?? 0);
+    }
+    // The one error level the ladder reached is byte-identical to what a terminal-less cook of the
+    // same mesh produced: adding the terminal did not recalculate it.
+    const ladder = await cook(input, {
+      lod: { generation: { maxLevels: 2, errorTargets: [0.06] } },
+      virtual: "none",
+    });
+    expect(ladder.primitives[0]?.levels[0]?.triangles).toBe(levels[0]?.triangles);
+    expect(ladder.primitives[0]?.levels[0]?.error).toBe(levels[0]?.error);
+  }, 240_000);
+
+  it("gives a mesh already under the terminal floor no terminal level", async () => {
+    // 1,024 triangles: under the 1,500 floor, so `max(1500, 5%)` exceeds LOD0 and there is nothing
+    // to gain. Only the error level ships, exactly one of them.
+    const summary = await cook(await patchesGlb(8, 8), { lod: GENERATE, virtual: "none" });
+    const levels = summary.primitives[0]?.levels ?? [];
+    expect(summary.trianglesBefore).toBe(1_024);
+    expect(levels).toHaveLength(1);
+    expect(levels[0]?.triangles ?? 0).toBeGreaterThan(0);
+    expect(levels[0]?.triangles ?? 0).toBeLessThan(1_024);
+  }, 120_000);
+
+  it("bakes the terminal level deterministically", async () => {
+    const input = await patchesGlb(16, 24);
+    const first = await modelPass({ lod: GENERATE, virtual: "none" }).apply(input, "patches.glb");
+    const second = await modelPass({ lod: GENERATE, virtual: "none" }).apply(input, "patches.glb");
+    if (Buffer.isBuffer(first) || Buffer.isBuffer(second)) throw new Error("unchanged");
+    expect(first.buffer.equals(second.buffer)).toBe(true);
+  }, 240_000);
+
+  it("loads an old chain that has no terminal level", async () => {
+    // The chain layout did not change, so a file cooked before this feature still reads. The cache
+    // identity moved instead, which is what makes a re-cook pick the terminal level up.
+    expect(LOD_SCHEMA_VERSION).toBe(1);
+    expect(LOD_GENERATOR_VERSION).toBe(3);
+    const document = await readWithLod(await oldChainGlb());
+    const primitive = document
+      .getRoot()
+      .listMeshes()
+      .flatMap((mesh) => mesh.listPrimitives())
+      .find((entry) => entry.getExtension(TN_DISCRETE_LOD) !== null);
+    const property = primitive?.getExtension<DiscreteLod>(TN_DISCRETE_LOD);
+    expect(property).not.toBeUndefined();
+    expect(property?.getCounts()).toEqual([1]);
+    expect(property?.getIndices()).toHaveLength(1);
+  }, 60_000);
 });
 
 describe("assets.lod through the public compiler", () => {

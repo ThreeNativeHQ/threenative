@@ -137,4 +137,70 @@ describe("frame-budget GPU series", () => {
     expect(() => budget.addGpuMs(10, 1.5)).toThrow(/frame/u);
     expect(() => budget.addGpuMs(10, -1)).toThrow(/frame/u);
   });
+
+  it("summarises the per-bucket GPU p50 and appends the fields to the marker", () => {
+    const lines: string[] = [];
+    const windows: IFrameBudgetWindow[] = [];
+    const budget = new FrameBudget({
+      onWindow: (window) => windows.push(window),
+      report: (line) => lines.push(line),
+      reportEvery: 2,
+    });
+    const clock = { now: 0, timestamp: 0 };
+    const frames = [
+      { compute: 0.44, main: 6.06, other: 1.04, shadow: 2.02, total: 10 },
+      { compute: 0.66, main: 12.12, other: 3.03, shadow: 4.04, total: 20 },
+    ];
+    for (const [index, frame] of frames.entries()) {
+      clock.now += 1;
+      clock.timestamp += 16.7;
+      budget.beginFrame(clock.timestamp, clock.now);
+      clock.now += 2;
+      budget.markSimulationEnd(clock.now, 1);
+      budget.addRender(9);
+      clock.now += 9;
+      budget.addGpuMs(frame.total, index + 1);
+      budget.addGpuBucketMs({
+        compute: frame.compute,
+        main: frame.main,
+        other: frame.other,
+        shadow: frame.shadow,
+      });
+      budget.endFrame(clock.now);
+    }
+    const window = windows[0] as IFrameBudgetWindow;
+    // p50 of two samples is the lower of the two; every bucket is reported to one decimal.
+    expect(window.gpuMain).toBe(6.1);
+    expect(window.gpuShadow).toBe(2);
+    expect(window.gpuOther).toBe(1);
+    expect(window.gpuCompute).toBe(0.4);
+    const marker = lines.find((line) => line.startsWith(`${FRAME_BUDGET_MARKER}:`));
+    expect(marker).toBeDefined();
+    const payload = JSON.parse(
+      (marker as string).slice(`${FRAME_BUDGET_MARKER}:`.length),
+    ) as Record<string, unknown>;
+    expect(payload.gpuMain).toBe(6.1);
+    expect(payload.gpuShadow).toBe(2);
+    expect(payload.gpuOther).toBe(1);
+    expect(payload.gpuCompute).toBe(0.4);
+    // Appended after every existing field, so a reader that parsed the older line keeps its keys.
+    expect(Object.keys(payload).slice(-4)).toEqual([
+      "gpuMain",
+      "gpuShadow",
+      "gpuOther",
+      "gpuCompute",
+    ]);
+  });
+
+  it("reports a bucket absent rather than zero when no frame resolved it", () => {
+    const budget = gpuBudget();
+    budget.beginFrame(0, 0);
+    budget.addGpuMs(9, 1);
+    // Main and shadow resolved, compute did not: compute must stay absent.
+    budget.addGpuBucketMs({ main: 5, shadow: 2, other: 2 });
+    budget.endFrame(1);
+    const window = budget.window();
+    expect(window.gpuMain).toBe(5);
+    expect(window.gpuCompute).toBeUndefined();
+  });
 });
