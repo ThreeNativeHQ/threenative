@@ -164,6 +164,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // arrive through the templating step rather than a verbatim copy, which is why a content-hash
 // matcher does not list them and this ablation is the evidence instead.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // Recomputed 2026-10-01 on the merge of origin/develop (PRD-458 open worlds) into the rain +
+  // snow branch: neither side's values describe the merged tree, so all ten were re-measured
+  // through createProject; snow's tree did not move.
   // Recomputed 2026-10-01 (PRD-473 sandbox demo): every scaffold's .gitignore now carries the
   // asset pipeline's compiled outputs (manifest, bake receipt, hashed files), and the copied
   // capability manifest and reference gained the Scheduler's round-time-limit situation.
@@ -433,8 +436,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // arm64 cache-key fix: the distributed `patches/three@0.185.1.patch` carries #358's hunks without
   // the render-target samples line, so every scaffold that embeds it moved and all ten trees were
   // re-measured through `createProject` on the merged tree.
-  "action-rpg": "5f2f92b8a025d047ad74695a44a3d39df61defe0269d7abc90e84dccb615eb7c",
-  defense: "1c9976fed927d6f751980bdcb100f641071ce8c952e9440c496bda866df0556e",
+  "action-rpg": "2ee61fe892191a446342aa255f8bf7e3f3f84946f3c0d0a2797cd0034b058016",
+  defense: "d6c5844893c1e414c5bd998db6e20081c19391f12fae5904111dc10cb39ba7f6",
   // Recomputed 2026-09-09 for the current main pipeline patch after the Dream Loop additions.
   // Recomputed 2026-09-10 for PRD-372: every scaffold now includes the generated creature
   // authoring reference and its matching agent skill guidance, so all ten trees move together.
@@ -446,12 +449,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // `playtests/production-readiness.playtest.json` proving movement + state transitions + restart,
   // and the develop merge anchors the starter Menu buttons to the panel's left edge (PRD-217), so
   // only the starter tree moves.
-  minimal: "86fa2656f89dced1982c5e43c059a0d16097027a5a46f216df316779f78eecfb",
-  platformer: "be5ffb6200074fb6eb54a0587ae6947e7ada1c80c73e1e53451a8021d3ee5c3c",
-  runner: "3f76b7adc2ae29159be90fded7f4226d15816136346b5424df02445e2ff086f9",
-  puzzle: "12c65fc715a3025712d591c9ccd9a4d551a00a6a3ae6db65969878ea643131cd",
-  racing: "62c82446146b3e18604c3ab6e343603ff1c699064cc43070c9c9cd7824ee6cc7",
-  shooter: "fc153673fd8b2b0cc59d2f2e00973c70c5ae3e65c0bc97a2c1927852b78bffc5",
+  minimal: "e6a54f3316c6a2ee0a1710163aa202f2fb074ea43b7034303740fbbd6e865368",
+  platformer: "9c88fb076993ae884c98fa4d029df32ed686858250cbbda7d1518274da8357ff",
+  runner: "97e6673ca93ce5f11a1d7c91cbebee650b9578f4b79f797d4305b60cd82aa210",
+  puzzle: "9c4d5e923ea7efd388e87470ee3bfc449fb17f95f97f899be6b3d01615fba9e8",
+  racing: "70824b4d769e69ed3c7023cf08b4d2d13ca3750dfda9c8b0037e7a0b4c313b0f",
+  shooter: "74d7d4cd2a25baa27eddcc2452bd864bb293cb30c87ce586bc5b95729376bd14",
   // Recomputed 2026-09-25 for PRD-449: the starter ships three scenarios, not 24. The 21 engine
   // guards moved to `packages/create-threenative/template-playtests/starter/` and never reach a
   // generated project, so only the starter tree moves.
@@ -461,13 +464,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-09-28 on the merge of origin/develop (the prepared 11-package cohort: template
   // version pins and shipped MCP metadata) under PRD-462: neither side's value describes the tree
   // that carries both, so the starter was re-measured through `createProject` on the merged tree.
-  starter: "7cb203e129938191cd6f37fa564af12c1a9c24fef3b76a65c4e2f2f6d125038f",
+  // Recomputed 2026-10-01 for the PRD-458 merge of origin/develop: develop's
+  // capability manifest and generated reference, its template version pins and its scaffold bytes
+  // all moved on top of this branch's own, so all ten trees were re-measured through
+  // `createProject` on the merged tree.
+  starter: "d17235d9ed99429ef184e32d10801780c206b2c244796086635d8d2e75a065b8",
   // Recomputed 2026-09-02 for the VirtualShadowNode surface: the capability manifest and the
   // generated reference gain its entries, and those bytes are embedded in every scaffold, so all
   // eight parent trees move together.
   // Recomputed 2026-09-02 for the reconciled main: every tree carries the merged capability
   // manifest and generated reference, including the VirtualShadowNode surface.
   // Recomputed 2026-09-02 for PRD-324 phases 1-2: the capability manifest and the generated
+  // Recomputed 2026-09-28 for the PRD-458 merge of origin/develop: the distributed
+  // `patches/three@0.185.1.patch` now carries develop's #368 arm64 cache-key fix on top of the
+  // branch's own hunks, and develop's single tracked copy plus its scaffold changes moved the
+  // embedded patch, manifest and reference bytes, so neither side's values describe the merged
+  // tree. All ten were re-measured through `createProject` on the merged tree.
   // reference gain the bone-length and mirrored-clip surfaces, and those bytes ship in every
   // scaffold.
   // Recomputed 2026-09-02 for PRD-325: the generated capability manifest and reference gained the
@@ -489,9 +501,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // changes with the PRD-361/362 delivery; values come from the committed merged scaffold tree.
   // Recomputed 2026-09-27 after merging the PRD-400 three.js velocity patch with develop's
   // PRD-112/365 scaffold changes; the value comes from the committed merged scaffold tree.
-  sailing: "348125d2b8e60b766c0fbaa455e3004d9cc262615bfb2c4a9d18fc05e72a8f44",
-  // Added 2026-10-01 for PRD-469: the snow kit's no-install tree on the rain + snow merge.
-  snow: "4c8893762d42fc53a2773a052e2726e7a5029c54acd63d3ba264062b05a12082",
+  sailing: "c06207a05801baae26cf8ea10bccc89dc61e548bfa261e7613b652210c39aa66",
+  // Added 2026-10-01 for PRD-469: the snow kit's no-install tree.
+  snow: "f0dc1469f513ca7c4f2fea38c1ec6c70e5f2d355fc3673cf65cbf572ca2523c0",
   // Recomputed 2026-08-31 for the merged PRD-268 and PRD-269 render/runtime surfaces.
   // Recomputed 2026-08-30 for PRD-251: the generated capability manifest and reference gained
   // terrain fields, bounded tile residency, and the three plain-language world situations.

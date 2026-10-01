@@ -10,6 +10,7 @@ import type {
   SkinnedMesh,
 } from "three";
 
+import { isEngineRenderHook } from "./engine-render-hook.js";
 import { skinnedMaterialBlocked } from "./projection-skinned.js";
 import { uniformSignatureOf } from "./projection-uniform.js";
 import type { ProjectionExactReason, ProjectionReasonCode } from "./renderProjection.js";
@@ -248,9 +249,17 @@ function laneReasonOf(
  * and a batch would not call it at all, so a game that hooks a draw gets its own object back or the
  * frame is not projected. There is no third option that is honest, and this is rare enough that
  * whole-scene fallback is the right price.
+ *
+ * The engine's own borrows are the exception (PRD-458): `WorldCells` marks each prewarm hook as
+ * bookkeeping, and a marked callback claims no object, so folding it away loses nothing. A streamed
+ * world carries hundreds of them and unmarking them silently disabled the projection on exactly the
+ * scenes it exists for.
  */
 export function hasRenderHook(object: Object3D): boolean {
-  return Object.hasOwn(object, "onBeforeRender") || Object.hasOwn(object, "onAfterRender");
+  return (
+    (Object.hasOwn(object, "onBeforeRender") && !isEngineRenderHook(object.onBeforeRender)) ||
+    (Object.hasOwn(object, "onAfterRender") && !isEngineRenderHook(object.onAfterRender))
+  );
 }
 
 /** Why a source cannot share a batch, or the whole classification for one frame. */

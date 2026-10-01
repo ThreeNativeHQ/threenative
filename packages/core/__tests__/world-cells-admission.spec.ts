@@ -94,12 +94,19 @@ function terrainOf(world: WorldCells): TerrainTiles {
   return terrain;
 }
 
-/** One batch mesh, by the name `#buildOne` gives it. */
-/** The shared mesh an asset's level draws through; every resident cell has a segment in it. */
+/**
+ * The shared mesh an asset's level draws through; every resident cell has a segment in it. One per
+ * key for the main pass (PRD-458); the shadow-caster clusters beside it are one per world-grid
+ * square and are not this lookup's business.
+ */
 function batchOf(world: WorldCells, _cell: string, asset: string, level: number): InstancedMesh {
-  const name = `${asset}:${String(level)}:0`;
-  const mesh = world.getObjectByName(name);
-  if (!(mesh instanceof InstancedMesh)) throw new Error(`No batch mesh named '${name}'.`);
+  const key = `${asset}:${String(level)}:0`;
+  const meshes: InstancedMesh[] = [];
+  world.traverse((object: Object3D) => {
+    if (object instanceof InstancedMesh && object.name === key) meshes.push(object);
+  });
+  const mesh = meshes[0];
+  if (mesh === undefined) throw new Error(`No batch mesh named '${key}'.`);
   return mesh;
 }
 
@@ -178,7 +185,6 @@ function drain(world: WorldCells, limit = 4000): number[] {
   throw new Error(`WorldCells still owed ${String(world.stats().admission.backlog)} units.`);
 }
 
-/** Every batch mesh the world drew, as `name` to instance count. */
 /** Instances a shared mesh draws: free segment slots are zero matrices and draw nothing. */
 function live(mesh: InstancedMesh): number {
   const array = mesh.instanceMatrix.array as Float32Array;
@@ -187,10 +193,17 @@ function live(mesh: InstancedMesh): number {
   return count;
 }
 
+/**
+ * Every batch mesh the world drew, keyed by `asset:level:part` with the drawn-instance total across
+ * the world-grid clusters that key is split into (PRD-458).
+ */
 function drawn(world: WorldCells): Map<string, number> {
   const meshes = new Map<string, number>();
   world.traverse((object: Object3D) => {
-    if (object instanceof InstancedMesh) meshes.set(object.name, live(object));
+    if (object instanceof InstancedMesh) {
+      const key = object.name.split("@")[0] ?? object.name;
+      meshes.set(key, (meshes.get(key) ?? 0) + live(object));
+    }
   });
   return meshes;
 }
@@ -220,6 +233,71 @@ describe("WorldCells admission budget", () => {
     cells.dispose();
   });
 
+  it("keeps building props while the terrain catches up after a jump", async () => {
+    // Terrain admits first and every tile is a unit; with the whole allowance its own, a jump left
+    // the prop queue nothing for as long as the ground took to follow — on the 2 km map, seconds of
+    // a review camera looking at an empty forest.
+    const { follow, world: cells } = await makeWorld({ admissionBudgetMs: 2, priced: true });
+    cells.update();
+    await step(cells);
+    drain(cells);
+    const far = cellCenter(3, 3);
+    follow.position.x = far.x;
+    follow.position.z = far.z;
+    let shared = 0;
+    let previous = cells.stats().admission.backlog;
+    for (let frame = 0; frame < 400; frame += 1) {
+      cells.update();
+      await flush(1);
+      const { backlog, deferred } = cells.stats().admission;
+      // A frame where terrain still owed tiles and the prop queue still finished work of its own.
+      if (terrainOf(cells).deferredAdmissions > 0 && backlog < previous) shared += 1;
+      previous = backlog;
+      if (backlog === 0 && deferred === 0 && terrainOf(cells).deferredAdmissions === 0) break;
+    }
+    expect(shared).toBeGreaterThan(0);
+    expect(cells.stats().failures).toBe(0);
+    cells.dispose();
+  });
+
+  it("admits the cells around a jumped camera when the ring it left filled the cell budget", async () => {
+    // Residency keeps one ring of hysteresis, so after a jump those cells sat in a full budget and
+    // the cells the camera now needed were refused (pressure) until it moved again.
+    async function jump(to: readonly [number, number]): Promise<number> {
+      stubFixtureFetch();
+      const follow = followAt(cellCenter(0, 0).x, cellCenter(0, 0).z);
+      const cells = await WorldCells.load({
+        admissionBudgetMs: Number.POSITIVE_INFINITY,
+        budgets: { ...budgets, residentCells: 4 },
+        follow,
+        loadModel: async () => model(),
+        prefetchSeconds: 0,
+        ring: 1,
+        surface,
+        url: "/world/world.json",
+      });
+      cells.update();
+      await step(cells);
+      expect(cells.stats().residentCells).toBe(4);
+      const before = cells.stats().pressure.cells;
+      const at = cellCenter(to[0], to[1]);
+      follow.position.x = at.x;
+      follow.position.z = at.z;
+      await step(cells);
+      expect(cells.stats().residentCells).toBe(4);
+      expect(cells.stats().failures).toBe(0);
+      const refused = cells.stats().pressure.cells - before;
+      cells.dispose();
+      return refused;
+    }
+    // A two-cell jump to (2, 2) wants nine cells over a budget of four: the four the corner held are
+    // all within the hysteresis ring, so without the yield all eight new ones are refused; with it
+    // three of the four the corner held give way and only five are.
+    expect(await jump([2, 2])).toBe(5);
+    // A one-cell step is not a jump: the hysteresis holds, as a walk needs it to.
+    expect(await jump([1, 1])).toBe(5);
+  });
+
   it("reports the deferred work and the backlog while it waits, and empties both", async () => {
     const { world: cells } = await makeWorld({ admissionBudgetMs: 2, priced: true });
     cells.update();
@@ -245,7 +323,14 @@ describe("WorldCells admission budget", () => {
     const unbounded = await makeWorld({ admissionBudgetMs: Number.POSITIVE_INFINITY });
     unbounded.world.update();
     await flush();
-    unbounded.world.update();
+    // One mesh per world-grid cluster per key (PRD-458), and two fresh meshes an update, so an
+    // unbounded ring still needs as many updates as it has clusters to mint. What this compares is
+    // the answer, not how many frames it took.
+    for (let frame = 0; frame < 200; frame += 1) {
+      unbounded.world.update();
+      await flush(1);
+      if (unbounded.world.stats().admission.deferred === 0) break;
+    }
 
     // Nothing dropped, nothing doubled: the same meshes, with the same instances, however many
     // frames it took to admit them.

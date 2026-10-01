@@ -117,6 +117,15 @@ describe("core constraints", () => {
           // map, the colour, the geometry and every other appearance value stay the game's, and the
           // assertions below keep it that way.
           file !== "render/foliage-alpha.ts" &&
+          // The impostor baker is a SOURCE-derived mechanism: it stages the package's own parts into
+          // a private scene and captures their own albedo and normals into an atlas. It constructs a
+          // material only as a node twin of the source and copies every value from it; it chooses no
+          // colour, light, tone or palette. The assertions below keep that true.
+          file !== "render/world-impostor.ts" &&
+          // The impostor surface projects that atlas: albedo, normals and coverage come from it and
+          // scalar surface values from the source twin. The clear colour it saves is a scratch
+          // object for restore, not a look it picked. The assertions below keep it so.
+          file !== "render/world-impostor-surface.ts" &&
           // The geometry capture counts what the renderer submitted. It is handed a material by
           // `onBeforeRender` and puts it in a Set to report how many DISTINCT surfaces an object
           // was drawn with — identity, exactly as `warmup.ts` reads it. It constructs no material,
@@ -224,6 +233,28 @@ describe("core constraints", () => {
     // roughness, a metalness, an opacity — is how a framework starts deciding one.
     expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The impostor baker stages the package's own parts and captures their own albedo and normals.
+    // Every material value is copied from the source twin; the one colour literal is the scratch
+    // clear the capture sets and restores, not a look the framework chose. No light, tone, post or
+    // handwritten shader may appear.
+    const impostorBaker = readFileSync(
+      path.join(sourceDirectory, "render/world-impostor.ts"),
+      "utf8",
+    );
+    expect(impostorBaker).not.toMatch(/new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu);
+    expect([...new Set(impostorBaker.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu) ?? [])]).toEqual([
+      "0x000000",
+    ]);
+
+    // The surface samples albedo, normals and coverage out of the atlas and keeps the source's own
+    // scalar values. It originates no light, tone curve, post effect or shader, and names no colour.
+    const impostorSurface = readFileSync(
+      path.join(sourceDirectory, "render/world-impostor-surface.ts"),
+      "utf8",
+    );
+    expect(impostorSurface).not.toMatch(/new\s+\w*Light|tonemapping|postprocessing|\.wgsl/iu);
+    expect(impostorSurface.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     const particles = readFileSync(path.join(sourceDirectory, "particles.ts"), "utf8");
     expect(particles).not.toMatch(
