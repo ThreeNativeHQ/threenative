@@ -58,7 +58,7 @@ name it are renamed to `tower-defense` in the same change. The old template stay
 ### Phase 3 — gates
 
 - [x] Scaffold hash, the 100-line instruction cap, the palette rule (six roles, one accent), the capability-recall corpus and the render-file gate pass. proof: `scaffold.spec.ts`, `template.spec.ts`, `visual-gate.spec.ts`, `pnpm caps:recall`, `check-template-quality`, `sync-mcp-configs --check` — 2026-09-29
-- [ ] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — **open**: it stops at `check-core-boundary` on `templates/adventure/src/render/tools.ts` (another lane), before reaching the checks this template touches; those were run one by one instead.
+- [ ] `pnpm budgets` end to end. proof: `pnpm budgets` exits 0 — **open**: awaiting the final batch end-to-end budgets rerun.
 - [x] The look gallery is current. proof: `/home/joao/Pictures/threenative-aaa-look/` holds a fresh `tower-defense.png` and the stale `defense.png` is gone; sailing, shooter and starter were retaken by hand after the delegated arm timed out on queue contention, the others by the arm — 2026-09-29
 - [ ] Native. proof: a `--target desktop` playtest of this template — **open**: none was run; the game adds no helper that needs one (route, pooling and queries are existing installed systems), but nothing here claims a platform it did not run on.
 
