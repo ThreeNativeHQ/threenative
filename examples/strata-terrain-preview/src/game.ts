@@ -212,9 +212,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       }
       // --- the meadow's props -------------------------------------------------------------------
       //
-      // One variant set and one surface set per scene, built from the baked field: the placement
-      // rule reads the same colours and the same heights the ground material draws from, so a spruce
-      // stands where the ground says there is meadow rather than where a second opinion says so.
+      // Built on the first physics step rather than in `enter`, because both ways of asking the
+      // world where the ground is need a world that has been stepped: the ray query walks the
+      // heightfield's own triangles and the collider is not in the space until the solver runs.
+      // Asking in `enter` returns "no ground here" for every prop on a perfectly solid hillside.
       const propField: IPlacementField = {
         colors: data.colors,
         field,
@@ -225,65 +226,76 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const scatter = scatterProps(propField, BENCHMARK[world].focus);
       const propParts = buildPropVariants();
       const flat = flatPropMaterials();
-      // Ground contact is a raycast against the drawn terrain mesh, not the bilinear sampler: a
-      // spruce whose base floats a centimetre above the visible surface reads as a mistake at the
-      // exact distance a player spends the most time at.
-      const geometryBounds = mesh.geometry.boundingBox ?? mesh.geometry.computeBoundingBox();
-      const top = geometryBounds?.max.y ?? 0;
+      let props: ReturnType<typeof createProps> | undefined;
+      let released = false;
+      let surfacesDispose: (() => void) | undefined;
+      // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
+      // the bilinear sampler: a spruce floating a centimetre above the visible surface reads as a
+      // mistake at exactly the distance a player spends most of their time at.
+      mesh.updateMatrixWorld(true);
+      mesh.geometry.computeBoundingBox();
+      const top = mesh.geometry.boundingBox?.max.y ?? 0;
       const groundAt: PropGroundQuery = (placement, at) => {
         const [x, , z] = at;
-        const hit = ctx.raycast({
+        const visual = ctx.raycast({
           direction: new Vector3(0, -1, 0),
           origin: new Vector3(x, top + 2, z),
           targets: [mesh],
         });
+        const physical = ctx.physics.directSpaceState.intersectRay({
+          collisionMask: 4,
+          from: { x, y: top + 2, z },
+          to: { x, y: -100, z },
+        });
         const [originX, originY, originZ] = placement.position;
         return {
-          height: hit?.point.y ?? null,
+          height: visual?.point.y ?? physical?.position.y ?? null,
           offset: originY - field.heightAt(originX, originZ),
         };
       };
-      const props = createProps(scatter.placements, groundAt, propParts, flat);
-      ctx.add(props.object);
-      ctx.entities.add("props", {
-        object: props.object,
-        debug: () => ({
-          boulders: scatter.counts.boulder,
-          draws: props.meshes.length,
-          grass: scatter.counts.grass,
-          poppies: scatter.counts.poppy,
-          spruces: scatter.counts.spruce,
-          totalInstances: props.meshes.reduce((sum, mesh) => sum + mesh.count, 0),
-          triangles: props.meshes.reduce(
-            (sum, mesh) => sum + (mesh.count * (mesh.geometry.index?.count ?? 0)) / 3,
-            0,
-          ),
-        }),
-        dispose: () => {
-          released = true;
-          surfacesDispose?.();
-          flat.dispose();
-          props.dispose();
-          for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
-        },
-      });
-      // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
-      // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
-      // server costs this world its bark and its needles rather than its trees.
-      let released = false;
-      let surfacesDispose: (() => void) | undefined;
-      void createPropSurfaces(ctx.assets).then((surfaces) => {
-        this.#surfaces = surfaces;
-        if (released) {
-          surfaces.dispose();
-          return;
-        }
-        for (const mesh of props.meshes) {
-          const role = mesh.name.split(":").at(-1) as keyof typeof surfaces.materials;
-          mesh.material = surfaces.materials[role];
-        }
-        surfacesDispose = surfaces.dispose;
-      });
+      const buildProps = (): void => {
+        props = createProps(scatter.placements, groundAt, propParts, flat);
+        ctx.add(props.object);
+        ctx.entities.add("props", {
+          object: props.object,
+          debug: () => ({
+            boulders: scatter.counts.boulder,
+            draws: props?.meshes.length ?? 0,
+            grass: scatter.counts.grass,
+            poppies: scatter.counts.poppy,
+            spruces: scatter.counts.spruce,
+            totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
+            triangles:
+              props?.meshes.reduce(
+                (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
+                0,
+              ) ?? 0,
+          }),
+          dispose: () => {
+            released = true;
+            surfacesDispose?.();
+            flat.dispose();
+            props?.dispose();
+            for (const parts of propParts.values())
+              for (const part of parts) part.geometry.dispose();
+          },
+        });
+        // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
+        // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
+        // server costs this world its bark and its needles rather than its trees.
+        void createPropSurfaces(ctx.assets).then((surfaces) => {
+          this.#surfaces = surfaces;
+          if (released) {
+            surfaces.dispose();
+            return;
+          }
+          for (const draw of props?.meshes ?? []) {
+            const role = draw.name.split(":").at(-1) as keyof typeof surfaces.materials;
+            draw.material = surfaces.materials[role];
+          }
+          surfacesDispose = surfaces.dispose;
+        });
+      };
 
       let frames = 0;
       let travel = 0;
@@ -365,6 +377,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           minSlope = Math.min(minSlope, slope);
           maxSlope = Math.max(maxSlope, slope);
         }
+        // The props are placed here rather than in `enter`: their ground query asks the stepped
+        // world where the surface is, and neither the ray tree nor the collider answers before the
+        // solver has run once.
+        if (props === undefined) buildProps();
         frames++;
         ctx.state.set({
           world,
@@ -379,12 +395,13 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           waveSamples,
           waveRange: waveSamples ? maxWave - minWave : 0,
           sampleSlopeRange: waveSamples ? maxSlope - minSlope : 0,
-          propDraws: props.meshes.length,
-          propInstances: props.meshes.reduce((sum, mesh) => sum + mesh.count, 0),
-          propTriangles: props.meshes.reduce(
-            (sum, mesh) => sum + (mesh.count * (mesh.geometry.index?.count ?? 0)) / 3,
-            0,
-          ),
+          propDraws: props?.meshes.length ?? 0,
+          propInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
+          propTriangles:
+            props?.meshes.reduce(
+              (sum, draw) => sum + (draw.count * (draw.geometry.index?.count ?? 0)) / 3,
+              0,
+            ) ?? 0,
           windowDrawCalls: budget.drawCalls,
           windowFrameMs: budget.frameMs,
         });

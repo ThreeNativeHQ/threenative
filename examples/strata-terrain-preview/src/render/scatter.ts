@@ -1,3 +1,4 @@
+import { createRandom } from "@threenative/core";
 // Where the Temperate starter's props go.
 //
 // The rule is short and it is the rule the rubric is written against: a spruce stands on grass, a
@@ -10,7 +11,6 @@
 // can walk through it twice without the trees moving. Nothing here reads the frame clock.
 import type { Heightfield } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
-import { createRandom } from "@threenative/core";
 
 /** A field the placement rule reads: the world's own baked colours plus its sampled geometry. */
 export interface IPlacementField {
@@ -81,10 +81,15 @@ export const SCATTER = {
   boulderSpacing: 11,
   boulderAttempts: 2600,
   boulderScale: [0.7, 2.6],
-  /** Grass clumps per accepted cell, and the cell size, in metres. */
-  grassCell: 2.6,
-  /** Cells either side of the focus that are considered at all. */
-  grassRadiusCells: 11,
+  /**
+   * The grass cell, in metres, and the cells either side of the focus that are considered at all.
+   *
+   * Half a metre is the number that matters: a clump every half metre reads as continuous ground
+   * from eye height, one every two metres reads as scattered weeds on a lawn, and the difference is
+   * not visible in any count — only in the picture.
+   */
+  grassCell: 0.55,
+  grassRadiusCells: 30,
   /** Poppies grow in patches: a patch centre, and a radius around it, in metres. */
   poppyPatches: 26,
   poppyPatchRadius: [3.5, 11],
@@ -175,7 +180,6 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
   // not walked at all.
   const grass = createRandom(SCATTER.seed ^ 0x27d4);
   const cellSize = SCATTER.grassCell;
-  const cells = SCATTER.grassRadiusCells * 2 + 1;
   const centre = Math.round(focus.x / cellSize);
   const centreZ = Math.round(focus.z / cellSize);
   for (let row = -SCATTER.grassRadiusCells; row <= SCATTER.grassRadiusCells; row += 1) {
@@ -183,9 +187,11 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
       const cellX = (centre + column) * cellSize;
       const cellZ = (centreZ + row) * cellSize;
       const distance = Math.hypot(cellX - focus.x, cellZ - focus.z);
-      // Full density out to a third of the radius, thinning to a fifth of that at the edge.
-      const density = Math.max(0.16, 1 - distance / (SCATTER.grassRadiusCells * cellSize * 1.15));
-      if (grass() > density * 0.92) continue;
+      // Full density out to a third of the radius, thinning to a fifth of that at the edge. A meadow
+      // read at eye height is a wall of blades in the first few metres and a suggestion past fifteen,
+      // and that is what a distance-weighted density buys over a uniform carpet.
+      const density = Math.max(0.1, 1 - distance / 14);
+      if (grass() > density) continue;
       const x = cellX + (grass() - 0.5) * cellSize;
       const z = cellZ + (grass() - 0.5) * cellSize;
       if (!inside(x, z, 4) || wet(x, z)) continue;

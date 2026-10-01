@@ -242,7 +242,14 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
 
   const barkMaterial = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.95 });
   if (bark.diffuse === undefined) barkMaterial.colorNode = vec3(0.26, 0.15, 0.11);
-  else barkMaterial.map = bark.diffuse;
+  else {
+    barkMaterial.map = bark.diffuse;
+    // Bark Brown 02 is a dark, damp-looking bark, and a spruce trunk spends most of its visible
+    // length inside its own crown's shadow: untinted it renders as a black pole with a silhouette.
+    // The lift is warm and well under 2, which keeps the plates legible without turning the trunk
+    // into a highlight.
+    barkMaterial.colorNode = vec3(1.85, 1.7, 1.55);
+  }
   if (bark.normal !== undefined) barkMaterial.normalMap = bark.normal;
   if (bark.roughness !== undefined) barkMaterial.roughnessMap = bark.roughness;
   sway(barkMaterial, seconds, WIND.amplitude.bark);
@@ -260,11 +267,13 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     crownMaterial.alphaTestNode = mipCompensatedCutoff(atlas);
   }
   // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
-  // driven by the sway weight, which is a share of the tree's own height.
+  // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
+  // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them reads
+  // as a field of white cutouts.
   if (atlas !== undefined)
     crownMaterial.colorNode = mix(
-      vec3(0.72, 0.86, 0.66),
-      vec3(1.06, 1.12, 1),
+      vec3(0.62, 0.74, 0.58),
+      vec3(0.86, 0.94, 0.78),
       smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
     );
   crownMaterial.roughness = 0.87;

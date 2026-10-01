@@ -135,7 +135,10 @@ function preparePose(
   const ground = groundAt(placement, model.position.toArray());
   const snap = new GroundSnap(model, { enabled: grounding });
   if (ground.height === null) {
-    if (grounding) throw new Error(`Missing terrain ground for '${placement.id}'`);
+    if (grounding)
+      throw new Error(
+        `Missing terrain ground for '${placement.id}' at ${JSON.stringify(model.position.toArray())}`,
+      );
   } else {
     snap.apply(model, ground.height, 0);
     if (grounding && ground.offset !== 0) {

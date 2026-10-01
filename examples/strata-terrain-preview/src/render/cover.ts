@@ -10,12 +10,7 @@
 // and light at the tip, and a clump is a handful of them at different angles — which is what makes
 // a lawn read as depth rather than as a green plane with a texture on it.
 import { createRandom } from "@threenative/core";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  IcosahedronGeometry,
-  Vector3,
-} from "three";
+import { BufferAttribute, BufferGeometry, IcosahedronGeometry, Vector3 } from "three";
 
 /** How the boulders read, in metres. Sized against a spruce's 12-17 m, not in the abstract. */
 export const ROCK = {
@@ -101,7 +96,12 @@ class CoverBuffer {
     return this.sway.length - 1;
   }
 
-  quad(corners: readonly Vector3[], normal: Vector3, colors: readonly Vector3[], weight: number): void {
+  quad(
+    corners: readonly Vector3[],
+    normal: Vector3,
+    colors: readonly Vector3[],
+    weight: number,
+  ): void {
     const base = this.sway.length;
     corners.forEach((point, i) => this.vertex(point, normal, colors[i] as Vector3, weight));
     this.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -256,8 +256,14 @@ export function poppyCluster(
         [
           centre.clone().addScaledVector(right, -radius),
           centre.clone().addScaledVector(right, radius),
-          centre.clone().addScaledVector(right, radius).addScaledVector(up, radius * 1.15),
-          centre.clone().addScaledVector(right, -radius).addScaledVector(up, radius * 1.15),
+          centre
+            .clone()
+            .addScaledVector(right, radius)
+            .addScaledVector(up, radius * 1.15),
+          centre
+            .clone()
+            .addScaledVector(right, -radius)
+            .addScaledVector(up, radius * 1.15),
         ],
         new Vector3(0, 1, 0),
         [white, white, white, white],

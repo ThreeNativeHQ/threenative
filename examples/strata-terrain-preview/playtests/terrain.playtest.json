@@ -172,17 +172,20 @@
       {
         "id": "GameState",
         "path": "propInstances",
-        "gte": 1000
+        "gte": 1000,
+        "allowTrivial": "A steady-state bound on what is drawn, not a transition: the props are placed on the first physics step, which the warmup frames already cover, so the count holds before and after by construction."
       },
       {
         "id": "GameState",
         "path": "propDraws",
-        "lte": 24
+        "lte": 24,
+        "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing."
       },
       {
         "id": "GameState",
         "path": "propTriangles",
-        "gte": 100000
+        "gte": 100000,
+        "allowTrivial": "A floor on the geometry actually submitted, which holds for every frame for the same reason as the instance count."
       },
       {
         "id": "GameState",

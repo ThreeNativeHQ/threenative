@@ -149,41 +149,54 @@ function twigAt(t, root, tip) {
 }
 
 /**
- * A spruce branch card: a drooping twig almost buried under a fringe of needles.
+ * A spruce branch card: a drooping twig buried under a dense spray of needles.
  *
- * `count` and `length` separate the dense whorl card from the open one. The droop is the whole
- * silhouette — a branch that hangs is a spruce, a branch that sticks out is a fir — and the needles
- * are dense enough to hide the twig they grow from, because a card that shows its armature reads
- * as a dead shrub no matter how green the needles are.
+ * The card is the tree's mass, so it has to be mostly opaque along its length. A card that is a
+ * tenth covered leaves the crown as a haze of specks with sky between every needle, which is what a
+ * few hundred strokes per card produces — and that haze is the exact failure this lane exists to
+ * remove. Density here is what lets a dozen quads stand in for a branch instead of fifty.
  */
 function spruceBranch(seed, { count, length, droop, needleWidth, tipOnly = false }) {
   const target = card();
   const rnd = random(seed);
-  const root = [CELL * 0.1, tipOnly ? CELL * 0.2 : CELL * 0.12];
-  const tip = [CELL * 0.94, root[1] + droop * CELL];
-  const segments = 8;
+  const root = [CELL * 0.06, tipOnly ? CELL * 0.12 : CELL * 0.08];
+  const tip = [CELL * 0.97, root[1] + droop * CELL];
+  const segments = 10;
   const twig = [];
   for (let i = 0; i <= segments; i += 1) twig.push(twigAt(i / segments, root, tip));
   for (let i = 0; i + 1 < twig.length; i += 1) {
-    drawTwig(target, [twig[i], twig[i + 1]], tipOnly ? 3 : 4, TWIG);
+    drawTwig(target, [twig[i], twig[i + 1]], tipOnly ? 5 : 7, TWIG);
   }
-  for (let i = 0; i < count; i += 1) {
-    // Needles march from the twig's root to its tip and are longest at mid-branch, which is how a
-    // spruce whorl fills out: a bare length of twig, then a fringe, then a bare tip again.
-    const t = Math.pow((i + rnd()) / count, 0.78);
-    const index = Math.min(segments, Math.floor(t * segments));
-    const [x, y] = twig[index] ?? twig[twig.length - 1];
-    const side = rnd() < 0.5 ? 1 : -1;
-    // Sprays leave the twig between roughly 40 and 140 degrees off its axis and curve toward the
-    // tip; a needle that points straight out from the twig is a bottle brush, not a spruce.
-    const angle = side * (0.7 + rnd() * 1.5) + 0.55;
-    const reach = length * CELL * (0.7 + rnd() * 0.55);
-    const from = [x, y];
-    const to = [
-      x + Math.cos(angle) * reach,
-      y + Math.sin(angle) * reach * 0.7 + Math.abs(t - 0.5) * reach * 0.5,
-    ];
-    drawNeedle(target, from, to, needleWidth * (0.7 + rnd() * 0.6), needleColour(rnd));
+  // Needles in three passes: long structural sprays that set the outline, medium ones that fill
+  // between them, and short ones that close the gaps at the twig. Longest first, so the short ones
+  // sit on top and the card reads as a solid with a fringe rather than a thicket of loose strokes.
+  for (const pass of [
+    { count: Math.round(count * 0.4), reach: [0.9, 1.25], width: 1.25, along: 0.7 },
+    { count: Math.round(count * 0.35), reach: [0.55, 0.9], width: 1, along: 0.7 },
+    { count: Math.round(count * 0.25), reach: [0.25, 0.55], width: 0.8, along: 0 },
+  ]) {
+    for (let i = 0; i < pass.count; i += 1) {
+      // The structural pass marches along the twig from its root; the short pass clusters near the
+      // tip, which is where a spruce's new growth is.
+      const t = pass.along === 0 ? 0.35 + rnd() * 0.65 : ((i + rnd()) / pass.count) ** pass.along;
+      const index = Math.min(segments, Math.floor(t * segments));
+      const [x, y] = twig[index] ?? twig[twig.length - 1];
+      const side = rnd() < 0.5 ? 1 : -1;
+      // Sprays leave the twig between roughly 40 and 155 degrees off its axis and curve toward the
+      // tip; a needle that points straight out from the twig is a bottle brush, not a spruce.
+      const angle = side * (0.7 + rnd() * 1.6) + 0.62;
+      const reach = length * CELL * (pass.reach[0] + rnd() * (pass.reach[1] - pass.reach[0]));
+      drawNeedle(
+        target,
+        [x, y],
+        [
+          x + Math.cos(angle) * reach,
+          y + Math.sin(angle) * reach * 0.72 + Math.abs(t - 0.5) * reach * 0.4,
+        ],
+        needleWidth * pass.width * (0.8 + rnd() * 0.5),
+        needleColour(rnd),
+      );
+    }
   }
   return target;
 }
@@ -199,7 +212,7 @@ function poppyPetal(seed) {
   // rounded over at the tip. The outline is sampled per scanline rather than per angle, which keeps
   // the lobe smooth at the crown where an angular sweep would show its facets.
   const halfWidth = (t) =>
-    reach * 0.46 * Math.sin(Math.PI * Math.pow(t, 0.78)) * (1 + 0.05 * Math.sin(t * 11 + seed));
+    reach * 0.46 * Math.sin(Math.PI * t ** 0.78) * (1 + 0.05 * Math.sin(t * 11 + seed));
   for (let y = 0; y < CELL; y += 1) {
     const t = 1 - y / (CELL - 1);
     if (t <= 0) continue;
@@ -211,9 +224,7 @@ function poppyPetal(seed) {
       // Scallops: the edge is chewed inward a little, irregularly, the way a petal is.
       const scallop = inside && Math.abs(Math.abs(x + 0.5 - baseX) - width) < 2 + rnd() * 3;
       if (!inside || scallop) continue;
-      const colour = PETAL_RED.map((red, c) =>
-        Math.round(red + (PETAL_DEEP[c] - red) * cup),
-      );
+      const colour = PETAL_RED.map((red, c) => Math.round(red + (PETAL_DEEP[c] - red) * cup));
       stamp(target, x, y, 1, colour);
     }
   }
@@ -265,16 +276,29 @@ function crc32(buffer) {
 
 /** Lay the four cells out in the 2x2 grid the material's UVs address. */
 const cells = [
-  [0, 0, spruceBranch(SEED, { count: 900, length: 0.15, droop: 0.42, needleWidth: 2.6 })],
-  [1, 0, spruceBranch(SEED + 1, { count: 620, length: 0.2, droop: 0.52, needleWidth: 2.2 })],
-  [0, 1, spruceBranch(SEED + 2, { count: 420, length: 0.11, droop: 0.16, needleWidth: 2.8, tipOnly: true })],
+  [0, 0, spruceBranch(SEED, { count: 4200, length: 0.34, droop: 0.4, needleWidth: 3.2 })],
+  [1, 0, spruceBranch(SEED + 1, { count: 3000, length: 0.42, droop: 0.5, needleWidth: 2.8 })],
+  [
+    0,
+    1,
+    spruceBranch(SEED + 2, {
+      count: 2200,
+      length: 0.24,
+      droop: 0.14,
+      needleWidth: 3.4,
+      tipOnly: true,
+    }),
+  ],
   [1, 1, poppyPetal(SEED + 3)],
 ];
 const atlas = new Uint8Array(ATLAS * ATLAS * 4);
 for (const [column, row, target] of cells) {
   for (let y = 0; y < CELL; y += 1) {
     const from = y * CELL * 4;
-    atlas.set(target.data.subarray(from, from + CELL * 4), ((row * CELL + y) * ATLAS + column * CELL) * 4);
+    atlas.set(
+      target.data.subarray(from, from + CELL * 4),
+      ((row * CELL + y) * ATLAS + column * CELL) * 4,
+    );
   }
 }
 

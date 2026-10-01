@@ -33,12 +33,16 @@ export const ATLAS_CELLS = {
 export const SPRUCE = {
   /** Bare trunk, as a share of total height: a spruce's crown starts about a fifth of the way up. */
   bareTrunk: 0.22,
-  /** Whorls up the trunk. Fewer and the tree reads as a pole with a hat on. */
-  whorls: 12,
+  /**
+   * Whorls up the trunk. This is the number that decides whether a spruce is a tree or a pole with
+   * a hat on: at 12 the whorls sit a metre apart on a fourteen-metre trunk and the crown reads as
+   * bare sticks with foliage on them.
+   */
+  whorls: 26,
   /** Branches per whorl at the widest part of the crown. */
-  branchesPerWhorl: 6,
+  branchesPerWhorl: 8,
   /** Longest branch, as a share of height. A spruce is spire, not sphere. */
-  crown: 0.19,
+  crown: 0.2,
   /** Trunk radius at the base, as a share of height. */
   trunkRadius: 0.021,
 } as const;
@@ -116,7 +120,7 @@ function trunk(height: number, seed: number): BufferGeometry {
     const level01 = level / rings;
     const angle = (side / sides) * Math.PI * 2;
     const flare = 1 + Math.max(0, 0.55 - level01 * 3.2);
-    const radius = base * Math.pow(1 - level01, 0.75) * flare;
+    const radius = base * (1 - level01) ** 0.75 * flare;
     return new Vector3(
       Math.cos(angle) * radius + leanX * envelope(level01) * height,
       level01 * height,
@@ -183,8 +187,7 @@ function branch(
   // A spruce branch is a catenary: it leaves the trunk nearly level and falls away as it goes out.
   const reach = (at: number) => origin.clone().addScaledVector(outward, length * at);
   const drop = (at: number) => droop * length * at * at;
-  const halfWidth = (at: number) =>
-    (width * (1 - at * 0.82) * Math.min(1, 0.35 + at * 1.6)) / 2;
+  const halfWidth = (at: number) => (width * (1 - at * 0.82) * Math.min(1, 0.35 + at * 1.6)) / 2;
   for (let i = 0; i < segments; i += 1) {
     const at0 = i / segments;
     const at1 = (i + 1) / segments;
@@ -192,10 +195,7 @@ function branch(
     const b = reach(at0).addScaledVector(across, halfWidth(at0));
     const c = reach(at1).addScaledVector(across, halfWidth(at1));
     const d = reach(at1).addScaledVector(across, -halfWidth(at1));
-    const normal = new Vector3()
-      .subVectors(b, a)
-      .cross(new Vector3().subVectors(d, a))
-      .normalize();
+    const normal = new Vector3().subVectors(b, a).cross(new Vector3().subVectors(d, a)).normalize();
     const u0 = cell.u0 + (cell.u1 - cell.u0) * at0;
     const u1 = cell.u0 + (cell.u1 - cell.u0) * at1;
     buffer.quad(
@@ -221,7 +221,7 @@ function crown(height: number, seed: number): BufferGeometry {
     // cards rather than a ring.
     const at = SPRUCE.bareTrunk + ((1 - SPRUCE.bareTrunk) * w) / (SPRUCE.whorls - 1);
     // Widest at the bottom of the crown, tapering to a spire. A cone of branches is a fir.
-    const taper = Math.pow(1 - (at - SPRUCE.bareTrunk) / (1 - SPRUCE.bareTrunk), 0.78);
+    const taper = (1 - (at - SPRUCE.bareTrunk) / (1 - SPRUCE.bareTrunk)) ** 0.78;
     const length = height * SPRUCE.crown * taper * (0.85 + random() * 0.3);
     const count = Math.max(3, Math.round(SPRUCE.branchesPerWhorl * (0.55 + taper * 0.45)));
     const phase = random() * Math.PI * 2;
@@ -243,8 +243,8 @@ function crown(height: number, seed: number): BufferGeometry {
         length,
         origin: new Vector3(0, at * height, 0),
         roll: (random() - 0.5) * 1.5,
-        segments: 2,
-        width: length * (0.5 + random() * 0.16),
+        segments: 3,
+        width: length * (0.72 + random() * 0.2),
       });
     }
   }
