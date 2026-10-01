@@ -15,6 +15,8 @@ import {
   ProductionEvidenceError,
   evaluateFrameBudget,
   evaluateProductionEvidence,
+  meanFps,
+  unmeasurableIntervalCount,
   nearestRank,
   sha256,
   writeProductionEvidence,
@@ -28,6 +30,7 @@ import {
   installNativeProfileEntry,
   nativeArtifactPath,
   nativeFrameInstrumentation,
+  normalizeRun,
   parseProductionArgs,
   playtestTimeoutMs,
   prepareNativeWorkload,
@@ -40,6 +43,8 @@ import {
   safeReport,
   setNativeProfileEntry,
   webFrameInstrumentation,
+  webRateDisplayFault,
+  webRateIdentity,
   writeRunScenarios,
 } from '../scripts/profile-production.mjs';
 import { parseStandalonePlaytestArgs } from '../../playtest/src/runner/config.js';
@@ -329,6 +334,167 @@ test('failed production commands name the timeout or carry their stderr tail', a
   assert.match(`The scaffolded platformer web build failed.${failureSuffix(failed)}`, /boom-tail/u);
 });
 
+test('a child run with no parseable report retains a visible, redacted failure artifact', async () => {
+  const artifactDirectory = makeTempDirSync('tn-profile-missing-report-');
+  const run = await normalizeRun(
+    { durationMs: 5, status: 2, stderr: 'Error: the browser closed\n', stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  const unsafe = await normalizeRun(
+    { durationMs: 5, status: 1, stderr: 'Authorization: Bearer sk-fixture at /home/operator/.npmrc\n', stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  const timedOut = await normalizeRun(
+    { durationMs: 5, status: 2, stderr: '', stdout: '', timeout: 90_000, timedOut: true },
+    artifactDirectory,
+    'web',
+  );
+  const oversized = await normalizeRun(
+    { durationMs: 5, status: 1, stderr: 'x'.repeat(10_000), stdout: '', timeout: 90_000, timedOut: false },
+    artifactDirectory,
+    'web',
+  );
+  assert.equal(run.report, undefined);
+  assert.equal(run.failure.status, 2);
+  assert.equal(run.failure.code, 'TN_PROD_RUN_REPORT_MISSING');
+  assert.match(run.failure.message, /the browser closed/u);
+  assert.match(unsafe.failure.message, /TN_PROD_REDACTION/u);
+  assert.equal(timedOut.failure.timedOut, true);
+  assert.match(timedOut.failure.message, /timed out after 90 s/u);
+  assert.equal(JSON.stringify(unsafe.failure).includes('Bearer'), false);
+  assert.ok(oversized.failure.message.length <= 4_100);
+
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: undefined,
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 2,
+      target: 'web',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: 'fixture-project',
+    resolutionScaleSetting: undefined,
+    runId: 'missing-report',
+    startedAt: new Date().toISOString(),
+    web: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'web',
+      runs: [run, unsafe],
+      startups: [timedOut],
+    },
+  });
+  assert.ok(evidence.codes.includes('TN_PROD_PLAYTEST_FAILED'));
+  assert.deepEqual(evidence.rawArtifacts.map(({ label }) => label), [
+    'production-run-failure-web-1',
+    'production-run-failure-web-2',
+    'production-startup-failure-web-1',
+  ]);
+  assert.match(evidence.rawArtifacts[0].content, /the browser closed/u);
+  assert.equal(evidence.rawArtifacts[1].content.includes('Bearer'), false);
+});
+
+test('a desktop frame series ends at the capture the harness itself requested', async () => {
+  // The desktop host captures `after.png` inside its own frame loop, and the frame that spans the
+  // readback reports the readback as its own frame time: both clean-HEAD native collections carry a
+  // 312.72 ms and a 358.26 ms gap immediately after the host's `[Screenshot]` line, beside a
+  // `TN_SLOW_PHASE pollEvents` at the same figure. That line and the sample batches are one
+  // `std::cout` pipe in write order, so it is an exact boundary and not a threshold. A batch logged
+  // at or after it is dropped whole, because a batch straddles the capture and dropping one is the
+  // direction that cannot read the readback as gameplay. The capture itself is still taken, and its
+  // artifact is still evidence.
+  const artifactDirectory = makeTempDirSync('tn-profile-capture-boundary-');
+  temporary.push(artifactDirectory);
+  writeFileSync(join(artifactDirectory, 'after.png'), nonBlankScreenshot());
+  const samples = (firstIndex, frameMs, count = 5) => Array.from({ length: count }, (_, index) => ({
+    clockMs: 100 + (firstIndex + index) * 16.6,
+    drawCalls: 64,
+    frameIndex: firstIndex + index,
+    frameMs,
+  }));
+  const before = samples(100, 16.6);
+  const after = samples(105, 358.18);
+  const seriesLine = (batch) => `[log] TN_PROD_FRAME_SAMPLES:${JSON.stringify(batch)}`;
+  const consoleLines = [
+    seriesLine(before),
+    'TN_SURFACE_FRAME:{"view":true,"present":1935}',
+    '[Screenshot] First 16 bytes (BGRA raw): 202 141 67 255 202 141 67 255 ',
+    'TN_SLOW_PHASE:{"phase":"pollEvents","ms":358.18799999999999,"atMs":34601.958643999998}',
+    seriesLine(after),
+  ];
+  const report = (target) => ({
+    observations: { console: consoleLines.map((text) => ({ text, type: 'log' })) },
+    pass: true,
+    target,
+  });
+  const result = { durationMs: 1, status: 0 };
+  const desktop = await normalizeRun(result, artifactDirectory, 'desktop', report('desktop'));
+  assert.deepEqual(desktop.series.map(({ frameIndex }) => frameIndex), before.map(({ frameIndex }) => frameIndex));
+  assert.ok(desktop.series.every(({ frameMs }) => frameMs <= 17), 'the readback frame stayed in the series');
+  assert.ok(desktop.screenshot.length > 0, 'the desktop capture artifact is still retained');
+  // Web and mobile keep every batch: only the desktop host captures inside its own frame loop.
+  const web = await normalizeRun(result, artifactDirectory, 'web', report('browser'));
+  assert.equal(web.series.length, before.length + after.length);
+  const mislabeledDesktop = await normalizeRun(result, artifactDirectory, 'desktop', report('browser'));
+  assert.deepEqual(mislabeledDesktop.series.map(({ frameIndex }) => frameIndex), before.map(({ frameIndex }) => frameIndex));
+  const mislabeledWeb = await normalizeRun(result, artifactDirectory, 'web', report('desktop'));
+  assert.equal(mislabeledWeb.series.length, before.length + after.length);
+  // A desktop report with no capture line has no boundary to stop at, and it fails closed rather than
+  // measuring a window it cannot bound.
+  const unbounded = await normalizeRun(result, artifactDirectory, 'desktop', {
+    observations: {
+      console: [seriesLine(before), seriesLine(after)].map((text) => ({ text, type: 'log' })),
+      performanceSeries: after,
+    },
+    pass: true,
+    target: 'browser',
+  });
+  assert.equal(unbounded.series, undefined);
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: {
+      applicationClass: 'fixture',
+      artifactSha,
+      driverClass: 'fixture',
+      kind: 'desktop',
+      runs: [unbounded],
+      startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot: nonBlankScreenshot(), status: 0 }],
+    },
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      profile: 'production',
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: 'fixture-project',
+    resolutionScaleSetting: undefined,
+    runId: 'capture-boundary',
+    startedAt: new Date().toISOString(),
+    web: undefined,
+  });
+  assert.ok(evidence.codes.includes('TN_PROD_RENDER_SAMPLES_INCOMPLETE'));
+  assert.deepEqual(evidence.rawArtifacts.map(({ label }) => label), [
+    'production-render-desktop-1',
+    'production-playtest-desktop-1',
+    'production-first-frame-desktop-1',
+    'production-startup-desktop-1',
+  ]);
+});
+
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { force: true, recursive: true });
 });
@@ -340,6 +506,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
   let sampledBeforeRender = false;
   const samples = [];
   const sampleLines = [];
+  const requests = [];
   const record = (payload) => {
     if (payload?.kind === 'samples' && Array.isArray(payload.samples)) samples.push(...payload.samples);
   };
@@ -361,6 +528,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
       },
     },
     fetch: async (_url, request) => {
+      requests.push(_url);
       record(JSON.parse(request.body));
       return {};
     },
@@ -380,7 +548,7 @@ function injectedFrameSamples(source, performanceObservation, frameMs = 14) {
     now = frame * frameMs;
     scheduledCallback(now);
   }
-  return { sampledBeforeRender, sampleLines, samples };
+  return { requests, sampledBeforeRender, sampleLines, samples };
 }
 
 function completeEvidence(overrides = {}) {
@@ -1257,7 +1425,7 @@ test('generated production workload runs through the playtest validator and keep
     rendererPerformance,
   );
   const webSamples = injectedFrameSamples(
-    webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
+    webFrameInstrumentation(undefined, 0),
     rendererPerformance,
   );
   assert.equal(nativeSamples.sampledBeforeRender, false);
@@ -1265,10 +1433,16 @@ test('generated production workload runs through the playtest validator and keep
   assert.equal(nativeSamples.samples.length, 30);
   assert.equal(webSamples.samples.length, 30);
   assert.ok(nativeSamples.sampleLines.every((line) => line.length < 1_000));
+  // The web arm reports over the console like the native one. It used to POST to a marker server,
+  // and the playtest's own noNetworkErrors policy then failed every web run for the profile's own
+  // instrumentation: Chromium reports each in-flight fetch as net::ERR_ABORTED at page teardown.
+  assert.deepEqual(webSamples.requests, []);
+  assert.equal(webSamples.sampleLines.length, 1);
+  assert.ok(webSamples.sampleLines[0].startsWith('TN_PROD_FRAME_SAMPLES:'));
   assert.deepEqual(nativeSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   assert.deepEqual(webSamples.samples[0], { clockMs: 14, drawCalls: 180, frameIndex: 1, frameMs: 14, presentationMs: 14, triangles: 100_000 });
   const missingSamples = injectedFrameSamples(
-    webFrameInstrumentation('http://127.0.0.1:41777', undefined, 0),
+    webFrameInstrumentation(undefined, 0),
     undefined,
   );
   assert.equal(Object.hasOwn(missingSamples.samples[0], 'drawCalls'), false);
@@ -1415,10 +1589,10 @@ test('an existing project baseline without an authored performance bound is not 
 
 test('post-warmup frame metrics exclude warmup samples from mean and percentiles', () => {
   const samples = [
-    { frameIndex: 1, frameMs: 500 },
-    { frameIndex: 2, frameMs: 400 },
-    { frameIndex: 61, frameMs: 16 },
-    { frameIndex: 62, frameMs: 17 },
+    { frameIndex: 1, frameMs: 500, presentationMs: 0 },
+    { frameIndex: 2, frameMs: 400, presentationMs: 500 },
+    { frameIndex: 61, frameMs: 16, presentationMs: 4_000 },
+    { frameIndex: 62, frameMs: 17, presentationMs: 4_016 },
   ];
   assert.deepEqual(postWarmupFrameSamples(samples, 60), samples.slice(2));
   assert.deepEqual(postWarmupFrameSamples([{ frameMs: 500 }, { frameMs: 400 }, { frameMs: 16 }], 2), [{ frameMs: 16 }]);
@@ -1427,6 +1601,188 @@ test('post-warmup frame metrics exclude warmup samples from mean and percentiles
   assert.deepEqual(metrics.frameIntervalsMs, expected.frameIntervalsMs);
   assert.equal(metrics.meanFps, expected.meanFps);
   assert.equal(metrics.p99FrameMs, expected.p99FrameMs);
+  // One presented frame separates the two post-warmup samples, so the series is one interval long
+  // however many warmup callbacks preceded it.
+  assert.deepEqual(metrics.frameIntervalsMs, [16]);
+});
+
+/**
+ * One second of the shape this harness actually collects: three rAF callbacks per presented frame
+ * at 60 Hz. The native host stamps every callback it dispatches in one frame with the same
+ * timestamp (`runtime.cpp` `executeAnimationFrameCallbacks`), and the engine loop, the UI hit-test
+ * pump and the profile itself each register one. The callback deltas are real readings of the
+ * per-callback cost the arms reported on this host — native 0.48 ms, web 1.70 ms — so the sample
+ * that straddles the display period is the *remainder* of a fixed 16.6 ms and the faster arm
+ * carries the larger one.
+ */
+function callbacksPerPresentedFrame({ perCallbackMs, presentedPeriodMs = 16.6, frames = 60 }) {
+  const straddlingMs = presentedPeriodMs - perCallbackMs * 2;
+  const series = [];
+  let clockMs = 0;
+  for (let frame = 0; frame < frames; frame += 1) {
+    for (const [index, frameMs] of [perCallbackMs, perCallbackMs, straddlingMs].entries()) {
+      clockMs += frameMs;
+      series.push({
+        clockMs,
+        frameIndex: frame * 3 + index,
+        frameMs,
+        presentationMs: frame * presentedPeriodMs,
+      });
+    }
+  }
+  return series;
+}
+
+function nonBlankScreenshot() {
+  const frame = new PNG({ height: 2, width: 2 });
+  frame.data.fill(255);
+  frame.data[0] = 0;
+  return PNG.sync.write(frame);
+}
+
+test('frame metrics come from successive presented frames, not from rAF callback deltas', () => {
+  const series = callbacksPerPresentedFrame({ perCallbackMs: 0.48 });
+  const metrics = aggregateMetrics([{ series }], []);
+  // 180 callbacks, 60 presented frames, and the first presented stamp has nothing to pair with.
+  assert.equal(series.length, 180);
+  assert.deepEqual(metrics.frameIntervalsMs.map((value) => Math.round(value * 100) / 100), Array.from({ length: 59 }, () => 16.6));
+  assert.equal(Math.round(metrics.p50FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.p99FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(metrics.meanFps * 100) / 100, 60.24);
+  // The callback diagnostics the evidence also carries are untouched: 180 per-callback samples,
+  // each with the delta the host actually reported, while the counts are the presented frames.
+  assert.equal(metrics.sampleCount, 59);
+  assert.equal(metrics.intervals.length, 180);
+  assert.equal(metrics.intervals[0].frameMs, 0.48);
+  assert.equal(metrics.intervals[2].frameMs, 15.64);
+  assert.equal(Math.round(metrics.worstFrameMs * 100) / 100, 16.6);
+});
+
+test('the one-second floor and the sample counts count presented frames, not the three callbacks each frame runs', () => {
+  // 25 ms presented frames at three rAF callbacks per frame: the display presents 40 a second and
+  // the host records 120 callback records for them. 25 divides exactly in binary, so the per-second
+  // buckets land where the arithmetic says they do.
+  const series = callbacksPerPresentedFrame({ frames: 100, perCallbackMs: 1, presentedPeriodMs: 25 });
+  const metrics = aggregateMetrics([{ series }], []);
+  assert.equal(series.length, 300);
+  // Two full seconds of presented frames, and the callbacks that ran inside them are still there.
+  assert.deepEqual(metrics.oneSecondFps, [40, 40]);
+  assert.equal(metrics.runWindows[0].sampleCount, 99);
+  assert.equal(metrics.sampleCount, 99);
+  assert.equal(metrics.intervals.length, 300);
+  // The floor is what a `minOneSecondFps` budget reads. Counting callbacks answers 120 here, which
+  // passes a 60 fps floor on a display that presented 40; the presented answer must fail it.
+  assert.deepEqual(evaluateFrameBudget(metrics, { minOneSecondFps: 60 }).floors, [40, 40]);
+  assert.deepEqual(
+    evaluateFrameBudget(metrics, { minOneSecondFps: 60 }).failures,
+    ['TN_PROD_PERFORMANCE_BUDGET'],
+  );
+
+  // A dropped frame whose cost is split across three callbacks is still a dropped frame. Nine
+  // presented frames here each missed a display period, while the callback stream they were split
+  // into never exceeded 25 ms and so counted no hitch at all.
+  const dropped = aggregateMetrics(
+    [{ series: callbacksPerPresentedFrame({ frames: 10, perCallbackMs: 25, presentedPeriodMs: 75 }) }],
+    [],
+  );
+  assert.equal(dropped.hitchCount, 9);
+  assert.equal(dropped.worstFrameMs, 75);
+});
+
+test('a sample the presentation clock cannot place voids the presented series', () => {
+  const series = callbacksPerPresentedFrame({ frames: 4, perCallbackMs: 0.48 });
+  const malformed = [undefined, Number.NaN, 'later'];
+  for (const presentationMs of malformed) {
+    const tampered = series.map((sample, index) => (index === 5 ? { ...sample, presentationMs } : sample));
+    const metrics = aggregateMetrics([{ series: tampered }], []);
+    // A partial cadence would publish a percentile of the frames that happened to survive, so the
+    // series stays unmeasured: the budget then fails on the missing mean and a pair blocks.
+    assert.equal(metrics.frameIntervalsMs, undefined);
+    assert.equal(metrics.p50FrameMs, undefined);
+    assert.equal(metrics.p95FrameMs, undefined);
+    assert.equal(metrics.meanFps, undefined);
+    assert.equal(metrics.presentationClockSource, 'missing');
+    // The loss is named rather than hidden: the callbacks were still collected, and the counts
+    // publish no presented frame at all rather than the three-per-frame multiples they would carry.
+    assert.equal(metrics.intervals.length, tampered.length);
+    assert.equal(metrics.sampleCount, undefined);
+    assert.equal(metrics.runWindows, undefined);
+  }
+  // A stamp that goes backwards is not a presented frame either.
+  const backwards = series.map((sample, index) => (index === 5 ? { ...sample, presentationMs: 0 } : sample));
+  assert.equal(aggregateMetrics([{ series: backwards }], []).frameIntervalsMs, undefined);
+});
+
+test('a pair whose native callbacks read worse is compared on presented frame cadence', () => {
+  const screenshot = nonBlankScreenshot();
+  const arm = (perCallbackMs, kind) => ({
+    applicationClass: 'fixture',
+    artifactSha: sha256(Buffer.from(`fixture-artifact-${kind}`)),
+    driverClass: `${kind}-driver`,
+    kind,
+    runs: [{ report: { pass: true }, screenshot, series: callbacksPerPresentedFrame({ perCallbackMs }), status: 0 }],
+    startups: [{ firstFrameMs: 100, report: { pass: true }, screenshot, status: 0 }],
+  });
+  const evidence = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: arm(0.48, 'desktop'),
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop-pair',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture',
+    runId: 'presented-pair',
+    startedAt: new Date().toISOString(),
+    web: arm(1.7, 'web'),
+  });
+  // The callback statistic this replaced read native 15.64 against web 13.20 — a difference created
+  // by which arm spent less time per callback, with both arms presenting at the same 16.6 ms.
+  assert.equal(Math.round(evidence.metrics.native.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.web.p95FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.native.p50FrameMs * 100) / 100, 16.6);
+  assert.equal(Math.round(evidence.metrics.web.p50FrameMs * 100) / 100, 16.6);
+  const result = evaluateProductionEvidence(evidence);
+  assert.equal(result.status, 'PASS');
+  assert.deepEqual(result.codes, []);
+
+  // One arm's stamps unreadable is not a pair that compares well; it is a pair with no cadence.
+  const broken = assembleEvidence({
+    context: { audioEvidence: {}, physicalEvidence: {}, sourceSha, sourceState: { dirty: false } },
+    native: {
+      ...arm(0.48, 'desktop'),
+      runs: [{
+        report: { pass: true },
+        screenshot,
+        series: callbacksPerPresentedFrame({ perCallbackMs: 0.48 }).map((sample, index) => (index === 5 ? { ...sample, presentationMs: undefined } : sample)),
+        status: 0,
+      }],
+    },
+    options: {
+      coldStarts: 1,
+      control: undefined,
+      device: undefined,
+      renderSize: { height: 1080, width: 1920 },
+      repetitions: 1,
+      target: 'desktop-pair',
+      warmup: 0,
+    },
+    performanceBounds: undefined,
+    project: '/fixture',
+    runId: 'presented-pair-broken',
+    startedAt: new Date().toISOString(),
+    web: arm(1.7, 'web'),
+  });
+  const blocked = evaluateProductionEvidence(broken);
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.equal(blocked.exitCode, 2);
+  assert.ok(blocked.codes.includes('TN_PROD_COMPARISON_METRICS_INCOMPLETE'));
 });
 
 test('paced native instrumentation waits one display interval per fixed-step tick', () => {
@@ -1479,6 +1835,122 @@ test('scaffolded native profile paces the fixed step so the host renders the mea
   writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
   await installNativeProfileEntry(project, 'desktop', { warmup: 1 });
   assert.match(readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8'), /const tnProductionPaceEnabled = true;/u);
+});
+
+test('the warmup is the requested wall time, not a frame count read as 60fps', async () => {
+  // A frame count only names a duration on a host that presents at 60 Hz. The native host runs its
+  // loop at 100-170 Hz while it boots, so a 120-frame warmup elapsed in 1.18 s of a requested 2 s
+  // and the measured window started inside first-use pipeline compilation: native read 26.29 mean
+  // fps and 306.04 ms p95 for boot, and published `warmupSeconds: 2` beside it. Both arms warm up on
+  // the host's own clock, and the frame bound stays because a host slower than 60 Hz needs it more.
+  for (const source of [nativeFrameInstrumentation(undefined, 120), webFrameInstrumentation(undefined, 120)]) {
+    let scheduled;
+    let now = 0;
+    const samples = [];
+    const context = {
+      cancelAnimationFrame: () => undefined,
+      console: {
+        log: (line) => {
+          const prefix = 'TN_PROD_FRAME_SAMPLES:';
+          if (typeof line === 'string' && line.startsWith(prefix)) samples.push(...JSON.parse(line.slice(prefix.length)));
+        },
+      },
+      performance: { now: () => now },
+      requestAnimationFrame: (callback) => { scheduled = callback; return 1; },
+    };
+    runInNewContext(source, context);
+    const schedule = context.requestAnimationFrame;
+    const pump = async (frame, frameMs) => {
+      for (let index = 0; index < frame; index += 1) {
+        scheduled = undefined;
+        schedule(() => undefined);
+        now += frameMs;
+        scheduled(now);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    };
+    // 120 frames at 8 ms is the whole frame budget spent in 0.96 s: the seconds are not.
+    await pump(120, 8);
+    assert.equal(samples.length, 0);
+    // 2.05 s of host time, five native batches later, and the measurement is collecting.
+    await pump(200, 8);
+    assert.ok(samples.length > 0);
+    assert.ok(samples.every((sample) => sample.clockMs >= 2_000));
+  }
+});
+
+test('the first measured frame starts the window, so a crossing stall is not reported as gameplay', async () => {
+  // The wall-time bound is only reached once the frame count is, and the host can take a large step
+  // on the way. Clearing the carry on the frame count left the last warmup frame still holding its
+  // clock, so the first measured sample carried the whole crossing as its frame time.
+  for (const source of [nativeFrameInstrumentation(undefined, 3), webFrameInstrumentation(undefined, 3)]) {
+    let scheduled;
+    let now = 0;
+    const samples = [];
+    const context = {
+      cancelAnimationFrame: () => undefined,
+      console: {
+        log: (line) => {
+          const prefix = 'TN_PROD_FRAME_SAMPLES:';
+          if (typeof line === 'string' && line.startsWith(prefix)) samples.push(...JSON.parse(line.slice(prefix.length)));
+        },
+      },
+      performance: { now: () => now },
+      requestAnimationFrame: (callback) => { scheduled = callback; return 1; },
+    };
+    runInNewContext(source, context);
+    const schedule = context.requestAnimationFrame;
+    const pump = async (frameMs) => {
+      scheduled = undefined;
+      schedule(() => undefined);
+      now += frameMs;
+      scheduled(now);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    // Three frames is the whole 50 ms warmup budget, but they spent only 16 ms of it; five more
+    // frames are still inside the window when the host's clock takes a 500 ms step, and that step is
+    // the crossing. Clearing the carry on the frame count published it as the first measured frame.
+    for (let index = 0; index < 7; index += 1) await pump(8);
+    await pump(500);
+    assert.equal(samples.length, 0);
+    for (let index = 0; index < 40; index += 1) await pump(8);
+    assert.ok(samples.length > 0);
+    // The transition frame is the boundary, not a measurement: the first sample is the frame after it.
+    assert.equal(samples[0].frameIndex, 8);
+    assert.ok(samples.every((sample) => sample.frameMs <= 8), `a ${samples[0].frameMs} ms crossing was measured as gameplay`);
+  }
+});
+
+test('a live-clock profile asks the game for the wall clock and keeps the idempotent pace', async () => {
+  const project = makeTempDirSync('tn-profile-live-clock-');
+  temporary.push(project);
+  mkdirSync(join(project, 'src'));
+  writeFileSync(join(project, 'package.json'), '{}');
+  writeFileSync(join(project, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  // Both clocks pace the scaffolded workload. On the live clock `advance` already waits the wall time
+  // those ticks name, so the pacer's remainder is zero and it adds nothing; disabling it there is
+  // what let the native host consume the frame count at its own speed.
+  await installNativeProfileEntry(project, 'desktop', { liveClock: true, warmup: 1 });
+  const entry = readFileSync(join(project, 'src/profile-native-entry.ts'), 'utf8');
+  assert.match(entry, /globalThis\.__THREENATIVE_PLAYTEST_CLOCK__ = "wall-clock";/u);
+  assert.match(entry, /const tnProductionPaceEnabled = true;/u);
+  // The default run is unchanged: no clock request, and the synthetic workload still paced.
+  const paced = makeTempDirSync('tn-profile-fixed-clock-');
+  temporary.push(paced);
+  mkdirSync(join(paced, 'src'));
+  writeFileSync(join(paced, 'package.json'), '{}');
+  writeFileSync(join(paced, 'threenative.config.ts'), 'export default { nativeEntry: "src/game.ts" };');
+  await installNativeProfileEntry(paced, 'desktop', { warmup: 1 });
+  const defaultEntry = readFileSync(join(paced, 'src/profile-native-entry.ts'), 'utf8');
+  assert.doesNotMatch(defaultEntry, /__THREENATIVE_PLAYTEST_CLOCK__/u);
+  assert.match(defaultEntry, /const tnProductionPaceEnabled = true;/u);
+  // The artifact names the clock it ran on, because a rate read off a frozen loop is not a frame rate.
+  assert.match(readFileSync(new URL('../scripts/profile-production.mjs', import.meta.url), 'utf8'),
+    /clock: options\.liveClock === true \? 'wall-clock' : 'fixed-step',/u);
+  // Through the CLI, because the option set is rebuilt field by field and an unlisted flag reaches
+  // nothing: the run would have paced and frozen exactly as asked while the artifact said otherwise.
+  assert.equal(parseProductionArgs(['--target', 'desktop', '--live-clock']).liveClock, true);
+  assert.equal(parseProductionArgs(['--target', 'desktop']).liveClock, false);
 });
 
 test('slow-path control is bounded and returns the intended exit-1 budget failure', async () => {
@@ -1602,6 +2074,61 @@ test('slow-startup delays the live fixture launch beyond the five-second budget'
   assert.ok(result.codes.includes('TN_PROD_STARTUP_BUDGET'));
   assert.ok(result.metrics.startupP95Ms > 5_000);
   assert.ok(result.markers.includes('clean-end'));
+});
+
+test('one interval the clock cannot resolve does not void every other reading', () => {
+  // Two presented frames can land inside a single `performance.now()` quantum and read as a
+  // zero-length interval. That is the clock's resolution, not a measurement of the workload, and
+  // one such sample used to make the mean undefined — which blocked the desktop comparison outright
+  // instead of reporting the pair it had 12,000 good readings for.
+  const intervals = [...Array.from({ length: 1_000 }, () => 16), 0];
+  assert.equal(Math.round(meanFps(intervals) * 100) / 100, 62.5);
+  assert.equal(meanFps([0, 0]), undefined);
+  assert.equal(meanFps([]), undefined);
+  assert.equal(unmeasurableIntervalCount(intervals), 1);
+  assert.equal(unmeasurableIntervalCount([16, 16]), 0);
+});
+
+test('one malformed sample voids the series, because only a zero is the clock, not a defect', () => {
+  // The zero-length exemption is for the clock alone. NaN, a negative and Infinity are malformed
+  // readings, so dropping them from the series would silently publish a passing frame rate from
+  // the surviving good ones; the series stays unmeasured and the budget fails on the missing mean.
+  assert.equal(meanFps([16, Number.NaN, 16]), undefined);
+  assert.equal(meanFps([16, -1, 16]), undefined);
+  assert.equal(meanFps([16, Number.POSITIVE_INFINITY, 16]), undefined);
+  assert.equal(meanFps([Number.NaN, 0]), undefined);
+  assert.equal(unmeasurableIntervalCount([16, Number.NaN, 16]), 0);
+});
+
+test('a web frame rate measured on a private Xvfb is refused, because that lane cannot carry one', () => {
+  // Two collections of the same built platformer at 1920x1080 on this host: the private-display web
+  // arm reported 33.97 fps mean and a 117.1 ms p99, the session-display arm 163.45 fps and 19.6 ms.
+  // The private lane is not the player's experience, so a run that would judge the budget on it
+  // refuses before collecting rather than publishing a number.
+  const fault = webRateDisplayFault({ kind: 'private-xvfb', screen: '1600x900x24' });
+  assert.equal(fault?.code, 'TN_PROD_DISPLAY_UNTRUSTWORTHY');
+  assert.match(fault.message, /TN_PLAYTEST_HOST_DISPLAY=1/u);
+  // The opt-in lane the runner itself selects, and a non-Linux host that owns its display.
+  assert.equal(webRateDisplayFault({ display: ':0', kind: 'existing' }), undefined);
+  assert.equal(webRateDisplayFault({ kind: 'host' }), undefined);
+});
+
+test('the web identity names the display the frame rate was read from', () => {
+  // `observations.hardwareIdentity` was the key this read and no producer ever wrote it, so every
+  // web artifact published an identity with no GPU in it. The display is the field that separates
+  // this host's two web collections, and it is published from the decision the runner made.
+  assert.deepEqual(webRateIdentity({ display: { display: ':0', kind: 'existing' }, runs: [{}] }), {
+    webDisplay: 'session::0',
+  });
+  assert.deepEqual(webRateIdentity({ display: { kind: 'host' }, runs: [{}] }), { webDisplay: 'host' });
+  const observedRun = { report: { observations: { pipelineCensus: { adapter: { identity: 'webgpu:architecture=turing|vendor=nvidia' } } } } };
+  assert.deepEqual(webRateIdentity({ display: { kind: 'host' }, runs: [observedRun, observedRun] }), {
+    webAdapter: 'webgpu:architecture=turing|vendor=nvidia',
+    webDisplay: 'host',
+  });
+  assert.deepEqual(webRateIdentity({ runs: [observedRun, {}] }), {});
+  assert.deepEqual(webRateIdentity({ runs: [observedRun, { report: { observations: { pipelineCensus: { adapter: { identity: 'webgpu:architecture=other|vendor=other' } } } } }] }), {});
+  assert.deepEqual(webRateIdentity({ runs: [{}] }), {});
 });
 
 // Loads the real `privateDisplayCommand` selection out of the judge so a revert to `xvfb-run`

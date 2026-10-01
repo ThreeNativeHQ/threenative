@@ -244,8 +244,8 @@ async function runDevicePlaytestInternal(
     const startupOutcome = scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
-        acceptCompileSettled: config.allowSoftwareAdapter === true,
         bridge: attached,
+        declaredSoftware: config.allowSoftwareAdapter === true,
         // A device host can die mid-launch, and its mailbox then simply stops answering. Without
         // this the wait reads that as a slow loading gate and burns its whole deadline; with it
         // the report names the exit and carries the console tail that says why.

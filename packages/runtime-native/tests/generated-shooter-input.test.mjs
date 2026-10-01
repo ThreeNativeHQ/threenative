@@ -80,7 +80,7 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   const labeled = new Map(scenario.steps.map((step) => [step.label ?? "", step]));
   assert.equal(scenario.steps[0]?.label, "no-input-control");
   assert.deepEqual(labeled.get("aim-down")?.pointerPosition, { buttons: 2, x: 0.5, y: 0.5 });
-  assert.deepEqual(labeled.get("look-right")?.pointerPosition, { buttons: 2, x: 0.75, y: 0.5 });
+  assert.deepEqual(labeled.get("look-right")?.pointerPosition, { x: 0.75, y: 0.5 });
   assert.deepEqual(labeled.get("release-buttons")?.pointerPosition, {
     buttons: 0,
     x: 0.5,
@@ -110,7 +110,7 @@ function assertScenarioRegistered(registry = readJson(registryPath)) {
   const ammo = (scenario.assert?.resources ?? []).find(({ path }) => path === "ammo");
   assert.deepEqual(ammo?.atSteps, [{ label: "fire-settle", equals: 29 }]);
   const divergence = (scenario.assert?.components ?? []).find(
-    ({ component }) => component === "aimDivergenceDeg",
+    ({ component }) => component === "barrelAxisErrorDeg",
   );
   assert.ok(divergence !== undefined, "the scenario must score the shot against the camera axis");
   return { entry, scenario, scenarioPath };
@@ -142,6 +142,7 @@ function stubBridge() {
       capabilities: [
         "entity.bounds",
         "entity.observe",
+        "runtime.components",
         "runtime.diagnostics",
         "runtime.events",
         "runtime.fixedStep",
@@ -155,6 +156,12 @@ function stubBridge() {
     ready: () => ({ ready: true }),
     sample: () => ({
       clock: { mode: "fixed-step", tick },
+      components: {
+        rifle: {
+          barrelAxisErrorDeg: 0,
+          opticScreen: { x: 0.5 },
+        },
+      },
       diagnostics: [],
       entities: [
         {
@@ -285,19 +292,19 @@ test("should preserve button order on the native target", async () => {
   // browser lane never reaching the page at all, so a scenario built on one proves nothing.
   const pointers = deliveries.filter((delivery) => delivery.kind === "pointer");
   const expectedOrder = [
-    { buttons: 0, type: "pointermove", x: 640 },   // wake-pointer: absorb the first-move warp
+    { buttons: 1, type: "pointerdown", x: 640 },   // wake-pointer: left press absorbs the first-move warp
+    { buttons: 0, type: "pointerup", x: 640 },     // wake-pointer releases in-step
     { buttons: 2, type: "pointerdown", x: 640 },   // aim-down: right button press
-    { buttons: 2, type: "pointermove", x: 960 },   // look-right: relative move while aiming
-    { buttons: 2, type: "pointermove", x: 640 },   // look-back: equal and opposite
     { buttons: 0, type: "pointermove", x: 640 },   // release-buttons clears the mask in-step
     { buttons: 0, type: "pointerup", x: 640 },     // that release closes the pointer at its last point
     { buttons: 1, type: "pointerdown", x: 640 },   // fire-while-aiming: the trigger, alone
     { buttons: 0, type: "pointerup", x: 640 },     // end-of-step release closes it at the last point
+    { buttons: 0, type: "pointermove", x: 960 },   // look-right: a relative move with no button held
   ];
   assert.deepEqual(
     pointers.map(({ buttons, type, x }) => ({ buttons, type, x })),
     expectedOrder,
-    "native delivery must preserve the right-hold -> release -> left-alone order",
+    "native delivery must preserve the wake -> right-hold -> release -> trigger-alone -> look order",
   );
   assert.deepEqual(
     deliveries.filter(({ kind }) => kind === "key"),
@@ -306,7 +313,7 @@ test("should preserve button order on the native target", async () => {
       // KeyF — the aim held while the trigger is pressed — arrives as "f".
       { kind: "key", key: "Enter", type: "keydown" },
       { kind: "key", key: "Enter", type: "keyup" },
-      // No `q` release: the aim is held from its own step to the end of the scenario, which is
+      // No `f` release: the aim is held from its own step to the end of the scenario, which is
       // the whole point — the shot has to be taken while it is down.
       { kind: "key", key: "f", type: "keydown" },
     ],

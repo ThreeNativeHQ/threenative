@@ -12,6 +12,7 @@
       "build/**",
       "release-native/**",
       ".linchpin/**",
+      ".runtime/**",
       ".worktrees/**",
       ".claude/worktrees/**",
       ".opencode/**",
