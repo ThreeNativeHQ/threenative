@@ -155,7 +155,10 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
       });
 
     // The snow binding owns the surface collider and presses solved contacts into the field.
-    const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow });
+    // `resistance` is how hard powder holds what ploughs through it: 1 (the default soft-ground
+    // coefficient) stops a kicked ball within half a metre, 0.3 lets a push carve a track you can
+    // follow, 0 lets a ball roll forever. Any of them keeps a resting ball in its crater.
+    const snowPhysics = attachSnowPhysics({ physics: ctx.physics, resistance: 0.3, snow });
 
     const ballObject = createBall(materials, BALL_RADIUS);
     ballObject.position.set(2.2, snow.heightAt(2.2, -2) + BALL_RADIUS + 0.05, -2);

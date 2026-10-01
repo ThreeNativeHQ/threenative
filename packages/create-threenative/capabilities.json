@@ -3935,6 +3935,7 @@
       "importPath": "@threenative/physics",
       "kind": "function",
       "overrides": [
+        "resistance scales how much horizontal momentum powder takes from a supported body (0 turns it off; `observe().resistance` reports what it took)",
         "loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour"
       ],
       "package": "@threenative/physics",
@@ -3943,7 +3944,8 @@
       "situations": [
         "leave footprints and tracks where physical bodies actually touch snow",
         "let a dropped or pushed sphere carve and settle into deformable snow",
-        "make a crate, capsule or ball compress the surface it rests on"
+        "make a crate, capsule or ball compress the surface it rests on",
+        "a ball pushed through powder slows and comes to rest instead of rolling forever"
       ],
       "summary": "Drive a `SnowField` from real solved contacts. The binding creates the snow surface collider from the field's own canonical samples and keeps it in step with them, so a body lands on the surface a query would report. Each fixed step it reads the solver's persistent contacts — not collision start/stop events, which carry no point or load — deforms the snow only where a contact is supported and loaded downward, then republishes the surface before the next step. Airborne bodies, side contacts and unrelated colliders never deform anything. A dropped sphere settles on the surface it made; a pushed one rotates and carves a connected track without its transform being copied anywhere. Footprints come from the body's own collision shape and orientation unless the game supplies one. Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which estimates a contact force and is not measured. `observe().loadProvenance` says so.",
       "supersedes": [],
