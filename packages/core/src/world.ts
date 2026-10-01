@@ -24,6 +24,24 @@ export interface IHeightfieldOptions {
   readonly worldPasses?: IHeightfieldWorldPassOptions;
 }
 
+/** A rectangular window of a heightfield's canonical samples, in grid indices. */
+export interface IHeightfieldRegionBounds {
+  /** First column (x index), inclusive. */
+  readonly column: number;
+  /** Number of columns covered. */
+  readonly columns: number;
+  /** First row (z index), inclusive. */
+  readonly row: number;
+  /** Number of rows covered. */
+  readonly rows: number;
+}
+
+/** A rectangular window plus the replacement samples written over it. */
+export interface IHeightfieldRegion extends IHeightfieldRegionBounds {
+  /** Row-major samples, `columns * rows` long and read with the region's own stride. */
+  readonly heights: Float32Array;
+}
+
 export interface IHeightfieldWorldPassOptions {
   /** Maximum TSL compute dispatches submitted by one rendered frame. */
   readonly dispatchBudget: number;
@@ -58,6 +76,38 @@ function count(value: number, name: string): number {
   if (!Number.isInteger(value) || value < 2)
     throw new Error(`Heightfield ${name} must be an integer of at least 2.`);
   return value;
+}
+
+/** Validates one axis of an update window against the field's own sample count. */
+function regionAxis(
+  start: number,
+  size: number,
+  total: number,
+  names: readonly [string, string],
+): { readonly count: number; readonly start: number } {
+  if (!Number.isInteger(start) || start < 0)
+    throw new Error(`Heightfield region ${names[0]} must be an integer of at least 0.`);
+  if (!Number.isInteger(size) || size < 1)
+    throw new Error(`Heightfield region ${names[1]} must be an integer of at least 1.`);
+  if (start + size > total)
+    throw new Error(
+      `Heightfield region ${names[0]} ${String(start)} + ${names[1]} ${String(size)} exceeds the field's ${String(total)} samples.`,
+    );
+  return { count: size, start };
+}
+
+function regionColumns(
+  region: IHeightfieldRegionBounds,
+  total: number,
+): { readonly count: number; readonly start: number } {
+  return regionAxis(region.column, region.columns, total, ["column", "columns"]);
+}
+
+function regionRows(
+  region: IHeightfieldRegionBounds,
+  total: number,
+): { readonly count: number; readonly start: number } {
+  return regionAxis(region.row, region.rows, total, ["row", "rows"]);
 }
 
 function shouldBuildGpuPasses(options: IHeightfieldWorldPassOptions | undefined): boolean {
@@ -114,6 +164,7 @@ export class Heightfield extends Group implements IComputeDriven {
   #renderer: IRendererLike | undefined;
   #gpuCompletionObserved = false;
   #released = false;
+  #version = 0;
 
   constructor(options: IHeightfieldOptions & IStoredHeightfieldChannels) {
     super();
@@ -362,6 +413,94 @@ export class Heightfield extends Group implements IComputeDriven {
     return target.set(-slopeX, 1, -slopeZ).normalize();
   }
 
+  /**
+   * Monotonic sample version, incremented by every `updateHeights` call.
+   *
+   * A renderer or collider that caches derived data compares this against its own last-seen value
+   * instead of diffing the whole grid each frame.
+   */
+  get version(): number {
+    return this.#version;
+  }
+
+  /**
+   * Overwrite one rectangular window of the canonical samples.
+   *
+   * Height is the one buffer queries, rendered geometry and collider export share, so a second
+   * terrain representation is never needed: a simulation writes its surface here and every
+   * consumer already reads it. The whole window is validated before any sample changes, so a
+   * malformed call leaves the field untouched rather than half-written.
+   * @situation deform terrain, snow or water in place and have queries and collision follow
+   * @constraint the region must lie inside the field; an out-of-bounds window throws and writes nothing
+   * @constraint heights is `columns * rows` long, row-major, and every sample must be finite
+   */
+  updateHeights(region: IHeightfieldRegion): void {
+    if (this.#released) throw new Error("Heightfield cannot be updated after release.");
+    const column = regionColumns(region, this.columns);
+    const row = regionRows(region, this.rows);
+    const expected = column.count * row.count;
+    if (region.heights.length !== expected)
+      throw new Error(
+        `Heightfield region expected ${expected} heights, received ${region.heights.length}.`,
+      );
+    for (const height of region.heights) finite(height, "region sample");
+    for (let index = 0; index < row.count; index += 1) {
+      for (let offset = 0; offset < column.count; offset += 1) {
+        const target = row.start + index;
+        const source = column.start + offset;
+        this.#heights[target * this.columns + source] = region.heights[
+          index * column.count + offset
+        ] as number;
+        this.#colliderHeights[source * this.rows + target] = this.#height(
+          target * this.columns + source,
+        );
+      }
+    }
+    this.#version += 1;
+  }
+
+  /**
+   * Rewrite an existing `toGeometry()` result from the current canonical samples.
+   *
+   * Positions carry over unchanged because only the surface moves; y and normals are refreshed
+   * from the same sampler queries use, which is what keeps a rendered vertex and a height query
+   * from disagreeing. Pass a region to touch only the window a simulation just changed.
+   * @situation redraw a terrain, snow or water mesh after its samples changed
+   * @constraint geometry must come from `toGeometry()` with the same rows and columns
+   */
+  refreshGeometry(geometry: BufferGeometry, bounds?: IHeightfieldRegionBounds): void {
+    const position = geometry.getAttribute("position");
+    const normalAttribute = geometry.getAttribute("normal");
+    if (position.count !== this.rows * this.columns)
+      throw new Error(
+        `Heightfield geometry has ${position.count} vertices, expected ${this.rows * this.columns}.`,
+      );
+    const column =
+      bounds === undefined
+        ? { count: this.columns, start: 0 }
+        : regionColumns(bounds, this.columns);
+    const row =
+      bounds === undefined ? { count: this.rows, start: 0 } : regionRows(bounds, this.rows);
+    const normal = new Vector3();
+    for (let index = 0; index < row.count; index += 1) {
+      const target = row.start + index;
+      const worldZ = this.origin.z - this.depth / 2 + target * this.#cellDepth;
+      for (let offset = 0; offset < column.count; offset += 1) {
+        const source = column.start + offset;
+        const vertex = target * this.columns + source;
+        const worldX = this.origin.x - this.width / 2 + source * this.#cellWidth;
+        position.setY(vertex, this.#height(vertex));
+        if (normalAttribute === undefined) continue;
+        this.normalAt(worldX, worldZ, normal);
+        normalAttribute.setXYZ(vertex, normal.x, normal.y, normal.z);
+      }
+    }
+    position.needsUpdate = true;
+    if (normalAttribute !== undefined) normalAttribute.needsUpdate = true;
+    geometry.computeBoundingSphere();
+    geometry.computeBoundingBox();
+  }
+
   /** The same values transposed once into Rapier's column-major height-matrix order. */
   toColliderHeights(): Float32Array {
     return this.#colliderHeights.slice();
@@ -494,6 +633,15 @@ export type {
   IWorldTerrain,
   WorldPackageErrorCode,
 } from "./world-package.js";
+
+export { SnowField, snowDiscFootprint } from "./snow-field.js";
+export type {
+  ISnowContact,
+  ISnowFieldOptions,
+  ISnowFieldSample,
+  ISnowFootprint,
+  ISnowFootprintSample,
+} from "./snow-field.js";
 
 export { heightSamplerFromHeightmap, loadWorldHeightmap } from "./world-heightmap.js";
 export { loadTerrainSplat } from "./world-terrain-splat.js";

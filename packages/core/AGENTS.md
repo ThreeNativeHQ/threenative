@@ -48,6 +48,18 @@ Use `heightAt`, `normalAt` and `sample` on the resident field so queries stay ti
 stored values that produce geometry and collision. `follow` is the only residency update entry
 point; a tile is evicted as one unit with its collider, geometry and asset release.
 
+`SnowField` is the subpath's numerical snow record: indentation, displaced bank, compaction and
+disturbance channels over one canonical `Heightfield`, plus load-dependent penetration and bounded
+sparse recovery. It writes `terrain + depth + bank - indent` back through
+`Heightfield.updateHeights`, so queries, rendered geometry and collider export keep reading one
+surface. The game supplies the terrain, the snow depth, the contact footprint, the load in newtons
+and the supported area; the field owns no boot, tread, material, particle or camera. `depth`,
+`hardness`, `yieldFraction`, `maxBank` and `responseTime` are its only response coefficients.
+`heightAt` and `normalAt` keep `Heightfield`'s out-of-region error contract; `sample` returns zeros
+outside the resident region so a broad sweep needs no bounds check. It is a heightfield
+approximation, never granular snow, avalanche simulation, melting or a calibrated material law,
+and it does not encode to a texture — GPU encoding belongs in `src/render/`.
+
 `picking.ts` is the one place a third-party dependency other than `three` and `zustand`
 reaches core. It is contained deliberately: `ScenePicker` builds a hierarchy on first use,
 patches no `three` prototype, and a game that never calls `ctx.raycast` never builds one.

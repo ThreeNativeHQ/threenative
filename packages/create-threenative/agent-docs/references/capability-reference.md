@@ -2899,6 +2899,43 @@ export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { �
 const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
 ```
 
+### `snowDiscFootprint`
+
+`function` — A circular contact footprint, sized from a radius the caller measures. The shape a sphere, a ball, a wheel or a probe presses into snow, and the default the physics binding derives from a sphere's contact geometry. Flat inside the radius, eased over the softness band, with a raised rim just outside it.
+
+```ts
+export function snowDiscFootprint( radius: number, options: ISnowDiscFootprintOptions = { … }
+```
+
+- **Use when:** press a ball, wheel or probe into snow · give a sphere a physically sized snow contact instead of a boot shape
+- **Constraints:** radius is metres; the footprint never grows with load, only deeper
+- **Overrides:** softness widens the eased edge without changing the contact radius
+
+```ts
+const footprint = snowDiscFootprint(0.25);
+```
+
+### `SnowField`
+
+`class` — Persistent snow deformation over one canonical heightfield. Snow keeps four channels per cell — indentation, displaced bank, compaction and disturbance — and writes the combined surface (`terrain + depth + bank - indent`) back into the heightfield it was given. Queries, rendered geometry and collider export therefore all read one surface, and no second terrain representation exists. The field is numeric only: it never chooses a boot, a tread, a particle, a material or a camera. Games supply terrain heights, the snow depth, the contact profile and the response coefficients; this class owns the storage, the load-dependent penetration and the bounded recovery. It is a heightfield approximation — not granular snow, displaced-volume conservation, avalanches, melting or a calibrated material law.
+
+```ts
+export class SnowField { … }
+```
+
+- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime
+- **Constraints:** the field composes onto a Heightfield; construct the terrain first and let this own the surface · zero depth is bare ground: contacts register no indentation at all · out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros
+- **Requires:** @threenative/core/world Heightfield as the canonical terrain and surface
+- **Overrides:** depth, hardness, yieldFraction, maxBank and responseTime name the response coefficients
+
+```ts
+import { Heightfield } from "@threenative/core/world";
+const terrain = Heightfield.fromSampler({ rows: 129, columns: 129, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: (x, z) => Math.sin(x * 0.1) * 0.5 });
+const snow = new SnowField({ field: terrain, depth: 0.28, hardness: 0.3 });
+snow.stamp({ x: 0, z: 0, area: 0.074, load: 784, duration: 0.1, footprint: snowDiscFootprint(0.12) });
+snow.recover(1 / 60, 0.0012, 0.4);
+```
+
 ### `TerrainTiles`
 
 `class` — Stream a bounded square of game-authored heightfields and keep their render and physics units together. The class composes ordinary THREE.LOD objects and leaves frustum/projection culling to the renderer's existing scene path.

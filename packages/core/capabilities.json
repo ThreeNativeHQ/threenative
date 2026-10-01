@@ -3688,6 +3688,49 @@
       "symbol": "loadWorldHeightmap"
     },
     {
+      "aliases": [],
+      "constraints": ["radius is metres; the footprint never grows with load, only deeper"],
+      "example": "const footprint = snowDiscFootprint(0.25);",
+      "importPath": "@threenative/core/world",
+      "kind": "function",
+      "overrides": ["softness widens the eased edge without changing the contact radius"],
+      "package": "@threenative/core",
+      "signature": "export function snowDiscFootprint( radius: number, options: ISnowDiscFootprintOptions = { … }",
+      "situations": [
+        "press a ball, wheel or probe into snow",
+        "give a sphere a physically sized snow contact instead of a boot shape"
+      ],
+      "summary": "A circular contact footprint, sized from a radius the caller measures. The shape a sphere, a ball, a wheel or a probe presses into snow, and the default the physics binding derives from a sphere's contact geometry. Flat inside the radius, eased over the softness band, with a raised rim just outside it.",
+      "supersedes": [],
+      "symbol": "snowDiscFootprint"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the field composes onto a Heightfield; construct the terrain first and let this own the surface",
+        "zero depth is bare ground: contacts register no indentation at all",
+        "out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros"
+      ],
+      "example": "import { Heightfield } from \"@threenative/core/world\";\nconst terrain = Heightfield.fromSampler({ rows: 129, columns: 129, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: (x, z) => Math.sin(x * 0.1) * 0.5 });\nconst snow = new SnowField({ field: terrain, depth: 0.28, hardness: 0.3 });\nsnow.stamp({ x: 0, z: 0, area: 0.074, load: 784, duration: 0.1, footprint: snowDiscFootprint(0.12) });\nsnow.recover(1 / 60, 0.0012, 0.4);",
+      "importPath": "@threenative/core/world",
+      "kind": "class",
+      "overrides": [
+        "depth, hardness, yieldFraction, maxBank and responseTime name the response coefficients"
+      ],
+      "package": "@threenative/core",
+      "requires": ["@threenative/core/world Heightfield as the canonical terrain and surface"],
+      "signature": "export class SnowField { … }",
+      "situations": [
+        "leave footprints, tracks and tyre ruts in snow that persist and fill in over time",
+        "let a pushed sphere carve a connected track and a dropped one settle into a crater",
+        "store snow deformation that rendered geometry and collision both read",
+        "reset a snowfield between rounds or change its depth at runtime"
+      ],
+      "summary": "Persistent snow deformation over one canonical heightfield. Snow keeps four channels per cell — indentation, displaced bank, compaction and disturbance — and writes the combined surface (`terrain + depth + bank - indent`) back into the heightfield it was given. Queries, rendered geometry and collider export therefore all read one surface, and no second terrain representation exists. The field is numeric only: it never chooses a boot, a tread, a particle, a material or a camera. Games supply terrain heights, the snow depth, the contact profile and the response coefficients; this class owns the storage, the load-dependent penetration and the bounded recovery. It is a heightfield approximation — not granular snow, displaced-volume conservation, avalanches, melting or a calibrated material law.",
+      "supersedes": [],
+      "symbol": "SnowField"
+    },
+    {
       "aliases": ["stream terrain across chunks"],
       "constraints": [
         "sampleHeight and surface are required game choices; no landform or surface preset is installed",
