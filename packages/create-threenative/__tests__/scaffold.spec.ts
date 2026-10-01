@@ -784,7 +784,8 @@ describe("create-threenative", () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
     try {
       const actual: Record<string, string> = {};
-      for (const template of ALL_TEMPLATES) {
+      // Kits added after PRD-201 have no tree in its parent commit.
+      for (const template of Object.keys(PRD_201_PARENT_SCAFFOLD_HASHES)) {
         const { target } = await createProject(
           { install: false, target: template, template },
           root,

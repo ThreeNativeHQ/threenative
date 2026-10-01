@@ -595,6 +595,30 @@
       "source": "sandbox:fps#render/facade.ts",
       "expect": ["mergeParts"],
       "reject": []
+    },
+    {
+      "id": "rain.weather-world",
+      "query": "procedural coastal storm with a road, forest, sea and wet reflections drawn from maths rather than geometry",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createWeatherWorld"],
+      "reject": ["Area3D", "NavigationAgent3D"]
+    },
+    {
+      "id": "rain.noise-volume",
+      "query": "generate a 3D noise volume for the clouds instead of shipping one as an asset",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createNoiseVolume"],
+      "reject": ["Area3D"]
+    },
+    {
+      "id": "rain.storm-audio",
+      "query": "rain hiss, wind bed and thunder delayed by how far away the strike was",
+      "scope": "mechanic",
+      "source": "template:rain#Ownership",
+      "expect": ["createStormAudio"],
+      "reject": ["Area3D"]
     }
   ]
 }

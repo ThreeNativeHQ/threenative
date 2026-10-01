@@ -96,15 +96,21 @@ export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
-export type { IAudioBusOptions, IAudioPlayOptions } from "./audio.js";
+export type {
+  IAudioBusOptions,
+  IAudioCompressorOptions,
+  IAudioPlayOptions,
+} from "./audio.js";
 /**
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
+ * @situation hold a loud mix below clipping with a compressor on the bus
  * @situation play cannon, wave, and ship sound effects
  * @constraint create buses before playing clips and dispose them with the game
  * @constraint refDistance and rolloffFactor tune positional falloff and apply to playAt only
+ * @constraint compressor takes threshold, knee, ratio, attack and release from the game and takes effect on the bus sum
  * @supersedes new Audio(
  * @example const effects = new AudioBus({ camera });
  */

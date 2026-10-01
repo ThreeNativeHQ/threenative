@@ -19,6 +19,7 @@ table, reads each template's `AGENTS.md`, and checks the TypeScript AST for the 
 | minimal | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | platformer | `src/conventions.ts:12` | `src/conventions.ts:11` | N/A — the template has no held object or character hand | N/A — procedural rig motion has no AnimationClip asset |
 | puzzle | `src/conventions.ts:19` | `src/conventions.ts:18` | N/A — the claw carries crates through physics velocity, not a bone attachment | N/A — no skinned or animated asset is loaded |
+| rain | N/A — the camera flies; no walking actor needs floor contact | N/A — procedural geometry is authored in metres; no imported model needs scaling | N/A — there is no held object or character hand | N/A — no skinned or animated asset is loaded |
 | racing | N/A — vehicle suspension and snap-to-ground own floor contact | `src/conventions.ts:5` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |
 | runner | `src/conventions.ts:18` | `src/conventions.ts:17` | N/A — the runner carries nothing and has no character hand | N/A — the jump is an authored arc, not an AnimationClip |
 | sailing | N/A — the ship is waterborne and uses buoyancy, not floor grounding | `src/conventions.ts:7` | N/A — the template has no held object or character hand | N/A — no skinned or animated asset is loaded |

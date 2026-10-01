@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-473 — Rain: the storm kit (TEMPEST, rebuilt on engine abstractions)
 
-**Status:** IN PROGRESS (planned; no implementation landed)
+**Status:** IN PROGRESS (scaffold, simulation and UI implemented locally; render fidelity and runtime gates remain open)
 **Complexity:** 7 → HIGH; risk override: none
 **Owner:** João (visual taste calls and the final PR screenshots)
 **Depends on:** None
@@ -76,7 +76,7 @@ with the game".
 
 ## Solution
 
-**Framework owns (packages/):** nothing new. The three empty searches above (ray-march a 3D noise
+**Framework owns (packages/):** existing renderer, input, asset, audio and lifecycle mechanisms. Audio extraction exposed two remaining mechanism gaps: no public bus compressor equivalent, and the native host reports `lowpassHz` unsupported. Both require actual engine support before the full audio/native acceptance can pass. The three empty searches above (ray-march a 3D noise
 volume, upload a 3D data texture and sample it, generate branching ribbon geometry) are answered by
 **generated kit source**, not by an engine export: `templates/rain/src/render/noise-volume.ts` is a
 pure seeded generator — `createRandom` (`random.ts:8`) plus Three's `Data3DTexture` and fBm
@@ -102,8 +102,7 @@ whole interface in `src/ui/` React + Tailwind.
 **Not admitted to the framework** (recorded so a later reader does not re-argue): the seeded 3D noise
 volume generator (generated render source, app maths — see above), weather presets
 (a preset system is outranking rule 5), the flash envelope and bolt generation (pure game maths and
-geometry), the quality table (each template already owns one), runtime audio synthesis (native has no
-`AudioContext`; the same DSP runs offline into committed assets), lens droplets and the grade (an
+geometry), the quality table (each template already owns one), runtime audio synthesis (the same DSP is baked offline into committed assets; dynamic bus/filter support still needs verification), lens droplets and the grade (an
 authored `RenderChain` stage), and the source's second render backend (the engine already ships one).
 
 ### Abstraction map (source → disposition)
@@ -140,7 +139,7 @@ and score in `docs/verification/visuals/`, and `native-playtests/*.playtest.json
 
 - [ ] AC-1 [local]: a project scaffolded from `--template rain` boots into the storm and one panel intent changes the rendered frame, not only the readout. proof: `node packages/playtest/dist/runner/cli.js
   packages/create-threenative/templates/rain/playtests/storm.playtest.json --url http://127.0.0.1:5173
-  --server-command "pnpm --filter rain dev" --browser-recipe webgpu`
+  --server-command "pnpm --dir <generated-rain-project> dev" --browser-recipe webgpu --headed`
 - [ ] AC-2 [local]: a strike raises the flash value, brightens the scene and lands a `thunder` cue in the audio ledger at the source delay, while `safe` and `prefers-reduced-motion` suppress every flash. proof: the same runner on `playtests/lightning.playtest.json`
 - [ ] AC-3 [local]: rain is registered everywhere a template must be registered — CI matrices, capability-recall brief, applicability row, docs, visual score. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts
   scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts`
@@ -159,9 +158,9 @@ green.
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| Kit registration | `npx threenative create --template rain` → `packages/create-threenative/src/index.ts:251` | new kit, no incumbent | AC-1 |
+| Kit registration | `pnpm create threenative rain-game --template rain` → `packages/create-threenative/src/index.ts:251` | new kit, no incumbent | AC-1 |
 | Weather control surface | UI slider/preset → `sendUiIntent` → `game.ui.onIntent` in `src/game.ts` → `Atmosphere`/`RippleField`/`GPUParticles3D` uniforms | replaces the source's inline DOM handlers | AC-1, AC-3 |
-| Volumetric noise volume | generated source `templates/rain/src/render/noise-volume.ts` (`createRandom` + `Data3DTexture`) consumed by `src/render/clouds.ts` | generated kit source; generated-source capability entries point to the kit files | Phase 2 box |
+| Volumetric noise volume | generated source `templates/rain/src/render/noise-volume.ts` (source-exact seeded noise + `Data3DTexture`) consumed by `src/render/clouds.ts` | generated kit source; generated-source capability entries point to the kit files | Phase 2 box |
 | Storm post chain | `src/render/postprocessing.ts` → `RenderChain` built-ins + one authored stage | replaces the source's single POST pass | Phase 1 box |
 | Storm audio | `src/audio/storm.ts` → `AudioBus.play`/`playAt` over `ctx.assets.audio` | replaces the source's `StormAudio` Web Audio graph | AC-2 |
 | Capture proof | playtest `capture` assertions and PR screenshots | replaces the source's `window.tempest.capture` | AC-1, Phase 3 box |
@@ -191,7 +190,25 @@ green.
 
 ### Phase 1 — The kit exists and the storm answers the player
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
+
+Current local results (2026-10-01): the installed consumer passes TypeScript and `build:web`; the
+React interface renders at 1440×900, 1024×768 and 390×844. Nine weather/intent regression tests pass. The Drizzle button playtest also passes: the target changes from 0.76 to 0.24, rendered weather eases to 0.246, and 94% of canvas pixels change with clean diagnostics (placeholder renderer only).
+The boot and simulation playtests pass with `--browser-recipe webgpu --headed`: capture provenance
+reports NVIDIA Turing WebGPU, with zero console, network or runtime errors. Clock/frame observations
+change and the boot capture is nonblank. Earlier headless runs selected Google SwiftShader and failed;
+headed execution resolves that browser setup. The original coast and a live cloud pass now render
+in the installed consumer after Three's GLSL-to-TSL conversion, inline Fn calls and mutable local
+variables. Their headed boot and weather runs pass with clean diagnostics; the cloud-stage weather
+run changes 46.5% of canvas pixels. The generated noise now matches all 1,048,576 source bytes
+(`059598d3d3da03b8a42999e9d3a81ed39803210dec666af8405c530b7e984c42`).
+Fresh integrated headed boot/weather runs pass with the corrected noise, live clouds, rain, bloom
+and source post grade. Drizzle changes 65.1% of canvas pixels and the actual rain instance count
+falls from 9,120 to 2,951. The boot capture is nonblank with clean diagnostics. Review of that image
+found vertically inverted sky sampling; its correction and bolt integration remain open. These
+captures do not establish complete visual fidelity or all four quality tiers.
+No phase or acceptance box is complete. Historical scaffold stability passes for its original kits;
+Rain is excluded from that historical fixture because it did not exist at the fixture's parent commit.
 **Files:** `packages/create-threenative/templates/rain/{kit.json,package.json,tsconfig.json,vite.config.ts,threenative.config.ts,index.html,gitignore,AGENTS.md}` ·
 `src/{main.tsx,game.ts,state.ts,conventions.ts,scenes/Storm.ts}` ·
 `src/render/{palette,camera,sky,lighting,materials,postprocessing,quality}.ts` ·
@@ -211,7 +228,7 @@ changed after an intent, a non-blank capture, and fps/draw-call bounds.
 
 ### Phase 2 — Sky, sea and rain: the look, built from generated source
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (world shader, cloud shader and noise-volume source exist locally; cloud-stage wiring and runtime proof remain open)
 **Files:** `templates/rain/src/render/{noise-volume,clouds,sea,wetRoad,rain}.ts` ·
 `templates/rain/playtests/tiers.playtest.json` · `scripts/capability-recall.ts` (`rain` brief) ·
 `docs/verification/visuals/rain.png` + `scores.json` · regenerated capability manifests
@@ -227,12 +244,31 @@ produces.
 - [ ] Phase 2: the cloud volume, sea, wet road and rain streaks render at every tier inside the declared bounds, from generated source rather than a new engine export. proof: `pnpm exec tsx scripts/check-template-quality.ts`; `pnpm build` regenerates the manifests; `engine_search_capabilities` and `engine_capability_detail` find the extracted Rain abstractions at valid generated-source paths, exercised by the `rain` brief in `scripts/capability-recall.ts`; and
   node packages/playtest/dist/runner/cli.js
   packages/create-threenative/templates/rain/playtests/tiers.playtest.json --url http://127.0.0.1:5173
-  --server-command "pnpm --filter rain dev" --browser-recipe webgpu
+  --server-command "pnpm --dir <generated-rain-project> dev" --browser-recipe webgpu
   captured at the low and high tiers
 
 ### Phase 3 — Lightning, thunder, and the finished study
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (audio extraction and engine audio support are being implemented; game integration and native proof remain open)
+
+Audio extraction exists locally: three WAV assets and a reproducible DSP bake pass its signal checks;
+the playback helper typechecks. It is registered in the game and receives updates, queued strikes,
+pause and visibility holds; the full game has no audio runtime/native proof yet. Review
+found a visibility hold that could stay latched, disabled audio that left loops audible, lost repeated
+queued strikes, and source gain ramps omitted. Twelve persistent audio regression tests now pass,
+alongside the nine weather tests. The helper requests the source's compressor settings. Source compressor behavior in the full game,
+and native game audio remain open. Existing asset conditioning `none` preserves the float WAV
+samples, including wind peaks above 1.0; three regression checks and the assets suite pass
+(434 passed, two skipped). The native SDL WAV decode path preserves those amplitudes. Static bounds
+and silent omission do not substitute for full game audio behavior.
+The engine audio slice passes 33 core audio tests. Native signal checks now prove compression of
+the bus sum before master gain, unchanged bypass audio, disconnect behavior, a non-amplifying soft
+knee and an exponential gain target ramp. The native audio graph and V8 binding checks pass, as do
+fresh web/desktop runs of conformance case `94-audio-context`. Full Rain game audio and mobile hosts
+remain unverified; these mechanism checks do not close native game acceptance.
+The first Rain desktop scout renders the interface after both 300 and 900 frames, but its captures
+show no coast, clouds or rain. Mailbox readiness also timed out. Native game rendering remains a
+failed observation; the interface's nonblank pixels do not satisfy storm-scene acceptance.
 **Files:** `templates/rain/src/render/lightning.ts` · `src/audio/storm.ts` ·
 `tools/make-storm-audio.mjs` + `assets/{rain,wind,thunder}.wav` · `src/ui/` accessibility switches ·
 `native-playtests/lightning.playtest.json` · PR body with the reference and kit captures
