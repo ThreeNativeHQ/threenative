@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { Game } from "../templates/rts/src/sim/game.js";
 import { clearMovement, travelEntity } from "../templates/rts/src/sim/movement.js";
@@ -81,12 +82,18 @@ describe("rts navigation", () => {
     expect(first, "the route has a first waypoint").toBeDefined();
     expect(last, "the route has a last waypoint").toBeDefined();
     if (!first || !last) throw new Error("the route has no endpoints");
-    expect(route.every((p) => p !== undefined), "every waypoint is a point").toBe(true);
+    expect(
+      route.every((p) => p !== undefined),
+      "every waypoint is a point",
+    ).toBe(true);
     let widest = 0;
     for (let i = 1; i < route.length; i++) {
       widest = Math.max(widest, dist(route[i - 1] ?? from, route[i] ?? to));
     }
-    expect(widest, "consecutive waypoints are one cell apart, so the route reads start-to-goal").toBeLessThanOrEqual(2 * Math.SQRT2 + 0.001);
+    expect(
+      widest,
+      "consecutive waypoints are one cell apart, so the route reads start-to-goal",
+    ).toBeLessThanOrEqual(2 * Math.SQRT2 + 0.001);
     expect(dist(first, from), "the route starts at the unit").toBeLessThan(dist(last, from));
     expect(dist(last, to), "the route ends at the goal").toBeLessThan(0.5);
   });
@@ -115,9 +122,10 @@ describe("rts path goal cache", () => {
 
     travelEntity(game, unit, -40, 40, 0.05, 0.5);
     expect(unit.pathGoal, "a new order plans a new goal").toBe(goal);
-    expect(unit.pathGoal && `${unit.pathGoal.x},${unit.pathGoal.z}`, "the goal is the new one").toBe(
-      "-40,40",
-    );
+    expect(
+      unit.pathGoal && `${unit.pathGoal.x},${unit.pathGoal.z}`,
+      "the goal is the new one",
+    ).toBe("-40,40");
     expect(unit.pathRevision, "a new goal is a replan").toBe(game.navRevision);
 
     clearMovement(unit);
@@ -323,4 +331,55 @@ describe("rts determinism", () => {
     expect(second.final).toBe(first.final);
     expect(play(19).midway).not.toBe(first.midway);
   }, 300_000);
+
+  // Replaying a seed against itself only proves the match is deterministic, not that it is the
+  // same match. An allocation rewrite passed the case above and still ended seed 18 at 149.6 s
+  // instead of 230.95 s, because two commander decisions were transposed on the way to being
+  // allocation-free — the army took its defender and then attacked the nearest shed. These are the
+  // pre-rewrite states, so any semantic change to the rules shows up here as a different hash
+  // rather than as a slower, differently-shaped game nobody notices.
+  describe("the match is the one that was played before the rewrite", () => {
+    const digest = (game: Game) =>
+      createHash("sha256").update(game.serialize()).digest("hex").slice(0, 16);
+
+    const CHECKPOINTS = [
+      [1000, "0496d97bfe4c5132"],
+      [2000, "cf946d59db620c5d"],
+      [3000, "4f30b8a55d355cb2"],
+      [6000, "6d79264916495caa"],
+    ] as const;
+
+    it("replays seed 18 to the same match, step for step", () => {
+      const game = new Game({ ai: true, seed: 18 });
+      const seen = new Map<number, string>();
+      for (let i = 0; i < 6000; i++) {
+        game.step();
+        for (const [step, hash] of CHECKPOINTS) if (step === i + 1) seen.set(step, digest(game));
+      }
+      for (const [step, expected] of CHECKPOINTS)
+        expect(seen.get(step), `seed 18 at step ${step}`).toBe(expected);
+      expect(game.time).toBeCloseTo(230.95, 6);
+      expect(game.kills).toBe(6);
+      expect(game.result).toBe("defeat");
+    }, 300_000);
+
+    it("replays seed 19 to the same match, step for step", () => {
+      // The other seed is the one that must still differ, so its checkpoints prove the fence is
+      // pinned to this match and not to "every match hashes the same".
+      const game = new Game({ ai: true, seed: 19 });
+      const seen = new Map<number, string>();
+      for (let i = 0; i < 6000; i++) {
+        game.step();
+        for (const [step, hash] of [
+          [1000, "250e71a712596ee0"],
+          [2000, "a3afc3fb6841ca19"],
+          [3000, "432fa5f7732ff6fc"],
+          [6000, "ee270f78dd8e9059"],
+        ] as const)
+          if (step === i + 1) seen.set(step, digest(game));
+      }
+      expect(seen.get(1000)).toBe("250e71a712596ee0");
+      expect(seen.get(6000)).toBe("ee270f78dd8e9059");
+    }, 300_000);
+  });
 });
