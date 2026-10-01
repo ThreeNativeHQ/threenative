@@ -500,7 +500,17 @@ function rippleSlope(ripples: DataTexture, time: Node<"float">, fade: Node<"floa
   return slope;
 }
 
-export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWaterSurface {
+export function createWaterMesh(
+  ocean: SpectralOcean,
+  mirror: ISeaMirror,
+  options: { readonly software?: boolean } = {},
+): IWaterSurface {
+  // A CPU rasteriser draws this material's full graph (cascade normals, foam, wake, mirror) so
+  // slowly that the sea-height readback never lands inside a scenario's ticks (measured on four
+  // cores: `readbackStaleFrames` stays -1 with the full graph and lands with this one).
+  // `ctx.renderer.softwareAdapter` names that machine; the swell, the readback and the hull still
+  // run, and only the shading that needs a GPU is left off.
+  const cheap = options.software === true;
   const geometry = seaDisc();
   const ripples = rippleNormals();
 
@@ -563,10 +573,11 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // `normalNode` overrides `normalView`, so a material handed a world-space normal lights the
   // surface in the camera's frame instead of the world's — the sun's reflection stopped being a
   // place on the sea and became a column of glare pointing at the camera.
-  material.normalNode = Fn(() => {
-    const slope = surfaceSlope(ocean, worldX, worldZ);
-    return transformNormalToView(vec3(slope.x.negate(), 1, slope.y.negate()).normalize());
-  })();
+  if (!cheap)
+    material.normalNode = Fn(() => {
+      const slope = surfaceSlope(ocean, worldX, worldZ);
+      return transformNormalToView(vec3(slope.x.negate(), 1, slope.y.negate()).normalize());
+    })();
 
   // Colour by height: deep blue-green in the troughs, lit water on the shoulders, foam on the
   // crests.
@@ -672,11 +683,9 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
     .mul(wakeStrength)
     .mul(torn);
   const broken = max(max(wake, bow), wash.mul(torn).mul(wakeStrength));
-  material.colorNode = mix(
-    water.add(color(SUBSURFACE).mul(through)),
-    color(FOAM),
-    max(crest, broken),
-  );
+  material.colorNode = cheap
+    ? water
+    : mix(water.add(color(SUBSURFACE).mul(through)), color(FOAM), max(crest, broken));
 
   // The one thing the prefiltered environment cannot do: the hull, the marks and the headland, in
   // the water, sharp.
@@ -685,28 +694,29 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // the material's image-based specular, which applies the same Schlick curve on its own; this
   // applies the same one to the mirror, so the two agree at the horizon and the silhouettes fade
   // out as the eye comes down onto the water.
-  material.emissiveNode = Fn(() => {
-    // The interpolated vertex normal, which is the swell, plus this fragment's own ripple. Adding
-    // the ripple here rather than in the vertex stage is what makes it affordable: the swell's
-    // central difference is four cascade reads, and doing that per *fragment* on a full-screen sea
-    // cost sixteen texture fetches a pixel to arrive at a vector the vertex stage had already
-    // computed. The ripple is a texture read either way, and per fragment is finer, which is the
-    // whole point of a normal map.
-    const normal = normalWorld
-      .add(vec3(rippleSlope(ripples, seaTime, detail).mul(-0.47).mul(detail), 0))
-      .normalize();
-    const facing = saturate(dot(normal, eye.normalize()));
-    // Exponent five is water's own Schlick curve, and the 0.97963/0.02037 pair is its reflectance
-    // at the horizon and at normal incidence.
-    const fresnel = pow(oneMinus(facing), float(5)).mul(0.97963).add(0.02037);
-    // The normal's own slope is the offset: it is the same slope that is bending the light, so the
-    // mirror wobbles with the wave it is standing on.
-    const reflected = mirror.reflectionAt(normal.xz.mul(0.02)).mul(MIRROR_GAIN);
-    // Rough water does not mirror at grazing angles the way a flat facet does: the microfacets that
-    // survive are not aligned with the view, so reflectance falls off with roughness.
-    const rough = max(crest, broken);
-    return reflected.mul(fresnel).mul(oneMinus(max(subpixel, rough).mul(0.75)));
-  })();
+  if (!cheap)
+    material.emissiveNode = Fn(() => {
+      // The interpolated vertex normal, which is the swell, plus this fragment's own ripple. Adding
+      // the ripple here rather than in the vertex stage is what makes it affordable: the swell's
+      // central difference is four cascade reads, and doing that per *fragment* on a full-screen sea
+      // cost sixteen texture fetches a pixel to arrive at a vector the vertex stage had already
+      // computed. The ripple is a texture read either way, and per fragment is finer, which is the
+      // whole point of a normal map.
+      const normal = normalWorld
+        .add(vec3(rippleSlope(ripples, seaTime, detail).mul(-0.47).mul(detail), 0))
+        .normalize();
+      const facing = saturate(dot(normal, eye.normalize()));
+      // Exponent five is water's own Schlick curve, and the 0.97963/0.02037 pair is its reflectance
+      // at the horizon and at normal incidence.
+      const fresnel = pow(oneMinus(facing), float(5)).mul(0.97963).add(0.02037);
+      // The normal's own slope is the offset: it is the same slope that is bending the light, so the
+      // mirror wobbles with the wave it is standing on.
+      const reflected = mirror.reflectionAt(normal.xz.mul(0.02)).mul(MIRROR_GAIN);
+      // Rough water does not mirror at grazing angles the way a flat facet does: the microfacets that
+      // survive are not aligned with the view, so reflectance falls off with roughness.
+      const rough = max(crest, broken);
+      return reflected.mul(fresnel).mul(oneMinus(max(subpixel, rough).mul(0.75)));
+    })();
   // Roughness is spent, not lost: the slope a distant pixel can no longer resolve reappears here.
   //
   // This is now the term that decides the whole look, because it is what the prefiltered sky is
@@ -719,7 +729,8 @@ export function createWaterMesh(ocean: SpectralOcean, mirror: ISeaMirror): IWate
   // longer resolve a metre of wave the roughness takes over and the middle distance turns into the
   // soft band a real sea shows. Broken water is not a mirror either, and roughening it is what
   // stops the foam reading as chrome.
-  material.roughnessNode = max(float(0.13).add(subpixel.mul(0.3)), max(crest, broken).mul(0.9));
+  if (!cheap)
+    material.roughnessNode = max(float(0.13).add(subpixel.mul(0.3)), max(crest, broken).mul(0.9));
 
   const mesh = new Mesh(geometry, material);
   mesh.receiveShadow = true;
