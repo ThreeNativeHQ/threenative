@@ -565,7 +565,10 @@ async function runDevicePlaytestInternal(
   } catch (error) {
     if (error instanceof PlaytestBridgeError) {
       let diagnostic = error.diagnostic;
-      if (diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT") {
+      if (
+        diagnostic.code === "TN_PLAYTEST_OPERATION_TIMEOUT" ||
+        diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED"
+      ) {
         // A timed-out operation must say what stopped answering: a host whose process exited is
         // a crash with evidence in its console tail, not a generic timeout (PRD-167).
         const hostAlive = await target.driver.isAlive().catch(() => undefined);

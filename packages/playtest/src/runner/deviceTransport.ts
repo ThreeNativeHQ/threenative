@@ -284,11 +284,16 @@ export function deviceTimeoutDiagnostic(
   hostAlive: boolean | undefined,
   lastConsoleLines: readonly string[],
 ): IPlaytestProtocolDiagnostic {
-  if (diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT") return diagnostic;
   if (hostAlive !== false) return diagnostic;
   const tail = lastConsoleLines.length === 0
     ? "the host produced no further output"
     : `last host output: ${lastConsoleLines.map((line) => line.slice(0, 160)).join(" | ").slice(0, 1_000)}`;
+  // A host that died while the run waited for its startup already knows it is gone; what it lacked
+  // was the evidence, which the report used to promise and not carry.
+  if (diagnostic.code === "TN_PLAYTEST_STARTUP_HOST_EXITED") {
+    return playtestDiagnostic(diagnostic.code, `${diagnostic.message} — ${tail}`, diagnostic.fix.instruction);
+  }
+  if (diagnostic.code !== "TN_PLAYTEST_OPERATION_TIMEOUT") return diagnostic;
   return playtestDiagnostic(
     "TN_PLAYTEST_HOST_EXITED",
     `${diagnostic.message}; the host process has exited — ${tail}`,
