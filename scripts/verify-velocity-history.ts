@@ -27,15 +27,49 @@ try {
     stdio: "inherit",
   });
   const results = [];
-  for (const variant of ["without-history", "tracked", "instanced", "instanced-dynamic"] as const) {
-    const query =
-      variant === "without-history"
-        ? "?without-history"
-        : variant === "instanced"
-          ? "?instanced"
-          : variant === "instanced-dynamic"
-            ? "?instanced&dynamic"
-            : "";
+  const variants = [
+    {
+      variant: "without-history",
+      query: "?without-history",
+      kind: "BatchedMesh",
+      failures: ["movingPixels", "oracleMaxErrorPixels"],
+    },
+    { variant: "tracked", query: "", kind: "BatchedMesh", failures: [] },
+    { variant: "instanced", query: "?instanced", kind: "InstancedMesh", failures: [] },
+    {
+      variant: "instanced-dynamic",
+      query: "?instanced&dynamic",
+      kind: "InstancedMesh",
+      failures: [],
+    },
+    {
+      variant: "aggregate-batch",
+      query: "?aggregate-history",
+      kind: "BatchedMesh",
+      failures: ["staticMax", "stationaryMax"],
+    },
+    {
+      variant: "aggregate-instance",
+      query: "?instanced&aggregate-history",
+      kind: "InstancedMesh",
+      failures: ["staticMax", "stationaryMax"],
+    },
+    { variant: "skinned", query: "?skinned", kind: "SkinnedMesh", failures: [] },
+    {
+      variant: "skinned-current-history",
+      query: "?skinned&current-as-previous",
+      kind: "SkinnedMesh",
+      failures: ["movingPixels", "oracleMaxErrorPixels"],
+    },
+    { variant: "late-write", query: "?instanced&late-write", kind: "InstancedMesh", failures: [] },
+    {
+      variant: "premature-commit",
+      query: "?instanced&late-write&premature-commit",
+      kind: "InstancedMesh",
+      failures: ["movingPixels", "oracleMaxErrorPixels"],
+    },
+  ];
+  for (const { variant, query, kind, failures } of variants) {
     const artifactDirectory = path.join(output, variant);
     const report = await runStandalonePlaytest({
       allowSoftwareAdapter: true,
@@ -60,7 +94,7 @@ try {
     );
     results.push({ variant, report });
     await writeFile(path.join(output, "reports.json"), `${JSON.stringify(results, null, 2)}\n`);
-    assertVelocityCaptureDiagnostics(report.diagnostics, variant === "without-history");
+    assertVelocityCaptureDiagnostics(report.diagnostics, failures.length > 0);
     assert.equal(report.capture?.rendererKind, "webgpu", `${variant}: must render WebGPU`);
     assert.ok(
       report.capture?.adapter &&
@@ -76,14 +110,22 @@ try {
       );
     assert.equal(
       report.pass,
-      variant !== "without-history",
+      failures.length === 0,
       `${variant}: ${JSON.stringify(report.diagnostics)}`,
     );
-    if (variant === "without-history")
-      assert.deepEqual(
-        (report.assertionResults ?? []).filter(({ pass }) => !pass).map(({ id }) => id),
-        ["resource.motion.movingPixels", "resource.motion.oracleMaxErrorPixels"],
-      );
+    assert.deepEqual(
+      (report.assertionResults ?? []).filter(({ pass }) => !pass).map(({ id }) => id),
+      failures.map((name) => `resource.motion.${name}`),
+    );
+    const snapshot = report.observations?.resources.motion?.after;
+    assert.ok(snapshot && typeof snapshot === "object" && !Array.isArray(snapshot));
+    assert.ok("geometryKind" in snapshot && "lateWrites" in snapshot);
+    assert.equal(snapshot.geometryKind, kind, `${variant}: actual geometry class`);
+    assert.equal(
+      snapshot.lateWrites,
+      query.includes("late-write") ? 8 : 0,
+      `${variant}: writes after scheduling`,
+    );
   }
   assert.ok(
     !(await readFile(path.join(output, "without-history/after.png"))).equals(
@@ -96,7 +138,7 @@ try {
     `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
-    `Velocity history: missing-history control failed and tracked authored batch and both instance usages passed. Artifacts: ${output}`,
+    `Velocity history: missing-history control failed and batch, instance, skinning and ordering cases passed their exact positive/mutation assertions. Artifacts: ${output}`,
   );
 } catch (error) {
   await writeFile(
