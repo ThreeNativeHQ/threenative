@@ -1,5 +1,5 @@
 {
-  "name": "authored-batch-velocity-history",
+  "name": "authored-batch-and-instance-velocity-history",
   "schemaVersion": 1,
   "target": "web",
   "viewport": {
@@ -14,7 +14,7 @@
     {
       "kind": "wait",
       "label": "moved",
-      "waitTicks": 3
+      "waitTicks": 8
     }
   ],
   "assert": {
@@ -26,8 +26,8 @@
       {
         "id": "motion",
         "path": "frame",
-        "gte": 4,
-        "allowTrivial": "One initial GPU frame and three requested deterministic frames must complete; warmup waits do not advance this bridge.",
+        "gte": 9,
+        "allowTrivial": "One initial GPU frame and eight requested deterministic frames must complete, including reversals and a stop.",
         "changed": true
       },
       {
@@ -48,6 +48,20 @@
         "path": "movingPixels",
         "gte": 100,
         "allowTrivial": "The moved authored sub-draw must cover at least 100 non-zero velocity pixels."
+      },
+      {
+        "id": "motion",
+        "path": "oracleMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.05,
+        "allowTrivial": "Every rendered frame must match signed current-minus-previous NDC within 0.05 pixel, allowing half-float quantization."
+      },
+      {
+        "id": "motion",
+        "path": "stoppedMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The moving instance stops on frame seven; no extra stale frame of motion is allowed."
       }
     ]
   }

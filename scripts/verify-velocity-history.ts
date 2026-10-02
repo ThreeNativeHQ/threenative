@@ -27,7 +27,15 @@ try {
     stdio: "inherit",
   });
   const results = [];
-  for (const variant of ["without-history", "tracked"] as const) {
+  for (const variant of ["without-history", "tracked", "instanced", "instanced-dynamic"] as const) {
+    const query =
+      variant === "without-history"
+        ? "?without-history"
+        : variant === "instanced"
+          ? "?instanced"
+          : variant === "instanced-dynamic"
+            ? "?instanced&dynamic"
+            : "";
     const artifactDirectory = path.join(output, variant);
     const report = await runStandalonePlaytest({
       allowSoftwareAdapter: true,
@@ -44,7 +52,7 @@ try {
       },
       timeoutMs: 60_000,
       trace: false,
-      url: `http://127.0.0.1:5173/velocity.html${variant === "without-history" ? "?without-history" : ""}`,
+      url: `http://127.0.0.1:5173/velocity.html${query}`,
     });
     await writeFile(
       path.join(artifactDirectory, "report.json"),
@@ -68,13 +76,13 @@ try {
       );
     assert.equal(
       report.pass,
-      variant === "tracked",
+      variant !== "without-history",
       `${variant}: ${JSON.stringify(report.diagnostics)}`,
     );
     if (variant === "without-history")
       assert.deepEqual(
         (report.assertionResults ?? []).filter(({ pass }) => !pass).map(({ id }) => id),
-        ["resource.motion.movingPixels"],
+        ["resource.motion.movingPixels", "resource.motion.oracleMaxErrorPixels"],
       );
   }
   assert.ok(
@@ -88,7 +96,7 @@ try {
     `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
-    `Velocity history: missing-history control failed and tracked authored batch passed. Artifacts: ${output}`,
+    `Velocity history: missing-history control failed and tracked authored batch and both instance usages passed. Artifacts: ${output}`,
   );
 } catch (error) {
   await writeFile(

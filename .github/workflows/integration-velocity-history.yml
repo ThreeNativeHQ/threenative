@@ -6,7 +6,8 @@ on:
       - 'packages/core/src/render/velocity.ts'
       - 'packages/core/src/render/batched-velocity.ts'
       - 'packages/core/__tests__/render-velocity.spec.ts'
-      - 'patches/three@0.185.1.patch'
+      - 'packages/core/__tests__/instance-velocity-upload.spec.ts'
+      - 'packages/core/patches/three@0.185.1.patch'
       - 'packages/playtest/**'
       - 'examples/abyss-framework/velocity-main.ts'
       - 'examples/abyss-framework/src/render/velocityReadback.ts'
@@ -40,7 +41,7 @@ jobs:
       - name: Build this commit's public bridge and runner
         run: pnpm --filter @threenative/playtest build
       - name: Verify motion history and fail-closed capture guards
-        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/velocity-capture-proof.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts packages/core/__tests__/renderProjection.spec.ts
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/velocity-capture-proof.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/instance-velocity-upload.spec.ts packages/core/__tests__/three-static-settled.spec.ts packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts packages/core/__tests__/renderProjection.spec.ts
       - name: Check the exact source-wired fixture types
         run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
       - name: Render actual authored batch velocity and missing-history control

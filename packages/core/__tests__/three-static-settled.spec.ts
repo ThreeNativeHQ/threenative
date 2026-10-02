@@ -418,8 +418,8 @@ describe("a settled static object skips the per-object draw work", () => {
     );
 
     expect(steps).toEqual([
-      "geometries",
       "before",
+      "geometries",
       "nodes",
       "bindings",
       "pipelines",

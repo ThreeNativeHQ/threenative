@@ -1,0 +1,177 @@
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..bdffb9b4069f7beafa85913b155e92d3e83f12d0 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,12 +18580,28 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		OnObjectUpdate( ( { object } ) => {
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
++		OnObjectUpdate( ( { object } ) => {
++
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -63161,8 +63177,8 @@ class Renderer {
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1245f0da9bb6a0f731b8c75a64490d7c91238700 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -18580,11 +18580,28 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		OnObjectUpdate( ( { object } ) => {
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
++
++		};
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
++		OnObjectUpdate( ( { object } ) => {
++
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+@@ -63104,8 +63121,8 @@ class Renderer {
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
+diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
+index ed00e75ba4fd7b49343cfada26eacdef8940a4f4..18e2b7943393fd07b7989b1e3a5231a61ca24187 100644
+--- a/src/nodes/accessors/Instance.js
++++ b/src/nodes/accessors/Instance.js
+@@ -1,6 +1,6 @@
+ 
+ import { vec3, mat4, Fn } from '../tsl/TSLBase.js';
+-import { OnFrameUpdate, OnObjectUpdate } from '../utils/EventNode.js';
++import { OnBeforeFrameUpdate, OnBeforeObjectUpdate, OnObjectUpdate } from '../utils/EventNode.js';
+ import { normalLocal, transformNormal } from './Normal.js';
+ import { positionLocal, positionPrevious } from './Position.js';
+ import { varyingProperty } from '../core/PropertyNode.js';
+@@ -177,7 +177,7 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 	// Synchronization of dynamic buffer updates per frame
+ 	if ( interleavedMatrix !== null || interleavedColor !== null ) {
+ 
+-		OnFrameUpdate( () => {
++		OnBeforeFrameUpdate( () => {
+ 
+ 			if ( interleavedMatrix !== null ) {
+ 
+@@ -218,12 +218,28 @@ export const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder
+ 
+ 		const instancedMesh = builder.object;
+ 
+-		OnObjectUpdate( ( { object } ) => {
++		const updatePrevious = ( object, array ) => {
++
++			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
++			previousInstanceMatrix.array.set( array );
++			previousInstanceMatrix.needsUpdate = true;
++			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
++			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
++		};
++
++		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
++		OnBeforeObjectUpdate( ( { object } ) => {
+ 
+ 			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
+-			previousInstanceData.previousInstanceMatrix.array.set( scheduledPrevious ?? matrices.array );
++			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
++
++		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
++		OnObjectUpdate( ( { object } ) => {
++
++			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
+ 
+ 		} );
+ 
+diff --git a/src/renderers/common/Renderer.js b/src/renderers/common/Renderer.js
+index 89b33efb80ca1dcb9db931071dfda62ffdba3526..51590d5a23a93365e5cd9fb0360678750270d5bf 100644
+--- a/src/renderers/common/Renderer.js
++++ b/src/renderers/common/Renderer.js
+@@ -3723,8 +3723,8 @@ class Renderer {
+ 		// attribute scan - because each of those answers for itself, and a step left out here
+ 		// cannot: a group a node added after this object's first draw still has to be created, and
+ 		// the pipeline reads that group's layout whatever this draw decided to do with it.
+-		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateBefore( renderObject );
++		this._geometries.updateForRender( renderObject );
+ 		this._nodes.updateForRender( renderObject );
+ 		this._bindings.updateForRender( renderObject );
+ 
