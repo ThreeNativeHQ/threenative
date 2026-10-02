@@ -386,11 +386,31 @@
       "release": true
     },
     {
+      "label": "tundra-braid-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "riverSurfaceCount",
+        "equals": 2
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
       "label": "tundra-water-ready",
       "waitForResource": {
         "id": "GameState",
         "path": "lakeTriangles",
         "gte": 100
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-pond-footprint",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "lakeFootprintError",
+        "lte": 0.02
       },
       "timeoutMs": 15000,
       "release": true

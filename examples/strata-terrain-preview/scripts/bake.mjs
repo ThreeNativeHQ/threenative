@@ -168,8 +168,8 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
   .stamp({
     id: "main-arete",
     at: [15, -65],
-    radius: [205, 145],
-    amplitude: 168,
+    radius: [165, 120],
+    amplitude: 132,
     shape: "ridge",
     rotation: -22,
     roughness: 0.025,
@@ -188,31 +188,71 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     offset: 16,
   })
   .stamp({
+    id: "east-horn",
+    at: [55, -95],
+    radius: [120, 90],
+    amplitude: 140,
+    shape: "ridge",
+    rotation: 78,
+    roughness: 0.08,
+    blend: "max",
+    offset: 20,
+  })
+  .stamp({
+    id: "west-horn",
+    at: [-80, -40],
+    radius: [130, 85],
+    amplitude: 125,
+    shape: "ridge",
+    rotation: -38,
+    roughness: 0.075,
+    blend: "max",
+    offset: 16,
+  })
+  .stamp({
     id: "cirque-east",
     at: [90, -12],
-    radius: [65, 74],
-    amplitude: 42,
+    radius: [78, 84],
+    amplitude: 36,
     shape: "valley",
     roughness: 0.04,
   })
   .stamp({
     id: "cirque-west",
     at: [-40, 10],
-    radius: [62, 68],
-    amplitude: 36,
+    radius: [75, 84],
+    amplitude: 32,
     shape: "valley",
     roughness: 0.04,
   })
   .noise({
     id: "crags",
     base: 0,
-    amplitude: 10,
-    scale: 85,
+    amplitude: 26,
+    scale: 115,
     warp: 14,
     octaves: 3,
     persistence: 0.4,
     mode: "ridged",
     mask: Mask.height(45, 1e9, 18),
+  })
+  .noise({
+    id: "fractures",
+    base: 0,
+    amplitude: 9,
+    scale: 35,
+    warp: 12,
+    octaves: 3,
+    persistence: 0.45,
+    mode: "ridged",
+    mask: Mask.and(Mask.height(48, 1e9, 12), Mask.slope(20, 80, 12)),
+  })
+  .terrace({
+    id: "rock-ledges",
+    step: 18,
+    softness: 0.55,
+    strength: 0.28,
+    mask: Mask.and(Mask.height(55, 170, 12), Mask.slope(26, 70, 12)),
   })
   .erode({
     id: "weathering",
@@ -224,7 +264,7 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     evaporation: 0.035,
     droplets: 18000,
   })
-  .erode({ id: "scree", method: "thermal", talus: 33, iterations: 24, mask: Mask.slope(15, 43, 8) })
+  .erode({ id: "scree", method: "thermal", talus: 45, iterations: 8, rate: 0.12 })
   .smooth({ id: "settle", iterations: 1, strength: 0.45 })
   .river({
     id: "glacial-trough",
@@ -272,10 +312,26 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .stamp({
     id: "butte",
     at: [-30, 60],
-    radius: [29, 25],
+    radius: [36, 31],
     amplitude: 48,
     shape: "mesa",
     roughness: 0.02,
+  })
+  .stamp({
+    id: "west-cleft",
+    at: [-77, -45],
+    radius: [21, 32],
+    amplitude: 16,
+    shape: "valley",
+    roughness: 0.08,
+  })
+  .stamp({
+    id: "north-cleft",
+    at: [4, -217],
+    radius: [25, 22],
+    amplitude: 12,
+    shape: "valley",
+    roughness: 0.06,
   })
   .erode({
     id: "weathering",
@@ -288,16 +344,16 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .terrace({
     id: "benches",
     step: 8,
-    softness: 0.23,
-    strength: 0.88,
+    softness: 0.13,
+    strength: 0.96,
     offset: 2,
     mask: Mask.height(18, 1e9, 6),
   })
-  .flatten({ id: "west-caprock", at: [-140, -60], radius: 27, height: 74, falloff: 0.25 })
-  .flatten({ id: "north-caprock", at: [40, -170], radius: 25, height: 90, falloff: 0.25 })
-  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 9, height: 58, falloff: 0.3 })
-  .erode({ id: "aprons", method: "thermal", talus: 52, iterations: 6, rate: 0.12 })
-  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.3 })
+  .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 70, falloff: 0.15 })
+  .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 86, falloff: 0.15 })
+  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 54, falloff: 0.12 })
+  .erode({ id: "aprons", method: "thermal", talus: 65, iterations: 3, rate: 0.12 })
+  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.15 })
   .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
   .stamp({
     id: "dune-west",
@@ -325,6 +381,15 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     shape: "ridge",
     rotation: -32,
     roughness: 0.06,
+  })
+  .stamp({
+    id: "dune-hollow",
+    at: [145, 145],
+    radius: [36, 70],
+    amplitude: 3,
+    shape: "valley",
+    rotation: 18,
+    roughness: 0.05,
   })
   .river({
     id: "wash",
@@ -397,9 +462,13 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
     points: [
       [-210, 17, -135],
       [-125, 14, -80],
+      [-100, 11, -90],
       [-65, 11, -50],
-      [-10, 10, 5],
-      [65, 9.5, 80],
+      [-30, 11, -15],
+      [0, 10.3, 5],
+      [38, 9.8, 47],
+      [65, 9.8, 80],
+      [100, 9.8, 100],
       [160, 8, 140],
       [250, 7, 150],
     ],
@@ -412,9 +481,10 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
     id: "braid",
     points: [
       [-65, 11, -50],
-      [-30, 10, 40],
+      [-40, 11, -18],
+      [-30, 10.4, 40],
       [15, 9.8, 105],
-      [65, 9.5, 80],
+      [65, 9.8, 80],
     ],
     width: 4,
     depth: 1.2,

@@ -184,7 +184,9 @@ const initialState = {
   sampleSlopeRange: 0,
   lakePlacementError: 1,
   lakeSurfaceCount: 0,
+  riverSurfaceCount: 0,
   lakeTriangles: 0,
+  lakeFootprintError: 1,
   sunX: -180,
   propDraws: 0,
   propInstances: 0,
@@ -366,9 +368,12 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
       // its own layer so the lake's mirror can leave it out; the eye sees both.
       ctx.camera.layers.enable(WATER_LAYER);
-      const river = createRivers(data.rivers ?? [], field);
+      const river = createRivers(data.rivers ?? [], field, world === "tundra");
       this.#river = river;
       if (river) {
+        ctx.state.set({
+          riverSurfaceCount: river.mesh.geometry.groups.filter((group) => group.count > 0).length,
+        });
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
@@ -377,7 +382,26 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       if (lake) {
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
+        let lakeFootprintError = 0;
+        if (world === "tundra") {
+          const geometry = lake.mesh.geometry;
+          for (const [index, group] of geometry.groups.entries()) {
+            const pond = data.lakes?.[index];
+            if (!pond) throw new Error("A drawn pond has no baked footprint");
+            for (let i = group.start; i < group.start + group.count; i++) {
+              const vertex = geometry.index?.getX(i) ?? i;
+              lakeFootprintError = Math.max(
+                lakeFootprintError,
+                Math.hypot(
+                  centre.getX(vertex) - (pond.at[0] ?? 0),
+                  centre.getZ(vertex) - (pond.at[1] ?? 0),
+                ) - pond.radius,
+              );
+            }
+          }
+        }
         ctx.state.set({
+          lakeFootprintError,
           lakeSurfaceCount: Math.max(1, lake.mesh.geometry.groups.length),
           lakeTriangles: (lake.mesh.geometry.index?.count ?? 0) / 3,
           lakePlacementError: Math.hypot(

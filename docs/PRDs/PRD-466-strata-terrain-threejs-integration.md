@@ -1091,7 +1091,8 @@ luminance p5/p50/p95: baseline **15.5078/77.0686/176.5044**, increment
 **15.4356/77.0658/176.5044**, all differences below 0.5. Forest/coast recipes are unchanged.
 
 The initial steep alpine experiment produced 151 spikes and vertical pillars; lower hydraulic
-capacity/bite and unmasked low-rate thermal settling reduced them. Multi-lake rendering previously
+capacity/bite and low-rate thermal settling reduced them (the first increment still masked talus;
+the second removes that mask). Multi-lake rendering previously
 threw at tundra entry (pass1); it now merges ordinary geometry with one material group per pond,
 advancing and disposing each existing water surface. Desert optional Kite variant 0 is no longer
 overwritten by its CC0 fallback. Colour and normal projections share rotations and tile scales.
@@ -1102,3 +1103,20 @@ alpine still reads too broad and grey with weak snow/cirques; desert strata/dune
 tundra needs clearer patterned ground and less regular cover. AC-5 stays open; a visual follow-up
 within this round is next. A run interrupted by edits timed out during a screenshot (pass2); it is
 not evidence. No licensed bytes committed, no push, native unverified.
+
+Second working increment: pass6 **36/36 PASS**, zero diagnostics/console errors before the
+braid correction; frame p50 meadow/overview/alpine/desert/tundra **2.4/2.8/1.3/1.0/1.9 ms**
+(`/tmp/worlds-r2-pass6.log`, `artifacts/playtest/worlds-r2-pass6/`). Broader arêtes and
+fracture noise remove the most conspicuous alpine needles; sandstone front light, rotated
+rock sampling, patterned tundra ground and bounded/faded ponds improve definition. The
+caps are still uneven and the water/rock appearance remains below the reference.
+
+Read-only review exposed a real shared ribbon bug: the second river's local wet array was
+indexed with global vertex indices, dropping all its quads. Synthetic two-channel proof
+failed **144 versus expected 288 indices**, then passes **144/288** after subtracting the
+base. A flooded tundra scatter fixture failed with **1,659 submerged plants**, then passes
+with **0** after excluding the interpolated stream footprint. The persistent scenario now
+waits for two non-empty river index groups. This latest browser rerun and licensed-absent
+fallback are pending; no unrun acceptance is checked. Terrain Vitest remains **69/69 PASS**;
+example typecheck and root Biome error checks pass for this increment. Forest pass5
+luminance **15.4986/76.9828/176.5004** remains within 0.5 of baseline. AC-5 stays open.

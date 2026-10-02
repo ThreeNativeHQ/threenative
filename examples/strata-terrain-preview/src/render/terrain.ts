@@ -420,6 +420,10 @@ export function createGroundMaterial(
       texture(diffuse, tiledUV(key, 2.35)),
       tileBlend,
     );
+    if (otherBiome && biome.world === "tundra" && key === "dirt")
+      return vec4(flat.rgb.mul(vec3(0.48, 0.38, 0.27)), flat.a);
+    if (otherBiome && biome.world === "tundra" && key === "moss")
+      return vec4(flat.rgb.mul(vec3(1.3, 1.25, 0.95)), flat.a);
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
@@ -453,11 +457,24 @@ export function createGroundMaterial(
           mix(vec3(0.74, 0.66, 0.53), vec3(1.16, 1.05, 0.87), smoothstep(0.25, 0.75, band)),
         );
       }
+      if (otherBiome && biome.world === "alpine") {
+        const seams = positionWorld.y
+          .mul(0.34)
+          .add(positionWorld.x.mul(0.11))
+          .add(positionWorld.z.mul(0.07))
+          .add(mx_fractal_noise_float(positionWorld.mul(0.075), 3).mul(5))
+          .sin();
+        stone = stone.mul(mix(0.62, 1.08, smoothstep(-0.6, 0.3, seams)));
+      }
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
       const distant = vec3(...(biome?.distantStone ?? [0.115, 0.105, 0.088])).mul(weathering);
       return vec4(
-        mix(stone, distant, smoothstep(35, 220, positionView.length()).mul(0.65)),
+        mix(
+          stone,
+          distant,
+          smoothstep(35, 220, positionView.length()).mul(otherBiome ? 0.28 : 0.65),
+        ),
         blended.a,
       );
     }
@@ -493,7 +510,7 @@ export function createGroundMaterial(
         crevice: walls.crevice,
         tilt: walls.tilt
           .mul(strength)
-          .mul(mix(1, 0.18, smoothstep(24, 160, positionView.length()))),
+          .mul(mix(1, otherBiome ? 0.45 : 0.18, smoothstep(24, 160, positionView.length()))),
       };
     }
     const near = planarRelief(source, tiledUV(key), strength);

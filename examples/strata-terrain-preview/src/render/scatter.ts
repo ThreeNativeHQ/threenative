@@ -132,6 +132,21 @@ export function scatterProps(
   const inside = (x: number, z: number) => Math.abs(x) < half - 3 && Math.abs(z) < half - 3;
   const wet = (x: number, z: number) =>
     (data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35) ||
+    (tundra &&
+      (data.rivers ?? []).some((river) =>
+        river.points.some((b, index) => {
+          const a = river.points[index - 1];
+          if (!a) return false;
+          const dx = (b[0] ?? 0) - (a[0] ?? 0);
+          const dz = (b[2] ?? 0) - (a[2] ?? 0);
+          const t = clamp01(
+            ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
+          );
+          const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
+          const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
+          return distance < river.width * 2.5 && clampedHeight(data, x, z) < level + 0.35;
+        }),
+      )) ||
     (data.lakes ?? []).some(
       (lake) =>
         Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
@@ -248,7 +263,12 @@ export function scatterProps(
       return;
     const drift = 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7);
     if (random() > density * drift) return;
-    put("grass", x, z, (temperate ? 0.8 : 0.38) + random() * (temperate ? 0.65 : 0.35));
+    put(
+      "grass",
+      x,
+      z,
+      (temperate ? 0.8 : tundra ? 0.85 : 0.55) + random() * (temperate ? 0.65 : 0.5),
+    );
     if (!desert && random() < 0.3)
       put("scrub", x + (random() - 0.5), z + (random() - 0.5), 0.9 + random() * 0.6);
   };
@@ -263,7 +283,11 @@ export function scatterProps(
       x < half - 3;
       x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
     )
-      cover(x + (random() - 0.5) * 1.5, z + (random() - 0.5) * 1.5, 0.7);
+      cover(
+        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
+        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
+        0.7,
+      );
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
