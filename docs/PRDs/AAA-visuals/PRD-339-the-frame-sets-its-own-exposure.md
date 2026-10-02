@@ -260,6 +260,24 @@ regressions failed before correction. The focused suite now passes 90 exposure t
 TypeScript and scoped Biome pass. The prior hold increment also passed 12 doc-link tests and five
 fixture builds. These local checks do not qualify the pending runtime arms.
 
+Hosted source `2a33c9a0edbe38ced02820385267e4de049b7a4c`,
+[run 37014029224](https://github.com/ThreeNativeHQ/threenative/actions/runs/37014029224), now passes
+all 14 cases with empty runtime diagnostics. All 18 retained PNGs were visually inspected;
+[exact bytes, adapter, report hashes, and paired timing evidence](../../verification/prd339-exposure-proof/qualified-cuts-2a33c9a0.json)
+are durable. The four controlled corrected/raw comparisons each completed 180 accepted post-cut
+GPU samples and 3.0 fixture-controlled adaptation seconds. Corrected eleven/one-stop reverse cuts
+settled by 114/42 updates; raw one-stop settled by 57. Raw eleven-stop failed only:
+
+`TN_EXPOSURE_NOT_SETTLED: Terminal GPU measurement remains unsettled after 180 rendered updates; observed time {"renderedUpdates":180,"adaptationSeconds":2.99999999999999,"realConsumedSeconds":10.978800000000414,"realElapsedSeconds":32.52129999999997,"clock":"deterministic-per-render"}.`
+
+Its actual final frame is visibly dark while the corrected endpoint remains readable, qualifying
+acceptance 1's same-budget mutation proof. Live-clock forward/reverse cuts also pass. Fixed/off
+reports measured luminance with `applied=false` and zero exposure stops, while the early-return
+mutation fails only `TN_EXPOSURE_MEASUREMENT_MISSING`; both final PNGs are byte-identical, qualifying
+acceptance 3. Doubled-meter and wrong-clock controls fail their specific named gates. These are
+SwiftShader correctness results, not hardware timing or native parity. Cold boots, reset/rebuild
+history, native proof and full required CI remain open; phase progress remains 3/6 boxes (50%).
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
@@ -276,11 +294,11 @@ fixture builds. These local checks do not qualify the pending runtime arms.
   this fresh cloud executor has no GPU/KVM, and the manager
   re-probed Unix socket creation on 2026-10-02: EPERM. Native contract registration
   and portable fixture work remain in scope; no native success is claimed from browser pixels.
-- Final tone qualification consumes PRD-341's gate on its separate PR; do not duplicate the metric.
+- Cold-boot qualification now consumes the landed PRD-341 tone gate; its twenty corrected/mutated launches remain unrun.
 
 ## Acceptance criteria
 
-- [ ] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
+- [x] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
    between a bright pose and a dark pose eleven stops apart, and between two poses one stop apart,
    and asserts both reach within 0.25 stops of their steady value inside the same frame budget.
    *Red-green:* replace the `log2` interpolation in `auto-exposure.ts` with `mix(prev, cur, rate)` on
@@ -289,7 +307,7 @@ fixture builds. These local checks do not qualify the pending runtime arms.
 - [ ] **A cold boot into a pose is repeatable.** proof: `ten exposure fixture cold boots and PRD-341 assert.tone`. Ten runs of the same scenario at the same pose report
    p99 luminance within a 10% band (PRD-341's `assert.tone` supplies the number).
    *Red-green:* set `snapGain` to 0 so the cut response never engages; the run must go red on spread.
-- [ ] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
+- [x] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
    measured luminance and `applied=false`, and the frame's exposure is exactly the game's constant.
    *Red-green:* early-return from `update()` when disabled; the marker assertion fails.
 - [ ] **It runs on native.** proof: `desktop exposure playtest and verify-native-contracts.mjs`. A `--target desktop` playtest of the same scenario reports the same
