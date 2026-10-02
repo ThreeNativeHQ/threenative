@@ -89,8 +89,134 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     ],
   })
   .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 });
+// Mountain / Alpine: a massif and a side ridge over foothills, crags only where it is high, and
+// snow that holds on the flatter high ground while the steep faces stay bare rock.
+export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
+  .noise({ id: "foothills", base: 10, amplitude: 22, scale: 160, warp: 40, octaves: 6 })
+  .stamp({
+    id: "summit",
+    at: [30, -40],
+    radius: [170, 140],
+    amplitude: 130,
+    shape: "mountain",
+    roughness: 0.32,
+  })
+  .stamp({
+    id: "side-ridge",
+    at: [-120, 70],
+    radius: [150, 60],
+    amplitude: 70,
+    shape: "ridge",
+    roughness: 0.28,
+  })
+  .noise({
+    id: "crags",
+    base: 0,
+    amplitude: 9,
+    scale: 38,
+    octaves: 4,
+    mode: "ridged",
+    mask: Mask.height(60, 1e9, 20),
+  })
+  .erode({ id: "weathering", method: "hydraulic", droplets: 5000, maxSteps: 50 })
+  .materials({
+    id: "surfaces",
+    rules: [
+      { material: "dirt", mask: Mask.noise(30, 0.72, 41, 0.2), strength: 0.3 },
+      { material: "rock", mask: Mask.slope(32, 90, 8) },
+      { material: "snow", mask: Mask.and(Mask.height(85, 1e9, 12), Mask.slope(0, 38, 6)) },
+    ],
+  });
+
+// Desert / Canyon: a low plain with three mesas, a dune field and a dry wash cut through it — sand
+// and sandstone rather than a recoloured forest.
+export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
+  .noise({ id: "plain", base: 8, amplitude: 6, scale: 220, warp: 30, octaves: 4 })
+  .stamp({
+    id: "mesa-west",
+    at: [-140, -60],
+    radius: [80, 64],
+    amplitude: 46,
+    shape: "mesa",
+    roughness: 0.25,
+  })
+  .stamp({
+    id: "mesa-north",
+    at: [40, -170],
+    radius: [62, 90],
+    amplitude: 58,
+    shape: "mesa",
+    roughness: 0.22,
+  })
+  .stamp({
+    id: "butte",
+    at: [-30, 60],
+    radius: [34, 30],
+    amplitude: 40,
+    shape: "mesa",
+    roughness: 0.3,
+  })
+  .stamp({
+    id: "dunes",
+    at: [140, 130],
+    radius: [150, 120],
+    amplitude: 12,
+    shape: "dune",
+    roughness: 0.4,
+  })
+  .erode({ id: "weathering", method: "hydraulic", droplets: 1600, maxSteps: 36 })
+  .river({
+    id: "wash",
+    followTerrain: true,
+    points: [
+      [-240, null, 200],
+      [-90, null, 150],
+      [60, null, 20],
+      [240, null, -80],
+    ],
+    width: 16,
+    depth: 5,
+    shoulder: 10,
+    water: false,
+    material: "sand",
+    enforceDownhill: true,
+  })
+  .materials({
+    id: "surfaces",
+    rules: [
+      { material: "sand", mask: Mask.all() },
+      { material: "dirt", mask: Mask.noise(26, 0.7, 97, 0.2), strength: 0.35 },
+      { material: "rock", mask: Mask.slope(28, 90, 8) },
+    ],
+  });
+
+// Snow / Tundra: rolling snowfields with ridged rocky outcrops and moss where the wind strips the
+// cover; its frozen lake is an ice surface, not a fluid.
+export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
+  .noise({ id: "snowfield", base: 12, amplitude: 14, scale: 200, warp: 30, octaves: 5 })
+  // Outcrops in patches, not everywhere: ridged noise over the whole field roughened a third of a
+  // snowfield past 30 degrees, which is a rockfall, not tundra.
+  .noise({
+    id: "outcrops",
+    base: 0,
+    amplitude: 5,
+    scale: 55,
+    octaves: 3,
+    mode: "ridged",
+    mask: Mask.noise(90, 0.68, 131, 0.2),
+  })
+  .erode({ id: "weathering", method: "hydraulic", droplets: 1200, maxSteps: 30 })
+  .materials({
+    id: "surfaces",
+    rules: [
+      { material: "snow", mask: Mask.all() },
+      { material: "moss", mask: Mask.noise(40, 0.74, 131, 0.2), strength: 0.45 },
+      { material: "rock", mask: Mask.slope(24, 90, 8) },
+    ],
+  });
+
 const worlds = {};
-for (const [name, terrain] of Object.entries({ forest, coastal })) {
+for (const [name, terrain] of Object.entries({ forest, coastal, alpine, desert, tundra })) {
   const state = terrain.evaluate();
   const mesh = bakeMesh(state, { palette: terrainPalette });
   worlds[name] = {
@@ -107,4 +233,4 @@ for (const [name, terrain] of Object.entries({ forest, coastal })) {
 }
 await mkdir(new URL("../src/world/", import.meta.url), { recursive: true });
 await writeFile(new URL("../src/world/baked.json", import.meta.url), JSON.stringify(worlds));
-console.log("Baked two seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
+console.log("Baked five seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
