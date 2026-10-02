@@ -140,6 +140,34 @@ function canopyTranslucency(amount: number, tint: number = CANOPY.tint): Node<"v
 /** Alpha cutoff for every cutout surface. Half coverage: a needle card is mostly empty. */
 const CUTOUT = 0.42;
 
+/**
+ * The prepared pine's own cutoff, which is a seventh of the shared one.
+ *
+ * Not a fudge and not a preference: it is what the pine's atlas measures. A Scots pine spray is
+ * 116 atlas cells of needles drawn thin, and `scripts/prep-fab-pines.py` measures what that means
+ * by area-averaging the crown's own front view — 11.8% of the crown's silhouette carries needle at
+ * all, and the 99th percentile of a texel's alpha is 0.22. A cutout at 0.42 therefore discards the
+ * crown almost entirely the moment the card is minified, because a mip of a 12%-dense cell averages
+ * to about 0.12 however deep it is. The generated needle atlas and Poly Haven's twig atlas are both
+ * far denser per cell and keep the shared cutoff; this one gets the number its own texture implies.
+ */
+
+/**
+ * The prepared pine's own map, cut from the licensed Fab atlas by
+ * `scripts/prep-fab-pines.py` into this example's gitignored `local-assets/prepared/`.
+ *
+ * One texture, and the absence of the other two is a decision rather than a saving. A needle spray
+ * is a flat card: the relief in a pine is the four thousand cards of the prepared crown pointing
+ * every which way, not a normal map, and binding this atlas as one — or deriving a height field
+ * from its own alpha, which is the same mistake with more steps — would emboss a flat card into
+ * something corrugated. So the pine gets the atlas's colour and its alpha, the shared waxy
+ * roughness, and the same wrapped two-sided canopy light every other crown gets.
+ */
+const PINE_ATLAS = "prepared/pine-tall-atlas.png";
+
+/** The far card, baked from the uncut crown by the same script. One card, eight triangles. */
+const IMPOSTOR_CARD = "prepared/pine-tall-impostor.png";
+
 /** Which CC0 starter maps each surface binds. This mapping is the game's, not the package's. */
 interface ISurfaceMaps {
   readonly diffuse: string;
@@ -309,11 +337,16 @@ function mipLevels(atlas: Texture): { area: Node<"float">; worst: Node<"float"> 
  * is a coarser question about the same texel rather than a stricter one. A needle card forty metres
  * away is sampled from mip three or four, where its alpha has averaged down towards 0.2, and a
  * `discard` at 0.42 throws the needles away and leaves a forest of bare trunks.
+ *
+ * `cutoff` is the surface's own base value rather than one constant for every cutout in the game,
+ * because how much of a card is needle is a property of the card and not of the shader: the
+ * generated atlas and Poly Haven's twig atlas are dense enough for half coverage, and the pine's
+ * sprays and the baked far card are not.
  */
-function mipCompensatedCutoff(mip: Node<"float">) {
+function mipCompensatedCutoff(mip: Node<"float">, cutoff: number) {
   // Golus's compensation in its cutoff form: divide the cutoff by the mip's alpha scale.
   const scale = float(1).add(mip.mul(MIP_ALPHA_SCALE));
-  return float(CUTOUT).div(scale) as unknown as Node<"float">;
+  return float(cutoff).div(scale) as unknown as Node<"float">;
 }
 
 /**
@@ -338,6 +371,76 @@ function mipCompensatedCutoff(mip: Node<"float">) {
 const SOLID = { from: 3, to: 5.5 } as const;
 
 /**
+ * How a needle surface is graded and cut, per species.
+ *
+ * Every field is a property of the atlas rather than of the shader, which is why they are parameters
+ * and not constants: how much of a card is needle, how dark its darkest texel is, how far it has to
+ * travel before it is a mass rather than a spray, and whether the species is a yellow-green spruce or
+ * a blue-green pine are all questions about the texture in hand.
+ */
+interface INeedleLook {
+  /** The alpha a texel is cut at, before mip compensation. */
+  readonly cutout: number;
+  /** The linear albedo the darkest texel is lifted to, as a share towards its own peak. */
+  readonly floor: number;
+  /** The mip range over which the crown gains density and becomes a mass. */
+  readonly ramp: { from: number; to: number };
+  /** A per-channel grade on the sampled needle colour. */
+  readonly tint: readonly [number, number, number];
+  /** The colour of the tree's new growth at the tips, against {@link TIP_ROOT} at its base. */
+  readonly tip: readonly [number, number, number];
+  /** How much light comes *through* the card. */
+  readonly light: number;
+}
+
+/** The shared grade: new growth is lighter than the shaded interior, and both ends stay honest. */
+const TIP_ROOT = [0.9, 1.0, 0.86] as const;
+const TIP_TIP = [1.28, 1.34, 1.12] as const;
+
+/**
+ * How the pine's own atlas is graded, cut and lit, and every number in it is measured rather than
+ * chosen.
+ *
+ * `cutout` 0.11, not the shared 0.42: a Scots pine spray is needles drawn thin, and
+ * `scripts/prep-fab-pines.py` area-averages the crown's front view to find out what that costs — 12%
+ * of the crown's silhouette carries needle at all, and a texel's 99th percentile alpha is 0.22. A
+ * discard at 0.42 erases the crown the moment its cards are minified, because a mip of a 12%-dense
+ * cell averages to about 0.12 however deep it is.
+ *
+ * `floor` 0.05, against a shared 0.14 and an atlas whose needles peak at 0.106: the shared value
+ * takes a one-in-three lift on an average pine needle and up to five on a dark one, compressing the
+ * whole crown into one flat band.
+ *
+ * `tint` is the correction for what the atlas actually is. Its needles measure a linear
+ * 0.106 red against 0.026 blue — four times as much red as blue, which is olive, not green — because
+ * the crown samples the atlas's brown and dying cells as well as its green ones. A pine is blue-green
+ * against a spruce's yellow-green, and this is where the game says so: red and blue pulled down and
+ * green left alone turns the atlas's olive into the species' green without touching a texel.
+ *
+ * `tip` is the shared spruce grade pulled back, because the shared one is a 28 to 34 per cent push
+ * towards yellow at the top of the tree and this crown is *all* top of the tree.
+ */
+const PINE_LOOK: INeedleLook = {
+  cutout: 0.11,
+  floor: 0.05,
+  light: 0.07,
+  ramp: SOLID,
+  tint: [0.72, 0.94, 0.78],
+  tip: [1.04, 1.1, 1.0],
+};
+
+/**
+ * The far card's cutoff, and how fast it becomes solid.
+ *
+ * A cross-card impostor is not a cutout. It is a crown that was area-averaged into a picture, and
+ * its alpha is a *coverage* — twelve per cent of the crown, spread thin — so a discard at any
+ * pine-like value erases the tree it is standing in for. The card's own margins are exactly zero, so
+ * the threshold can sit very low and still cut them, and the ramp is pulled forward to where a card
+ * of this size is already a mass: that is the whole reason the far band is eight triangles.
+ */
+const IMPOSTOR = { cutoff: 0.02, from: 0.2, to: 2.4 } as const;
+
+/**
  * One alpha-tested needle surface, built from whichever atlas it is handed.
  *
  * The same shader for both crowns in the starter, because they are the same decision about light:
@@ -352,14 +455,16 @@ function needleMaterial(
   relief: Texture | undefined,
   arms: Texture | undefined,
   seconds: Node<"float">,
+  look: Partial<INeedleLook> = {},
 ): MeshStandardNodeMaterial {
+  const { cutout = CUTOUT, floor = CANOPY.floor, ramp = SOLID, tint, tip, light = 0.1 } = look;
   const material = new MeshStandardNodeMaterial({
     metalness: 0,
     // Double-sided: the far side of a spruce from across a meadow is mostly the backs of its
     // cards, and a single-sided crown shows its own absence there.
     side: DoubleSide,
   });
-  material.alphaTest = CUTOUT;
+  material.alphaTest = cutout;
   if (atlas === undefined) {
     material.colorNode = vec3(0.09, 0.24, 0.11);
     // A needle is waxy, not varnished, and rougher than the bark below it on purpose.
@@ -369,9 +474,9 @@ function needleMaterial(
   }
   const mip = mipLevels(atlas);
   const card = texture(atlas);
-  const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
+  const solid = smoothstep(float(ramp.from), float(ramp.to), mip.area);
   material.map = atlas;
-  material.alphaTestNode = mipCompensatedCutoff(mip.worst);
+  material.alphaTestNode = mipCompensatedCutoff(mip.worst, cutout);
   // The card's own occlusion: how much sky a texel buried in the spray can see. This is the
   // "near-black undersides" fix as a *texture* rather than as a colour lift — the interior of a
   // spray is darker than its fringe because its neighbours are in the way, which is a fact about
@@ -384,20 +489,40 @@ function needleMaterial(
   const needle = card.rgb
     .mul(
       mix(
-        vec3(0.9, 1.0, 0.86),
-        vec3(1.28, 1.34, 1.12),
+        vec3(...TIP_ROOT),
+        vec3(...(tip ?? TIP_TIP)),
         smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
       ),
     )
-    .mul(occlusion);
+    .mul(occlusion)
+    .mul(tint ? vec3(...tint) : vec3(1));
   // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
   // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
   // to ink against the sky. It is a *scale* towards the colour's own peak, not a per-channel
   // maximum: a floor applied per channel lifts a dark needle's blue and red along with its green,
   // and the darkest texels come out grey.
+  //
+  // And it is the floor of *this* atlas, which is why it is a parameter. The lift is
+  // `floor / peak`, so an absolute floor is only neutral for an atlas whose needles peak just above
+  // it: the generated atlas peaks at 0.167 linear and the shared 0.14 floor barely touches it,
+  // while the pine's peak at 0.106 takes a one-in-three lift on its average texel and up to five on
+  // its darkest, which compresses the whole crown into one flat pale band. Measured from each
+  // atlas, not guessed.
   const peak = needle.r.max(needle.g).max(needle.b).max(float(0.0001));
-  const lifted = needle.mul(float(CANOPY.floor).div(peak).max(float(1)));
-  material.colorNode = vec4(lifted, mix(card.a, float(1), solid));
+  const lifted = needle.mul(float(floor).div(peak).max(float(1)));
+  // The ramp fills in the needle that has already survived the test, and never the gap beside it.
+  //
+  // `mix(card.a, 1, solid)` on its own is wrong in a way that only shows up once a surface uses the
+  // ramp early: it raises a *transparent* texel towards solid, and it does so before the discard
+  // runs, so every distant tree becomes an opaque slab of its own colour standing in the meadow.
+  // Gating the fill on the texel already being above the cutoff keeps the intent — a crown that
+  // gains density with distance — and loses only the part that was never foliage.
+  const filled = mix(
+    card.a,
+    float(1),
+    solid.mul(smoothstep(float(cutout), float(cutout).mul(8), card.a)),
+  );
+  material.colorNode = vec4(lifted, filled);
   if (relief !== undefined) {
     // Poly Haven's twig atlas carries a real tangent-space normal, so it goes in as one; the
     // generated atlas carries a height field instead, and `bumpMap` turns that into relief.
@@ -407,7 +532,7 @@ function needleMaterial(
   if (arms !== undefined) material.roughnessNode = texture(arms).g.mul(0.35).add(0.6);
   else material.roughness = 0.96;
   // And the light coming *through* the card, which the standard shading cannot produce.
-  material.emissiveNode = canopyTranslucency(0.1);
+  material.emissiveNode = canopyTranslucency(light);
   sway(material, seconds, WIND.amplitude.crown);
   return material;
 }
@@ -478,6 +603,25 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
 
   sway(needlesMaterial, seconds, WIND.amplitude.crown);
 
+  // The prepared pine, and the card that stands in for it past the last band. Two textures, two
+  // materials, and both of them fail soft: a machine that never ran the prep script has neither
+  // file, and a crown with no atlas is the procedural green the flat stand-ins already use.
+  const [pineAtlas, impostorCard] = await Promise.all([
+    map(assets, PINE_ATLAS, false),
+    map(assets, IMPOSTOR_CARD, false),
+  ]);
+  textures.push(
+    ...[pineAtlas, impostorCard].filter((found): found is Texture => found !== undefined),
+  );
+  const pineMaterial = needleMaterial(pineAtlas, undefined, undefined, seconds, PINE_LOOK);
+  // The far card is the same crown seen from far enough away to be a mass, so it is the same shader
+  // with the ramp pulled forward: at the distances it draws at, a pine is not a spray of needles.
+  const impostorMaterial = needleMaterial(impostorCard, undefined, undefined, seconds, {
+    ...PINE_LOOK,
+    cutout: IMPOSTOR.cutoff,
+    ramp: { from: IMPOSTOR.from, to: IMPOSTOR.to },
+  });
+
   const grassMaterial = new MeshStandardNodeMaterial({
     metalness: 0,
     roughness: 0.93,
@@ -519,7 +663,7 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     const petal = texture(atlas);
     const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
     petalMaterial.map = atlas;
-    petalMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst);
+    petalMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst, CUTOUT);
     // The colour goes with the coverage: a petal cell is mostly empty, so its mip average is a dark
     // red, and a patch of poppies that goes solid at sixty metres would go black with it. The
     // sampled colour is faded into the red the game wants at that distance instead.
@@ -545,8 +689,10 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     bark: barkMaterial,
     crown: crownMaterial,
     grass: grassMaterial,
+    impostor: impostorMaterial,
     needles: needlesMaterial,
     petal: petalMaterial,
+    pine: pineMaterial,
     stem: stemMaterial,
     stone: stoneSurface(stone),
   };

@@ -39,34 +39,48 @@ export const VARIANTS = {
   boulder: 1,
   grass: 2,
   poppy: 2,
-  spruce: 3,
+  // One procedural spruce rather than three. The prepared pine takes over index 0 and brings three
+  // detail levels, which is five draws; three procedural spruces would have been six, so the
+  // meadow's draw budget buys the pine and one procedural silhouette instead of three, and the
+  // procedural one is still here because it is what CI and a fresh clone draw.
+  spruce: 1,
   seed: 0x9e3779b9,
 } as const;
 
 /**
- * How many prepared CC0 variants of each prop the starter's prepared art provides.
+ * How many prepared variants of each prop the starter's prepared art provides.
  *
- * The fir's two variants are behind `SCATTER_PREPARED_FIR` in `prepared.ts`, which is off on the
- * measurement printed there, so the spruce count is the procedural tree's own.
+ * One pine, at all three of its levels. A second prepared pine would be five more draws, and the
+ * playtest's ceiling is twenty-four for the whole meadow.
  */
-const PREPARED_VARIANTS = { boulder: 3, spruce: 0 } as const;
+const PREPARED_VARIANTS = { boulder: 3, spruce: 1 } as const;
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
 const BOULDER_BURIAL = 0.2;
 
-export type PropRole = "bark" | "crown" | "needles" | "stone" | "grass" | "petal" | "stem";
+export type PropRole =
+  | "bark"
+  | "crown"
+  | "grass"
+  | "impostor"
+  | "needles"
+  | "petal"
+  | "pine"
+  | "stem"
+  | "stone";
 
 /**
  * Metres at which a prepared prop steps down one detail level, and the slack that keeps a
  * camera walking the boundary from stepping it up and down again.
  *
  * The bands are the game's, because the triangle budget behind them is the game's: a prop is drawn
- * from its full prepared detail inside `near` and from the mid level past it. The hysteresis is a
- * fifth of the band rather than a fixed number of metres, so the same slack works for a two-metre
- * rock and a fourteen-metre tree.
+ * from its full prepared detail inside `near`, from the mid level past it, and from the far
+ * cross-card past that. The hysteresis is a fifth of the band rather than a fixed number of
+ * metres, so the same slack works for a two-metre rock, a fourteen-metre spruce and a
+ * twenty-two-metre pine.
  */
-export const LOD_BANDS = { hysteresis: 0.2, mid: 60, near: 22 } as const;
+export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 60, near: 22 } as const;
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;
@@ -93,10 +107,17 @@ export function buildPropVariants(
   prepared?: ReadonlyMap<string, IPropPart[]>,
 ): Map<string, IPropPart[]> {
   const variants = new Map<string, IPropPart[]>();
-  // Two seeds' worth, so a prepared variant does not cost a procedural one the indices after it
-  // would have needed.
+  // Every index the layout knows about, so a prepared variant replaces the procedural one at the
+  // same index rather than being appended: the placement hash is what picks a variant, and it
+  // picks an index, so index 0 has to mean the pine on the machine that has the pine and the
+  // procedural spruce on the machine that does not.
   const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed);
   for (let index = 0; index < PROP_COUNTS.spruce; index += 1) {
+    const ready = prepared?.get(`spruce:${index}`);
+    if (ready) {
+      variants.set(`spruce:${index}`, [...ready]);
+      continue;
+    }
     const spruce = spruces[index];
     if (spruce === undefined) continue;
     variants.set(`spruce:${index}`, [
@@ -271,9 +292,13 @@ export interface IPropMaterials {
   readonly bark: Material;
   readonly crown: Material;
   readonly grass: Material;
+  /** The far cross-card: the whole tree past the last band, one card and eight triangles. */
+  readonly impostor: Material;
   /** The prepared CC0 fir's own cutout, sampled against Poly Haven's twig atlas. */
   readonly needles: Material;
   readonly petal: Material;
+  /** The prepared pine's own cutout, sampled against its own leaf atlas. */
+  readonly pine: Material;
   readonly stem: Material;
   readonly stone: Material;
 }
@@ -295,8 +320,12 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
       side: DoubleSide,
       vertexColors: true,
     }),
+    // The far card and the pine's crown are the same green: one is a picture of the other, so a
+    // tree that steps down a band does not change colour on the way.
+    impostor: new MeshStandardMaterial({ color: 0x24401f, roughness: 0.94, side: DoubleSide }),
     needles: new MeshStandardMaterial({ color: 0x24401f, roughness: 0.94, side: DoubleSide }),
     petal: new MeshStandardMaterial({ color: 0xb8181a, roughness: 0.75, side: DoubleSide }),
+    pine: new MeshStandardMaterial({ color: 0x24401f, roughness: 0.94, side: DoubleSide }),
     stem: new MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.9,
@@ -325,13 +354,18 @@ interface IVariantGroup {
 /**
  * Which detail level a placement draws at, and when it is allowed to change its mind.
  *
- * A step down happens at the band, and a step back up only once the camera has come a fifth
- * further inside it. Without that slack a camera sitting on a boundary assigns a different level
- * to the same tree on alternate frames, which reads as the tree flickering rather than as a
- * change of detail.
+ * A step down happens at the band for the level it is leaving, and a step back up only once the
+ * camera has come a fifth further inside it. Without that slack a camera sitting on a boundary
+ * assigns a different level to the same tree on alternate frames, which reads as the tree
+ * flickering rather than as a change of detail.
+ *
+ * The bands are indexed by level rather than picked from a pair, because a variant may have two
+ * levels or three: the pine has a far cross-card as well as a mid mesh, and a two-band ladder
+ * would leave the third level unreachable or reachable at the wrong distance.
  */
 export function levelFor(distance: number, current: number, levelCount: number): number {
-  const band = current === 0 ? LOD_BANDS.near : LOD_BANDS.mid;
+  const bands = [LOD_BANDS.near, LOD_BANDS.mid, LOD_BANDS.far];
+  const band = bands[current] ?? LOD_BANDS.far;
   if (distance > band && current + 1 < levelCount) return current + 1;
   if (distance < band * (1 - LOD_BANDS.hysteresis) && current > 0) return current - 1;
   return current;

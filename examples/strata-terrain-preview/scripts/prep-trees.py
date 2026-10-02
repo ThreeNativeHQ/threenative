@@ -56,10 +56,28 @@ from mathutils import Vector
 # The alpha a needle card is cut at, the same number the game's crown material uses.
 NEEDLE_CUTOUT = 0.42
 
+# The threshold the rasteriser actually cuts at, which is a knob rather than a
+# constant because it is a property of the atlas being measured and not of the
+# rasteriser. Half coverage suits the generated needle atlas and Poly Haven's twig
+# atlas, whose cells are mostly needle; an atlas of thin Scots pine sprays is not,
+# and measuring it at half coverage reports a crown as sparser than the game will
+# ever draw it — which is how a gate can pass a tree that is see-through in the
+# meadow. A caller whose crown material uses another cutoff sets this to the same
+# number, so the measurement describes the picture the game draws.
+CUTOUT = NEEDLE_CUTOUT
+
 # How much of the crown's front silhouette the surviving cards have to cover. Below
 # about a third a fir reads as a pole with a haze on it, which is the failure the
 # six-thousand-triangle budget produces on its own.
 CROWN_COVERAGE = 0.42
+
+# The side of the voxel a crown is stratified into, in metres, and how many cells one axis
+# may be cut into. Sixty centimetres is about three needle cards across on the Fab Scots
+# pine, which is the scale at which "one card in this voxel" means "this branch still has
+# needles on it"; the cap keeps the per-cell bookkeeping bounded on a crown with cards a
+# centimetre across, where the number of occupied cells is the number of cards.
+VOXEL_METRES = 0.6
+VOXEL_MAX_AXIS = 24
 
 # How far one card may be enlarged before it stops reading as a needle, per level.
 #
@@ -568,7 +586,13 @@ def thin_needles(obj, triangle_budget):
     centres = np.array([card["centre"] for card in cards.values()])
     lo = centres.min(axis=0)
     span = np.maximum(centres.max(axis=0) - lo, 1e-6)
-    grid = np.array([6, 6, 14])
+    # Voxels of a *metre*, not a fixed count. A six-by-six-by-fourteen grid is a different
+    # size on every crown, so the same code stratified the Fab pine into 1.4 m cells and
+    # the fir into 0.2 m ones; sixty centimetres is about three needle cards wide on the
+    # pine and about sixty on the fir, which is the scale at which "one card here" means
+    # "this branch still has needles on it". The cap is memory, not taste: a 22 m fir has
+    # enough cells to matter, and the tree's own card count is the real bound.
+    grid = np.clip(np.ceil(span / VOXEL_METRES), 1, VOXEL_MAX_AXIS).astype(int)
     step = span / grid
     if not cards or total <= triangle_budget:
         log(f"needles: kept whole, {total} triangles in {len(cards)} cards")
@@ -583,6 +607,15 @@ def thin_needles(obj, triangle_budget):
     # budget on specks too small to see. So the crown is cut into a grid of regions,
     # each region is offered its largest cards first, and the regions take turns —
     # which is what covers a fir's whole outline instead of one side of it.
+    #
+    # And within a region the survivors are spread, not merely the largest. The
+    # biggest cards in any one region of a conifer are the ones nearest the branch
+    # it hangs from, so taking a region's largest first spends its whole share in
+    # one corner of it and leaves a hole you can see the sky through — which is
+    # what a prepared Scots pine did at six thousand triangles until this minimum
+    # separation was added. A card is skipped when it sits closer to one already
+    # taken than the region's own share can afford, so the same number of cards
+    # spreads over the same volume.
     buckets = {}
     for key, card in cards.items():
         cell = tuple(
@@ -592,21 +625,35 @@ def thin_needles(obj, triangle_budget):
         buckets.setdefault(cell, []).append((key, card))
     for entries in buckets.values():
         entries.sort(key=lambda item: item[1]["area"], reverse=True)
-    # Every region gets the same share of the budget, which is what stops one dense
-    # region from spending it all: a grid of six hundred parts with seven triangles
-    # each buys six hundred separate cards spread over the whole crown, where a
-    # shared budget buys the largest few and leaves the rest of the tree bare.
     share = max(4, triangle_budget // max(len(buckets), 1))
     selected = []
     spent = 0
-    for cell in sorted(buckets):
+    # The order the voxels are served in. Sorted lexicographically the pass fills the low
+    # corner of the crown and stops when the budget runs out — a quarter of the tree, solid,
+    # and three quarters bare. Seeded rather than sorted, so two runs cut the same tree.
+    rng = np.random.default_rng(0)
+    cells_sorted = sorted(buckets)
+    order = rng.permutation(len(cells_sorted))
+    separation = math.sqrt(float(np.prod(step))) / math.sqrt(max(1, share // 2)) * 0.5
+    for slot in order:
+        cell = cells_sorted[int(slot)]
+        entries = buckets[cell]
         taken = 0
-        for key, card in buckets[cell]:
+        chosen = []
+        for key, card in entries:
             if taken + card["tris"] > share or spent + card["tris"] > triangle_budget:
                 break
+            centre = card["centre"]
+            if any(
+                float(np.linalg.norm(centre - other["centre"])) < separation for other in chosen
+            ):
+                continue
+            chosen.append(card)
             selected.append(key)
             taken += card["tris"]
             spent += card["tris"]
+        taken_keys = {id(card) for card in chosen}
+        buckets[cell] = [(key, card) for key, card in entries if id(card) not in taken_keys]
     # Whatever the even split could not spend goes back over the crown, biggest
     # card in each region first, so the budget is spent and not rounded away.
     for cell in sorted(buckets):
@@ -616,6 +663,11 @@ def thin_needles(obj, triangle_budget):
             selected.append(key)
             spent += card["tris"]
     kept = spent
+    log(
+        f"needles: {len(buckets)} voxels of "
+        f"{step[0]:.2f}x{step[1]:.2f}x{step[2]:.2f} m, {kept} triangles in "
+        f"{len(selected)} of {len(cards)} cards"
+    )
     selected = set(selected)
     doomed = {
         int(index)
@@ -623,7 +675,6 @@ def thin_needles(obj, triangle_budget):
         if key not in selected
         for index in card["faces"]
     }
-    log(f"needles: kept {kept} triangles in {len(selected)} of {len(cards)} cards")
 
     bm = bmesh.new()
     bm.from_mesh(mesh)
@@ -767,13 +818,26 @@ def atlas_pixels(material):
     return None
 
 
-def rasterise_front(objects, width_px, height_px, atlas, top, bottom):
-    """Orthographic front view of the meshes, cut out against the atlas's own alpha.
+def rasterise_front(objects, width_px, height_px, atlas, top, bottom, side=False):
+    """Orthographic front (or side) view of the meshes, cut out against the atlas's own alpha.
 
     This is how the prep measures what the picture will look like: the fraction of the
     card a tree's needles actually cover. It is also the impostor bake, at a different
     resolution, so the card a distant tree draws and the number that sized it come
     from one function.
+
+    `side` looks along X instead of Y, and it is a separate measurement rather than a
+    formality: a crown whose cards are spread evenly through its volume covers a front
+    view at any budget, and covers a side view only if it is spread in *depth* as well.
+    Measuring one view lets a cut that has collapsed the crown onto a single slab pass.
+
+    The cards are composited as a **union**, not in draw order. Painter's order measures
+    "is this pixel opaque in whichever card happened to be written last", which for a
+    crown of tens of thousands of overlapping one-triangle cards reports almost nothing
+    no matter how dense the geometry is — the uncut Scots pine measures 1.3% of its own
+    card that way when every one of its pixels is covered. The game depth-tests and
+    blends, so a pixel behind two cards is covered, and the union is the only reading of
+    the raster that describes the picture.
     """
     import numpy as np
 
@@ -783,10 +847,12 @@ def rasterise_front(objects, width_px, height_px, atlas, top, bottom):
         corners = np.array([list(obj.matrix_world @ Vector(c)) for c in obj.bound_box])
         lo = np.minimum(lo, corners.min(axis=0))
         hi = np.maximum(hi, corners.max(axis=0))
-    width = max(hi[0] - lo[0], hi[1] - lo[1])
+    # Across the card is X for the front view and Y for the side one; up is Z either way.
+    across = 1 if side else 0
+    width = max(hi[across] - lo[across], hi[1 - across] - lo[1 - across])
     height = max(top - bottom, 1e-6)
     scale = min(width_px / (width * 1.04), height_px / (height * 1.02))
-    centre_x = (lo[0] + hi[0]) * 0.5
+    centre_x = (lo[across] + hi[across]) * 0.5
 
     card = np.zeros((height_px, width_px, 4), dtype=np.float32)
     triangles_kept = 0
@@ -810,11 +876,11 @@ def rasterise_front(objects, width_px, height_px, atlas, top, bottom):
         loops = loops.reshape(-1, 3)
 
         world = positions[corners]
-        # Blender is Z-up and the card is a front view, so x is across, z is up and
-        # the projection looks along +Y; the row order is flipped because a PNG's
-        # first row is its top.
+        # Blender is Z-up and the card is an elevation, so Z is up and the projection looks
+        # along Y (front) or X (side); the row order is flipped because a PNG's first row is
+        # its top.
         screen = np.empty((count, 3, 2), dtype=np.float32)
-        screen[:, :, 0] = (world[:, :, 0] - centre_x) * scale + width_px * 0.5
+        screen[:, :, 0] = (world[:, :, across] - centre_x) * scale + width_px * 0.5
         screen[:, :, 1] = height_px - (world[:, :, 2] - bottom) * scale
         for index in range(count):
             a, b, c = screen[index]
@@ -840,20 +906,34 @@ def rasterise_front(objects, width_px, height_px, atlas, top, bottom):
             u = wa * tri_uv[0, 0] + wb * tri_uv[1, 0] + wc * tri_uv[2, 0]
             v = wa * tri_uv[0, 1] + wb * tri_uv[1, 1] + wc * tri_uv[2, 1]
             rgb, alpha = sample_atlas(atlas, u[inside], v[inside])
-            keep = alpha >= NEEDLE_CUTOUT
+            keep = alpha >= CUTOUT
             if not keep.any():
                 continue
             rows, columns = y1 - y0 + 1, x1 - x0 + 1
             tile = np.zeros((rows, columns, 4), dtype=np.float32)
-            tile[..., :3][inside] = rgb[keep]
+            # Every pixel the triangle covers gets the texel it samples, and the
+            # ones below the cutoff get zero alpha rather than being skipped: a
+            # card is a triangle over a mostly-empty atlas cell, so a card whose
+            # footprint is half needles leaves half its bounding box uncovered
+            # unless the rejected texels are written as transparent. Assigning
+            # only the survivors to the whole mask is a shape error on a model
+            # whose cards are one triangle each, and on a model whose cards are
+            # quads it happens to work only because a quad's footprint is nearly
+            # all needle.
+            tile[..., :3][inside] = rgb
             tile[..., 3][inside] = np.where(keep, alpha, 0.0)
-            card[y0 : y1 + 1, x0 : x1 + 1] = tile
+            # Union, not assignment: the alpha only ever grows, and the colour goes with
+            # whichever card put it there, which is what a depth-tested blend leaves.
+            window = card[y0 : y1 + 1, x0 : x1 + 1]
+            closer = tile[..., 3] > window[..., 3]
+            window[..., :3] = np.where(closer[..., None], tile[..., :3], window[..., :3])
+            np.maximum(window[..., 3], tile[..., 3], out=window[..., 3])
             triangles_kept += 1
-    coverage = float((card[:, :, 3] >= NEEDLE_CUTOUT).mean())
+    coverage = float((card[:, :, 3] >= CUTOUT).mean())
     return card, coverage, triangles_kept, width, height
 
 
-def enlarge_cards(target_coverage, level):
+def enlarge_cards(target_coverage, level, resolutions=((192, 384, False),)):
     """Grow the surviving needle cards until the crown covers what a crown should.
 
     This is the whole reason a cutout can be spent down to a few thousand triangles
@@ -865,21 +945,35 @@ def enlarge_cards(target_coverage, level):
     does by hand when they build a low-poly tree, and the factor is measured rather
     than chosen — the prep rasterises the front view, reads its coverage and solves
     for the scale that lands on the target.
+
+    `resolutions` is the set of `(width, height, side)` cards the solve measures on, and it
+    is a parameter because a 192x384 card of a 22 m tree is 17 pixels per metre: a sparse
+    crown's cards overlap at that size and the measurement says the crown is already full,
+    so the solve returns a factor of one and the tree ships see-through. The caller passes
+    the resolutions the level is actually drawn at — both elevations for a level that has
+    to pass both, because growing to satisfy the fuller one leaves the thinner one bare.
     """
     import numpy as np
 
     objects = [obj for obj in mesh_objects() if is_needle(material_names(obj))]
     if not objects:
         return {"cards": 0, "scale": 1.0}
-    _card, before, _triangles, _width, _height = rasterise_front(
-        objects, 192, 384, ATLAS[0], TOP[0], BOTTOM[0]
-    )
+    measures = [
+        rasterise_front(objects, width, height, ATLAS[0], TOP[0], BOTTOM[0], side=side)[1]
+        for width, height, side in resolutions
+    ]
+    before = min(measures) if measures else 0.0
     if before <= 1e-6:
         return {"cards": 0, "scale": 1.0}
-    # Clamped: a card blown up far enough to cover a silhouette stops being a needle,
-    # and the solve would happily ask for fifty times. Past the clamp the coverage is
-    # what the model can give, and the log says so rather than the script pretending.
-    scale = min(float(np.sqrt(target_coverage / before)), CARD_SCALE_MAX.get(level, 4.0))
+    # Clamped at both ends. Past the top clamp a card blown up far enough to cover
+    # a silhouette stops being a needle and the solve would happily ask for fifty
+    # times. Past the bottom clamp — 1.0, the authored size — because a cut that
+    # already covers more than the target has nothing to grow: shrinking the
+    # survivors to *hit* a coverage floor is the opposite of what this is for, and
+    # on a tree whose cards are large enough to overlap it fires every run.
+    scale = min(
+        max(1.0, float(np.sqrt(target_coverage / before))), CARD_SCALE_MAX.get(level, 4.0)
+    )
     enlarged = 0
     for obj in objects:
         mesh = obj.data
@@ -915,14 +1009,25 @@ def enlarge_cards(target_coverage, level):
             enlarged += 1
         mesh.vertices.foreach_set("co", positions.reshape(-1))
         mesh.update()
-    _card, after, _triangles, _width, _height = rasterise_front(
-        objects, 192, 384, ATLAS[0], TOP[0], BOTTOM[0]
+    after = min(
+        rasterise_front(objects, width, height, ATLAS[0], TOP[0], BOTTOM[0], side=side)[1]
+        for width, height, side in resolutions
     )
     log(
-        f"needles: enlarged {enlarged} cards by {scale:.2f}x, "
-        f"front coverage {before * 100:.1f}% -> {after * 100:.1f}% (target {target_coverage * 100:.0f}%)"
+        f"needles: enlarged {enlarged} cards by {scale:.2f}x, worst-view coverage "
+        f"{before * 100:.2f}% -> {after * 100:.2f}% "
+        f"(target {target_coverage * 100:.2f}% of the card)"
     )
     return {"cards": enlarged, "scale": round(scale, 3), "coverage": round(after, 4)}
+
+
+# The coverage below which a baked impostor card counts as empty, as a share of
+# the card rather than of the tree. An absolute fraction is the wrong unit: it is
+# calibrated to a broad fir crown that fills its own bounding box, and a 22 m
+# spire whose box is mostly sky covers two per cent of the same card while being
+# a perfectly good tree. A caller whose tree has a different shape to reason
+# about overrides it with the number its own silhouette implies.
+IMPOSTOR_MIN_COVERAGE = 0.02
 
 
 def bake_impostor(args, top, bottom, atlas):
@@ -945,8 +1050,11 @@ def bake_impostor(args, top, bottom, atlas):
         f"{args.impostor_height_px} card, {coverage * 100:.1f}% covered, "
         f"{round(width, 2)} m wide on a {round(height, 2)} m tree"
     )
-    if coverage < 0.02:
-        raise SystemExit("prep-trees: the impostor card rasterised to almost nothing")
+    if coverage < IMPOSTOR_MIN_COVERAGE:
+        raise SystemExit(
+            f"prep-trees: the impostor card rasterised to {coverage * 100:.2f}% of itself, "
+            f"under the {IMPOSTOR_MIN_COVERAGE * 100:.0f}% floor"
+        )
     write_card(card, os.path.join(args.out, f"{args.species}-impostor.png"))
     return f"{args.species}-impostor.png"
 
@@ -970,6 +1078,7 @@ def sample_atlas(atlas, u, v):
 def write_card(card, path):
     """Save the rasterised card, sRGB-encoded by Blender from linear float pixels."""
     import bpy
+    import numpy as np
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     image = bpy.data.images.new(
@@ -983,14 +1092,22 @@ def write_card(card, path):
     bpy.data.images.remove(image)
 
 
-def cross_card_geometry(args, top, bottom):
-    """Four quads around the trunk: the whole far band, two triangles a view."""
+def cross_card_geometry(args, top, bottom, width=None):
+    """Four quads around the trunk: the whole far band, two triangles a view.
+
+    `width` is the full width of the quad, which is what keeps the quad and the
+    card the same shape and so keeps the tree from being stretched. Left unset it
+    is the scene's own width times the 1.24 the fir's card was baked to match, so
+    the CC0 output is unchanged; a caller whose card was baked to the tree's own
+    aspect passes the width that aspect implies.
+    """
     import bpy
     from mathutils import Vector
 
-    width = scene_bounds()[1][0] - scene_bounds()[0][0]
+    if width is None:
+        width = (scene_bounds()[1][0] - scene_bounds()[0][0]) * 1.24
     radius = max(width * 0.16, 0.05)
-    half_width = width * 0.62
+    half_width = width * 0.5
     vertices = []
     uvs = []
     faces = []
@@ -1126,7 +1243,7 @@ def main(argv):
             cylindrical_uv(wood, height)
             smooth(wood)
             stats = thin_needles(crown, budget - triangle_count(wood))
-            stats.update(enlarge_cards(CROWN_COVERAGE, level))
+            stats.update(enlarge_cards(CROWN_COVERAGE, level, ((192, 384, False),)))
             results[level] = stats
             log(f"{level}: wood {triangle_count(wood)}, crown {stats['triangles']}, budget {budget}")
 
