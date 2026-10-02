@@ -1,6 +1,6 @@
 # PRD-476 — Fluid Lab: particle water on the GPU at 60 fps
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
@@ -151,7 +151,7 @@ Phase boxes below are the acceptance criteria; each names its proof.
 
 #### Phase 1: `FluidParticles3D` runs a dam break on the GPU at 60 fps
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2 of 3 boxes)
 **Files:** `packages/core/src/fluid-particles.ts` (new), `packages/core/src/index.ts` (export +
 JSDoc tags), `packages/core/__tests__/fluid-particles.spec.ts` (new),
 `examples/prd476-fluid-particles/` (new, copied from the `prd249-fluid-field` layout: `game.ts`,
@@ -161,9 +161,10 @@ JSDoc tags), `packages/core/__tests__/fluid-particles.spec.ts` (new),
 compared. The example renders particles as points from `positions` (debug look only) and exposes
 `GameState` with `stats`, `steps`, and a front-position probe.
 
-- [ ] Option validation fails closed, passes dispatch in the documented order, `fill`/`emit`/ `drain` respect capacity, and scene removal releases buffers. proof: `pnpm exec vitest run packages/core/__tests__/fluid-particles.spec.ts`
-- [ ] A released dam-break column runs across the tank and settles with mean compression ≤ 0.05 and every particle inside `bounds` (GameState resource assertions). proof: `node packages/playtest/dist/runner/cli.js examples/prd476-fluid-particles/playtests/fluid-particles.playtest.json --url http://127.0.0.1:5173 --server-command "pnpm --filter prd476-fluid-particles dev --host 127.0.0.1" --browser-recipe webgpu`
+- [x] Option validation fails closed, passes dispatch in the documented order, `fill`/`emit`/ `drain` respect capacity, and scene removal releases buffers. proof: `pnpm exec vitest run packages/core/__tests__/fluid-particles.spec.ts` — 9/9 pass
+- [x] A released dam-break column runs across the tank and settles with mean compression ≤ 0.05 and every particle inside `bounds` (GameState resource assertions). proof: `node packages/playtest/dist/runner/cli.js examples/prd476-fluid-particles/playtests/fluid-particles.playtest.json --url http://127.0.0.1:5173 --server-command "pnpm --filter prd476-fluid-particles dev --host 127.0.0.1" --browser-recipe webgpu --headed` — pass on `nvidia/turing`: 1,638 particles, peak front x 2.9 m, final mean compression 0.0012, max speed 0.047 m/s, inBounds 1, 0 console errors (headless Chromium reports no adapter here, so `--headed` on the private Xvfb is required)
 - [ ] With 6,000 particles (the source's High capacity) the splash tank holds steady-state frame p95 ≤ 16.7 ms on the Linux desktop browser with a hardware WebGPU adapter (`adapter.info` recorded, not SwiftShader). proof: `measure-steady-state-fps` skill lane against the example
+  Partial, not ticked: the solver step costs 2.5–3.4 ms to GPU completion at 6,000 particles (`?bench=1&stress=1`, 5×200 steps, `nvidia/turing`, host load average ~50) and uncapped frame deltas over 6,213 frames are p50 1.2 / p95 7.4 / p99 15 ms. The skill's presentation-lane control fails here, though: a trivial WebGPU page presents at 17–20 fps under the private Xvfb and headless falls to SwiftShader, so presented p95 is unmeasured.
 
 **Verification:** run the three proofs above; record particle count, p95 frame time and adapter
 beside the third box.

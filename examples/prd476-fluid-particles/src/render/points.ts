@@ -1,12 +1,12 @@
 import type { FluidParticles3D } from "@threenative/core";
 import {
   BoxGeometry,
+  type Camera,
   Color,
   EdgesGeometry,
   Group,
   LineBasicMaterial,
   LineSegments,
-  type Camera,
   type Scene,
 } from "three";
 import { vec3 } from "three/tsl";

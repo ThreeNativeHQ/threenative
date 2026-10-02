@@ -1055,7 +1055,6 @@ export class FluidParticles3D extends Group {
     this.#queuedDrains = 0;
     if (this.#used > 0) {
       renderer.compute(this.#predict);
-      this.#queuedStirs = 0;
       for (let iteration = 0; iteration < this.iterations; iteration += 1) {
         renderer.compute(this.#gridClear);
         renderer.compute(this.#gridBuild);
@@ -1073,6 +1072,7 @@ export class FluidParticles3D extends Group {
       renderer.compute(this.#volume);
       renderer.compute(this.#columnHeights);
     }
+    this.#queuedStirs = 0;
     this.#steps += 1;
     this.#readback.request(renderer);
   }

@@ -39,9 +39,30 @@ class DamBreakScene extends Scene<IFluidParticlesState> {
     const water = new FluidParticles3D({ capacity: 6000 });
     ctx.add(water);
     ctx.add(createPointsView(water, ctx.scene, ctx.camera));
-    water.setColliders([GATE]);
-    water.fill([-2.8, 0.1, -1.5], [-1.0, 2.8, 1.5]);
+    // ?stress=1 fills the whole tank to capacity (6,000 particles) and keeps no gate.
+    const stress = new URLSearchParams(globalThis.location?.search ?? "").has("stress");
+    if (stress) water.fill([-2.8, 0.1, -1.5], [2.8, 3.6, 1.5]);
+    else {
+      water.setColliders([GATE]);
+      water.fill([-2.8, 0.1, -1.5], [-1.0, 2.8, 1.5]);
+    }
 
+    if (new URLSearchParams(globalThis.location?.search ?? "").has("bench")) {
+      // Back-to-back solver steps timed to GPU completion: the cost of one fixed step, with no
+      // presentation in the number.
+      const device = (
+        ctx.renderer.raw as {
+          backend?: { device?: { queue: { onSubmittedWorkDone(): Promise<void> } } };
+        }
+      ).backend?.device;
+      (globalThis as Record<string, unknown>).__fluidBench = async (steps: number) => {
+        await device?.queue.onSubmittedWorkDone();
+        const start = performance.now();
+        for (let step = 0; step < steps; step += 1) water.process(ctx.renderer);
+        await device?.queue.onSubmittedWorkDone();
+        return (performance.now() - start) / steps;
+      };
+    }
     let peakFrontX = 0;
     return (frame) => {
       if (water.steps === GATE_STEPS) water.setColliders([]);
