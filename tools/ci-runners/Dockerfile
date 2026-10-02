@@ -18,7 +18,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build ccache clang lld pkg-config \
       git curl jq unzip zip xz-utils xvfb xauth python3 python3-pip \
-      7zip ffmpeg imagemagick zstd file lsof procps \
+      7zip ffmpeg imagemagick zstd file lsof procps openjdk-17-jdk-headless \
       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-freefont-ttf \
       libfontconfig1 libfreetype6 \
       libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
