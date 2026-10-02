@@ -814,19 +814,23 @@ dry sand bars stop propagation into lagoons. Crest ellipses are removed. The den
 inner sea grid stretches out to 4.1 km with wave/detail fading, removing the short,
 striped horizon. Alpha dissolves across the shoreline; existing terrain wetness is
 retained. The soft noise cloud deck uses optical thickness and sunward density samples.
-Distant geometry gets secondary crags and sharper ridges. Lake reflection resolution
+Distant geometry gets secondary crags and sharper ridges. Three's installed
+distance/height fog nodes add valley haze below 115 m without a render pass, with
+the previous fog restored on scene cleanup. Lake reflection resolution
 is 0.5 → 1 with the existing two-frame cadence, filtered taps and stronger subtle
 ripples; cooler silt/scatter and red absorption remove the muddy water-body tint.
 
-Fourth retained WebGPU run: **24/24 assertions PASS, 0 console errors**, NVIDIA
-Turing, 1920×1080. Meadow/overview engine frame p50 **2.3/2.8 ms** (CPU/frame metric,
-not presented FPS). Existing ocean wave/sun checks PASS: **66.2% / 53.3%** changed
+Final frozen-source WebGPU run: **24/24 assertions PASS, 0 console errors**, NVIDIA
+Turing, 1920×1080. Meadow/overview engine frame p50 **2.3/2.3 ms** (CPU/frame metric,
+not presented FPS). Existing ocean wave/sun checks PASS: **66.1% / 53.7%** changed
 qualified water pixels. Added sheltered-water check rejects the actual round-8
 capture (**0/63000** blue lagoon pixels) and passes the retained capture (**100%**).
 Example typecheck, root Biome error gate and diff whitespace check PASS. Captures:
 `examples/strata-terrain-preview/artifacts/playtest/web/` — `coastal-ocean.png`,
 `coastal-horizon-sea.png`, `coastal-sun-alt.png`, `river.png`, `forest-walk.png`.
-Inspected at full resolution. Licensed bytes and other lane files are untouched;
+Inspected at full resolution. An in-progress fifth capture timed out after a
+type-only Vite reload; browser doctor checks passed and the frozen-source rerun
+completed cleanly. Licensed bytes and other lane files are untouched;
 procedural/CC0 paths receive the same materials. Native and a new no-pack run are
 unverified for this round. **Below the Unreal/Gaia target; AC-5 stays open.**
 

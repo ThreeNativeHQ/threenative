@@ -26,8 +26,11 @@ import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
   color,
+  densityFogFactor,
   dot,
+  exponentialHeightFogFactor,
   float,
+  fog,
   max,
   mix,
   mrt,
@@ -266,6 +269,15 @@ export function installOutdoorOcclusion(
 ): () => void {
   const { renderer, scene, camera } = ctx;
   if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
+  // Three's existing fog nodes retain aerial perspective and add low valley mist without a pass.
+  const previousFog = scene.fogNode;
+  const distanceHaze = densityFogFactor(float(RIG.haze.density));
+  const valleyHaze = exponentialHeightFogFactor(float(0.000005), float(115)) as Node<"float">;
+  const heightFog = fog(
+    color(RIG.haze.color),
+    float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
+  );
+  scene.fogNode = heightFog;
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
@@ -291,6 +303,7 @@ export function installOutdoorOcclusion(
     ],
   });
   return () => {
+    if (scene.fogNode === heightFog) scene.fogNode = previousFog;
     chain.dispose();
     world.dispose();
     contact.dispose();
