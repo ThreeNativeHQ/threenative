@@ -143,6 +143,30 @@ function expectContainsEveryVertex(mesh: Mesh): void {
 }
 
 describe("TerrainTiles settled-frame cost", () => {
+  it("skips the neighbor LOD scan when follow changed no tile or target", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      let lookups = 0;
+      const original = Map.prototype.get;
+      const get = vi.spyOn(Map.prototype, "get").mockImplementation(function (
+        this: Map<unknown, unknown>,
+        key: unknown,
+      ) {
+        if (this.size === 25) lookups += 1;
+        return original.call(this, key);
+      });
+      tiles.follow({ x: 0, z: 0 });
+      get.mockRestore();
+      expect(lookups).toBe(25);
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
   it("reads the active blend count without walking the resident ring", () => {
     const tiles = ring(2, 17, 32, 25, 64_000_000);
     try {

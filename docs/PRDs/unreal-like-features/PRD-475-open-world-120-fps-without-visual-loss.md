@@ -127,6 +127,8 @@ Cut 2 coarse-probe fix (2026-10-02, source/unit lane): converting the caster tra
 
 Active-blend scan fix: `world-tiles-cost.spec.ts` red: expected `Map.values` not called, got 1. The active-tile Set removes a 25-tile walk from every blend-count read and makes transition advancement visit active tiles only; settled rendered positions stay identical. `pnpm exec vitest run packages/core/__tests__/world-tiles-cost.spec.ts packages/core/__tests__/world-terrain-merge-walk.spec.ts --maxWorkers=1`: 10 passed, 2 benchmark skips, exit 0.
 
+Neighbor-LOD scan fix: `world-tiles-cost.spec.ts` red: 75 resident-map lookups, expected 25. Target changes already coordinate the resident ring; the extra neighbor pass is now required only for newly admitted tiles. Green: 25 lookups (50 saved/follow), identical settled positions; terrain cost and merge-walk specs 11 passed, 2 benchmark skips, exit 0.
+
 Frame-work follow-up (2026-10-02, source/unit lane; complexity 3, LOW): preserve settled geometry, LOD and shadow settings. Existing seam epochs and the residency/2 m refilter gate stay. Replace unconditional terrain blend/neighbor scans with dirty bookkeeping, then share the existing admission allowance with measured shadow work. Render-cadence culling stays before the draw; streaming runs after the draw so the actual shadow cost is known, with bounded deferral and a named override. Each fix requires a red-green operation-count/state spec; final gates are core units, typecheck, lint and quality. Browser playtests, pushes and merges are excluded by the owner; walking p95, same-pose visuals and the pop judge remain unverified here.
 
 #### Phase 3: Hold 120 fps with the look intact

@@ -2203,7 +2203,8 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
     this.#recordPeaks();
     this.#updateColliders(centerX, centerZ, budget);
     this.#applyLodTargets(targets);
-    this.#coordinateNeighborLods(hadFocus);
+    // Retargeting already coordinates the resident ring; only newly admitted tiles can owe it.
+    if (built > 0) this.#coordinateNeighborLods(hadFocus);
     this.#seamPass();
     // After every LOD target is settled, so a block is built from the levels this pass left behind.
     this.#rebuildDirtyBlocks(budget);
