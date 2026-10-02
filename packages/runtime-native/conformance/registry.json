@@ -75,6 +75,22 @@
   ],
   "tests": [
     {
+      "id": "temporal-aa",
+      "title": "full-resolution temporal AA with object motion history",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/temporal-aa.js",
+      "captureFrames": 26,
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",

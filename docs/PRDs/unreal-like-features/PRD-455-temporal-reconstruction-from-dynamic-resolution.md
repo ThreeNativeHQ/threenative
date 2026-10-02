@@ -82,6 +82,18 @@ experimental path or mark the draft ready before the outstanding acceptance evid
   --maxWorkers=1` passes 56 tests after fresh-checkout red-to-green reproduction. No runtime,
   image-quality, native, or performance qualification is claimed by these CPU tests.
 
+  Partial, 2026-10-02: starter-only generated `temporalAA.ts` now reuses TRAANode and owns
+  explicit cut/reset, projection/size invalidation, raster-size guards and disposal. The shared
+  fixture exercises moving rigid/skinned/instanced content; `integration-temporal.yml` captures
+  reference, temporal, cut, projection and resize variants through the existing headed playtest
+  runner. Fresh focused checks: 297/297 source/scaffold/workflow tests, 67/67 native-conformance
+  contract tests, root TypeScript check, core build, fixture web build and shared native bundle
+  all pass. These are source/contracts/builds, not native execution. Local runtime capture was
+  attempted and refused because this environment has neither Xvfb nor a usable X display;
+  the hosted lane must supply actual screenshots and adapter evidence before this box is checked.
+  The complete repository test/budget/quality board and temporal visual-quality corpus are still
+  unrun for this slice. The optional conformance row does not qualify any native target.
+
 - [ ] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion.
 - [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
 

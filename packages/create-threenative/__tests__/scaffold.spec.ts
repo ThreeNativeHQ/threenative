@@ -194,7 +194,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   sailing: "93f7526320547acd320a340774e5384b2c42c109379bff2437cb2b01e1b0e149",
   shooter: "d5a0cf3706e7a0b621fa9290564ac896467b256154d7f6abdf75ca4c36aade91",
   snow: "d59cab83418e9636bb9b48f8b802b3c36defdc5889e4a03c96b1167b7a4f2623",
-  starter: "d6d685a7ddba9d074869bf76afa1400357503ece29e96d857a3322c8ca61c078",
+  // PRD-455: starter-only opt-in temporalAA.ts plus its ownership/qualification paragraph.
+  starter: "2a1ce31178413a9850216e0504a3a25dd0117823a3b86371db698f6608301970",
   "tower-defense": "d50982f0cdfe90786e0042e7d7113d847856c9d9eed71673adfb42e6a9349287",
 };
 
@@ -293,6 +294,7 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/temporalAA.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
