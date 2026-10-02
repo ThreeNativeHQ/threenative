@@ -14,6 +14,7 @@ import {
 
 import { verifyEditorCameras } from "./verify-cameras.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
+import { verifyToolGroups } from "./verify-tool-groups.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
 
 const root = resolve(".");
@@ -34,6 +35,7 @@ try {
   const activation = await plugin.activate();
   const controller = new TerrainEditorController(activation.editorUrl);
   assert.deepEqual(await controller.activate(), activation);
+  let captured = false;
   const config = parseStandalonePlaytestArgs([
     "--scenario",
     "playtests/editor.playtest.json",
@@ -349,6 +351,26 @@ try {
         provenance: session.provenance,
       }),
     );
+    captured = true;
+  });
+  // The tool groups make dozens of terrain edits and undo every one of them, which is more work
+  // than one capture session's budget covers. They run in a second session against the same live
+  // editor and the same document, so the shared-file claim is tested across two browser sessions
+  // rather than inside one.
+  assert(captured, "The integration session must finish before the tool-group session");
+  // Dozens of committed edits, each one a full rebuild with its own save and undo, take far longer
+  // than the other stages of this proof, so this session carries its own budget rather than
+  // shortening the work to fit the first stage's.
+  await withBrowserCapture({ ...config, timeoutMs: 900000 }, async (session) => {
+    await session.page.waitForFunction(
+      () => window.strata?.state && !window.strata.busy,
+      {},
+      {
+        timeout: 30000,
+      },
+    );
+    await advanceFixedStep(session.page, session.bridge, 2);
+    await verifyToolGroups(session, controller);
   });
   const report = await runStandalonePlaytest(config);
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");

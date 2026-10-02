@@ -97,6 +97,12 @@ export interface IEditorView {
   setView(view: string): void;
   frame(): void;
   registerAsset?(id: string, object: unknown): void;
+  /**
+   * The asset IDs this project can place and scatter. The recovered palette asks the view rather
+   * than shipping a starter list, so a game's own props and its registered imports are what the
+   * scatter and clear controls offer.
+   */
+  propAssets?(): readonly string[];
   cameras?(): IViewCamera;
   /**
    * The whole rendered revision as a portable GLB: terrain, resolved models with their final

@@ -295,7 +295,8 @@ public middleware. Reuse projection/bounds/orbit controls and stable target IDs.
 
 ### Phase 2: Editable live atmosphere and model injection
 
-**Status:** NOT STARTED
+**Status:** NOT STARTED — AC-3 and AC-4 are untouched. Nothing in this phase
+has been implemented, and no box below may be read as partially proven.
 **Files:** proposed `editor/environment.ts`, `editor/assetImport.ts`, existing
 document validators/inspector, preview game-owned `src/render/` and
 `src/world/terrainAssets.ts`; extend existing compiler/loader wiring and scenario.
@@ -310,7 +311,7 @@ shared validators sequentially.
 
 ### Phase 3: Image injection and explicit game handoff
 
-**Status:** NOT STARTED
+**Status:** NOT STARTED — AC-5 and AC-6 are untouched.
 **Files:** proposed `editor/assetImport.ts` image validation/mapping, material and
 environment inspectors/source, `__tests__/editor-assets.spec.ts`, existing export
 integration, consumer fixture and addon agent guide; project-owned render source
