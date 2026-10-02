@@ -106,6 +106,7 @@ Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 m
 
 Cut 1 (terrain super-tiles, PRD-473 plan): landed in ec9a739ad, b9442ec5a, bc998f510, 8349962ce, 0421ed329; Machinefall A/B pending.
 Cut 1 fix: Machinefall correctness pair (same build, merge off/on) found the ring shrinking 289 → 248 because block bytes were charged to tile admission; blocks are now reported (`blockBytes`), not charged — 68a3691d2. Terrain draws 289 → 33–42, main draws p50 289–343 → 158–258.
+Cut 1 fix 2: a block kept drawing the ground of a tile that had left it — a second copy at the level the tile left, for as many frames as the one-per-frame rebuild queue took to reach it — and counted that tile twice, so the `tiles` stat drifted off 289; a departure now dissolves its block for the frames before the rebuild brings it back — f8a990abe; per-frame walk invariant `world-terrain-merge-walk.spec.ts` (red at frame 18, green after; draws stay under the unmerged ring's 81).
 Cut 2 (memoised shadow-caster table): landed in d47a24dfc; Machinefall A/B pending.
 
 #### Phase 3: Hold 120 fps with the look intact
