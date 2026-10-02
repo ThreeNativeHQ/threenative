@@ -79,7 +79,7 @@ jobs:
   # job that discards its own node_modules — it only added a serial edge in front of the run.
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -97,6 +97,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm typecheck
@@ -196,7 +199,7 @@ jobs:
   # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
   test-unit:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -225,13 +228,16 @@ jobs:
       # this job takes the cached result rather than repeating it three times over.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test
 
   test-native:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -356,6 +362,14 @@ jobs:
       - name: Restore the compiled native tree
         uses: actions/cache@v4
         with:
+          # No `.github/workflows/ci.yml` in this key. It named this job's own workflow file, so
+          # every edit to ci.yml — this one included — produced a key no run had ever saved, and the
+          # three pull requests that followed a workflow change each compiled the whole Linux host
+          # and stored their own 1.35 GiB copy. What ci.yml actually contributes to this build is
+          # the toolchain above, and `dpkg-query -W` in that identity already covers every package
+          # this job installs. Exact key only, with no prefix fallback: a tree restored from a
+          # different commit carries objects newer than the sources `restore-source-mtimes.mjs`
+          # stamps below, and ninja would read that as up to date.
           # Cargo's output belongs here too. With the C++ compile eliminated by #78, the host build
           # step was still ~112s and all of it was Rust: `threenative_native_physics` and the
           # `ui-overlay` crate with its webkit2gtk bindings. Measured locally, physics alone is a
@@ -375,7 +389,7 @@ jobs:
             packages/runtime-native/build/tn-linux-quickjs
             packages/runtime-native/.runtime/physics-target
             packages/runtime-native/native/ui-overlay/target
-          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('packages/runtime-native/scripts/**', 'packages/runtime-native/*.json', 'pnpm-lock.yaml', '.github/workflows/ci.yml', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**', 'packages/runtime-native/native/**/build.rs', 'packages/runtime-native/native/**/.cargo/**', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
+          key: native-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-toolchain.outputs.identity }}-${{ hashFiles('packages/runtime-native/scripts/**', 'packages/runtime-native/*.json', 'pnpm-lock.yaml', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/**/*.cmake', 'packages/runtime-native/src/**', 'packages/runtime-native/include/**', 'packages/runtime-native/tests/**', 'packages/runtime-native/native/**/build.rs', 'packages/runtime-native/native/**/.cargo/**', 'packages/runtime-native/native/**/src/**', 'packages/runtime-native/native/**/Cargo.toml', 'packages/runtime-native/native/**/Cargo.lock') }}
       # `ccache --show-stats` at the end of the job reports one number for three builds, and that
       # number has been stuck at `Hits: 184 / 574 (32.06%)` on every run measured — identical
       # before and after each lane got its own restore-key namespace, and with the restore
@@ -452,6 +466,9 @@ jobs:
       #     imported from '.../packages/runtime-native/tests/production-profile.test.mjs'
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       # The pump-silence observer drives the real host with the public native-smoke bundle. Keep
       # this explicit because the shared action only builds packages/*/dist, not examples/*/dist.
@@ -495,7 +512,7 @@ jobs:
           if-no-files-found: error
 
   test-browser:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -525,6 +542,9 @@ jobs:
       # so they build it themselves — otherwise the run dies on a missing assets/dist/index.js.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       # `playwright.config.ts` scaffolds its starter projects from packed tarballs, and without
@@ -546,7 +566,7 @@ jobs:
           if-no-files-found: ignore
 
   test-playtest:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -573,6 +593,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
@@ -863,7 +886,7 @@ jobs:
           test "$result" = "success"
 
   benchmark:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -881,6 +904,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm tsx scripts/count-loc.ts --check
@@ -1046,7 +1072,7 @@ jobs:
           if-no-files-found: warn
 
   budgets:
-    needs: scope
+    needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1071,6 +1097,9 @@ jobs:
       # reads like a guarantee it does not make. The shared action is what actually supplies dist.
       - uses: ./.github/actions/workspace-dist
         with:
+          # Compiled once by build-artifacts and downloaded rather than rebuilt: this job is
+          # ordered behind it above, so the upload always exists and the cache key never misses.
+          shared-artifact: workspace-packages
           save-bundles: "false"
           pack-archives: "false"
       - run: pnpm budgets

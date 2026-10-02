@@ -2011,6 +2011,58 @@ describe("CI pipeline structure", () => {
     );
   });
 
+  // Within one run the workspace dist compiled about nine times, at 71-95s each. Every consumer
+  // declared `needs: scope` only, so all eight started beside the one job that saves the key, all
+  // eight looked for an entry nobody had published yet, and all eight compiled it themselves. The
+  // action grows a mode that takes this run's upload instead; a job that keeps the cache path next
+  // to a producer it is ordered behind is the arrangement that put the nine builds back.
+  it("compiles the workspace dist once and hands the upload to every consumer", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const producer = requiredJob(ci, "build-artifacts");
+    expect(producer).toContain("uses: ./.github/actions/workspace-dist");
+    expect(producer, "the producer no longer publishes what consumers download").toContain(
+      "name: workspace-packages",
+    );
+    expect(producer).toMatch(/^\s+packages\/\*\/dist$/mu);
+
+    const shared = "shared-artifact: workspace-packages";
+    for (const [name, section] of jobSections(ci)) {
+      if (name === "build-artifacts") continue;
+      // The action is what compiles; this job is about which of them compile it themselves.
+      if (!section.includes("uses: ./.github/actions/workspace-dist")) continue;
+      // `lint` keeps the cache path on purpose: its dist lane runs on the `instructions` selection,
+      // where `build-artifacts` is skipped and there is no upload to take. Everything that runs on
+      // `full` downloads instead.
+      if (name === "lint") continue;
+      expect(section, `${name} restores a key nobody saved before it`).toContain(
+        "needs: [scope, build-artifacts]",
+      );
+      expect(section, `${name} compiles the workspace instead of downloading it`).toContain(shared);
+    }
+
+    const action = await readFile(
+      path.join(repo, ".github/actions/workspace-dist/action.yml"),
+      "utf8",
+    );
+    // Fail closed on the download exactly as on the restore: a partial upload must not be imported
+    // from, and the producer's step order — build, validate, publish — is what keeps it complete.
+    expect(action).toContain("Take the compiled workspace from this run's producer");
+    expect(action).toContain("uses: actions/download-artifact@v4");
+    expect(action).toContain("TN_WORKSPACE_DIST_INCOMPLETE");
+    for (const step of [
+      "Restore the compiled workspace",
+      "Build missing workspace bundles",
+      "Pack current workspace files",
+    ]) {
+      const entry = action
+        .split(/(?=^ {4}- name:)/mu)
+        .find((block) => block.startsWith(`    - name: ${step}\n`));
+      expect(entry, `the shared download does not gate ${step}`).toContain(
+        "inputs.shared-artifact == ''",
+      );
+    }
+  });
+
   // Six jobs need `packages/*/dist` and each compiled it from scratch — measured at 49-65s per
   // job, six times a run. tsup keeps no incremental state, so the output is what gets cached, and
   // one shared action owns the key so the six cannot drift apart into six different answers about

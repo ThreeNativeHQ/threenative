@@ -118,16 +118,24 @@ describe("CI efficiency without lost evidence", () => {
     },
   );
 
-  it.each(["benchmark", "budgets", "performance-contracts"])(
-    "%s starts after scope rather than waiting for artifacts it never downloads",
+  // These two used to sit at `needs: scope` and restore the workspace key, which meant they started
+  // beside the only job that saves it, missed every time and compiled the workspace themselves —
+  // 71-95s each. PRD-481 gives them the producer's upload instead, so the edge is real work.
+  it.each(["benchmark", "budgets"])(
+    "%s downloads this run's workspace rather than compiling its own",
     (name) => {
-      expect(declaredNeeds(job(name))).toEqual(["scope"]);
+      expect(declaredNeeds(job(name))).toEqual(["scope", "build-artifacts"]);
+      expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
+      expect(job(name)).toContain("shared-artifact: workspace-packages");
       expect(ancestors(name).has("native-platforms")).toBe(false);
-      if (name !== "performance-contracts") {
-        expect(job(name)).toContain("uses: ./.github/actions/workspace-dist");
-      }
     },
   );
+
+  it("performance-contracts starts after scope rather than waiting for artifacts it never downloads", () => {
+    expect(declaredNeeds(job("performance-contracts"))).toEqual(["scope"]);
+    expect(ancestors("performance-contracts").has("native-platforms")).toBe(false);
+    expect(job("performance-contracts")).not.toContain("uses: ./.github/actions/workspace-dist");
+  });
 
   it("reports the new producer as well as every pre-existing job", () => {
     const graph = ciJobGraph(source);
