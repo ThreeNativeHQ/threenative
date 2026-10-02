@@ -51,6 +51,11 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
 - **Fork guard:** a PR from a fork always runs on hosted runners and never reaches the machine.
 - **Same verdicts, no caching:** the job still runs inside the workflow, on a fresh checkout of the
   candidate SHA, and `ci-required` is unchanged. The rule "Never cache test verdicts" stands.
+- **One full run per candidate:** while `TN_RUNNER` is set, agents run only the focused checks for what
+  they changed (the touched spec, the affected playtest), then push. The full board runs once, on
+  `tn-local`. Today the agent runs `pnpm test` or `pnpm ci:local --full` here, then CI repeats the same
+  board, so this removes the duplicate. With `TN_RUNNER` unset, CI is hosted and slow again, and the
+  local full run before pushing comes back.
 - **Comparable timing:** each container is capped at 4 CPUs and 16 GB, the shape of a hosted
   `ubuntu-24.04` runner, so operation budgets and timeouts keep meaning what they meant.
 - **Ephemeral:** each container takes one job, exits and is recreated (`--ephemeral`, compose
@@ -114,6 +119,9 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 - 2026-10-02 (João): the cost is accepted. Actions minutes on public repositories stay free on
   self-hosted runners; GitHub's announced $0.002/min self-hosted charge is postponed and exempted
   public repos.
+- 2026-10-02 (João): the runner must also remove the duplicate run, not only the queue. Agents stop
+  running the full board locally while `TN_RUNNER` is set. Skipping a CI job because an identical tree
+  already passed it would break "Never cache test verdicts", so it is out of scope; it would be its own PRD.
 
 ## Execution Phases
 
@@ -137,7 +145,8 @@ stack. The script fails closed when the env file or token is missing.
 
 **Status:** NOT STARTED
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/workflows/integration-*.yml`,
-`scripts/__tests__/ci-structure.spec.ts`; the `integration-*.yml` template wherever agents copy it from.
+`scripts/__tests__/ci-structure.spec.ts`; the `integration-*.yml` template wherever agents copy it from;
+`AGENTS.md` ("Nearest lane first, CI last") plus its regenerated `CLAUDE.md` mirror.
 **Implementation:** Replace each movable Linux `runs-on` with the routing expression. `supply-chain` keeps
 `ubuntu-latest`. Extend `ci-structure.spec.ts` so every Linux job in these workflows either uses the
 exact expression or is on a named hosted allow-list (`supply-chain`), and no macOS, Windows or arm64
@@ -146,6 +155,9 @@ job ever does.
 - [ ] Structure spec enforces the routing. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`
   passes, and it fails on a job left at a bare `ubuntu-latest`.
 - [ ] With `TN_RUNNER` set, a PR run lands its Linux jobs on `tn-local`. proof: AC-1 run.
+- [ ] `AGENTS.md` tells agents to run focused checks and push, not the full board, while `TN_RUNNER` is set.
+  proof: `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts`
+  pass after the edit. Land it only after the AC-1 run is green.
 - [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
 
