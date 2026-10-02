@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assertExposureProof } from "./fixtures/auto-exposure/proof.js";
+import { assertExposureProof, exposureCutTiming } from "./fixtures/auto-exposure/proof.js";
 
 function report() {
   return {
@@ -18,6 +18,43 @@ function report() {
 }
 
 describe("runtime exposure proof", () => {
+  it("counts actual GPU updates to the first settled new target and reports consumed time", () => {
+    const value = report();
+    value.observations.console = [
+      {
+        text: 'TN_EXPOSURE_CUT:{"updates":30,"consumedSeconds":2,"targetStops":6.5,"settled":true}',
+      },
+      { text: 'TN_AUTO_EXPOSURE:{"targetStops":6.5,"settled":true}' },
+      { text: 'TN_EXPOSURE_TIMING:{"updates":47,"consumedSeconds":3.1}' },
+      { text: 'TN_AUTO_EXPOSURE:{"targetStops":-4.5,"settled":true}' },
+    ];
+    expect(exposureCutTiming(value, 11, 180)).toEqual({
+      renderedUpdates: 17,
+      consumedSeconds: 1.1,
+    });
+  });
+  it("rejects a stale settled readback from before the cut", () => {
+    const value = report();
+    value.observations.console = [
+      {
+        text: 'TN_EXPOSURE_CUT:{"updates":30,"consumedSeconds":2,"targetStops":6.5,"settled":true}',
+      },
+      { text: 'TN_EXPOSURE_TIMING:{"updates":47,"consumedSeconds":3.1}' },
+      { text: 'TN_AUTO_EXPOSURE:{"targetStops":6.5,"settled":true}' },
+    ];
+    expect(() => exposureCutTiming(value, 11, 180)).toThrow(/did not settle.*17.*1.1/);
+  });
+  it("rejects settling after the authored rendered-frame budget", () => {
+    const value = report();
+    value.observations.console = [
+      {
+        text: 'TN_EXPOSURE_CUT:{"updates":30,"consumedSeconds":2,"targetStops":6.5,"settled":true}',
+      },
+      { text: 'TN_EXPOSURE_TIMING:{"updates":211,"consumedSeconds":5}' },
+      { text: 'TN_AUTO_EXPOSURE:{"targetStops":-4.5,"settled":true}' },
+    ];
+    expect(() => exposureCutTiming(value, 11, 180)).toThrow(/181.*180/);
+  });
   it("owns its favicon without an unrequested missing /favicon.ico request", () => {
     const html = readFileSync(
       new URL("./fixtures/auto-exposure/index.html", import.meta.url),

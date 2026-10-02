@@ -7,7 +7,7 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
-import { assertExposureProof } from "./proof.js";
+import { assertExposureProof, exposureCutTiming } from "./proof.js";
 
 const fixture = dirname(fileURLToPath(import.meta.url));
 const root = resolve(fixture, "../../../../..");
@@ -62,11 +62,22 @@ if (!process.argv.includes("--build-only")) {
       join(directory, "report.json"),
       `${JSON.stringify({ sourceSha, ...report }, null, 2)}\n`,
     );
+    const cutTiming =
+      item.scenario === "cut"
+        ? exposureCutTiming(report, item.name === "one-stop-cut" ? 1 : 11, 180)
+        : undefined;
     const measurement = assertExposureProof(report, item.applied);
     const screenshot = join(directory, "after.png");
     if ((await stat(screenshot)).size === 0)
       throw new Error(`${item.name}: runtime screenshot missing.`);
-    results.push({ name: item.name, sourceSha, measurement, capture: report.capture, screenshot });
+    results.push({
+      name: item.name,
+      sourceSha,
+      measurement,
+      cutTiming,
+      capture: report.capture,
+      screenshot,
+    });
     await writeFile(
       join(artifacts, "summary.json"),
       `${JSON.stringify({ sourceSha, correctnessOnly: true, results }, null, 2)}\n`,

@@ -117,7 +117,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           bright = !bright;
           applyLight();
           console.info(
-            `TN_EXPOSURE_CUT:${JSON.stringify({ bright, stops: options.stops, ...exposure.timing })}`,
+            `TN_EXPOSURE_CUT:${JSON.stringify({ bright, stops: options.stops, ...exposure.timing, ...exposure.getObservation() })}`,
           );
         }
         if (frame.input.justPressed("disable")) exposure.setEnabled(false);

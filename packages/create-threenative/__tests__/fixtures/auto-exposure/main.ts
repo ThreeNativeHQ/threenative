@@ -1,4 +1,7 @@
+import { PLAYTEST_CLOCK_GLOBAL } from "../../../../core/dist/playtest.js";
 import { createExposureFixture } from "./game.js";
+// The graph consumes NodeFrame time. Let the engine's existing frame pump run during playtest waits.
+Reflect.set(globalThis, PLAYTEST_CLOCK_GLOBAL, "wall-clock");
 const query = new URLSearchParams(location.search);
 const stops = Number(query.get("stops") ?? 11);
 const snapGain = Number(query.get("snapGain") ?? 1);

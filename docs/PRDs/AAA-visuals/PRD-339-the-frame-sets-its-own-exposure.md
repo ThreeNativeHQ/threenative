@@ -179,6 +179,17 @@ after each GPU update. This diagnostic leaves the rates, thresholds and scripted
 unchanged. The runner's fixed-step path batches `waitFrames` as simulation ticks; whether the
 failed cut consumed enough rendered time remains under investigation.
 
+Timing diagnostic [run 36997457561](https://github.com/ThreeNativeHQ/threenative/actions/runs/36997457561)
+at `1f6c58af0` confirmed only 11 GPU updates and 0.7265 consumed seconds after the 180-tick cut
+wait; its last readback remained unsettled. Both static endpoints passed, with no console or
+device-loss errors. The fixture now selects the existing public wall-clock playtest mode so the
+engine's frame pump runs throughout each wait. Its rates, snap policy and 180 budget are unchanged.
+A new guard counts actual GPU updates through the first settled readback at the new target,
+rejects stale pre-cut samples, and reports consumed seconds. Three guard regressions went red
+then green; 40 exposure tests, root types and the isolated fixture build pass. Runtime rerun is
+pending. Links/citations and the real evidence cap pass; two evidence-budget subprocess tests
+cannot launch the tsx CLI because the environment rejects its Unix socket with EPERM.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
