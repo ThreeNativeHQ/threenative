@@ -81,15 +81,11 @@ const DRAW_REACH: Record<string, number> = {
 /**
  * Variants whose own reach is shorter than their asset's.
  *
- * Eight grass species is the meadow's real species count, but the three low mats are ground fuzz:
- * past the near field they are sub-pixel, and paying a draw plus an instance-buffer upload for
- * three of them in every far view is host cost for nothing. A variant named here draws less far.
+ * Empty on measurement: cutting the three low mats' reach bought nothing once the band stopped
+ * rebuilding every third frame, and it cost the far meadow its grass. A variant named here draws
+ * less far.
  */
-const VARIANT_REACH: Record<string, number> = {
-  "grass:5": 46,
-  "grass:6": 46,
-  "grass:7": 34,
-};
+const VARIANT_REACH: Record<string, number> = {};
 const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
@@ -773,12 +769,13 @@ export function createProps(
     const seenFrom = new Vector3(Number.NaN, 0, 0);
     let seenPoseVersion = poseVersion;
     const setLevels = (camera: Vector3): void => {
-      // Only when the eye has actually moved. A benchmark framing holds the camera still for
-      // hundreds of frames and the assignment cannot change, and every refill re-uploads each
-      // level's whole instance buffer — which is a cost the frame pays whether the answer moved
-      // or not.
+      // Only when the eye has actually moved, and a walk moves it every frame. 0.75 m of slack: at
+      // 5 m/s that is one refill every nine frames instead of every three, which is what put the
+      // player view's CPU p50 over the 4 ms gate — the band is rebuilt and every instanced bounding
+      // sphere recomputed from scratch, and that price is the number of plants within reach. A tree
+      // still standing at the same LOD band after three quarters of a metre of walking is invisible.
       const edited = seenPoseVersion !== poseVersion;
-      if (!edited && seenFrom.distanceToSquared(camera) < 0.25 ** 2) return;
+      if (!edited && seenFrom.distanceToSquared(camera) < 0.75 ** 2) return;
       seenFrom.copy(camera);
       seenPoseVersion = poseVersion;
       for (const group of banded) {
