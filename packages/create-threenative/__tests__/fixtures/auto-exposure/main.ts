@@ -4,7 +4,8 @@ import { createExposureFixture } from "./game.js";
 const query = new URLSearchParams(location.search);
 // Live adaptation consumes the renderer's real NodeFrame clock. Controlled arms use the
 // supported fixed-step bridge while independently waiting on actual GPU sample completion.
-if (query.get("deterministic") === "1") Reflect.deleteProperty(globalThis, PLAYTEST_CLOCK_GLOBAL);
+if (query.get("deterministic") === "1" || query.get("coldBoot") === "1")
+  Reflect.deleteProperty(globalThis, PLAYTEST_CLOCK_GLOBAL);
 else Reflect.set(globalThis, PLAYTEST_CLOCK_GLOBAL, "wall-clock");
 const stops = Number(query.get("stops") ?? 11);
 const snapGain = Number(query.get("snapGain") ?? 1);
@@ -16,6 +17,7 @@ const game = createExposureFixture({
   stops,
   snapGain,
   deterministic: query.get("deterministic") === "1",
+  coldBoot: query.get("coldBoot") === "1",
 });
 void game
   .start()

@@ -280,6 +280,24 @@ acceptance 3. Doubled-meter and wrong-clock controls fail their specific named g
 SwiftShader correctness results, not hardware timing or native parity. Cold boots, reset/rebuild
 history, native proof and full required CI remain open; phase progress remains 3/6 boxes (50%).
 
+The separate cold-boot fixture is now prepared at a predeclared age of exactly three accepted
+GPU exposure updates. It preserves the real NodeFrame deltas, freezes only the existing fixture
+history/output, and applies no controlled warmup hold. Both `snapGain=1` and `snapGain=0` arms use
+the same sunlight pose and twenty independent launches in total. The landed `assert.tone` supplies
+the named boot frame's p99; readiness age, actual update/sample indices, per-update delta and
+cumulative time are archived. Review exposed unchecked initial readiness ages and impossible
+NodeFrame chronology. The guard now compares zero-update readiness to the complete initial timing
+state, relates each accepted live delta to elapsed NodeFrame time (allowing skipped frames and only
+numeric roundoff), and requires exactly one fixed-step bridge marker. Eleven regressions failed
+before this correction; all 29 cold-boot proof tests now pass. These remain CPU evidence checks. A further review reproduced
+reordered timing markers that let impossible readiness counts pass. The verifier now reads timing,
+accepted measurement and sample events in producer order, deriving readiness counts from that
+stream. Five reordered-event regressions went red then green; nine valid readiness placements
+before/after acceptance remain accepted. All 43 cold-boot proof tests and the reviewer's 88 probes
+pass, including rejection of both previously accepted reorder traces. The ten-run spread is `(maximum - minimum) / minimum` with the
+unchanged 10% limit. The mutation must empirically exceed that limit; no qualification is claimed
+from its expected behavior. The prepared source awaits review and hosted execution.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated

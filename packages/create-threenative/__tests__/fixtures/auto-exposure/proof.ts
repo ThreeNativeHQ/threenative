@@ -138,7 +138,7 @@ function cutEntries(report: IExposureProofReport) {
   return { cut, after: entries.slice(entries.indexOf(cutEntry) + 1) };
 }
 
-function pairedExposureSamples(entries: readonly { text: string }[]): IExposureSample[] {
+export function pairedExposureSamples(entries: readonly { text: string }[]): IExposureSample[] {
   const samples: IExposureSample[] = [];
   let accepted: IExposureMeasurement | undefined;
   for (const { text } of entries) {

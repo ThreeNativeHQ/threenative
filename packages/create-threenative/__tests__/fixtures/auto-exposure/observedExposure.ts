@@ -10,6 +10,7 @@ export function exposureFrameSnapshot(frame: NodeFrame): NodeFrame {
 /** Diagnostic instrumentation around the actual generated GPU graph, never a CPU exposure model. */
 export class ObservedExposureNode extends AutoExposureNode {
   deterministic = false;
+  coldBoot = false;
   onProgress = () => {};
   timing = {
     updates: 0,
@@ -52,6 +53,17 @@ export class ObservedExposureNode extends AutoExposureNode {
     });
   }
 
+  observeColdBootStartup(startup: Pick<ICtx["startup"], "whenReady">): void {
+    if (!this.coldBoot || this.deterministic || this.#disposed)
+      throw new Error("Cold-boot observation requires an active live-clock arm.");
+    void startup.whenReady().then(() => {
+      if (!this.#disposed)
+        console.info(
+          `TN_EXPOSURE_BOOT_READY:${JSON.stringify({ ...this.timing, ...this.getProgress() })}`,
+        );
+    });
+  }
+
   beginCut(): void {
     this.#cutStart = this.timing.updates;
   }
@@ -67,8 +79,9 @@ export class ObservedExposureNode extends AutoExposureNode {
   override updateBefore(frame: NodeFrame): undefined {
     // Bound each deterministic pose to exactly 180 actual graph updates. Wait for its real
     // GPU readback before the next update, including the terminal update; then hold that history.
-    if (this.deterministic && (this.#pending || this.timing.updates - (this.#cutStart ?? 0) >= 180))
-      return;
+    const bounded = this.deterministic || this.coldBoot;
+    const limit = this.coldBoot ? 3 : 180;
+    if (bounded && (this.#pending || this.timing.updates - (this.#cutStart ?? 0) >= limit)) return;
     const input = this.deterministic ? exposureFrameSnapshot(frame) : frame;
     const next = {
       updates: this.timing.updates + 1,
@@ -84,7 +97,7 @@ export class ObservedExposureNode extends AutoExposureNode {
     if (renderer === null) throw new Error("Exposure fixture renderer missing.");
     const read = renderer.readRenderTargetPixelsAsync;
     let sampleRead: ReturnType<typeof read> | undefined;
-    if (this.deterministic) {
+    if (bounded) {
       renderer.readRenderTargetPixelsAsync = (...args) => {
         this.#pending = true;
         sampleRead = read.apply(renderer, args);
@@ -117,6 +130,8 @@ export class ObservedExposureNode extends AutoExposureNode {
               this.#sampleUpdates = next.updates;
               const sample = { ...next, measurement };
               console.info(`TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`);
+              if (this.coldBoot && next.updates === 3)
+                console.info(`TN_EXPOSURE_BOOT_FROZEN:${JSON.stringify(sample)}`);
               if (next.updates === 180) {
                 this.#releaseWarmup?.(sample);
                 this.#releaseWarmup = undefined;

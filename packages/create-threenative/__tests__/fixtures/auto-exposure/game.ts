@@ -22,6 +22,7 @@ export interface IExposureFixtureOptions {
   stops: number;
   snapGain: number;
   deterministic?: boolean;
+  coldBoot?: boolean;
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -75,11 +76,13 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
           ...exposureSettings,
           enabled: options.enabled,
           snapGain: options.snapGain,
-          reportInterval: options.deterministic === true ? 1e-6 : 0.1,
+          reportInterval: options.deterministic === true || options.coldBoot === true ? 1e-6 : 0.1,
         },
         1,
       );
       exposure.deterministic = options.deterministic === true;
+      exposure.coldBoot = options.coldBoot === true;
+      if (exposure.coldBoot) exposure.observeColdBootStartup(ctx.startup);
       if (exposure.deterministic) exposure.holdStartup(ctx.startup);
       exposure.onProgress = () => ctx.state.set(exposure.getProgress());
       ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);

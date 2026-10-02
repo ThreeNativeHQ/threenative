@@ -50,6 +50,60 @@ describe("exposure deterministic render clock", () => {
     return { node, frame, read };
   }
 
+  it("freezes a cold boot after exactly three accepted live-clock GPU samples", async () => {
+    const { node, frame, read } = harness();
+    node.deterministic = false;
+    node.coldBoot = true;
+    const ready = Promise.resolve();
+    node.observeColdBootStartup({ whenReady: () => ready });
+    for (let i = 0; i < 8; i++) {
+      node.updateBefore(frame);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      frame.time += 0.07;
+      frame.frameId++;
+    }
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(node.timing.updates).toBe(3);
+    expect(node.getProgress().sampleFrames).toBe(3);
+    expect(node.timing.consumedSeconds).toBeCloseTo(0.21);
+    expect(node.timing.realConsumedSeconds).toBeCloseTo(0.21);
+    expect(node.timing.clock).toBe("live");
+    expect(frame.deltaTime).toBe(0.07);
+    const messages = vi.mocked(console.info).mock.calls.map(([text]) => String(text));
+    expect(messages.filter((text) => text.startsWith("TN_EXPOSURE_BOOT_FROZEN:"))).toHaveLength(1);
+    expect(messages.filter((text) => text.startsWith("TN_EXPOSURE_BOOT_READY:"))).toHaveLength(1);
+    expect(messages.some((text) => text.startsWith("TN_EXPOSURE_WARMUP:"))).toBe(false);
+    node.dispose();
+  });
+
+  it("does not freeze a cold boot until its third GPU readback is accepted", async () => {
+    const { node, frame, read } = harness();
+    node.deterministic = false;
+    node.coldBoot = true;
+    for (let i = 0; i < 2; i++) {
+      node.updateBefore(frame);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      frame.time += 0.07;
+      frame.frameId++;
+    }
+    let finish!: (values: Float32Array) => void;
+    read.mockReturnValueOnce(
+      new Promise<Float32Array>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    node.updateBefore(frame);
+    expect(node.getProgress().sampleFrames).toBe(2);
+    node.updateBefore(frame);
+    expect(read).toHaveBeenCalledTimes(3);
+    finish(new Float32Array([0, 0.18, 0, 1]));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(node.getProgress().sampleFrames).toBe(3);
+    node.updateBefore(frame);
+    expect(read).toHaveBeenCalledTimes(3);
+    node.dispose();
+  });
+
   it("holds startup until the 180th accepted readback, then reports real readiness", async () => {
     const { node, frame, read } = harness();
     let held: Promise<unknown> = Promise.resolve();
