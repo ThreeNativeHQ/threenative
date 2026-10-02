@@ -11,24 +11,47 @@
 // rather than a substitute for it.
 import type { IAssetLoader } from "@threenative/core";
 import { DoubleSide, MeshStandardMaterial, RepeatWrapping, type Texture } from "three";
+import {
+  FERN_MAPS,
+  FIR_MAPS,
+  GROUND_MAPS,
+  GROUND_TILE,
+  type IGroundMaps,
+  type ISurfaceMaps,
+  NEEDLE_ATLAS,
+  PROP_MAPS,
+} from "../world/terrainAssets.js";
 
 /**
- * Which CC0 starter maps the portable ground binds. This mapping is the game's, not the package's.
+ * Every portable path is the shared one from `src/world/terrainAssets.ts`, rooted at `/`.
  *
- * Rooted at `/` rather than relative, because the export runs inside the editor at
- * `/terrain-editor/`, where a relative path would resolve under the route and 404. `src/render/
- * terrain.ts` and `propMaterials.ts` ask for the same set relatively because the runtime game is
- * served from the root; an export that loaded no art would be indistinguishable from one that did.
+ * Rooted because the export runs inside the editor at `/terrain-editor/`, where a relative path
+ * would resolve under the route and 404. The runtime game is served from the root and asks for the
+ * same paths relatively; an export that loaded no art would be indistinguishable from one that did.
  */
+const rooted = (path: string): string => `/${path}`;
+
+/**
+ * Which maps the portable ground binds: the grass set's four.
+ *
+ * A non-optional read of the shared table, because a GLB with no normal or roughness map is a
+ * different-looking ground and the grass set is the one layer that carries the full four.
+ */
+const GRASS = GROUND_MAPS.grass as Required<IGroundMaps>;
+
+/** Which maps the portable ground binds: the grass set's four. */
 const PORTABLE_MAPS = {
-  ao: "/leafy_grass/leafy_grass_ao_1k.jpg",
-  colour: "/leafy_grass/leafy_grass_diff_1k.jpg",
-  normal: "/leafy_grass/leafy_grass_nor_gl_1k.jpg",
-  roughness: "/leafy_grass/leafy_grass_rough_1k.jpg",
+  ao: rooted(GRASS.occlusion),
+  colour: rooted(GRASS.diffuse),
+  normal: rooted(GRASS.normal),
+  roughness: rooted(GRASS.roughness),
 } as const;
 
 /** Metres one tile of the grass set spans, matching `src/render/terrain.ts`'s own choice. */
-const TILE_METRES = 2.6;
+const TILE_METRES = GROUND_TILE.grass;
+
+/** One role's three maps, in the order the export binds them: albedo, normal, roughness. */
+const pbr = (set: ISurfaceMaps): string[] => [set.diffuse, set.normal, set.roughness].map(rooted);
 
 /**
  * Which starter maps each portable prop role binds.
@@ -39,25 +62,13 @@ const TILE_METRES = 2.6;
  * light are shader behaviour and stay in the game.
  */
 const PORTABLE_PROP_MAPS: Record<string, { maps: string[]; cutout?: number }> = {
-  bark: {
-    maps: [
-      "/bark_brown_02/bark_brown_02_diff_1k.jpg",
-      "/bark_brown_02/bark_brown_02_nor_gl_1k.jpg",
-      "/bark_brown_02/bark_brown_02_rough_1k.jpg",
-    ],
-  },
-  stone: {
-    maps: [
-      "/mossy_rock/mossy_rock_diff_1k.jpg",
-      "/mossy_rock/mossy_rock_nor_gl_1k.jpg",
-      "/mossy_rock/mossy_rock_rough_1k.jpg",
-    ],
-  },
-  crown: { maps: ["/needle-atlas.png"], cutout: 0.42 },
-  fern: { maps: ["/fern_02/fern_02_diff_512.jpg"], cutout: 0.4 },
-  needles: { maps: ["/fir_tree_01/fir_tree_01_twig_diff_1k.jpg"], cutout: 0.42 },
-  petal: { maps: ["/needle-atlas.png"], cutout: 0.42 },
-  pine: { maps: ["/needle-atlas.png"], cutout: 0.11 },
+  bark: { maps: pbr(PROP_MAPS.bark) },
+  stone: { maps: pbr(PROP_MAPS.stone) },
+  crown: { maps: [rooted(NEEDLE_ATLAS)], cutout: 0.42 },
+  fern: { maps: [rooted(FERN_MAPS.diffuse)], cutout: 0.4 },
+  needles: { maps: [rooted(FIR_MAPS.surface)], cutout: 0.42 },
+  petal: { maps: [rooted(NEEDLE_ATLAS)], cutout: 0.42 },
+  pine: { maps: [rooted(NEEDLE_ATLAS)], cutout: 0.11 },
 };
 
 /** The albedo a role falls back to, so a map that will not load never costs the export its shape. */

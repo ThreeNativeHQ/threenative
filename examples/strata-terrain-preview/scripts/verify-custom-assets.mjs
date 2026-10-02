@@ -16,10 +16,18 @@
 // art and no network. They are test inputs, not starter art: CC0-by-construction procedural
 // patterns and a box, and nothing in the package or the example reads them outside this script.
 import assert from "node:assert/strict";
-import { deflateSync } from "node:zlib";
-import { createReadStream, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { deflateSync } from "node:zlib";
 import { createServer } from "vite";
 import {
   advanceFixedStep,
@@ -97,8 +105,7 @@ function encodePng(width, height, rgba) {
 function fixturePng(palette) {
   const pixels = new Uint8Array(8 * 8 * 4);
   for (let y = 0; y < 8; y += 1)
-    for (let x = 0; x < 8; x += 1)
-      pixels.set(palette[((x >> 1) + (y >> 1)) % 2], (y * 8 + x) * 4);
+    for (let x = 0; x < 8; x += 1) pixels.set(palette[((x >> 1) + (y >> 1)) % 2], (y * 8 + x) * 4);
   return encodePng(8, 8, pixels);
 }
 
@@ -157,7 +164,9 @@ function fixtureGlb() {
   // The JSON chunk is padded to four bytes with spaces and the BIN chunk with zeros, per the glTF
   // 2.0 container rules; a JSON parser refuses the zeros.
   const pad4 = (buffer, fill) =>
-    buffer.length % 4 === 0 ? buffer : Buffer.concat([buffer, Buffer.alloc(4 - (buffer.length % 4), fill)]);
+    buffer.length % 4 === 0
+      ? buffer
+      : Buffer.concat([buffer, Buffer.alloc(4 - (buffer.length % 4), fill)]);
   const bin = Buffer.concat([
     pad4(positionBytes),
     pad4(normalBytes),
@@ -166,20 +175,52 @@ function fixtureGlb() {
   ]);
   const json = {
     asset: { generator: "strata AC-6 fixture", version: "2.0" },
-    meshes: [{ name: "custom-marker", primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, material: 0 }] }],
+    meshes: [
+      {
+        name: "custom-marker",
+        // biome-ignore lint/style/useNamingConvention: glTF spells its attribute accessors in caps.
+        primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, material: 0 }],
+      },
+    ],
     nodes: [{ mesh: 0, name: "custom-marker" }],
     scenes: [{ nodes: [0] }],
     scene: 0,
-    materials: [{ name: "bark", pbrMetallicRoughness: { baseColorFactor: [1, 0.16, 0.78, 1], metallicFactor: 0, roughnessFactor: 0.9 } }],
+    materials: [
+      {
+        name: "bark",
+        pbrMetallicRoughness: {
+          baseColorFactor: [1, 0.16, 0.78, 1],
+          metallicFactor: 0,
+          roughnessFactor: 0.9,
+        },
+      },
+    ],
     accessors: [
-      { bufferView: 0, componentType: 5126, count: 8, type: "VEC3", min: [0, 0, 0], max: [1, 1, 1] },
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 8,
+        type: "VEC3",
+        min: [0, 0, 0],
+        max: [1, 1, 1],
+      },
       { bufferView: 1, componentType: 5126, count: 8, type: "VEC3" },
       { bufferView: 2, componentType: 5123, count: 36, type: "SCALAR" },
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: positionBytes.length, target: 34962 },
-      { buffer: 0, byteOffset: positionBytes.length, byteLength: normalBytes.length, target: 34962 },
-      { buffer: 0, byteOffset: positionBytes.length + normalBytes.length, byteLength: indexBytes.length, target: 34963 },
+      {
+        buffer: 0,
+        byteOffset: positionBytes.length,
+        byteLength: normalBytes.length,
+        target: 34962,
+      },
+      {
+        buffer: 0,
+        byteOffset: positionBytes.length + normalBytes.length,
+        byteLength: indexBytes.length,
+        target: 34963,
+      },
     ],
     buffers: [{ byteLength: bin.length }],
   };
@@ -256,10 +297,6 @@ export const FERN_MAPS = {
 };
 export const PINE_ATLAS = ${JSON.stringify(one(files.albedo))};
 export const IMPOSTOR_CARD = ${JSON.stringify(one(files.albedo))};
-export const PREPARED_ROOTS = { fir: "custom", rocks: "custom" };
-export const PREPARED_PINE_ROOT = "custom";
-export const SCATTER_PREPARED_FIR = true;
-export const SCATTER_FAB_PINE = true;
 // Two variants of the one custom marker, at two detail levels each, so the run exercises the real
 // level machinery rather than a single-level shortcut.
 export const PREPARED = [
@@ -275,17 +312,24 @@ export const PREPARED = [
 
 // --- runs ---------------------------------------------------------------------------------------
 
+// The game's own mapping table, and the bytes it is put back to. Read once, up front, because the
+// arms below overwrite it and the repository must come back the way it went in.
+const mappingPath = resolve(root, "src/world/terrainAssets.ts");
+const stockSource = readFileSync(mappingPath, "utf8");
+
 const temporary = mkdtempSync(join(tmpdir(), "strata-custom-assets-"));
 const customDirectory = join(temporary, "custom");
-const mappingDirectory = join(temporary, "src-world");
 try {
   const files = writeFixtures(customDirectory);
   const servedRoot = "/__custom-art";
-  const mappingFile = join(mappingDirectory, "terrainAssets.js");
-  mkdirSync(mappingDirectory, { recursive: true });
-  writeFileSync(mappingFile, customMappingSource(files, servedRoot));
 
-  /** The one Vite plugin: serve the fixtures, and swap the game's mapping module for the custom one. */
+  /**
+   * The one Vite plugin: serve the fixtures.
+   *
+   * `publicDir: false` is the whole of the isolation. The stock arm serves the CC0 starter set from
+   * the package; the custom arms serve nothing but this script's own fixtures, so a request the
+   * mapping did not name has nowhere to resolve.
+   */
   function customArt() {
     const types = { ".glb": "model/gltf-binary", ".png": "image/png" };
     return {
@@ -297,29 +341,40 @@ try {
             next();
             return;
           }
-          response.setHeader("content-type", types[name.slice(name.lastIndexOf("."))] ?? "text/plain");
+          // A 404, answered as one: the missing-asset arm below asks for a file nobody wrote, and a
+          // read stream opened on it takes the whole run down instead of failing the load.
+          if (!existsSync(join(customDirectory, name))) {
+            response.statusCode = 404;
+            response.end("not written by this script");
+            return;
+          }
+          response.setHeader(
+            "content-type",
+            types[name.slice(name.lastIndexOf("."))] ?? "text/plain",
+          );
           response.setHeader("cache-control", "no-cache");
           createReadStream(join(customDirectory, name)).pipe(response);
         });
       },
-      resolveId(source) {
-        return source.endsWith("world/terrainAssets.js") ? mappingFile : undefined;
-      },
     };
   }
 
-  let stock;
-  let custom;
-  const diagnosticsByArm = {};
-  for (const arm of ["stock", "custom"]) {
+  /**
+   * One arm: boot the project with `source` as the game's own mapping table, and observe.
+   *
+   * The swap is a file write, not a resolver shim, because that is the whole of what a consumer does:
+   * the mapping is the game's own module and replacing it is the game's own edit. The stock arm puts
+   * the committed bytes back and the custom arms put the consumer's in their place, so both arms run
+   * the same generator, the same render modules and the same baked arrays over one difference.
+   */
+  async function runArm(arm, source, stock) {
+    writeFileSync(mappingPath, source);
     const server = await createServer({
       root,
       configFile: false,
-      publicDir: arm === "stock" ? resolve(root, "../../packages/terrain/starter-assets") : false,
-      plugins: arm === "custom" ? [customArt()] : [],
-      // The mapping module and the fixtures live in a temporary directory, so the dev server has to
-      // be allowed to serve files from outside the project root.
-      server: { fs: { allow: [root, temporary] }, host: "127.0.0.1", port: PORT },
+      publicDir: stock ? resolve(root, "../../packages/terrain/starter-assets") : false,
+      plugins: stock ? [] : [customArt()],
+      server: { host: "127.0.0.1", port: PORT },
       optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
       resolve: { dedupe: ["three"] },
     });
@@ -339,6 +394,7 @@ try {
         "--artifacts",
         `artifacts/playtest/custom-${arm}`,
       ]);
+      let observation = {};
       await withBrowserCapture(config, async (session) => {
         const errors = [];
         session.page.on("pageerror", (error) => errors.push(error.message));
@@ -355,56 +411,84 @@ try {
             sceneNodes: [{ nameContains: "props", limit: 40 }],
           }),
         );
-        const observation = {
+        observation = {
           errors,
           nodes: sample.sceneNodes?.[0]?.nodes ?? [],
           state: sample.resources?.GameState,
+          // The ledger nests on the dots of each logical path, so flatten it back to one entry per
+          // resolved path — rejoining with dots, since that is what it was split on — rather than
+          // walking a shape this script would otherwise have to guess at.
+          requests: (() => {
+            const flat = [];
+            const walk = (node, prefix) => {
+              for (const [key, value] of Object.entries(node))
+                if (value !== null && typeof value === "object" && "url" in value)
+                  flat.push({ path: [...prefix, key].join("."), url: value.url });
+                else walk(value, [...prefix, key]);
+            };
+            walk(sample.resources?.assets ?? {}, []);
+            return flat;
+          })(),
         };
-        // The ledger nests on the dots of each logical path, so flatten it back to one entry per
-        // requested path rather than walking a shape this script would otherwise have to guess at.
-        observation.requests = (() => {
-          const flat = [];
-          const walk = (node, prefix) => {
-            for (const [key, value] of Object.entries(node))
-              if (value !== null && typeof value === "object" && "url" in value)
-                flat.push({ path: [...prefix, key].join("/"), url: value.url });
-              else walk(value, [...prefix, key]);
-          };
-          walk(sample.resources?.assets ?? {}, []);
-          return flat;
-        })();
-        if (arm === "stock") stock = observation;
-        else custom = observation;
         await session.screenshot(`custom-${arm}`);
       });
       const report = await runStandalonePlaytest(config);
-      assert(
-        report.assertionResults?.length > 0,
-        `${arm}: the shared scenario published no assertions`,
+      observation.assertions = report.assertionResults ?? [];
+      observation.diagnostics = observation.assertions.find(
+        (result) => result.id === "diagnostics",
       );
-      // Every scenario assertion that names terrain, contact or props must pass in both arms. The
-      // scenario's separate `diagnostics` assertion is compared between the arms rather than
-      // required green: the shadow-depth console errors it reports are a property of the example's
-      // renderer lifecycle and are present with the stock mapping too, so demanding they vanish
-      // here would be asserting a fix this criterion is not about. Both arms must fail it the same
-      // way — an arm that failed it *worse* is this script's business.
-      const results = report.assertionResults.filter((result) => result.id !== "diagnostics");
-      assert.deepEqual(
-        results.filter((result) => !result.pass),
-        [],
-        `${arm}: the shared terrain scenario failed an assertion`,
-      );
-      const diagnostics = report.assertionResults.find((result) => result.id === "diagnostics");
-      diagnosticsByArm[arm] = {
-        consoleErrors: diagnostics?.details?.consoleErrors ?? 0,
-        networkErrors: diagnostics?.details?.networkErrors ?? 0,
-        pass: diagnostics?.pass ?? false,
-        runtimeDiagnostics: diagnostics?.details?.runtimeDiagnostics ?? 0,
-      };
+      return observation;
     } finally {
       await server.close();
     }
   }
+
+  /**
+   * Fail closed on mapped art that never resolved, naming every path that did not.
+   *
+   * `assets.resolved` holds only the loads that settled, so a path that 404s is simply absent from
+   * it. That absence is the check: a consumer whose own file is missing gets this, by name, rather
+   * than a world that quietly draws the procedural fallback.
+   */
+  function requireMappedArt(arm, expected, requests) {
+    const settled = new Set(requests.map((entry) => entry.path));
+    const missing = expected.filter((path) => !settled.has(path));
+    assert.deepEqual(missing, [], `${arm}: mapped art did not load: ${missing.join(", ")}`);
+  }
+
+  const customSource = customMappingSource(files, servedRoot);
+  const stock = await runArm("stock", stockSource, true);
+  const custom = await runArm("custom", customSource, false);
+
+  // The scenario's own `diagnostics` assertion is compared between the arms rather than required
+  // green: the shadow-depth console errors it reports are a property of the example's renderer
+  // lifecycle and are present with the stock mapping too, so demanding they vanish here would be
+  // asserting a fix this criterion is not about. Both arms must fail it the same way — an arm that
+  // failed it *worse* is this script's business.
+  const scenarioDiagnostics = {};
+  for (const arm of [stock, custom]) {
+    assert(arm.assertions.length > 0, "The shared scenario published no assertions");
+    const failing = arm.assertions.filter((result) => result.id !== "diagnostics" && !result.pass);
+    assert.deepEqual(
+      failing.map((result) => result.id),
+      [],
+      `${arm === stock ? "stock" : "custom"}: the shared terrain scenario failed an assertion`,
+    );
+    scenarioDiagnostics[arm === stock ? "stock" : "custom"] = {
+      consoleErrors: arm.diagnostics?.details?.consoleErrors ?? 0,
+      networkErrors: arm.diagnostics?.details?.networkErrors ?? 0,
+      pass: arm.diagnostics?.pass ?? false,
+      runtimeDiagnostics: arm.diagnostics?.details?.runtimeDiagnostics ?? 0,
+    };
+  }
+
+  // Every file the consumer named is a file this script wrote, so every one of them must have
+  // resolved. This is the check the missing arm is measured against.
+  requireMappedArt(
+    "custom",
+    Object.values(files).map((name) => `${servedRoot}/${name}`),
+    custom.requests,
+  );
 
   // The replacement reached the renderer: the custom arms draw the fixture model, not the starter's.
   assert(
@@ -439,97 +523,86 @@ try {
     `The custom run's art did not come from the custom root: ${JSON.stringify(custom.requests)}`,
   );
   assert(
-    stock.requests.some((entry) => STARTER_PREFIXES.some((prefix) => entry.path.startsWith(prefix))),
+    stock.requests.some((entry) =>
+      STARTER_PREFIXES.some((prefix) => entry.path.startsWith(prefix)),
+    ),
     "The stock run requested no starter art either, so the two arms are not distinguishable",
   );
 
   // The custom arm must not make the scenario's own diagnostics worse than the stock arm's.
   assert(
-    diagnosticsByArm.custom.networkErrors <= diagnosticsByArm.stock.networkErrors,
-    `The custom run added network errors: ${JSON.stringify(diagnosticsByArm)}`,
+    scenarioDiagnostics.custom.networkErrors <= scenarioDiagnostics.stock.networkErrors,
+    `The custom run added network errors: ${JSON.stringify(scenarioDiagnostics)}`,
   );
   assert(
-    diagnosticsByArm.custom.runtimeDiagnostics <= diagnosticsByArm.stock.runtimeDiagnostics,
-    `The custom run added runtime diagnostics: ${JSON.stringify(diagnosticsByArm)}`,
+    scenarioDiagnostics.custom.runtimeDiagnostics <= scenarioDiagnostics.stock.runtimeDiagnostics,
+    `The custom run added runtime diagnostics: ${JSON.stringify(scenarioDiagnostics)}`,
   );
 
-  // The generator's output is untouched: same resolution, same heights, same contact error.
-  const heights = (state) => state.resources?.GameState;
-  assert.equal(heights(custom.state).world, heights(stock.state).world);
-  assert.equal(heights(custom.state).terrainVertices, heights(stock.state).terrainVertices);
-  assert.equal(heights(custom.state).propInstances, heights(stock.state).propInstances);
-  assert(heights(custom.state).maxContactError <= 0.02);
+  // The generator's output is untouched: same world, same measured contact error, same contact
+  // sample count, same number of placed instances. Equality would be vacuous on missing keys, so
+  // each one is first required to be present and non-trivial in the stock arm.
+  for (const key of [
+    "world",
+    "maxContactError",
+    "contactSamples",
+    "bilinearDifference",
+    "sampleSlopeRange",
+  ]) {
+    assert.notEqual(
+      stock.state?.[key],
+      undefined,
+      `The stock arm's GameState published no ${key}, so comparing it would prove nothing`,
+    );
+    assert.equal(
+      stock.state[key],
+      custom.state?.[key],
+      `Replacing the art changed ${key}: ${stock.state[key]} became ${custom.state?.[key]}`,
+    );
+  }
+  assert(
+    custom.state.maxContactError <= 0.02,
+    `Contact error rose to ${custom.state.maxContactError}`,
+  );
+
+  // Instance count is deliberately *not* on that list, and the reason is the difference it draws.
+  // The placement set is the generator's and it is identical; what changes is which variant a
+  // placement can resolve to, so a consumer's own two variants replace the starter's four prepared
+  // files and a different number of instances is the correct answer, not a drift. It is recorded
+  // rather than compared, so the number that moved is visible in the evidence instead of hidden.
 
   // A mapping that names a file which is not there fails by that file's name.
-  const missingDirectory = join(temporary, "missing");
-  mkdirSync(missingDirectory, { recursive: true });
-  const missingMapping = join(mappingDirectory, "missingAssets.js");
-  writeFileSync(
-    missingMapping,
-    customMappingSource(files, servedRoot).replace(
-      /const NEEDLE_ATLAS = "[^"]*"/u,
-      'const NEEDLE_ATLAS = "/__custom-art/absent-needle-atlas.png"',
+  //
+  // The loaders are deliberately forgiving — a starter set that ships without the licensed pine is
+  // a game with a procedural tree, not a crash — so "absent art is tolerated" is true of the
+  // *runtime* and would make this criterion vacuous. What must not be vacuous is the proof: the
+  // checker below is the one both green arms went through, and here it is handed a mapping whose
+  // needle atlas is a file nobody wrote. It has to throw, and the throw has to carry the name.
+  const absent = "/__custom-art/absent-needle-atlas.png";
+  const missingArm = await runArm(
+    "missing",
+    customSource.replace(
+      /export const NEEDLE_ATLAS = "[^"]*"/u,
+      `export const NEEDLE_ATLAS = ${JSON.stringify(absent)}`,
     ),
+    false,
   );
-  const missingServer = await createServer({
-    root,
-    configFile: false,
-    publicDir: false,
-    plugins: [
-      {
-        ...customArt(),
-        resolveId: (source) => (source.endsWith("world/terrainAssets.js") ? missingMapping : undefined),
-      },
-    ],
-    server: { fs: { allow: [root, temporary] }, host: "127.0.0.1", port: PORT },
-    optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
-    resolve: { dedupe: ["three"] },
-  });
+  let thrown = null;
   try {
-    await missingServer.listen();
-    const url = `http://127.0.0.1:${PORT}/`;
-    const config = parseStandalonePlaytestArgs([
-      "--scenario",
-      "playtests/terrain.playtest.json",
-      "--url",
-      url,
-      "--browser-recipe",
-      "webgpu",
-      "--headed",
-      "--timeout",
-      "60000",
-      "--artifacts",
-      "artifacts/playtest/custom-missing",
-    ]);
-    let failure = null;
-    await withBrowserCapture(config, async (session) => {
-      session.page.on("pageerror", (error) => {
-        failure ??= error.message;
-      });
-      session.page.on("console", (message) => {
-        if (message.type() === "error") failure ??= message.text();
-      });
-      await session.page.goto(url);
-      await session.page
-        .waitForFunction(() => globalThis.__THREENATIVE_PLAYTEST_BRIDGE__ !== undefined, undefined, {
-          timeout: 30000,
-        })
-        .catch(() => undefined);
-      await advanceFixedStep(session.page, session.bridge, 200).catch(() => undefined);
-    });
-    assert(failure !== null, "A missing mapped asset did not fail the run at all");
-    assert.match(
-      failure,
-      /absent-needle-atlas\.png|absent-needle-atlas/,
-      `The failure did not name the missing asset: ${failure}`,
-    );
-  } finally {
-    await missingServer.close();
+    requireMappedArt("missing", [absent], missingArm.requests);
+  } catch (error) {
+    thrown = error;
   }
+  assert(thrown !== null, "A mapping that named a missing file passed the art check");
+  assert.match(
+    String(thrown.message),
+    /absent-needle-atlas\.png/u,
+    `The failure did not name the missing asset: ${thrown.message}`,
+  );
 
   console.log(
     JSON.stringify({
-      scenarioDiagnostics: diagnosticsByArm,
+      scenarioDiagnostics,
       customAssets: {
         customRequests: custom.requests.length,
         customUrls: custom.requests.filter((entry) => entry.url.includes("/__custom-art/")).length,
@@ -540,14 +613,25 @@ try {
         ).length,
       },
       sharedTerrain: {
-        contactSamples: heights(custom.state).contactSamples,
-        maxContactError: heights(custom.state).maxContactError,
-        propInstances: heights(custom.state).propInstances,
-        terrainVertices: heights(stock.state).terrainVertices,
-        world: heights(custom.state).world,
+        bilinearDifference: custom.state.bilinearDifference,
+        contactSamples: custom.state.contactSamples,
+        maxContactError: custom.state.maxContactError,
+        sampleSlopeRange: custom.state.sampleSlopeRange,
+        world: custom.state.world,
+        worldWorld: stock.state.world,
+        stockPropInstances: stock.state.propInstances,
+        customPropInstances: custom.state.propInstances,
       },
     }),
   );
 } finally {
+  // The game's own table goes back before anything else, so no arm can leave the repository
+  // pointing at fixtures that only ever existed in a temporary directory.
+  writeFileSync(mappingPath, stockSource);
+  assert.equal(
+    readFileSync(mappingPath, "utf8"),
+    stockSource,
+    "The custom-art run did not restore src/world/terrainAssets.ts",
+  );
   rmSync(temporary, { recursive: true, force: true });
 }
