@@ -6724,6 +6724,25 @@
     {
       "aliases": [],
       "constraints": [
+        "headers and checksums only; throws by name for a damaged, truncated or oversize file"
+      ],
+      "example": "const report = inspectImage(bytes, \"png\", { maxDimension: 8192 });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project sets the dimension limit"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function inspectImage( bytes: Uint8Array, format: string, limits: { … }",
+      "situations": [
+        "check an imported surface or environment image for damage and for the project's size limit"
+      ],
+      "summary": "Validate a PNG, JPEG, WebP, Radiance HDR or OpenEXR container and read its pixel size. @summary Inspect an image file's container and pixel size without decoding it",
+      "supersedes": [],
+      "symbol": "inspectImage"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "authoring data only; queries outside the extent or without observations throw"
       ],
       "example": "const observation = inspectSpatial(state, revision, { kind: \"point\", at: [0, 0] });",
@@ -6830,6 +6849,23 @@
       "summary": "The kind and format a file's own bytes declare, whatever its name says. @summary Identify a GLB, PNG, JPEG, WebP, HDR or EXR file by its header",
       "supersedes": [],
       "symbol": "sniff"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "throws by name for an input that is not <surface>.<channel> with a known channel"
+      ],
+      "example": "const space = surfaceSpace(\"bark.normal\");",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns which surface inputs exist"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function surfaceSpace(input: string): \"srgb\" | \"linear\" { … }",
+      "situations": ["decide how an imported image bound to a named surface input must be sampled"],
+      "summary": "The colour space an input's pixels are read in, from the channel its name ends with. @summary Resolve a surface input name to sRGB or linear",
+      "supersedes": [],
+      "symbol": "surfaceSpace"
     },
     {
       "aliases": [],
@@ -6961,6 +6997,27 @@
       "summary": "Normalise and validate one saved reference, exactly as a document commit would store it.",
       "supersedes": [],
       "symbol": "validateSpatialReference"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "authoring metadata only; each input is <surface>.<channel>; every asset must be a registered image"
+      ],
+      "example": "const surfaces = validateSurfaces({ \"bark.normal\": { asset: \"my-normal\" } }, document.assets ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the project's render source defines which surface inputs exist and what they draw"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }",
+      "situations": [
+        "save which imported PBR image replaces which named surface input of the project's render source"
+      ],
+      "summary": "Validate surface mappings against the registered images they name. @summary Validate terrain-editor surface image mappings",
+      "supersedes": [],
+      "symbol": "validateSurfaces"
     },
     {
       "aliases": [],

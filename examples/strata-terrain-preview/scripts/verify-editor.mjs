@@ -12,6 +12,7 @@ import {
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
 
+import { verifyModelImport } from "./verify-assets.mjs";
 import { verifyEditorCameras } from "./verify-cameras.mjs";
 import { verifyEnvironment } from "./verify-environment.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
@@ -339,19 +340,10 @@ try {
     );
     // Last: the camera block owns its document edits and needs nothing from the sections above.
     await verifyEditorCameras(session, controller, captures);
-    // Back on the ordinary editor camera, so the fixed view the captures compare is the same one.
-    await controller.camera({ op: "activate", id: null }, (await controller.snapshot()).revision);
-    await session.page.waitForFunction(() => window.strata.cameras.read().activeCamera === null);
-    const environment = await verifyEnvironment(session, controller, captures);
-    console.log(JSON.stringify({ environment }));
     assert.deepEqual(
       errors,
-      [
-        "Failed to load resource: the server responded with a status of 409 (Conflict)",
-        // The environment proof's deliberately rejected GUI value (a negative sun intensity).
-        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
-      ],
-      "Only the deliberately injected stale and invalid GUI transactions may produce a console error",
+      ["Failed to load resource: the server responded with a status of 409 (Conflict)"],
+      "Only the deliberately injected stale GUI transaction may produce a console error",
     );
     console.log(
       JSON.stringify({
@@ -381,6 +373,43 @@ try {
     );
     await advanceFixedStep(session.page, session.bridge, 2);
     await verifyToolGroups(session, controller);
+  });
+  // The world controls (environment, imported models) compare captures of one fixed view, so they get
+  // their own fresh page on the ordinary editor camera, not the state the camera block leaves behind.
+  await controller.camera({ op: "activate", id: null }, (await controller.snapshot()).revision);
+  await withBrowserCapture(config, async (session) => {
+    const errors = [];
+    session.page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await session.page.waitForFunction(
+      () => window.strata?.state && !window.strata.busy,
+      {},
+      { timeout: 30000 },
+    );
+    await advanceFixedStep(session.page, session.bridge, 2);
+    const worldCaptures = async (captureSession, name) => {
+      const taken = await captureSession.screenshot(name);
+      const directory = resolve("../../docs/verification/visuals/strata");
+      mkdirSync(directory, { recursive: true });
+      copyFileSync(taken, `${directory}/${name}.png`);
+    };
+    console.log(
+      JSON.stringify({ environment: await verifyEnvironment(session, controller, worldCaptures) }),
+    );
+    console.log(
+      JSON.stringify({ models: await verifyModelImport(session, controller, worldCaptures) }),
+    );
+    assert.deepEqual(
+      errors,
+      [
+        // The environment proof's rejected GUI value (a negative sun intensity), then the model
+        // proof's garbage GUI file: each is a deliberate 400.
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+      ],
+      "Only the deliberately rejected GUI imports may produce a console error",
+    );
   });
   const report = await runStandalonePlaytest(config);
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");

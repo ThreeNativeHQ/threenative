@@ -43,6 +43,7 @@ import {
   Vector3,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createImportedModels } from "./imports.js";
 import { landformPose } from "./landforms.js";
 import { OCEAN_LOOK, createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
@@ -105,6 +106,8 @@ export async function createEditorView(
     inspectSelection(): ReturnType<ReturnType<typeof createPropSelection>["inspect"]>;
     /** The effective environment read off the scene's own objects, with the revision it answers to. */
     inspectEnvironment(): Required<IEnvironment> & { revision: string };
+    /** Every registered model: loading, ready or failed, with the geometry actually placed. */
+    inspectAssets(): ReturnType<ReturnType<typeof createImportedModels>["status"]>;
     projectPlacement(id: string): [number, number] | undefined;
     inspectHandles(): ReturnType<ReturnType<typeof createPropSelection>["handles"]>;
     /** Every water body the rendered revision contains, and how much geometry it drew. */
@@ -514,6 +517,13 @@ export async function createEditorView(
   // material on every brush stroke.
   const propParts = buildPropVariants();
   propSurfaces = await createPropSurfaces(ctx.assets);
+  // Registered GLBs join the same variant map the scatter palette reads, loaded from the editor's own
+  // hash-named URLs so a replaced file can never be served from a stale cache.
+  const imported = createImportedModels(
+    ctx.assets,
+    propParts,
+    (asset) => new URL(`api/assets/${asset.path}`, document.baseURI).href,
+  );
   const selection = createPropSelection(
     ctx,
     controls,
@@ -549,6 +559,7 @@ export async function createEditorView(
       return `ThreeNative · ${ctx.renderer.kind}`;
     },
     setDocument(next, revision): void {
+      imported.sync(next.assets ?? []);
       // Appearance only: the lights and haze change, the terrain and its collider never do.
       if (JSON.stringify(next.environment ?? null) !== JSON.stringify(environmentOverrides ?? null))
         applyEnvironment(next.environment);
@@ -740,6 +751,8 @@ export async function createEditorView(
     },
     frame,
     cameras: () => cameras,
+    assetsReady: () => imported.ready(),
+    inspectAssets: () => imported.status(),
     environment: () => environment,
     inspect(): EditorState {
       return { ...ctx.state.getState() };
@@ -840,6 +853,7 @@ export async function createEditorView(
     },
     dispose(): void {
       selection.dispose();
+      imported.dispose();
       propSurfaces?.dispose();
       for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
       clearWater();

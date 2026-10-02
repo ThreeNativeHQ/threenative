@@ -34,7 +34,9 @@ export type {
   IFocusTarget,
   ISavedCamera,
 } from "./cameras.js";
-export { sniff, validateAsset, validateAssets } from "./assets.js";
+export { sniff, surfaceSpace, validateAsset, validateAssets, validateSurfaces } from "./assets.js";
+export { SURFACE_CHANNELS, inspectImage } from "./images.js";
+export type { IImageReport, ISurfaceChannel } from "./images.js";
 export type {
   IAssetAdjust,
   IAssetBounds,
@@ -43,6 +45,8 @@ export type {
   IAssetOperation,
   IAssetResult,
   IProjectAsset,
+  ISurfaceMapping,
+  ISurfaceMappings,
 } from "./assets.js";
 export { runEnvironmentOperation, validateEnvironment } from "./environment.js";
 export type {

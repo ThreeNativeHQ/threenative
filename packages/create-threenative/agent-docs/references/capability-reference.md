@@ -5589,6 +5589,23 @@ export function focusCamera( camera: ISavedCamera, request: IFocusRequest, resol
 const outcome = focusCamera(camera, { target: { kind: "prop", id: "pine-3" }, aspect: 16 / 9 }, resolve);
 ```
 
+### `inspectImage`
+
+`function` — Validate a PNG, JPEG, WebP, Radiance HDR or OpenEXR container and read its pixel size. @summary Inspect an image file's container and pixel size without decoding it
+
+```ts
+export function inspectImage( bytes: Uint8Array, format: string, limits: { … }
+```
+
+- **Use when:** check an imported surface or environment image for damage and for the project's size limit
+- **Constraints:** headers and checksums only; throws by name for a damaged, truncated or oversize file
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project sets the dimension limit
+
+```ts
+const report = inspectImage(bytes, "png", { maxDimension: 8192 });
+```
+
 ### `inspectSpatial`
 
 `function` — Read-only spatial inspection of one evaluated terrain revision.
@@ -5689,6 +5706,23 @@ export function sniff( bytes: Uint8Array, ): { … }
 
 ```ts
 const kind = sniff(new Uint8Array(await file.arrayBuffer()))?.kind;
+```
+
+### `surfaceSpace`
+
+`function` — The colour space an input's pixels are read in, from the channel its name ends with. @summary Resolve a surface input name to sRGB or linear
+
+```ts
+export function surfaceSpace(input: string): "srgb" | "linear" { … }
+```
+
+- **Use when:** decide how an imported image bound to a named surface input must be sampled
+- **Constraints:** throws by name for an input that is not <surface>.<channel> with a known channel
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns which surface inputs exist
+
+```ts
+const space = surfaceSpace("bark.normal");
 ```
 
 ### `TerrainEditorController`
@@ -5808,6 +5842,23 @@ export function validateSpatialReference(input: unknown): ISavedSpatialReference
 
 ```ts
 const reference = validateSpatialReference(JSON.parse(saved));
+```
+
+### `validateSurfaces`
+
+`function` — Validate surface mappings against the registered images they name. @summary Validate terrain-editor surface image mappings
+
+```ts
+export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }
+```
+
+- **Use when:** save which imported PBR image replaces which named surface input of the project's render source
+- **Constraints:** authoring metadata only; each input is <surface>.<channel>; every asset must be a registered image
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source defines which surface inputs exist and what they draw
+
+```ts
+const surfaces = validateSurfaces({ "bark.normal": { asset: "my-normal" } }, document.assets ?? []);
 ```
 
 ## `@threenative/terrain/editor/server`

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { advanceFixedStep } from "../../../packages/playtest/dist/runner/index.js";
 
 /**
@@ -22,20 +21,31 @@ export async function compareCaptures(page, first, second) {
       let diff = 0;
       let lumaLeft = 0;
       let lumaRight = 0;
+      const meanLeft = [0, 0, 0];
+      const meanRight = [0, 0, 0];
       for (let index = 0; index < left.length; index += 4) {
-        for (let channel = 0; channel < 3; channel += 1)
+        for (let channel = 0; channel < 3; channel += 1) {
           diff += Math.abs(left[index + channel] - right[index + channel]);
+          meanLeft[channel] += left[index + channel];
+          meanRight[channel] += right[index + channel];
+        }
         lumaLeft += (left[index] + left[index + 1] + left[index + 2]) / 3;
         lumaRight += (right[index] + right[index + 1] + right[index + 2]) / 3;
       }
       const pixels = left.length / 4;
+      // How far the picture's average colour moved. A moving sea shuffles pixels without moving
+      // the average, so this is the measure a lighting, haze or tint change has to beat.
+      const shift =
+        meanLeft.reduce((sum, value, channel) => sum + Math.abs(value - meanRight[channel]), 0) /
+        pixels;
       return {
+        shift,
         diff: diff / (pixels * 3),
         lumaLeft: lumaLeft / pixels,
         lumaRight: lumaRight / pixels,
       };
     },
-    [readFileSync(first).toString("base64"), readFileSync(second).toString("base64")],
+    [first.toString("base64"), second.toString("base64")],
   );
 }
 
@@ -54,14 +64,15 @@ export async function verifyEnvironment(session, controller, captures) {
       revision,
       { timeout: 5000 },
     );
-  const settled = async (name) => {
+  const settled = async () => {
     await advanceFixedStep(page, session.bridge, 30);
     await page.waitForFunction(
       (was) => window.strata.view.inspect().renderedFrames > was + 2,
       (await state()).renderedFrames,
       { timeout: 5000 },
     );
-    return session.screenshot(name);
+    // The canvas alone: page chrome (status text, panel layout) is not the world under test.
+    return page.locator("canvas.render-canvas").screenshot();
   };
 
   // The terrain, its collision source arrays and the placements are the control: no environment
@@ -82,15 +93,16 @@ export async function verifyEnvironment(session, controller, captures) {
   await advanceFixedStep(page, session.bridge, 600);
   await settled("env-warmup");
   let last = await settled("env-before");
-  const step = async (name, apply) => {
+  const step = async (label, apply) => {
     await apply();
-    const next = await settled(name);
+    const next = await settled();
     const result = await compareCaptures(page, last, next);
+    console.log(JSON.stringify({ environmentStep: label, ...result }));
     last = next;
     return result;
   };
   const control = await step("env-control", async () => {});
-  assert(control.diff < 1, `The control must be still: ${control.diff}`);
+  assert(control.shift < 0.3, `The control must hold the average colour: ${control.shift}`);
 
   // AI path: a patch through the public endpoint, sun swung low and strong.
   const sunStep = await step("env-sun", async () => {
@@ -104,10 +116,9 @@ export async function verifyEnvironment(session, controller, captures) {
   near(afterSun.sun.azimuth, -60, 1e-6, "The live sun must take the requested azimuth");
   near(afterSun.sun.elevation, 18, 1e-6, "The live sun must take the requested elevation");
   near(afterSun.sun.intensity, 6, 1e-9, "The live sun must take the requested intensity");
-  const sunDiff = sunStep.diff;
   assert(
-    sunDiff > control.diff + 0.5,
-    `A swung sun must change the picture: ${sunDiff} against a ${control.diff} control`,
+    sunStep.shift > control.shift + 0.3,
+    `A swung sun must move the average colour: ${sunStep.shift} against a ${control.shift} control`,
   );
   await captures(session, "468-environment-sun");
 
@@ -125,10 +136,9 @@ export async function verifyEnvironment(session, controller, captures) {
     );
   });
   assert.equal((await controller.snapshot()).document.environment.fog.density, 0.006);
-  const hazeDiff = hazeStep.diff;
   assert(
-    hazeDiff > control.diff + 0.5,
-    `Denser haze must change the picture: ${hazeDiff} against a ${control.diff} control`,
+    hazeStep.shift > control.shift + 0.3,
+    `Denser haze must move the average colour: ${hazeStep.shift} against a ${control.shift} control`,
   );
 
   // Colour fields and the sea: independent groups, each one visible.
@@ -148,10 +158,9 @@ export async function verifyEnvironment(session, controller, captures) {
   assert.equal(afterTints.fog.colour, "#d8a070");
   assert.equal(afterTints.ocean.shallow, "#ff3030");
   assert.equal(afterTints.ocean.deep, "#601010");
-  const tintDiff = tintStep.diff;
   assert(
-    tintDiff > control.diff + 0.5,
-    `Sky, haze and sea tints must show: ${tintDiff} against a ${control.diff} control`,
+    tintStep.shift > control.shift + 0.3,
+    `Sky, haze and sea tints must show: ${tintStep.shift} against a ${control.shift} control`,
   );
   await captures(session, "468-environment-tint");
 
@@ -245,15 +254,15 @@ export async function verifyEnvironment(session, controller, captures) {
   });
   assert.deepEqual({ ...(await live()), revision: "" }, { ...starter, revision: "" });
   assert(
-    resetStep.diff > control.diff + 0.5,
-    `Reset must change the picture back: ${resetStep.diff} against a ${control.diff} control`,
+    resetStep.shift > control.shift + 0.3,
+    `Reset must change the picture back: ${resetStep.shift} against a ${control.shift} control`,
   );
   return {
-    control: control.diff,
-    sunDiff,
-    hazeDiff,
-    tintDiff,
-    resetDiff: resetStep.diff,
+    control: control.shift,
+    sun: sunStep.shift,
+    haze: hazeStep.shift,
+    tint: tintStep.shift,
+    reset: resetStep.shift,
     exposureLuma: [exposureStep.lumaLeft, exposureStep.lumaRight],
   };
 }

@@ -7,14 +7,17 @@ import { validatePlacementOverrides } from "../core/placements.js";
 import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
+import { AssetStore } from "./assetStore.js";
 import {
-  AssetStore,
   type IAssetLimits,
   type IAssetOperation,
   type IAssetResult,
   type IProjectAsset,
+  type ISurfaceMappings,
+  surfaceSpace,
   validateAsset,
   validateAssets,
+  validateSurfaces,
 } from "./assets.js";
 import {
   type ICameraResult,
@@ -53,6 +56,8 @@ export interface IAuthoringDocument {
   environment?: IEnvironment;
   /** Registered models, images and environment files: metadata only, the files live on disk. */
   assets?: IProjectAsset[];
+  /** Imported images that replace named surface inputs of the project's render source. */
+  surfaces?: ISurfaceMappings;
 }
 export interface IEditorSnapshot {
   revision: string;
@@ -83,6 +88,7 @@ function validate(value: unknown): IAuthoringDocument {
           "activeCamera",
           "environment",
           "assets",
+          "surfaces",
         ].includes(key),
     )
   )
@@ -110,6 +116,8 @@ function validate(value: unknown): IAuthoringDocument {
     document.activeCamera = active;
   }
   if (input.assets !== undefined) document.assets = validateAssets(input.assets);
+  if (input.surfaces !== undefined)
+    document.surfaces = validateSurfaces(input.surfaces, document.assets ?? []);
   if (input.environment !== undefined)
     document.environment = validateEnvironment(input.environment);
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
@@ -461,6 +469,8 @@ export function terrainEditor(options: {
                 throw new Error("Expected an asset operation");
               const assets = current.document.assets ?? [];
               let next = assets;
+              const surfaces = current.document.surfaces ?? {};
+              let nextSurfaces = surfaces;
               let touched: IProjectAsset | null = null;
               if (operation.op === "register" || operation.op === "upload") {
                 // A browser page may only upload bytes; reading a path is the trusted local agent's.
@@ -502,17 +512,51 @@ export function terrainEditor(options: {
               } else if (operation.op === "remove") {
                 touched = assets.find((entry) => entry.id === operation.id) ?? null;
                 if (!touched) throw new EditorError(404, `No registered asset '${operation.id}'`);
+                const used = Object.entries(surfaces).filter(
+                  ([, mapping]) => mapping.asset === operation.id,
+                );
+                if (used.length)
+                  throw new EditorError(
+                    409,
+                    `Asset '${operation.id}' is mapped to ${used.map(([input]) => input).join(", ")}; unmap it first`,
+                  );
                 // The palette entry goes; the stored file and anything that referenced it stay.
                 next = assets.filter((entry) => entry.id !== operation.id);
+              } else if (operation.op === "map") {
+                // The input's channel decides its colour space; an unknown channel is refused by name.
+                surfaceSpace(operation.input);
+                touched = assets.find((entry) => entry.id === operation.asset) ?? null;
+                if (!touched || touched.kind !== "image")
+                  throw new EditorError(404, `No registered image '${operation.asset}'`);
+                nextSurfaces = { ...surfaces, [operation.input]: { asset: touched.id } };
+              } else if (operation.op === "unmap") {
+                if (!surfaces[operation.input])
+                  throw new EditorError(404, `Surface input '${operation.input}' has no mapping`);
+                nextSurfaces = Object.fromEntries(
+                  Object.entries(surfaces).filter(([input]) => input !== operation.input),
+                );
               } else if (operation.op !== "list") throw new Error("Unknown asset operation");
-              const changed = JSON.stringify(next) !== JSON.stringify(assets);
+              const changed =
+                JSON.stringify(next) !== JSON.stringify(assets) ||
+                JSON.stringify(nextSurfaces) !== JSON.stringify(surfaces);
               const revision = changed
                 ? document.commit({
                     baseRevision: current.revision,
-                    document: JSON.parse(JSON.stringify({ ...current.document, assets: next })),
+                    document: JSON.parse(
+                      JSON.stringify({
+                        ...current.document,
+                        assets: next,
+                        surfaces: Object.keys(nextSurfaces).length ? nextSurfaces : undefined,
+                      }),
+                    ),
                   }).revision
                 : current.revision;
-              const result: IAssetResult = { op: operation.op, assets: next, asset: touched };
+              const result: IAssetResult = {
+                op: operation.op,
+                assets: next,
+                surfaces: nextSurfaces,
+                asset: touched,
+              };
               json(response, 200, { ...result, revision });
               return;
             }

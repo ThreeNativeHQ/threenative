@@ -3,20 +3,8 @@
  * environment image. This file validates and measures files; it never loads or draws one — the
  * project's render source does that through `ctx.assets`.
  */
-import { createHash } from "node:crypto";
-import {
-  closeSync,
-  fstatSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
 import { Matrix4, Quaternion, Vector3 } from "three";
+import { SURFACE_CHANNELS } from "./images.js";
 
 export type IAssetKind = "model" | "image" | "environment";
 
@@ -71,10 +59,10 @@ export const DEFAULT_ASSET_LIMITS: IAssetLimits = {
   maxTriangles: 5_000_000,
 };
 export const MAX_ASSETS = 64;
-const ID = /^[a-z0-9][a-z0-9_-]{0,47}$/u;
-const PATH =
+export const ID = /^[a-z0-9][a-z0-9_-]{0,47}$/u;
+export const PATH =
   /^(models|images|environments)\/[a-f0-9]{12}-[a-z0-9_-]+\.(glb|png|jpg|webp|hdr|exr)$/u;
-const FOLDER: Record<IAssetKind, string> = {
+export const FOLDER: Record<IAssetKind, string> = {
   model: "models",
   image: "images",
   environment: "environments",
@@ -457,12 +445,23 @@ export type IAssetOperation =
       readonly replace?: boolean;
     }
   | { readonly op: "adjust"; readonly id: string; readonly adjust: unknown }
+  /** Bind an image asset to one named surface input of the project's render source. */
+  | { readonly op: "map"; readonly input: string; readonly asset: string }
+  /** Return one surface input to the project's own art. */
+  | { readonly op: "unmap"; readonly input: string }
   /** Removes the palette entry only; the stored file is never erased. */
   | { readonly op: "remove"; readonly id: string };
+
+/** One surface input and the registered image that replaces its starter art. */
+export interface ISurfaceMapping {
+  readonly asset: string;
+}
+export type ISurfaceMappings = Record<string, ISurfaceMapping>;
 
 export interface IAssetResult {
   readonly op: string;
   readonly assets: readonly IProjectAsset[];
+  readonly surfaces: ISurfaceMappings;
   readonly asset: IProjectAsset | null;
 }
 
@@ -491,95 +490,58 @@ export function sniff(
   return undefined;
 }
 
+const SURFACE_INPUT = /^[a-z0-9][a-z0-9_-]{0,31}\.([a-z]+)$/u;
+
 /**
- * Where registered files live. The directory is configured by the project and every stored file
- * name carries its own content hash, so a replaced file can never be served from a stale cache.
+ * The colour space an input's pixels are read in, from the channel its name ends with.
+ * @summary Resolve a surface input name to sRGB or linear
+ * @requires npm i -D @threenative/terrain
+ * @situation decide how an imported image bound to a named surface input must be sampled
+ * @constraint throws by name for an input that is not <surface>.<channel> with a known channel
+ * @example const space = surfaceSpace("bark.normal");
+ * @override the project owns which surface inputs exist
  */
-export class AssetStore {
-  readonly dir: string;
-  readonly limits: IAssetLimits;
-  constructor(dir: string, limits: Partial<IAssetLimits> = {}) {
-    if (!isAbsolute(dir)) throw new Error("Assets directory must be absolute");
-    this.dir = resolve(dir);
-    this.limits = { ...DEFAULT_ASSET_LIMITS, ...limits };
-  }
-  /** Read a local source file for registration: a regular file, never a link, within the limit. */
-  readSource(path: string): Uint8Array {
-    if (!isAbsolute(path)) throw new Error("Asset path must be absolute");
-    const info = lstatSync(path);
-    if (!info.isFile() || info.isSymbolicLink())
-      throw new Error("Asset path must be a regular file");
-    if (info.size > this.limits.maxBytes)
+export function surfaceSpace(input: string): "srgb" | "linear" {
+  const channel = SURFACE_INPUT.exec(input)?.[1];
+  const space = channel
+    ? (SURFACE_CHANNELS as Record<string, "srgb" | "linear">)[channel]
+    : undefined;
+  if (!space)
+    throw new Error(
+      `Surface input '${input}' must be <surface>.<channel>, channel one of ${Object.keys(SURFACE_CHANNELS).join(", ")}`,
+    );
+  return space;
+}
+
+/**
+ * Validate surface mappings against the registered images they name.
+ * @summary Validate terrain-editor surface image mappings
+ * @requires npm i -D @threenative/terrain
+ * @situation save which imported PBR image replaces which named surface input of the project's render source
+ * @constraint authoring metadata only; each input is <surface>.<channel>; every asset must be a registered image
+ * @example const surfaces = validateSurfaces({ "bark.normal": { asset: "my-normal" } }, document.assets ?? []);
+ * @override the project's render source defines which surface inputs exist and what they draw
+ */
+export function validateSurfaces(
+  input: unknown,
+  assets: readonly IProjectAsset[],
+): ISurfaceMappings {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new Error("surfaces must be an object");
+  const entries = Object.entries(input as Record<string, unknown>);
+  if (entries.length > 64) throw new Error("A document holds at most 64 surface mappings");
+  const out: ISurfaceMappings = {};
+  for (const [key, value] of entries) {
+    surfaceSpace(key);
+    const mapping = value as { asset?: unknown } | null;
+    if (!mapping || typeof mapping !== "object" || Object.keys(mapping).some((k) => k !== "asset"))
+      throw new Error(`surfaces.${key} must be { asset }`);
+    const asset = assets.find((entry) => entry.id === mapping.asset);
+    if (!asset || asset.kind !== "image")
       throw new Error(
-        `Asset is ${info.size} bytes; this project's limit is ${this.limits.maxBytes}`,
+        `surfaces.${key} names '${String(mapping.asset)}', which is not a registered image`,
       );
-    const descriptor = openSync(path, "r");
-    try {
-      const bytes = new Uint8Array(fstatSync(descriptor).size);
-      let read = 0;
-      while (read < bytes.length) {
-        const count = readSync(descriptor, bytes, read, bytes.length - read, read);
-        if (!count) break;
-        read += count;
-      }
-      return bytes;
-    } finally {
-      closeSync(descriptor);
-    }
+    out[key] = { asset: asset.id };
   }
-  /** The bytes of one stored file, addressed only by a path an entry carries. */
-  read(path: string): Buffer {
-    if (!PATH.test(path)) throw new Error("Unknown asset file");
-    return readFileSync(join(this.dir, path));
-  }
-  /** Measure, hash and store one file; the returned entry is what the document saves. */
-  store(
-    id: string,
-    name: string,
-    bytes: Uint8Array,
-    extra: { license?: string; source?: string; kind?: IAssetKind },
-  ): IProjectAsset {
-    if (!ID.test(id)) throw new Error(`Asset id '${id}' must be lowercase letters, digits, - or _`);
-    if (bytes.byteLength > this.limits.maxBytes)
-      throw new Error(
-        `Asset is ${bytes.byteLength} bytes; this project's limit is ${this.limits.maxBytes}`,
-      );
-    const kind = sniff(bytes);
-    if (!kind)
-      throw new Error(`'${name}' is not a supported GLB, PNG, JPEG, WebP, HDR or EXR file`);
-    if (extra.kind && extra.kind !== kind.kind)
-      throw new Error(`'${name}' is a ${kind.kind} file, not a ${extra.kind}`);
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
-    const measured = kind.kind === "model" ? inspectGlb(bytes, this.limits) : undefined;
-    const path = `${FOLDER[kind.kind]}/${sha256.slice(0, 12)}-${id}.${kind.ext}`;
-    mkdirSync(join(this.dir, FOLDER[kind.kind]), { recursive: true });
-    const target = join(this.dir, path);
-    const temporary = `${target}.${process.pid}.tmp`;
-    // Content-addressed: the same bytes under the same id are already stored, never rewritten.
-    try {
-      lstatSync(target);
-    } catch {
-      writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
-      renameSync(temporary, target);
-    }
-    return validateAsset({
-      id,
-      kind: kind.kind,
-      name: name.slice(0, 128),
-      path,
-      sha256,
-      bytes: bytes.byteLength,
-      status: "ready",
-      ...(extra.license ? { license: extra.license } : {}),
-      ...(extra.source ? { source: extra.source } : {}),
-      ...(measured
-        ? {
-            bounds: measured.bounds,
-            triangles: measured.triangles,
-            ...(measured.diagnostics.length ? { diagnostics: measured.diagnostics } : {}),
-            adjust: { scale: 1, pivot: "base" },
-          }
-        : {}),
-    });
-  }
+  return out;
 }
