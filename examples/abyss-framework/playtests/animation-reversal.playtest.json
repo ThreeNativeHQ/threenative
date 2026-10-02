@@ -1,0 +1,92 @@
+{
+  "name": "animation-reversal-preserves-live-loop-pose",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "walk-start",
+      "waitTicks": 12,
+      "screenshot": "walk-start.png"
+    },
+    {
+      "kind": "wait",
+      "label": "run-start",
+      "waitTicks": 6,
+      "screenshot": "run-start.png"
+    },
+    {
+      "kind": "wait",
+      "label": "return-to-idle",
+      "waitTicks": 6,
+      "screenshot": "return-to-idle.png"
+    },
+    {
+      "kind": "wait",
+      "label": "rapid-reversals",
+      "waitTicks": 24,
+      "screenshot": "rapid-reversals.png"
+    },
+    {
+      "kind": "wait",
+      "label": "settled-idle",
+      "waitTicks": 42,
+      "screenshot": "settled-idle.png"
+    },
+    {
+      "kind": "wait",
+      "label": "disposed",
+      "waitTicks": 60
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "reversals",
+        "equals": 9
+      },
+      {
+        "id": "state",
+        "path": "maxWeightError",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxPoseJump",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "maxPhaseJump",
+        "gte": 0,
+        "lte": 1e-6
+      },
+      {
+        "id": "state",
+        "path": "activeActions",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "disposedActions",
+        "equals": 0
+      }
+    ]
+  },
+  "artifacts": {
+    "screenshots": "before-after"
+  }
+}

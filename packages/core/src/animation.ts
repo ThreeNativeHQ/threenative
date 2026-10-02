@@ -237,6 +237,7 @@ export class AnimationPlayer {
   #fadeOut: { action: AnimationAction; from: number }[] = [];
   #fadeElapsed = 0;
   #fadeDuration = 0;
+  #fadeInFrom = 0;
   #clips = new Map<string, AnimationClip>();
   #clipGroundSpeed = new Map<string, IClipStride>();
   #preparation: RigPreparation | undefined;
@@ -501,9 +502,11 @@ export class AnimationPlayer {
   }
 
   #playNext(name: string, next: AnimationAction, options: IAnimationPlayOptions): void {
-    const previous = this.#current === undefined ? undefined : this.#actions.get(this.#current);
     const fade = Math.max(0, options.fade ?? 0);
     const once = options.mode === "once";
+    const from = fade > 0 && next.isScheduled() ? next.getEffectiveWeight() : 0;
+    // A loop that is still visible keeps its gait; explicit one-shots and mode changes replay.
+    const time = from > 0 && !once && next.loop === LoopRepeat ? next.time : 0;
 
     // Every clip still contributing ramps out together, from the weight it currently holds.
     //
@@ -515,15 +518,12 @@ export class AnimationPlayer {
     for (const action of this.#actions.values()) {
       if (action === next) continue;
       const weight = action.getEffectiveWeight();
-      if (weight > 1e-4) outgoing.push({ action, from: weight });
+      if (action.isScheduled() && weight > 0) outgoing.push({ action, from: weight });
       else action.setEffectiveWeight(0).stop();
     }
-    if (previous !== undefined && !outgoing.some((entry) => entry.action === previous)) {
-      previous.setEffectiveWeight(1).play();
-      outgoing.push({ action: previous, from: 1 });
-    }
 
-    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? 0 : 1);
+    this.#playAction(next, once ? "once" : "loop", fade > 0 && outgoing.length > 0 ? from : 1);
+    next.time = time;
     if (outgoing.length === 0 || fade === 0) {
       for (const entry of outgoing) entry.action.setEffectiveWeight(0).stop();
       this.#fadeOut = [];
@@ -532,6 +532,7 @@ export class AnimationPlayer {
       this.#fadeOut = outgoing;
       this.#fadeElapsed = 0;
       this.#fadeDuration = fade;
+      this.#fadeInFrom = from;
     }
     this.#current = name;
     this.#mode = once ? "once" : "loop";
@@ -567,7 +568,9 @@ export class AnimationPlayer {
       for (const entry of this.#fadeOut) {
         entry.action.setEffectiveWeight(entry.from * (1 - progress));
       }
-      this.#actions.get(this.#current ?? "")?.setEffectiveWeight(progress);
+      this.#actions
+        .get(this.#current ?? "")
+        ?.setEffectiveWeight(this.#fadeInFrom + (1 - this.#fadeInFrom) * progress);
       if (linear >= 1) {
         for (const entry of this.#fadeOut) entry.action.setEffectiveWeight(0).stop();
         this.#fadeOut = [];
