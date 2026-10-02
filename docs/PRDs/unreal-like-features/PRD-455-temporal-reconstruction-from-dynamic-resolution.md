@@ -304,3 +304,13 @@ and [actual combined temporal frame 30](../../verification/prd455/combined-tempo
 unchanged renderer bytes. The frame was inspected; the matched no-AA reference bytes are unchanged
 from the earlier linked reference. The separate velocity and tone workflows also pass on this exact
 combined source, while temporal intentionally fails the unchanged quality bar.
+
+
+The next fixture-only diagnostic observes the already-compiled instance draw at frames 22–24,
+recording the actual vertex shader, matrix attribute bytes/versions and object identities. It
+does not invoke another compile or render, and releases its temporary draw observer on disposal.
+The existing quality thresholds and appearance stay unchanged. This isolates the one-frame
+recompile corner before any engine patch; PR393 retains canonical motion-history ownership.
+A separate HDR-reference hypothesis is not supported by the captured sequence: across all 32
+reference/no-AA PNGs, non-marker channel maxima are 189/227/242 and no non-marker channel
+saturates. The authored marker is unit red. No reference method or score has been changed.

@@ -109,10 +109,33 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     };
   }) : null;
   let frame = 0;
+  let instanceDraw = null;
+  // Fixture-only observation of the actual compiled draw. Unlike getShaderAsync(), this never
+  // compiles an extra pass or advances previous-frame bookkeeping while inspecting the shader.
+  const originalDraw = renderer.backend.draw;
+  const observedDraw = function (renderObject, ...args) {
+    if (renderObject.object === instances && frame >= 21 && frame <= 23) {
+      const state = renderObject.getNodeBuilderState();
+      instanceDraw = {
+        frame: frame + 1,
+        objectUuid: instances.uuid,
+        matrixUuid: instances.instanceMatrix.uuid,
+        vertexShader: state.vertexShader,
+        beforeEvents: state.updateBeforeNodes.map((node) => node.eventType ?? node.constructor.name),
+        attributes: state.nodeAttributes.filter(({ node }) => node?.attribute?.data?.stride === 16).map(({ name, node }) => ({
+          name, bufferUuid: node.attribute.data.uuid, version: node.attribute.data.version,
+          isCurrent: node.attribute.data.array === instances.instanceMatrix.array,
+          values: Array.from(node.attribute.data.array),
+        })),
+      };
+    }
+    return originalDraw.call(this, renderObject, ...args);
+  };
+  if (variant === "recompile") renderer.backend.draw = observedDraw;
   let resets = 0;
   let lastReset = null;
   const observation = () => ({
-    frame, resets, lastReset, aa: temporal?.report() ?? null,
+    frame, resets, lastReset, aa: temporal?.report() ?? null, instanceDraw,
     measurement, variant, setupCount, setupDuringJitter, occluderVisible: measurement && occluder.visible,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     velocityProbe: velocityProbe?.observation() ?? null,
@@ -128,6 +151,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     instancedHistory: readVelocityPreviousMatrices(instances) !== undefined,
   });
   const render = () => {
+    instanceDraw = null;
     if (variant === "recompile" && frame === 22) renderer.contextNode.needsUpdate = true;
     if (measurement) occluder.visible = frame < 28 && !variant.endsWith("-open");
     rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
@@ -152,6 +176,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     render, observation,
     sampleVelocity: () => velocityProbe?.read(),
     dispose: () => {
+      if (renderer.backend.draw === observedDraw) renderer.backend.draw = originalDraw;
       velocityProbe?.dispose();
       chain.dispose(); tracker.clear(); scenePass.dispose(); pipeline.dispose();
       const geometries = new Set();
