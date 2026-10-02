@@ -129,6 +129,7 @@ async function main(): Promise<void> {
         server: {
           cwd: root,
           command:
+            `VQ_FOG_HTTP_LOG=${JSON.stringify(path.join(directory, "http-errors.jsonl"))} ` +
             "node examples/abyss-framework/node_modules/vite/bin/vite.js preview --config examples/abyss-framework/vq-fog/vite.config.ts --host 127.0.0.1 --port ${PORT}",
           timeoutMs: 60_000,
         },
