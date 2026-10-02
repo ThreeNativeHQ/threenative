@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "../examples/abyss-framework/node_modules/vite/dist/node/index.js";
@@ -29,6 +29,18 @@ await build({
     rollupOptions: { input: path.join(fixture, "animation-reversal.html") },
   },
 });
+// The framework probes a manifest at boot. Publish Vite's actual emitted model URL so
+// the capture proves a clean asset load rather than suppressing an expected 404.
+const models = (await readdir(path.join(site, "assets"))).filter((file) =>
+  /^mannequin-.*\.glb$/.test(file),
+);
+assert.equal(models.length, 1, "Capture build must emit exactly one mannequin GLB.");
+const modelUrl = `/assets/${models[0]}`;
+await writeFile(
+  path.join(site, "assets.manifest.json"),
+  `${JSON.stringify({ version: 1, entries: { [modelUrl]: { output: modelUrl } } }, null, 2)}\n`,
+);
+
 if (!process.argv.includes("--build-only")) {
   const reports = [];
   for (const tick of [24, 25, 26, 48, 108]) {
