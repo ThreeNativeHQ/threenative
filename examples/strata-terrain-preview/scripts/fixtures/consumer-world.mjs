@@ -19,14 +19,15 @@ import {
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+// 4x4, not 1x1: a game's asset pipeline compresses textures in 4-pixel blocks.
 const map = (colour) => {
-  const value = new DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1);
+  const value = new DataTexture(new Uint8Array(4 * 4 * 4).fill(160), 4, 4);
   value.needsUpdate = true;
   if (colour) value.colorSpace = SRGBColorSpace;
   return value;
 };
 
-export async function exportAndLoad(document, revision, sampleIndices) {
+export async function exportAndLoad(document, revision, sampleIndices, withBytes = false) {
   const evaluated = Terrain.fromJSON(document.recipe).evaluate();
   const state = applyPlacementOverrides(evaluated, document.placementOverrides ?? {});
   const geometry = toGeometry(bakeMesh(state));
@@ -98,7 +99,17 @@ export async function exportAndLoad(document, revision, sampleIndices) {
     if (object.name.startsWith("water")) waterIds.push(object.name.replace(/^water:?/, ""));
   });
   const position = loadedTerrain.geometry.getAttribute("position");
+  const base64 = withBytes
+    ? await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.readAsDataURL(new Blob([output.bytes]));
+      })
+    : undefined;
   return {
+    glbBase64: base64,
+    heights: withBytes ? Array.from(state.height) : undefined,
     report: output.report,
     glbBytes: output.bytes.length,
     resolution: state.resolution,

@@ -52,11 +52,11 @@ export async function openConsumerPage({ consumer, repo, port = 5184 }) {
   return {
     problems,
     /** Export one saved document in the page and read the file back with a plain GLTFLoader. */
-    exportAndLoad: (document, revision, sampleIndices) =>
+    exportAndLoad: (document, revision, sampleIndices, withBytes = false) =>
       page.evaluate(
-        async ([doc, rev, indices]) =>
-          (await import("/world-fixture.mjs")).exportAndLoad(doc, rev, indices),
-        [document, revision, sampleIndices],
+        async ([doc, rev, indices, bytes]) =>
+          (await import("/world-fixture.mjs")).exportAndLoad(doc, rev, indices, bytes),
+        [document, revision, sampleIndices, withBytes],
       ),
     close: async () => {
       await browser.close();

@@ -159,9 +159,16 @@
         "scale": [2, 0.5, 1.5],
         "grounding": false
       }
+    },
+    "environment": {
+      "exposure": 1.2,
+      "sun": { "azimuth": 200, "elevation": 25, "intensity": 3.2, "colour": "#ffe2b8" },
+      "fill": { "intensity": 0.35 },
+      "sky": { "colour": "#7fb0d8" },
+      "fog": { "mode": "exp2", "colour": "#a9c4d6", "density": 0.0012 }
     }
   },
-  "revision": "a39f0ba4be65c50f05e9718adba3eadf7efed1196366ab40ef3bdc2c187afbad",
+  "revision": "70744865b80ec9c5b1790fe97ac9866652250e50a8a06cc590d1a275d83479d9",
   "resolution": 129,
   "size": 512,
   "sampleIndices": [0, 129, 4096, 8256, 8320, 12000, 16512, 16640, 8693, 8437, 8180, 7794, 7667],

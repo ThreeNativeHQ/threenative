@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openConsumerPage } from "./consumer-world.mjs";
+import { verifyGameHandoff } from "./verify-game-handoff.mjs";
 
 const root = resolve(".");
 const repo = resolve(root, "../..");
@@ -406,6 +407,59 @@ try {
   assert.deepEqual(replayed.editorGlobals, []);
   assert.deepEqual(replayed.storedKeys, []);
 
+  // --- PRD-466 AC-8: every world bake.mjs exports, as a FULL-world GLB -------------------------------
+  // Terrain, any placements and any water, exported and read back in the plain page. A world with no
+  // scatter layer exports no placements, and is reported as such rather than counted as complete:
+  // only a world that places something proves the placement half of this criterion.
+  const everyWorld = await openConsumerPage({ consumer, repo });
+  const fullWorlds = [];
+  try {
+    for (const name of worldNames) {
+      const recipe = recipes[name].toJSON();
+      const revision = createHash("sha256").update(JSON.stringify(recipe)).digest("hex");
+      const full = await everyWorld.exportAndLoad(
+        { version: 1, recipe },
+        revision,
+        [0, 1000, 33024, 66048],
+      );
+      assert.deepEqual(full.loadedHeights, full.stateHeights, `${name}: full-world GLB terrain`);
+      assert.equal(full.placements.length, full.report.placementIds.length, `${name}: placements`);
+      assert.equal(full.externalUris, 0, `${name}: external URI`);
+      assert.equal(full.cameras, 0);
+      fullWorlds.push({
+        world: name,
+        placements: full.placements.length,
+        water: full.waterIds,
+        glbBytes: full.glbBytes,
+        complete: full.placements.length > 0,
+      });
+    }
+    assert.deepEqual(everyWorld.problems, []);
+  } finally {
+    await everyWorld.close();
+  }
+
+  // --- PRD-468 AC-8: an ordinary ThreeNative game adopts the exported world ------------------------
+  // CONSUMER_GAME=skip leaves this stage out (it scaffolds, installs, builds and plays a game).
+  const gameHandoff =
+    process.env.CONSUMER_GAME === "skip"
+      ? "skipped (CONSUMER_GAME=skip)"
+      : await verifyGameHandoff({
+          repo,
+          temporary,
+          polished,
+          withPage: async (use) => {
+            const open = await openConsumerPage({ consumer, repo });
+            try {
+              const result = await use(open);
+              assert.deepEqual(open.problems, []);
+              return result;
+            } finally {
+              await open.close();
+            }
+          },
+        });
+
   const optional = {
     graph,
     workflowRan: [
@@ -509,6 +563,8 @@ try {
       templatesChecked: templates.length,
       freshScaffold: fresh.target.split("/").at(-1),
       optionalTooling: optional,
+      gameHandoff,
+      fullWorlds,
       worlds: authored.map((entry) => ({
         world: entry.world,
         heights: entry.heights,

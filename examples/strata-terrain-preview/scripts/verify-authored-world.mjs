@@ -18,6 +18,13 @@ import {
 } from "../../../packages/playtest/dist/runner/index.js";
 
 const FIXTURE = resolve("scripts/fixtures/editor-authored.json");
+const LOOK = {
+  sun: { azimuth: 200, elevation: 25, intensity: 3.2, colour: "#ffe2b8" },
+  fill: { intensity: 0.35 },
+  sky: { colour: "#7fb0d8" },
+  fog: { mode: "exp2", colour: "#a9c4d6", density: 0.0012 },
+  exposure: 1.2,
+};
 const SPREAD = [0, 129, 4096, 8256, 8320, 12000, 16512, 16640];
 const root = resolve(".");
 const temporary = mkdtempSync(join(tmpdir(), "strata-authored-"));
@@ -165,7 +172,18 @@ try {
       timeout: 30000,
     });
     await idle();
+    // The look the game will adopt, saved as the explicit settings the handoff carries.
+    await controller.environment(
+      { op: "patch", values: LOOK },
+      (await controller.snapshot()).revision,
+    );
     const saved = await controller.snapshot();
+    await page.waitForFunction(
+      (rev) => window.strata.view.inspectEnvironment().revision === rev,
+      saved.revision,
+      { timeout: 10000 },
+    );
+    assert.deepEqual(saved.document.environment, LOOK, "The environment settings were saved");
     assert(
       saved.document.placementOverrides?.[chosen.id],
       "The numeric panel must save the override",
