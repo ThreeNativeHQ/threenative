@@ -8,7 +8,11 @@ import { createTemporalAA } from "../templates/starter/src/render/temporalAA.js"
 afterEach(() => vi.restoreAllMocks());
 function fixture() {
   // GPU execution belongs to the runtime fixture. Unit tests isolate reset/lifetime ownership.
-  vi.spyOn(TRAANode.prototype, "updateBefore").mockImplementation(() => undefined);
+  const events: string[] = [];
+  vi.spyOn(TRAANode.prototype, "updateBefore").mockImplementation(() => {
+    events.push("resolve");
+    return undefined;
+  });
   const camera = new PerspectiveCamera(50, 1280 / 720);
   const scenePass = pass(new Scene(), camera);
   scenePass.setSize(1280, 720);
@@ -25,6 +29,7 @@ function fixture() {
     renderer: {
       initRenderTarget: () => {},
       copyTextureToTexture: (from: Texture, to: Texture) => {
+        events.push("copy");
         copies.push({ from, to });
       },
     },
@@ -34,15 +39,16 @@ function fixture() {
     setViewOffset(width: number, height: number): void;
     clearViewOffset(): void;
     _historyRenderTarget: RenderTarget;
+    _resolveRenderTarget: RenderTarget;
   };
   node.setSize(1280, 720);
   temporal.node.setup({ context: { velocity }, renderer: {} } as unknown as NodeBuilder);
-  return { camera, copies, frame, node, scenePass, temporal };
+  return { camera, copies, events, frame, node, scenePass, temporal };
 }
 
 describe("opt-in full-resolution temporal AA", () => {
   it("seeds current colour on first use and a camera cut, not ordinary frames", () => {
-    const { temporal, frame, copies, scenePass, node } = fixture();
+    const { temporal, frame, copies, events, scenePass, node } = fixture();
     temporal.node.updateBefore(frame);
     expect(temporal.report()).toMatchObject({
       frame: 1,
@@ -53,11 +59,16 @@ describe("opt-in full-resolution temporal AA", () => {
     });
     expect(copies[0]).toEqual({
       from: scenePass.renderTarget.texture,
+      to: node._resolveRenderTarget.texture,
+    });
+    expect(copies[1]).toEqual({
+      from: scenePass.renderTarget.texture,
       to: node._historyRenderTarget.texture,
     });
+    expect(events).toEqual(["resolve", "copy", "copy"]);
     temporal.node.updateBefore(frame);
     expect(temporal.report()).toMatchObject({ frame: 2, historyValid: true, resetReason: null });
-    expect(copies).toHaveLength(1);
+    expect(copies).toHaveLength(2);
     temporal.resetHistory("camera-cut");
     temporal.node.updateBefore(frame);
     expect(temporal.report()).toMatchObject({
@@ -65,7 +76,7 @@ describe("opt-in full-resolution temporal AA", () => {
       historyValid: false,
       resetReason: "camera-cut",
     });
-    expect(copies).toHaveLength(2);
+    expect(copies).toHaveLength(4);
     temporal.dispose();
     scenePass.dispose();
   });

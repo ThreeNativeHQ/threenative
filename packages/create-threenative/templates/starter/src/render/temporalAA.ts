@@ -81,17 +81,15 @@ export function createTemporalAA(
     if (report.frame > 0 && (width !== report.inputWidth || height !== report.inputHeight))
       pending = "resize";
     const reason = pending;
-    // Size mismatches are restarted by upstream. A same-sized cut otherwise retains old colour.
-    if (
-      reason !== null &&
-      internals._historyRenderTarget.width === width &&
-      internals._historyRenderTarget.height === height
-    ) {
-      frame.renderer.initRenderTarget(internals._historyRenderTarget);
-      frame.renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
-    }
     try {
       updateBefore(frame);
+      if (reason !== null) {
+        // Seeding history before resolve is insufficient: motion would still sample that seed
+        // at shifted UVs. Publish this frame verbatim, then seed next frame, after upstream has
+        // updated dimensions, depth and camera bookkeeping. A reset intentionally skips AA once.
+        frame.renderer.copyTextureToTexture(source.texture, internals._resolveRenderTarget.texture);
+        frame.renderer.copyTextureToTexture(source.texture, internals._historyRenderTarget.texture);
+      }
     } catch (error) {
       pending = "scene-reset";
       throw error;

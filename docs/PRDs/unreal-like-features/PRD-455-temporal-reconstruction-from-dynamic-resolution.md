@@ -94,6 +94,14 @@ experimental path or mark the draft ready before the outstanding acceptance evid
   The complete repository test/budget/quality board and temporal visual-quality corpus are still
   unrun for this slice. The optional conformance row does not qualify any native target.
 
+  Follow-up, 2026-10-02: hosted run `36986673556` passed 61 focused tests, then failed in
+  the source-loaded runner's serialized callback (`__name` undefined), before temporal evidence.
+  The verifier now imports the freshly built public runner rather than source-transpiled browser
+  callbacks and preserves early failure diagnostics. A fresh red-to-green lifecycle regression
+  also requires reset frames to overwrite **both** resolved output and next-frame history with
+  current colour after upstream bookkeeping; a pre-resolve seed alone still reprojects at shifted
+  UVs and is not complete rejection. Five lifecycle tests pass; screenshot proof remains pending.
+
 - [ ] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion.
 - [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
 

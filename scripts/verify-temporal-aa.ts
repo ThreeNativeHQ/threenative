@@ -3,8 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
-import { WEBGPU_BROWSER_ARGS } from "../packages/playtest/src/runner/browser.js";
-import { runStandalonePlaytest } from "../packages/playtest/src/runner/runner.js";
+import {
+  WEBGPU_BROWSER_ARGS,
+  runStandalonePlaytest,
+} from "../packages/playtest/dist/runner/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "artifacts/temporal-aa");
@@ -13,6 +15,7 @@ const summaries = [];
 let referenceFrame: number | undefined;
 for (const variant of ["reference", "temporal", "cut", "projection", "resize"] as const) {
   const artifactDirectory = path.join(output, variant);
+  await mkdir(artifactDirectory, { recursive: true });
   const report = await runStandalonePlaytest({
     allowSoftwareAdapter: true,
     artifactDirectory,
@@ -29,6 +32,20 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
     timeoutMs: 60_000,
     trace: false,
     url: `http://127.0.0.1:5173/temporal.html?variant=${variant}`,
+  }).catch(async (error: unknown) => {
+    await writeFile(
+      path.join(artifactDirectory, "failure.json"),
+      `${JSON.stringify(
+        {
+          variant,
+          pass: false,
+          error: error instanceof Error ? error.stack : String(error),
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    throw error;
   });
   await writeFile(
     path.join(artifactDirectory, "report.json"),
