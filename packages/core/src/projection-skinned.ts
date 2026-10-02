@@ -114,10 +114,7 @@ export function tintableMaterial(material: Material): boolean {
  * world transform whose fold into the bone palette leaves normals exactly where stock skinning's
  * normal matrix puts them.
  */
-export function isSimilarityTransform(
-  elements: ArrayLike<number>,
-  relativeTolerance = 1e-5,
-): boolean {
+export function isSimilarityTransform(elements: ArrayLike<number>): boolean {
   const x0 = elements[0] as number;
   const x1 = elements[1] as number;
   const x2 = elements[2] as number;
@@ -131,7 +128,7 @@ export function isSimilarityTransform(
   const yy = y0 * y0 + y1 * y1 + y2 * y2;
   const zz = z0 * z0 + z1 * z1 + z2 * z2;
   if (!(xx > 1e-16)) return false;
-  const tolerance = xx * relativeTolerance;
+  const tolerance = xx * 1e-5;
   if (Math.abs(yy - xx) > tolerance || Math.abs(zz - xx) > tolerance) return false;
   if (Math.abs(x0 * y0 + x1 * y1 + x2 * y2) > tolerance) return false;
   if (Math.abs(x0 * z0 + x1 * z1 + x2 * z2) > tolerance) return false;

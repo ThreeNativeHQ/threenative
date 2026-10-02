@@ -428,8 +428,6 @@ interface ICasterMesh extends Mesh {
   casterPrewarmOwed?: boolean;
   chunkShadowProxy?: boolean;
   casterMinDiameter?: number;
-  casterSourceBounds?: Float64Array;
-  casterSourceBoundsCount?: number;
   computeBoundingBox(): void;
   computeBoundingSphere(): void;
 }
@@ -1373,25 +1371,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
         memo[memoAt + 27] = _box.max.y;
       }
       const at = this.#poolCount * POOL_STRIDE;
-      const sourceBounds = mesh.casterSourceBounds;
-      const count = sourceBounds === undefined ? 1 : (mesh.casterSourceBoundsCount ?? 0);
-      if (at + count * POOL_STRIDE > this.#pool.length) {
-        const grown = new Float64Array(Math.max(this.#pool.length * 2, at + count * POOL_STRIDE));
+      if (at + POOL_STRIDE > this.#pool.length) {
+        const grown = new Float64Array(this.#pool.length * 2);
         grown.set(this.#pool);
         this.#pool = grown;
       }
       const pool = this.#pool;
-      if (sourceBounds !== undefined) pool.set(sourceBounds.subarray(0, count * POOL_STRIDE), at);
-      else {
-        pool[at] = _sphere.center.x;
-        pool[at + 1] = _sphere.center.y;
-        pool[at + 2] = _sphere.center.z;
-        pool[at + 3] = _sphere.radius;
-        pool[at + 4] = mesh.castShadow ? POOL_CASTERS : 0;
-        pool[at + 5] = _box.min.y;
-        pool[at + 6] = _box.max.y;
-      }
-      this.#poolCount += count;
+      pool[at] = _sphere.center.x;
+      pool[at + 1] = _sphere.center.y;
+      pool[at + 2] = _sphere.center.z;
+      pool[at + 3] = _sphere.radius;
+      pool[at + 4] = mesh.castShadow ? POOL_CASTERS : 0;
+      pool[at + 5] = _box.min.y;
+      pool[at + 6] = _box.max.y;
+      this.#poolCount += 1;
       // Sub-texel: a caster the level cannot resolve draws no shadow a fragment could tell from
       // ground cover, so it is hidden for this render and put back immediately after it.
       //
