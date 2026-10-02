@@ -1628,7 +1628,9 @@ jobs:
             ${{ runner.temp }}/packages/*.tgz
 
   finalize:
-    needs: [validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows]
+    # iOS is not a supported target (owner, 2026-09-23): its consumer proof stays as evidence but
+    # does not gate promotion, and it has never completed green in a tag run.
+    needs: [validate-tag, clean-consumer, clean-consumer-windows]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1648,9 +1650,9 @@ jobs:
     if: >-
       ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
       needs.publish.result == 'success' &&
-      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success' ||
+      (needs.clean-consumer.result != 'success' ||
       needs.clean-consumer-windows.result != 'success') }}
-    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows]
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
