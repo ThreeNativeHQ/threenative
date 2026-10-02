@@ -97,6 +97,7 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 ### Phase 3 — close original image-space acceptance
 
 - [x] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: hosted run `36992451504` passed at `095eca85`; `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
+- [x] Qualify animated skinned geometry against a static wall with actual colour/velocity readbacks. proof: hosted `37006604512` at `68601527` passes the skinned arm; the current-as-previous bone control fails exactly motion/oracle assertions (stationary coverage excludes the conservative moving rectangle)
 - [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
 
 The authored BatchedMesh fixture has actual browser GPU readback and screenshot proof. The
@@ -118,13 +119,13 @@ is inferred from the CPU tests.
 
 ## Acceptance criteria
 
-- [ ] **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.** proof: PR #393 GPU fixture capture and velocity-buffer assertions (pending).
+- [ ] **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.** proof: hosted `37006604512` passes one-bone motion and current-as-previous control; exact exposed-wall coverage and the original world-transform mutation remain open.
    A fixture animates one skinned mesh in front of a static wall; the velocity buffer is non-zero
    over the mesh's screen footprint and zero over the wall, within tolerance. *Mutation:* write the
    current world matrix into the previous-transform slot and the spec fails with a zero buffer over
    the mesh.
 
-- [ ] **Per-instance motion is per-instance.** proof: PR #393 `InstancedMesh` and `BatchedMesh` per-instance GPU assertions (pending).
+- [x] **Per-instance motion is per-instance.** proof: hosted `37006604512` at `68601527` passes browser `InstancedMesh` and `BatchedMesh` moving/static cases (0.015625-pixel maximum error); shared-transform controls fail exactly static/stationary bounds at 1.06640625. Native qualification remains separately open.
    With an `InstancedMesh` where one instance moves and the
    rest are still, velocity is non-zero only over the moving instance. *Mutation:* track one
    transform for the whole `InstancedMesh` and the spec fails by marking every instance as moving.
@@ -142,7 +143,7 @@ is inferred from the CPU tests.
    target is allocated and the `render` phase is unchanged within noise. *Mutation:* allocate it
    unconditionally and the allocation spec fails naming the target.
 
-- [ ] **Bookkeeping is frame-ordered, not incidental.** proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts` plus PR #393 live colour/velocity ordering assertions (pending).
+- [x] **Bookkeeping is frame-ordered, not incidental.** proof: hosted `37006604512` at `68601527` passes eight same-frame instance writes after history update, with 0.015625-pixel velocity error and <1.2e-13-pixel colour-centroid error; premature-commit mutation fails exactly motion/oracle bounds at 64 pixels.
    Moving an object after the velocity update
    point within the same frame produces a velocity consistent with the colour pass — the two agree
    or the frame is wrong. *Mutation:* update previous transforms at draw time instead of at the
@@ -235,3 +236,58 @@ Packaging/scaffolding follow-up: 73/74 initially passed; the byte-stability pin 
 Independent review found and reproduced a consumer-upgrade refusal: the prior `dcbc5131` patch's changed hunks matched neither stock nor the candidate. The exact prior files (Git blobs from develop `416ffd7c`) now have a four-file migration with full old/output blob checks. Every file is still preflighted before any writes; unknown edits refuse. The real upgrade regressions were **2 failed / 5 passed** before this repair and now pass for LF and CRLF, idempotence, and one-byte tamper refusal without partial writes. Fresh-stock and packed-consumer coverage remains green (**15/15** upgrade/packaging tests). This migration does not accept arbitrary historical or custom patches.
 
 Final local core lane after the upgrade repair: **2,221 passed, 2 skipped, 175 files** (`pnpm exec vitest run --maxWorkers=1 packages/core`, 114.77 s). Independent review cleared the renderer repair and verified actual packed prior-version LF/CRLF upgrades, byte equality, idempotence and tamper refusal; its final uploader/static sanity lane passed 30/30. The hosted MRT extension remains the next proof gate; original acceptance stays open pending actual execution.
+
+## Repaired instance velocity: actual WebGPU proof
+
+[Run 37003076606](https://github.com/ThreeNativeHQ/threenative/actions/runs/37003076606) passed at source `47e188e41601a64decb4fe0f580037546d63b543`. Artifact `11224711152` has verified ZIP SHA-256 `bca60e256985287d5eeeda1b7942d17ef5a3c5b5a056f35f7093520a7a1ae667`. On Google SwiftShader WebGPU, the authored `BatchedMesh`, default `InstancedMesh` and `DynamicDrawUsage` arms each rendered nine RAF-separated frames and matched the signed current-minus-previous oracle within **0.015625 pixel**, below the fixed **0.05-pixel** bound. First-frame, static-footprint and stopped-frame velocity were exactly **0**; the moving footprint contained **25,676** nonzero pixels. Positive diagnostics were empty. The actual missing-history batch control measured **64 pixels** of error and failed exactly the movement and oracle assertions.
+
+All four runtime PNGs were visually inspected. The three positive PNGs are byte-identical, so one unchanged image is retained for them: [repaired instance velocity](../../verification/prd269/instanced-37003076606.png), [missing-history control](../../verification/prd269/without-history-37003076606.png), and [full adapter/readback/provenance](../../verification/prd269/velocity-37003076606.json). Left halves are actual colour; right halves visualize actual velocity. These captures qualify the explicit browser cases, not native rendering, skinned deformation, active temporal rejection or hardware cost. The original acceptance checkboxes remain open where their complete proof is still pending.
+
+## Remaining footprint and ordering fixtures (in progress)
+
+The maintained browser fixture now adds a real bone-animated `SkinnedMesh` in front of a static wall; its mutation writes the current bone pose into scheduled history. Both batched and instanced aggregate-history controls broadcast one moving-instance previous matrix to both slots, so static geometry must be falsely marked as moving. A late-write arm schedules history before writing the current instance transform; its mutation prematurely commits that new transform before the draw. These cases compare actual colour-silhouette position and signed velocity against the same current pose, and inspect all static pixels outside the moving geometry bounds. The fixed 0.05-pixel velocity bound remains; the colour centroid bound is 0.5 pixel. No readback numbers are replaced by controls. New readback guard tests went 4 failed / 3 passed to 7/7 passed; hosted execution is pending before any new acceptance tick.
+
+
+## Skinned, per-instance and frame-order GPU qualification (2026-10-02)
+
+[Hosted run 37006604512](https://github.com/ThreeNativeHQ/threenative/actions/runs/37006604512) passed all ten expected outcomes at source `68601527451c6530762a5bdcd1c52e562c6e33fe`, tree `f5ae8b1d01300313e867ebb02ec641388312a312`. Artifact `11225942712` ZIP SHA-256 `415fddc91e60806f90b63dd7b82e31ece9ed554324a3d9bf7971ba6fe0f1b177` is verified. [Full per-frame observations, assertions and adapter provenance](../../verification/prd269/velocity-37006604512.json) retain all ten arms. Unchanged PNGs were visually inspected and byte-identical captures deduplicated.
+
+- Actual Google SwiftShader WebGPU, 960 × 540, nine RAF-separated frames per arm. Batched, static/dynamic instance, skinned and late-write positives all have maximum signed velocity error 0.015625 pixel, colour-centroid error below 1.2e-13 pixel, and zero static, stationary-region, first-frame and stopped-frame velocity. Positive diagnostics are empty; no device-loss diagnostic is accepted.
+- [Skinned sphere](../../verification/prd269/skinned-37006604512.png) deforms through its bound bone. Its [current-as-previous control](../../verification/prd269/skinned-current-history-37006604512.png) preserves colour while removing all moving velocity, failing exactly movement and oracle bounds (64-pixel maximum error). The stationary check excludes a conservative moving rectangle, so it does not yet qualify every exposed wall pixel or the original world-transform mutation.
+- Both shared-transform controls produce the same [incorrect static-instance velocity](../../verification/prd269/aggregate-batch-37006604512.png): static/stationary maximum 1.06640625, failing exactly those two assertions. Ordinary per-instance arms retain zero static velocity. This qualifies the original per-instance browser criterion.
+- Eight actual instance writes after the history-update point produce colour and velocity consistent with the latest pose. Prematurely committing the current pose before drawing preserves colour but removes motion (64-pixel error), failing exactly movement and oracle bounds. This qualifies the specified same-frame ordering case.
+- Fresh local tests pass 28/28; independent fixture review passed 35 tests, strict types/Biome and its own bound-skinned CPU oracle. Earlier broader local fixture/CI checks passed 169/169. Hosted motion tests, strict types and the actual capture gate all pass.
+- Ghosting/rejection, temporal-off frame cost, native rendering and full skinned acceptance remain open. PR #398 separately observed a one-frame instance Y-velocity loss after context/material recompile despite correct CPU history and unchanged shader assignments; this lifecycle case remains under investigation and is not covered by the ordinary-frame acceptance above.
+- An unrelated inherited tone workflow failed at this head because `pnpm test:tone` is absent from the older branch base, before rendering or artifact capture. It is not a failed velocity run; synchronize merged develop changes before final full-CI qualification.
+
+
+## Attribute-wrapper rebuild repair (in progress, 2026-10-02)
+
+PR #398's observed context recompile is a separate shipped uploader defect. Actual GPU readback in [run 37008638293](https://github.com/ThreeNativeHQ/threenative/actions/runs/37008638293), source `aabfa027`, shows fresh current-matrix wrappers reusing the same interleaved GPU buffer at frame 23. Four `createAttribute` calls see an existing buffer; CPU current Y is -0.6999545693/version 23, but GPU current Y remains -0.6924691796 from frame 22, equal to the correctly uploaded previous Y. Frame 24's ordinary update catches up. The diagnostic does not alter the 208 captured PNGs.
+
+The real `Attributes` manager plus real `WebGPUAttributeUtils` reproduces two failures with a byte-copy GPU queue: a fresh wrapper skips dirty bytes, including explicit update ranges. The candidate records the shared buffer's uploaded version and render-call ID, then updates an existing dirty buffer before the manager marks its new wrapper current. DynamicDrawUsage without a version bump reproduced an additional failure; rebuilt dynamic columns now refresh once per render call without multiplying uploads. Unchanged wrappers upload nothing; four rebuilt columns share one update; ordinary writes and disposal/recreation retain their behavior. The original candidate passed 30/30 uploader/static/disposal/migration checks and 18/18 packaging/upgrade checks. The added dynamic regression is one red case; final combined uploader/static/disposal/packaging/migration coverage passes 39/39.
+
+Both actual predecessor states are recognized by full blob hashes: develop patch `dcbc5131` and published PR393 patch `455ed1dd`. Their LF/CRLF upgrades are exact and idempotent. Partially patched migration files with an unknown full hash now fail before any file is written; one-byte custom edits from both predecessors reproduce that refusal. Other append-only patch files retain the existing upgrade behavior. All thirteen generated scaffold hashes return to their previous published values when only the embedded patch is restored.
+
+The maintained actual MRT fixture now has an instance context-recompile arm with a checked rebuild count and the same 0.05-pixel oracle. Independent review and hosted candidate execution remain pending. No new acceptance criterion is ticked for this candidate.
+
+Final candidate validation before review: full core **2,229 passed, 2 skipped, 175 files**; scaffold/capture **73/73**; core ESM/DTS/publint; native-smoke single import-free bundle plus **4/4** tests; root and strict fixture TypeScript; actual fixture Vite build; root lint (1,004 existing warnings); quality JSON; documentation links and fixed evidence budget all pass. Native-smoke remains bundle proof only. The initial fixture build invocation used the repository root and could not resolve its entry; rerunning from the example directory, as the maintained verifier does, passes. The two provenance JSON files were formatted without changing any parsed value or PNG byte.
+
+
+### Independent review: mixed attribute wrappers
+
+Review of the unpublished `2ba7498c` candidate found a partial-range regression through the real `Geometries` → `Attributes` → `WebGPUAttributeUtils` path. A fresh wrapper uploaded range 13 and cleared it; an older wrapper then requested another update from its stale local version, causing a full upload of unmarked element 12. The published `455ed1dd` path wrote once and retained GPU values `[0, 2]`; the candidate wrote twice and produced `[99, 2]`.
+
+The shared version/render-call guard now also covers ordinary updates, so a wrapper cannot re-upload an already consumed range. Both wrapper orders are tested with static/dynamic usage, with and without a version bump; a genuinely newer static version in the same render call still uploads. The three fresh-first regressions were red, then all 15 shared-buffer/disposal cases passed. The reviewer's original probe now reports one upload and `[0, 2]` for both published and revised code.
+
+Revised source patch `d000f4c4449145e81da0aba078c1d9e7becb205dfa440742f62eb6d0e97765e0` and both supported predecessor migrations pass the 48-test uploader/static/disposal/packaging/upgrade lane. Source and both shipped WebGPU method bodies agree after normalizing only the existing bundled descriptor identifier; installed files match the generated patched bytes exactly. All thirteen scaffold hashes restore to the published baseline when only the embedded patch is restored. Full core: **2,238 passed, 2 skipped, 175 files**. Scaffold/capture: **73/73**. Core ESM/DTS/publint, native-smoke single import-free bundle plus **4/4**, fixture build, root lint (1,004 warnings) and quality JSON pass. Re-review and actual candidate GPU execution remain pending; no acceptance box changes.
+
+### Independent review: compute uploads
+
+Re-review of unpublished patch `d000f4c4` found that its upload guard used only `info.render.calls`. Real `Bindings.updateForCompute` also consumes this uploader, but compute-only calls advance `info.calls` and `info.compute.calls` while render calls remain zero. Dynamic storage bytes therefore stayed at their initial value without a version bump. This is a candidate regression, not a claim that published `455ed1dd` has the compute defect.
+
+The guard now uses the pinned renderer's global `info.calls`, which advances before both render and compute and is preserved by ordinary frame-metric resets. Three new regressions through real `Bindings`, `Attributes`, `Geometries` and `WebGPUAttributeUtils` were red on the prior candidate, then pass: compute-only dynamic storage and alternating compute/render partial-range uploads for storage and interleaved attributes. Repeated consumers in one call still write once; unmarked bytes remain unchanged. The existing static, dynamic, mixed-wrapper order and disposal checks pass with them (**18/18**). Source patch SHA-256 is `daef254ca250dffe6977b8c926682a943688236f9f95ddcafe231b41bb0e203c`; upgrade patch SHA-256 is `64dfa910b3f066f036759babc1a9917eaed295c1607149b1ccfcab5e3c4cc47d`.
+
+The focused uploader/static/packaging/migration lane passes **46/46**, including exact LF/CRLF upgrades from both published predecessors, idempotence and tamper refusal before any write. Source and bundled method bodies agree, installed bytes match, and all thirteen measured scaffold hashes restore to the published baseline when only the embedded patch is restored. Independent re-review and actual candidate GPU execution remain pending; no acceptance box changes.
+
+Final local validation of this revision: full core **2,241 passed, 2 skipped, 175 files** (124.09 s); scaffold/capture **73/73**; core ESM/DTS/publint; native-smoke single import-free bundle plus **4/4**; root and strict fixture TypeScript; root lint (1,004 warnings); quality JSON; 2,410 documentation links and the fixed evidence budget all pass. The original mixed-wrapper reviewer probe still reports one upload and `[0, 2]` for both published `455ed1dd` and revised code. Native-smoke remains bundle compatibility proof, not native rendering proof.

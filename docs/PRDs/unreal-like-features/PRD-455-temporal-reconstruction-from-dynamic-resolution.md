@@ -409,3 +409,25 @@ excluded from qualification. No original quality threshold or runtime arm change
 Empty check sets also save `pass: false` before throwing a missing-checks error; equivalence
 failure retains precedence. The new false-pass regression went red-green; both empty-set paths
 and the existing checks now pass.
+
+Actual 304-frame run `37016735368`, source `3afcbc66a8101be6a39bac489e09d3f75b8895c4`,
+passes authored-linear equivalence: all 16 PNGs are byte-identical to installed TRAA. All 304
+hashes verify, all 19 arm diagnostics are empty and the earlier 208 PNGs remain unchanged.
+Cubic+strict improves edge error relative to installed temporal (0.05605 versus 0.06001), but
+still loses to no-AA (0.05061) and misses the fixed 5% improvement bar. Instability is 0.03173;
+causal red tint is zero across all reveal frames. Conservative reveal projection and excursions
+versus installed temporal still fail. Its matched zero-velocity arm degrades moving-edge error
+from 0.02470 to 0.04169. The unqualified result and all controls are retained in
+[exact cubic experiment evidence](../../verification/prd455/cubic-history.json), with inspected
+[before](../../verification/prd455/cubic-strict-frame-27.png),
+[reveal](../../verification/prd455/cubic-strict-frame-30.png) and
+[recovery](../../verification/prd455/cubic-strict-frame-36.png) runtime frames.
+
+The next explicit dependency merge consumes canonical PR393 uploader repair
+`ac7e78978854beea2c7db1026b26da5ea2f71716`, whose actual GPU recompile gate passed in run
+`37016640068`. Frozen offline install and 199 focused combined tests pass. The only merge
+conflict was the scaffold hash table; all thirteen were measured and only starter differs
+from the incoming dependency because it includes this PR's generated temporal source.
+The identical 304-frame benchmark must run on the combined source before its result can be
+attributed to this new dependency. Neither the earlier experiment nor the dependency's separate
+oracle establishes that combined result. PR393 still must land before this PR becomes ready.

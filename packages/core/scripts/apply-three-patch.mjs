@@ -241,6 +241,7 @@ async function planPatch(threeRoot, files, upgrades) {
       : states.some((state) => state === "patched")
         ? "extended"
         : "stock";
+    assertKnownExtension(status, recognised === original, file.oldPath, upgrades);
     if (status === "patched") {
       plans.push({
         contents: recognised,
@@ -256,6 +257,19 @@ async function planPatch(threeRoot, files, upgrades) {
     });
   }
   return plans;
+}
+
+/** Registered migration files must not fall through to permissive hunk-only upgrades. */
+function assertKnownExtension(status, unchanged, file, upgrades) {
+  if (
+    status === "extended" &&
+    unchanged &&
+    upgrades.some((candidate) => candidate.oldPath === file)
+  ) {
+    throw new Error(
+      `TN_THREE_PATCH_PARTIAL: ${file} is partly patched but does not match an exact supported predecessor; refusing an unrecognised installation.`,
+    );
+  }
 }
 
 /** Upgrade only exact known prior blobs; a custom edit never enters this migration. */

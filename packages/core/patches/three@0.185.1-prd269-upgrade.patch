@@ -1,5 +1,5 @@
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..bdffb9b4069f7beafa85913b155e92d3e83f12d0 100644
+index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..148869ee7f18c62570ac1eafb7df5775e5a89581 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -23,10 +23,10 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..bdffb9b4069f7beafa85913b155e92d3
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
-+
-+		};
  
 -			const previousInstanceData = _previousInstanceMatrices.get( object );
++		};
++
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
  
@@ -53,8 +53,46 @@ index 7aa62adb9e78ba8f0a67709d3141bf93c67419cc..bdffb9b4069f7beafa85913b155e92d3
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
+@@ -81386,6 +81402,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81406,6 +81431,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81487,6 +81517,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1245f0da9bb6a0f731b8c75a64490d7c91238700 100644
+index b8a7b2fd0a2e95911e7e12fd5674592107f012de..81c24b2e05e5047e1a02410a2056949d39b1a05c 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -18539,7 +18539,7 @@ const instance = /*@__PURE__*/ Fn( ( [ matrices, colors = null ], builder ) => {
@@ -80,12 +118,11 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1245f0da9bb6a0f731b8c75a64490d7c
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
 +
 +		};
- 
--			const previousInstanceData = _previousInstanceMatrices.get( object );
++
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
  
--			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
 +
@@ -93,7 +130,8 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1245f0da9bb6a0f731b8c75a64490d7c
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
 +		OnObjectUpdate( ( { object } ) => {
-+
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
 +			if ( object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ] === undefined ) updatePrevious( object, matrices.array );
  
  		} );
@@ -108,6 +146,44 @@ index b8a7b2fd0a2e95911e7e12fd5674592107f012de..1245f0da9bb6a0f731b8c75a64490d7c
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
+@@ -81325,6 +81342,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81345,6 +81371,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81426,6 +81457,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
 diff --git a/src/nodes/accessors/Instance.js b/src/nodes/accessors/Instance.js
 index ed00e75ba4fd7b49343cfada26eacdef8940a4f4..18e2b7943393fd07b7989b1e3a5231a61ca24187 100644
 --- a/src/nodes/accessors/Instance.js
@@ -175,3 +251,137 @@ index 89b33efb80ca1dcb9db931071dfda62ffdba3526..51590d5a23a93365e5cd9fb036067875
  		this._nodes.updateForRender( renderObject );
  		this._bindings.updateForRender( renderObject );
  
+diff --git a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+index 83bbe189915c8450c4e14108e6a3f4ed98c4b016..16bd72d0c0f1d693481efc98140a0f1b73905149 100644
+--- a/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
++++ b/src/renderers/webgpu/utils/WebGPUAttributeUtils.js
+@@ -3,6 +3,7 @@ import { submit } from './WebGPUUtils.js';
+ import GPUBufferDescriptor from '../descriptors/GPUBufferDescriptor.js';
+ import GPUCommandEncoderDescriptor from '../descriptors/GPUCommandEncoderDescriptor.js';
+ 
++import { DynamicDrawUsage } from '../../../constants.js';
+ import { Float16BufferAttribute } from '../../../core/BufferAttribute.js';
+ import { isTypedArray, error } from '../../../utils.js';
+ 
+@@ -174,6 +175,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -194,6 +204,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -275,6 +290,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+diff --git a/build/three.webgpu.js b/build/three.webgpu.js
+index bdffb9b4069f7beafa85913b155e92d3e83f12d0..148869ee7f18c62570ac1eafb7df5775e5a89581 100644
+--- a/build/three.webgpu.js
++++ b/build/three.webgpu.js
+@@ -81402,6 +81402,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81422,6 +81431,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81503,6 +81517,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
+diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
+index 1245f0da9bb6a0f731b8c75a64490d7c91238700..81c24b2e05e5047e1a02410a2056949d39b1a05c 100644
+--- a/build/three.webgpu.nodes.js
++++ b/build/three.webgpu.nodes.js
+@@ -81342,6 +81342,15 @@ class WebGPUAttributeUtils {
+ 			buffer.unmap();
+ 
+ 			bufferData.buffer = buffer;
++			bufferData.version = bufferAttribute.version;
++			bufferData.uploadCall = backend.renderer.info.calls;
++
++		} else if ( bufferData.version < bufferAttribute.version ||
++			( bufferAttribute.usage === DynamicDrawUsage && bufferData.uploadCall !== backend.renderer.info.calls ) ) {
++
++			// A rebuilt shader can create a fresh attribute wrapper for this existing buffer.
++			// Synchronize its dirty bytes before Attributes records the wrapper as current.
++			this.updateAttribute( attribute );
+ 
+ 		}
+ 
+@@ -81362,6 +81371,11 @@ class WebGPUAttributeUtils {
+ 		const bufferData = backend.get( bufferAttribute );
+ 		const buffer = backend.get( bufferAttribute ).buffer;
+ 
++		// A fresh wrapper may already have uploaded this shared buffer in the same render or compute call.
++		// Do not repeat that write after its partial ranges have been consumed.
++		if ( bufferData.version === bufferAttribute.version &&
++			( bufferAttribute.usage !== DynamicDrawUsage || bufferData.uploadCall === backend.renderer.info.calls ) ) return;
++
+ 		let array = bufferAttribute.array;
+ 
+ 		const itemSize = bufferData._itemSize;
+@@ -81443,6 +81457,9 @@ class WebGPUAttributeUtils {
+ 
+ 		}
+ 
++		bufferData.version = bufferAttribute.version;
++		bufferData.uploadCall = backend.renderer.info.calls;
++
+ 	}
+ 
+ 	/**
