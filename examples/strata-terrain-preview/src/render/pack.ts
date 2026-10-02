@@ -366,8 +366,8 @@ export async function loadPack(
         }
         if (world === "forest" && one.asset === "spruce" && !one.level) {
           const pine = await assets
-            // Two Kite pines (tall and broad) alternate so a stand is not one tree repeated.
-            .model<{ scene?: Group }>(`temperate/kite-spruce/${one.variant % 2}.glb`)
+            // ScotsPine_01 (19 m wide, gnarled) read as a broadleaf orchard at forest scale; tall only.
+            .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
             .catch(() => undefined);
           if (pine) return pine;
         }

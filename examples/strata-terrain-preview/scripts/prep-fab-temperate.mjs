@@ -81,7 +81,6 @@ for (const [i, name] of ["flower_15_05", "flower_07_01", "flower_01_01", "flower
 for (let i = 0; i < 3; i++) add("ground-foliage", `ground_0${i + 1}_01`, `scrub/${i}`);
 for (let i = 0; i < 2; i++) add("fern-collection", `fern_0${i + 1}_01`, `fern/${i}`);
 add("open-world-demo", "ScotsPineTall_01", "kite-spruce/0");
-add("open-world-demo", "ScotsPine_01", "kite-spruce/1");
 add("open-world-demo", "SM_FieldGrass_01", "fieldgrass/0");
 add("conifer-bushes-saplings-1", "Spruce_08", "needle-spruce/0");
 for (const [name, logical] of [
