@@ -72,14 +72,18 @@ Audit on 2026-10-02 of what an agent pays between starting a task and pushing it
 
 #### Phase 2: Instructions and injections carry only what agents use
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — push rule and hook landed; playtest AGENTS.md trim pending
 **Files:** EDIT `AGENTS.md` (push rule; `gate:*` lines move to `docs/architecture/` or the scripts' `--help`),
 `.claude/settings.json` (ponytail hook on SessionStart and compact only), `packages/playtest/AGENTS.md`
 (reference sections move to a linked doc), the `CLAUDE.md` mirrors.
 
-- [ ] `AGENTS.md` states the push rule. proof: `pnpm sync:agents --check` and
+- [x] `AGENTS.md` states the push rule. proof: `pnpm sync:agents --check` and
   `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts scripts/__tests__/primary-docs.spec.ts`.
-- [ ] The ponytail hook fires only on SessionStart and compaction. proof: `jq '.hooks | keys' .claude/settings.json`
+  Evidence: 2026-10-02, "Push once per run" in the Pull requests list; `pnpm sync:agents` wrote the mirror;
+  sync-agent-docs, primary-docs and instruction-budget specs 24 passed.
+- [x] The ponytail hook fires only on SessionStart and compaction. proof: `jq '.hooks | keys' .claude/settings.json`
   lists neither `UserPromptSubmit` nor `SubagentStart` for it.
+  Evidence: 2026-10-02, `jq '.hooks | keys'` prints `["SessionStart"]`; SessionStart has no matcher, so it
+  also fires on compaction.
 - [ ] `packages/playtest/AGENTS.md` is under 2,000 words. proof: `wc -w packages/playtest/AGENTS.md`, and
   `pnpm check:docs` passes with every moved section linked.
