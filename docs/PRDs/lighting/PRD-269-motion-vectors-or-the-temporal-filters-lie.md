@@ -73,7 +73,7 @@ object transform is not enough and will read as correct in every static test.
 
 ## Current implementation and bounded repair
 
-The problem measurements below are historical, not a claim that the shipped engine has no
+The problem measurements above are historical, not a claim that the shipped engine has no
 velocity implementation. Commit `3630847a` added `VelocityTracker`, RenderChain MRT provisioning,
 the patched Three.js accessors, and CPU software-rasterization coverage. Reuse those mechanisms.
 The engine-layer defect at `d7277838` is narrower: `SceneRenderProjection.reconcile()` and
@@ -84,13 +84,13 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 
 ### Phase 1 — qualify shipped motion history
 
-- [ ] Verify the existing per-object transform and MRT provisioning implementation. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
-- [ ] Verify the shipped batched accessor and projection pipeline integration. proof: `pnpm exec vitest run packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts`
+- [x] Verify the existing per-object transform and MRT provisioning implementation. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
+- [x] Verify the shipped batched accessor and projection pipeline integration. proof: `pnpm exec vitest run packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts`
 
 ### Phase 2 — preserve temporal history through projection opt-out
 
-- [ ] Preserve explicit BatchedMesh sub-draw history across first and subsequent rendered frames with projection disabled. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
-- [ ] Release/reset history on temporal toggles, removal and disposal without a projection scan or temporal-off traversal. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/renderProjection.spec.ts`
+- [x] Preserve explicit BatchedMesh sub-draw history across first and subsequent rendered frames with projection disabled. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
+- [x] Release/reset history on temporal toggles, removal and disposal without a projection scan or temporal-off traversal. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/renderProjection.spec.ts`
 
 ### Phase 3 — close original image-space acceptance
 
@@ -102,6 +102,11 @@ GPU image-space or native proof. The original acceptance and mutation descriptio
 below and remain unqualified wherever no real lane has run.
 
 ## Blocked on
+
+Actual relevant runtime screenshots must be attached to the PR before merge (owner requirement,
+2026-10-02). They remain unverified; software-rasterizer output and test-log screenshots do not
+satisfy this gate.
+
 
 Browser/native GPU execution requires a working WebGPU device or supported native host. This
 cloud environment has no `/dev/dri`, Android device tooling or `/dev/kvm`; the batch's attempted
@@ -145,11 +150,30 @@ paths, which have their own lifetimes.
 
 ## Verification
 
+2026-10-02 repair: before the fix, `render-velocity.spec.ts` reports 4 failed / 12 passed:
+missing `_previousMatricesTexture` in authored batch/frame-footprint tests, plus undefined
+history in toggle and removal tests. Moving temporal enablement/update ahead of the opt-out
+return and allowing its post-render commit makes the focused lane green: 117/117 tests across
+`render-velocity`, `batched-velocity`, `render-projection-pipeline`, and `renderProjection`.
+A broader direct core-suite run was interrupted before results while the targeted lane was rerun.
+The tests assert first-frame identity, non-aliased texture history, next-frame advancement,
+static/moving CPU footprints, toggle resets, removal/disposal, no eligibility scan, and no
+steady-frame history traversal while temporal rendering is off. This verifies phases 1 and 2;
+the CPU footprint fixture builds the patched Three.js nodes but is not GPU readback.
+
+`pnpm lint` passes with 1,000 repository warnings. `pnpm typecheck` is killed with exit 137
+before completing. `pnpm test` exits 2 before assertions because tsx cannot open its IPC socket
+(`listen EPERM`). A direct core typecheck/build additionally needs the playtest package's missing
+built declarations; its normal build reaches the same tsx IPC restriction. Running the same
+validator with `node --import tsx` followed by the package's tsup build succeeds, after which
+`tsc --noEmit -p packages/core/tsconfig.json` passes. The root typecheck/full test/core package
+build remain unverified. `node packages/playtest/dist/runner/cli.js doctor --text` exits 2:
+`TN_PLAYTEST_RUNNER_FAILED`, adb not found.
+
 2026-10-02 qualification start: existing `render-velocity.spec.ts` passes 11/11 CPU tests.
 `node --import tsx scripts/check-doc-links.ts` resolves 2,395 links; agent mirrors are in sync.
 The prose test lane passes 178/180 tests; two `evidence-budget.spec.ts` subprocess cases are
 blocked by tsx IPC `listen EPERM` in this environment. No code was changed for those failures.
-
 
 `pnpm typecheck && pnpm lint && pnpm test`; the ghosting playtest with the before/after rejection
 fraction pasted; `pnpm visuals:ab` on a template with an animated character. Native parity follows
