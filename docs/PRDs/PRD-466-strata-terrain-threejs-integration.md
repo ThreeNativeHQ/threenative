@@ -906,7 +906,7 @@ no push. Verdict: improved forest material/cover/contact/flower scale, **below t
 Unreal/Gaia target; AC-5 remains open**. This active PR checkout is retained for the
 other lane and later acceptance work.
 
-### AC-5 forest round 10 — 2026-10-02 (in progress)
+### AC-5 forest round 10 — 2026-10-02 (bounded round complete)
 
 Bounded continuation in the existing forest checkout (100 minutes; no push): first
 ablate needle-only indirect fill and hemisphere colours, then retain an evidence-led
@@ -961,6 +961,40 @@ two-argument signature and narrowing its generic Node values to vec3; the final
 narrowing changes types only. Read-only review passes the shadow/lighting strategy.
 Verdict: the dominant forest cyan is reduced; pale inner branch patches and
 repetitive distant ribs still prevent an Unreal-level acceptance claim.
+Fourth working increment: the remaining distant comb also came from straight
+extrusion of baked perimeter heights through the horizon's 480 m transition.
+Forest continuation now fades fine perimeter detail over 45 m into a cached,
+triangularly averaged edge profile, then into the existing massif. The exact
+collider seam and coastal continuation are preserved. A first domain-warped
+continuation introduced an exposed strip and was rejected; the retained filtered
+version removes the conspicuous parallel ribs without that strip. The existing
+temperate check now verifies the exact inner seam and finite horizon coordinates.
+Read-only review of original 1920×1080 overview/river captures passes this bounded
+relief improvement; it does not certify Unreal-level art.
+Fallback qualification: a temporary Vite transform disabled licensed pack models,
+prepared prop models and vegetation textures at their loaders, leaving source and
+local assets untouched. The same scenario passes 24/24 assertions with 0 console
+errors and meadow/overview frame p50 1.6/1.8 ms. Captures:
+`examples/strata-terrain-preview/artifacts/playtest/round10-fallback/`.
+The untextured fallback remains functional, with visibly pale, angular foliage;
+its art is not equivalent to the licensed arm.
+The first filtered licensed run has 0 console errors and 2.3/2.5 ms p50, but only
+22/24 assertions: automatic quality selected low and excluded the AO stage,
+failing render-chain stage/contribution diagnostics. A fresh forced-capture-lease
+run `round10-final-green` passes 24/24 assertions including both AO diagnostics,
+with 0 console/network errors, no runtime diagnostics, hardware WebGPU and
+meadow/overview frame p50 2.2/2.8 ms. The sky/AO configuration is unchanged;
+contention is a possible explanation of the earlier tier drop, not a proven cause.
+Final 1920×1080 captures:
+`examples/strata-terrain-preview/artifacts/playtest/round10-final-green/`
+(`river.png`, `overview.png`, `coastal-ocean.png`). Typecheck, root Biome error
+gate, temperate geometry/placement check, document checks and six prescribed
+document suites pass. No licensed assets are committed and no push is performed.
+Verdict: the five reported defects have bounded improvements, including removal
+of the wet-bank boundary smear and placed coastal cliff slab. Pale inner crown
+cards, overly vivid foliage patches and soft distant material detail still fall
+below the Unreal/Gaia target. Forest→coast colours survive the handoff; the lake
+and downhill river remain in the basin. Native rendering is unverified this round.
 AC-5 remains open pending visual acceptance of all five environments.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.

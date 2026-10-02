@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
+import { createHorizonGeometry } from "../src/render/horizon.js";
 import {
   buildPropVariants,
   createProps,
@@ -24,6 +25,18 @@ const field = new Heightfield({
   origin: { x: 0, z: 0 },
   heights: Float32Array.from(data.heights),
 });
+// Decorative continuation must retain the exact collider seam and finite geometry.
+const horizon = createHorizonGeometry(data);
+const horizonPositions = horizon.getAttribute("position");
+for (let i = 0; i < (data.resolution - 1) * 4; i++) {
+  assert.ok(
+    Math.abs(
+      horizonPositions.getY(i) - field.heightAt(horizonPositions.getX(i), horizonPositions.getZ(i)),
+    ) < 0.00001,
+  );
+}
+assert.ok(Array.from(horizonPositions.array).every(Number.isFinite));
+horizon.dispose();
 const scatter = scatterProps({ ...data, field }, { x: 186, z: 76 }, [
   [176, 84, 10],
   [-20, -150, 10],
