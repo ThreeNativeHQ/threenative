@@ -444,7 +444,15 @@ export function scatterProps(
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
-    const eyeStep = temperate ? 0.34 : desert ? 1.8 : tundra ? 0.5 : 0.6;
+    const eyeStep = temperate
+      ? data.world === "coastal"
+        ? 0.34
+        : 0.5
+      : desert
+        ? 1.8
+        : tundra
+          ? 0.5
+          : 0.6;
     const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
     // Uniform rejection sampling in the eye disc avoids a carpet of parallel jittered rows.
     if (tundra) {

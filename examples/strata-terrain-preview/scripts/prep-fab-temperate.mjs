@@ -22,9 +22,15 @@ const LIBRARY = process.env.FAB_TEMPERATE;
 if (!LIBRARY) throw new Error("Set FAB_TEMPERATE to the imported Fab library.");
 const OUT = join(EXAMPLE, "local-assets/temperate");
 const worldsOnly = process.argv.includes("--worlds");
+const canopyOnly = process.argv.includes("--canopy");
+const incremental = worldsOnly || canopyOnly;
 const STAGE = join(
   EXAMPLE,
-  worldsOnly ? "local-assets/.worlds-stage" : "local-assets/.temperate-stage",
+  canopyOnly
+    ? "local-assets/.canopy-stage"
+    : worldsOnly
+      ? "local-assets/.worlds-stage"
+      : "local-assets/.temperate-stage",
 );
 const requireAssets = createRequire(join(REPO, "packages/assets/package.json"));
 const sharp = requireAssets("sharp");
@@ -55,6 +61,8 @@ const atlases = {
   "ground-foliage": set("Foilage_Ground_Main_A", "Foilage_Ground_Main_N", "Foilage_Ground_Main_O"),
   "meadow-flowers": set("Combined_Flowers_A", "Combined_Flowers_N", "Combined_Flowers_O"),
   "fern-collection": set("fern_01_A", "fern_01_N", "fern_01_AORO", 2),
+  "open-world-demo": set("T_FieldGrass_01_D", null, "T_FieldGrass_01_D", 3),
+  "conifer-bushes-saplings-1": set("Spruce_A", null, "Spruce_AORO", 2),
 };
 const models = [];
 const add = (pack, name, logical) => models.push({ pack, name, logical });
@@ -72,6 +80,9 @@ for (const [i, name] of ["flower_15_05", "flower_07_01", "flower_01_01", "flower
   add("meadow-flowers", name, `poppy/${i}`);
 for (let i = 0; i < 3; i++) add("ground-foliage", `ground_0${i + 1}_01`, `scrub/${i}`);
 for (let i = 0; i < 2; i++) add("fern-collection", `fern_0${i + 1}_01`, `fern/${i}`);
+add("open-world-demo", "ScotsPineTall_01", "kite-spruce/0");
+add("open-world-demo", "SM_FieldGrass_01", "fieldgrass/0");
+add("conifer-bushes-saplings-1", "Spruce_08", "needle-spruce/0");
 for (const [name, logical] of [
   ["SM_Boulder05a", "boulder/0"],
   ["SM_LargePlainsBoulder002", "boulder/1"],
@@ -113,14 +124,17 @@ async function imageBytes(pack, spec, normal = false) {
     return found;
   };
   const resized = sharp(path(normal ? spec.normal : spec.albedo))
-    .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
+    .resize(
+      pack === "conifer-bushes-saplings-1" ? 1024 : 2048,
+      pack === "conifer-bushes-saplings-1" ? 1024 : 2048,
+      { fit: "inside", withoutEnlargement: true },
+    )
     .removeAlpha();
   let result = await resized.png().toBuffer();
   if (!normal && spec.mask) {
     const metadata = await sharp(result).metadata();
     const alpha = await sharp(path(spec.mask))
       .resize(metadata.width, metadata.height)
-      .removeAlpha()
       .extractChannel(spec.channel)
       .png()
       .toBuffer();
@@ -177,7 +191,7 @@ async function prepare(source, pack, logical) {
     accessor.count = Math.min(accessor.count, held);
     if (!(accessor.count > 0)) throw new Error(`Empty accessor in ${source}`);
   }
-  if (atlases[pack]) {
+  if (atlases[pack] && (pack !== "open-world-demo" || logical.startsWith("fieldgrass/"))) {
     json.images = [];
     json.textures = [];
     json.samplers = [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }];
@@ -203,7 +217,7 @@ async function prepare(source, pack, logical) {
         metallicFactor: 0,
         roughnessFactor: 0.9,
       };
-      material.normalTexture = { index: await embed(spec, true) };
+      material.normalTexture = spec.normal ? { index: await embed(spec, true) } : undefined;
       material.occlusionTexture = undefined;
       material.emissiveTexture = undefined;
       material.alphaMode = spec.mask ? "MASK" : "OPAQUE";
@@ -215,6 +229,36 @@ async function prepare(source, pack, logical) {
   }
   json.buffers = [{ byteLength: cursor }];
   const document = await io.readBinary(glb(json, Buffer.concat(buffers)));
+  if (logical.startsWith("kite-spruce/")) {
+    // Preserve every authored crown card; a 21% near crown was visibly sparse.
+    const bark = document
+      .getRoot()
+      .listMaterials()
+      .find((one) => one.getName() === "ScotsPine_01_Branches_Mat");
+    if (!bark) throw new Error(`Missing Kite bark material: ${logical}`);
+    // Both bark sections share albedo/UVs.
+    // ponytail: secondary bark uses trunk relief; split the draw if its normal detail becomes visible.
+    for (const mesh of document.getRoot().listMeshes())
+      for (const primitive of mesh.listPrimitives())
+        if (primitive.getMaterial()?.getName() === "ScotsPine_01_Branches_2_Mat")
+          primitive.setMaterial(bark);
+    for (const material of document.getRoot().listMaterials())
+      if (material.getAlphaMode() === "MASK")
+        material.setNormalTexture(null).setMetallicRoughnessTexture(null);
+    for (const image of document.getRoot().listTextures()) {
+      image.setImage(
+        await sharp(image.getImage())
+          .resize(
+            image.getName() === "ScotsPine_01_Atlas_Tex" ? 2048 : 1024,
+            image.getName() === "ScotsPine_01_Atlas_Tex" ? 2048 : 1024,
+            { fit: "inside", withoutEnlargement: true },
+          )
+          .png()
+          .toBuffer(),
+      );
+      image.setMimeType("image/png");
+    }
+  }
   if (/^(mountain|volcanic|reveal)\//.test(logical))
     for (const image of document.getRoot().listTextures()) {
       image.setImage(
@@ -259,7 +303,9 @@ for (const [slot, suffix] of [
 }
 const selected = worldsOnly
   ? models.filter(({ logical }) => /^(mountain|volcanic|reveal)\//.test(logical))
-  : models;
+  : canopyOnly
+    ? models.filter(({ logical }) => /^(kite-spruce|needle-spruce|fieldgrass)\//.test(logical))
+    : models;
 for (const { pack, name, logical } of selected) {
   const report = JSON.parse(readFileSync(join(LIBRARY, pack, "import-report.json"), "utf8"));
   const model = report.models.find((entry) => entry.name === name);
@@ -277,7 +323,9 @@ for (const { pack, name, logical } of selected) {
 const previous = existsSync(join(OUT, "assets.manifest.json"))
   ? JSON.parse(readFileSync(join(OUT, "assets.manifest.json"), "utf8"))
   : null;
-const cooked = worldsOnly ? join(EXAMPLE, "local-assets/.worlds-cooked") : OUT;
+const cooked = incremental
+  ? join(EXAMPLE, canopyOnly ? "local-assets/.canopy-cooked" : "local-assets/.worlds-cooked")
+  : OUT;
 await compileAssets({
   source: ".",
   output: cooked,
@@ -285,14 +333,14 @@ await compileAssets({
   config: { models: { textures: { maxSize: 2048 }, virtual: "none" }, textures: { maxSize: 2048 } },
 });
 const manifest = JSON.parse(readFileSync(join(cooked, "assets.manifest.json"), "utf8"));
-if (worldsOnly) cpSync(cooked, OUT, { recursive: true });
+if (incremental) cpSync(cooked, OUT, { recursive: true });
 for (const [logical, entry] of Object.entries(manifest.entries))
   if (logical.endsWith(".glb")) copyFileSync(join(OUT, entry.output), join(OUT, logical));
   else if (logical.startsWith("rockface/")) {
     mkdirSync(join(OUT, "rockface"), { recursive: true });
     copyFileSync(join(OUT, entry.output), join(OUT, logical.replace(/\.png$/, ".ktx2")));
   }
-if (worldsOnly && previous) {
+if (incremental && previous) {
   manifest.entries = { ...previous.entries, ...manifest.entries };
   writeFileSync(join(OUT, "assets.manifest.json"), JSON.stringify(manifest, null, 2));
 }
@@ -302,6 +350,13 @@ const transcoder = createRequire(join(EXAMPLE, "package.json")).resolve(
 mkdirSync(join(OUT, "basis"), { recursive: true });
 for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"])
   copyFileSync(join(dirname(transcoder), name), join(OUT, "basis", name));
-const total = [...files(OUT)].reduce((sum, path) => sum + statSync(path).size, 0);
+// Incremental cooks retain old hashes on disk; budget the manifest's live payload once.
+const live = new Set(
+  Object.values(manifest.entries).flatMap((entry) => [
+    entry.output,
+    ...(entry.sharedImages ?? []).map((image) => image.output),
+  ]),
+);
+const total = [...live].reduce((sum, path) => sum + statSync(join(OUT, path)).size, 0);
 console.log(`[prep] ${selected.length} models, ${(total / 1048576).toFixed(1)} MiB (local-only)`);
 if (total > 130_000_000) throw new Error("Cook exceeds 130 MB");
