@@ -110,6 +110,7 @@ export class AutoExposureNode extends TempNode<"float"> {
       throw new Error("Exposure constant must be finite and positive.");
     this.input = input;
     this.settings = Object.freeze({ ...settings });
+    const policy = this.settings;
     this.#constant = constantExposure;
     this.#seed.value = Math.log2(settings.initialExposure);
     this.#enabled.value = settings.enabled;
@@ -124,21 +125,21 @@ export class AutoExposureNode extends TempNode<"float"> {
         .greaterThan(0)
         .and(luminance.greaterThan(0))
         .and(luminance.lessThan(3.4e38));
-      const goal = float(Math.log2(settings.key))
+      const goal = float(Math.log2(policy.key))
         .sub(luminance.max(1e-20).log2())
-        .clamp(settings.minStops, settings.maxStops);
+        .clamp(policy.minStops, policy.maxStops);
       const old = this.#resetMode
         .equal(1)
         .select(this.#seed, textureLoad(this.#previous, ivec2(0)).r);
       const error = goal.sub(old);
-      const rate = error.greaterThan(0).select(float(settings.rateUp), float(settings.rateDown));
+      const rate = error.greaterThan(0).select(float(policy.rateUp), float(policy.rateDown));
       const normal = float(1).sub(this.#delta.mul(rate).negate().exp());
-      const cut = smoothstep(settings.snapLo, settings.snapHi, error.abs()).mul(settings.snapGain);
+      const cut = smoothstep(policy.snapLo, policy.snapHi, error.abs()).mul(policy.snapGain);
       const adapted = valid.select(
         this.#resetMode.equal(2).select(goal, mix(old, goal, mix(normal, float(1), cut))),
         old,
       );
-      const settled = goal.sub(adapted).abs().lessThanEqual(settings.settleStops).select(1, 0);
+      const settled = goal.sub(adapted).abs().lessThanEqual(policy.settleStops).select(1, 0);
       return vec4(adapted, valid.select(luminance, -1), goal, settled);
     })();
   }

@@ -38,6 +38,7 @@ if (!process.argv.includes("--build-only")) {
   const results = [];
   for (const item of cases) {
     const directory = join(artifacts, item.name);
+    await mkdir(directory, { recursive: true });
     const report = await runStandalonePlaytest({
       artifactDirectory: directory,
       projectPath: fixture,
@@ -45,7 +46,7 @@ if (!process.argv.includes("--build-only")) {
       url: `http://127.0.0.1:4173/?${item.query}`,
       port: 0,
       server: {
-        command: `${JSON.stringify(process.execPath)} ${JSON.stringify(vite)} preview --host 127.0.0.1 --port $PORT --strictPort --outDir ${JSON.stringify(site)}`,
+        command: `TN_EXPOSURE_HTTP_LOG=${JSON.stringify(join(directory, "http-errors.jsonl"))} ${JSON.stringify(process.execPath)} ${JSON.stringify(vite)} preview --host 127.0.0.1 --port $PORT --strictPort --outDir ${JSON.stringify(site)}`,
         cwd: fixture,
       },
       timeoutMs: 180_000,
@@ -56,6 +57,10 @@ if (!process.argv.includes("--build-only")) {
       allowSoftwareAdapter: true,
       captureArtifactScreenshots: true,
     });
+    await writeFile(
+      join(directory, "report.json"),
+      `${JSON.stringify({ sourceSha, ...report }, null, 2)}\n`,
+    );
     const messages = report.observations?.console.filter((entry) =>
       entry.text.startsWith("TN_AUTO_EXPOSURE:"),
     );
@@ -75,7 +80,9 @@ if (!process.argv.includes("--build-only")) {
           Math.abs(measurement.targetStops - measurement.exposureStops) > 0.25)) ||
       (!item.applied && measurement.exposureStops !== 0)
     )
-      throw new Error(`${item.name}: exposure proof failed; inspect ${directory}/report.json.`);
+      throw new Error(
+        `${item.name}: exposure proof failed: ${JSON.stringify({ pass: report.pass, diagnostics: report.diagnostics, measurement })}; inspect ${directory}/report.json.`,
+      );
     const screenshot = join(directory, "after.png");
     if ((await stat(screenshot)).size === 0)
       throw new Error(`${item.name}: runtime screenshot missing.`);

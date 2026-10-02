@@ -1,5 +1,3 @@
-import { type ICtx, Scene, defineGame } from "@threenative/core";
-import { playtest } from "@threenative/core/playtest";
 import {
   ACESFilmicToneMapping,
   AmbientLight,
@@ -12,6 +10,8 @@ import {
 } from "three";
 import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
+import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
+import { playtest } from "../../../../core/dist/playtest.js";
 import { AutoExposureNode } from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
 

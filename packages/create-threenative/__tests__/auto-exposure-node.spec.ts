@@ -13,7 +13,8 @@ import { AutoExposureNode } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
 
 function harness(enabled = true) {
-  const node = new AutoExposureNode(texture(new Texture()), { ...exposureSettings, enabled }, 2);
+  const settings = { ...exposureSettings, enabled };
+  const node = new AutoExposureNode(texture(new Texture()), settings, 2);
   const frame = new NodeFrame();
   let size: [number, number] = [17, 5];
   const targets: RenderTarget[] = [];
@@ -46,6 +47,7 @@ function harness(enabled = true) {
     frame,
     targets,
     renderer: frame.renderer,
+    settings,
     resize: (width: number, height: number) => {
       size = [width, height];
     },
@@ -160,7 +162,8 @@ describe("GPU exposure lifecycle", () => {
       const flow = builder.flowStagesNode(graph, "vec4");
       generated.push(`${flow.code}\n${flow.result}`);
     });
-    const { node, frame } = harness();
+    const { node, frame, settings } = harness();
+    settings.rateUp = 99999; // A caller mutation cannot replace the validated shader policy.
     node.updateBefore(frame);
     expect(generated).toHaveLength(4);
     expect(generated[0]?.match(/textureLoad\(/gu)).toHaveLength(16);
@@ -168,6 +171,7 @@ describe("GPU exposure lifecycle", () => {
     expect(generated[3]).toContain("log2(");
     expect(generated[3]).toContain("smoothstep(");
     expect(generated[3]).toContain("exp(");
+    expect(generated[3]).not.toContain("99999");
     expect(generated.join("\n")).not.toContain("textureSample(");
     node.dispose();
   });

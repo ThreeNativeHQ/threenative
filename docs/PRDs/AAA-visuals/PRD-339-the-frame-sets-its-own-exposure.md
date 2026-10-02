@@ -134,8 +134,11 @@ graphs now generate WGSL through Three's builder (29 focused tests green); fixtu
 scoped strict types and 141 CI-structure/needs tests also pass. A portable scene using the existing
 engine loop and one explicit world pass now has static/cut playtests and a dedicated hosted
 `Integration exposure` capture workflow. Local runtime attempt refuses the missing X display/Xvfb;
-a fresh manager Unix-socket probe also returned EPERM. Actual GPU execution, runtime screenshots,
-settle/cold-boot assertions and native proof remain unverified. Earlier lost-workspace results are
+a fresh manager Unix-socket probe also returned EPERM. First hosted execution at `bb34aff158d07973cba5eaef53b3464caa7917bf`,
+[run 36986637037](https://github.com/ThreeNativeHQ/threenative/actions/runs/36986637037),
+produced an inspected real 640×360 room screenshot on SwiftShader WebGPU: luminance 0.001918947,
+applied 6.4936 stops versus target 6.5515, settled=true. Its gate still failed a browser console 404;
+all-case screenshot qualification, settle/cold-boot assertions and native proof remain open. Earlier lost-workspace results are
 not evidence for this implementation.
 
 ## Implementation decisions
