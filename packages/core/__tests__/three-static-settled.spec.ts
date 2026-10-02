@@ -1,7 +1,5 @@
 import { BoxGeometry, Euler, InstancedMesh, Quaternion } from "three";
-// @ts-expect-error Three's private binding manager has no public declarations.
 import Bindings from "three/src/renderers/common/Bindings.js";
-// @ts-expect-error Three's private geometry manager has no public declarations.
 import Geometries from "three/src/renderers/common/Geometries.js";
 import Renderer from "three/src/renderers/common/Renderer.js";
 // @ts-expect-error Three's node manager has no public declarations.

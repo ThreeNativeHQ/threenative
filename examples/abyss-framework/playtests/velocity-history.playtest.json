@@ -68,7 +68,7 @@
         "path": "stationaryMax",
         "gte": 0,
         "lte": 1e-5,
-        "allowTrivial": "The whole static wall and every pixel outside the moving geometry bounds must remain still."
+        "allowTrivial": "Pixels outside the conservative moving-sphere rectangle, including the static geometry, must remain still."
       },
       {
         "id": "motion",

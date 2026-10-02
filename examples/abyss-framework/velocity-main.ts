@@ -61,6 +61,7 @@ const aggregateHistory = query.has("aggregate-history");
 const currentAsPrevious = query.has("current-as-previous");
 const lateWrite = query.has("late-write");
 const prematureCommit = query.has("premature-commit");
+const recompile = query.has("recompile");
 const material = new MeshStandardMaterial({ color: 0x69c5ff, roughness: 0.38 });
 let mesh: BatchedMesh | InstancedMesh | SkinnedMesh;
 if (skinned) {
@@ -123,6 +124,7 @@ let firstFrameMax = -1;
 let metrics = { staticMax: 0, stationaryMax: 0, movingMax: 0, movingPixels: 0 };
 let colourMaxErrorPixels = 0;
 let lateWrites = 0;
+let recompiles = 0;
 let oracleMaxErrorPixels = 0;
 let stoppedMax = -1;
 let currentX = 1.5;
@@ -155,6 +157,10 @@ async function renderFrame() {
     projection.reconcile();
   }
   mutateHistory();
+  if (recompile && frame === 3) {
+    renderer.contextNode.needsUpdate = true;
+    recompiles += 1;
+  }
   if (projection.root !== scene || projection.report.reasonCode !== "disabled")
     throw new Error("Velocity fixture must render the authored, opted-out scene.");
   pipeline.render();
@@ -285,6 +291,8 @@ installThreePlaytestBridge({
         lateWrite,
         prematureCommit,
         lateWrites,
+        recompile,
+        recompiles,
         colourMaxErrorPixels,
         oracleMaxErrorPixels,
         stoppedMax,

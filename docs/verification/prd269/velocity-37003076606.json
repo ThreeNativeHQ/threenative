@@ -43,9 +43,9 @@
   "qualification": "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim",
   "limits": {
     "maximumSignedVelocityErrorPixels": 0.05,
-    "maximumStaticVelocity": 1e-05,
-    "maximumFirstFrameVelocity": 1e-05,
-    "maximumStoppedVelocity": 1e-05,
+    "maximumStaticVelocity": 1e-5,
+    "maximumFirstFrameVelocity": 1e-5,
+    "maximumStoppedVelocity": 1e-5,
     "minimumMovingPixels": 100
   },
   "variants": [

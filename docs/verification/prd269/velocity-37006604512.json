@@ -86,10 +86,10 @@
   "limits": {
     "maximumSignedVelocityErrorPixels": 0.05,
     "maximumColourCentroidErrorPixels": 0.5,
-    "maximumStaticVelocity": 1e-05,
-    "maximumStationaryVelocity": 1e-05,
-    "maximumFirstFrameVelocity": 1e-05,
-    "maximumStoppedVelocity": 1e-05,
+    "maximumStaticVelocity": 1e-5,
+    "maximumStationaryVelocity": 1e-5,
+    "maximumFirstFrameVelocity": 1e-5,
+    "maximumStoppedVelocity": 1e-5,
     "minimumMovingPixels": 100
   },
   "limitations": [
@@ -277,10 +277,7 @@
           "suggestion": "Check resource IDs, script writes, and assertion path spelling."
         }
       ],
-      "failedAssertions": [
-        "resource.motion.movingPixels",
-        "resource.motion.oracleMaxErrorPixels"
-      ]
+      "failedAssertions": ["resource.motion.movingPixels", "resource.motion.oracleMaxErrorPixels"]
     },
     {
       "variant": "tracked",
@@ -965,10 +962,7 @@
           "suggestion": "Check resource IDs, script writes, and assertion path spelling."
         }
       ],
-      "failedAssertions": [
-        "resource.motion.staticMax",
-        "resource.motion.stationaryMax"
-      ]
+      "failedAssertions": ["resource.motion.staticMax", "resource.motion.stationaryMax"]
     },
     {
       "variant": "aggregate-instance",
@@ -1149,10 +1143,7 @@
           "suggestion": "Check resource IDs, script writes, and assertion path spelling."
         }
       ],
-      "failedAssertions": [
-        "resource.motion.staticMax",
-        "resource.motion.stationaryMax"
-      ]
+      "failedAssertions": ["resource.motion.staticMax", "resource.motion.stationaryMax"]
     },
     {
       "variant": "skinned",
@@ -1501,10 +1492,7 @@
           "suggestion": "Check resource IDs, script writes, and assertion path spelling."
         }
       ],
-      "failedAssertions": [
-        "resource.motion.movingPixels",
-        "resource.motion.oracleMaxErrorPixels"
-      ]
+      "failedAssertions": ["resource.motion.movingPixels", "resource.motion.oracleMaxErrorPixels"]
     },
     {
       "variant": "late-write",
@@ -1853,10 +1841,7 @@
           "suggestion": "Check resource IDs, script writes, and assertion path spelling."
         }
       ],
-      "failedAssertions": [
-        "resource.motion.movingPixels",
-        "resource.motion.oracleMaxErrorPixels"
-      ]
+      "failedAssertions": ["resource.motion.movingPixels", "resource.motion.oracleMaxErrorPixels"]
     }
   ]
 }

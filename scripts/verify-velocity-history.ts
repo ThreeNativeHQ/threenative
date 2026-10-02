@@ -37,6 +37,12 @@ try {
     { variant: "tracked", query: "", kind: "BatchedMesh", failures: [] },
     { variant: "instanced", query: "?instanced", kind: "InstancedMesh", failures: [] },
     {
+      variant: "instanced-recompile",
+      query: "?instanced&recompile",
+      kind: "InstancedMesh",
+      failures: [],
+    },
+    {
       variant: "instanced-dynamic",
       query: "?instanced&dynamic",
       kind: "InstancedMesh",
@@ -119,13 +125,14 @@ try {
     );
     const snapshot = report.observations?.resources.motion?.after;
     assert.ok(snapshot && typeof snapshot === "object" && !Array.isArray(snapshot));
-    assert.ok("geometryKind" in snapshot && "lateWrites" in snapshot);
+    assert.ok("geometryKind" in snapshot && "lateWrites" in snapshot && "recompiles" in snapshot);
     assert.equal(snapshot.geometryKind, kind, `${variant}: actual geometry class`);
     assert.equal(
       snapshot.lateWrites,
       query.includes("late-write") ? 8 : 0,
       `${variant}: writes after scheduling`,
     );
+    assert.equal(snapshot.recompiles, query.includes("recompile") ? 1 : 0, `${variant}: rebuilds`);
   }
   assert.ok(
     !(await readFile(path.join(output, "without-history/after.png"))).equals(
