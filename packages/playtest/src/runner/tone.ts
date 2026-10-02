@@ -11,7 +11,15 @@ export async function toneCommand(paths: readonly string[]): Promise<number> {
     if (metrics === undefined) throw new Error(`TN_TONE_UNOBSERVED: '${path}' has no visible pixels.`);
     rows.push({ label: path, metrics });
   }
-  const average = Object.fromEntries(TONE_METRICS.map((key) => [key, rows.reduce((sum, { metrics }) => sum + metrics[key], 0) / rows.length])) as unknown as IToneMetrics;
+  const meanOf = (key: keyof IToneMetrics): number => rows.reduce((sum, { metrics }) => sum + metrics[key], 0) / rows.length;
+  const average: IToneMetrics = {
+    mean: meanOf("mean"),
+    p1: meanOf("p1"),
+    p50: meanOf("p50"),
+    p99: meanOf("p99"),
+    clipFraction: meanOf("clipFraction"),
+    blackFraction: meanOf("blackFraction"),
+  };
   rows.push({ label: "average", metrics: average });
   const lines = rows.map(({ label, metrics }) => [label, ...TONE_METRICS.map((key) => (metrics[key] * (key.endsWith("Fraction") ? 100 : 1)).toFixed(2))].join("\t"));
   process.stdout.write(["frame\tmean\tp1\tp50\tp99\tclip%\tblack%", ...lines, ""].join("\n"));
