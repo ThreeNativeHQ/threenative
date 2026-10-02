@@ -2011,3 +2011,16 @@ are untouched. A licensed candidate passed all 54 top-level assertions, all 17 v
 p50 budgets (maximum 3.6 ms), ocean verification and the 0.5 luminance-quantile
 guard. The next candidate failed the river/max-view CPU budgets at 4.1 ms; added
 rock density is reduced before final qualification. Example tsc passes.
+
+Qualification increment: the active shared alpine snow helper now thresholds
+elevation, geometric slope and wind exposure; tundra no longer multiplies snow
+by broad colour noise. Steep alpine faces receive exposed rock. The existing
+GUI producer (`RECORD=1 pnpm test:terrain:authored`) refreshed its erosion-sensitive
+fixture and passed live-terrain/GLB equality. Packed `pnpm test:consumer` now passes,
+including all five canonical baked-height hashes, their full-world terrain/water
+exports, and the edited-world game handoff on NVIDIA Turing WebGPU. The producer
+fixture is refreshed rather than weakening any consumer tolerance. Example tsc,
+Biome and temperate placement/contact checks pass. Warm `pnpm bake`: **1.141 s**,
+all output modification times unchanged. Docs checks and all **180/180** selected
+document checks pass. A third, unchanged-performance final run is pending: the
+preceding run failed forest player/river at 6.3/5.4 ms; Chromium/Xvfb doctor passes.

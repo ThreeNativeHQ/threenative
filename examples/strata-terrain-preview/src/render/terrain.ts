@@ -395,6 +395,7 @@ export function createGroundMaterial(
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
   // Transport, slope and shelter choose the splat; noise only frays the material's edge.
   weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
+  if (biome?.world === "alpine") weights.rock = max(weights.rock, smoothstep(0.08, 0.22, slope));
   weights.dirt = max(weights.dirt.mul(0.45), deposits.mul(0.85))
     .mul(oneMinus(smoothstep(0.22, 0.4, slope)))
     .mul(sand.oneMinus());
