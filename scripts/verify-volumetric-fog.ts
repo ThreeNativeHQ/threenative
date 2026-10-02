@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 import { type IPlaytestScenario, loadPlaytestScenario } from "../packages/playtest/dist/index.js";
+import { regionMetrics } from "../packages/playtest/src/runner/steps.js";
 // Use the built public runner: source-runner browser callbacks under tsx may capture __name.
 import {
   type IStandalonePlaytestReport,
@@ -178,6 +179,48 @@ export async function fogCaptureScenarios() {
     result.push({ mode, scenario });
   }
   return result;
+}
+
+// A one-variable diagnostic: retain this fixture's geometry, renderer and resize path,
+// while never creating a fog controller. The ordinary 17-case acceptance sequence is separate.
+export function fogResizeControlScenarios() {
+  return ["resizeOff", "resizeOffRestore"].map((mode) => {
+    const scenario = fogCaptureScenario("off", "KeyO");
+    scenario.name = `vq-volumetric-fog-${mode}`;
+    for (const key of mode === "resizeOff" ? ["KeyR"] : ["KeyR", "KeyT"])
+      scenario.steps.push(
+        { press: [key], holdTicks: 1, release: true },
+        { kind: "wait", waitFrames: 60, release: true },
+        textureBoundary,
+      );
+    scenario.assert?.components?.push(
+      ...["createdTargets", "releasedTargets", "liveTargets"].map((component) => ({
+        entity: "fog",
+        component,
+        equals: 0,
+        allowTrivial: "The resize control must never allocate a fog controller or target.",
+      })),
+    );
+    return { mode, scenario };
+  });
+}
+
+export function fogNativePixelMetrics(png: PNG) {
+  const metrics = regionMetrics(png, { x: 0, y: 0, width: png.width, height: png.height });
+  return { ...metrics, minimum: 0.05, pass: metrics.nonblankPixelRatio >= 0.05 };
+}
+
+export async function readFogNativeConsole(
+  report: Pick<IStandalonePlaytestReport, "pass" | "capture" | "diagnostics">,
+  consolePath: string,
+  viewport = { width: 640, height: 400 },
+): Promise<unknown> {
+  // Failed hosts can exit before writing console.json. Preserve their actual diagnostic.
+  if (!fogCaptureIsValid(report, viewport))
+    throw new Error(
+      `VQ07 native capture failed: ${report.diagnostics.map(({ code, message }) => `${code}: ${message}`).join("; ") || "invalid capture report"}`,
+    );
+  return JSON.parse(await readFile(consolePath, "utf8"));
 }
 
 export function fogTextureBaselineMatches(
@@ -379,10 +422,17 @@ export function fogNativeCaptureIsValid(
 
 async function main(): Promise<void> {
   const nativeRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
+  const resizeControl = process.env.VQ_FOG_RESIZE_CONTROL === "1";
+  if (resizeControl && nativeRuntime === undefined)
+    throw new Error("The native resize control requires the actual desktop host.");
   const artifacts = path.join(
     root,
     "artifacts",
-    nativeRuntime === undefined ? "volumetric-fog" : "volumetric-fog-native",
+    resizeControl
+      ? "volumetric-fog-native-resize-control"
+      : nativeRuntime === undefined
+        ? "volumetric-fog"
+        : "volumetric-fog-native",
   );
   const nativeBundle = path.join(artifacts, "fog-native.js");
   const hash = async (file: string) =>
@@ -404,6 +454,7 @@ async function main(): Promise<void> {
   const summary = {
     sourceSha,
     pass: false,
+    resizeControl,
     executionHost: { platform: process.platform, architecture: process.arch },
     nativeArtifacts: undefined as { runtimeSha256: string; bundleSha256: string } | undefined,
     qualification:
@@ -443,13 +494,17 @@ async function main(): Promise<void> {
         bundleSha256: await hash(nativeBundle),
       };
     }
-    for (const { mode, scenario: authored } of await fogCaptureScenarios()) {
+    for (const { mode, scenario: authored } of resizeControl
+      ? fogResizeControlScenarios()
+      : await fogCaptureScenarios()) {
       const scenario =
         nativeRuntime === undefined
           ? authored
           : nativeFogScenario(
               authored,
-              mode === "resizeSmall" ? { width: 320, height: 240 } : authored.viewport,
+              mode === "resizeSmall" || mode === "resizeOff"
+                ? { width: 320, height: 240 }
+                : authored.viewport,
             );
       const directory = path.join(artifacts, mode);
       await mkdir(directory, { recursive: true });
@@ -499,7 +554,11 @@ async function main(): Promise<void> {
       const nativeConsole =
         nativeRuntime === undefined
           ? undefined
-          : JSON.parse(await readFile(path.join(directory, "console.json"), "utf8"));
+          : await readFogNativeConsole(
+              report,
+              path.join(directory, "console.json"),
+              scenario.viewport,
+            );
       const valid =
         nativeRuntime === undefined
           ? fogCaptureIsValid(report)
@@ -541,6 +600,23 @@ async function main(): Promise<void> {
         throw new Error(
           `VQ07 ${mode}: actual screenshot dimensions do not match the declared capture viewport.`,
         );
+      if (nativeRuntime !== undefined) {
+        const metrics = fogNativePixelMetrics(png);
+        results.push({ assertion: `${mode} authored whole-frame nonblank ratio`, ...metrics });
+        if (!metrics.pass)
+          throw new Error(
+            `VQ07 ${mode}: native pixels fail the authored five-percent nonblank gate.`,
+          );
+      }
+    }
+    if (resizeControl) {
+      if (
+        (await hash(nativeRuntime!)) !== summary.nativeArtifacts?.runtimeSha256 ||
+        (await hash(nativeBundle)) !== summary.nativeArtifacts?.bundleSha256
+      )
+        throw new Error("VQ07 native executable or game bundle changed during resize control.");
+      summary.pass = true;
+      return;
     }
     const off = PNG.sync.read(await readFile(path.join(artifacts, "off/after.png")));
     const zero = PNG.sync.read(await readFile(path.join(artifacts, "zero/after.png")));

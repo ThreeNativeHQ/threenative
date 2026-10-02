@@ -675,7 +675,7 @@
         "fix": {
           "instruction": "Inspect the named host output for the first native or JavaScript error; rerun the same scenario after fixing it."
         },
-        "message": "Device mailbox operation '20' exceeded 120000ms.; the host process has exited \u2014 last host output: Error in wgpuSurfaceGetCurrentTexture: Validation Error | Caused by: |   Surface image is already acquired | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace | fatal runtime error: failed to initiate panic, error 3656715680, aborting | [Mystral] Caught signal SIGABRT, exiting gracefully",
+        "message": "Device mailbox operation '20' exceeded 120000ms.; the host process has exited — last host output: Error in wgpuSurfaceGetCurrentTexture: Validation Error | Caused by: |   Surface image is already acquired | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace | fatal runtime error: failed to initiate panic, error 3656715680, aborting | [Mystral] Caught signal SIGABRT, exiting gracefully",
         "severity": "error",
         "suggestion": "Inspect the named host output for the first native or JavaScript error; rerun the same scenario after fixing it."
       }
@@ -1891,5 +1891,100 @@
       }
     ],
     "qualification": "Google SwiftShader browser WebGPU software correctness; includes each intermediate graph rendering before replacement, full teardown and portable target/depth resize."
+  },
+  "authoredNonblankRevalidation": {
+    "method": "Existing playtest regionMetrics on decoded original native PNGs, full frame, luminance >0.01, alpha >0, frozen minimum0.05; independently recomputed after whole-feature review.",
+    "images": {
+      "off": {
+        "darkPixelRatio": 0.67553515625,
+        "nonblankPixelRatio": 0.99937109375,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "zero": {
+        "darkPixelRatio": 0.67553515625,
+        "nonblankPixelRatio": 0.99937109375,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "fog": {
+        "darkPixelRatio": 0.62978515625,
+        "nonblankPixelRatio": 0.99998828125,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "inside": {
+        "darkPixelRatio": 0.17884765625,
+        "nonblankPixelRatio": 1,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "sunOff": {
+        "darkPixelRatio": 0.92972265625,
+        "nonblankPixelRatio": 0.999984375,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "pointOff": {
+        "darkPixelRatio": 0.65212890625,
+        "nonblankPixelRatio": 0.99893359375,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "overlap": {
+        "darkPixelRatio": 0.62975,
+        "nonblankPixelRatio": 0.99998828125,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "half": {
+        "darkPixelRatio": 0.6297734375,
+        "nonblankPixelRatio": 0.9999921875,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "wallOff": {
+        "darkPixelRatio": 0.62996484375,
+        "nonblankPixelRatio": 0.99998828125,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "blackOff": {
+        "darkPixelRatio": 0.94375,
+        "nonblankPixelRatio": 0.05625,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "scatter": {
+        "darkPixelRatio": 0.86383203125,
+        "nonblankPixelRatio": 0.23834375,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "scatterSunOff": {
+        "darkPixelRatio": 0.88630078125,
+        "nonblankPixelRatio": 0.236296875,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "scatterPointOff": {
+        "darkPixelRatio": 0.9053125,
+        "nonblankPixelRatio": 0.23907421875,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "lifecycle": {
+        "darkPixelRatio": 0.62978515625,
+        "nonblankPixelRatio": 0.99998828125,
+        "minimum": 0.05,
+        "pass": true
+      },
+      "lifecycleOff": {
+        "darkPixelRatio": 0.67553515625,
+        "nonblankPixelRatio": 0.99937109375,
+        "minimum": 0.05,
+        "pass": true
+      }
+    }
   }
 }

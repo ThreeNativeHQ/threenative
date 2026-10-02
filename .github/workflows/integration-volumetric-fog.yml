@@ -89,15 +89,29 @@ jobs:
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
       - name: Build the ordinary ARM desktop host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Isolate native resize with no fog allocation
+        id: resize-control
+        # Preserve the original fog sequence even when this diagnostic reproduces the abort.
+        # The final step below still fails the job if this control fails.
+        continue-on-error: true
+        env:
+          VQ_FOG_RESIZE_CONTROL: '1'
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
       - name: Run the same authored fog and pixel gates on the native host
         env:
           THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
         run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Require the no-fog resize control
+        if: always() && steps.resize-control.outcome != 'success'
+        run: exit 1
       - name: Retain native screenshots, host console and executable identities
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: volumetric-fog-native-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/volumetric-fog-native/
+          path: |
+            artifacts/volumetric-fog-native/
+            artifacts/volumetric-fog-native-resize-control/
           retention-days: 30
           if-no-files-found: warn
