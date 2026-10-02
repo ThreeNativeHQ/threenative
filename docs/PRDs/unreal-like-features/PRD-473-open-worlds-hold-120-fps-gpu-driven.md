@@ -69,7 +69,7 @@ Risks:
 - [ ] AC-2 [local]: world batches and static chunks replay from render bundles. A 200-frame walk re-records bundles only on key mint/retire, and per-frame JS in the render phase for the world is ≤ 1.5 ms at 400 world draws. proof: `world-bundles.spec.ts` (bundle version counters) plus `TN_FRAME_SPANS` on machinefall.
 - [ ] AC-3 [local]: a foliage asset gets an automatic octahedral impostor as its last LOD level, drawn beyond the chain, casting into the coarse shadow levels. Past the impostor distance, triangles per tree are 2. proof: `world-impostors.spec.ts` plus a visual-baseline capture at the switch distance.
 - [ ] AC-4 [local]: the cook bakes a per-cell HLOD proxy for hand-placed chunks, and WorldCells draws it beyond the HLOD distance: one draw per material group per cell. proof: `packages/assets/__tests__/hlod.spec.ts` plus the `TN_WORLD_CHUNK_MERGE` / `TN_WORLD_HLOD` markers on machinefall.
-- [ ] AC-5 [local]: machinefall `?scene=map-walk` holds CPU frame p95 ≤ 8.3 ms and GPU p95 ≤ 8.3 ms on the RTX 2080 WebGPU adapter, with 0 console errors and no game-side performance option. proof: the walk harness's `TN_FRAME_BUDGET` windows.
+- AC-5 (map-walk at 120 fps) moved to [PRD-475](PRD-475-open-world-120-fps-without-visual-loss.md) on 2026-10-01 (João): this PRD keeps the mechanisms, PRD-475 owns the frame target and the no-visual-loss check.
 - [ ] AC-6 [local]: every mechanism falls back to PRD-458's CPU path on a backend without compute/indirect support, reporting why in `TN_WORLD_GPU_SCENE`. proof: a unit test with a backend lacking `drawIndexedIndirect`.
 
 ## Phases
@@ -88,7 +88,9 @@ The largest CPU and GPU win, and the prerequisite for bundles.
 ### Phase 3 — Impostors (AC-3) and HLOD (AC-4)
 They are independent; the executable plan is below. Impostors are not implemented in the visibility pass.
 
-### Phase 4 — Measure and tune (AC-5)
+### Phase 4 — Measure and tune
+
+Moved to PRD-475 with AC-5 (decision 2026-10-01, João).
 
 ## GPU-driven main-pass visibility (bugfix + continuity)
 

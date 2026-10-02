@@ -16,6 +16,7 @@ on:
       - '.github/actions/workspace-dist/**'
       - 'scripts/fluid-collision-proof.ts'
       - 'scripts/__tests__/fluid-collision-proof.spec.ts'
+      - 'scripts/__tests__/fluid-collision-view.spec.ts'
       - 'pnpm-lock.yaml'
       - '.github/actions/pnpm/**'
       - '.github/actions/playwright-chromium/**'
@@ -44,7 +45,7 @@ jobs:
       - name: Build the current public playtest bridge
         run: pnpm --filter @threenative/playtest build
       - name: Validate solver and fail-closed proof contracts
-        run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/fluid-particles.spec.ts packages/core/__tests__/gpu-readback.spec.ts scripts/__tests__/fluid-collision-proof.spec.ts
+        run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/fluid-particles.spec.ts packages/core/__tests__/gpu-readback.spec.ts scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-view.spec.ts
       - name: Render real GPU readbacks and the missing-gate control
         run: sh scripts/xvfb.sh pnpm exec tsx scripts/verify-fluid-collision.ts
       - name: Retain captured pixels and minimal source provenance

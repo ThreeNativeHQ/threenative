@@ -1,7 +1,27 @@
 import { FluidParticles3D, type IFluidCollider } from "@threenative/core";
 import { installThreePlaytestBridge } from "@threenative/playtest/three";
-import { BoxGeometry, Color, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene } from "three";
-import { Sprite, SpriteNodeMaterial, WebGPURenderer } from "three/webgpu";
+import {
+  AmbientLight,
+  BoxGeometry,
+  Color,
+  DirectionalLight,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Scene,
+  SphereGeometry,
+} from "three";
+import { positionLocal } from "three/tsl";
+import { MeshLambertNodeMaterial, WebGPURenderer } from "three/webgpu";
+
+/** Draw the actual GPU position at the solver's collision radius, with readable surface shading. */
+export function createParticleView(water: FluidParticles3D) {
+  const material = new MeshLambertNodeMaterial({ color: 0x63d7ff });
+  material.positionNode = positionLocal.add(water.positions.element(0).xyz);
+  const particle = new Mesh(new SphereGeometry(water.spacing * 0.44, 24, 16), material);
+  particle.frustumCulled = false;
+  return particle;
+}
 
 async function start({ gateClosed = true } = {}) {
   // The renderer consumes this exact device on both runtimes, so its adapter identity is observed.
@@ -103,13 +123,10 @@ async function start({ gateClosed = true } = {}) {
   const camera = new PerspectiveCamera(42, 960 / 540, 0.1, 10);
   camera.position.set(-0.9, 1.2, 2);
   camera.lookAt(-0.9, 1, 0);
-  const particleMaterial = new SpriteNodeMaterial({ color: 0x63d7ff });
-  particleMaterial.positionNode = primary.positions.toAttribute().xyz;
-  particleMaterial.scaleNode = primary.positions.toAttribute().w.mul(0.12);
-  const particle = new Sprite(particleMaterial);
-  particle.count = 1;
-  particle.frustumCulled = false;
-  scene.add(particle);
+  scene.add(createParticleView(primary));
+  const keyLight = new DirectionalLight(0xffffff, 2);
+  keyLight.position.set(-2, 3, 3);
+  scene.add(keyLight, new AmbientLight(0xffffff, 0.6));
   const wall = new Mesh(
     new BoxGeometry(0.1, 1, 0.8),
     new MeshBasicMaterial({ color: gateClosed ? 0xef9a42 : 0x547489, wireframe: !gateClosed }),
