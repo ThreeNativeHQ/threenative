@@ -162,9 +162,11 @@ skip it.
 #### Phase 3: Triggers fire only when they prove something
 
 **Status:** COMPLETE
-**Files:** EDIT `.github/workflows/pipeline-cache.yml`, `.github/workflows/integration-*.yml`,
-`scripts/__tests__/ci-structure.spec.ts` (workflow-file allow-list, so per-branch workflows cannot land
-unreviewed).
+**Files:** EDIT `.github/workflows/pipeline-cache.yml`, DELETE `.github/workflows/integration-*.yml` for
+`.github/workflows/integration.yml`, `scripts/workspace-packages.ts` (a hand-listed package set is one
+run block, not one file), `scripts/__tests__/ci-structure.spec.ts`,
+`scripts/__tests__/workspace-packages.spec.ts` (workflow-file allow-list, so per-branch workflows cannot
+land unreviewed).
 
 - [x] `pipeline-cache.yml` fires only on paths its proof reads, with no dead branch. proof:
   `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`. Evidence: 2026-10-02, 126 passed;
@@ -177,3 +179,16 @@ unreviewed).
   (pull request #394 merged 2026-10-02) are both removed; every integration job now carries
   `!github.event.pull_request.draft`, and each trigger gained `ready_for_review` so that guard cannot
   silence the lane.
+- [x] The per-feature `integration-*.yml` files fold into one `integration.yml`, one job per feature with
+  its own `paths` gate, draft guard and routing expression kept per job. proof:
+  `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` — its allow-list lists one integration
+  workflow and rejects a new `integration-*.yml`. Evidence: 2026-10-02, 131 passed, each of the two
+  new assertions red first: a lane without `needs: paths` and a lane gate without
+  `!github.event.pull_request.draft` both fail, and adding `integration-newlane.yml` fails the
+  allow-list. The five lanes' steps, permissions, timeouts, runners, checkout refs and artifact names
+  are unchanged; `dorny/paths-filter` (pinned to the v4.0.3 commit) reads the pull request's own
+  changed paths once, so a lane this commit does not touch is skipped rather than given a runner, and
+  the csg and decals supersession groups become one. What changes: a job id's check name
+  (`test` becomes `csg` / `ik` / `vegetation`, which were three indistinguishable `test` checks), a
+  ~30-second gate job on every pull request, and cancellation applying to the three lanes that queued
+  behind a superseded run instead of cancelling it.

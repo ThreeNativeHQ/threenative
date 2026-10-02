@@ -428,11 +428,7 @@ const workflows = [
 const reviewedWorkflows = [
   ".github/workflows/build-quiche-owned.yml",
   ".github/workflows/ci.yml",
-  ".github/workflows/integration-csg.yml",
-  ".github/workflows/integration-decals.yml",
-  ".github/workflows/integration-ik.yml",
-  ".github/workflows/integration-tone.yml",
-  ".github/workflows/integration-vegetation.yml",
+  ".github/workflows/integration.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
   ".github/workflows/npm-release.yml",
@@ -1050,28 +1046,58 @@ describe("CI pipeline structure", () => {
       .map((name) => `.github/workflows/${name}`)
       .sort();
     expect(onDisk).toEqual([...reviewedWorkflows].sort());
+    // The owner's rule: no workflow file per feature. A new lane is a job in an existing workflow
+    // with its own paths gate, not a new set of triggers, permissions and required checks. The
+    // allow-list above already rejects an unnamed file; this names the shape it rejects.
+    expect(
+      onDisk.filter((name) => /integration-[^/]+\.ya?ml$/u.test(name)),
+      "a per-feature integration workflow is back; add its proof as a job in integration.yml",
+    ).toEqual([]);
   });
 
-  it("runs each integration lane once per commit and never on a draft", async () => {
-    const integrations = reviewedWorkflows.filter((name) => name.includes("/integration-"));
-    expect(integrations.length, "the integration lanes went unreviewed").toBeGreaterThanOrEqual(5);
-
-    for (const relative of integrations) {
-      const source = await readFile(path.join(repo, relative), "utf8");
-      expect(duplicateCommitTriggers(source), relative).toEqual([]);
-      // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
-      // listens for. Without `ready_for_review` the guard turns the lane off rather than cheap.
-      expect(triggerSection(source), relative).toContain(
-        "types: [opened, synchronize, reopened, ready_for_review]",
+  it("keeps every integration lane in one workflow, each with its own paths gate", async () => {
+    const integrations = reviewedWorkflows.filter((name) => name.includes("/integration"));
+    expect(
+      integrations,
+      "the integration lanes are one workflow, not one file per feature",
+    ).toEqual([".github/workflows/integration.yml"]);
+    const source = await readFile(path.join(repo, ".github/workflows/integration.yml"), "utf8");
+    expect(duplicateCommitTriggers(source)).toEqual([]);
+    // Skipping drafts only saves a runner if the event that ends the draft is one this workflow
+    // listens for. Without `ready_for_review` the guard turns the lanes off rather than cheap.
+    expect(triggerSection(source)).toContain(
+      "types: [opened, synchronize, reopened, ready_for_review]",
+    );
+    const sections = jobSections(source);
+    // A job behind another job of the same workflow is skipped when that one is, so the guard belongs
+    // on the entry points only.
+    for (const [job, section] of sections) {
+      if (/^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} runs on a draft`).toContain(
+        "if: ${{ !github.event.pull_request.draft }}",
       );
-      for (const [job, section] of jobSections(source)) {
-        // A job behind another job of the same workflow is skipped when that one is, so the guard
-        // belongs on the entry points only.
-        if (/^ {4}needs:/mu.test(section)) continue;
-        expect(section, `${relative} ${job} runs on a draft`).toContain(
-          "if: ${{ !github.event.pull_request.draft }}",
+    }
+    // One gate, one output per lane, and every lane job reads its own. A lane folded in without its
+    // filter would run on every pull request; a filter with no job behind it would silently stop.
+    const lanes = [...source.matchAll(/^ {12}([a-z][a-z-]*):$/gmu)].map((match) => match[1]);
+    expect(lanes.length, "a lane lost its trigger filter").toBeGreaterThanOrEqual(5);
+    for (const lane of lanes) {
+      const gated = sections.filter(([, section]) =>
+        section.includes(`needs.paths.outputs.${lane} == 'true'`),
+      );
+      expect(gated.length, `no job runs the ${lane} gate`).toBeGreaterThanOrEqual(1);
+      for (const [job, section] of gated) {
+        expect(section, `${job} runs the ${lane} gate on a draft`).toContain(
+          "!github.event.pull_request.draft",
         );
       }
+      expect(source, `the ${lane} gate is not exposed as a job output`).toContain(
+        `${lane}: \${{ steps.filter.outputs.${lane} }}`,
+      );
+    }
+    for (const [job, section] of sections) {
+      if (job === "paths" || /^ {4}needs:/mu.test(section)) continue;
+      expect(section, `${job} is not behind a per-lane gate`).toContain("needs: paths");
     }
   });
 
