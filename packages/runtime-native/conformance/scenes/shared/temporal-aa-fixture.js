@@ -12,6 +12,7 @@ import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
 export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false) {
+  const policy = variant.replace(/-open$/u, "");
   scene.background = new THREE.Color(0x0d1630);
   camera.position.set(0, 0.3, 6);
   const sun = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -73,13 +74,13 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
         temporal = createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
         // Diagnostic: normalized depth range is at most 1, so only the upstream edge bypass
         // is disabled. Its disocclusion threshold and history blend remain identical.
-        if (variant === "strict-rejection") temporal.node.edgeDepthDiff = 1;
+        if (policy === "strict-rejection") temporal.node.edgeDepthDiff = 1;
         const setup = temporal.node.setup.bind(temporal.node);
         temporal.node.setup = (builder) => {
           setupCount++;
           if (camera.view?.enabled) setupDuringJitter++;
           const result = setup(builder);
-          if (variant === "unchecked-history") {
+          if (policy === "unchecked-history") {
           // Fixture-only negative control: actually render an unchecked 95% history blend.
           // This bypasses depth rejection AND neighbourhood clipping; it is not a product mode
           // and does not isolate either mechanism's individual contribution.
@@ -128,7 +129,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   });
   const render = () => {
     if (variant === "recompile" && frame === 22) renderer.contextNode.needsUpdate = true;
-    if (measurement) occluder.visible = frame < 28;
+    if (measurement) occluder.visible = frame < 28 && !variant.endsWith("-open");
     rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
     limb.rotation.z = Math.sin(frame / 13) * 0.7;
     for (let index = 0; index < instances.count; index++) {

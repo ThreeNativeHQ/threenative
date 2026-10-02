@@ -164,9 +164,20 @@ A re-setup regression also reproduced copying an active camera jitter into the s
 The helper now tracks its own active view offset, preserves the unjittered matrix during setup,
 and avoids applying the same frame jitter twice. The maintained recompile arm changes the public
 renderer context-node version and must observe both a repeated setup during jitter and correct
-MRT velocity; runtime verification is pending. A separate fixture-only strict-rejection arm sets
+MRT velocity. Hosted run `36999580189` at `2b9bdf16aba68c86ba5f8ce0af784727a215c8ed`
+observes setup count 1→2 while jitter is active at frame 23, with maximum rigid error 0.000308
+pixel. Ordinary temporal PNGs remain byte-identical to the prior run. A separate fixture-only
+strict-rejection arm sets
 TRAA edgeDepthDiff to 1 to test its documented depth-edge exception without changing blend weights,
 any quality threshold, or generated appearance policy.
+[Actual control frame](../../verification/prd455/edge-exception-control.png) and
+[all original scores/lifecycle evidence](../../verification/prd455/edge-exception-control.json)
+record the measured comparison. Strict rejection yields zero projected stale pixels one frame
+after reveal, but 59 late pixels still trip that score; inspecting them shows dark-blue fence
+undercoverage, which can point toward the old red vector without added red. The score remains
+unchanged and conservative. A separate matched open-history control and red-excess diagnostic
+are being added to isolate causal tint; regressions reject neutral brightening/darkening and
+recover a known 25% injected red history. The independent edge-quality bar remains red.
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.

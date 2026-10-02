@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linearFrame, measureSequence } from "../temporal-aa-quality.js";
+import { linearFrame, measureCausalReveal, measureSequence } from "../temporal-aa-quality.js";
 
 const image = (width: number, height: number, colour: (x: number, y: number) => number[]) => ({
   width,
@@ -69,5 +69,45 @@ describe("temporal sequence measurements", () => {
     const result = measureSequence(reference, bad, 3);
     expect(result.edgeError).toBeCloseTo(0.1);
     expect(result.residualInstability).toBeCloseTo(0.2);
+  });
+
+  it("separates neutral brightness errors from causal red history in matched open controls", () => {
+    const open = reference.map((frame) => ({
+      ...frame,
+      rgb: Float64Array.from(frame.rgb, (_, i) => [0.2, 0.3, 0.5][i % 3] ?? 0),
+    }));
+    for (const delta of [-0.1, 0.1]) {
+      const neutral = open.map((frame) => ({
+        ...frame,
+        rgb: Float64Array.from(frame.rgb, (value) => value + delta),
+      }));
+      const result = measureCausalReveal(reference, neutral, open, 3);
+      expect(result).toHaveLength(3);
+      expect(result.every((frame) => frame.redTintFraction === 0)).toBe(true);
+      expect(result.every((frame) => frame.meanAbsoluteDifference > 0.09)).toBe(true);
+    }
+    const redHistory = open.map((frame) => ({
+      ...frame,
+      rgb: Float64Array.from(frame.rgb, (value, i) => value * 0.75 + (i % 3 === 0 ? 0.25 : 0)),
+    }));
+    const result = measureCausalReveal(reference, redHistory, open, 3);
+    expect(result).toHaveLength(3);
+    expect(result.every((frame) => frame.redTintFraction === 1)).toBe(true);
+    for (const frame of result) expect(frame.meanRedHistoryWeight).toBeCloseTo(0.25);
+  });
+
+  it("retains the original projection-score ambiguity while the causal control rejects dark-blue undercoverage as red history", () => {
+    const dark = reference.map((frame) => ({
+      ...frame,
+      rgb: Float64Array.from(frame.rgb, (value) => value * 0.25),
+    }));
+    expect(
+      measureSequence(reference, dark, 3).reveal.every((frame) => frame.staleFraction === 1),
+    ).toBe(true);
+    expect(
+      measureCausalReveal(reference, dark, reference, 3).every(
+        (frame) => frame.redTintFraction === 0,
+      ),
+    ).toBe(true);
   });
 });

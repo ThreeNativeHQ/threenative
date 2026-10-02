@@ -87,8 +87,7 @@ function revealMask(reference: ILinearFrame[], revealIndex: number): number[] {
   return interior;
 }
 
-/** Error changes are measured relative to the matching reference, so real motion is not flicker. */
-export function measureSequence(
+function validateSequence(
   reference: ILinearFrame[],
   candidate: ILinearFrame[],
   revealIndex: number,
@@ -110,6 +109,16 @@ export function measureSequence(
     );
     assert.ok(frame.rgb.every(Number.isFinite), "Nonfinite sequence pixels");
   }
+  return first;
+}
+
+/** Error changes are measured relative to the matching reference, so real motion is not flicker. */
+export function measureSequence(
+  reference: ILinearFrame[],
+  candidate: ILinearFrame[],
+  revealIndex: number,
+) {
+  const first = validateSequence(reference, candidate, revealIndex);
   let error = 0;
   let change = 0;
   let edgeSamples = 0;
@@ -193,4 +202,45 @@ export function measureSequence(
     revealedPixels: pixels.length,
     reveal,
   };
+}
+
+/**
+ * Fixture-specific causal diagnostic: same temporal policy/pose, but the pure-red marker was
+ * never present in `open`. Neutral brightening/darkening is not evidence of added red history.
+ * This supplements the original conservative projection score; it does not replace its gate.
+ */
+export function measureCausalReveal(
+  reference: ILinearFrame[],
+  candidate: ILinearFrame[],
+  open: ILinearFrame[],
+  revealIndex: number,
+) {
+  validateSequence(reference, candidate, revealIndex);
+  validateSequence(reference, open, revealIndex);
+  const pixels = revealMask(reference, revealIndex);
+  const before = at(reference, revealIndex - 1);
+  return candidate.slice(revealIndex).map((actual, afterReveal) => {
+    const control = at(open, revealIndex + afterReveal);
+    let changed = 0;
+    let weight = 0;
+    let absolute = 0;
+    for (const pixel of pixels) {
+      const offset = pixel * 3;
+      const dr = at(actual.rgb, offset) - at(control.rgb, offset);
+      const dg = at(actual.rgb, offset + 1) - at(control.rgb, offset + 1);
+      const db = at(actual.rgb, offset + 2) - at(control.rgb, offset + 2);
+      const redRoom = at(before.rgb, offset) - at(control.rgb, offset);
+      assert.ok(redRoom > 0.05, "Red marker must be distinguishable from the open control");
+      const residue = Math.max(0, dr - Math.max(0, dg, db)) / redRoom;
+      weight += residue;
+      if (residue > 0.1) changed++;
+      absolute += Math.abs(dr) + Math.abs(dg) + Math.abs(db);
+    }
+    return {
+      afterReveal,
+      redTintFraction: changed / pixels.length,
+      meanRedHistoryWeight: weight / pixels.length,
+      meanAbsoluteDifference: absolute / (pixels.length * 3),
+    };
+  });
 }

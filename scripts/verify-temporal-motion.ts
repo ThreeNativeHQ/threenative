@@ -10,7 +10,12 @@ import {
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
 import { requireTemporalRenderEvidence } from "./temporal-aa-evidence.js";
-import { type ILinearFrame, linearFrame, measureSequence } from "./temporal-aa-quality.js";
+import {
+  type ILinearFrame,
+  linearFrame,
+  measureCausalReveal,
+  measureSequence,
+} from "./temporal-aa-quality.js";
 
 interface IVelocityProbe {
   projectionError: number | null;
@@ -42,6 +47,9 @@ for (const variant of [
   "dynamic-instances",
   "strict-rejection",
   "recompile",
+  "temporal-open",
+  "strict-rejection-open",
+  "unchecked-history-open",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -108,7 +116,7 @@ for (const variant of [
     assert.equal(sample.label, `frame-${frame}`);
     assert.equal(sample.tick, frame);
     assert.equal(observed.frame, frame);
-    assert.equal(observed.occluderVisible, frame <= 28);
+    assert.equal(observed.occluderVisible, frame <= 28 && !variant.endsWith("-open"));
     currentPoses.push(observed.pose);
     if (variant !== "supersampled" && variant !== "reference") {
       assert.ok(observed.aa);
@@ -155,8 +163,16 @@ const reference = frames.supersampled;
 assert.ok(reference);
 const results = Object.fromEntries(
   Object.entries(frames)
-    .filter(([name]) => name !== "supersampled")
+    .filter(([name]) => name !== "supersampled" && !name.endsWith("-open"))
     .map(([name, frames]) => [name, measureSequence(reference, frames, 8)]),
+);
+const causalReveals = Object.fromEntries(
+  ["temporal", "strict-rejection", "unchecked-history"].map((policy) => {
+    const candidate = frames[policy];
+    const open = frames[`${policy}-open`];
+    assert.ok(candidate && open, `Matched open-history control missing: ${policy}`);
+    return [policy, measureCausalReveal(reference, candidate, open, 8)];
+  }),
 );
 const temporal = results.temporal;
 const baseline = results.reference;
@@ -176,6 +192,8 @@ for (const { velocity } of temporalVelocity) {
 // Pinned before the first runtime measurement. These are a narrow-fixture experimental bar,
 // not a claim of general image quality, native qualification or saved GPU time.
 const checks = {
+  causalNegativeControl:
+    causalReveals["unchecked-history"]?.every((frame) => frame.redTintFraction > 0.1) === true,
   recompileObserved,
   recompileVelocity:
     velocityDiagnostics.recompile?.every(({ velocity }) => {
@@ -213,14 +231,17 @@ const summary = {
   },
   negativeControl:
     "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
+  causalMethod:
+    "Each policy is paired with the same temporal sequence whose red marker was never drawn. Positive red excess subtracts any positive shared green/blue change, normalised by marker red minus control red. This diagnostic separates red tint from neutral brightening/darkening; the original projection score and gate remain unchanged.",
   pass: Object.values(checks).every(Boolean),
   checks,
   results,
+  causalReveals,
   provenance,
   velocityDiagnostics,
 };
 await writeFile(path.join(output, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(JSON.stringify({ checks, results }, null, 2));
+console.log(JSON.stringify({ checks, results, causalReveals }, null, 2));
 assert.ok(
   summary.pass,
   `Temporal motion quality remains unqualified: ${JSON.stringify(checks)}; actual frames and full measurements retained at ${output}`,
