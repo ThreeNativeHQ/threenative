@@ -112,8 +112,7 @@ a convention missing from there does not exist.
 ### Phase 1 — authored adaptation and metering contract
 
 - [ ] Generated exposure controls validate inputs and adapt in log2 with authored asymmetric rates, cut response, reset and disabled measurement. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure.spec.ts`
-- [ ] Reduction dimensions follow the drawing buffer without invalidating 1×1 history. proof:
-  `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure.spec.ts`
+- [x] Reduction dimensions follow the drawing buffer without invalidating 1×1 history. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts` — 28 tests pass on 2026-10-02; renderer-stub lifetime proof only, no GPU execution claim.
 
 ### Phase 2 — opt-in GPU graph and lifecycle
 
@@ -124,6 +123,15 @@ a convention missing from there does not exist.
 
 - [ ] Bright/dark and disabled fixture scenarios exercise the real reduction and adaptation path. proof: PRD-339 exposure fixture playtest, with source-SHA and adapter-tagged canvas screenshots on this PR
 - [ ] Settle and cold-boot tone assertions meet acceptance criteria 1–3 using PRD-341's tone gate. proof: exposure fixture playtest plus ten cold boots using `assert.tone`
+
+### Current verification
+
+2026-10-02 fresh-environment implementation: settings/topology and GPU resource-lifecycle tests
+observed red for missing modules, then 28/28 passed after implementation. Scoped strict TypeScript
+and Biome pass. Generated `autoExposure.ts` and `exposure.ts` are feature-local source at this stage;
+no template or existing render chain has been changed. Actual shader execution, runtime screenshots,
+settle/cold-boot assertions and native proof remain unverified. Earlier lost-workspace results are
+not evidence for this implementation.
 
 ## Implementation decisions
 
