@@ -36,13 +36,13 @@
       {
         "id": "GameState",
         "path": "meshes",
-        "equals": 101,
+        "equals": 202,
         "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
       },
       {
         "id": "GameState",
         "path": "pbrMaps",
-        "equals": 4,
+        "equals": 404,
         "allowTrivial": "Measured from the actual decoded static GLB during Scene.load, before scenario readiness; this value must remain unchanged while the receiving game renders."
       },
       {

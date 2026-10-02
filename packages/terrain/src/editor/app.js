@@ -877,6 +877,24 @@ export function mountRecoveredEditor({
       download(await makeExport(state, terrain.toJSON(), kind));
       return;
     }
+    // The whole world comes from the live view, because only the view holds the resolved models,
+    // the grounded transforms and the baked water. The worker export below is terrain-only, and
+    // presenting that as a world is the thing this card exists to stop.
+    if (kind === "world") {
+      if (!view.exportCurrentWorld) throw Error("This view cannot export a world GLB");
+      for (const b of document.querySelectorAll("[data-export]")) b.disabled = true;
+      setBusy(true, "Baking world GLB");
+      try {
+        download(await view.exportCurrentWorld());
+        toast("World GLB ready.");
+      } catch (e) {
+        $("export-error").textContent = e.message;
+      } finally {
+        for (const b of document.querySelectorAll("[data-export]")) b.disabled = false;
+        if (!workerBusy && !pending) setBusy(false);
+      }
+      return;
+    }
     for (const b of document.querySelectorAll("[data-export]")) {
       b.disabled = true;
     }

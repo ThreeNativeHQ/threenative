@@ -34,27 +34,53 @@ const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
 
 /** How many variants of each prop the starter builds, and the seed they are built from. */
 export const VARIANTS = {
-  // One procedural boulder: the four prepared CC0 ones replace it as variants, and one is left so
-  // the procedural path is a live variant rather than a fallback nothing reaches.
+  // One procedural boulder: the three pack ones take the other indices, and one is left so the
+  // procedural path is a live variant rather than a fallback nothing reaches.
   boulder: 1,
-  fern: 3,
-  grass: 2,
+  // One procedural sapling. It is a spruce at the scale a seedling stands, and it exists so a
+  // machine with no licensed pack still has a young generation rather than a forest of giants.
+  bush: 1,
+  fern: 2,
+  // One grass clump. Two variants were two draws for a difference no eye separates at half a metre,
+  // and the twenty-four-draw ceiling is what bought the canopy's distance level instead.
+  grass: 1,
   poppy: 2,
-  // One procedural spruce rather than three. The prepared pine takes over index 0 and brings three
-  // detail levels, which is five draws; three procedural spruces would have been six, so the
-  // meadow's draw budget buys the pine and one procedural silhouette instead of three, and the
-  // procedural one is still here because it is what CI and a fresh clone draw.
-  spruce: 1,
+  sapling: 1,
+  scrub: 1,
+  // No procedural spruce at all on a machine with the pack: the two canopy indices are the pack's
+  // pines, at two levels each, and a third index would put a third of the wood back on the procedural
+  // tree the owner rejected. A machine without the pack builds two procedural spruces at the same two
+  // indices, which is why the fallback stays a live path rather than dead code.
+  spruce: 0,
   seed: 0x9e3779b9,
 } as const;
 
 /**
- * How many prepared variants of each prop the starter's prepared art provides.
+ * How many prepared variants of each prop this starter's prepared art provides.
  *
- * One pine, at all three of its levels. A second prepared pine would be five more draws, and the
- * playtest's ceiling is twenty-four for the whole meadow.
+ * Two pines for `spruce` and one specimen per stone for `boulder`. A third pine would be two more
+ * draws and a fifth variant nothing can tell from the second at meadow distance; the playtest's
+ * ceiling is twenty-four prop draws for the whole meadow, and every asset below is counted there.
  */
-const PREPARED_VARIANTS = { boulder: 3, spruce: 1 } as const;
+const PREPARED_VARIANTS = { boulder: 3, bush: 0, sapling: 0, scrub: 0, spruce: 2 } as const;
+
+/**
+ * Metres at which a prepared prop steps down one detail level.
+ *
+ * `near` is 60, not the 22 the prepared pine was cut against: the only banded variants in the world
+ * are the pack canopy's, and a twelve-metre pine at sixty metres is about eighty pixels tall in a
+ * 1080-line frame — the same picture as its far level — while at twenty-two metres it is seven hundred
+ * pixels tall and the swap is not a distance LOD at all, it is a visible substitution.
+ */
+
+/**
+ * The assets whose draws skip the shadow pass.
+ *
+ * Seedlings and shrubs, and the reason is the cost rather than the look: a pine's shadow is a shape
+ * on the meadow, and the shadow of a knee-high plant under a pine is already inside it. Wildwood's
+ * `LAYERS` marks the same three layers `castShadows: false`, and its numbers agree.
+ */
+const NO_SHADOW_ASSETS = new Set(["sapling", "scrub"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
@@ -86,6 +112,15 @@ export const LOD_BANDS = { far: 150, hysteresis: 0.2, mid: 60, near: 22 } as con
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;
+  /**
+   * The surface this part draws with, when it is not one of the starter's.
+   *
+   * The CC0 prepared art and every procedural prop are re-dressed in the starter's own surfaces, so
+   * a role decides them. A licensed pack species brings its own atlas and its own UVs and is not
+   * re-dressed (`src/render/pack.ts`), so it carries the material it was authored with, and this
+   * field is how the batch knows to leave that draw alone when the lit surfaces arrive.
+   */
+  readonly material?: Material;
   /** Which detail level this part is. `0` is the full one; a variant with only it never steps. */
   readonly level?: number;
   readonly role: PropRole;
@@ -112,8 +147,11 @@ export function buildPropVariants(
   // Every index the layout knows about, so a prepared variant replaces the procedural one at the
   // same index rather than being appended: the placement hash is what picks a variant, and it
   // picks an index, so index 0 has to mean the pine on the machine that has the pine and the
-  // procedural spruce on the machine that does not.
+  // procedural spruce on the machine that does not. The saplings' own variants come off the end of
+  // the same seeded set, so a seedling and a tree are the same species at two sizes rather than two
+  // unrelated shapes.
   const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed);
+  const youngs = spruceVariants(PROP_COUNTS.sapling, VARIANTS.seed ^ 0x51ed3a7f);
   for (let index = 0; index < PROP_COUNTS.spruce; index += 1) {
     const ready = prepared?.get(`spruce:${index}`);
     if (ready) {
@@ -147,6 +185,43 @@ export function buildPropVariants(
     variants.set(`fern:${i}`, [
       { geometry: fernClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "fern", variant: i },
     ]);
+  // The young generation and the two undergrowth niches, all three with the starter's own geometry
+  // standing in: a machine with no licensed pack grows a small spruce, a fern-sized shrub and a
+  // grass clump. That is a thinner wood, and it is never a broken one — which is the whole point of
+  // the licensed art being optional rather than required.
+  for (let i = 0; i < PROP_COUNTS.sapling; i += 1) {
+    const ready = prepared?.get(`sapling:${i}`);
+    if (ready) {
+      variants.set(`sapling:${i}`, [...ready]);
+      continue;
+    }
+    const young = youngs[i];
+    if (young === undefined) continue;
+    variants.set(`sapling:${i}`, [
+      { geometry: young.trunk, role: "bark", variant: i },
+      { geometry: young.crown, role: "crown", variant: i },
+    ]);
+  }
+  for (let i = 0; i < PROP_COUNTS.bush; i += 1) {
+    const ready = prepared?.get(`bush:${i}`);
+    if (ready) {
+      variants.set(`bush:${i}`, [...ready]);
+      continue;
+    }
+    variants.set(`bush:${i}`, [
+      { geometry: fernClump((VARIANTS.seed ^ (i * 0x27d4eb2f)) >>> 0), role: "fern", variant: i },
+    ]);
+  }
+  for (let i = 0; i < PROP_COUNTS.scrub; i += 1) {
+    const ready = prepared?.get(`scrub:${i}`);
+    if (ready) {
+      variants.set(`scrub:${i}`, [...ready]);
+      continue;
+    }
+    variants.set(`scrub:${i}`, [
+      { geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "grass", variant: i },
+    ]);
+  }
   for (let i = 0; i < VARIANTS.grass; i += 1)
     variants.set(`grass:${i}`, [
       { geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0), role: "grass", variant: i },
@@ -169,9 +244,12 @@ export function buildPropVariants(
  */
 const PROP_COUNTS = {
   boulder: VARIANTS.boulder + PREPARED_VARIANTS.boulder,
+  bush: VARIANTS.bush + PREPARED_VARIANTS.bush,
   fern: VARIANTS.fern,
   grass: VARIANTS.grass,
   poppy: VARIANTS.poppy,
+  sapling: VARIANTS.sapling + PREPARED_VARIANTS.sapling,
+  scrub: VARIANTS.scrub + PREPARED_VARIANTS.scrub,
   spruce: VARIANTS.spruce + PREPARED_VARIANTS.spruce,
 } as const;
 
@@ -463,19 +541,31 @@ export function createProps(
         for (const part of levelParts) {
           const batch = new InstancedBatch({
             geometry: part.geometry,
-            material: materials[part.role],
+            // A pack species wears the material it was authored with; everything else wears the
+            // starter's surface for its role, which is what the lit surfaces later swap in.
+            material: part.material ?? materials[part.role],
           });
           for (const entry of entries) batch.add(entry.pose);
           const mesh = batch.build({
             name: `props:${key}:${part.role}`,
             parent: object,
             // Crowns and bark cast; grass does too, because its own shadow is most of its depth. The
-            // poppy's petals and stems do not, at five centimetres they only cost the shadow pass.
-            castShadow: part.role !== "petal" && part.role !== "stem",
+            // poppy's petals and stems do not, at five centimetres they only cost the shadow pass —
+            // and neither does the undergrowth that grew under the canopy, for the same reason one
+            // order of magnitude up: a thousand seedlings and shrubs drawn a second time into a
+            // shadow map is the single largest thing the pass could be asked to do, and none of it
+            // reaches the ground the shadow is cast on.
+            castShadow:
+              part.role !== "petal" &&
+              part.role !== "stem" &&
+              !NO_SHADOW_ASSETS.has(key.split(":")[0] ?? ""),
             receiveShadow: true,
           });
           if (!mesh) throw new Error(`Empty prop batch '${key}:${part.role}'`);
           mesh.userData.placementIds = entries.map((entry) => entry.instance.placement.id);
+          // Recorded rather than inferred later: the surface swap has to leave a pack species alone,
+          // and "does the role name appear in the lit set" is not the same question.
+          mesh.userData.ownMaterial = part.material !== undefined;
           meshes.push(mesh);
           const list = byLevel.get(level) ?? [];
           list.push(mesh);

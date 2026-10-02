@@ -109,6 +109,29 @@ describe("public full-world GLB export", () => {
     await expect(exportWorldGLB(input)).rejects.toThrow("RGBA");
   });
 
+  it("resolves a per-placement model before the shared asset model", async () => {
+    const { exportWorldGLB, input, id } = await fixture();
+    // Two variants of one tree share an asset id, so the resolved model is keyed by placement. The
+    // bespoke model is an unsupported material and its own name is what the encoder reports, which
+    // is how this proves the placement's own model was examined rather than the shared `pine` one.
+    const rejected = new Mesh(new BoxGeometry(), new ShaderMaterial());
+    rejected.name = "bespoke-variant";
+    await expect(exportWorldGLB({ ...input, models: new Map([[id, rejected]]) })).rejects.toThrow(
+      "bespoke-variant",
+    );
+    // A models map alone cannot hide a missing asset: with no shared asset, a placement the caller
+    // did not model fails closed rather than exporting an empty node.
+    await expect(
+      exportWorldGLB({
+        ...input,
+        assets: new Map(),
+        models: new Map([["no-such-placement", new Mesh()]]),
+      }),
+    ).rejects.toThrow("pine");
+    // A placement with no model at all still fails closed rather than exporting an empty node.
+    await expect(exportWorldGLB({ ...input, assets: new Map() })).rejects.toThrow("pine");
+  });
+
   it("fails closed for omitted, stale or incoherent water instead of omitting it", async () => {
     const { exportWorldGLB, input } = await fixture();
     const state = new Terrain({ size: 16, resolution: 17 })

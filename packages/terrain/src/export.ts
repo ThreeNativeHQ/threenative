@@ -27,8 +27,15 @@ export interface IWorldGLBInput {
   readonly state: ITerrainState;
   /** The committed canonical terrain with caller-baked UV albedo/normal/roughness/AO. */
   readonly terrain: Mesh;
-  /** Actual static models, including authored hierarchy/transforms and portable materials. */
-  readonly assets: ReadonlyMap<string, Object3D>;
+  /**
+   * Actual static models by asset id. A placement resolves through `models` first and this second,
+   * so a caller can hand one asset two genuinely different models without renaming the asset. The
+   * geometries may still be shared instances; the encoder references one buffer view per attribute,
+   * so per-placement models cost nodes rather than bytes.
+   */
+  readonly assets?: ReadonlyMap<string, Object3D>;
+  /** Per-placement models keyed by durable placement id; the resolved model when both are supplied. */
+  readonly models?: ReadonlyMap<string, Object3D>;
   /** Final placement-root matrices after the game's model-bound grounding. Keys are durable IDs. */
   readonly transforms: ReadonlyMap<string, Matrix4>;
   /** Every resolved water body/ribbon, baked at snapshotTime with no stale simulation copy. */
@@ -252,7 +259,9 @@ export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBEx
   for (const placement of state.instances) {
     if (ids.has(placement.id)) throw new Error(`Duplicate placement '${placement.id}'`);
     ids.add(placement.id);
-    const asset = input.assets.get(placement.asset);
+    // A per-placement model wins over the asset's shared one: two variants of one tree are the same
+    // asset id, and a receiving game has to be able to see that they are not the same model.
+    const asset = input.models?.get(placement.id) ?? input.assets?.get(placement.asset);
     if (!asset) throw new Error(`Unresolved placement asset '${placement.asset}'`);
     const matrix = input.transforms.get(placement.id);
     if (

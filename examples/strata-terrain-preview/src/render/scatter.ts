@@ -84,14 +84,66 @@ export interface IPropScatter {
 /** How much of each prop the Temperate starter grows, and where it will accept one. */
 export const SCATTER = {
   /** Metres between two accepted spruces. A forest, not an orchard. */
-  spruceSpacing: 7.5,
+  spruceSpacing: 8.5,
   /** Spruces tried per attempt; the rest of the budget is spent on placement, not on candidates. */
   spruceAttempts: 9000,
-  /** Spruce scale range, as a multiplier on the variant's own height. */
-  spruceScale: [0.62, 1.18],
+  /**
+   * How many trunks the world grows.
+   *
+   * One hundred and forty, and every number in this table is a triangle budget rather than a
+   * preference: the canopy is the pack's real pines at 9.3–12.5k triangles each where the procedural
+   * spruce it replaced was 3.2k, so the same wood at the old three hundred and forty cost three times
+   * the geometry. The sightlines the missing trunks would have carried are closed by the seedlings,
+   * which are 530 triangles each.
+   */
+  spruceCount: 140,
+  /**
+   * Spruce scale range, as a multiplier on the variant's own height.
+   *
+   * The pack's `SM_pine01` is 10.0 m as it ships and `SM_pine03` is 9.5 m, so this band is the
+   * band a wood actually has — eight to thirteen metres, with the giants left to the roll. The
+   * procedural variant this range also dresses is 12–17 m, which is a taller tree at the same
+   * numbers, and that is the fallback's problem and not the wood's.
+   */
+  spruceScale: [0.85, 1.3],
   boulderSpacing: 11,
   boulderAttempts: 2600,
-  boulderScale: [0.7, 2.6],
+  boulderScale: [0.55, 2.1],
+  /**
+   * The young generation, in the spruces' own shade, and how far out from a trunk a seedling stands.
+   *
+   * Seedlings are the cheapest way to make a wood read as a wood: `SM_pine-small01` is 530 triangles
+   * against the canopy's 12,535, so six hundred of them cost what forty pines cost, and they are
+   * what closes the sightlines between the trunks. The count is per trunk and the reach is short,
+   * because a seedling that is not under its parent is a weed.
+   */
+  saplingsPerTree: 4,
+  saplingReach: 7,
+  saplingScale: [0.7, 1.35],
+  /**
+   * Shrubs, in drifts at the wood's edge and under its canopy.
+   *
+   * `SM_bush01` is 4,275 triangles — a waist-high cherry laurel — so this is a placement budget of
+   * a few hundred rather than a few thousand, and it is spent on the ring where the canopy thins,
+   * not evenly over the meadow. The clump noise is what makes a thicket read as a thicket: evenly
+   * sown bushes read as pins in a map at any count.
+   */
+  bushAttempts: 5200,
+  /** How many shrubs the world grows. Four hundred of `SM_bush01` is the thicket's whole budget. */
+  bushCount: 130,
+  bushClumps: 3,
+  bushReach: 9,
+  bushScale: [0.9, 1.7],
+  /**
+   * Ground cover over the grass, and the distance it thins over.
+   *
+   * The four `SM_grass_bush` meshes are 1.4–2.0k triangles of cut-out shrub, and this is the layer
+   * that stops the meadow reading as a mown lawn between the trees. It uses grass's own falloff —
+   * full density near the focus, a floor past `grassThin` — because a carpet to the horizon is a
+   * hundred thousand instances that look identical from two hundred metres.
+   */
+  scrubCell: 1.15,
+  scrubScale: [0.75, 1.6],
   /**
    * The grass cell, in metres, and the cells either side of the focus that are considered at all.
    *
@@ -140,7 +192,16 @@ export function scatterProps(
   clearings: readonly (readonly [number, number, number])[] = [],
 ): IPropScatter {
   const placements: IPlacement[] = [];
-  const counts = { boulder: 0, fern: 0, grass: 0, poppy: 0, spruce: 0 };
+  const counts = {
+    boulder: 0,
+    bush: 0,
+    fern: 0,
+    grass: 0,
+    poppy: 0,
+    sapling: 0,
+    scrub: 0,
+    spruce: 0,
+  };
   const half = data.size / 2;
   const inside = (x: number, z: number, margin: number) =>
     Math.abs(x) <= half - margin && Math.abs(z) <= half - margin;
@@ -153,11 +214,17 @@ export function scatterProps(
     );
 
   // --- spruces: on grass, off the steep ground, out of the water ---------------------------------
+  //
+  // Two hundred, down from three hundred and forty, and the count is the triangle budget rather than
+  // a preference: the canopy is the pack's real pines at 9.3–12.5k triangles each where the
+  // procedural spruce it replaced was 3.2k, so the same wood at the same density costs three times
+  // the geometry. The sightlines the extra forty carried are closed by the seedlings below for a
+  // fiftieth of the price.
   const spruce = createRandom(SCATTER.seed);
   const spruceCells = new Set<string>();
   const spruceSpacing = SCATTER.spruceSpacing;
   let tries = 0;
-  while (counts.spruce < 340 && tries < SCATTER.spruceAttempts) {
+  while (counts.spruce < SCATTER.spruceCount && tries < SCATTER.spruceAttempts) {
     tries += 1;
     const x = (spruce() - 0.5) * data.size;
     const z = (spruce() - 0.5) * data.size;
@@ -182,12 +249,34 @@ export function scatterProps(
     counts.spruce += 1;
   }
 
-  // --- ferns: in the spruces' own shade, a few around each trunk --------------------------------
-  // Bracken grows where the canopy keeps the grass down, so it is placed off the trees rather than
-  // over the meadow: two to five clumps in the ring two to five metres out from each trunk.
+  // --- saplings and bracken: in the spruces' own shade, a few around each trunk ------------------
+  // A seedling and a fern both grow where the canopy keeps the grass down, so both are placed off the
+  // trees rather than over the meadow: a handful in the ring a few metres out from each trunk. The
+  // seedling ring is the wider of the two, because a spruce seed lands a little way off its parent
+  // and a fern does not travel at all.
   const fern = createRandom(SCATTER.seed ^ 0x3c6e);
   for (const tree of placements.filter((placement) => placement.asset === "spruce")) {
     const [tx, , tz] = tree.position;
+    const saplings = SCATTER.saplingsPerTree + Math.floor(fern() * 2);
+    for (let k = 0; k < saplings; k += 1) {
+      const angle = fern() * Math.PI * 2;
+      const reach = 1.5 + fern() * SCATTER.saplingReach;
+      const x = tx + Math.cos(angle) * reach;
+      const z = tz + Math.sin(angle) * reach;
+      if (!inside(x, z, 4) || wet(x, z) || slopeDegrees(data, x, z) > 30) continue;
+      placements.push({
+        alignToNormal: false,
+        asset: "sapling",
+        id: `temperate-sapling:${Math.round(x * 4)},${Math.round(z * 4)}`,
+        layer: "temperate-sapling",
+        normal: [0, 1, 0],
+        position: [x, clampedHeight(data, x, z), z],
+        rotation: fern() * Math.PI * 2,
+        scale:
+          SCATTER.saplingScale[0] + fern() * (SCATTER.saplingScale[1] - SCATTER.saplingScale[0]),
+      });
+      counts.sapling += 1;
+    }
     const clumps = 2 + Math.floor(fern() * 4);
     for (let k = 0; k < clumps; k += 1) {
       const angle = fern() * Math.PI * 2;
@@ -207,6 +296,41 @@ export function scatterProps(
       });
       counts.fern += 1;
     }
+  }
+
+  // --- thicket: shrubs in drifts, over the wood and along its edge --------------------------------
+  //
+  // Placed on the same walk as the trunks but through a clump field, so a wood has thickets to walk
+  // around and bare ground between them. Evenly sown bushes read as pins in a map at any count, and
+  // the walk is over the whole world rather than around each trunk: the thicket that matters is the
+  // one a player brushes through on the way through the wood.
+  const bush = createRandom(SCATTER.seed ^ 0x1d0b);
+  tries = 0;
+  while (counts.bush < SCATTER.bushCount && tries < SCATTER.bushAttempts) {
+    tries += 1;
+    const x = (bush() - 0.5) * data.size;
+    const z = (bush() - 0.5) * data.size;
+    if (!inside(x, z, 5) || wet(x, z)) continue;
+    if (slopeDegrees(data, x, z) > 28) continue;
+    if (grassWeight(data, x, z) < 0.35) continue;
+    // Two incommensurate waves over world metres, so the drifts are metres across, irregular, and do
+    // not march across the meadow the way a single sine does. Read at its own frequency from the
+    // grass's, so a thicket and the meadow's thin patches are never the same patch.
+    const drift = clamp01(
+      0.5 + 0.34 * Math.sin(x * 0.17 + z * 0.11) + 0.22 * Math.sin(x * 0.07 - z * 0.29 + 2.1),
+    );
+    if (bush() > 0.18 + drift * 0.82) continue;
+    placements.push({
+      alignToNormal: false,
+      asset: "bush",
+      id: `temperate-bush:${Math.round(x * 4)},${Math.round(z * 4)}`,
+      layer: "temperate-bush",
+      normal: [0, 1, 0],
+      position: [x, clampedHeight(data, x, z), z],
+      rotation: bush() * Math.PI * 2,
+      scale: SCATTER.bushScale[0] + bush() * (SCATTER.bushScale[1] - SCATTER.bushScale[0]),
+    });
+    counts.bush += 1;
   }
 
   // --- boulders: on rock and on grass, out of the water, never mid-cliff -------------------------
@@ -366,6 +490,47 @@ export function scatterProps(
         });
         counts.poppy += 1;
       }
+    }
+  }
+
+  // --- scrub: the ground cover between the grass clumps -------------------------------------------
+  //
+  // The layer that decides whether the meadow is grass *and* something else. It walks a coarser
+  // jittered cell than the grass does and rides grass's own falloff, so it thins with distance from
+  // the focus rather than carpeting to the horizon, and its density is multiplied by its own clump
+  // field — a third one, at its own frequency — so the cover is drifts over the meadow rather than a
+  // second lawn at a different height.
+  const scrub = createRandom(SCATTER.seed ^ 0x6b1c);
+  const scrubCell = SCATTER.scrubCell;
+  const scrubCentre = Math.round(focus.x / scrubCell);
+  const scrubCentreZ = Math.round(focus.z / scrubCell);
+  const scrubReach = Math.ceil((SCATTER.grassRadiusCells * cellSize * 1.6) / scrubCell);
+  for (let row = -scrubReach; row <= scrubReach; row += 1) {
+    for (let column = -scrubReach; column <= scrubReach; column += 1) {
+      const cellX = (scrubCentre + column) * scrubCell;
+      const cellZ = (scrubCentreZ + row) * scrubCell;
+      const distance = Math.hypot(cellX - focus.x, cellZ - focus.z);
+      const falloff = Math.max(0.1, 1 - distance / (SCATTER.grassThin * 2.4));
+      const drift = clamp01(
+        0.5 + 0.36 * Math.sin(cellX * 0.23 - cellZ * 0.31) + 0.2 * Math.sin(cellX * 0.61 + 0.9),
+      );
+      if (scrub() > falloff * drift * 0.5) continue;
+      const x = cellX + (scrub() - 0.5) * scrubCell * 2;
+      const z = cellZ + (scrub() - 0.5) * scrubCell * 2;
+      if (!inside(x, z, 4) || wet(x, z)) continue;
+      if (slopeDegrees(data, x, z) > 26) continue;
+      if (grassWeight(data, x, z) < 0.3) continue;
+      placements.push({
+        alignToNormal: false,
+        asset: "scrub",
+        id: `temperate-scrub:${Math.round(x * 4)},${Math.round(z * 4)}`,
+        layer: "temperate-scrub",
+        normal: [0, 1, 0],
+        position: [x, clampedHeight(data, x, z), z],
+        rotation: scrub() * Math.PI * 2,
+        scale: SCATTER.scrubScale[0] + scrub() * (SCATTER.scrubScale[1] - SCATTER.scrubScale[0]),
+      });
+      counts.scrub += 1;
     }
   }
 

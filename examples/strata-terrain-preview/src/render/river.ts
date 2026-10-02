@@ -146,7 +146,7 @@ const MAX_BAKED_DEPTH = 1.6;
  * is that one distant pixel covers many ripples and shows their average: near water gets chop you can
  * see, water past seventy metres is a mirror.
  */
-const SLOPE_GAIN_NEAR = 1.5;
+const SLOPE_GAIN_NEAR = 0.8;
 const SLOPE_GAIN_FAR = 0.45;
 const SLOPE_FADE_NEAR = 10;
 const SLOPE_FADE_FAR = 72;
@@ -211,15 +211,15 @@ const TINT = {
   /** Foam and white water. */
   foam: 0xe8efe8,
   /** The sky the stream reflects: the horizon haze, and the zenith above it. */
-  skyHorizon: 0xb7c5cc,
-  skyZenith: 0x7d98ac,
+  skyHorizon: 0xd2e0ec,
+  skyZenith: 0x86acd2,
   /**
    * What stands on both banks of a stream in spruce wood. A reflected ray leaving the surface at two
    * degrees does not reach the sky at all — it hits a trunk — and without this floor the stream is a
    * strip of chrome wherever the eye is low enough for the fresnel to close.
    */
   bank: 0x33452f,
-  bankGain: 0.3,
+  bankGain: 0.62,
 } as const;
 
 /**
@@ -587,7 +587,9 @@ export function createRivers(
   const sky = mix(
     linear(TINT.bank, TINT.bankGain),
     mix(color(TINT.skyHorizon), color(TINT.skyZenith), clamp(bounced.y, float(0), float(1))),
-    smoothstep(float(0.0), float(0.3), bounced.y),
+    // Only rays that really leave downward see the bank; a ripple tilting a ray a few degrees below
+    // the horizon still sees mostly sky, and taking the bank there turned every facet into a black blob.
+    smoothstep(float(-0.12), float(0.06), bounced.y),
   );
   const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
   const shaded = compositeWater({ normal, depthM, bed, reflected: sky });

@@ -536,6 +536,26 @@ needed. The automated replacement test uses attributable custom test art, not
 private paid files. Make public terrain authoring discoverable in the installed
 capability workflow without claiming optional imports exist before installation.
 
+**Vegetation lane (owner: "trees are not ok, leaves look like crap; why insist on procedural
+trees?").** The Temperate forest now draws the owner's licensed **Landscape Pro 2.0** pack
+(Fab listing `1ac647da-b1bc-4e72-a56d-60aaeb6918e1`) instead of procedural trees:
+`scripts/prep-landscape-pro.mjs` copies nine species plus three's Basis transcoder from the owner's
+Fab import into the gitignored `local-assets/landscape-pro/` (1.4 MB of meshopt-compressed meshes,
+11.4 MB with the pack's shared UASTC images; `--raw` reads the uncooked import instead), and
+`src/render/pack.ts` loads them as ordinary prop variants — no new package, no new mechanism.
+Measured by `pnpm --filter strata-terrain-preview test:terrain:web` on the RTX 2080 at 1920x1080:
+prop draws 20 -> **24** (the scenario's ceiling, unchanged — the CC0 rocks' second LOD level paid for
+the canopy's), prop triangles 1.92 M -> **2.20 M**, prop instances 6,672 -> 7,361, and the two judged
+framings' p50 frame cost measured **3.9-7.4 ms at the meadow and 3.2-5.7 ms at the overview across
+four runs** — a spread wider than the change, on a host whose load average was 15-26 from other
+agents' browser benchmarks, and the engine's own scene warning names `objectsConsidered` rather than
+triangles as the dominant term. Wildwood's per-section gains (`[3.9, 3.4, 2.7]` bark,
+`[3.3, 3.6, 2.8]` leaf) render paper-white under this sky's 3.2-intensity sun and AgX curve and were
+cut to about a third with a mip-compensated cutoff, which is what the captures show. The draw ceiling
+was **not** raised. With the folder absent the world grows the procedural spruce, boulder, fern, grass
+and poppy as before; that fallback run is recorded with this note. AC-5 stays open: one environment's
+vegetation is not five.
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: pending; inspect actual defining views of all five with Temperate first, including coast/ocean; qualify licenses/provenance and each selected starter's 25 MiB cooked budget, with no CDN/marketplace runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
 - [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.
