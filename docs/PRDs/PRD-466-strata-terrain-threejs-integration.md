@@ -1750,3 +1750,77 @@ hold; no sun/sky/haze/grade/GTAO/snow values were changed to compensate. Final
 scope-corrected captures and a bounded shadow-map cost control are running.
 
 Scope-corrected licensed final: **50/50 PASS**, zero diagnostics; maximum CPU p50 3.9 ms. Final absent-licensed rerun remains pending.
+
+Round 15 delivered checkpoint (2026-10-02): final licensed **50/50 PASS** and
+final absent-licensed **50/50 PASS**, zero diagnostics in both. All 17 poses have
+measured CPU budget windows; maxima **3.9 ms licensed / 2.6 ms fallback**. Fresh
+example tsc and root Biome pass (warnings only); fresh serial terrain Vitest
+**69/69 PASS**. verify-ocean passes both: licensed wave/sun changed ratios
+0.6470/0.5384, fallback 0.6399/0.5200; sheltered-water blue ratio 1 in both.
+NVIDIA Turing WebGPU, 1920×1080; each final arm retains 22 PNGs and 12 1:1 crops.
+
+CPU p50 by pose, in ms (these are CPU frame budgets, not GPU or presented FPS):
+
+| World | Pose order | Licensed | Fallback |
+| --- | --- | --- | --- |
+| forest | player, meadow-close, overview, river | 3.2, 2.2, 2.3, 3.9 | 2.3, 1.9, 2, 2.6 |
+| coastal | player, meadow-close, overview, horizon-sea | 2.2, 2.3, 2, 2.1 | 1.8, 1.8, 1.7, 1.7 |
+| alpine | player, ridge, overview | 2.1, 2.4, 2.2 | 1.5, 1.5, 1.4 |
+| desert | player, mesa, overview | 1.3, 1.3, 1.2 | 1.2, 1.2, 1.2 |
+| tundra | player, plain, overview | 2.2, 1.9, 2.2 | 2.3, 2.2, 1.9 |
+
+Shadow cost control: same final form and matching sunX (alpine 180/desert 160),
+2048 map instead of 4096; **7/7 assertions PASS**, no diagnostics. Alpine
+ridge/overview CPU p50 2.2/2.4 versus final 2.4/2.2 ms; desert mesa/overview
+1.3/1.3 versus 1.3/1.2 ms. Largest observed increase 0.2 ms. RefreshStep and
+extents are identical between these arms. Cached GPU shadow windows are mostly
+zero and refresh samples are sparse; a GPU refresh-cost estimate is unqualified.
+The 320 m half-extent's texels shrink from 31.25 to 15.625 cm. The 1:1 crop
+still has visible scalloped edges; do not claim complete far-shadow correction.
+
+Full-resolution self-review, not a fresh independent V10 judge:
+
+| World | Licensed /10 | Fallback /10 |
+| --- | --- | --- |
+| forest | 4.5 | 3.2 |
+| coastal | 4.5 | 3.3 |
+| alpine | 3.5 | 2.8 |
+| desert | 4.5 | 3.8 |
+| tundra | 3.5 | 3.3 |
+
+Licensed self-score average 4.1/10 (V9 independent baseline 3.9). Forest has
+connected eroded ridges/spurs but distant faces remain soft; alpine loses the
+largest isolated cones but keeps some pointed noise peaks and the protected snow
+blend; desert has detached fins, wall channels and less repeated strata but some
+rounded cap outlines remain. Tundra has irregular near cover, fewer broad black
+cards and a smoother resident-edge transition; sparse distant cover remains.
+Coastal composition is preserved and its capsule is absent in showcase mode.
+Fallback qualifies function; its procedural vegetation/rocks do not qualify
+licensed art parity. AC-5 stays open.
+
+The **full 0.5 luminance-quantile hold is not met**: final licensed horizon-sea
+p05/p50 delta −0.7152/−0.7678, and sun-alt p50 delta -0.9278, versus the first
+merged control (0–255 luminance). Other early/late ocean quantiles are within
+0.13. Static crop differences reject an animation-only explanation; preserving
+coastal rock projection did not resolve it. The unresolved assumption is that
+these frames have equivalent lighting/render state despite equal ocean step
+counts. No protected light/atmosphere/GTAO/grade value was changed to compensate.
+A fresh independent visual acceptance and the strict quantile guard remain open.
+
+Root causes addressed: runtime un-eroded continuation noise/broad texture scale;
+radial mesa profiles and one repeated strata scale; 2048 far cascade texels; a
+view-only capsule guard that still drew the scripted player view; tundra's
+jittered grid/sine acceptance, wide low scrub cards, distant mountain-normal
+substitution and an edge derivative that extruded small rills. This is example
+appearance/authoring work; packages, sun/sky/haze/grade/GTAO and snow blend are
+unchanged. Seam assertions observe all 1,024 vertices with zero gap in alpine,
+desert and tundra; showcase start/walk visibility is false while travel/contact
+assertions stay green. Default interactive walking uses its existing render guard.
+
+Delivery: local commits f9c8b418a, 538a3740d, 2e83a2d7b, 38852f4cf and the final
+notes commit; no push/merge. Captures are inside the example at
+`artifacts/playtest/form-final/` and `fallback/`; the bounded 2048 control is at
+`artifacts/playtest/form-shadow-2048/`. All source/asset mounts are restored; no
+licensed bytes were committed. Worktree retained at the authorized
+`.worktrees/prd-466-468-ground` path, **5.7 GB**, because its commits are unmerged
+and it holds the requested captures and local licensed assets. No forced removal.
