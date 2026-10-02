@@ -10,7 +10,12 @@ import {
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { GROUND_MAPS, type IGroundMaps, type LayerKey } from "../world/terrainAssets.js";
+import {
+  GROUND_MAPS,
+  type IGroundMaps,
+  type LayerKey,
+  ROCKFACE_MAPS,
+} from "../world/terrainAssets.js";
 
 export type WorldName = "forest" | "coastal" | "alpine" | "desert" | "tundra";
 type RGB = readonly [number, number, number];
@@ -63,9 +68,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "alpine",
     grassTint: [0.43, 0.8, 0.35],
     stoneTint: [0.69, 0.72, 0.77],
-    snowTint: [2.65, 2.7, 2.8],
+    snowTint: [1.6, 1.65, 1.7],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [64, 100, 0.39],
+    snow: [54, 88, 0.39],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -74,9 +79,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
         diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
         normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
       },
-      rock: GROUND_MAPS.rock,
+      rock: ROCKFACE_MAPS,
     },
-    sun: { color: 0xfff3e5, intensity: 4.6, direction: [-180, 165, 80] },
+    sun: { color: 0xfff3e5, intensity: 4.6, direction: [180, 165, 140] },
     sky: { turbidity: 1.3, rayleigh: 2.1, mieCoefficient: 0.0018, mieDirectionalG: 0.8 },
     haze: { color: 0x9aafc3, density: 0.00035 },
     fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.65 },
@@ -134,8 +139,8 @@ export const BIOMES: Record<WorldName, IBiome> = {
         normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
       },
     },
-    sun: { color: 0xe9efff, intensity: 0.75, direction: [-180, 90, -120] },
-    sky: { turbidity: 10, rayleigh: 0.4, mieCoefficient: 0.018, mieDirectionalG: 0.78 },
+    sun: { color: 0xe9efff, intensity: 1.6, direction: [-180, 90, -120] },
+    sky: { turbidity: 4.2, rayleigh: 1.6, mieCoefficient: 0.002, mieDirectionalG: 0.68 },
     fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.15 },
     haze: { color: 0xb1c0c9, density: 0.00065 },
     exposure: 2 ** -0.28,
@@ -171,7 +176,13 @@ export function biomeWeights(
     positionWorld.y.add(drift.mul(22)).add(hollow.max(0).mul(biome.world === "alpine" ? 18 : 0)),
   ).mul(
     float(1)
-      .sub(smoothstep(biome.world === "alpine" ? 0.2 : 0.04, biome.snow[2], steep))
+      .sub(
+        smoothstep(
+          biome.world === "alpine" ? 0.16 : 0.04,
+          biome.world === "alpine" ? 0.33 : biome.snow[2],
+          steep,
+        ),
+      )
       .mul(float(1).sub(exposure.mul(0.28))),
   );
   const cells = mx_worley_noise_vec2(

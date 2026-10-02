@@ -16,6 +16,7 @@ import {
   cameraViewMatrix,
   dFdx,
   dFdy,
+  dot,
   float,
   instanceIndex,
   length,
@@ -36,6 +37,7 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
+import { WORLD_ROCKS } from "../world/terrainAssets.js";
 import type { WorldName } from "./biomes.js";
 import { lightNeedles } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
@@ -80,6 +82,7 @@ for (const [asset, heights] of Object.entries({
   );
 }
 const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
+for (const one of WORLD_ROCKS) STONE.add(one.asset);
 const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
 
@@ -95,7 +98,7 @@ function surface(
     map: source.map,
     normalMap: canopy ? null : source.normalMap,
     roughness: stone ? 0.96 : 1,
-    specularIntensity: canopy ? 0 : cutout ? 0.02 : 0.3,
+    specularIntensity: canopy || (world === "tundra" && cutout) ? 0 : cutout ? 0.02 : 0.3,
     metalness: 0,
   });
   if (source.map) {
@@ -122,6 +125,13 @@ function surface(
             ? vec3(0.94, 0.98, 1.02)
             : vec3(0.7, 0.78, 0.61),
       );
+    if (world === "desert" && stone) {
+      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+      const strata = sin(
+        positionWorld.y.mul(0.8).add(mx_noise_float(positionWorld.mul(0.04)).mul(0.4)),
+      );
+      material.colorNode = vec3(1.65, 0.86, 0.43).mul(grain).mul(strata.mul(0.16).add(1));
+    }
     if (otherBiome && cutout && !canopy)
       material.colorNode = sampled.rgb.mul(
         world === "desert"
@@ -130,6 +140,11 @@ function surface(
             ? vec3(0.64, 0.67, 0.42)
             : vec3(0.72, 0.8, 0.55),
       );
+    if (world === "tundra" && cutout && !canopy) {
+      const root = smoothstep(0.015, 0.14, positionGeometry.y);
+      material.colorNode = mix(vec3(0.025, 0.035, 0.013), material.colorNode, root);
+      material.aoNode = mix(0.15, 0.8, root);
+    }
     if (stone) {
       const base = attribute<"float">("groundBlend", "float");
       const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
@@ -147,6 +162,13 @@ function surface(
         moss,
       );
       material.aoNode = mix(1, 0.65, base);
+      if (world === "alpine") {
+        const drift = mx_noise_float(positionWorld.mul(0.06));
+        const snow = smoothstep(70, 110, positionWorld.y.add(drift.mul(18))).mul(
+          smoothstep(0.7, 0.92, normalWorldGeometry.y),
+        );
+        material.colorNode = mix(material.colorNode, vec3(0.78, 0.82, 0.87), snow);
+      }
     }
     if (cutout) {
       // Shadow overrides and VirtualShadowNode classify cutouts by this scalar, not the node.
@@ -163,7 +185,7 @@ function surface(
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
         material.colorNode = mix(material.colorNode, vec3(0.028, 0.055, 0.009), dark.mul(0.75));
         material.emissiveNode = material.colorNode.mul(0.045);
-      } else if (asset !== "poppy" && source.normalMap) {
+      } else if (asset !== "poppy" && source.normalMap && world !== "tundra") {
         // Ground foliage keeps photographed relief around its bent, upward leaf normal.
         const relief = texture(source.normalMap, uv()).xy.mul(2).sub(1).mul(0.45);
         material.normalNode = vec3(relief.x, 1, relief.y)
@@ -176,7 +198,9 @@ function surface(
         log2(max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size))).max(1)),
         float(0),
       );
-      material.alphaTestNode = float(0.42).div(float(1).add(mip.mul(0.25)));
+      // Low tundra mats must reject blurred photographic background in alpha mips.
+      material.alphaTestNode =
+        world === "tundra" && !canopy ? float(0.5) : float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
       if (canopy) lightNeedles(material, material.aoNode as Node<"float">);
       else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
@@ -215,11 +239,19 @@ export async function loadPack(
         ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
           one.asset,
         )) ||
-      (world === "tundra" &&
-        ["sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)) ||
+      (world === "tundra" && ["sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
       (world === "desert" &&
         ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
   );
+  if (world === "alpine" || world === "desert")
+    selected.push(
+      ...WORLD_ROCKS.filter((one) =>
+        world === "alpine" ? one.asset === "mountain" : one.asset !== "mountain",
+      ).map((one) => ({
+        ...one,
+        path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
+      })),
+    );
   const loaded = await Promise.all(
     selected.map(async (one) => {
       if (!assets) return undefined;
@@ -251,6 +283,8 @@ export async function loadPack(
       const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
       geometry.translate(0, -box.min.y, 0);
       geometry.scale(factor, factor, factor);
+      if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 0.5, 1.35);
+      if (world === "tundra" && one.asset === "scrub") geometry.scale(2.8, 1.2, 2.8);
       if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
       // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
       const normals = geometry.getAttribute("normal");

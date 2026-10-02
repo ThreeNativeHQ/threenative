@@ -45,6 +45,8 @@ import {
   normalViewGeometry,
   normalWorld,
   normalize,
+  output,
+  positionGeometry,
   positionLocal,
   positionWorld,
   pow,
@@ -911,6 +913,8 @@ export async function createPropSurfaces(
     stone: stoneMaterial,
   };
   if (biome && biome.world !== "forest" && biome.world !== "coastal") {
+    // colorNode already consumes blade colour; Three must not multiply it a second time.
+    grassMaterial.vertexColors = false;
     grassMaterial.colorNode = blade.mul(
       vec3(
         ...(biome.world === "desert"
@@ -921,6 +925,11 @@ export async function createPropSurfaces(
       ),
     );
     grassMaterial.emissiveNode = vec3(0);
+    if (biome.world === "tundra") {
+      // Basal colour alone does not occlude the sky/fog contribution after lighting.
+      const root = smoothstep(0.02, 0.22, positionGeometry.y);
+      grassMaterial.outputNode = vec4(output.rgb.mul(mix(0.08, 1, root)), output.a);
+    }
     if (stoneMaterial.colorNode)
       stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(
         vec3(...biome.stoneTint),

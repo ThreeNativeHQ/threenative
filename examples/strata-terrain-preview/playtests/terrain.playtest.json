@@ -629,7 +629,8 @@
         "id": "GameState",
         "path": "alpineFrameP50",
         "gte": 0.01,
-        "changed": true
+        "changed": true,
+        "lte": 4
       },
       {
         "id": "GameState",
@@ -641,7 +642,8 @@
         "id": "GameState",
         "path": "desertFrameP50",
         "gte": 0.01,
-        "changed": true
+        "changed": true,
+        "lte": 4
       },
       {
         "id": "GameState",
@@ -653,7 +655,8 @@
         "id": "GameState",
         "path": "tundraFrameP50",
         "gte": 0.01,
-        "changed": true
+        "changed": true,
+        "lte": 4
       },
       {
         "id": "GameState",
@@ -728,6 +731,27 @@
           }
         ],
         "allowTrivial": "Both baked kettle ponds must produce distinct material groups in the drawn lake mesh."
+      },
+      {
+        "id": "GameState",
+        "path": "alpineOverviewFrameP50",
+        "gte": 0.01,
+        "lte": 4,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "desertOverviewFrameP50",
+        "gte": 0.01,
+        "lte": 4,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "tundraOverviewFrameP50",
+        "gte": 0.01,
+        "lte": 4,
+        "changed": true
       }
     ],
     "renderChain": {
@@ -737,6 +761,23 @@
       "contributions": {
         "graphOutputChanged": ["ambientOcclusion"]
       }
-    }
+    },
+    "components": [
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "drawn",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          },
+          {
+            "label": "desert-mesa",
+            "equals": true
+          }
+        ]
+      }
+    ]
   }
 }

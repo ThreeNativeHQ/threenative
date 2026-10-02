@@ -9,7 +9,8 @@ export function createHorizonGeometry(
 ): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
-  const rings = 192;
+  // Alpine fine crags alias across long radial cells; retain broad massif relief.
+  const rings = landform === "alpine" ? 384 : 192;
   const noise = new ImprovedNoise();
   const starts = [
     [0, 0],
@@ -81,8 +82,7 @@ export function createHorizonGeometry(
             : landform === "alpine"
               ? 25 +
                 massif * (170 + ridge ** 1.8 * 330) +
-                fineRidge ** 3 * Math.min(1, massif * 3) * 60 +
-                crags * Math.min(1, massif * 2) * 0.5
+                fineRidge ** 3 * Math.min(1, massif * 3) * 25
               : hills;
       const height = data.waterLevel === null ? inland : data.waterLevel - 28;
       // The collider seam is exact. Short baked rills fade into broad shoulders before the massif.

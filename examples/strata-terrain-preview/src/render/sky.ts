@@ -246,7 +246,8 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   // The physical sky's radiance is calibrated separately from ground irradiance.
   daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
   const skyMaterial = daylight.sky.material;
-  if (skyMaterial.colorNode) skyMaterial.colorNode = skyMaterial.colorNode.mul(0.32);
+  if (skyMaterial.colorNode)
+    skyMaterial.colorNode = skyMaterial.colorNode.mul(biome?.world === "tundra" ? 0.15 : 0.32);
   daylight.sun.visible = false;
   daylight.add(sun.target);
 
@@ -289,7 +290,11 @@ export function installOutdoorOcclusion(
   // Three's existing fog nodes retain aerial perspective and add low valley mist without a pass.
   const previousFog = scene.fogNode;
   const distanceHaze = densityFogFactor(float(biome?.haze.density ?? RIG.haze.density));
-  const valleyHaze = exponentialHeightFogFactor(float(0.000005), float(115)) as Node<"float">;
+  // A 115 m fog sheet washes low tundra cover and distant alpine valleys in sky colour.
+  const valleyHaze =
+    biome?.world === "alpine" || biome?.world === "tundra"
+      ? float(0)
+      : (exponentialHeightFogFactor(float(0.000005), float(115)) as Node<"float">);
   const heightFog = fog(
     color(biome ? new Color(biome.haze.color) : RIG.haze.color),
     float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
@@ -315,7 +320,16 @@ export function installOutdoorOcclusion(
       {
         name: "ambientOcclusion",
         minimumTier: "medium",
-        build: (input) => (input as Node<"vec4">).mul(mix(1, occlusion.r, 0.65)),
+        build: (input) =>
+          (input as Node<"vec4">).mul(
+            mix(
+              1,
+              occlusion.r,
+              biome?.world === "alpine" || biome?.world === "tundra"
+                ? float(0.65).mul(float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())))
+                : 0.65,
+            ),
+          ),
       },
     ],
   });

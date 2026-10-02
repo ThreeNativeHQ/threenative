@@ -410,7 +410,9 @@ export function createGroundMaterial(
       const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
       return vec4(tangent, sampled.z.mul(2).sub(1), 1);
     };
-    return mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
+    return biome?.world === "alpine"
+      ? mix(tap(3.8, 0.17, vec2(0)), tap(24, -0.21, vec2(0.37, 0.61)), patch.mul(0.3).add(0.2))
+      : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
   };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
@@ -421,9 +423,9 @@ export function createGroundMaterial(
       tileBlend,
     );
     if (otherBiome && biome.world === "tundra" && key === "dirt")
-      return vec4(flat.rgb.mul(vec3(0.48, 0.38, 0.27)), flat.a);
+      return vec4(flat.rgb.mul(vec3(0.7, 0.58, 0.42)), flat.a);
     if (otherBiome && biome.world === "tundra" && key === "moss")
-      return vec4(flat.rgb.mul(vec3(1.3, 1.25, 0.95)), flat.a);
+      return vec4(flat.rgb.mul(vec3(0.85, 1.15, 0.48)), flat.a);
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
@@ -443,20 +445,20 @@ export function createGroundMaterial(
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.72 : 0.35).mul(
+      let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.25 : 0.35).mul(
         vec3(...(biome?.stoneTint ?? [0.48, 0.44, 0.39])),
       );
       if (otherBiome && biome.world === "desert") {
         const band = positionWorld.y
           .sub(2)
-          .mul(Math.PI / 4)
+          .mul(Math.PI / 5.3)
           .add(mx_noise_float(positionWorld.mul(0.035)).mul(0.9))
           .sin()
           .mul(0.5)
           .add(0.5);
-        stone = stone.mul(
-          mix(vec3(0.84, 0.77, 0.66), vec3(1.09, 1.02, 0.9), smoothstep(0.25, 0.75, band)),
-        );
+        stone = vec3(grey)
+          .mul(vec3(1.65, 0.86, 0.43))
+          .mul(mix(vec3(0.56, 0.39, 0.27), vec3(1.12, 1.02, 0.85), smoothstep(0.18, 0.62, band)));
       }
       if (otherBiome && biome.world === "alpine") {
         const seams = positionWorld.y
@@ -556,12 +558,23 @@ export function createGroundMaterial(
         ),
         1,
       );
+  if (biome?.world === "alpine") {
+    // Keep unresolved grass texels out of the alpine horizon.
+    const distantCover = vec3(0.075, 0.12, 0.028)
+      .mul(cover)
+      .mul(mix(0.85, 1.12, patch));
+    albedo = vec4(
+      mix(albedo.rgb, distantCover, smoothstep(65, 160, positionView.length()).mul(0.85)),
+      1,
+    );
+  }
   // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
   // third sampler on the grass layer is a third of the budget for detail nobody can name.
   let normal = grassRelief.tilt
     .mul(weights.grass)
+    .mul(biome?.world === "alpine" ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
     .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
@@ -638,7 +651,7 @@ export function createGroundMaterial(
     rockNormal === undefined
       ? vec3(0)
       : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
-  const tilt = mix(normal, mountainTilt, continuation);
+  const tilt = mix(normal, biome?.world === "alpine" ? vec3(0) : mountainTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
@@ -814,10 +827,15 @@ async function loadGroundMaps(
   const layers = await Promise.all(
     Object.entries(pathsByLayer).map(async ([key, paths]) => {
       // A layer without its albedo has no place in the blend, so the set comes back without it.
-      const diffuse = await get(assets, paths.diffuse, false);
+      let diffuse = await get(assets, paths.diffuse, false);
+      let chosen = paths;
+      if (diffuse === undefined && paths.diffuse.startsWith("temperate/")) {
+        chosen = GROUND_MAPS[key as LayerKey];
+        diffuse = await get(assets, chosen.diffuse, false);
+      }
       if (diffuse === undefined) return undefined;
       const maps: ILayerMaps = { diffuse };
-      for (const [slot, path] of Object.entries(paths)) {
+      for (const [slot, path] of Object.entries(chosen)) {
         if (slot === "diffuse") continue;
         const found = await get(assets, path, true);
         if (found !== undefined) maps[slot as "normal"] = found;
