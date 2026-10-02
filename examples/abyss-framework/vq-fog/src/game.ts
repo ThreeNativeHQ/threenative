@@ -45,7 +45,7 @@ const initialState = {
 type FogState = typeof initialState;
 type FogCtx = ICtx<FogState>;
 interface IProbeInfo {
-  frame: number;
+  render: { calls: number };
   memory: { textures: number };
 }
 const modes = [
@@ -85,7 +85,7 @@ export class FogProbe extends GameScene<FogState> {
   #createdTargets = 0;
   #releasedTargets = 0;
   #releasedMaterials = 0;
-  #lastRenderFrame = -1;
+  #lastRenderCalls = -1;
   #lastTextures = -1;
   #settledRenderFrames = 0;
   #stableTextureFrames = 0;
@@ -163,8 +163,11 @@ export class FogProbe extends GameScene<FogState> {
     if (this.#applied !== this.#mode && this.#sun.shadow.map !== null) this.#compose(ctx);
     const observation = this.#fog?.diagnostics();
     const info = ctx.renderer.info as IProbeInfo;
-    if (info.frame !== this.#lastRenderFrame) {
-      this.#lastRenderFrame = info.frame;
+    // Three's info.frame is driven by its Animation loop; this game owns the loop instead.
+    // A new cumulative render.calls value at update means the previous render interval returned.
+    // Count one observation boundary regardless of the number of internal passes in that interval.
+    if (info.render.calls !== this.#lastRenderCalls) {
+      this.#lastRenderCalls = info.render.calls;
       this.#settledRenderFrames += 1;
       this.#stableTextureFrames =
         info.memory.textures === this.#lastTextures ? this.#stableTextureFrames + 1 : 1;
@@ -211,7 +214,7 @@ export class FogProbe extends GameScene<FogState> {
   }
 
   #resetObservation(ctx: FogCtx): void {
-    this.#lastRenderFrame = (ctx.renderer.info as IProbeInfo).frame;
+    this.#lastRenderCalls = (ctx.renderer.info as IProbeInfo).render.calls;
     this.#lastTextures = -1;
     this.#settledRenderFrames = 0;
     this.#stableTextureFrames = 0;

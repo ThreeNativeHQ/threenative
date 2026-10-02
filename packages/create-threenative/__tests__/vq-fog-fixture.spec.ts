@@ -21,7 +21,7 @@ function fixture() {
   const scene = new Scene();
   const state = createGameStore({ ...FogProbe.initialState });
   let action = "";
-  const info = { frame: 0, memory: { textures: 2 } };
+  const info = { frame: 0, render: { calls: 0 }, memory: { textures: 2 } };
   const sizes: number[][] = [];
   // No GPU is available in a unit test. Use real scene/state/TSL ownership objects;
   // only the input edge and renderer installation boundary are replaced.
@@ -136,7 +136,7 @@ it("counts texture stability only across observed completed render frames", () =
   for (let i = 0; i < 5; i += 1) f.select("");
   expect(f.state.getState()).toMatchObject({ settledRenderFrames: 0, stableTextureFrames: 0 });
   for (let i = 1; i <= 3; i += 1) {
-    f.info.frame = i;
+    f.info.render.calls = i * 4;
     f.select("");
   }
   expect(f.state.getState()).toMatchObject({
@@ -145,7 +145,7 @@ it("counts texture stability only across observed completed render frames", () =
     textures: 2,
   });
   f.info.memory.textures = 3;
-  f.info.frame = 4;
+  f.info.render.calls = 16;
   f.select("");
   expect(f.state.getState().stableTextureFrames).toBe(1);
   f.select("off");
