@@ -315,6 +315,20 @@ changes exposure, but its p99 spread does not exceed the requirement. This is an
 negative control for repeatability in this measured fixture, not a passing acceptance or grounds
 to retune the age, scene, timing or 10% bar. Camera-pose qualification remains a separate open task.
 
+
+Camera-cut qualification is now prepared as four separate controlled arms. Two identical rooms
+remain 100 units apart, with finite-radius local lights and static background shells. The cut
+changes only the actual camera translation: [106, 4, 9] to [6, 4, 9]. Camera layers, projection,
+all four lights, room transforms and background colors stay fixed; every accepted GPU sample
+carries an observed pose/lighting snapshot. The verifier rejects stationary/fabricated matrices,
+light or layer changes and stale post-cut samples. The 11/1-stop corrected/raw comparison keeps
+the same 180-update/3.0-second budget and unchanged 0.25-stop bar. Historical intensity-step and
+cold-boot arms remain intact. 146 focused exposure/lifetime tests, root TypeScript, five fixture Vite builds, scoped Biome,
+141 CI-structure/needs tests, documentation links and the tracked evidence budget pass. Broader
+scaffold/mirror verification passes 69/70; the unchanged mobile-assets case cannot resolve the
+Basis transcoder from its independent temporary project (`TN_ASSETS_TRANSCODER_MISSING`). Actual
+camera pixels, native qualification and full required CI remain open.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
@@ -352,9 +366,12 @@ to retune the age, scene, timing or 10% bar. Camera-pose qualification remains a
    a display (see the native contract lane in `packages/runtime-native/AGENTS.md`).
    *Red-green:* the contract case is registered in all five places a new native target needs; a
    missing registration must fail `verify-native-contracts.mjs`, not skip.
-- [ ] **The framework picks no number.** proof: `auto-exposure.spec.ts boundary assertion`. `packages/core/src/render/auto-exposure.ts` contains no
+- [x] **The framework picks no number.** proof: `auto-exposure.spec.ts boundary assertion`. `packages/core/src/render/auto-exposure.ts` contains no
    default clamp, weight curve or rate that is not `1`, `0` or an identity. A grep in the spec
-   enforces it.
+   enforces it. Verified 2026-10-02: 23 control/topology/boundary tests pass. The current
+   architecture keeps the complete exposure graph and policy in generated game source; the
+   boundary assertion scans every core source file and rejects exposure graph/metric/policy
+   symbols and a core-owned auto-exposure module. No core look defaults are added.
 
 ## Out of scope
 

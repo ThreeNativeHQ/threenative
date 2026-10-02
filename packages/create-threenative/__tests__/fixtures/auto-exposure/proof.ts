@@ -1,3 +1,5 @@
+import { assertExposureCameraCut } from "./cameraProof.js";
+
 interface IExposureProofReport {
   pass: boolean;
   capture?: { rendererKind: string; adapter: Record<string, string> };
@@ -16,7 +18,8 @@ interface IExposureMeasurement {
 
 export interface IExposureCaseProof {
   applied: boolean;
-  expectedLuminance: number;
+  expectedLuminance?: number;
+  cameraCut?: boolean;
   cutStops?: number;
   reject?: string;
   deterministic?: boolean;
@@ -25,6 +28,7 @@ export interface IExposureCaseProof {
 /** A negative control may fail its one named gate; runtime errors never qualify the mutation. */
 export function qualifyExposureCase(report: IExposureProofReport, expectation: IExposureCaseProof) {
   assertExposureRuntime(report);
+  if (expectation.cameraCut === true) assertExposureCameraCut(report, expectation.cutStops ?? 0);
   if (expectation.deterministic === true) assertExposureWarmup(report);
   const frameBudget =
     expectation.deterministic === true ? assertDeterministicExposureBudget(report) : undefined;

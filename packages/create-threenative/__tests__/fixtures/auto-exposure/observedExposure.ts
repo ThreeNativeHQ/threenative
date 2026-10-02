@@ -11,6 +11,7 @@ export function exposureFrameSnapshot(frame: NodeFrame): NodeFrame {
 export class ObservedExposureNode extends AutoExposureNode {
   deterministic = false;
   coldBoot = false;
+  capturePose: (() => unknown) | undefined;
   onProgress = () => {};
   timing = {
     updates: 0,
@@ -128,7 +129,11 @@ export class ObservedExposureNode extends AutoExposureNode {
               )
                 return;
               this.#sampleUpdates = next.updates;
-              const sample = { ...next, measurement };
+              const sample = {
+                ...next,
+                measurement,
+                ...(this.capturePose === undefined ? {} : { cameraPose: this.capturePose() }),
+              };
               console.info(`TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`);
               if (this.coldBoot && next.updates === 3)
                 console.info(`TN_EXPOSURE_BOOT_FROZEN:${JSON.stringify(sample)}`);

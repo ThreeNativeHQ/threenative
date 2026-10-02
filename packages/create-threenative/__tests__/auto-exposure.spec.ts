@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   exposureReductionSizes,
@@ -60,5 +62,28 @@ describe("meter reduction topology", () => {
     [1, Number.POSITIVE_INFINITY],
   ])("rejects an invalid buffer %s x %s", (width, height) => {
     expect(() => exposureReductionSizes(width, height)).toThrow(/drawing buffer/i);
+  });
+});
+
+describe("framework exposure ownership boundary", () => {
+  it("keeps exposure policy, metric and adaptation out of core package source", () => {
+    const root = path.resolve("packages/core/src");
+    const files = readdirSync(root, { recursive: true, encoding: "utf8" }).filter((file) =>
+      /\.tsx?$/u.test(file),
+    );
+    expect(files.length).toBeGreaterThan(0);
+    const appearance =
+      /AutoExposureNode|exposureSettings|exposureMeter|exposureLuminance|\bsnap(?:Gain|Lo|Hi)\b/u;
+    for (const file of files) {
+      expect(file).not.toMatch(/auto[-_]?exposure/i);
+      expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(appearance);
+    }
+    const authored = readFileSync(
+      "packages/create-threenative/template-assets/exposure.ts",
+      "utf8",
+    );
+    expect(authored).toMatch(/export const exposureSettings/);
+    expect(authored).toMatch(/export function exposureMeter/);
+    expect(authored).not.toContain("@threenative/");
   });
 });

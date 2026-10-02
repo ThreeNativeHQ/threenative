@@ -18,6 +18,7 @@ const game = createExposureFixture({
   snapGain,
   deterministic: query.get("deterministic") === "1",
   coldBoot: query.get("coldBoot") === "1",
+  cameraCut: query.get("cameraCut") === "1",
 });
 void game
   .start()

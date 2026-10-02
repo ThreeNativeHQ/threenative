@@ -14,6 +14,7 @@ import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
 import { applyExposure } from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
+import { createFixedExposureRooms } from "./fixedRooms.js";
 import { ObservedExposureNode } from "./observedExposure.js";
 
 export interface IExposureFixtureOptions {
@@ -23,6 +24,7 @@ export interface IExposureFixtureOptions {
   snapGain: number;
   deterministic?: boolean;
   coldBoot?: boolean;
+  cameraCut?: boolean;
 }
 
 /** Portable scene and engine loop. The browser entry only supplies controls and mounts the canvas. */
@@ -34,37 +36,53 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
       const camera = ctx.camera as PerspectiveCamera;
       camera.position.set(6, 4, 9);
       camera.lookAt(0, 1.2, 0);
-      const floor = new BoxGeometry(12, 0.2, 12);
-      const block = new BoxGeometry(1, 1, 1);
-      const materials = [0x9a9a9a, 0xa34a25, 0x246d95, 0xd9c989].map(
-        (color) => new MeshStandardMaterial({ color, roughness: 0.85 }),
-      );
-      const ground = new Mesh(floor, materials[0]);
-      ground.position.y = -0.1;
-      ctx.add(ground);
-      for (let i = 0; i < 12; i++) {
-        const box = new Mesh(block, materials[i % materials.length]);
-        box.position.set(
-          (i % 4) * 1.8 - 2.7,
-          0.5 + Math.floor(i / 4) * 0.2,
-          Math.floor(i / 4) * 1.8 - 1.8,
-        );
-        box.scale.y = 1 + Math.floor(i / 4) * 0.4;
-        ctx.add(box);
-      }
-      const sun = new DirectionalLight(0xfff4df, 1);
-      sun.position.set(4, 7, 3);
-      const fill = new AmbientLight(0xffffff, 1);
-      ctx.add(sun);
-      ctx.add(fill);
       let bright = options.bright;
-      const applyLight = () => {
-        const intensity = 0.01 * (bright ? 2 ** options.stops : 1);
-        sun.intensity = intensity * 3;
-        fill.intensity = intensity;
-        ctx.scene.background = new Color(0x445565).multiplyScalar(intensity);
-      };
-      applyLight();
+      const fixedRooms =
+        options.cameraCut === true
+          ? createFixedExposureRooms(ctx.scene, camera, options.stops)
+          : undefined;
+      let applyLight = () => {};
+      let disposeRoom = () => {};
+      if (fixedRooms === undefined) {
+        const floor = new BoxGeometry(12, 0.2, 12);
+        const block = new BoxGeometry(1, 1, 1);
+        const materials = [0x9a9a9a, 0xa34a25, 0x246d95, 0xd9c989].map(
+          (color) => new MeshStandardMaterial({ color, roughness: 0.85 }),
+        );
+        const ground = new Mesh(floor, materials[0]);
+        ground.position.y = -0.1;
+        ctx.add(ground);
+        for (let i = 0; i < 12; i++) {
+          const box = new Mesh(block, materials[i % materials.length]);
+          box.position.set(
+            (i % 4) * 1.8 - 2.7,
+            0.5 + Math.floor(i / 4) * 0.2,
+            Math.floor(i / 4) * 1.8 - 1.8,
+          );
+          box.scale.y = 1 + Math.floor(i / 4) * 0.4;
+          ctx.add(box);
+        }
+        const sun = new DirectionalLight(0xfff4df, 1);
+        sun.position.set(4, 7, 3);
+        const fill = new AmbientLight(0xffffff, 1);
+        ctx.add(sun);
+        ctx.add(fill);
+        applyLight = () => {
+          const intensity = 0.01 * (bright ? 2 ** options.stops : 1);
+          sun.intensity = intensity * 3;
+          fill.intensity = intensity;
+          ctx.scene.background = new Color(0x445565).multiplyScalar(intensity);
+        };
+        applyLight();
+        disposeRoom = () => {
+          floor.dispose();
+          block.dispose();
+          for (const material of materials) material.dispose();
+        };
+      } else {
+        fixedRooms.setPose(bright);
+        disposeRoom = () => fixedRooms.dispose();
+      }
       const renderer = ctx.renderer.raw as WebGPURenderer;
       renderer.toneMapping = ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1;
@@ -80,6 +98,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         },
         1,
       );
+      exposure.capturePose = fixedRooms?.snapshot;
       exposure.deterministic = options.deterministic === true;
       exposure.coldBoot = options.coldBoot === true;
       if (exposure.coldBoot) exposure.observeColdBootStartup(ctx.startup);
@@ -98,17 +117,19 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         ctx.renderer.clearOutputNode?.();
         exposure.dispose();
         worldPass.dispose();
-        floor.dispose();
-        block.dispose();
-        for (const material of materials) material.dispose();
+        disposeRoom();
       };
       return (frame: ICtx) => {
         if (frame.input.justPressed("cut")) {
+          const before = fixedRooms?.snapshot();
           exposure.beginCut();
           bright = !bright;
-          applyLight();
+          if (fixedRooms === undefined) applyLight();
+          else fixedRooms.setPose(bright);
+          const cameraCut =
+            before === undefined ? undefined : { before, after: fixedRooms?.snapshot() };
           console.info(
-            `TN_EXPOSURE_CUT:${JSON.stringify({ bright, stops: options.stops, ...exposure.timing, ...exposure.getObservation() })}`,
+            `TN_EXPOSURE_CUT:${JSON.stringify({ cameraCut, bright, stops: options.stops, ...exposure.timing, ...exposure.getObservation() })}`,
           );
         }
         if (frame.input.justPressed("disable")) exposure.setEnabled(false);
