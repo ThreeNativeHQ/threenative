@@ -218,17 +218,18 @@ export function buildPropVariants(
       { geometry: grassClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "grass", variant: i },
     ]);
   }
-  for (let i = 0; i < VARIANTS.grass; i += 1)
-    variants.set(
-      `grass:${i}`,
-      prepared?.get(`grass:${i}`) ?? [
-        {
-          geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0),
-          role: "grass",
-          variant: i,
-        },
-      ],
-    );
+  for (let i = 0; i < VARIANTS.grass; i += 1) {
+    const ready = prepared?.get(`grass:${i}`);
+    const basal = grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0);
+    // The photographed meadow atlas is seed stalks; a low blade layer closes the basal gaps.
+    if (ready) {
+      basal.scale(0.8, 0.32, 0.8);
+      const colours = basal.getAttribute("color");
+      for (let c = 0; c < colours.count; c++)
+        colours.setXYZ(c, colours.getX(c) * 0.45, colours.getY(c) * 0.6, colours.getZ(c) * 0.35);
+    }
+    variants.set(`grass:${i}`, [...(ready ?? []), { geometry: basal, role: "grass", variant: i }]);
+  }
   for (let i = 0; i < VARIANTS.poppy; i += 1) {
     const ready = prepared?.get(`poppy:${i}`);
     if (ready) {
