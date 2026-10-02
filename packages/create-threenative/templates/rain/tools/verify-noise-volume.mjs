@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
-import { NOISE_SIZE, createNoiseVolume } from "../src/render/noise-volume.js";
+import { NOISE_SIZE, createNoiseVolume } from "../src/render/noise-volume.ts";
 
 const [source] = process.argv.slice(2);
 if (source === undefined) {
