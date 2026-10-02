@@ -554,6 +554,9 @@ importers:
       '@threenative/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@threenative/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
       '@threenative/playtest':
         specifier: workspace:*
         version: link:../../packages/playtest
