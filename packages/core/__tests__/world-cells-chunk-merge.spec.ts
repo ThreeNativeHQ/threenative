@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  BackSide,
   Box3,
   BoxGeometry,
   BufferAttribute,
@@ -178,7 +179,11 @@ function meshesIn(root: Object3D): Mesh[] {
 }
 
 /** Observe the real level probe's draw inputs at three's shadow-render boundary, without a GPU. */
-function shadowDraws(world: WorldCells, half: "cluster" | "wide"): Mesh[][] {
+function shadowDraws(
+  world: WorldCells,
+  half: "cluster" | "wide",
+  observe?: (meshes: Mesh[], level: number) => void,
+): Mesh[][] {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 1, 0.1, 900);
   camera.position.copy(CHUNK_ORIGIN).add(new Vector3(0, 10, 0));
@@ -202,7 +207,9 @@ function shadowDraws(world: WorldCells, half: "cluster" | "wide"): Mesh[][] {
     clipExtents: [24, 96, 320],
     invalidationDelay: 0,
     marker: false,
-    minCasterTexels: 0,
+    mapSize: 1024,
+    adaptiveRefresh: false,
+    adaptiveCasterGate: false,
   });
   node.setup({
     context: {},
@@ -222,14 +229,30 @@ function shadowDraws(world: WorldCells, half: "cluster" | "wide"): Mesh[][] {
           shadowCamera.projectionMatrix,
           shadowCamera.matrixWorldInverse,
         ),
+        shadowCamera.coordinateSystem,
+        shadowCamera.reversedDepth,
       );
-      draws[index] = meshesIn(world).filter(
+      const visible: Mesh[] = [];
+      world.traverseVisible((object) => {
+        if (object instanceof Mesh) visible.push(object);
+      });
+      draws[index] = visible.filter(
         (mesh) =>
           mesh.visible &&
           mesh.castShadow &&
           shadowCamera.layers.test(mesh.layers) &&
           (!mesh.frustumCulled || frustum.intersectsObject(mesh)),
       );
+      for (const mesh of draws[index] as Mesh[])
+        mesh.onBeforeRender(
+          {} as never,
+          scene,
+          shadowCamera,
+          mesh.geometry,
+          mesh.material as Material,
+          null as never,
+        );
+      observe?.(draws[index] as Mesh[], index);
     };
   });
   for (const mover of node.moverNodes)
@@ -240,6 +263,83 @@ function shadowDraws(world: WorldCells, half: "cluster" | "wide"): Mesh[][] {
   node.dispose();
   world.removeFromParent();
   return draws;
+}
+
+/** The ordered world-space vertices of every drawn triangle, including its authored side. */
+function trianglesOf(meshes: readonly Mesh[]): string[] {
+  const triangles: string[] = [];
+  const instance = new Matrix4();
+  const world = new Matrix4();
+  const vertex = new Vector3();
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry;
+    const position = geometry.getAttribute("position");
+    const indices = geometry.getIndex();
+    const end = Math.min(
+      indices?.count ?? position.count,
+      geometry.drawRange.start + geometry.drawRange.count,
+    );
+    for (let copy = 0; copy < (mesh instanceof InstancedMesh ? mesh.count : 1); copy += 1) {
+      if (mesh instanceof InstancedMesh) mesh.getMatrixAt(copy, instance);
+      else instance.identity();
+      world.multiplyMatrices(mesh.matrixWorld, instance);
+      for (let at = geometry.drawRange.start; at + 2 < end; at += 3) {
+        const triangle: number[] = [(mesh.material as Material).side];
+        for (let corner = 0; corner < 3; corner += 1) {
+          vertex
+            .fromBufferAttribute(position, indices?.getX(at + corner) ?? at + corner)
+            .applyMatrix4(world);
+          triangle.push(vertex.x, vertex.y, vertex.z);
+        }
+        triangles.push(JSON.stringify(triangle));
+      }
+    }
+  }
+  return triangles.sort();
+}
+
+function preservedChunk(): { group: Group; parts: InstancedMesh[] } {
+  const group = new Group();
+  group.position.copy(CHUNK_ORIGIN);
+  const nested = new Group();
+  nested.position.set(2, 4, -2);
+  nested.scale.set(2, 1, 2);
+  group.add(nested);
+  const parts: InstancedMesh[] = [];
+  for (let part = 0; part < 5; part += 1) {
+    const size = part === 4 ? 1 / 32 : 2;
+    const box = new BoxGeometry(size, size, size);
+    const geometry = part % 2 === 0 ? box : box.toNonIndexed();
+    if (part === 0) {
+      const position = geometry.getAttribute("position");
+      geometry.setAttribute(
+        "position",
+        new BufferAttribute(
+          Int16Array.from(position.array, (value) => value * 32767),
+          3,
+          true,
+        ),
+      );
+    }
+    if (part === 1) geometry.setDrawRange(3, 15);
+    const mesh = new InstancedMesh(
+      geometry,
+      new MeshBasicMaterial({ side: part % 2 === 0 ? FrontSide : BackSide }),
+      part === 4 ? 1 : 3,
+    );
+    mesh.position.set(part * 2, 0, 0);
+    if (part === 3) mesh.position.x = 150;
+    for (let copy = 0; copy < mesh.count; copy += 1)
+      mesh.setMatrixAt(
+        copy,
+        copy === 2
+          ? new Matrix4().set(0, 0, 1, 0, 0, 1, 0, 4, -1, 0, 0, -4, 0, 0, 0, 1)
+          : new Matrix4().makeTranslation(0, copy * 2, copy * -2),
+      );
+    nested.add(mesh);
+    parts.push(mesh);
+  }
+  return { group, parts };
 }
 
 function markers(): string[] {
@@ -301,7 +401,7 @@ async function attached(
     ...options,
     admissionBudgetMs: Number.POSITIVE_INFINITY,
     budgets,
-    follow: { position: { ...FOLLOW } },
+    follow: options.follow ?? { position: { ...FOLLOW } },
     loadModel: async () => model,
     prefetchSeconds: 0,
     ring: 0,
@@ -571,6 +671,126 @@ describe("a hand-placed chunk merged by material", () => {
     },
   );
 
+  it.each(["cluster", "wide"] as const)(
+    "consolidates retained opaque parts with exact %s level inputs and unchanged main draws",
+    async (half) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const { group, parts } = preservedChunk();
+      group.updateMatrixWorld(true);
+      const mainBefore = trianglesOf(parts);
+      const original = parts.map((mesh) => ({
+        geometry: mesh.geometry,
+        material: mesh.material,
+        parent: mesh.parent,
+        matrix: mesh.matrix.clone(),
+      }));
+      const follow = { position: { ...FOLLOW } };
+      const { chunk, world } = await attached(group, {
+        follow,
+        chunkMergeMaxTriangles: 1,
+        shadows: { cast: true, receive: true },
+      });
+      const proxies = meshesIn(chunk).filter((mesh) => !mesh.layers.isEnabled(0));
+      expect(parts.filter((mesh) => mesh.castShadow && mesh.layers.isEnabled(0))).toHaveLength(0);
+      expect(proxies).toHaveLength(2);
+      expect(meshesIn(chunk).filter((mesh) => mesh.layers.isEnabled(0))).toEqual(parts);
+      expect(trianglesOf(parts)).toEqual(mainBefore);
+      for (let index = 0; index < parts.length; index += 1) {
+        const mesh = parts[index] as InstancedMesh;
+        expect(mesh.geometry).toBe(original[index]?.geometry);
+        expect(mesh.material).toBe(original[index]?.material);
+        expect(mesh.parent).toBe(original[index]?.parent);
+        expect(mesh.matrix.equals(original[index]?.matrix as Matrix4)).toBe(true);
+      }
+      const after: string[][] = [];
+      shadowDraws(world, half, (drawn, level) => {
+        after[level] = trianglesOf(drawn);
+      });
+      // Re-enable the exact retained sources and disable only their proxies: the pre-consolidation draw path.
+      for (const mesh of parts) mesh.castShadow = true;
+      for (const proxy of proxies) proxy.castShadow = false;
+      const before: string[][] = [];
+      shadowDraws(world, half, (drawn, level) => {
+        before[level] = trianglesOf(drawn);
+      });
+      expect(before[0]?.length).toBeGreaterThan(0);
+      expect(before[0]?.length).toBeGreaterThan(before[1]?.length ?? 0);
+      expect(after).toEqual(before);
+      expect(before[2]?.length).toBeGreaterThan(before[1]?.length ?? 0);
+      for (const mesh of parts) mesh.castShadow = false;
+      for (const proxy of proxies) proxy.castShadow = true;
+      // A hidden source hierarchy must not reappear through a proxy parented outside it.
+      const nested = parts[0]?.parent as Group;
+      nested.visible = false;
+      const hiddenAfter: string[][] = [];
+      shadowDraws(world, half, (drawn, level) => {
+        hiddenAfter[level] = trianglesOf(drawn);
+      });
+      for (const mesh of parts) mesh.castShadow = true;
+      for (const proxy of proxies) proxy.castShadow = false;
+      const hiddenBefore: string[][] = [];
+      shadowDraws(world, half, (drawn, level) => {
+        hiddenBefore[level] = trianglesOf(drawn);
+      });
+      expect(hiddenAfter).toEqual(hiddenBefore);
+      expect(hiddenAfter).toEqual([[], [], []]);
+      nested.visible = true;
+      for (const mesh of parts) mesh.castShadow = false;
+      for (const proxy of proxies) proxy.castShadow = true;
+      expect(trianglesOf(parts)).toEqual(mainBefore);
+      const disposed = proxies.map((mesh) => vi.spyOn(mesh.geometry, "dispose"));
+      follow.position.x += 4 * CELL_SIZE;
+      for (let pass = 0; pass < 40 && world.stats().residentKeys.length > 0; pass += 1) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().residentKeys).toEqual([]);
+      expect(world.getObjectByName("world-chunk")).toBeUndefined();
+      for (const spy of disposed) expect(spy).toHaveBeenCalled();
+      world.dispose();
+    },
+  );
+
+  it("leaves AutoLOD, alpha, morph and deforming retained parts casting their own silhouettes", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { group, parts } = preservedChunk();
+    const chained = await chainedMesh();
+    const lod = new InstancedMesh(chained.geometry, chained.material, 1);
+    const morph = new InstancedMesh(morphed().geometry, surface, 1);
+    const alpha = new InstancedMesh(
+      new BoxGeometry(),
+      new MeshBasicMaterial({ alphaTest: 0.5 }),
+      1,
+    );
+    const transparent = new InstancedMesh(
+      new BoxGeometry(),
+      new MeshBasicMaterial({ transparent: true }),
+      1,
+    );
+    const deformingMaterial = new MeshBasicMaterial();
+    Reflect.set(deformingMaterial, "positionNode", {});
+    const deforming = new InstancedMesh(new BoxGeometry(), deformingMaterial, 1);
+    const custom = new InstancedMesh(new BoxGeometry(), surface, 1);
+    custom.customDepthMaterial = new MeshBasicMaterial();
+    const mirrored = new InstancedMesh(new BoxGeometry(), surface, 1);
+    mirrored.scale.x = -1;
+    const excluded = [lod, morph, alpha, transparent, deforming, custom, mirrored];
+    for (const mesh of excluded) mesh.setMatrixAt(0, new Matrix4());
+    group.add(...excluded);
+    const { chunk, world } = await attached(group, {
+      chunkMergeMaxTriangles: 1,
+      shadows: { cast: true, receive: true },
+    });
+    expect(meshesIn(chunk).filter((mesh) => !mesh.layers.isEnabled(0))).toHaveLength(2);
+    for (const mesh of excluded) {
+      expect(mesh.parent).toBe(group);
+      expect(mesh.castShadow).toBe(true);
+    }
+    for (const mesh of parts) expect(mesh.castShadow).toBe(false);
+    expect(lodChainOf(lod.geometry)).toBeDefined();
+    world.dispose();
+  });
+
   it("collapses the chunk's shadow bill into one position-only proxy per side", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { cutout, group, opaque } = shadowChunkModel();
@@ -639,6 +859,7 @@ describe("a hand-placed chunk merged by material", () => {
       throw new Error("Expected a plain position attribute on the proxy.");
     const proxyBox = new Box3().setFromBufferAttribute(proxyPosition);
     expect(proxyBox.equals(coveredBox)).toBe(true);
+    expect(trianglesOf([proxy])).toEqual(trianglesOf(covered));
 
     // The proxy belongs to the chunk: evicting the cell releases it with the rest of the subtree.
     const disposed = vi.spyOn(proxy.geometry, "dispose");

@@ -426,6 +426,8 @@ interface ICasterMesh extends Mesh {
   boundingBox?: Box3 | null;
   boundingSphere?: Sphere | null;
   casterPrewarmOwed?: boolean;
+  chunkShadowProxy?: boolean;
+  casterMinDiameter?: number;
   computeBoundingBox(): void;
   computeBoundingSphere(): void;
 }
@@ -1247,6 +1249,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const mesh = table[entry];
       if (mesh === undefined) continue;
       if (mesh.visible !== true) continue;
+      // A retained-part proxy applies this gate to each original source at the draw boundary.
+      if (mesh.chunkShadowProxy === true) mesh.casterMinDiameter = gate;
       // Read before the gates below: the level is going to render both caster layers either way, and
       // a caster too small for this level's texels is still one the prewarm owes a draw.
       if (mesh.casterPrewarmOwed === true) prewarming = true;
@@ -1394,6 +1398,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // while the replay still drew it this frame. See WorldCells `bundled`.
       if (
         mesh.castShadow &&
+        mesh.chunkShadowProxy !== true &&
         mesh.userData.tnBundled !== true &&
         instanceDiameter(mesh, _sphere.radius) < gate
       ) {
