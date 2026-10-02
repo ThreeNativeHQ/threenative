@@ -58,7 +58,7 @@ Count active actions and allocations. Keep nonparticipants at the existing Anima
 
 ## Blocked on
 
-A license-clear multi-clip rig is required. Use repository-owned fixtures where possible; downloading commercial animations is not assumed.
+The repository-owned Quaternius CC0 mannequin provides Idle/Walk/Jog/Sprint loops and is now reused for the bounded reversal fixture. Compatible directional clips and two actual game consumers remain open for the full 2D blend-space scope; downloading commercial animations is not assumed.
 
 ## Completion record
 
@@ -74,3 +74,10 @@ A license-clear multi-clip rig is required. Use repository-owned fixtures where 
 - All original phase and acceptance boxes remain open. Full blend spaces still need the two-consumer/less-code admission and a license-clear real rig; GPU/native proof and human visual review have not been supplied by these CPU tests.
 
 Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
+
+### Actual mannequin capture preparation — 2026-10-02
+
+- Replaced the synthetic proxy capture with the repository's CC0 `mannequin.glb`, through the real `SkeletalMesh3D`/`AnimationPlayer`. The trace measures all 65 bones across nine Idle/Walk/Jog requests and seven returns to contributing actions. It begins on scenario input and freezes at the requested fixed tick, independent of startup/warmup duration.
+- `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/core/__tests__/animation-reversal-fixture.spec.ts packages/core/__tests__/animation.spec.ts`: 52 passed. Restoring the pre-fix engine source makes the real-rig check fail (weight error 1). Float32 quaternions are normalized only in diagnostic copies before angular comparison; raw self-angle was 0.000523 radians, not actual pose movement.
+- `node --import tsx scripts/verify-animation-reversal.ts --build-only`: the real-rig capture site builds. `tsc --noEmit -p examples/abyss-framework/tsconfig.json` passes. Quality scanning adds no double casts or suppressions.
+- Hosted proof target: `Integration animation reversal` runs the maintained public runner on headed WebGPU and records exact source SHA, adapter, per-frame screenshot SHA-256 and measured weights/phases. It rejects errors, missing/non-WebGPU adapters, blank frames and device-loss warnings. Runtime screenshots are pending this job, not claimed by local CPU/build checks. Full blend-space and platform acceptance remains open.

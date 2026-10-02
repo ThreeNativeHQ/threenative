@@ -1,0 +1,46 @@
+name: Integration animation reversal
+on:
+  pull_request:
+    paths:
+      - 'packages/core/src/animation.ts'
+      - 'packages/core/__tests__/animation*.spec.ts'
+      - 'examples/abyss-framework/src/render/animation-reversal*.ts'
+      - 'examples/abyss-framework/src/animation-reversal-main.ts'
+      - 'examples/abyss-framework/animation-reversal.html'
+      - 'examples/abyss-framework/playtests/animation-reversal.playtest.json'
+      - 'scripts/verify-animation-reversal.ts'
+      - '.github/workflows/integration-animation-reversal.yml'
+permissions:
+  contents: read
+concurrency:
+  group: integration-animation-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  animation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/animation.spec.ts packages/core/__tests__/animation-reversal-fixture.spec.ts
+      - name: Capture real mannequin gait reversals on headed WebGPU
+        run: node --import tsx scripts/verify-animation-reversal.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vq04-animation-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/vq04-animation
+          if-no-files-found: error

@@ -1,117 +1,74 @@
-import { AnimationPlayer, type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
+import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
-  AnimationClip,
-  Bone,
-  BoxGeometry,
-  Group,
+  AmbientLight,
+  type AnimationClip,
+  Color,
+  DirectionalLight,
   Mesh,
-  MeshBasicMaterial,
-  NumberKeyframeTrack,
+  MeshStandardMaterial,
+  type Object3D,
+  PlaneGeometry,
 } from "three";
+import mannequinUrl from "../../../../packages/create-threenative/template-assets/assets/mannequin.glb?url";
+import { createReversalTrace } from "./animation-reversal-trace.js";
 
-interface IReversalState extends Record<string, unknown> {
-  reversals: number;
-  maxWeightError: number;
-  maxPoseJump: number;
-  maxPhaseJump: number;
-  activeActions: number;
-  disposedActions: number;
-}
+/** CC0 Quaternius mannequin and its shipped locomotion clips, not a proxy skeleton. */
+class AnimationReversal extends Scene {
+  #model: { scene: Object3D; animations: AnimationClip[] } | undefined;
 
-/** Synthetic bone motion isolates crossfade continuity; it does not qualify a real gait asset. */
-class AnimationReversal extends Scene<IReversalState> {
-  static override readonly initialState: IReversalState = {
-    reversals: 0,
-    maxWeightError: 0,
-    maxPoseJump: 0,
-    maxPhaseJump: 0,
-    activeActions: -1,
-    disposedActions: -1,
-  };
+  override async load(ctx: ICtx): Promise<void> {
+    this.#model = await ctx.assets.model(mannequinUrl);
+  }
 
-  override enter(ctx: ICtx<IReversalState>): SceneFrame<IReversalState> {
-    ctx.camera.position.set(1, 1, 6);
-    ctx.camera.lookAt(1, 0, 0);
-    const root = new Group();
-    const hip = new Bone();
-    hip.name = "Hip";
-    hip.add(new Mesh(new BoxGeometry(0.5, 1.5, 0.3), new MeshBasicMaterial({ color: 0x41c7c2 })));
-    root.add(hip);
-    ctx.add(root);
-    const clips = ["idle", "walk", "run"].map(
-      (name, index) =>
-        new AnimationClip(name, 1, [
-          new NumberKeyframeTrack("Hip.position[x]", [0, 0.5, 1], [index, index + 1, index]),
-        ]),
+  override enter(ctx: ICtx) {
+    if (this.#model === undefined) throw new Error("Mannequin did not load.");
+    const limit = Number(new URLSearchParams(globalThis.location?.search ?? "").get("tick") ?? 108);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 108)
+      throw new Error("Invalid capture tick.");
+    ctx.camera.position.set(2.1, 1.6, 3.6);
+    ctx.camera.lookAt(0, 0.95, 0);
+    ctx.scene.background = new Color(0x263346);
+    ctx.add(new AmbientLight(0xd5e3ff, 2));
+    const key = new DirectionalLight(0xffe4c4, 3);
+    key.position.set(3, 5, 4);
+    ctx.add(key);
+    const floor = new Mesh(
+      new PlaneGeometry(7, 7),
+      new MeshStandardMaterial({ color: 0x526474, roughness: 0.95 }),
     );
-    const player = new AnimationPlayer({ clips, root, strideSync: false });
-    const actions = clips.map((clip) => player.mixer.clipAction(clip));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.01;
+    ctx.add(floor);
+    const trace = createReversalTrace(this.#model);
+    ctx.add(trace.player.root);
     ctx.entities.add("locomotion", {
-      animation: player,
-      mesh: root,
-      dispose: () => player.dispose(),
+      animation: trace.player,
+      mesh: trace.player.root,
+      debug: trace.observation,
+      dispose: () => trace.player.dispose(),
     });
-    player.play("idle");
-    const trace = new Map<number, readonly string[]>([
-      [12, ["walk"]],
-      [18, ["run"]],
-      [24, ["idle"]],
-      [30, ["run"]],
-      [36, ["walk"]],
-      [42, ["idle"]],
-      [48, ["walk", "run", "idle"]],
-    ]);
-    let tick = 0;
-    let reversals = 0;
-    let maxWeightError = 0;
-    let maxPoseJump = 0;
-    let maxPhaseJump = 0;
-    return (frameCtx, dt) => {
-      tick += 1;
-      if (tick > 120) return;
-      player.update(dt);
-      // Zero-time samples isolate the request's pose jump from normal motion between frames.
-      player.update(0);
-      for (const name of trace.get(tick) ?? []) {
-        const action = player.mixer.clipAction(player.clip(name));
-        const live = action.isScheduled() && action.getEffectiveWeight() > 0;
-        const phase = action.time;
-        const pose = hip.position.x;
-        player.play(name, { fade: 0.4 });
-        if (live) maxPhaseJump = Math.max(maxPhaseJump, Math.abs(action.time - phase));
-        player.update(0);
-        maxPoseJump = Math.max(maxPoseJump, Math.abs(hip.position.x - pose));
-        reversals += 1;
-      }
-      const weights = actions.map((action) => action.getEffectiveWeight());
-      if (weights.some((weight) => !Number.isFinite(weight) || weight < 0))
-        throw new Error("Animation reversal produced an invalid weight.");
-      maxWeightError = Math.max(
-        maxWeightError,
-        Math.abs(weights.reduce((sum, weight) => sum + weight, 0) - 1),
-      );
-      frameCtx.state.set({
-        reversals,
-        maxWeightError,
-        maxPoseJump,
-        maxPhaseJump,
-        activeActions: player.mixer.stats.actions.inUse,
-      });
-      if (tick === 120) {
-        player.dispose();
-        frameCtx.state.set({ disposedActions: player.mixer.stats.actions.total });
+    let started = false;
+    let reported = false;
+    return (frameCtx: ICtx) => {
+      if (frameCtx.input.justPressed("start")) started = true;
+      if (!started || trace.observation().tick >= limit) return;
+      trace.step();
+      frameCtx.state.set(trace.observation());
+      if (trace.observation().tick === limit && !reported) {
+        reported = true;
         frameCtx.state.flush();
+        console.log(`TN_ANIMATION_REVERSAL:${JSON.stringify(trace.observation())}`);
       }
     };
   }
 }
 
-const game = defineGame<IReversalState>({
+export default defineGame({
+  camera: { projection: "perspective", fov: 42, near: 0.1, far: 50 },
+  input: { start: { keys: ["Space"] } },
   plugins: [playtest()],
   render: { preferWebGPU: true },
   scenes: { reversal: AnimationReversal },
   start: "reversal",
 });
-
-export default game;
