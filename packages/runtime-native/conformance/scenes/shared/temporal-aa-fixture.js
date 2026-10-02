@@ -75,6 +75,12 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
         // Diagnostic: normalized depth range is at most 1, so only the upstream edge bypass
         // is disabled. Its disocclusion threshold and history blend remain identical.
         if (policy === "strict-rejection") temporal.node.edgeDepthDiff = 1;
+        // Causal probe only: suppress bilinear diffusion of repeatedly reprojected history.
+        // Nearest sampling can introduce motion snapping; it is not a proposed quality policy.
+        if (policy === "nearest-history") {
+          temporal.node._historyRenderTarget.texture.minFilter = THREE.NearestFilter;
+          temporal.node._historyRenderTarget.texture.magFilter = THREE.NearestFilter;
+        }
         const setup = temporal.node.setup.bind(temporal.node);
         temporal.node.setup = (builder) => {
           setupCount++;

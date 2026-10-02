@@ -50,6 +50,8 @@ for (const variant of [
   "temporal-open",
   "strict-rejection-open",
   "unchecked-history-open",
+  "nearest-history",
+  "nearest-history-open",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -167,7 +169,7 @@ const results = Object.fromEntries(
     .map(([name, frames]) => [name, measureSequence(reference, frames, 8)]),
 );
 const causalReveals = Object.fromEntries(
-  ["temporal", "strict-rejection", "unchecked-history"].map((policy) => {
+  ["temporal", "strict-rejection", "unchecked-history", "nearest-history"].map((policy) => {
     const candidate = frames[policy];
     const open = frames[`${policy}-open`];
     assert.ok(candidate && open, `Matched open-history control missing: ${policy}`);

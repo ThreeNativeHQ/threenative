@@ -314,3 +314,10 @@ recompile corner before any engine patch; PR393 retains canonical motion-history
 A separate HDR-reference hypothesis is not supported by the captured sequence: across all 32
 reference/no-AA PNGs, non-marker channel maxima are 189/227/242 and no non-marker channel
 saturates. The authored marker is unit red. No reference method or score has been changed.
+
+
+A fixture-only nearest-history control and its matching never-occluded arm test whether repeated
+bilinear history reprojection causes the thin-edge blur. They add 32 actual captures to the
+unchanged original 176-frame corpus and use the same numerical evaluator; all original gates
+remain authoritative. The control changes only the history texture sampler. Nearest sampling can
+snap under subpixel motion, so it is a causal experiment, not an adopted filter or product mode.
