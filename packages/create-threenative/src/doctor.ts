@@ -1252,6 +1252,9 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
   const declared = declaredDependencies(snapshot.packageJson);
   const missing = declared.filter((name) => !snapshot.installedVersions.has(name));
   const installed = [...snapshot.installedVersions].sort(([a], [b]) => a.localeCompare(b));
+  // The cohort versions per package, so a patch may differ (assets 0.3.5 beside core 0.3.4); on
+  // 0.x the minor is the compatibility boundary, which is what the peer ranges name.
+  const series = new Set(installed.map(([, version]) => version.split(".").slice(0, 2).join(".")));
   const versions = new Set(installed.map(([, version]) => version));
   return [
     missing.length > 0
@@ -1269,7 +1272,7 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
           name: "dependencies",
           status: "ok",
         },
-    versions.size > 1
+    series.size > 1
       ? {
           detail: `@threenative packages disagree on version: ${installed
             .map(([name, version]) => `${name}@${version}`)
@@ -1280,7 +1283,11 @@ function dependencyChecks(snapshot: IProjectSnapshot): IDoctorCheck[] {
         }
       : {
           detail:
-            versions.size === 0 ? "nothing installed to compare" : `all at ${[...versions][0]}`,
+            versions.size === 0
+              ? "nothing installed to compare"
+              : versions.size === 1
+                ? `all at ${[...versions][0]}`
+                : `all on the ${[...series][0]} series (${installed.map(([name, version]) => `${name}@${version}`).join(", ")})`,
           name: "versions",
           status: "ok",
         },
