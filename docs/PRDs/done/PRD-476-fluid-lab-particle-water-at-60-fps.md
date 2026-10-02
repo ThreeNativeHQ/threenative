@@ -1,6 +1,6 @@
 # PRD-476 — Fluid Lab: particle water on the GPU at 60 fps
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
@@ -121,6 +121,10 @@ tunnelling at the lab's 18 m/s velocity clamp (keep the clamp as an option).
 ## Acceptance Criteria
 
 Phase boxes below are the acceptance criteria; each names its proof.
+
+- [x] Presented 60 fps on the real display: the sandbox Splash Tank (High) and the example's 6,000-particle stress scene read p50/p95/p99 16.7/16.8/16.8 ms against a 59.97 fps empty-page control. proof: the `Presented fps` section (rAF deltas on `:0`, vsync on, 30 s per scene)
+- [x] The water reads as water, not jelly or plastic: the raymarch is the example's default and the solver defaults are pinned. proof: `pnpm exec vitest run packages/core/__tests__/fluid-particles.spec.ts` (12/12, incl. "defaults to water-like damping, not a jelly") and the PR screenshots
+- [x] The gates pass on the final defaults. proof: `pnpm typecheck`, `pnpm lint` (0 errors), the example dam-break and coupling playtests, the lab playtest, and the desktop `fluid-particles` conformance case
 
 ## Integration Ledger
 
