@@ -9,7 +9,7 @@ const NEIGHBOURS: readonly [number, number][] = [
 ];
 
 /** A sloped, noisy hill — the landform whose default weathering is under-dosed today. */
-const hill = (resolution: number, erosion?: { droplets: number; maxSteps: number }): Terrain => {
+const hill = (resolution: number, erosion?: { droplets: number; maxSteps: number; erosion?: number }): Terrain => {
   const recipe = new Terrain({ size: 512, resolution, seed: 73 })
     .noise({ id: "hills", base: 30, amplitude: 34, scale: 190, warp: 35, octaves: 5 })
     .stamp({
@@ -64,6 +64,25 @@ function channelCells(state: ITerrainState): number {
   return count;
 }
 
+/** Cells over a metre proud of their 8-neighbour mean: the visible single-cell spike metric. */
+function spikeCount(state: ITerrainState): number {
+  const n = state.resolution;
+  let count = 0;
+  for (let z = 1; z < n - 1; z += 1)
+    for (let x = 1; x < n - 1; x += 1) {
+      const i = z * n + x;
+      let max = Number.NEGATIVE_INFINITY;
+      let sum = 0;
+      for (const [dx, dz] of NEIGHBOURS) {
+        const v = state.height[(z + dz) * n + x + dx] as number;
+        if (v > max) max = v;
+        sum += v;
+      }
+      if ((state.height[i] as number) > max && (state.height[i] as number) - sum / 8 > 1) count += 1;
+    }
+  return count;
+}
+
 /** Mean absolute height change: how much material a pass actually moved. */
 function movedMean(before: Float32Array, after: Float32Array): number {
   let total = 0;
@@ -91,6 +110,16 @@ describe("hydraulic erosion defaults", () => {
       2 * channelCells(hill(257, { droplets: 2400, maxSteps: 40 }).evaluate()),
     );
     expect(channelCells(bare.evaluate())).toBeLessThan(channelCells(hill(257).evaluate()));
+  });
+
+  it("incises without leaving the dimples a deep per-step bite would", () => {
+    // The count alone is not the budget: a droplet-per-cell run with the old 0.25 bite carved
+    // 746 single-cell dimples standing a metre proud of their neighbours. The shallow bite cuts
+    // the same drainage and leaves the surface smooth.
+    const deepBite = hill(257, { droplets: 66000, maxSteps: 64, erosion: 0.25 }).evaluate();
+    const shallow = hill(257, { droplets: 66000, maxSteps: 64 }).evaluate();
+    expect(spikeCount(shallow)).toBeLessThan(spikeCount(deepBite) / 4);
+    expect(spikeCount(shallow)).toBeLessThan(60);
   });
 
   it("keeps a 65 grid's default pass fast enough to bake", () => {

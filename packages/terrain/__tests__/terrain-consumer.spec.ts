@@ -122,10 +122,12 @@ describe("public terrain consumer", () => {
       .erode({ id: "talus", method: "thermal", iterations: 3, talus: 32 })
       .evaluate();
     // Generated from the supplied source, not from this port. The hydraulic pass changed when
-    // erosion and deposition moved onto a brush (it used to leave single-cell spikes); the noise
-    // coefficients that feed it are untouched.
+    // erosion and deposition moved onto a brush (it used to leave single-cell spikes), and again
+    // when the per-step erosion default dropped from 0.25 to 0.03 so a dense droplet budget cuts
+    // shallow lines instead of dimples; the noise coefficients that feed it are untouched, and
+    // this recipe pins its own droplets and maxSteps.
     expect(createHash("sha256").update(state.height).digest("hex")).toBe(
-      "f58707a3bc5f3c71c015fb2a578547b29cc0e15e264558b4c438c51d329b88cc",
+      "4d620f3aed39b13716f6f2fa31e65c0f757e74cd39e059a65de24b2325973c21",
     );
   });
 

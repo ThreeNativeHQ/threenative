@@ -103,13 +103,18 @@ export function hydraulic(
   n: number,
   size: number,
   {
-    droplets = Math.round(1.5 * n * n),
+    // Roughly one droplet per cell. Incision saturates near here: more droplets keep cutting the
+    // same drainage lines over, which deepens nothing and spends the bake time.
+    droplets = n * n,
     // A droplet has to be able to cross the world, so its step budget scales with the grid: a
     // fixed 40 barely leaves a 257 world while a 65 world would walk off it in a few steps.
     maxSteps = Math.round(Math.min(64, Math.max(24, n / 4))),
     inertia = 0.2,
     capacity = 4,
-    erosion = 0.25,
+    // Each step takes a small bite of the sediment the droplet can carry. A big bite carves
+    // fewer, deeper dimples that stand proud of their neighbours as spikes; many shallow bites
+    // over the same lines incise the same drainage with a smooth surface.
+    erosion = 0.03,
     deposition = 0.3,
     evaporation = 0.025,
     seed = 1,
