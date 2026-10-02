@@ -2,9 +2,14 @@ import { installThreePlaytestBridge } from "@threenative/playtest/three";
 import { NoToneMapping, PerspectiveCamera, Scene, WebGPURenderer } from "three/webgpu";
 import { createTemporalAAFixture } from "../../packages/runtime-native/conformance/scenes/shared/temporal-aa-fixture.js";
 
+const query = new URLSearchParams(location.search);
+const measurement = query.has("measure");
+const rasterScale = query.get("variant") === "supersampled" ? 4 : 1;
+const width = measurement ? 640 * rasterScale : 1280;
+const height = measurement ? 360 * rasterScale : 720;
 const renderer = new WebGPURenderer({ antialias: false });
 renderer.setPixelRatio(1);
-renderer.setSize(1280, 720);
+renderer.setSize(width, height);
 renderer.toneMapping = NoToneMapping;
 document.body.appendChild(renderer.domElement);
 await renderer.init();
@@ -14,7 +19,8 @@ const fixture = createTemporalAAFixture(
   renderer,
   scene,
   camera,
-  new URLSearchParams(location.search).get("variant") ?? "temporal",
+  query.get("variant") === "supersampled" ? "reference" : (query.get("variant") ?? "temporal"),
+  measurement,
 );
 // Three advances NodeUpdateType.FRAME from its existing animation clock. Multiple synchronous
 // renders would reuse one temporal result, so each deterministic step waits for that boundary.

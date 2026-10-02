@@ -91,9 +91,7 @@
           "outputWidth": 1280,
           "outputHeight": 720
         },
-        "stages": [
-          "traa"
-        ],
+        "stages": ["traa"],
         "velocity": {
           "provisioned": true,
           "required": true,
@@ -151,9 +149,7 @@
           "outputWidth": 1280,
           "outputHeight": 720
         },
-        "stages": [
-          "traa"
-        ],
+        "stages": ["traa"],
         "velocity": {
           "provisioned": true,
           "required": true,
@@ -211,9 +207,7 @@
           "outputWidth": 1280,
           "outputHeight": 720
         },
-        "stages": [
-          "traa"
-        ],
+        "stages": ["traa"],
         "velocity": {
           "provisioned": true,
           "required": true,
@@ -271,9 +265,7 @@
           "outputWidth": 960,
           "outputHeight": 540
         },
-        "stages": [
-          "traa"
-        ],
+        "stages": ["traa"],
         "velocity": {
           "provisioned": true,
           "required": true,

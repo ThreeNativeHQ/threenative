@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { pass } from "three/tsl";
+import { mrt, pass, texture, vec2 } from "three/tsl";
 import { RenderChain } from "../../../../core/src/render/chain.ts";
 import {
   VelocityTracker,
@@ -10,7 +10,7 @@ import {
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
 
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
-export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal") {
+export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false) {
   scene.background = new THREE.Color(0x0d1630);
   camera.position.set(0, 0.3, 6);
   const sun = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -48,6 +48,11 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   character.bind(new THREE.Skeleton([root, limb]));
   character.position.set(1.4, 0.25, 0.5);
   scene.add(character);
+  // Saturated foreground is a measurable history marker. Removing it reveals the actual scene,
+  // including thin geometry; no reset is requested because this is ordinary disocclusion.
+  const occluder = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+  occluder.position.set(0.25, 0.45, 1.3);
+  if (measurement) scene.add(occluder);
   const scenePass = pass(scene, camera);
   const pipeline = new THREE.RenderPipeline(renderer);
   const tracker = new VelocityTracker();
@@ -60,23 +65,38 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       name: "traa",
       build: (input, context) => {
         temporal = createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
+        if (variant === "unchecked-history") {
+          // Fixture-only negative control: actually render an unchecked 95% history blend.
+          // This bypasses depth rejection AND neighbourhood clipping; it is not a product mode
+          // and does not isolate either mechanism's individual contribution.
+          const setup = temporal.node.setup.bind(temporal.node);
+          temporal.node.setup = (builder) => {
+            const result = setup(builder);
+            temporal.node._resolveMaterial.colorNode = temporal.node.beautyNode.mul(0.05).add(texture(temporal.node._historyRenderTarget.texture).mul(0.95));
+            return result;
+          };
+        }
         return temporal.node;
       },
       dispose: () => temporal?.dispose(),
     }],
   });
+  if (variant === "zero-velocity") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
   let frame = 0;
   let resets = 0;
   let lastReset = null;
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null,
+    measurement, variant, occluderVisible: measurement && occluder.visible,
+    pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
     stages: chain.applied.stages, velocity: chain.applied.velocity,
     rigidHistory: readVelocityPreviousWorldMatrix(rigid) !== undefined,
     skinnedHistory: readVelocityPreviousBoneMatrices(character) !== undefined,
     instancedHistory: readVelocityPreviousMatrices(instances) !== undefined,
   });
   const render = () => {
+    if (measurement) occluder.visible = frame < 28;
     rigid.position.x = -1.5 + Math.sin(frame / 18) * 0.65;
     limb.rotation.z = Math.sin(frame / 13) * 0.7;
     for (let index = 0; index < instances.count; index++) {
@@ -104,6 +124,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       for (const item of geometries) item.dispose();
       for (const item of materials) item.dispose();
       character.skeleton.dispose();
+      if (!measurement) { occluder.geometry.dispose(); occluder.material.dispose(); }
     },
   };
 }

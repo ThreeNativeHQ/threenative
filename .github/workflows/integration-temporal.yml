@@ -9,10 +9,10 @@ on:
       - 'packages/create-threenative/__tests__/temporal-aa.spec.ts'
       - 'packages/runtime-native/conformance/scenes/shared/temporal-aa*.js'
       - 'examples/abyss-framework/temporal*'
-      - 'examples/abyss-framework/playtests/temporal-aa.playtest.json'
-      - 'scripts/verify-temporal-aa.ts'
-      - 'scripts/temporal-aa-evidence.ts'
-      - 'scripts/__tests__/temporal-aa-evidence.spec.ts'
+      - 'examples/abyss-framework/playtests/temporal-*.playtest.json'
+      - 'scripts/verify-temporal-*.ts'
+      - 'scripts/temporal-aa-*.ts'
+      - 'scripts/__tests__/temporal-aa-*.spec.ts'
       - '.github/workflows/integration-temporal.yml'
 permissions:
   contents: read
@@ -33,9 +33,11 @@ jobs:
       - run: pnpm --filter @threenative/playtest build
       - uses: ./.github/actions/playwright-chromium
       - name: Validate actual TRAANode and history lifecycle contracts
-        run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts --maxWorkers=2
+        run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts scripts/__tests__/temporal-aa-quality.spec.ts --maxWorkers=2
       - name: Render temporal motion and reset variants
         run: node --import tsx scripts/verify-temporal-aa.ts
+      - name: Measure matched temporal motion and disocclusion
+        run: node --import tsx scripts/verify-temporal-motion.ts
       - name: Retain actual runtime screenshots and adapter evidence
         if: always()
         uses: actions/upload-artifact@v7

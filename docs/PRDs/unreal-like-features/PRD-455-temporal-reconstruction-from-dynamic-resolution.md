@@ -107,6 +107,18 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 
 ### Phase 2 — Prove motion stability on content that exposes temporal defects
 
+The next maintained full-resolution measurement captures frames 21–36 from the actual generated
+helper/RenderChain, matched against a 4× raster reference numerically integrated in linear RGB.
+It measures edge error, changes in reference-relative error (excluding true scene motion), and
+stale-colour residue inside a two-pixel inset after a contrasting occluder disappears at frame 29.
+The fixture also renders zero-velocity and unchecked 95% history controls. The latter bypasses
+both depth rejection and neighbourhood clipping; it does not isolate either mechanism or report
+the shader's per-pixel rejection fraction. Before the first runtime measurement, the experimental
+bar is pinned at 5% edge/instability improvement versus no-AA, at most 1% stale interior pixels
+after one frame, and detectable negative controls. Five numerical tests and the fixture bundle
+pass; hosted sequence results remain pending. These checks do not qualify reconstruction or the
+broader foliage/content corpus below.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
