@@ -1,17 +1,3 @@
-// Generated for you. The sea's tuning and its entire look live in this file, and ThreeNative does
-// not read it. `SpectralOcean` runs the simulation and draws nothing: the mesh, the material, the
-// colours, the foam line and the tessellation are all decisions this game makes here.
-//
-// This replaces a two-wave `WaveField` under a `MeshBasicNodeMaterial`. Both halves of that were
-// the problem. Two analytic waves plus one domain warp is a corrugated sheet — it repeats visibly
-// within a boat length, and no amount of colour work hides a surface with two frequencies in it.
-// And a *basic* material takes no lights at all, so the sea could not respond to the sun the rest
-// of the scene is lit by: its brightness had to be hand-computed with a `pow(dot(n, sun), 30)`
-// term standing in for a specular highlight. Water is one of the few surfaces where the specular
-// *is* the material, so that read as plastic.
-//
-// A spectral ocean is cascaded wave spectra inverse-transformed on the GPU every frame, which is
-// what real water is, and a standard node material puts it back under the scene's own lights.
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
 import {
   DataTexture,
@@ -20,17 +6,22 @@ import {
   LinearFilter,
   Mesh,
   PlaneGeometry,
-  RedFormat,
+  RGBAFormat,
 } from "three";
 import {
+  cameraPosition,
+  clamp,
   color,
   float,
   mix,
+  mx_fractal_noise_float,
   mx_noise_float,
+  normalize,
   positionLocal,
   positionWorld,
   smoothstep,
   texture,
+  time,
   transformNormalToView,
   vec2,
   vec3,
@@ -39,31 +30,14 @@ import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import type { IBakedWorld } from "./terrain.js";
 
-/**
- * The sea state. Every number is this game's.
- *
- * `windSpeed` and `amplitude` are the two to reach for: wind sets which wavelengths carry energy,
- * amplitude scales the whole spectrum. `choppiness` above zero displaces horizontally as well as
- * vertically, which is what sharpens a crest into something a hull can be thrown by.
- */
+/** This game's spectral sea state; two non-overlapping wave bands. */
 export const SEA = {
-  amplitude: 0.0082,
-  // Largest patch first, and the bands do not overlap. One cascade is a toy — the join between
-  // bands is where a spectral ocean visibly fails, so there is nothing to look at until there are
-  // two.
+  amplitude: 0.0018,
   cascades: [{ patchSize: 190 }, { patchSize: 37 }],
   choppiness: 1.2,
   directionality: 2.6,
   gravity: 9.81,
-  // The ship reads this field on the CPU for its buoyancy and its attitude, so the copy has to
-  // land often enough — and be fine enough — to steer by.
-  //
-  // 32 samples across the largest patch is one height every six metres, which is coarser than the
-  // waves themselves: the hull then sat at a smoothed mean sea level while the drawn surface moved
-  // three metres either side of it, so the ship hung in the air over its own troughs and pitched
-  // on differences between samples that were nowhere near it. 64 halves that spacing, and the
-  // calmer sea state below closes the rest of the gap. This is the cost of a spectral ocean over
-  // an analytic one, and it is worth paying — but it has to be paid.
+  // Keep the scenario's throttled CPU wave observations.
   readbackEveryFrames: 3,
   readbackResolution: 32,
   resolution: 128,
@@ -73,28 +47,17 @@ export const SEA = {
   windSpeed: 10.5,
 } satisfies ISpectralOceanOptions;
 
-/** The drawn surface's edge length in metres, and how finely it is tessellated. */
+/** Dense inner grid; its outer vertices stretch to the distant horizon below. */
 export const SURFACE = { segments: 512, size: 1024 } as const;
 
-/** Crest foam. Near-white, and not a seventh palette role: the sea's look is owned here. */
+/** Thin breaking surf on exposed shores. */
 const FOAM = 0xe9f4f6;
 
 export function createOcean(): SpectralOcean {
   return new SpectralOcean(SEA);
 }
 
-/**
- * Read one cascade's displacement at a world position, **bilinearly**.
- *
- * Nearest-texel sampling is the obvious way to write this and it is visibly wrong here. The mesh
- * carries one vertex per 1.6 m while the fine cascade's texel is 0.29 m, so every vertex grabbed a
- * different texel of a field it was far too coarse to resolve — and the normal, being a difference
- * of two of those, came out piecewise-constant. The frame showed the sun's reflection broken into
- * hard axis-aligned white rectangles, which is a sampling artefact and reads as a bug in the water.
- *
- * The two `mod`s are not redundant: the first is still negative for a vertex left of the origin,
- * and a negative index reads whatever happens to sit behind the buffer.
- */
+/** Bilinear periodic sampling; wrap twice because JavaScript/WGSL remainder can be negative. */
 function cascadeAt(
   ocean: SpectralOcean,
   index: number,
@@ -134,13 +97,67 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const level = data.waterLevel;
   if (level === null || !Number.isFinite(level))
     throw new Error("Coastal bake has no finite sea level");
-  const heightTexture = new DataTexture(
-    Uint16Array.from(data.heights, DataUtils.toHalfFloat),
-    data.resolution,
-    data.resolution,
-    RedFormat,
-    HalfFloatType,
-  );
+  // Distance to dry land and connection to deep open water, measured once from the bake.
+  // Flooding only through >2 m water leaves sheltered lagoons out of the breaking-surf mask.
+  const n = data.resolution;
+  const cell = data.size / (n - 1);
+  const distance = Float32Array.from(data.heights, (height) => (height >= level ? 0 : 1e4));
+  const exposed = new Uint8Array(n * n);
+  const queue: number[] = [];
+  for (let i = 0; i < n * n; i++) {
+    const row = Math.floor(i / n);
+    const col = i % n;
+    if (
+      (row === 0 || col === 0 || row === n - 1 || col === n - 1) &&
+      (data.heights[i] as number) < level - 2
+    ) {
+      exposed[i] = 1;
+      queue.push(i);
+    }
+    if (col > 0) distance[i] = Math.min(distance[i] as number, (distance[i - 1] as number) + cell);
+    if (row > 0) distance[i] = Math.min(distance[i] as number, (distance[i - n] as number) + cell);
+  }
+  for (let i = n * n - 1; i >= 0; i--) {
+    if (i % n < n - 1)
+      distance[i] = Math.min(distance[i] as number, (distance[i + 1] as number) + cell);
+    if (i < n * (n - 1))
+      distance[i] = Math.min(distance[i] as number, (distance[i + n] as number) + cell);
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const i = queue[head] as number;
+    for (const next of [i % n > 0 ? i - 1 : -1, i % n < n - 1 ? i + 1 : -1, i - n, i + n]) {
+      if (
+        next < 0 ||
+        next >= exposed.length ||
+        exposed[next] ||
+        (data.heights[next] as number) >= level - 2
+      )
+        continue;
+      exposed[next] = 1;
+      queue.push(next);
+    }
+  }
+  // Carry exposure through the last eighteen metres of shallow water, never across a dry sand bar.
+  for (let pass = 0; pass < Math.ceil(18 / cell); pass++) {
+    const previous = exposed.slice();
+    for (let i = 0; i < exposed.length; i++) {
+      if ((data.heights[i] as number) >= level) continue;
+      if (
+        (i % n > 0 && previous[i - 1]) ||
+        (i % n < n - 1 && previous[i + 1]) ||
+        previous[i - n] ||
+        previous[i + n]
+      )
+        exposed[i] = 1;
+    }
+  }
+  const pixels = new Uint16Array(n * n * 4);
+  for (let i = 0; i < n * n; i++) {
+    pixels[i * 4] = DataUtils.toHalfFloat(data.heights[i] as number);
+    pixels[i * 4 + 1] = DataUtils.toHalfFloat(distance[i] as number);
+    pixels[i * 4 + 2] = DataUtils.toHalfFloat(exposed[i] as number);
+  }
+  const heightTexture = new DataTexture(pixels, n, n, RGBAFormat, HalfFloatType);
   heightTexture.minFilter = LinearFilter;
   heightTexture.magFilter = LinearFilter;
   heightTexture.needsUpdate = true;
@@ -151,64 +168,105 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
     SURFACE.segments,
   );
   geometry.rotateX(-Math.PI / 2);
+  // Dense near shore, sparse beyond it; the sea reaches the fogged horizon instead of ending at 512 m.
+  const vertices = geometry.getAttribute("position");
+  const stretch = (value: number): number =>
+    Math.sign(value) *
+    (Math.abs(value) <= 320 ? Math.abs(value) : 320 + ((Math.abs(value) - 320) / 192) ** 2 * 3800);
+  for (let i = 0; i < vertices.count; i++)
+    vertices.setXYZ(i, stretch(vertices.getX(i)), 0, stretch(vertices.getZ(i)));
+  geometry.computeBoundingSphere();
 
-  // Standard, not basic. This is the whole reason the sea now has a sun on it rather than a
-  // hand-rolled `pow()` blob: a lit material gets the scene's key light, its hemisphere fill and
-  // its specular response for free, and gets them consistent with the hull floating on it.
   const material = new MeshStandardNodeMaterial({
-    metalness: 0.02,
+    metalness: 0,
     transparent: true,
-    depthWrite: false,
-    // Not glass. At 0.08 the key light landed as one blown white disc on the swell in front of the
-    // camera; water this side of a dead calm scatters enough to spread that into a glitter path.
-    roughness: 0.29,
+    depthWrite: true,
+    roughness: 0.12,
   });
-
-  const offset = displacementAt(ocean, positionLocal.x, positionLocal.z);
-  material.positionNode = positionLocal.add(offset);
-
-  // Normals by central difference. Without this the surface is lit by the flat plane's normals —
-  // every vertex pointing straight up — and a perfectly simulated ocean shades like a sheet of
-  // paper.
-  //
-  // The step is the mesh's own quad size, not a texel. Differencing finer than the mesh can
-  // represent measures detail that is never drawn and turns the highlight into noise.
-  const step = float(SURFACE.size / SURFACE.segments);
-  const east = displacementAt(ocean, positionLocal.x.add(step), positionLocal.z);
-  const west = displacementAt(ocean, positionLocal.x.sub(step), positionLocal.z);
-  const north = displacementAt(ocean, positionLocal.x, positionLocal.z.add(step));
-  const south = displacementAt(ocean, positionLocal.x, positionLocal.z.sub(step));
-  const twice = step.mul(2);
-  // `transformNormalToView`, not the raw vector. `normalNode` overrides `normalView`, so a
-  // material handed a world-space normal lights the surface in the camera's frame instead of the
-  // world's: the sun's reflection stopped being a place on the sea and became a column of glare
-  // pointing at the camera, sliding across the water as the ship turned.
-  material.normalNode = transformNormalToView(
-    vec3(west.y.sub(east.y).div(twice), float(1), south.y.sub(north.y).div(twice)).normalize(),
+  const shoreUV = (x: Node<"float">, z: Node<"float">) =>
+    vec2(x.div(data.size).add(0.5), z.div(data.size).add(0.5));
+  const inside = (x: Node<"float">, z: Node<"float">) =>
+    float(1).sub(smoothstep(data.size / 2 - 2, data.size / 2 + 2, x.abs().max(z.abs())));
+  const vertexLand = texture(heightTexture, shoreUV(positionLocal.x, positionLocal.z)).r;
+  const vertexDepth = mix(
+    float(28),
+    float(level).sub(vertexLand),
+    inside(positionLocal.x, positionLocal.z),
+  );
+  const shoal = smoothstep(0.15, 3, vertexDepth);
+  const vertexDistance = positionLocal.xz.sub(cameraPosition.xz).length();
+  const swellFade = float(1).sub(smoothstep(240, 1600, vertexDistance));
+  material.positionNode = positionLocal.add(
+    displacementAt(ocean, positionLocal.x, positionLocal.z).mul(shoal).mul(swellFade),
   );
 
-  // Both coast masking and shallow foam use the same authored heightfield as the land.
-  // Half-float is sufficient for a metre-wide visual foam band and is filterable on WebGPU.
-  const shoreUV = vec2(
-    positionWorld.x.div(float(data.size)).add(0.5),
-    positionWorld.z.div(float(data.size)).add(0.5),
+  const eyeDistance = positionWorld.sub(cameraPosition).length();
+  const slopeFade = float(1).sub(smoothstep(100, 950, eyeDistance));
+  const step = float(0.45).add(eyeDistance.mul(0.006));
+  const east = displacementAt(ocean, positionWorld.x.add(step), positionWorld.z);
+  const west = displacementAt(ocean, positionWorld.x.sub(step), positionWorld.z);
+  const north = displacementAt(ocean, positionWorld.x, positionWorld.z.add(step));
+  const south = displacementAt(ocean, positionWorld.x, positionWorld.z.sub(step));
+  // The river's noise-gradient detail has no directional period to read as corduroy.
+  const ripplePoint = vec3(
+    positionWorld.x.mul(0.85).sub(time.mul(0.22)),
+    positionWorld.z.mul(0.85).add(time.mul(0.11)),
+    time.mul(0.07),
   );
-  const landHeight = texture(heightTexture, shoreUV).r;
-  const depth = positionWorld.y.sub(landHeight);
-  const relativeHeight = positionWorld.y.sub(float(level));
-  const shallow = smoothstep(float(0.5), float(12), depth);
-  const water = mix(color(0x5ea7a9), color(0x153e54), shallow);
-  const crest = smoothstep(float(1.6), float(3), relativeHeight);
-  // Surf, not a contour. The foam band's width is the swell's: a depth threshold on its own draws a
-  // straight-edged white shape round every tidal flat in the world, which reads as spilled paint
-  // rather than as water breaking, so the band is narrow and its outer edge wanders with a noise at
-  // the scale of a breaking wave.
-  const surf = mx_noise_float(positionWorld.mul(0.35), 3).mul(0.5).add(0.5);
-  const shoreFoam = float(1).sub(smoothstep(float(0.2), float(1.1).add(surf.mul(1.5)), depth));
-  const foam = crest.max(shoreFoam);
-  material.colorNode = mix(water, color(FOAM), foam);
-  material.opacityNode = smoothstep(float(-0.15), float(0.35), depth);
-  material.roughnessNode = mix(float(0.29), float(0.82), foam);
+  const rippleHeight = (point: Node<"vec3">) =>
+    mx_fractal_noise_float(point, 3, 2.1, 0.48).mul(0.028);
+  const h = rippleHeight(ripplePoint);
+  const ripple = vec3(
+    h.sub(rippleHeight(ripplePoint.add(vec3(0.12, 0, 0)))).div(0.12),
+    1,
+    h.sub(rippleHeight(ripplePoint.add(vec3(0, 0.12, 0)))).div(0.12),
+  );
+  const shore = texture(heightTexture, shoreUV(positionWorld.x, positionWorld.z));
+  const local = inside(positionWorld.x, positionWorld.z);
+  const depth = mix(float(28), positionWorld.y.sub(shore.r), local);
+  const damp = smoothstep(0.1, 2.5, depth);
+  const wind = mx_noise_float(
+    vec3(positionWorld.x.mul(0.07).sub(time.mul(0.04)), positionWorld.z.mul(0.07), time.mul(0.015)),
+  )
+    .mul(0.6)
+    .add(0.6);
+  const fineFade = float(1)
+    .sub(smoothstep(18, 100, eyeDistance))
+    .mul(damp)
+    .mul(wind);
+  const normal = normalize(
+    vec3(
+      west.y.sub(east.y).div(step.mul(2)).mul(slopeFade).mul(damp).add(ripple.x.mul(fineFade)),
+      1,
+      south.y.sub(north.y).div(step.mul(2)).mul(slopeFade).mul(damp).add(ripple.z.mul(fineFade)),
+    ),
+  );
+  material.normalNode = transformNormalToView(normal);
+  const view = normalize(cameraPosition.sub(positionWorld));
+  const bounced = view.negate().reflect(normal);
+  // The standard material supplies Fresnel and the actual sun's specular lobe; the sky supplies radiance.
+  material.envNode = mix(color(0xb6cbd5), color(0x568fbd), clamp(bounced.y, 0, 1)).mul(1.15);
+  const water = mix(color(0x24646a), color(0x082e45), smoothstep(0.4, 9, depth));
+  const surf = mx_noise_float(
+    vec3(positionWorld.x.mul(0.9), positionWorld.z.mul(0.9), time.mul(0.45)),
+  )
+    .mul(0.5)
+    .add(0.5);
+  const shoreFoam = float(1)
+    .sub(smoothstep(0.2, 1.2, depth))
+    .mul(smoothstep(0.015, 0.08, depth))
+    .mul(float(1).sub(smoothstep(0.5, 3, shore.g)))
+    .mul(smoothstep(0.25, 0.65, surf))
+    .mul(shore.b)
+    .mul(local)
+    .mul(0.8);
+  material.colorNode = mix(water, color(FOAM), shoreFoam);
+  material.opacityNode = smoothstep(-0.03, 0.35, depth);
+  material.roughnessNode = mix(
+    float(0.12).add(smoothstep(70, 700, eyeDistance).mul(0.07)),
+    float(0.7),
+    shoreFoam,
+  );
   material.addEventListener("dispose", () => heightTexture.dispose());
 
   const mesh = new Mesh(geometry, material);

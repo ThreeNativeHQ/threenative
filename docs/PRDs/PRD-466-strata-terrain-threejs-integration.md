@@ -802,6 +802,44 @@ walk **0.146/0.392/0.503**, river **0.173/0.376/0.806**.
 Final verdict remains **improved, below the Unreal/Gaia target**: broad fan forms and soft
 mountain silhouettes still need work. AC-5 stays open. No push; native unverified.
 
+### AC-5 round 9 — coastal, sky and distance (2026-10-02)
+
+Complexity 1 → LOW; existing factory wiring is unchanged. Capability search/detail
+covered SpectralOcean, WaterSurface3D, WaveField and Daylight before material work.
+Retained sea: calmer spectral swell, fragment noise-gradient normals ported from the
+existing river approach, PBR sky radiance/Fresnel and real directional sun glitter.
+The shared sun is now 35° and northerly so its reflection enters the coastal framing.
+A baked distance/deep-water connection mask confines surf to a thin exposed shore;
+dry sand bars stop propagation into lagoons. Crest ellipses are removed. The dense
+inner sea grid stretches out to 4.1 km with wave/detail fading, removing the short,
+striped horizon. Alpha dissolves across the shoreline; existing terrain wetness is
+retained. The soft noise cloud deck uses optical thickness and sunward density samples.
+Distant geometry gets secondary crags and sharper ridges. Lake reflection resolution
+is 0.5 → 1 with the existing two-frame cadence, filtered taps and stronger subtle
+ripples; cooler silt/scatter and red absorption remove the muddy water-body tint.
+
+Fourth retained WebGPU run: **24/24 assertions PASS, 0 console errors**, NVIDIA
+Turing, 1920×1080. Meadow/overview engine frame p50 **2.3/2.8 ms** (CPU/frame metric,
+not presented FPS). Existing ocean wave/sun checks PASS: **66.2% / 53.3%** changed
+qualified water pixels. Added sheltered-water check rejects the actual round-8
+capture (**0/63000** blue lagoon pixels) and passes the retained capture (**100%**).
+Example typecheck, root Biome error gate and diff whitespace check PASS. Captures:
+`examples/strata-terrain-preview/artifacts/playtest/web/` — `coastal-ocean.png`,
+`coastal-horizon-sea.png`, `coastal-sun-alt.png`, `river.png`, `forest-walk.png`.
+Inspected at full resolution. Licensed bytes and other lane files are untouched;
+procedural/CC0 paths receive the same materials. Native and a new no-pack run are
+unverified for this round. **Below the Unreal/Gaia target; AC-5 stays open.**
+
+Other-lane handoff: the rectangular slab comes from `scatter.ts`'s >43° `cliff`
+placement and the pack's 18 m variant, not a coastal render placement. The dark
+mountain stripe is consistent with `terrain.ts`'s unbounded clamped wet-bank sample:
+the actual south boundary has **11 wet cells, x=-88…-68, z=-256**, which extend as a
+strip outside the bake. Fade `wetBank` to zero outside the resident extent. That same
+file owns the distant rock/snow colour override; it currently replaces mapped albedo
+with procedural grey, so textured mountain layering needs the terrain lane. These
+files were not edited. Rejected straight and warped analytic short-wave trials both
+showed corduroy; retained the existing river's noise-gradient detail instead.
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [x] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: PASS 2026-10-02 — one script runs the shared `playtests/terrain.playtest.json` twice over the same generator, the same render modules and the same baked arrays, differing only in `src/world/terrainAssets.ts`: the committed bytes, then a consumer's table naming five 8×8 procedural PNGs and one hand-written 12-triangle GLB the script writes into a temporary directory. Every scenario assertion, `diagnostics` included, passes in both arms (0 console errors each). The replacement reached the renderer — the 12-triangle fixture is among the drawn props and no stock node has that triangle count; the custom arm resolved 5 files, all 5 from its own `/__custom-art/` root and 0 of the 27 starter files the stock arm resolved, so the two arms are distinguishable. The generator is untouched: `world`, `contactSamples`, `maxContactError` (3.12e-05 m), `bilinearDifference` (1.5 m) and `sampleSlopeRange` are identical across arms. `propInstances` is deliberately recorded rather than compared (2130 stock, 1990 custom): the placement set is the generator's and identical, but the consumer's own variants replace the starter's four prepared files, so a different instance count is the correct answer. A third arm whose needle atlas names a file nobody wrote makes the same checker both arms went through throw, and the throw names `absent-needle-atlas.png`. The committed table is restored and byte-compared in the run's `finally`, so no arm can leave the repository pointing at temporary fixtures. The first custom run failed `diagnostics` on 26 console errors, both fixture faults and both now fixed in the fixture: the marker GLB had no UVs, and the consumer table gave all six ground layers a normal map, which is 18 samplers against WebGPU's 16 per stage (the starter spends the 16 with normals on four layers) — a truthful constraint on custom ground art, recorded in the script.
 - [x] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: PASS 2026-10-02 — `pnpm build` exit 0 (53 s), `pnpm capabilities:check` fresh (400 entries, 393 of 393 package-backed entries resolvable), `pnpm exec vitest run packages/engine-mcp/__tests__/terrain-discovery.spec.ts` green, and `pnpm --filter strata-terrain-preview test:consumer` green (~12 s) from tarballs installed outside the workspace. Through the packed `threenative-engine-mcp` and the packed manifest, four queries resolve at rank 0 to the public import: a request-scope island prompt and "procedural heightmap landscape" to `Terrain` in `@threenative/terrain`, "export the terrain as a glb for another three.js project" to `exportWorldGLB` in `@threenative/terrain/export`, "open the terrain brush and layer GUI" to `mountTerrainEditor` in `@threenative/terrain/editor`. `Terrain`'s constraints now state metres with Y up and the 1 to 100000 size, the seven allowed resolutions (17 to 1025), the 0 to 4294967295 seed and that one document and seed give the same arrays (the consumer re-evaluates all five worlds and matches the game's baked heights hash-for-hash), the synchronous `evaluate()`, and that materials, models and texture paths belong to the game; a negative control that asserts a wrong unit fails by name. All eleven packed templates and a fresh `createProject` scaffold carry the terrain pointer in both AGENTS.md and CLAUDE.md, list no authoring dependency, and `terrain-authoring.md` names the install, the editor server entry, `exportWorldGLB` and the shipped `AGENT_GUIDE.md`; the packed editor entry exports `mountTerrainEditor` and `TerrainEditorController`. Not covered: the `capability-examples` spec fails on `@threenative/metahuman`, `raw-unreal`, `ueformat` and `ui` modules that are not built in this checkout (no terrain entry in its list). Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.

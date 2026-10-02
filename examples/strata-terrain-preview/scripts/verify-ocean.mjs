@@ -40,3 +40,24 @@ for (const [left, right, label] of [
     JSON.stringify({ oceanVisual: label, waterPixels, changedRatio: changed / waterPixels }),
   );
 }
+
+// The sheltered pool was filled with opaque white foam in round 8. Observe its water, not the sky.
+const lagoon = inspectCapture(readFileSync(resolve(directory, "coastal-horizon-sea.png")));
+const lagoonScale = lagoon.width / 1280;
+let lagoonPixels = 0;
+let bluePixels = 0;
+for (let y = Math.round(600 * lagoonScale); y < Math.round(700 * lagoonScale); y++)
+  for (let x = Math.round(940 * lagoonScale); x < Math.round(1220 * lagoonScale); x++) {
+    const i = (y * lagoon.width + x) * 4;
+    const [r, g, b] = lagoon.png.data.subarray(i, i + 3);
+    lagoonPixels++;
+    if (b > r + 20 && g > r + 12) bluePixels++;
+  }
+assert(lagoonPixels > 10000 * lagoonScale * lagoonScale, "lagoon: water region was not observed");
+assert(
+  bluePixels / lagoonPixels > 0.7,
+  `lagoon: opaque foam obscures sheltered water (${bluePixels}/${lagoonPixels})`,
+);
+console.log(
+  JSON.stringify({ oceanVisual: "sheltered-water", blueRatio: bluePixels / lagoonPixels }),
+);

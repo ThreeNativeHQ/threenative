@@ -11,12 +11,7 @@
 // the tone curve — and the capabilities call the sky's own uniforms live precisely so a game can
 // move the sun under them.
 //
-// The cloud deck is not a rig feature and not a texture: it is a shader on a dome that rides inside
-// the rig's sky box, one noise field sampled twice and lit by one dot product. Cumulus read as
-// volume because of three things in that field — vertical squash, so the cells are wider than they
-// are tall and every puff has a flat base; a second, coarser field, so the deck is banks with clear
-// sky between them rather than an even wash; and coverage that thickens inward, so a puff is thin
-// and bright at its fringe and dense and blue-grey at its core.
+// The existing cloud dome samples a soft density field and its sunward neighbourhood for shading.
 import { Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
 import {
   BackSide,
@@ -58,9 +53,9 @@ import { setCanopySun } from "./propMaterials.js";
  */
 export const SUN = {
   colour: new Color(0xffeed0),
-  /** Towards the sun. A 41 degree afternoon sun: high enough to light the meadow, low enough that
+  /** Towards the sun. A 35 degree afternoon sun: high enough to light the meadow, low enough that
    *  every spruce throws a shadow long enough to see the ground between the trees. */
-  direction: new Vector3(-180, 185, 120),
+  direction: new Vector3(-180, 150, -120),
   /** Irradiance in three's physical units — the same number a Blender sun strength carries. */
   intensity: 4.6,
 } as const;
@@ -113,8 +108,8 @@ const CLOUDS = {
    * nothing to solid on top of it. Both ramps are narrow on purpose: a wide one is a smear, and a
    * smear across the whole sky is a fog bank, not a cumulus.
    */
-  bank: [-0.1, 0.12],
-  coverage: [0.16, 0.34],
+  bank: [-0.2, 0.22],
+  coverage: [-0.03, 0.4],
   /** The band of sky the deck occupies: its base just above the horizon, thinning towards the zenith. */
   band: [0.02, 0.1, 0.99, 0.5],
   /** Peak opacity of a fully covered patch of sky. */
@@ -122,13 +117,13 @@ const CLOUDS = {
   /** Sunlit crown, shaded underside, and the silver a thin fringe takes when it faces the sun. */
   tint: { lit: 0xf7f8f9, shade: 0xc8d3de, silver: 0xfff2d4 },
   /** How much a dense core is darkened relative to a thin fringe. */
-  core: 0.78,
+  core: 0.68,
   /**
    * The deck's brightness against the physical sky behind it. The sky is in radiance units several
    * times above one, so a cloud written as plain white came out darker than the blue around it —
    * grey blobs — once the rig stopped fogging its own dome.
    */
-  radiance: 1.9,
+  radiance: 2.25,
 } as const;
 
 /**
@@ -152,18 +147,13 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
   // The only coordinate a sky has is the direction to the fragment.
   const direction = normalize(positionLocal);
   const field = vec3(direction.x, direction.y.mul(CLOUDS.stretch), direction.z).mul(CLOUDS.scale);
-  const puff = mx_fractal_noise_float(field, 4, 2, 0.5);
+  const puff = mx_fractal_noise_float(field, 5, 2, 0.5);
   const bank = mx_fractal_noise_float(field.mul(0.3), 2, 2, 0.5);
-  // Which way a texel faces inside its own puff: the coarse field sampled a little above it, minus
-  // the field here. Rising field is the top of a cloud. Two noise calls buy a cumulus its lit crown
-  // and its flat grey base on the side of the sky the sun is not on, which is the whole difference
-  // between a cumulus and a grey blob.
-  const coarse = field.mul(0.3);
-  const crown = smoothstep(
-    float(-0.25),
-    float(0.3),
-    mx_noise_float(coarse.add(vec3(0, 2.5, 0))).sub(mx_noise_float(coarse)),
+  // Density sampled towards the live sun approximates self-shadow inside each soft puff.
+  const lightDepth = mx_fractal_noise_float(field.add(sun.mul(0.55)), 3, 2, 0.5).add(
+    mx_fractal_noise_float(field.add(sun.mul(1.1)), 2, 2, 0.5).mul(0.5),
   );
+  const crown = smoothstep(-0.12, 0.24, puff.sub(lightDepth.mul(0.65)));
   const coverage = smoothstep(float(CLOUDS.coverage[0]), float(CLOUDS.coverage[1]), puff);
   const deck = smoothstep(float(CLOUDS.band[0]), float(CLOUDS.band[1]), direction.y).mul(
     smoothstep(float(CLOUDS.band[2]), float(CLOUDS.band[3]), direction.y),
@@ -183,12 +173,11 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
     .add(fringe)
     .mul(mix(float(1), float(CLOUDS.core), coverage))
     .mul(CLOUDS.radiance);
-  // Feathering the last of the edge keeps a puff from ending on a hard noise contour.
+  // Optical thickness leaves translucent wisps instead of a hard clipped noise contour.
   const density = coverage
     .mul(smoothstep(float(CLOUDS.bank[0]), float(CLOUDS.bank[1]), bank))
-    .mul(deck)
-    .mul(smoothstep(float(0), float(0.3), coverage));
-  material.opacityNode = density.mul(CLOUDS.opacity);
+    .mul(deck);
+  material.opacityNode = float(1).sub(density.mul(-2.4).exp()).mul(CLOUDS.opacity);
   return material;
 }
 

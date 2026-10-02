@@ -111,7 +111,7 @@ const RIVER = {
 /** The lake's shape, and how its mirror is taken. Every number here is this game's. */
 const LAKE = {
   /** Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. */
-  mirror: { resolutionScale: 0.5, refreshInterval: 2, layers: 1 },
+  mirror: { resolutionScale: 1, refreshInterval: 2, layers: 1 },
   /** Rings and spokes in the disc the basin is meshed as. */
   rings: 44,
   spokes: 88,
@@ -129,7 +129,7 @@ const LAKE = {
  * — and a lake you can see four metres into reads as a swimming pool. The Temperate basin is 1.3 m at
  * its deepest, so this is a grade across a hand's depth rather than a wall of colour.
  */
-const EXTINCTION: readonly [number, number, number] = [0.86, 0.5, 0.36];
+const EXTINCTION: readonly [number, number, number] = [1.6, 0.65, 0.42];
 
 /** Metres of water past which the bed stops contributing. The basin bottoms out near 1.3 m. */
 const OPAQUE_DEPTH = 1.2;
@@ -145,8 +145,8 @@ const MAX_BAKED_DEPTH = 1.6;
  * is that one distant pixel covers many ripples and shows their average: near water gets chop you can
  * see, water past seventy metres is a mirror.
  */
-const SLOPE_GAIN_NEAR = 0.8;
-const SLOPE_GAIN_FAR = 0.45;
+const SLOPE_GAIN_NEAR = 1.4;
+const SLOPE_GAIN_FAR = 0.65;
 const SLOPE_FADE_NEAR = 10;
 const SLOPE_FADE_FAR = 72;
 
@@ -178,8 +178,8 @@ const REFRACTION_NEAR = 0.004;
 const REFRACTION_FAR = 0.026;
 
 /** How far the reflection smears, in fractions of the screen, at the near and far ends. */
-const REFLECT_BLUR_NEAR = 0.002;
-const REFLECT_BLUR_FAR = 0.006;
+const REFLECT_BLUR_NEAR = 0.0012;
+const REFLECT_BLUR_FAR = 0.003;
 /** How much narrower the smear is across the screen than down it. */
 const REFLECT_BLUR_ASPECT = 0.5;
 
@@ -201,12 +201,12 @@ const SNELL_OUTER = 0.79;
 
 /** This game's water body: silt at the margin, cold green in the middle, moss in the sun path. */
 const TINT = {
-  silt: 0xc0ad84,
-  shallow: 0.16,
+  silt: 0x789f98,
+  shallow: 0.08,
   deep: 0x1f3833,
   deepGain: 0.26,
   /** Sunlight scattered back out of the shallows. */
-  glow: 0x8fae62,
+  glow: 0x75a99b,
   /** Foam and white water. */
   foam: 0xe8efe8,
   /** The sky the stream reflects: the horizon haze, and the zenith above it. */
