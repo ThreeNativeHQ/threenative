@@ -16,6 +16,8 @@ export interface IHydraulicOptions {
   deposition?: number;
   evaporation?: number;
   seed?: number;
+  /** Brush radius in cells: every gram moved lands spread over this disc, never on one cell. */
+  brushRadius?: number;
 }
 
 /** Thermal erosion: material above the talus angle slides to its lowest neighbour. */
@@ -58,13 +60,41 @@ export function thermal(
   return h;
 }
 
+interface IBrushCell {
+  dx: number;
+  dz: number;
+  weight: number;
+}
+
+const brushes = new Map<number, IBrushCell[]>();
+
+/** Erosion brush: normalised weights over a disc, so a droplet digs a dimple and not a single-cell pit. */
+function brush(radius: number): IBrushCell[] {
+  let cells = brushes.get(radius);
+  if (!cells) {
+    cells = [];
+    let total = 0;
+    for (let dz = -radius; dz <= radius; dz += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        const d = Math.hypot(dx, dz);
+        if (d > radius) continue;
+        const weight = 1 - d / (radius + 1);
+        cells.push({ dx, dz, weight });
+        total += weight;
+      }
+    }
+    for (const c of cells) c.weight /= total;
+    brushes.set(radius, cells);
+  }
+  return cells;
+}
+
 interface IHydraulicProbe {
   value: number;
   dx: number;
   dz: number;
-  i: number;
-  tx: number;
-  tz: number;
+  ix: number;
+  iz: number;
 }
 
 /** Hydraulic erosion: seeded droplets carry sediment downhill, depositing where they slow. */
@@ -81,11 +111,30 @@ export function hydraulic(
     deposition = 0.3,
     evaporation = 0.025,
     seed = 1,
+    brushRadius = 3,
   }: IHydraulicOptions = {},
 ): Float32Array {
   const h = Float64Array.from(height);
   const rnd = random(seed);
   const cell = size / (n - 1);
+  const cells = brush(brushRadius);
+  /** Adds `amount` over the brush around one cell, renormalised where the field ends. */
+  const spread = (x: number, z: number, amount: number): void => {
+    let total = 0;
+    for (const c of cells) {
+      const ix = x + c.dx;
+      const iz = z + c.dz;
+      if (ix >= 0 && ix < n && iz >= 0 && iz < n) total += c.weight;
+    }
+    if (total <= 0) return;
+    for (const c of cells) {
+      const ix = x + c.dx;
+      const iz = z + c.dz;
+      if (ix < 0 || ix >= n || iz < 0 || iz >= n) continue;
+      const i = iz * n + ix;
+      h[i] = (h[i] as number) + (amount * c.weight) / total;
+    }
+  };
   const get = (x: number, z: number): IHydraulicProbe => {
     const ix = Math.min(n - 2, Math.floor(x));
     const iz = Math.min(n - 2, Math.floor(z));
@@ -110,17 +159,9 @@ export function hydraulic(
           (h[i + n + 1] as number) - (h[i + 1] as number),
           tx,
         ) / cell,
-      i,
-      tx,
-      tz,
+      ix,
+      iz,
     };
-  };
-  const deposit = (probe: IHydraulicProbe, amount: number): void => {
-    const { i, tx, tz } = probe;
-    h[i] = (h[i] as number) + amount * (1 - tx) * (1 - tz);
-    h[i + 1] = (h[i + 1] as number) + amount * tx * (1 - tz);
-    h[i + n] = (h[i + n] as number) + amount * (1 - tx) * tz;
-    h[i + n + 1] = (h[i + n + 1] as number) + amount * tx * tz;
   };
   for (let k = 0; k < droplets; k += 1) {
     let x = rnd() * (n - 1 - 0.001);
@@ -146,7 +187,6 @@ export function hydraulic(
       const nx = x + dx;
       const nz = z + dz;
       if (nx < 0 || nx >= n - 1 || nz < 0 || nz >= n - 1) {
-        deposit(old, sediment);
         sediment = 0;
         break;
       }
@@ -155,11 +195,11 @@ export function hydraulic(
       const cap = Math.max(-dh, 0.005 * cell) * speed * water * capacity;
       if (dh > 0 || sediment > cap) {
         const amount = dh > 0 ? Math.min(dh, sediment) : (sediment - cap) * deposition;
-        deposit(old, amount);
+        spread(old.ix, old.iz, amount);
         sediment -= amount;
       } else {
         const amount = Math.max(0, Math.min((cap - sediment) * erosion, -dh));
-        deposit(old, -amount);
+        spread(old.ix, old.iz, -amount);
         sediment += amount;
       }
       speed = Math.sqrt(Math.max(0.01, speed * speed - dh * 3));
@@ -168,7 +208,10 @@ export function hydraulic(
       z = nz;
       if (water < 0.02) break;
     }
-    if (sediment > 0) deposit(get(clamp(x, 0, n - 1.001), clamp(z, 0, n - 1.001)), sediment);
+    if (sediment > 0) {
+      const end = get(clamp(x, 0, n - 1.001), clamp(z, 0, n - 1.001));
+      spread(end.ix, end.iz, sediment);
+    }
   }
   return Float32Array.from(h);
 }
