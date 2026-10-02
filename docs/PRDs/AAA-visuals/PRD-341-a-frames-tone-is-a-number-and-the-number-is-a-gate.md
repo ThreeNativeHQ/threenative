@@ -21,7 +21,7 @@ report two numbers where five are needed.
 
 ### Phase 1 — one measurement and a strict contract
 
-- [ ] Compute the six display-luminance metrics in the existing PNG decode. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/capture.spec.ts`
+- [x] Compute the six display-luminance metrics in the existing PNG decode. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts` — 9 passed after two missing-metric failures in the fresh reconstruction.
 - [ ] Reject empty, malformed and contradictory tone bounds at scenario load. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts`
 
 ### Phase 2 — shared capture evidence and CLI
@@ -132,3 +132,17 @@ nothing still leaves the numbers behind for the next round.
 ## Out of scope
 
 Baseline diffing, perceptual metrics, and any automatic judgement of composition.
+
+
+## Reconstruction checkpoint — 2026-10-02
+
+The first executor was replaced before its implementation commit was published. This is new
+work from the surviving draft branch, with fresh tests; the lost local commit is not evidence for
+this branch. The histogram slice reuses the guard's existing PNG decode. Remaining phase boxes
+stay open until their implementation and proofs are rerun.
+
+## Required runtime screenshot proof
+
+The user explicitly requires screenshot proofs for every PR. Actual underexposed/restored WebGPU
+runtime captures, adapter provenance and source SHA must be inspected and linked before this PR
+leaves draft. Synthetic PNG unit-test inputs and pictures of test output do not satisfy this gate.
