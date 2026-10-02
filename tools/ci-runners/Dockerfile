@@ -42,6 +42,8 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 # Android platform-tools where hosted ubuntu-24.04 keeps its SDK: the playtest doctor resolves adb
 # through ANDROID_HOME before PATH.
 ENV ANDROID_HOME=/usr/local/lib/android/sdk ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+# Hosted runners run in C.UTF-8; without it javac reads sources as US-ASCII and rejects an em dash.
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 RUN mkdir -p "$ANDROID_HOME" \
  && curl -fsSL https://dl.google.com/android/repository/platform-tools-latest-linux.zip -o /tmp/pt.zip \
  && unzip -q /tmp/pt.zip -d "$ANDROID_HOME" && rm /tmp/pt.zip \
