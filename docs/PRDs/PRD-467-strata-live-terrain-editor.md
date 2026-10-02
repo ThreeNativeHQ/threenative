@@ -4,7 +4,7 @@
 **Complexity:** 9 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466 phases 1–2 public authoring/rendering contract
-**Progress:** 6/9 required boxes verified
+**Progress:** 9/9 required boxes verified
 **Required companion:** [PRD-468 — atmosphere, cameras, and asset imports](PRD-468-strata-world-controls-and-asset-imports.md)
 
 ## Context
@@ -271,7 +271,7 @@ without hiding it in the existing GUI tool claim.
 All are `local`, actor: implementing agent. New scripts/tests are implementation
 targets, not commands that currently exist.
 
-- [ ] AC-8 [local, actor: implementing agent]: A GUI-polished world survives reload and exports as the same portable GLB content. proof: planned `pnpm --filter strata-terrain-preview test:consumer` with the editor-authored fixture — Evidence: pending; compare terrain samples and stable placement transforms after refresh, JSON round trip, and vanilla GLTFLoader import without editor globals/localStorage.
+- [x] AC-8 [local, actor: implementing agent]: A GUI-polished world survives reload and exports as the same portable GLB content. proof: `pnpm --filter strata-terrain-preview test:consumer` with the editor-authored fixture — Evidence: PASS 2026-10-02. `pnpm --filter strata-terrain-preview test:terrain:authored` (`RECORD=1` rewrites, otherwise it must reproduce; both exit 0, WebGPU NVIDIA/turing, private Xvfb) polishes the forest world through the editor's real controls: a sculpt drag (`sculpt-1`), a scatter-brush drag of 12 spruce (`scatter-1`) and the numeric transform panel on one of its placements (position Y 55, rotation Y 45, scale 2/0.5/1.5, ground off). A fresh page then opens the saved document: terrain samples (13 heights, five of them on the sculpt stroke) and all 105 placement transforms equal the pre-reload values exactly, the exported GLB's terrain vertices equal the live heights, every live placement is a GLB node, the document JSON-round-trips to a commit that keeps the same revision (`a39f0ba4…`), and the reproduction is deterministic (second run matches the committed fixture). `scripts/fixtures/editor-authored.json` (12 KB: document, revision, samples, placement positions, the posed matrix) is that record. `test:consumer` then re-evaluates the fixture document with only the packed `@threenative/terrain` in a plain browser page and loads its full-world GLB with a vanilla `GLTFLoader`: the 13 terrain samples and exported vertices match the editor within 1e-6, the 105 placement ids are identical, the hand-posed matrix matches within 1e-4, every unedited placement's x/z matches within 1e-3 and its y within 0.084 m (the editor grounds on the triangle under it, the headless pose is the bilinear height; asserted under 0.25 m), the river id travels, no external URI, no editor global and empty `localStorage`. Negative control: changing the sculpt layer's opacity in the fixture fails by name (`terrain sample[8]: 30.82 vs 37.75`). Limit: the packed consumer supplies stand-in appearance, so the exported pixels are not compared here; the real starter art and placement-grounded matrices are covered by `test:terrain:export`.
 
 ## Integration Ledger
 

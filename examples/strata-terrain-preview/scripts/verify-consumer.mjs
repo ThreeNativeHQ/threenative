@@ -348,6 +348,64 @@ try {
   assert.equal(handoff.cameras, 0);
   assert.deepEqual(handoff.editorGlobals, []);
   assert.deepEqual(handoff.storedKeys, []);
+
+  // --- PRD-467 AC-8: the GUI-polished world, reproduced from the packed install alone -------------
+  // `scripts/fixtures/editor-authored.json` is what the live editor held after a sculpt stroke, a
+  // scatter stroke and a numeric transform, reloaded and exported (see verify-polished-world.mjs).
+  // The consumer re-evaluates the saved document with only the packed package and must land on the
+  // same terrain samples, the same stable placement ids and the same hand-posed matrix.
+  const polished = JSON.parse(
+    readFileSync(join(root, "scripts/fixtures/editor-authored.json"), "utf8"),
+  );
+  assert.equal(
+    JSON.parse(JSON.stringify(polished.document)).recipe.layers.length,
+    polished.document.recipe.layers.length,
+  );
+  const reproduced = await openConsumerPage({ consumer, repo });
+  let replayed;
+  try {
+    replayed = await reproduced.exportAndLoad(
+      polished.document,
+      polished.revision,
+      polished.sampleIndices,
+    );
+    assert.deepEqual(reproduced.problems, []);
+  } finally {
+    await reproduced.close();
+  }
+  const near = (actual, expected, tolerance, what) =>
+    actual.forEach((value, index) =>
+      assert(
+        Math.abs(value - expected[index]) <= tolerance,
+        `${what}[${index}]: ${value} vs ${expected[index]}`,
+      ),
+    );
+  assert.equal(replayed.report.revision, polished.revision);
+  assert.equal(replayed.resolution, polished.resolution);
+  assert.equal(replayed.size, polished.size);
+  near(replayed.stateHeights, polished.heights, 1e-6, "terrain sample");
+  near(replayed.loadedHeights, polished.glbHeights, 1e-6, "exported terrain vertex");
+  assert.deepEqual(
+    replayed.placements.map((p) => p.id).sort(),
+    polished.placements.map((p) => p.id).sort(),
+  );
+  const posedAgain = replayed.placements.find((p) => p.id === polished.posedId);
+  near(posedAgain.matrix, polished.posedMatrix, 1e-4, "hand-posed matrix");
+  let widest = 0;
+  for (const recorded of polished.placements) {
+    const node = replayed.placements.find((p) => p.id === recorded.id);
+    const [x, y, z] = node.matrix.slice(12, 15);
+    near([x, z], [recorded.position[0], recorded.position[2]], 1e-3, `${recorded.id} x/z`);
+    widest = Math.max(widest, Math.abs(y - recorded.position[1]));
+  }
+  // The game grounds an unedited prop on the triangle under it; the headless pose is the bilinear
+  // height. They differ by centimetres (0.084 m measured), never by a prop's height.
+  assert(widest < 0.25, `an unedited placement's height differs by ${widest} m`);
+  assert.deepEqual(replayed.waterIds, polished.waterIds);
+  assert.equal(replayed.externalUris, 0);
+  assert.deepEqual(replayed.editorGlobals, []);
+  assert.deepEqual(replayed.storedKeys, []);
+
   const optional = {
     graph,
     workflowRan: [
@@ -360,6 +418,12 @@ try {
       "exportWorldGLB",
     ],
     glbBytes: handoff.glbBytes,
+    polished: {
+      guiEdits: polished.guiEdits,
+      placements: polished.placements.length,
+      widestUneditedHeightGap: Math.round(widest * 1e3) / 1e3,
+      samples: polished.heights.length,
+    },
   };
 
   // --- AC-8, headless half: author, bake and load through public imports --------------------------
