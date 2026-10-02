@@ -21,6 +21,9 @@ type Vec4 = readonly [number, number, number, number];
 // biome-ignore lint/suspicious/noExplicitAny: three's TSL types refuse the swizzles the kernels read.
 type TslNode = Record<string, any>;
 type TslVar = TslNode;
+// quality-allow: the whole TSL namespace is read through one loose record; see TslNode.
+// biome-ignore lint/suspicious/noExplicitAny: see TslNode.
+const tslNodes: Record<string, any> = tsl;
 const {
   Fn,
   If,
@@ -54,8 +57,7 @@ const {
   uvec3,
   vec3,
   vec4,
-  // biome-ignore lint/suspicious/noExplicitAny: see TslNode.
-} = tsl as unknown as Record<string, any>;
+} = tslNodes;
 
 export interface IFluidBounds {
   readonly min: Vec3;
@@ -148,7 +150,7 @@ function finiteVec(name: string, value: readonly number[], length: number): void
 }
 
 function nodeVar(node: TslNode): TslVar {
-  return node.toVar() as unknown as TslVar;
+  return node.toVar();
 }
 
 function computeKernel(name: string, count: number, body: () => void): ComputeNode {
