@@ -24,18 +24,33 @@ import { Heightfield } from "../src/world.js";
  */
 const bench = process.env.TN_BENCH === "1";
 
+/** The name a merged super-tile carries; an unmerged tile has no name of its own. */
+const BLOCK_PREFIX = "tn-terrain-block:";
+
 const sampleHeight = (x: number, z: number): number =>
   Math.sin(x * 0.017) * 12 + Math.cos(z * 0.013) * 9 + Math.sin((x + z) * 0.007) * 4;
 
-/** Every resident tile's rendered positions, so "unchanged" is a number and not a claim. */
+/**
+ * Every position the main pass submits for terrain levels, so "unchanged" is a number and not a
+ * claim. Keyed by the mesh that carries it: a merged super-tile under its own block name, a tile
+ * that draws its own level under the tile key.
+ */
 function renderedPositions(tiles: TerrainTiles): Record<string, Float32Array> {
   const rendered: Record<string, Float32Array> = {};
+  const record = (key: string, mesh: Mesh): void => {
+    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+  };
+  // A named child is a merged super-tile; the unnamed ones are the stitch bridges, which are not
+  // terrain levels and were never part of this record.
+  for (const child of tiles.children)
+    if (child instanceof Mesh && child.name.startsWith(BLOCK_PREFIX)) record(child.name, child);
   for (const key of tiles.residentKeys) {
     const tile = tiles.getTile(key);
     if (tile === undefined) throw new Error(`Missing resident tile '${key}'.`);
-    const mesh = tile.lod.levels.find(({ object }) => object.visible)?.object;
-    if (!(mesh instanceof Mesh)) throw new Error(`Missing visible LOD for tile '${key}'.`);
-    rendered[key] = (mesh.geometry.getAttribute("position").array as Float32Array).slice();
+    for (const level of tile.lod.levels) {
+      const mesh = level.object;
+      if (mesh instanceof Mesh && mesh.visible) record(key, mesh);
+    }
   }
   return rendered;
 }
@@ -64,12 +79,26 @@ function ring(
   for (let frame = 0; frame < 4; frame += 1) tiles.process();
   tiles.follow({ x: 0, z: 0 });
   tiles.process();
+  // A third settle: the super-tile blocks rebuild one per frame, so the ring is only settled once
+  // the last dirty block is built.
+  let rebuilds = tiles.terrainTiles.rebuilds;
+  for (let frame = 0; frame < 64; frame += 1) {
+    tiles.follow({ x: 0, z: 0 });
+    tiles.process();
+    if (tiles.terrainTiles.rebuilds === rebuilds) break;
+    rebuilds = tiles.terrainTiles.rebuilds;
+  }
   return tiles;
 }
 
-/** A settled ring's stitch bridge, which is the only child of the tiles group that is a bare mesh. */
+/**
+ * A settled ring's stitch bridge: the only child of the tiles group that is a bare, unnamed mesh,
+ * where a merged super-tile is a bare mesh with a block name.
+ */
 function bridgeOf(tiles: TerrainTiles): Mesh {
-  const bridge = tiles.children.find((child): child is Mesh => child instanceof Mesh);
+  const bridge = tiles.children.find(
+    (child): child is Mesh => child instanceof Mesh && !child.name.startsWith(BLOCK_PREFIX),
+  );
   if (bridge === undefined) throw new Error("Expected a mixed-LOD bridge mesh.");
   return bridge;
 }
@@ -114,6 +143,54 @@ function expectContainsEveryVertex(mesh: Mesh): void {
 }
 
 describe("TerrainTiles settled-frame cost", () => {
+  it("skips the neighbor LOD scan when follow changed no tile or target", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      let lookups = 0;
+      const original = Map.prototype.get;
+      const get = vi.spyOn(Map.prototype, "get").mockImplementation(function (
+        this: Map<unknown, unknown>,
+        key: unknown,
+      ) {
+        if (this.size === 25) lookups += 1;
+        return original.call(this, key);
+      });
+      tiles.follow({ x: 0, z: 0 });
+      get.mockRestore();
+      expect(lookups).toBe(25);
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
+  it("reads the active blend count without walking the resident ring", () => {
+    const tiles = ring(2, 17, 32, 25, 64_000_000);
+    try {
+      const before = renderedPositions(tiles);
+      const values = vi.spyOn(Map.prototype, "values");
+      expect(tiles.blendingTiles).toBe(0);
+      expect(values).not.toHaveBeenCalled();
+      values.mockRestore();
+      tiles.process();
+      expect(renderedPositions(tiles)).toEqual(before);
+      for (let frame = 1; frame <= 60; frame += 1) {
+        tiles.follow({ x: frame * 0.3, z: 0 });
+        tiles.process();
+      }
+      for (let frame = 0; frame < 4; frame += 1) tiles.process();
+      expect(tiles.blendingTiles).toBe(0);
+      tiles.dispose();
+      expect(tiles.blendingTiles).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+      tiles.dispose();
+    }
+  });
+
   // A still camera must not rebuild per-sample seam coverage. `bridgeCoverageAt` revalidated the
   // whole bridge topology and re-derived three world matrices *for every sample of every pair*,
   // which is what turned a 25-tile ring into a 289-tile frame cost.

@@ -1138,6 +1138,52 @@ describe("WorldCells", () => {
     world.dispose();
   });
 
+  it("names a refused world load in a TN_WORLD_CELL_FAILURE marker", async () => {
+    stubManifestFetch({
+      ...manifest,
+      cells: manifest.cells
+        .filter((cell) => cell.x === 0 && cell.z === 0)
+        .map((cell) => ({
+          ...cell,
+          chunks: [],
+          runs: cell.runs.filter((run) => run.asset === "pine"),
+        })),
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const follow = followAt(0, 0);
+    let refused = false;
+    const load = (url: string): Promise<Object3D> => {
+      if (url.includes("pine") && !refused) {
+        refused = true;
+        return Promise.reject(new Error("pine is offline"));
+      }
+      return Promise.resolve(makeModel());
+    };
+    const world = await loadWorld({
+      budgets: largeBudgets,
+      follow,
+      loadModel: load,
+      ring: 1,
+      surface,
+      url: "/world/world.json",
+    });
+
+    const center = cellCenter(0, 0);
+    follow.position.x = center.x;
+    follow.position.z = center.z;
+    world.update();
+    await flush();
+
+    const lines = warn.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith("TN_WORLD_CELL_FAILURE"));
+    expect(lines[0]).toContain("kind=asset id=pine");
+    expect(lines[0]).toContain("pine.glb");
+    expect(lines[0]).toContain("message=pine is offline");
+    expect(world.stats().failures).toBe(1);
+    world.dispose();
+  });
+
   it("rejects a concurrency or refilter cap that could never start a load", async () => {
     stubFixtureFetch();
     for (const option of ["concurrency", "rebuildsPerUpdate", "chunkMergeMaxTriangles"] as const)
