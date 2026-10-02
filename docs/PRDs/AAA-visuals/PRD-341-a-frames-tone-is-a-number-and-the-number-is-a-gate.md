@@ -31,8 +31,8 @@ report two numbers where five are needed.
 
 ### Phase 3 — scenario proof and qualification
 
-- [ ] Ship a discoverable GPU-lane scenario and document the exact statistic/capture contract. proof: `node --import tsx scripts/check-doc-links.ts` and scenario schema test in `tone.spec.ts`
-- [ ] Run the scenario with normal and two-stops-under exposure on a capture-capable GPU lane. proof: `pnpm test:templates`; retain both measured verdicts here. Unrun in this environment; do not read CPU/PNG fixture tests as GPU proof.
+- [x] Ship a discoverable GPU-lane scenario and document the exact statistic/capture contract. proof: `node --import tsx scripts/check-doc-links.ts` and scenario schema test in `tone.spec.ts` — 52 focused fixture/capture/doc tests passed; isolated production Vite bundle and playtest ESM/declarations built.
+- [ ] Run the scenario with normal and two-stops-under exposure on a capture-capable GPU lane. proof: `pnpm test:tone` (also reached by `pnpm test:templates`); retain both measured verdicts and runtime PNGs here. Fresh local attempt built the fixture, then refused before browser launch: no usable X display and Xvfb absent. Maintained hosted integration is pending; unit PNG fixtures are not runtime screenshot proof.
 
 ## Implementation decisions
 
@@ -158,3 +158,11 @@ Browser/device production of the observation remains the next open slice.
 Fresh capture-wiring checkpoint: 52 tests passed across histogram, tone, target-driver and runner
 orchestration. Scoped playtest TypeScript passed. All four target paths reuse the guard's decoded
 metrics; host observations survive report assembly. The driver tests are not runtime screenshots.
+
+
+Fresh screenshot-lane checkpoint: the maintained read-only `integration-tone` workflow builds this
+commit's public bridge, then uses the same headed WebGPU/canvas-capture approach as native
+conformance. The script requires both exposure verdicts, actual PNG files, nonempty adapter
+identity and WebGPU provenance; it never accepts a missing capture as proof. Local playtest and
+fixture typechecks pass; fixture/capture/primary-doc focused suite: 52 tests passed. Runtime
+screenshots must still be produced by the hosted run and inspected before promotion.

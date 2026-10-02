@@ -1,0 +1,49 @@
+name: Integration tone exposure
+on:
+  pull_request:
+    paths:
+      - 'packages/playtest/**'
+      - 'examples/abyss-framework/src/render/toneCalibration.ts'
+      - 'examples/abyss-framework/src/tone-main.ts'
+      - 'examples/abyss-framework/tone.html'
+      - 'examples/abyss-framework/tone.vite.config.ts'
+      - 'examples/abyss-framework/playtests/tone.playtest.json'
+      - 'examples/abyss-framework/package.json'
+      - 'scripts/verify-tone-exposure.ts'
+      - 'scripts/non-visual-scenarios.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/actions/pnpm/**'
+      - '.github/actions/playwright-chromium/**'
+      - '.github/workflows/integration-tone.yml'
+permissions:
+  contents: read
+jobs:
+  exposure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's standalone bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Validate histogram and fail-closed assertion paths
+        run: pnpm exec vitest run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts
+      - name: Render underexposed and restored scene through the real runner
+        run: pnpm test:tone
+      - name: Retain runtime screenshots and exact adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tone-exposure-${{ github.event.pull_request.head.sha }}
+          path: artifacts/tone-exposure
+          if-no-files-found: error

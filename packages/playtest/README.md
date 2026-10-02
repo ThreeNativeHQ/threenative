@@ -96,3 +96,11 @@ Browser, Android, desktop and iOS scenario captures now record TN_TONE under obs
 even without tone assertions. Explicit tone requests force their captures despite disabled
 convenience screenshots. A named step's existing screenshot is reused. This host-side support
 is exercised with target-driver fixtures; it does not turn unit tests into native GPU proof.
+
+
+Repository runtime proof: `pnpm test:tone` builds the isolated calibration fixture and captures
+its real WebGPU output at exposure 0.25 and 1. The same assertions must fail then pass. PNGs,
+observations, reports and adapter provenance are retained under `artifacts/tone-exposure`; the
+summary names the exact source SHA. It also runs after `pnpm test:templates`. The maintained
+`integration-tone` workflow permits software WebGPU for pixel correctness only, not native
+execution, hardware performance or aesthetic qualification.

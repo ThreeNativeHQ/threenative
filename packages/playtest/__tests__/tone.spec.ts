@@ -90,3 +90,12 @@ test("tone-only scenarios stay out of the frame-less template lane", async () =>
   const result = spawnSync(process.execPath, ["scripts/non-visual-scenarios.mjs", root], { encoding: "utf8" });
   expect(result.status).toBe(0); expect(result.stdout.trim()).toBe("playtests/state.playtest.json"); expect(result.stderr).toContain("tone.playtest.json");
 });
+
+
+test("the real-render exposure scenario loads named and final frame bounds", async () => {
+  const source = JSON.parse(await readFile("examples/abyss-framework/playtests/tone.playtest.json", "utf8"));
+  const loaded = validatePlaytestScenario(source, "tone.playtest.json");
+  expect(loaded.assert?.tone).toHaveLength(2);
+  expect(loaded.assert?.tone?.[0]?.atStep).toBe("rendered");
+  expect(loaded.assert?.tone?.[0]?.mean?.min).toBeGreaterThan(0);
+});
