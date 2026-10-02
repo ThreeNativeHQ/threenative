@@ -21,6 +21,8 @@ function fixture() {
   const scene = new Scene();
   const state = createGameStore({ ...FogProbe.initialState });
   let action = "";
+  const info = { frame: 0, memory: { textures: 2 } };
+  const sizes: number[][] = [];
   // No GPU is available in a unit test. Use real scene/state/TSL ownership objects;
   // only the input edge and renderer installation boundary are replaced.
   const ctx = {
@@ -35,6 +37,8 @@ function fixture() {
     input: { justPressed: (name: string) => name === action },
     renderer: {
       kind: "webgpu",
+      info,
+      setSize: (width: number, height: number) => sizes.push([width, height]),
       raw: { shadowMap: { enabled: false } },
       setOutputNode: () => {},
       clearOutputNode: () => {},
@@ -49,6 +53,9 @@ function fixture() {
   sun.shadow.map.depthTexture = new DepthTexture(16, 16);
   return {
     probe,
+    info,
+    sizes,
+    camera: ctx.camera as PerspectiveCamera,
     scene,
     state,
     sun,
@@ -101,4 +108,47 @@ describe("fog qualification fixture", () => {
     });
     f.probe.exit();
   });
+});
+
+it("resizes the live graph without rebuilding and restores camera projection", () => {
+  const f = fixture();
+  f.select("fog");
+  f.select("resizeSmall");
+  expect(f.sizes).toEqual([[320, 240]]);
+  expect(f.camera.aspect).toBe(4 / 3);
+  expect(f.state.getState()).toMatchObject({
+    createdTargets: 1,
+    releasedTargets: 0,
+    liveTargets: 1,
+  });
+  f.select("resizeRestore");
+  expect(f.sizes).toEqual([
+    [320, 240],
+    [640, 400],
+  ]);
+  expect(f.camera.aspect).toBe(1.6);
+  expect(f.state.getState().builds).toBe(1);
+  f.probe.exit();
+});
+it("counts texture stability only across observed completed render frames", () => {
+  const f = fixture();
+  f.select("fog");
+  for (let i = 0; i < 5; i += 1) f.select("");
+  expect(f.state.getState()).toMatchObject({ settledRenderFrames: 0, stableTextureFrames: 0 });
+  for (let i = 1; i <= 3; i += 1) {
+    f.info.frame = i;
+    f.select("");
+  }
+  expect(f.state.getState()).toMatchObject({
+    settledRenderFrames: 3,
+    stableTextureFrames: 3,
+    textures: 2,
+  });
+  f.info.memory.textures = 3;
+  f.info.frame = 4;
+  f.select("");
+  expect(f.state.getState().stableTextureFrames).toBe(1);
+  f.select("off");
+  expect(f.state.getState()).toMatchObject({ settledRenderFrames: 0, stableTextureFrames: 0 });
+  f.probe.exit();
 });

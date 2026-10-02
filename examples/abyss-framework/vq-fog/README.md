@@ -10,6 +10,7 @@ This opt-in fixture uses the starter's generated `volumetricFog.ts` and `WorldEn
 - H: half-resolution fog with depth-discontinuity fallback
 - W: remove the foreground wall so current depth changes
 - C: dispose and rebuild the current graph
+- R / T: resize the existing render target to 320×240 / restore 640×400
 - L / K / J: scattering-only black-surface control, then directional / point light off
 - N: black no-fog control (exact zero RGB in the 500×400 fog evaluation area)
 
@@ -37,4 +38,6 @@ The existing public runner provides headed Chromium, a private Xvfb, canvas capt
 pnpm parity --project examples/abyss-framework/vq-fog --target desktop
 ```
 
-The reusable repeated-lifecycle scenario is `../playtests/vq-volumetric-fog.playtest.json`. Native execution and screenshot proof remain unverified until the host runs it; browser captures do not establish native support or hardware performance.
+The reusable repeated-lifecycle scenario is `../playtests/vq-volumetric-fog.playtest.json`. Portable target/depth resize scenarios retain the same fog controller and require exact restored pixels. Allocation comparisons require unchanged texture counts over at least three observed completed render frames, not just elapsed time. These do not establish operating-system window resize behavior.
+
+Native execution and screenshot proof remain unverified until the host runs it; browser captures do not establish native support or hardware performance.

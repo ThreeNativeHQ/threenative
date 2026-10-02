@@ -29,6 +29,11 @@ const initialState = {
   releasedMaterials: 0,
   liveTargets: 0,
   scatteringOnly: false,
+  textures: -1,
+  settledRenderFrames: 0,
+  stableTextureFrames: 0,
+  targetWidth: 0,
+  targetHeight: 0,
   targets: 0,
   pixels: 0,
   steps: 0,
@@ -39,6 +44,10 @@ const initialState = {
 };
 type FogState = typeof initialState;
 type FogCtx = ICtx<FogState>;
+interface IProbeInfo {
+  frame: number;
+  memory: { textures: number };
+}
 const modes = [
   "fog",
   "off",
@@ -76,6 +85,10 @@ export class FogProbe extends GameScene<FogState> {
   #createdTargets = 0;
   #releasedTargets = 0;
   #releasedMaterials = 0;
+  #lastRenderFrame = -1;
+  #lastTextures = -1;
+  #settledRenderFrames = 0;
+  #stableTextureFrames = 0;
 
   override enter(ctx: FogCtx): void {
     ctx.scene.background = this.#background;
@@ -136,6 +149,8 @@ export class FogProbe extends GameScene<FogState> {
   override update(ctx: FogCtx): void {
     for (const mode of modes) if (ctx.input.justPressed(mode)) this.#mode = mode;
     if (ctx.input.justPressed("rebuild")) this.#applied = undefined;
+    if (ctx.input.justPressed("resizeSmall")) this.#resize(ctx, 320, 240);
+    if (ctx.input.justPressed("resizeRestore")) this.#resize(ctx, 640, 400);
     this.#positionCamera(ctx);
     const scatteringOnly = this.#mode.startsWith("scatter") || this.#mode === "blackOff";
     ctx.scene.overrideMaterial = scatteringOnly ? this.#black : null;
@@ -147,6 +162,14 @@ export class FogProbe extends GameScene<FogState> {
     // Warm the ordinary directional shadow map with the first real scene frame before composing.
     if (this.#applied !== this.#mode && this.#sun.shadow.map !== null) this.#compose(ctx);
     const observation = this.#fog?.diagnostics();
+    const info = ctx.renderer.info as IProbeInfo;
+    if (info.frame !== this.#lastRenderFrame) {
+      this.#lastRenderFrame = info.frame;
+      this.#settledRenderFrames += 1;
+      this.#stableTextureFrames =
+        info.memory.textures === this.#lastTextures ? this.#stableTextureFrames + 1 : 1;
+      this.#lastTextures = info.memory.textures;
+    }
     ctx.state.set({
       mode: this.#mode,
       ready: this.#applied === this.#mode,
@@ -157,6 +180,11 @@ export class FogProbe extends GameScene<FogState> {
       releasedMaterials: this.#releasedMaterials,
       liveTargets: this.#createdTargets - this.#releasedTargets,
       scatteringOnly,
+      textures: info.memory.textures,
+      settledRenderFrames: this.#settledRenderFrames,
+      stableTextureFrames: this.#stableTextureFrames,
+      targetWidth: this.#fog?.target?.width ?? 0,
+      targetHeight: this.#fog?.target?.height ?? 0,
       targets: observation?.renderTargets ?? 0,
       pixels: observation?.pixels ?? 0,
       steps: observation?.steps ?? 0,
@@ -182,7 +210,23 @@ export class FogProbe extends GameScene<FogState> {
     this.#calibration.scale.set((120 / 640) * 2 * halfWidth, (120 / 400) * 2 * halfHeight, 1);
   }
 
+  #resetObservation(ctx: FogCtx): void {
+    this.#lastRenderFrame = (ctx.renderer.info as IProbeInfo).frame;
+    this.#lastTextures = -1;
+    this.#settledRenderFrames = 0;
+    this.#stableTextureFrames = 0;
+  }
+
+  #resize(ctx: FogCtx, width: number, height: number): void {
+    ctx.renderer.setSize(width, height);
+    const camera = ctx.camera as PerspectiveCamera;
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    this.#resetObservation(ctx);
+  }
+
   #compose(ctx: FogCtx): void {
+    this.#resetObservation(ctx);
     this.#disposeGraph();
     const volumes = [
       {
@@ -290,6 +334,8 @@ export default defineGame<FogState>({
     scatterSunOff: { keys: ["KeyK"] },
     scatterPointOff: { keys: ["KeyJ"] },
     blackOff: { keys: ["KeyN"] },
+    resizeSmall: { keys: ["KeyR"] },
+    resizeRestore: { keys: ["KeyT"] },
     rebuild: { keys: ["KeyC"] },
   },
   plugins: [playtest<FogState>()],

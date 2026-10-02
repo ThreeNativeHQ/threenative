@@ -285,5 +285,303 @@
         "range": 8
       }
     }
+  },
+  "successfulRevalidation": {
+    "sourceSha": "1c9534fe9fdd29458d880afe70c45dc4aa5f22ce",
+    "runId": 36998309685,
+    "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36998309685",
+    "artifactId": 11222836638,
+    "artifactSha256": "9f0c207b9ba0cbc024b78104cc025a09acb8c925e13cba6fc22e17d78195c551",
+    "capture": {
+      "adapter": {
+        "architecture": "swiftshader",
+        "vendor": "google",
+        "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+        "limit.maxBindGroups": "4",
+        "limit.maxTextureDimension2D": "8192",
+        "limit.maxStorageBufferBindingSize": "1073741824"
+      },
+      "browserArgs": [
+        "--ozone-platform=x11",
+        "--enable-unsafe-webgpu",
+        "--disable-gpu-sandbox",
+        "--ignore-gpu-blocklist",
+        "--enable-features=Vulkan"
+      ],
+      "captureMethod": "page.screenshot",
+      "rendererKind": "webgpu",
+      "target": "web",
+      "viewport": {
+        "height": 400,
+        "width": 640
+      }
+    },
+    "allFourControlPngBytesIdentical": true,
+    "results": [
+      {
+        "mode": "off",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "zero",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "fog",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "inside",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "sunOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "pointOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "overlap",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "half",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "wallOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "blackOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatter",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatterSunOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "scatterPointOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "lifecycle",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "mode": "lifecycleOff",
+        "pass": true,
+        "diagnostics": []
+      },
+      {
+        "assertion": "zero-density pixel identity",
+        "pass": true
+      },
+      {
+        "assertion": "repeated lifecycle restores baseline pixels",
+        "pass": true
+      },
+      {
+        "assertion": "isolated light-scattering pixels",
+        "baselineMaxRgb": 0,
+        "wallMaxRgb": 0,
+        "roi": {
+          "x": 260,
+          "y": 155,
+          "width": 150,
+          "height": 90
+        },
+        "wallRoi": {
+          "x": 184,
+          "y": 216,
+          "width": 18,
+          "height": 18
+        },
+        "evaluationRoi": {
+          "x": 0,
+          "y": 0,
+          "width": 500,
+          "height": 400
+        },
+        "calibrationRoi": {
+          "x": 515,
+          "y": 25,
+          "width": 110,
+          "height": 110
+        },
+        "calibrationMinimum": 146,
+        "calibrationMaxDifference": 0,
+        "sun": {
+          "meanRgbDelta": 15.958518518518519,
+          "changedPixelRatio": 0.9933333333333333
+        },
+        "point": {
+          "meanRgbDelta": 48.77553086419753,
+          "changedPixelRatio": 1
+        },
+        "thresholds": {
+          "minMeanRgbDelta": 1,
+          "minChangedPixelRatio": 0.1,
+          "maxBlackRgb": 0,
+          "minCalibrationRgb": 32,
+          "maxCalibrationDifference": 0
+        },
+        "pass": true
+      }
+    ],
+    "lifecycleObservations": {
+      "lifecycle": {
+        "mode": {
+          "before": "off",
+          "after": "fog"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 5
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 4
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 3
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 3
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 1
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "targets": {
+          "before": 0,
+          "after": 1
+        },
+        "pixels": {
+          "before": 0,
+          "after": 256000
+        },
+        "steps": {
+          "before": 0,
+          "after": 48
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      },
+      "lifecycleOff": {
+        "mode": {
+          "before": "off",
+          "after": "off"
+        },
+        "ready": {
+          "before": false,
+          "after": true
+        },
+        "builds": {
+          "before": 0,
+          "after": 6
+        },
+        "disposedGraphs": {
+          "before": 0,
+          "after": 5
+        },
+        "createdTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedTargets": {
+          "before": 0,
+          "after": 4
+        },
+        "releasedMaterials": {
+          "before": 0,
+          "after": 4
+        },
+        "liveTargets": {
+          "before": 0,
+          "after": 0
+        },
+        "scatteringOnly": {
+          "before": false,
+          "after": false
+        },
+        "targets": {
+          "before": 0,
+          "after": 0
+        },
+        "pixels": {
+          "before": 0,
+          "after": 0
+        },
+        "steps": {
+          "before": 0,
+          "after": 0
+        },
+        "inside": {
+          "before": false,
+          "after": false
+        },
+        "sun": {
+          "before": true,
+          "after": true
+        },
+        "point": {
+          "before": true,
+          "after": true
+        },
+        "overlaps": {
+          "before": false,
+          "after": false
+        }
+      }
+    }
   }
 }

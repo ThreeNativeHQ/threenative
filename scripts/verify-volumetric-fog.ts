@@ -60,6 +60,12 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
           equals: ["off", "zero", "blackOff"].includes(mode) ? 0 : 1,
           allowTrivial: "Observe the owned allocation baseline for this variant.",
         },
+        ...["settledRenderFrames", "stableTextureFrames"].map((component) => ({
+          entity: "fog",
+          component,
+          gte: 3,
+          allowTrivial: "Resource counts must be observed stable over completed rendered frames.",
+        })),
         ...[
           ["sun", mode !== "sunOff" && mode !== "scatterSunOff"],
           ["point", mode !== "pointOff" && mode !== "scatterPointOff"],
@@ -127,7 +133,56 @@ export async function fogCaptureScenarios() {
     ),
   );
   result.push({ mode: "lifecycleOff", scenario: off });
+  for (const [mode, width, height] of [
+    ["resizeSmall", 320, 240],
+    ["resizeRestore", 640, 400],
+  ] as const) {
+    const scenario = fogCaptureScenario("fog", "KeyF");
+    scenario.name = `vq-volumetric-fog-${mode}`;
+    scenario.steps.push(
+      { press: ["KeyR"], holdTicks: 1, release: true },
+      { kind: "wait", waitFrames: 60, release: true },
+    );
+    if (mode === "resizeRestore")
+      scenario.steps.push(
+        { press: ["KeyT"], holdTicks: 1, release: true },
+        { kind: "wait", waitFrames: 60, release: true },
+      );
+    scenario.assert?.components?.push(
+      ...[
+        ["targetWidth", width],
+        ["targetHeight", height],
+        ["pixels", width * height],
+        ["createdTargets", 1],
+        ["releasedTargets", 0],
+        ["liveTargets", 1],
+      ].map(([component, equals]) => ({
+        entity: "fog",
+        component: String(component),
+        equals,
+        allowTrivial:
+          "The existing fog target follows real renderer dimensions without graph replacement.",
+      })),
+    );
+    result.push({ mode, scenario });
+  }
   return result;
+}
+
+export function fogTextureBaselineMatches(
+  baseline: Record<string, unknown>,
+  restored: Record<string, unknown>,
+): boolean {
+  return (
+    [baseline, restored].every((observation) =>
+      ["textures", "settledRenderFrames", "stableTextureFrames"].every(
+        (key) =>
+          typeof observation[key] === "number" &&
+          Number.isInteger(observation[key]) &&
+          observation[key] >= (key === "textures" ? 0 : 3),
+      ),
+    ) && baseline.textures === restored.textures
+  );
 }
 
 interface IPixelFrame {
@@ -303,6 +358,12 @@ async function main(): Promise<void> {
         sourceSha,
         pass: valid,
         capture: report.capture,
+        resources: Object.fromEntries(
+          ["textures", "settledRenderFrames", "stableTextureFrames"].map((key) => [
+            key,
+            report.observations?.components?.fog?.[key]?.after,
+          ]),
+        ),
         diagnostics: report.diagnostics,
         lights: {
           directional: {
@@ -332,6 +393,33 @@ async function main(): Promise<void> {
     if (!off.data.equals(restored.data))
       throw new Error("VQ07 lifecycle off did not restore the baseline pixels.");
     results.push({ assertion: "repeated lifecycle restores baseline pixels", pass: true });
+    const baselineResources = results.find((result) => result.mode === "off")?.resources as
+      | Record<string, unknown>
+      | undefined;
+    const restoredResources = results.find((result) => result.mode === "lifecycleOff")?.resources as
+      | Record<string, unknown>
+      | undefined;
+    const texturesRestored =
+      baselineResources !== undefined &&
+      restoredResources !== undefined &&
+      fogTextureBaselineMatches(baselineResources, restoredResources);
+    results.push({
+      assertion: "renderer texture allocation baseline",
+      baselineResources,
+      restoredResources,
+      pass: texturesRestored,
+    });
+    if (!texturesRestored)
+      throw new Error("VQ07 renderer texture allocation baseline did not settle and restore.");
+    const fog = PNG.sync.read(await readFile(path.join(artifacts, "fog/after.png")));
+    const resized = PNG.sync.read(await readFile(path.join(artifacts, "resizeRestore/after.png")));
+    if (
+      fog.width !== resized.width ||
+      fog.height !== resized.height ||
+      !fog.data.equals(resized.data)
+    )
+      throw new Error("VQ07 target resize restore did not recover the exact fog pixels.");
+    results.push({ assertion: "target/depth resize restores exact pixels", pass: true });
     const lightFrames = await Promise.all(
       ["blackOff", "scatter", "scatterSunOff", "scatterPointOff"].map(async (mode) =>
         PNG.sync.read(await readFile(path.join(artifacts, mode, "after.png"))),

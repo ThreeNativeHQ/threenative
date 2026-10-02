@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-07 — Local volumetric fog composes with depth, lights and existing atmosphere
 
-**Status:** PARTIAL — 2026-10-02. Phase 1 browser reference proof is complete; receipt review and broader lifecycle/native qualification remain open.
+**Status:** PARTIAL — 2026-10-02. Browser scattering/lifecycle proof is complete; target resize, native qualification and promotion gates remain open.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 2 / atmosphere.
 **Dependencies:** Independent of clouds. Reuse VQ-06 only for any local-light feature it has actually qualified.
 
@@ -38,12 +38,12 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 ### Phase 2 — Compose with the existing environment
 
-- [ ] Integrate directional and the declared local-light subset without double-applying atmosphere or god rays. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
-- [ ] Add bounded quality settings, history invalidation where used and deterministic resource disposal. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
+- [x] Integrate directional and the declared local-light subset without double-applying atmosphere or god rays. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
+- [x] Add bounded quality settings, history invalidation where used and deterministic resource disposal. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
 
 ### Phase 3 — Qualify the visible result
 
-- [ ] The fog fixture verifies occlusion, light response and zero-density identity on browser WebGPU with fixed-camera captures. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
+- [x] The fog fixture verifies occlusion, light response and zero-density identity on browser WebGPU with fixed-camera captures. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
 - [ ] The same authored volume runs on Linux native and remains valid through resize and scene teardown. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
 
 ## Acceptance criteria
@@ -108,3 +108,9 @@ Pre-run calibration correction: source inspection shows the public runner reject
 Isolated-scattering progress: [run 36997361343](https://github.com/ThreeNativeHQ/threenative/actions/runs/36997361343) at source `001b934008cbc6e3ab196678506ae9b14f751f1e` passes all thirteen independent captures with empty diagnostics, including the four calibration controls. Downloaded artifact `11221669862` matches SHA256 `2c88ec8b13a525986867301a735ede33f5b76ab3b6d9db3c46459554b5b7a4ca`. The [unchanged scattering PNG](../../verification/vq07-progress/001b93400/scatter.png), [black control](../../verification/vq07-progress/001b93400/blackOff.png) and [four-arm provenance/pixel metrics](../../verification/vq07-progress/001b93400/provenance.json) are retained. The pinned room ROI passes: directional mean RGB delta 15.9585/255, changed ratio 0.99333; point mean delta 48.7755/255, changed ratio 1.0. The 500×400 black area and foreground plate are exactly zero; calibration minimum RGB is 146 and cross-arm difference is exactly zero. These isolates show scattering response rather than changed surface illumination.
 
 The overall run fails closed on lifecycle's old logical `disposedGraphs >= 4` assertion: the sampled initial state had `builds=0`, so four installs yielded three logical releases. Actual targets/materials were created=3, released=2, live=1 as asserted; there was no device loss or other runtime error. This is preserved as a setup mismatch, not a complete lifecycle pass. The corrected scenario explicitly executes **fog → inside → off → fog → rebuild**, then a separate final-off extension. It now requires exactly four real fog targets created, three target/material releases and one live target at the final fog frame; final off requires all four target/material releases and zero live targets. No dummy resources, manually advanced counters or lowered thresholds are used. New sequence assertions failed first; source/fixture/verifier tests pass 29/29. The stronger sequence and return-to-off pixels await the next hosted run.
+
+
+Successful lifecycle/control rerun: [run 36998309685](https://github.com/ThreeNativeHQ/threenative/actions/runs/36998309685) at `1c9534fe9fdd29458d880afe70c45dc4aa5f22ce` passed all 15 captures with empty diagnostics on Google SwiftShader WebGPU, 640×400. Artifact `11222836638` matches SHA256 `9f0c207b9ba0cbc024b78104cc025a09acb8c925e13cba6fc22e17d78195c551`. Observed counts are exactly 4 created / 3 target and material releases / 1 live target after reconstruction, then 4 releases / 0 live targets at final off. Final-off pixels equal the independent off baseline; zero-density identity and isolated-light metrics also pass. All four scattering PNGs remain byte-identical to the durable images; [provenance](../../verification/vq07-progress/001b93400/provenance.json) includes this successful revalidation. Phase 2 and the browser Phase 3 box are now verified. Acceptance remains open for portable target/depth resizing, independent renderer texture-baseline observation, native execution and repository promotion gates; OS-window lifecycle and hardware performance are not inferred.
+
+
+Next bounded proof slice (runtime pending): existing portable `renderer.setSize` drives 320×240 then 640×400 on the same fog controller, updating the camera projection; actual fog target dimensions, one creation/zero teardown and exact restored fog pixels are required. Independent upstream `renderer.info.memory.textures` samples must agree with the off baseline, after at least three distinct completed render frames with stable counts since each graph/size transition. Repeated simulation ticks without a new renderer frame cannot advance this boundary. These assertions qualify target/depth resize and observed resource accounting, not OS-window lifecycle. Fixture and verifier guards were red-green before the change; no engine API or fog shader change is involved.

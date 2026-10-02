@@ -8,6 +8,7 @@ import {
   fogCaptureScenario,
   fogCaptureScenarios,
   fogLightPixelMetrics,
+  fogTextureBaselineMatches,
 } from "../verify-volumetric-fog.js";
 
 describe("volumetric fog runtime evidence", () => {
@@ -135,4 +136,30 @@ it("runs the committed lifecycle and return-to-off scenarios, with actual releas
       expect.objectContaining({ component: "liveTargets", equals: 0 }),
     ]),
   );
+});
+
+it("requires observed rendered-frame stability before claiming the texture baseline restored", () => {
+  const baseline = { textures: 2, settledRenderFrames: 3, stableTextureFrames: 3 };
+  expect(fogTextureBaselineMatches(baseline, baseline)).toBe(true);
+  expect(fogTextureBaselineMatches(baseline, { ...baseline, textures: 3 })).toBe(false);
+  expect(fogTextureBaselineMatches(baseline, { ...baseline, settledRenderFrames: 0 })).toBe(false);
+  expect(fogTextureBaselineMatches(baseline, { ...baseline, stableTextureFrames: 2 })).toBe(false);
+  expect(fogTextureBaselineMatches({}, baseline)).toBe(false);
+});
+it("captures the live target at both sizes without replacing the fog controller", async () => {
+  const cases = await fogCaptureScenarios();
+  for (const [mode, width, height] of [
+    ["resizeSmall", 320, 240],
+    ["resizeRestore", 640, 400],
+  ] as const) {
+    const scenario = cases.find((entry) => entry.mode === mode)?.scenario;
+    expect(scenario?.assert?.components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ component: "targetWidth", equals: width }),
+        expect.objectContaining({ component: "targetHeight", equals: height }),
+        expect.objectContaining({ component: "createdTargets", equals: 1 }),
+        expect.objectContaining({ component: "releasedTargets", equals: 0 }),
+      ]),
+    );
+  }
 });

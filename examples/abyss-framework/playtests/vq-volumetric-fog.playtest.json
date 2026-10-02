@@ -104,6 +104,18 @@
         "component": "liveTargets",
         "equals": 1,
         "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "settledRenderFrames",
+        "gte": 3,
+        "allowTrivial": "Resource counts must be observed stable over completed rendered frames."
+      },
+      {
+        "entity": "fog",
+        "component": "stableTextureFrames",
+        "gte": 3,
+        "allowTrivial": "Resource counts must be observed stable over completed rendered frames."
       }
     ],
     "diagnostics": {
