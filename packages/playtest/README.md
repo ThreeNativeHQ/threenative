@@ -55,7 +55,7 @@ npx @threenative/playtest playtests/device-smoke.playtest.json \
 ```
 
 For a signed physical build, add `--ios-transport device --device <devicectl-id>`.
-Network, DOM, and visual-metric assertions are unsupported on device targets and fail
+Network, DOM, and `assert.visual` assertions are unsupported on device targets and fail
 `TN_PLAYTEST_UNSUPPORTED_ON_TARGET` with exit code 2. Default CI does not run Android or
 iOS device scenarios. `.github/workflows/native-platforms.yml` is an explicit opt-in
 platform lane; an absent run is not a pass.
@@ -90,3 +90,9 @@ Rec.709 display luminance fills 256 bins; mean averages bin values and percentil
 rank. Clip/black fractions count bins 255/0 and use 0..1 in assertions (percentages in the CLI).
 Fully transparent pixels are excluded; other pixels retain stored RGB without compositing.
 These numbers measure exposure, not aesthetic quality.
+
+
+Browser, Android, desktop and iOS scenario captures now record TN_TONE under observations.tone,
+even without tone assertions. Explicit tone requests force their captures despite disabled
+convenience screenshots. A named step's existing screenshot is reused. This host-side support
+is exercised with target-driver fixtures; it does not turn unit tests into native GPU proof.

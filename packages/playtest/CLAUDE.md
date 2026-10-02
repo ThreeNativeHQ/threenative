@@ -83,6 +83,16 @@ Concretely, when you touch this package:
   holds the shape: `vacuous-assertion.spec.ts`, `silent-drop.spec.ts`,
   `evidence-required.spec.ts`. Add to those rather than starting a new pattern.
 
+## Captured tone
+
+`assert.tone[]` bounds `mean`, `p1`, `p50`, `p99` in display luminance bytes and
+`clipFraction`, `blackFraction` in 0..1. Every metric takes inclusive min/max; at least one
+bound is required. `atStep` selects a named step, otherwise the final capture is used.
+Tone requests survive disabled convenience screenshots and fail on absent captures. The browser
+and device paths retain their shared PNG histogram as TN_TONE under observations.tone. The game's
+bridge never supplies these host measurements. The offline command
+`threenative-playtest tone <png...>` prints identical metrics and a frame-average row.
+
 ## One scenario, four targets
 
 `--target browser|android|desktop|ios` runs the same scenario file against a browser, an Android

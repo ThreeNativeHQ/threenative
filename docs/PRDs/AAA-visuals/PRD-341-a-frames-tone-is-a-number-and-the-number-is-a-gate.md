@@ -27,7 +27,7 @@ report two numbers where five are needed.
 ### Phase 2 — shared capture evidence and CLI
 
 - [x] Evaluate tone bounds against named captures and fail on missing evidence. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/tone.spec.ts` — 28 passed after 25 missing-feature failures in the fresh reconstruction.
-- [ ] Record `TN_TONE` on browser/device captures and print identical six-number CLI rows plus an average. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`
+- [x] Record `TN_TONE` on browser/device captures and print identical six-number CLI rows plus an average. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts` — 33 passed; five missing-producer failures observed first.
 
 ### Phase 3 — scenario proof and qualification
 
@@ -153,3 +153,8 @@ Fresh schema/CLI checkpoint: 118 tests passed across six focused files; scoped p
 passed. The shared evaluator now rejects missing/invalid captures and reports measured/bounded
 values. Offline CLI parity includes different-sized frames to prove equal per-frame averaging.
 Browser/device production of the observation remains the next open slice.
+
+
+Fresh capture-wiring checkpoint: 52 tests passed across histogram, tone, target-driver and runner
+orchestration. Scoped playtest TypeScript passed. All four target paths reuse the guard's decoded
+metrics; host observations survive report assembly. The driver tests are not runtime screenshots.
