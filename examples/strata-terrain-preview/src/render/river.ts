@@ -17,9 +17,10 @@
 //   water read as water. It draws layer 0 only, which is why the water sits on `WATER_LAYER`: a
 //   water surface inside the mirrored pass samples a single-sampled depth target and fails WebGPU
 //   validation, taking the frame down with it.
-// - **The stream has no mirror, on purpose.** It falls fifteen metres over its length, so a planar
+// - **The forest stream has no mirror.** It falls fifteen metres over its length, so a planar
 //   reflection would be right at one bend and wrong everywhere else; the sky comes back by fresnel
-//   over an analytic gradient, which is most of what a moving river surface shows anyway.
+//   over an analytic gradient. Tundra channels share the kettle ponds' existing mirrors, blended
+//   by elevation, so the stream and pond meet without a reflection-colour seam.
 //
 // Nothing here decides a colour for the engine: `WaterSurface3D` measures metres and hands back the
 // frame beneath the surface and the world mirrored in it, and every number under LOOK below is this
@@ -290,6 +291,8 @@ const RIPPLE = new WaveField({
 
 export interface IRiverWater {
   readonly mesh: Mesh;
+  /** Lake mirror sampling, shared with joining streams without another reflection pass. */
+  readonly reflectionAt?: (offset: Node<"vec2">) => Node<"vec3">;
   /** The water's clock, in seconds; the scene advances it so the playtest's time is the water's. */
   advance(elapsed: number): void;
   dispose(): void;
@@ -530,6 +533,7 @@ export function createRivers(
   rivers: readonly IBakedRiver[],
   field: Heightfield,
   limitToFootprint = false,
+  lakeReflection?: (offset: Node<"vec2">) => Node<"vec3">,
 ): IRiverWater | undefined {
   if (rivers.length === 0) return undefined;
   const positions: number[] = [];
@@ -605,7 +609,7 @@ export function createRivers(
     .mul(smoothstep(float(0), float(0.4), depthM));
   const bed = surface.refractionAt(offset);
 
-  // No mirror: this surface falls fifteen metres over its length. The sky comes back by fresnel over
+  // The forest stream falls fifteen metres. Its sky comes back by fresnel over
   // an analytic gradient, on a floor of the wood that stands on both banks — see `TINT.bank`.
   const bounced = view.negate().reflect(reflectNormal);
   const sky = mix(
@@ -615,7 +619,8 @@ export function createRivers(
     // over a broad angle; a hard dark cutoff makes moving facets flicker as black blobs.
     smoothstep(float(0.08), float(0.5), bounced.y),
   );
-  const shaded = compositeWater({ normal, depthM, bed, reflected: sky.mul(0.65) });
+  const reflected = lakeReflection ? lakeReflection(offset) : sky.mul(0.65);
+  const shaded = compositeWater({ normal, depthM, bed, reflected });
 
   // White water where the current runs over a shallow bed, and a few streaks in the channel. Broken
   // rather than ruled: the shallows only whiten where the churn is high, so the edge reads as water
@@ -738,11 +743,32 @@ export function createLakes(
       geometry,
       ponds.flatMap((one) => one.mesh.material),
     );
+    const mirrors = ponds.map((pond) => {
+      if (!pond.reflectionAt) throw new Error("A kettle pond has no mirror sampler");
+      return {
+        sample: pond.reflectionAt,
+        level: pond.mesh.geometry.getAttribute("position").getY(0),
+      };
+    });
     mesh.layers.set(WATER_LAYER);
     mesh.name = "lake-surfaces";
     mesh.renderOrder = 2;
     return {
       mesh,
+      reflectionAt(offset) {
+        const weighted = mirrors.map((mirror) => ({
+          ...mirror,
+          weight: float(1).div(positionWorld.y.sub(mirror.level).abs().add(0.1)),
+        }));
+        const total = weighted.reduce<Node<"float">>(
+          (sum, mirror) => sum.add(mirror.weight),
+          float(0),
+        );
+        return weighted.reduce<Node<"vec3">>(
+          (sum, mirror) => sum.add(mirror.sample(offset).mul(mirror.weight.div(total))),
+          vec3(0),
+        );
+      },
       advance(elapsed) {
         for (const pond of ponds) pond.advance(elapsed);
       },
@@ -998,6 +1024,7 @@ export function createLakes(
   mesh.renderOrder = 2;
   return {
     mesh,
+    reflectionAt: (offset) => surface.reflectionAt(offset) as unknown as Node<"vec3">,
     advance(elapsed) {
       time.value = elapsed;
     },

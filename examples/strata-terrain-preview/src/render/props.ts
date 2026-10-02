@@ -135,7 +135,13 @@ export interface IPropPart {
  */
 export function buildPropVariants(
   prepared?: ReadonlyMap<string, IPropPart[]>,
+  fallbackSaplingHeight?: number,
 ): Map<string, IPropPart[]> {
+  if (
+    fallbackSaplingHeight !== undefined &&
+    (!Number.isFinite(fallbackSaplingHeight) || fallbackSaplingHeight <= 0)
+  )
+    throw new Error("Fallback sapling height must be positive and finite");
   const variants = new Map<string, IPropPart[]>();
   // Every index the layout knows about, so a prepared variant replaces the procedural one at the
   // same index rather than being appended: the placement hash is what picks a variant, and it
@@ -193,6 +199,18 @@ export function buildPropVariants(
     }
     const young = youngs[i];
     if (young === undefined) continue;
+    if (fallbackSaplingHeight !== undefined) {
+      young.trunk.computeBoundingBox();
+      young.crown.computeBoundingBox();
+      const height = Math.max(
+        young.trunk.boundingBox?.max.y ?? 0,
+        young.crown.boundingBox?.max.y ?? 0,
+      );
+      if (!(height > 0)) throw new Error("Procedural sapling has no measurable height");
+      const scale = fallbackSaplingHeight / height;
+      young.trunk.scale(scale, scale, scale);
+      young.crown.scale(scale, scale, scale);
+    }
     variants.set(`sapling:${i}`, [
       { geometry: young.trunk, role: "bark", variant: i },
       { geometry: young.crown, role: "crown", variant: i },

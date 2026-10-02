@@ -1120,3 +1120,27 @@ waits for two non-empty river index groups. This latest browser rerun and licens
 fallback are pending; no unrun acceptance is checked. Terrain Vitest remains **69/69 PASS**;
 example typecheck and root Biome error checks pass for this increment. Forest pass5
 luminance **15.4986/76.9828/176.5004** remains within 0.5 of baseline. AC-5 stays open.
+
+Third working increment: pass7 **36/36 PASS**, zero diagnostics/console errors; both
+river index groups now contain triangles. Frame p50 meadow/overview/alpine/desert/tundra:
+**2.2/2.2/1.3/1.1/1.8 ms**. Tundra streams now reuse the kettle ponds' existing mirrors,
+blended by elevation; no new reflection pass. Pack-free run with this shader passed all
+assertions, zero diagnostics/console errors, p50 **2.4/2.3/1.3/1.0/2.1 ms**; licensed data
+was restored. Its oversized procedural saplings motivated measured fallback heights of
+2 m alpine / 1.4 m tundra, leaving licensed and temperate paths unchanged. The updated
+pack-free rerun and final licensed captures are in progress, not yet claimed.
+
+`pnpm exec tsx scripts/check-water.mjs` preserves the real two-channel, flooded-cover
+and small-fallback-sapling checks; all pass. Example typecheck, Biome error gate and
+example build pass. Terrain tests **69/69 PASS**. Higher alpine crag noise brought back
+an isolated needle and raised spike count from 37 to 75; retain the previous broader
+recipe (**37/9/0** spikes, worst **3.1/2.1/0 m**). Narrower rock fissure shading replaces
+camouflage patches; sandstone colour bands follow the 8 m benches more subtly.
+
+Broader checks: normal-state root lint passes. Root typecheck fails on unresolved
+`@threenative/assets` and missing `.mjs` fixture declarations in untouched package
+files; full suite reaches native tests but fails **21** assertions with absent host/test
+binaries (**1,502 passed**, **70 skipped** in that lane). No native claim. A fallback
+capture stopped during coastal while package-building tests ran; doctor passes, and a
+quiet rerun passes. The suite's generated Abyss build report was restored; no unrelated
+changes retained. AC-5 remains open: terrain/props still fall short of Gaia/Unreal.

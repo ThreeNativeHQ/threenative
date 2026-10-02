@@ -448,13 +448,14 @@ export function createGroundMaterial(
       );
       if (otherBiome && biome.world === "desert") {
         const band = positionWorld.y
-          .mul(1.15)
+          .sub(2)
+          .mul(Math.PI / 4)
           .add(mx_noise_float(positionWorld.mul(0.035)).mul(0.9))
           .sin()
           .mul(0.5)
           .add(0.5);
         stone = stone.mul(
-          mix(vec3(0.74, 0.66, 0.53), vec3(1.16, 1.05, 0.87), smoothstep(0.25, 0.75, band)),
+          mix(vec3(0.84, 0.77, 0.66), vec3(1.09, 1.02, 0.9), smoothstep(0.25, 0.75, band)),
         );
       }
       if (otherBiome && biome.world === "alpine") {
@@ -464,7 +465,7 @@ export function createGroundMaterial(
           .add(positionWorld.z.mul(0.07))
           .add(mx_fractal_noise_float(positionWorld.mul(0.075), 3).mul(5))
           .sin();
-        stone = stone.mul(mix(0.62, 1.08, smoothstep(-0.6, 0.3, seams)));
+        stone = stone.mul(float(1).sub(smoothstep(0.85, 0.97, seams).mul(0.22)));
       }
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);

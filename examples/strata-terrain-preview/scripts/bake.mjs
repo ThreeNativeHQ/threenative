@@ -349,11 +349,11 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     offset: 2,
     mask: Mask.height(18, 1e9, 6),
   })
-  .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 70, falloff: 0.15 })
-  .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 86, falloff: 0.15 })
-  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 54, falloff: 0.12 })
-  .erode({ id: "aprons", method: "thermal", talus: 65, iterations: 3, rate: 0.12 })
-  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.15 })
+  .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 78, falloff: 0.15 })
+  .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 94, falloff: 0.15 })
+  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 60, falloff: 0.12 })
+  .erode({ id: "aprons", method: "thermal", talus: 57, iterations: 5, rate: 0.12 })
+  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.35 })
   .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
   .stamp({
     id: "dune-west",

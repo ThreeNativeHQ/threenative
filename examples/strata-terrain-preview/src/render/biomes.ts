@@ -65,7 +65,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneTint: [0.69, 0.72, 0.77],
     snowTint: [2.65, 2.7, 2.8],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [64, 110, 0.29],
+    snow: [64, 100, 0.39],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -134,8 +134,8 @@ export const BIOMES: Record<WorldName, IBiome> = {
         normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
       },
     },
-    sun: { color: 0xe9efff, intensity: 1.7, direction: [-180, 90, -120] },
-    sky: { turbidity: 5.5, rayleigh: 1.1, mieCoefficient: 0.008, mieDirectionalG: 0.78 },
+    sun: { color: 0xe9efff, intensity: 0.75, direction: [-180, 90, -120] },
+    sky: { turbidity: 10, rayleigh: 0.4, mieCoefficient: 0.018, mieDirectionalG: 0.78 },
     fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.15 },
     haze: { color: 0xb1c0c9, density: 0.00065 },
     exposure: 2 ** -0.28,
@@ -171,7 +171,7 @@ export function biomeWeights(
     positionWorld.y.add(drift.mul(22)).add(hollow.max(0).mul(biome.world === "alpine" ? 18 : 0)),
   ).mul(
     float(1)
-      .sub(smoothstep(biome.world === "alpine" ? 0.12 : 0.04, biome.snow[2], steep))
+      .sub(smoothstep(biome.world === "alpine" ? 0.2 : 0.04, biome.snow[2], steep))
       .mul(float(1).sub(exposure.mul(0.28))),
   );
   const cells = mx_worley_noise_vec2(

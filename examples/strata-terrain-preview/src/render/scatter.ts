@@ -230,6 +230,13 @@ export function scatterProps(
       continue;
     }
     if (slope > (temperate ? 28 : 18) && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
+    if (alpine && slope > 18 && slope < 38) {
+      for (let k = 0; k < 8; k++) {
+        const sx = x + (random() - 0.5) * 14;
+        const sz = z + (random() - 0.5) * 14;
+        if (slopeDegrees(data, sx, sz) < 42) put("scree", sx, sz, 0.12 + random() * 0.22);
+      }
+    }
     for (let k = 0; k < 2 + Math.floor(random() * 3); k++)
       put("boulder", x + (random() - 0.5) * 8, z + (random() - 0.5) * 8, 0.45 + random() * 0.8);
   }
@@ -261,7 +268,9 @@ export function scatterProps(
       grassWeight(data, x, z) < 0.22
     )
       return;
-    const drift = 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7);
+    const drift = temperate
+      ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
+      : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
     if (random() > density * drift) return;
     put(
       "grass",
