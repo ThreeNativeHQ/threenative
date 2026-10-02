@@ -1,0 +1,68 @@
+name: Integration WorldProbe diagnostic capture
+on:
+  pull_request:
+    paths:
+      - 'packages/core/src/world*.ts'
+      - 'packages/core/__tests__/world-capture-fixture.spec.ts'
+      - 'packages/playtest/**'
+      - 'packages/assets/**'
+      - 'examples/abyss-framework/src/scenes/WorldProbe.ts'
+      - 'examples/abyss-framework/src/world-main.ts'
+      - 'examples/abyss-framework/src/style.css'
+      - 'examples/abyss-framework/assets/world/**'
+      - 'examples/abyss-framework/index.html'
+      - 'examples/abyss-framework/vite.config.ts'
+      - 'examples/abyss-framework/threenative.config.ts'
+      - 'examples/abyss-framework/playtests/phase477-world-capture.playtest.json'
+      - 'examples/abyss-framework/package.json'
+      - 'scripts/verify-world-capture.ts'
+      - 'scripts/world-capture-manifest.ts'
+      - 'scripts/world-visual-gate.ts'
+      - 'scripts/capture-guard.ts'
+      - 'scripts/__tests__/verify-world-capture.spec.ts'
+      - 'scripts/__tests__/world-capture-manifest.spec.ts'
+      - 'scripts/__tests__/world-visual-gate.spec.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/actions/pnpm/**'
+      - '.github/actions/playwright-chromium/**'
+      - '.github/workflows/integration-world-capture.yml'
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Record exact source before setup
+        run: |
+          mkdir -p artifacts/world-capture
+          git rev-parse HEAD > artifacts/world-capture/source-sha.txt
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build runner, runtime, and Vite asset cooker from this commit
+        run: pnpm --filter '@threenative/playtest...' --filter '@threenative/core...' --filter '@threenative/assets...' --filter '@threenative/physics...' --filter '@threenative/ui...' --workspace-concurrency=1 build
+      - name: Verify capture rejection and importer contracts
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/verify-world-capture.spec.ts scripts/__tests__/world-capture-manifest.spec.ts scripts/__tests__/world-visual-gate.spec.ts packages/core/__tests__/world-capture-fixture.spec.ts
+      - name: Capture 34 real frames and confirm strict software rejection
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        # The headed runner provisions its private Xvfb. Software is diagnostic only.
+        run: pnpm exec tsx scripts/verify-world-capture.ts
+      - name: Retain screenshots, reports, importer result, and strict gate outcome
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: world-capture-diagnostic-${{ github.event.pull_request.head.sha }}
+          path: artifacts/world-capture
+          if-no-files-found: error
