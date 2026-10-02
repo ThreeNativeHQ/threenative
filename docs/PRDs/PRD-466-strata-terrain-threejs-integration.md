@@ -1539,83 +1539,37 @@ The absent-licensed lane proves functionality, not visual parity. Final document
 link check PASS (**2,386 links**); no licensed bytes, ocean source, biomes.ts,
 otherBiome appearance branch or bake recipe is committed.
 
-### AC-5 round 14 — light, atmosphere and grade (2026-10-02; in progress)
 
-Game layer: `src/render/sky.ts`, `biomes.ts`, `terrain.ts`; the installed
-Daylight/VirtualShadowNode, Three fog nodes, GTAO/denoiser and RenderChain are
-reused. The mechanism is already shipped; per-world appearance belongs here.
-No licensed asset bytes, push or merge are authorized in this round.
+### AC-5 round 14 — light, atmosphere and grade (2026-10-02; local round complete)
 
-- [ ] Calibrate all five worlds against the merged r13 captures and Gaia references; proof: full-resolution display-luminance p05/p25/p50/p75/p95, saturation and standard deviation, same-build `?off=` stage ablations.
-- [x] Tune biome sun/fill, height haze with sunward scattering, alpha-preserving contact AO and soft snow response; proof: licensed/fallback shared scenario at 5293, ocean verifier and full-resolution inspection.
-- [x] Complete requested gates and local commits; proof: example tsc, root Biome, terrain Vitest, every captured view CPU p50 ≤4 ms and normalized quantile deltas ≤0.5; final captures `artifacts/playtest/light-final/`.
+Game layer: appearance belongs in `src/render/`; the installed Daylight,
+VirtualShadowNode, Three fog nodes, GTAO/denoiser and RenderChain are reused.
+Per-biome sun/fill, shadow softness, exposure, sky radiance, height haze,
+sunward tint and saturation live in `biomes.ts`. The AgX curve is retained;
+no bloom is added. AO preserves alpha, fades with distance and uses radius
+0.85, eight samples and half resolution. Terrain casts in alpine/desert/tundra;
+licensed props cast in every world. Horizon terrain receives shadows.
+Snow uses shared slope/height/noise coverage, a wider soft transition and
+attenuated snow normals/roughness on ground and licensed stone props.
+Multiplicative breakup preserves exact-zero snow coverage, including desert.
 
-Merged r13 reference measurements (normalized display RGB luminance, no linear
-decode): Gaia forest mean **0.3726**, q05/q25/q50/q75/q95
-**0.0655/0.1815/0.3608/0.5203/0.7909**, mean HSV saturation **0.4352**,
-σ **0.2216**. Gaia alpine mean **0.4892**, quantiles
+- [x] Calibrate all five worlds against merged r13 captures and Gaia references; proof: full-resolution quantiles/saturation/contrast below and five same-build stage controls PASS, zero diagnostics.
+- [x] Tune biome light, height/sun haze, contact AO and snow response; proof: full licensed and absent-licensed scenarios at port 5293 both 42/42 PASS, original-resolution inspection and both ocean verifiers PASS.
+- [ ] Complete requested gates and local commits (game gates PASS; supplemental documentation suite has an evidence-budget failure); proof: example `tsc --noEmit`, root Biome (2,656 files; existing warnings retained), terrain Vitest 69/69 and documentation link check PASS; every captured CPU p50 ≤4 ms. Final captures: `artifacts/playtest/light-final/`.
+
+Measurements use raw display Rec.709 luminance (no sRGB linear decode),
+normalized 0–1, mean HSV saturation and full-frame luminance standard
+deviation σ. Matching before/final/controls are 1920×1080 NVIDIA Turing WebGPU
+captures. Before is the fresh pre-edit branch baseline, with merged r13 also
+inspected. Quantile guards use unrounded values; tables round to four decimals.
+The 0.5 tolerance is a preservation guard, not a visual parity score.
+
+Gaia forest q05/q25/q50/q75/q95 **0.0655/0.1815/0.3608/0.5203/0.7909**,
+saturation **0.4352**, σ **0.2216**. Gaia alpine quantiles
 **0.2621/0.4308/0.5097/0.5534/0.6630**, saturation **0.1689**, σ **0.1133**.
-Our meadow-close median **0.2505**, saturation **0.6224**; desert-mesa
-σ **0.0856**; alpine-ridge q05/q95 **0.1588/0.7131**. These imply lifting
-forest readable illumination while reducing saturation, increasing desert
-directional contrast, and reducing alpine sky dominance rather than applying
-one global contrast/exposure setting. Baseline scenario is running before edits.
+Framing and sky occupancy differ; matching one statistic is not parity.
 
-Pass 1 `artifacts/playtest/light-pass1/`: shared scenario **42/42 PASS**,
-zero diagnostics, all 15 capture-window CPU p50s **1.1–2.9 ms**; final
-per-view medians **1.1–3.1 ms**. Example tsc and root Biome **PASS**
-(2,656 files; warnings retained); terrain Vitest **69/69 PASS**.
-Alpine ridge q05/q50/q95 **0.1538/0.4410/0.7109 →
-0.2053/0.4659/0.6852**, σ **0.1767 → 0.1430**: closer to Gaia.
-Forest close saturation **0.6156 → 0.5281**, but median **0.2406 →
-0.2280**; lower sun lights camera-hidden faces, so the next pass tests a
-camera-facing afternoon direction. Tundra lost foreground light; restore
-readable fill while retaining a higher key/fill ratio. Inspection found
-`authored-terrain` receives shadows but never casts: test that existing
-shadow mechanism before adding another contrast effect. Final/fallback and
-same-build ablations remain pending; AC-5 remains open.
-
-Pass 1 ocean verifier **PASS** (waves **65.19%**, sun **52.65%**, sheltered
-blue **100%**); largest quantile delta across all 15 views **0.0806**.
-Local checkpoint **fde53ae59**. Pass 2 and an ablation collided in the
-runner's automatic lock-detection startup window: first error was Vulkan
-**OUT_OF_DEVICE_MEMORY** allocating `T_Scree_001_N`, followed by invalid
-bind groups and frozen placeholder captures. That run is rejected, not visual
-evidence. The extra owned browser was stopped; all subsequent runs use
-`CAPTURE_LOCK=1` and execute serially. The caster-toggle hypothesis is not
-established by this invalid run; cold repeat is pending.
-
-Cold pass 2 proves the lighting build with **42/42 PASS**, zero console errors,
-but fails this round's stricter all-capture performance gate: grounded **4.6 ms**,
-walk **4.1 ms**. Meadow quantiles **0.0056/0.1189/0.2406/0.3691/0.7170 →
-0.0319/0.1899/0.3023/0.4036/0.6731**, saturation **0.6156 → 0.4993**.
-The final candidate keeps terrain shadow casting only in alpine/desert/tundra
-and omits distant horizon casting; licensed props still cast in every world.
-The checkpoint source reviewer found noise could add snow to exact-zero
-coverage (including desert); multiplying breakup by coverage fixes that leak.
-Sky saturation now stays separate from foreground grading. Final candidate
-tsc, root Biome (**2,656 files**, warnings retained), and terrain Vitest
-(**69/69**) pass; final licensed/fallback and serial ablations are pending.
-
-Final licensed candidate `artifacts/playtest/light-final/licensed/`: **42/42 PASS**,
-zero console errors/diagnostics, NVIDIA Turing WebGPU at **1920×1080**. All 15
-captured CPU frame-window p50s **1.2–3.9 ms**; grounded **3.1 ms**, walk
-**3.9 ms**. Final view medians forest meadow/overview/river/player
-**2.3/2.8/3.0/3.3 ms**, alpine ridge/overview **2.0/2.2 ms**, desert
-**1.3/1.2 ms**, tundra **2.1/2.1 ms**. These are CPU frame-budget
-observations, not GPU timing or a steady-state FPS claim. Ocean verifier
-**PASS**: waves **61.97%**, sun **54.12%**, sheltered blue **100%**.
-All five normalized quantiles across all 15 matched views stay within **0.5**
-of the fresh pre-edit baseline (maximum absolute delta **0.0994**).
-Source is frozen for serial same-build stage ablations; absent-licensed proof
-remains pending. The main PRD remains PARTIAL and AC-5 open.
-
-Final matched licensed measurement (fresh pre-edit baseline → frozen final;
-raw display Rec.709 luminance normalized 0–1, mean HSV saturation; σ is
-full-frame luminance standard deviation). Quantile tolerance 0.5 means 127.5
-display levels; it is a preservation guard, not a parity grade.
-
-| World / representative view | p05/p25/p50/p75/p95 before → after | Saturation before → after | σ before → after | Max quantile delta, every world view |
+| World / representative licensed view | p05/p25/p50/p75/p95 before → after | Saturation before → after | σ before → after | Max absolute quantile delta, all world views |
 | --- | --- | --- | --- | --- |
 | Forest / meadow-close | 0.0056/0.1189/0.2406/0.3691/0.7170 → 0.0316/0.1943/0.3095/0.4075/0.6731 | 0.6156 → 0.4968 | 0.2047 → 0.1775 | 0.0994 — within 0.5 |
 | Coast / coastal-ocean | 0.1310/0.2586/0.3534/0.5321/0.8583 → 0.1423/0.2633/0.3585/0.5343/0.8376 | 0.3888 → 0.3620 | 0.2237 → 0.2137 | 0.0392 — within 0.5 |
@@ -1623,40 +1577,86 @@ display levels; it is a preservation guard, not a parity grade.
 | Desert / desert-mesa | 0.3682/0.4628/0.4986/0.5385/0.6258 → 0.3931/0.4967/0.5423/0.5734/0.6374 | 0.4399 → 0.4173 | 0.0833 → 0.0895 | 0.0473 — within 0.5 |
 | Tundra / tundra-plain | 0.1117/0.2101/0.4070/0.7113/0.8020 → 0.0801/0.2017/0.3686/0.6564/0.7955 | 0.1885 → 0.1900 | 0.2513 → 0.2436 | 0.0549 — within 0.5 |
 
-Original-resolution self-review (out of 5; not a fresh sealed judge): forest
-**4.0**, coast **4.5**, alpine **2.5**, desert **3.0**, tundra **3.0**.
-Forest has more readable warm key light and less saturation, but needle noise
-and dull ground remain; its σ decreases rather than matching Gaia's contrast.
-Coast preserves convincing water/glint with a softer sky seam. Alpine's
-luminance spread moves toward Gaia, but repeated boulders, green trees and
-the large cloud sky dominate the miss. Desert contrast σ increases slightly
-(**0.0833 → 0.0895**), yet smooth mesas remain. Tundra is darker (preserved
-within **0.0549**, not claimed better), with conspicuous ground repetition.
-No independent quality-score increase or complete Gaia parity is claimed.
+All 15 benchmark views plus the final `after.png` capture pass the guard;
+maximum absolute delta **0.099366**. Forest illumination/saturation and alpine
+luminance spread move toward the references; desert contrast increases slightly.
+Coast preserves its water/glint with a softer horizon seam. Tundra is darker,
+preserved within **0.0549**, rather than claimed better. Forest σ decreases,
+so its contrast still does not match Gaia.
 
-The first frozen grade arm was interrupted by SIGTERM (143); its replacement
-captured all worlds without console/runtime errors but the temporary diagnostic
-scenario's `contactSamples >= 1` was already true at startup. Its own
-TN_PLAYTEST_ASSERTION_TRIVIAL verdict is rejected. The diagnostic arm now
-requires `changed:true` and is rerun without changing the rendering build.
+Same frozen render source as checkpoint **52ca7be62**: `?off=grade`, `haze`,
+`ambientOcclusion`, `scatter`, `sun`. All five controls PASS renderer diagnostics,
+zero console errors; all eight capture-window observations per arm are present,
+CPU p50 maxima **3.3/3.2/2.8/3.4/3.6 ms** respectively. Five fixed poses are
+measured below. These diagnostic image arms do not replace the full scenario.
 
-Re-plan after the same diagnostic sentinel failed twice: `changed:true`
-does not suppress the separate already-true `gte` comparison. Contact
-behavior is already proved by the unchanged full 42-assertion scenario.
-Stage controls now assert renderer diagnostics only and retain the existing
-fixed five-world camera poses; they are image ablations, not a replacement
-behavior gate. Valid controls are written separately under
-`artifacts/playtest/light-final/ablations/`; old interrupted/fixture-failed
-arms are excluded. The full absent-licensed scenario runs first.
+| World / control pose | Median all / no direct sun / no GTAO | Saturation all / no grade | σ all / no haze |
+| --- | --- | --- | --- |
+| Forest / meadow-close | 0.3095 / 0.0949 / 0.3274 | 0.4968 / 0.6322 | 0.1775 / 0.1767 |
+| Coast / coastal-horizon-sea | 0.5858 / 0.5396 / 0.5858 | 0.2243 / 0.2377 | 0.1092 / 0.1142 |
+| Alpine / alpine-ridge | 0.4645 / 0.1883 / 0.4648 | 0.2689 / 0.3076 | 0.1431 / 0.1493 |
+| Desert / desert-mesa | 0.5423 / 0.1044 / 0.5431 | 0.4173 / 0.4369 | 0.0895 / 0.0944 |
+| Tundra / tundra-plain | 0.3686 / 0.1449 / 0.3930 | 0.1900 / 0.1949 | 0.2436 / 0.2443 |
 
-Final absent-licensed shared scenario `artifacts/playtest/light-final/fallback/`:
-**42/42 PASS**, zero console errors/diagnostics; all 15 captured CPU p50s
-**1.0–2.6 ms**. Final view medians forest meadow/overview/river/player
-**1.8/2.1/2.7/2.3 ms**, alpine ridge/overview **1.5/1.5 ms**, desert
-**1.1/1.1 ms**, tundra **2.2/2.2 ms**. Ocean verifier **PASS**: waves
-**64.15%**, sun **51.41%**, sheltered blue **100%**. Both licensed folders
-were absent during capture and restored by the trap; restoration is verified.
-This is functional fallback proof; the paired before/after quantile table is
-licensed-only. Quantile guards now use unrounded measurements, with rounding
-only in the displayed PRD table, so the 0.5 boundary cannot pass by rounding.
-The frozen render build's representative stage controls are running.
+Sun scattering is subtle and directional: in tundra-plain the sunward sky ROI
+(x560–1000, y460–515) gains **0.5124 display levels** (p95 **2.0722**),
+while side sky (x1600–1850, y330–390) gains **0.0000**. The full-frame gain
+is **0.0460/255**. Foreground GTAO darkening averages **4.6191/0.3855/3.7986
+display levels** in forest/alpine/tundra crops; inspected captures show local
+contact without the previous alpha leakage or obvious halos.
+
+Both full shared scenarios **42/42 PASS**, zero console errors or runtime
+diagnostics. Capture-window CPU p50s (licensed / absent-licensed, ms):
+
+| World | Every benchmark capture p50 licensed / fallback |
+| --- | --- |
+| Forest | start 3.1/2.3; meadow 2.3/1.7; overview 2.7/2.0; river 2.6/2.3; walk 3.9/2.0 |
+| Coast | early ocean 2.4/1.8; ocean 2.4/2.1; horizon 2.2/1.6; changed sun 2.4/1.9 |
+| Alpine | ridge 2.0/1.5; overview 2.2/1.5 |
+| Desert | mesa 1.3/1.1; overview 1.2/1.0 |
+| Tundra | plain 1.9/2.6; overview 2.1/1.9 |
+
+Final view medians also pass: forest meadow/overview/river/player licensed
+**2.3/2.8/3.0/3.3**, fallback **1.8/2.1/2.7/2.3**; alpine ridge/overview
+**2.0/2.2** and **1.5/1.5**; desert **1.3/1.2** and **1.1/1.1**; tundra
+**2.1/2.1** and **2.2/2.2**. These are CPU FrameBudget observations;
+GPU frame timing and steady-state FPS were not measured in this round.
+Ocean verifier PASS both: licensed waves/sun/sheltered blue
+**61.97%/54.12%/100%**, fallback **64.15%/51.41%/100%**.
+Both licensed folders were absent during fallback capture and restored by
+trap; restoration verified. The paired quantile table is licensed-only;
+fallback proves functionality rather than visual parity.
+
+Original-resolution licensed self-review, out of 5 (not a fresh sealed judge):
+
+| World | Grade | Remaining visual limitation |
+| --- | --- | --- |
+| Forest | 4.0 | Noisy needles and dull ground; readable warmer key |
+| Coast | 4.5 | Convincing water/glint and haze; sparse shore |
+| Alpine | 2.5 | Repeated chunky boulders, green trees and large cloud sky |
+| Desert | 3.0 | Smooth mesas; stronger but still modest directional contrast |
+| Tundra | 3.0 | Dark foreground, ground repetition and conspicuous clouds |
+
+No independent judge-score increase or complete Gaia parity is claimed.
+The main PRD remains PARTIAL; **AC-5 stays open**.
+
+Discarded trials: an automatic-lock startup race let two owned browsers
+allocate simultaneously, producing Vulkan OUT_OF_DEVICE_MEMORY and frozen
+placeholders; that run is excluded. One grade arm was interrupted by SIGTERM.
+A temporary contact sentinel failed as already satisfied, including after
+adding `changed:true` alongside `gte`; replanned image controls use renderer
+diagnostics and all pass. Unrestricted terrain casting passed behavior but
+failed grounded/walk p50 **4.6/4.1 ms**; the final bounded-caster build passes.
+Source review found and corrected noise leaking into exact-zero snow coverage.
+Subsequent captures used the forced global lock, with one active browser.
+
+Local checkpoints **fde53ae59**, **52ca7be62**, **22ab2ceca**; final evidence
+is committed locally with these notes. No push or merge; licensed bytes and
+captures remain local-only. Owned Vite and capture processes are stopped.
+
+Supplemental documentation suite: **179/180 PASS**, five of six files PASS.
+`evidence-budget.spec.ts` fails because tracked `docs/verification` totals
+**72.2 MB**, above its **72 MB** cap. No verification files were added or
+changed in this round; inherited-tree comparison is being recorded. The cap
+was not raised and unrelated evidence was not deleted. Requested example
+tsc/root Biome/terrain/full scenarios/ocean/CPU gates all pass.
