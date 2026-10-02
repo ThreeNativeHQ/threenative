@@ -68,7 +68,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "alpine",
     grassTint: [0.43, 0.8, 0.35],
     stoneTint: [0.69, 0.72, 0.77],
-    snowTint: [1.02, 1.04, 1.07],
+    snowTint: [1.6, 1.65, 1.7],
     distantStone: [0.23, 0.225, 0.215],
     snow: [54, 88, 0.39],
     maps: {

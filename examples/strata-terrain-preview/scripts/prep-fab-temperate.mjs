@@ -4,6 +4,7 @@
  */
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -276,13 +277,15 @@ for (const { pack, name, logical } of selected) {
 const previous = existsSync(join(OUT, "assets.manifest.json"))
   ? JSON.parse(readFileSync(join(OUT, "assets.manifest.json"), "utf8"))
   : null;
+const cooked = worldsOnly ? join(EXAMPLE, "local-assets/.worlds-cooked") : OUT;
 await compileAssets({
   source: ".",
-  output: OUT,
+  output: cooked,
   cwd: STAGE,
   config: { models: { textures: { maxSize: 2048 }, virtual: "none" }, textures: { maxSize: 2048 } },
 });
-const manifest = JSON.parse(readFileSync(join(OUT, "assets.manifest.json"), "utf8"));
+const manifest = JSON.parse(readFileSync(join(cooked, "assets.manifest.json"), "utf8"));
+if (worldsOnly) cpSync(cooked, OUT, { recursive: true });
 for (const [logical, entry] of Object.entries(manifest.entries))
   if (logical.endsWith(".glb")) copyFileSync(join(OUT, entry.output), join(OUT, logical));
   else if (logical.startsWith("rockface/")) {

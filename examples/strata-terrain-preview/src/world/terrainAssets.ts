@@ -63,7 +63,8 @@ export const GROUND_TILE: Record<LayerKey, number> = {
 
 /** Optional owner-local Kite crags and rock-face maps; CI retains the CC0/procedural art. */
 export const WORLD_ROCKS = [
-  { asset: "mountain", variant: 0, path: "temperate/mountain/0.glb", metres: 24 },
+  // Closed surfaces avoid detached scan fringes at exposed silhouettes.
+  { asset: "mountain", variant: 0, path: "temperate/mountain/1.glb", metres: 24 },
   { asset: "mountain", variant: 1, path: "temperate/mountain/1.glb", metres: 24 },
   ...[0, 1, 2, 3].map((variant) => ({
     asset: "volcanic",

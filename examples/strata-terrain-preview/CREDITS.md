@@ -26,7 +26,7 @@ Project Nature atlas bindings and composites each photographed opacity mask into
 its albedo, then reuses `@threenative/assets` for meshopt geometry and compressed
 textures. Duplicate sections are joined before cooking. Outputs live under
 `local-assets/temperate/` with a 130 MB gate and Three.js's Apache-2.0 Basis transcoder.
-Round 3 measures 122.7 MiB (128.7 MB); the prior 120 MB cap rises by 10 MB for this
+Round 3 bounded `--worlds` cook measures 121.6 MiB (127.5 MB); the prior 120 MB cap rises by 10 MB for this
 bounded rock selection. Licensed provenance remains in the owner's import reports.
 
 `src/render/pack.ts` retains photographed material maps. Every section of a tree
@@ -68,3 +68,7 @@ playtest runs green without the pack.
 The ground's PBR maps, the fir and the prepared props are the CC0 sets in
 `packages/terrain/starter-assets/`, served through this example's `publicDir`; provenance is that
 folder's `credits.json`.
+
+Use `node scripts/prep-fab-temperate.mjs --worlds` to update only crags/RockFace003.
+It cooks into a separate staging output before merging; existing forest/coast species
+and intentionally missing aliases remain untouched. The default command rebuilds the full set.

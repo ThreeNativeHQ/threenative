@@ -423,9 +423,9 @@ export function createGroundMaterial(
       tileBlend,
     );
     if (otherBiome && biome.world === "tundra" && key === "dirt")
-      return vec4(flat.rgb.mul(vec3(0.48, 0.38, 0.27)), flat.a);
+      return vec4(flat.rgb.mul(vec3(0.7, 0.58, 0.42)), flat.a);
     if (otherBiome && biome.world === "tundra" && key === "moss")
-      return vec4(flat.rgb.mul(vec3(1.3, 1.25, 0.95)), flat.a);
+      return vec4(flat.rgb.mul(vec3(0.85, 1.15, 0.48)), flat.a);
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
@@ -451,14 +451,14 @@ export function createGroundMaterial(
       if (otherBiome && biome.world === "desert") {
         const band = positionWorld.y
           .sub(2)
-          .mul(Math.PI / 4)
+          .mul(Math.PI / 5.3)
           .add(mx_noise_float(positionWorld.mul(0.035)).mul(0.9))
           .sin()
           .mul(0.5)
           .add(0.5);
         stone = vec3(grey)
           .mul(vec3(1.65, 0.86, 0.43))
-          .mul(mix(vec3(0.42, 0.3, 0.22), vec3(1.2, 1.06, 0.78), smoothstep(0.18, 0.62, band)));
+          .mul(mix(vec3(0.56, 0.39, 0.27), vec3(1.12, 1.02, 0.85), smoothstep(0.18, 0.62, band)));
       }
       if (otherBiome && biome.world === "alpine") {
         const seams = positionWorld.y

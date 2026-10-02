@@ -185,7 +185,10 @@ export function scatterProps(
       alignToNormal: crag,
       normal: normal ? normal.toArray() : [0, 1, 0],
       position: [x, clampedHeight(data, x, z), z],
-      rotation: random() * Math.PI * 2,
+      rotation:
+        crag && normal
+          ? Math.atan2(normal.x, normal.z) + (random() - 0.5) * 0.6
+          : random() * Math.PI * 2,
       scale,
     });
     counts[asset] = index + 1;
@@ -324,14 +327,14 @@ export function scatterProps(
       "grass",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.6 : 0.55) + random() * (temperate ? 0.65 : 0.5),
+      (temperate ? 0.8 : tundra ? 0.25 : 0.55) + random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
     );
     if (!desert && random() < (tundra ? 0.85 : 0.3))
       put(
         "scrub",
         x + (random() - 0.5),
         z + (random() - 0.5),
-        (tundra ? 0.7 : 0.9) + random() * 0.6,
+        (tundra ? 0.25 : 0.9) + random() * (tundra ? 0.3 : 0.6),
       );
     if (tundra && random() < 0.055)
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.28 + random() * 0.25);

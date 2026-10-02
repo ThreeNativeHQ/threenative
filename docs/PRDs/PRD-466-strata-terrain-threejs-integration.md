@@ -1307,3 +1307,19 @@ spruce/2-far and sapling/2; forest triangles changed with identical placement/li
 Restore those missing aliases; bounded `--worlds` cook preserves existing species.
 Quantile verification is pending. RockFace003 binding succeeds; pale tundra cards
 are not a missing-map failure. Latest example tsc and source Biome pass.
+
+Working increment 3: bounded cook verified with installed compiler: 8 new models,
+121.6 MiB (127.5 MB), beneath 130 MB. Compiler replaces its output directory;
+`--worlds` now cooks separately and merges, preserving old optional assets.
+An overlapping cook invalidated pass4; that run also lost its renderer before
+tundra. Doctor finds Node/Chromium/Xvfb available. Stable short pass5/pass6 and
+flat probe pass 16/16; material-ready probes confirm ground and foliage bind.
+White blades persist without photographic cards and without specular/received
+shadow changes: those initial hypotheses are rejected. Final root occlusion is
+applied after lighting/fog; the final capture must prove it. Alpine stripes
+persist under constant albedo and fixed normal probes; radial horizon relief
+is simplified/densified for the final candidate, with cause still unconfirmed.
+Closed mountain faces avoid loose scan fringes; desert scans follow fall lines,
+cap heights match the stamps, erosion is confined to the floor, and visible
+strata use a 10.6 m broad band. Latest example tsc/Biome and 69 terrain tests
+pass; final licensed/fallback and preservation measurements are pending.
