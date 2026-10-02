@@ -13,11 +13,21 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { openConsumerPage } from "./consumer-world.mjs";
 
 const root = resolve(".");
 const repo = resolve(root, "../..");
@@ -155,9 +165,11 @@ try {
   const { createProject } = await import(
     pathToFileURL(join(repo, "packages/create-threenative/dist/index.js")).href
   );
+  // It is created INSIDE the install, so its imports resolve to the packed terrain package and
+  // `three` the way a project's own node_modules would, and the workflow below runs in it.
   const fresh = await createProject(
     { install: false, target: "fresh-game", template: "minimal" },
-    temporary,
+    consumer,
   );
   for (const file of ["AGENTS.md", "CLAUDE.md"])
     assert(
@@ -180,6 +192,175 @@ try {
   ])
     assert(workflow.includes(required), `The shipped terrain workflow lacks: ${required}`);
   readFileSync(join(consumer, "node_modules/@threenative/terrain/AGENT_GUIDE.md"), "utf8");
+
+  // --- PRD-467 AC-7: the editor stays optional, and every command the workflow names runs ----------
+  // (1) The headless entries carry no DOM, server or editor module: walk their import graph.
+  const installedTerrain = join(consumer, "node_modules/@threenative/terrain/dist");
+  const specifiers = (text) =>
+    [
+      ...text.matchAll(/^(?:import|export)\b[^'"\n]*?['"]([^'"\n]+)['"]\s*;?$/gmu),
+      ...text.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/gu),
+    ].map((match) => match[1]);
+  const graph = {};
+  for (const entry of ["index.js", "three.js"]) {
+    const seen = new Set();
+    const visit = (file) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const text = readFileSync(join(installedTerrain, file), "utf8");
+      assert(
+        !/\bdocument\.|\blocalStorage\b|\bnew (?:FileReader|Worker)\b|\bnode:|\bwindow\.(?:location|document|addEventListener)/u.test(
+          text,
+        ),
+        `${entry} reaches ${file}, which touches a DOM or Node global`,
+      );
+      for (const specifier of specifiers(text)) {
+        if (specifier.startsWith(".")) {
+          assert(!/editor|server/u.test(specifier), `${entry} imports ${specifier}`);
+          visit(join(dirname(file), specifier));
+        } else assert.equal(specifier, "three", `${entry} imports ${specifier}`);
+      }
+    };
+    visit(entry);
+    graph[entry] = [...seen];
+  }
+  assert(
+    typeof globalThis.document === "undefined" && typeof globalThis.window === "undefined",
+    "The consumer process must have no DOM",
+  );
+  await import(pathToFileURL(join(installedTerrain, "index.js")).href);
+  await import(pathToFileURL(join(installedTerrain, "three.js")).href);
+
+  // (2) The workflow's own code runs in the scaffold. Its first block is executed verbatim; the
+  // editor block runs against a real Vite server with the project-owned route; the controller
+  // snippet is the one the workflow prints. `vite` is the optional peer, linked from the workspace
+  // because it cannot be installed offline; the terrain package itself is the packed tarball.
+  const firstBlock = /```js\n([\s\S]*?)```/u.exec(workflow)?.[1];
+  assert(firstBlock?.includes("bakeTerrain"), "The workflow's authoring block is missing");
+  mkdirSync(join(fresh.target, "terrain-editor"), { recursive: true });
+  mkdirSync(join(fresh.target, "terrain"), { recursive: true });
+  writeFileSync(
+    join(fresh.target, "terrain-editor/index.html"),
+    "<!doctype html><title>terrain-editor</title>",
+  );
+  writeFileSync(
+    join(fresh.target, "terrain/authoring.mjs"),
+    `${firstBlock}
+import { writeFileSync } from "node:fs";
+if (!state.height.length || !mesh.positions.length || !collision.heights?.length)
+  throw new Error("The workflow's bake produced nothing");
+writeFileSync("terrain/world.json", JSON.stringify({ version: 1, recipe: terrain.toJSON() }));
+console.log(JSON.stringify({ heights: state.height.length }));
+`,
+  );
+  const authoredByWorkflow = JSON.parse(
+    run("node", ["terrain/authoring.mjs"], { cwd: fresh.target }),
+  );
+  assert.equal(authoredByWorkflow.heights, 257 * 257);
+  symlinkSync(join(root, "node_modules/vite"), join(consumer, "node_modules/vite"), "dir");
+  writeFileSync(
+    join(fresh.target, "terrain/editor-session.mjs"),
+    `import { resolve } from "node:path";
+import { TerrainEditorController } from "@threenative/terrain/editor";
+import { terrainEditor } from "@threenative/terrain/editor/server";
+import { Terrain, validatePlacementOverrides } from "@threenative/terrain";
+import { createServer } from "vite";
+const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
+const server = await createServer({
+  root: process.cwd(), configFile: false, logLevel: "silent",
+  server: { host: "127.0.0.1", port: 5184, strictPort: true },
+  plugins: [editor], optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
+});
+try {
+  await server.listen();
+  const activation = await editor.activate();
+  const controller = new TerrainEditorController(activation.editorUrl);
+  const first = await controller.snapshot();
+  const edited = await controller.commit({
+    baseRevision: first.revision,
+    commands: [{ op: "update", id: "hills", patch: { params: { amplitude: 35 } } }],
+  });
+  const planted = await controller.commit({
+    baseRevision: edited.revision,
+    commands: [{ op: "upsert", layer: { id: "trees", type: "scatter", params: { asset: "pine", count: 6, avoidWater: false } } }],
+  });
+  const id = Terrain.fromJSON(planted.document.recipe).evaluate().instances[0]?.id;
+  const pose = { position: [12, 60, -4], quaternion: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2, 0.5, 1.5], grounding: false };
+  validatePlacementOverrides({ [id]: pose });
+  const posed = await controller.commit({
+    baseRevision: planted.revision,
+    document: { ...planted.document, placementOverrides: { [id]: pose } },
+  });
+  let stale = null;
+  try { await controller.commit({ baseRevision: first.revision, commands: [] }); } catch (error) { stale = String(error.message ?? error); }
+  console.log(JSON.stringify({ activation, first: first.revision, posed, id, pose, stale, amplitude: posed.document.recipe.layers.find((l) => l.id === "hills").params.amplitude }));
+} finally { await server.close(); }
+`,
+  );
+  const session = JSON.parse(
+    run("node", ["terrain/editor-session.mjs"], { cwd: fresh.target }).split("\n").at(-1),
+  );
+  assert.match(session.activation.editorUrl, /^http:\/\/127\.0\.0\.1:5184\/terrain-editor\//u);
+  assert.equal(session.amplitude, 35, "The workflow's controller patch did not reach the document");
+  assert.notEqual(session.posed.revision, session.first);
+  assert.match(session.stale ?? "", /409|[Ss]tale/u, "A stale base must conflict");
+  assert(session.id, "The scatter layer placed nothing to pose");
+  const onDisk = JSON.parse(readFileSync(join(fresh.target, "terrain/world.json"), "utf8"));
+  assert.deepEqual(
+    onDisk,
+    session.posed.document,
+    "The shared document on disk is the committed one",
+  );
+
+  // (3) The edited document reaches the full-world GLB inside the consumer: a plain browser page
+  // with only the packed installs, the file read back by a vanilla GLTFLoader.
+  copyFileSync(
+    join(root, "scripts/fixtures/consumer-world.mjs"),
+    join(consumer, "world-fixture.mjs"),
+  );
+  const page = await openConsumerPage({ consumer, repo });
+  let handoff;
+  try {
+    const indices = [0, 1000, 33024, 66048];
+    handoff = await page.exportAndLoad(session.posed.document, session.posed.revision, indices);
+    assert.deepEqual(page.problems, [], "The consumer page raised errors or external requests");
+  } finally {
+    await page.close();
+  }
+  assert.equal(handoff.report.revision, session.posed.revision);
+  assert.equal(handoff.resolution, 257);
+  assert.deepEqual(
+    handoff.loadedHeights,
+    handoff.stateHeights,
+    "GLB terrain differs from the state",
+  );
+  assert.equal(handoff.placements.length, 6);
+  const posedNode = handoff.placements.find((entry) => entry.id === session.id);
+  assert(posedNode, "The posed placement is not in the GLB");
+  posedNode.matrix.forEach((value, index) =>
+    assert(Math.abs(value - posedNode.expected[index]) < 1e-4, `matrix ${index}`),
+  );
+  assert.deepEqual(
+    [12, 60, -4],
+    posedNode.matrix.slice(12, 15).map((value) => Math.round(value * 1e4) / 1e4),
+  );
+  assert.equal(handoff.externalUris, 0);
+  assert.equal(handoff.cameras, 0);
+  assert.deepEqual(handoff.editorGlobals, []);
+  assert.deepEqual(handoff.storedKeys, []);
+  const optional = {
+    graph,
+    workflowRan: [
+      "Terrain/Mask/bakeMesh/bakeTerrain block",
+      "terrainEditor + activate",
+      "TerrainEditorController commit",
+      "stale conflict",
+      "validatePlacementOverrides/applyPlacementOverrides",
+      "toGeometry",
+      "exportWorldGLB",
+    ],
+    glbBytes: handoff.glbBytes,
+  };
 
   // --- AC-8, headless half: author, bake and load through public imports --------------------------
   writeFileSync(
@@ -263,6 +444,7 @@ try {
       capabilities: lookedUp.found,
       templatesChecked: templates.length,
       freshScaffold: fresh.target.split("/").at(-1),
+      optionalTooling: optional,
       worlds: authored.map((entry) => ({
         world: entry.world,
         heights: entry.heights,
