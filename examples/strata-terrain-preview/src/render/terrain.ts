@@ -42,7 +42,7 @@ import {
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { GROUND_MAPS, GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
-import { alpineRockAlbedo, alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
+import { alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // The ground's look, and every number in it, lives in this game: which surface covers which
 // height and slope, how many metres one texture tile spans, and how the blend edges break. The
 // evaluator in `packages/terrain` produces heights and eight material channels; none of that is a
@@ -206,6 +206,75 @@ export function groundTurf(
   return mix(sampled.mul(MEADOW), field, smoothstep(32, 115, distance).mul(0.86));
 }
 
+function rockLayer(
+  source: Texture,
+  plane: Node<"vec2">,
+  biome?: IBiome,
+  relief = false,
+): Node<"vec4"> {
+  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const tap = (scale: number, angle: number, offset: Node<"vec2">) => {
+    const sampled = texture(source, rotateUV(plane.div(scale), float(angle), vec2(0)).add(offset));
+    if (!relief) return sampled;
+    const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
+    return vec4(tangent, sampled.z.mul(2).sub(1), 1);
+  };
+  return biome?.world === "alpine"
+    ? alpineRockTap(source, plane, relief)
+    : biome?.world === "desert"
+      ? mix(
+          tap(11, 0.035, vec2(mx_noise_float(positionWorld.xz.mul(0.009)).mul(0.9), 0)),
+          tap(27, -0.045, vec2(0.37, 0.61)),
+          patch.mul(0.5).add(0.25),
+        )
+      : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
+}
+
+/** The bedrock projection shared by the landscape and a rock's contact band. */
+export function stoneAlbedo(
+  source: Texture,
+  biome?: IBiome,
+  normal = normalWorldGeometry,
+): Node<"vec3"> {
+  const axis = abs(normal).pow(4);
+  const share = axis.div(axis.x.add(axis.y).add(axis.z));
+  const other = biome && biome.world !== "forest" && biome.world !== "coastal";
+  const tap = (plane: Node<"vec2">) =>
+    other ? rockLayer(source, plane, biome).rgb : texture(source, tiledUV("rock", 1, plane)).rgb;
+  return share.x
+    .mul(tap(positionWorld.zy))
+    .add(share.y.mul(tap(positionWorld.xz)))
+    .add(share.z.mul(tap(positionWorld.xy)));
+}
+
+export function stoneColor(sampled: Node<"vec3">, biome?: IBiome): Node<"vec3"> {
+  if (biome?.world === "alpine") return alpineRockColor(sampled);
+  if (biome?.world === "desert") return desertRockColor(sampled);
+  const other = biome && biome.world !== "forest" && biome.world !== "coastal";
+  const grey = dot(sampled, vec3(0.2126, 0.7152, 0.0722));
+  return mix(sampled, vec3(grey), other ? 0.25 : 0.35).mul(
+    vec3(...(other ? biome.stoneTint : [0.44, 0.46, 0.42])),
+  );
+}
+
+export function stoneRelief(
+  source: Texture,
+  biome?: IBiome,
+  normal = normalWorldGeometry,
+): Node<"vec3"> {
+  if (!biome || biome.world === "forest" || biome.world === "coastal")
+    return triplanarRelief(source, "rock", 1, normal).tilt;
+  const axis = abs(normal).pow(4);
+  const share = axis.div(axis.x.add(axis.y).add(axis.z));
+  const x = rockLayer(source, positionWorld.zy, biome, true);
+  const y = rockLayer(source, positionWorld.xz, biome, true);
+  const z = rockLayer(source, positionWorld.xy, biome, true);
+  return share.x
+    .mul(vec3(0, x.y, x.x.mul(sign(normal.x))))
+    .add(share.y.mul(vec3(y.x, 0, y.y)))
+    .add(share.z.mul(vec3(z.x.mul(sign(normal.z)), z.y, 0)));
+}
+
 /**
  * One normal map's two answers on the ground plane: the tilt it asks for, and how much of its own
  * up-facing it kept.
@@ -241,7 +310,12 @@ function planarRelief(source: Texture, uv: Node<"vec2">, strength: number, angle
  * across reads a nine-metre map at a one-metre scale as an unreadable fine band along its own
  * tangential direction, which is what a wall projection always does without this.
  */
-function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IRelief {
+function triplanarRelief(
+  source: Texture,
+  key: LayerKey,
+  roughnessScale = 1,
+  normal = normalWorldGeometry,
+): IRelief {
   const tap = (plane: Node<"vec2">) => {
     const sampled = texture(source, tiledUV(key, roughnessScale, plane));
     const tangent = rotateUV(
@@ -254,14 +328,14 @@ function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IR
   const x = tap(positionWorld.zy);
   const y = tap(positionWorld.xz);
   const z = tap(positionWorld.xy);
-  const axis = abs(normalWorldGeometry).pow(4);
+  const axis = abs(normal).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
   return {
     crevice: float(1),
     tilt: weight.x
-      .mul(vec3(0, x.y, x.x.mul(sign(normalWorldGeometry.x))))
+      .mul(vec3(0, x.y, x.x.mul(sign(normal.x))))
       .add(weight.y.mul(vec3(y.x, 0, y.y)))
-      .add(weight.z.mul(vec3(z.x.mul(sign(normalWorldGeometry.z)), z.y, 0))),
+      .add(weight.z.mul(vec3(z.x.mul(sign(normal.z)), z.y, 0))),
   };
 }
 
@@ -441,7 +515,7 @@ export function createGroundMaterial(
     // steepness term is scaled down in a hollow rather than replaced: bare rock still shows at a
     // scarp's foot where the ground is steep and the debris has not arrived yet.
     // Soil holds on ordinary hills; only scarps expose bedrock (34–48 degrees).
-    rock: smoothstep(0.12, 0.3, steep.add(rib.mul(0.04)).add(breakUp.mul(0.025)))
+    rock: smoothstep(0.17, 0.33, steep.add(rib.mul(0.04)).add(breakUp.mul(0.025)))
       .mul(mix(0.65, 1, smoothstep(12, 70, positionWorld.y)))
       .mul(oneMinus(smoothstep(0.15, 0.8, hollow).mul(0.25))),
     snow: smoothstep(float(SNOW.from), float(SNOW.to), positionWorld.y).mul(
@@ -480,6 +554,8 @@ export function createGroundMaterial(
   }
 
   // --- how each surface looks -------------------------------------------------------------
+  // Apply observed deposition after biome placement so dry/snow-world rules cannot erase it.
+  weights.dirt = weights.dirt.max(sediment.mul(0.5)).max(flow.mul(0.28)).mul(sand.oneMinus());
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.
@@ -502,27 +578,6 @@ export function createGroundMaterial(
    * two are blended rather than switched so the crossover has no seam to find.
    */
 
-  // Keep colour and tangent relief on the same rotated projections and scales.
-  const rockTap = (source: Texture, plane: Node<"vec2">, relief = false): Node<"vec4"> => {
-    const tap = (scale: number, angle: number, offset: Node<"vec2">) => {
-      const sampled = texture(
-        source,
-        rotateUV(plane.div(scale), float(angle), vec2(0)).add(offset),
-      );
-      if (!relief) return sampled;
-      const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
-      return vec4(tangent, sampled.z.mul(2).sub(1), 1);
-    };
-    return biome?.world === "alpine"
-      ? alpineRockTap(source, plane, relief)
-      : biome?.world === "desert"
-        ? mix(
-            tap(11, 0.035, vec2(mx_noise_float(positionWorld.xz.mul(0.009)).mul(0.9), 0)),
-            tap(27, -0.045, vec2(0.37, 0.61)),
-            patch.mul(0.5).add(0.25),
-          )
-        : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
-  };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
@@ -543,29 +598,13 @@ export function createGroundMaterial(
           : sampled;
     }
     const walls =
-      otherBiome && key === "rock"
-        ? (() => {
-            if (biome.world === "alpine") return vec4(alpineRockAlbedo(diffuse), 1);
-            // Two rotated, incommensurate projections break the photographed tile lattice.
-            const axis = abs(normalWorldGeometry).pow(4);
-            const share = axis.div(axis.x.add(axis.y).add(axis.z));
-            return share.x
-              .mul(rockTap(diffuse, positionWorld.zy))
-              .add(share.y.mul(rockTap(diffuse, positionWorld.xz)))
-              .add(share.z.mul(rockTap(diffuse, positionWorld.xy))) as Node<"vec4">;
-          })()
-        : triplanarAlbedo(diffuse, key);
+      key === "rock" ? vec4(stoneAlbedo(diffuse, biome), 1) : triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
     if (key === "snow" && biome) return vec4(blended.rgb.mul(vec3(...biome.snowTint)), blended.a);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
-      const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.25 : 0.35).mul(
-        vec3(...(otherBiome ? biome.stoneTint : [0.44, 0.46, 0.42])),
-      );
-      if (otherBiome && biome.world === "desert") stone = desertRockColor(blended.rgb);
-      if (otherBiome && biome.world === "alpine") stone = alpineRockColor(blended.rgb);
+      const stone = stoneColor(blended.rgb, biome);
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_fractal_noise_float(positionWorld.mul(vec3(0.005, 0.011, 0.005)), 2)
         .mul(0.18)
@@ -636,22 +675,7 @@ export function createGroundMaterial(
       };
     held.add(source);
     if (key === "rock") {
-      const walls = otherBiome
-        ? (() => {
-            const axis = abs(normalWorldGeometry).pow(4);
-            const share = axis.div(axis.x.add(axis.y).add(axis.z));
-            const x = rockTap(source, positionWorld.zy, true);
-            const y = rockTap(source, positionWorld.xz, true);
-            const z = rockTap(source, positionWorld.xy, true);
-            return {
-              crevice: float(1),
-              tilt: share.x
-                .mul(vec3(0, x.y, x.x.mul(sign(normalWorldGeometry.x))))
-                .add(share.y.mul(vec3(y.x, 0, y.y)))
-                .add(share.z.mul(vec3(z.x.mul(sign(normalWorldGeometry.z)), z.y, 0))),
-            };
-          })()
-        : triplanarRelief(source, key);
+      const walls = { crevice: float(1), tilt: stoneRelief(source, biome) };
       return {
         crevice: walls.crevice,
         tilt: mix(

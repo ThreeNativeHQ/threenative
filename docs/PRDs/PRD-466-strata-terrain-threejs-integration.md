@@ -2129,6 +2129,13 @@ no engine package changed. Static proof: example tsc PASS, example Biome PASS,
 terrain vitest **69/69 PASS**, optional-mask scratch check PASS. Baseline crops
 are in `examples/strata-terrain-preview/artifacts/playtest/material-before/`;
 zero console/runtime errors, but baseline CPU windows exceeded 4 ms. Fresh
-visual proof and both final arms are pending the machine-wide capture queue.
+iteration captures (`material-pass2/`) have zero console/runtime errors and
+all captured views ≤3.9 ms CPU p50, but tundra transition steps reach 4.3 ms.
+A subsequent contact-refinement iteration was interrupted by SIGINT/SIGTERM
+after the forest captures; no verdict is claimed for it. Both final arms
+remain pending the machine-wide capture queue. Shared stone projections
+now cover steep contacts too; contact height follows the drawn triangles.
+No flow/sediment bake has landed yet; normalized optional arrays are ready
+and their absent/present/malformed/seam cases pass the scratch check.
 The only additive cross-lane edit passes existing baked data into `loadPack`
 in `src/game.ts`; all vegetation and lighting decisions remain untouched.

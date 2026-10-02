@@ -73,6 +73,7 @@ import {
   NEEDLE_SURFACE,
   PINE_ATLAS,
   PROP_MAPS,
+  ROCKFACE_MAPS,
   SOIL_MAP,
 } from "../world/terrainAssets.js";
 import {
@@ -83,7 +84,14 @@ import {
   biomeWeights,
 } from "./biomes.js";
 import type { IPropMaterials } from "./props.js";
-import { groundLayer, groundTurf, tiledUV } from "./terrain.js";
+import {
+  groundLayer,
+  groundTurf,
+  stoneAlbedo,
+  stoneColor,
+  stoneRelief,
+  tiledUV,
+} from "./terrain.js";
 
 /** How much a mip level shrinks a needle card's alpha; see {@link mipCompensatedCutoff}. */
 const MIP_ALPHA_SCALE = 0.25;
@@ -347,6 +355,21 @@ function groundHeight(ground: IPropGround): {
     .add(0.5 / ground.resolution);
   const texel = 1 / ground.resolution;
   const step = ground.size / (ground.resolution - 1);
+  // Match Heightfield's two drawn triangles; bilinear interpolation floats above a saddle.
+  const grid = positionWorld.xz
+    .div(ground.size)
+    .add(0.5)
+    .mul(ground.resolution - 1)
+    .clamp(0, ground.resolution - 1.00001);
+  const fraction = grid.fract();
+  const cell = grid.floor().add(0.5).div(ground.resolution);
+  const a = texture(heights, cell).r;
+  const b = texture(heights, cell.add(vec2(texel, 0))).r;
+  const c = texture(heights, cell.add(vec2(0, texel))).r;
+  const d = texture(heights, cell.add(vec2(texel))).r;
+  const lower = a.add(b.sub(a).mul(fraction.x)).add(c.sub(a).mul(fraction.y));
+  const upper = d.add(c.sub(d).mul(fraction.x.oneMinus())).add(b.sub(d).mul(fraction.y.oneMinus()));
+  const height = fraction.x.add(fraction.y).lessThanEqual(1).select(lower, upper);
   const dx = texture(heights, at.add(vec2(texel, 0))).r.sub(
     texture(heights, at.sub(vec2(texel, 0))).r,
   );
@@ -354,7 +377,7 @@ function groundHeight(ground: IPropGround): {
     texture(heights, at.sub(vec2(0, texel))).r,
   );
   return {
-    node: texture(heights, at).r as unknown as Node<"float">,
+    node: height,
     normal: normalize(vec3(dx.negate(), step * 2, dz.negate())),
     texture: heights,
   };
@@ -399,9 +422,20 @@ export async function createRockGround(
   if (!ground) return undefined;
   const under = groundHeight(ground);
   const paths = biome?.maps ?? GROUND_MAPS;
-  const [grass, relief, snow] = await Promise.all([
+  const temperate = !biome || biome.world === "forest" || biome.world === "coastal";
+  const rockPaths = temperate ? ROCKFACE_MAPS : paths.rock;
+  const [grass, relief, rock, rockNormal, snow] = await Promise.all([
     map(assets, paths.grass.diffuse, false),
     paths.grass.normal ? map(assets, paths.grass.normal, true) : undefined,
+    map(assets, rockPaths.diffuse, false).then(
+      (found) => found ?? map(assets, paths.rock.diffuse, false),
+    ),
+    rockPaths.normal
+      ? map(assets, rockPaths.normal, true).then(
+          (found) =>
+            found ?? (paths.rock.normal ? map(assets, paths.rock.normal, true) : undefined),
+        )
+      : undefined,
     biome?.world === "alpine" || biome?.world === "tundra"
       ? map(assets, paths.snow.diffuse, false)
       : undefined,
@@ -411,9 +445,11 @@ export async function createRockGround(
       if (!grass || !material.colorNode) return;
       const share = groundShare(under.node);
       const floor = groundTurf(groundLayer(grass, "grass").rgb, biome);
-      // Steep ground exposes the same stone; only turf-bearing contact faces take the floor.
-      const soil = share.mul(smoothstep(0.5, 0.88, under.normal.y));
-      let contact = floor;
+      const slope = smoothstep(0.17, 0.33, under.normal.y.oneMinus());
+      const soil = share;
+      let contact = rock
+        ? mix(floor, stoneColor(stoneAlbedo(rock, biome, under.normal), biome), slope)
+        : floor;
       if (snow && biome) {
         const cover =
           biomeWeights(
@@ -436,7 +472,15 @@ export async function createRockGround(
             0.22,
           )
         : vec2(0);
-      const normal = normalize(under.normal.add(vec3(tilt.x, 0, tilt.y)));
+      const groundTilt = rockNormal
+        ? mix(
+            vec3(tilt.x, 0, tilt.y),
+            stoneRelief(rockNormal, biome, under.normal).mul(0.52),
+            slope,
+          )
+        : vec3(tilt.x, 0, tilt.y);
+      const tangent = groundTilt.sub(under.normal.mul(dot(under.normal, groundTilt)));
+      const normal = normalize(under.normal.add(tangent));
       material.normalNode = normalize(
         mix(lit as Node<"vec3">, transformNormalToView(normal), soil.mul(0.82)),
       );
@@ -447,7 +491,8 @@ export async function createRockGround(
       );
     },
     dispose(): void {
-      for (const source of [under.texture, grass, relief, snow]) source?.dispose();
+      for (const source of [under.texture, grass, relief, rock, rockNormal, snow])
+        source?.dispose();
     },
   };
 }
