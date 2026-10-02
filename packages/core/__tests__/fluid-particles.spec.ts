@@ -1,3 +1,5 @@
+import { context } from "three/tsl";
+import { WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { FluidParticles3D } from "../src/fluid-particles.js";
 import type { IRendererLike, RendererKind } from "../src/renderer.js";
@@ -31,7 +33,84 @@ function renderer(names: string[], kind: RendererKind = "webgpu"): IRendererLike
   };
 }
 
+function computeSource(water: FluidParticles3D, name: string): string {
+  const node = water.warmupNodes.find((candidate) => candidate.name === name);
+  if (node === undefined) throw new Error(`Missing kernel ${name}`);
+  const gpu = {
+    contextNode: context(),
+    backend: {
+      capabilities: { getUniformBufferLimit: () => 65_536 },
+      compatibilityMode: false,
+      device: {},
+      utils: {},
+    },
+    hasCompatibility: () => true,
+    hasFeature: () => false,
+  };
+  // Three's declarations omit the compute-node constructor path and generated shader fields.
+  const builder = new WGSLNodeBuilder(node as never, gpu as never) as unknown as {
+    build(): void;
+    computeShader: string;
+  };
+  builder.build();
+  return builder.computeShader;
+}
+
 describe("FluidParticles3D", () => {
+  it("generates a vector speed limit and radius-bounded prediction segments", () => {
+    const water = new FluidParticles3D({ capacity: 1 });
+    try {
+      const predict = computeSource(water, "fluidParticles.predict");
+      expect(predict).toMatch(/18\.0 \/ max\( length\( \w+ \), 18\.0 \)/);
+      expect(predict).toContain("ceil(");
+      expect(predict).toContain("/ 0.0968");
+      expect(predict).toMatch(/for \( var \w+ : u32 = 0u; \w+ < fluidSubsteps;/);
+      expect(computeSource(water, "fluidParticles.confine")).toMatch(
+        /18\.0 \/ max\( length\( \w+ \), 18\.0 \)/,
+      );
+    } finally {
+      water.detach();
+    }
+  });
+
+  it("returns the floor outside the tank rather than extending edge water indefinitely", async () => {
+    const water = new FluidParticles3D({ capacity: 1 });
+    const data = new Float32Array(16 + water.volumeSize[0] * water.volumeSize[2]);
+    data.fill(1.5, 16);
+    const gpu = { ...renderer([]), readback: async () => data.buffer };
+    water.process(gpu);
+    await Promise.resolve();
+    expect(water.sample(0, 0).height).toBe(1.5);
+    for (const [x, z] of [
+      [-3, 0],
+      [3, 0],
+      [0, -2],
+      [0, 2],
+    ])
+      expect(water.sample(x as number, z as number).height).toBe(water.bounds.min[1]);
+    water.detach();
+  });
+
+  it("samples a valid one-column volume while keeping covered columns excluded", async () => {
+    const water = new FluidParticles3D({
+      capacity: 1,
+      bounds: { min: [0, 0, 0], max: [1, 1, 1] },
+      voxelSize: 1,
+      readbackEvery: 1,
+    });
+    const data = new Float32Array(17);
+    data[16] = 0.75;
+    const gpu = { ...renderer([]), readback: async () => data.slice().buffer };
+    water.process(gpu);
+    await Promise.resolve();
+    expect(water.sample(0.5, 0.5).height).toBe(0.75);
+    data[16] = -1e30;
+    water.process(gpu);
+    await Promise.resolve();
+    expect(water.sample(0.5, 0.5).height).toBe(0);
+    water.detach();
+  });
+
   it("fails closed for every invalid option", () => {
     expect(() => new FluidParticles3D({ capacity: 0 })).toThrow("FluidParticles3D.capacity");
     expect(() => new FluidParticles3D({ capacity: 70000 })).toThrow("FluidParticles3D.capacity");

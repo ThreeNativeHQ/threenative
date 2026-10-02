@@ -35,6 +35,7 @@ const {
   atomicMax,
   atomicMin,
   atomicStore,
+  ceil,
   clamp,
   dot,
   exp,
@@ -87,7 +88,7 @@ export interface IFluidParticlesOptions {
   readonly cohesion?: number;
   readonly vorticity?: number;
   readonly gravity?: number;
-  /** Speed clamp in m/s; it is what stops a particle tunnelling through a thin collider. */
+  /** Vector speed limit in m/s. Prediction projects radius-sized segments; this is not swept CCD. */
   readonly maxSpeed?: number;
   readonly timeStep?: number;
   /** Colliders updated per step through `setColliders`. */
@@ -622,10 +623,21 @@ export class FluidParticles3D extends Group {
             ).mul(dt),
           ),
         );
-      velocity.assign(clamp(velocity, vec3(-maxSpeed), vec3(maxSpeed)));
+      velocity.assign(velocity.mul(float(maxSpeed).div(max(length(velocity), maxSpeed))));
       previous.element(i).assign(vec4(position, 1));
-      position.assign(position.add(velocity.mul(dt)));
-      project(position);
+      // A single 18 m/s step can cross the dam gate completely. Project along the path, with
+      // segments no longer than the particle radius (at most four at the default speed/step).
+      const substeps = clamp(
+        ceil(length(velocity).mul(dt).div(radius)),
+        1,
+        Math.max(1, Math.ceil((maxSpeed * timeStep) / radius)),
+      )
+        .toUint()
+        .toVar("fluidSubsteps");
+      Loop({ start: uint(0), end: substeps, type: "uint" }, () => {
+        position.assign(position.add(velocity.mul(dt).div(float(substeps))));
+        project(position);
+      });
       positions.element(i).assign(vec4(position, 1));
       velocities.element(i).assign(vec4(velocity, velocities.element(i).w));
     });
@@ -764,6 +776,7 @@ export class FluidParticles3D extends Group {
       If(position.y.lessThanEqual(min3[1] + 0.002), () => {
         v.assign(vec3(v.x.mul(1 - wallFriction), v.y, v.z.mul(1 - wallFriction)));
       });
+      v.assign(v.mul(float(maxSpeed).div(max(length(v), maxSpeed))));
       const speed = length(v);
       const source = clamp(speed.sub(1.5).mul(0.14), 0, 1).mul(
         select(omega.element(i).w.lessThan(22), float(1), float(0.2)),
@@ -1086,8 +1099,16 @@ export class FluidParticles3D extends Group {
   sample(x: number, z: number, _time = 0): { readonly height: number } {
     const data = this.#readback.data;
     const floor = this.bounds.min[1];
-    if (data === undefined) return { height: floor };
+    if (
+      data === undefined ||
+      x < this.bounds.min[0] ||
+      x > this.bounds.max[0] ||
+      z < this.bounds.min[2] ||
+      z > this.bounds.max[2]
+    )
+      return { height: floor };
     const [columns, rows] = this.#columns;
+    const minimumOpen = Math.min(MIN_OPEN_COLUMNS, columns * rows);
     const cx = Math.round(
       clampNumber((x - this.bounds.min[0]) / this.voxelSize - 0.5, 0, columns - 1),
     );
@@ -1108,7 +1129,7 @@ export class FluidParticles3D extends Group {
             found += 1;
           }
         }
-      if (found >= MIN_OPEN_COLUMNS) return { height: sum / found };
+      if (found >= minimumOpen) return { height: sum / found };
     }
     return { height: floor };
   }
