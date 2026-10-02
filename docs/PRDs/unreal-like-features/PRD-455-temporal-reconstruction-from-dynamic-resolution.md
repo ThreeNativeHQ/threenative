@@ -431,3 +431,16 @@ from the incoming dependency because it includes this PR's generated temporal so
 The identical 304-frame benchmark must run on the combined source before its result can be
 attributed to this new dependency. Neither the earlier experiment nor the dependency's separate
 oracle establishes that combined result. PR393 still must land before this PR becomes ready.
+
+Combined run `37018389700` on `e638fc470f2c36d59b2046de4822cfd406424048` now verifies
+the canonical uploader repair in this temporal helper's actual recompile path. All 304 PNG
+hashes verify and all 19 diagnostics are empty. Recompile matches ordinary temporal pixels,
+metrics and MRT samples exactly across all 16 frames. Frame 23 instance error falls from
+0.52156 pixel to 0.00005972 pixel; the sequence maximum is 0.0009863 pixel. Actual GPU current
+Y now equals CPU current Y=-0.6999545693 while previous Y remains -0.6924691796.
+Only recompile frames 23–36 change from the previous source; all other pixels and scores remain
+unchanged. Authored-linear equivalence still passes, while the same image-quality gates fail.
+[Combined provenance, unchanged metrics and corrected readback](../../verification/prd455/combined-cubic-history.json)
+and the inspected [corrected recompile frame](../../verification/prd455/recompile-corrected-frame-23.png)
+are retained. Existing cubic/reference images remain valid because their bytes are unchanged.
+Further resolve changes await a fresh critique of these measured remaining errors.
