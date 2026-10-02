@@ -448,6 +448,22 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     material: "sand",
     enforceDownhill: true,
   })
+  .river({
+    id: "wash-tributary",
+    followTerrain: true,
+    points: [
+      [160, null, 45],
+      [95, null, 30],
+      [55, null, 10],
+      [20, null, -5],
+    ],
+    width: 4,
+    depth: 1.2,
+    shoulder: 6,
+    water: false,
+    material: "sand",
+    enforceDownhill: true,
+  })
   .materials({
     id: "surfaces",
     rules: [

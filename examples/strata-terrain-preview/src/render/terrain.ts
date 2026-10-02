@@ -232,9 +232,9 @@ const RIPPLE = {
   wander: 1.4,
 } as const;
 
-function sandRipples(): Node<"vec3"> {
+function sandRipples(direction?: Node<"vec2">): Node<"vec3"> {
   // Downhill, in world xz. Normalised so the ripple amplitude does not change with the slope.
-  const fall = vec2(normalWorldGeometry.x, normalWorldGeometry.z);
+  const fall = direction ?? vec2(normalWorldGeometry.x, normalWorldGeometry.z);
   const downhill = fall.length().max(float(0.0001));
   const across = vec2(fall.x.div(downhill), fall.y.div(downhill));
   // Distance across the shore, in metres, with a slow noise on the frequency so the crest spacing is
@@ -429,7 +429,9 @@ export function createGroundMaterial(
     };
     return biome?.world === "alpine"
       ? alpineRockTap(source, plane, relief)
-      : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
+      : biome?.world === "desert"
+        ? mix(tap(11, 0, vec2(0)), tap(24, 0, vec2(0.37, 0.61)), patch.mul(0.35))
+        : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
   };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
@@ -584,7 +586,12 @@ export function createGroundMaterial(
     .mul(weights.grass)
     .mul(biome?.world === "alpine" ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
     .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
-  if (biome?.world === "desert") normal = normal.add(sandRipples().mul(weights.grass));
+  if (biome?.world === "desert")
+    normal = normal.add(
+      sandRipples(vec2(0.53, 0.85))
+        .mul(weights.grass)
+        .mul(float(1).sub(smoothstep(65, 220, positionView.length()))),
+    );
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   for (const key of LAYERS) {

@@ -1466,7 +1466,8 @@ licensed asset bytes are protected; no push/merge or purchases.
    fallback scenarios on port 5297. Judge six full-resolution captures; per-view
    CPU p50 ≤4 ms, protected forest/coast luminance p05/p50/p95 delta ≤0.5.
 
-Results pending. Final captures: `artifacts/playtest/worlds-r4-final/`.
+Final licensed results below; absent-licensed run pending. Final captures:
+`artifacts/playtest/worlds-r4-final/`.
 
 Baseline licensed and absent-licensed full scenarios PASS (42/42 each), terrain
 Vitest 69/69 PASS. No models recooked; forest/coast capture identity is now pinned
@@ -1475,7 +1476,7 @@ Tundra cause confirmed by changing only the other-biome AO multiplier from scala
 RGBA multiplication to `vec4(vec3(occlusion), 1)`: the full-resolution alpha-only
 capture loses the white/blue grass bases while all grass material/root settings
 remain identical. `worlds-r4-tundra-alpha/` scenario 4/4 PASS, zero diagnostics.
-The previously retained root-output darkening now reads black and will be removed.
+The previously retained root-output darkening read black and was removed.
 
 Composition pass1: enhanced full licensed scenario 44/44 PASS, zero diagnostics;
 example tsc and example Biome error gate PASS. Alpine ridge/overview CPU p50
@@ -1488,3 +1489,34 @@ Full-resolution pass1 review rejects completion: alpine ribs are better embedded
 but still isolated; desert thin beds are too faint and ripple normals form eddies;
 tundra cover mask leaves the defining foreground bare. Further composition tuning
 is required. AO-only blue cover pixels in the fixed ROI fell 5,856 → 0.
+
+Composition passes2/3: bounded three-world scenarios 12/12 PASS each. Rejected
+rotated desert texture projection, thin photo grass/flattened saplings in tundra,
+and a narrow alpine bake experiment that produced an artificial spiked wall.
+The original alpine heightfield recipe is retained; appearance comes from
+elongated, overlapping scans and their shared world-space RockFace003 material.
+The revised grounding probes the lowest peripheral vertex in each angular sector,
+so a buried narrow scan stem cannot qualify a floating wide collar. Final licensed
+alpine: 128 crag instances, 2,048 terrain-contact probes, maximum lower-ring
+clearance −0.5 m; initial burial is 82% of transformed height, with additional
+sinking where the measured downhill ring requires it. Talus fans now widen at
+crag feet. Licensed spruce/sapling tint and needle emission are subdued.
+
+Final licensed full scenario on port5297: **44/44 PASS**, zero diagnostics;
+example `pnpm exec tsc --noEmit` PASS, root example Biome error gate PASS (71 files),
+terrain Vitest **69/69 PASS**. CPU frame-window p50: alpine ridge/overview
+2.0/2.0 ms, desert mesa/overview 1.3/1.4 ms, tundra plain/overview 2.1/1.9 ms.
+All ten scenario CPU p50 assertions pass, including protected forest walking views.
+All nine protected forest/coast captures pass RGB-weighted luminance p05/p50/p95
+comparison against the untouched merged baseline: maximum absolute delta **0.2864**
+on the 0–255 scale (limit0.5). No licensed assets were recooked or modified.
+
+Full-resolution licensed review (1920×1080): alpine **5.5/10**, desert **6/10**,
+tundra **5.5/10**. Alpine now has embedded fall-line ribs and contiguous lower
+faces with upward-facing textured snow, but broad heightfield slopes remain smooth
+and scan silhouettes remain identifiable. Desert has subdued irregular thin beds,
+wall varnish, foot/rim rocks, dry clustered cover, dune ripples and a dry tributary;
+distant sand tiling and rounded mesa outlines remain. Tundra has connected bare
+gravel between sedge/lichen/shrub patches and no white/blue blade bases; dark
+broadleaf cutouts and sparse distant cover remain. These are improvements, not
+AAA acceptance; AC-5 stays open. Absent-licensed final proof is running.

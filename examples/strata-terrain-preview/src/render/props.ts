@@ -381,40 +381,44 @@ function preparePose(
         ? box.clone().applyMatrix4(model.matrix).getSize(new Vector3()).y
         : (box.max.y - box.min.y) * model.scale.y;
       model.position.y -=
-        (placement.asset === "mountain" ? 0.7 : crag ? 0.55 : BOULDER_BURIAL) * height;
+        (placement.asset === "mountain" ? 0.82 : crag ? 0.55 : BOULDER_BURIAL) * height;
     }
   }
   let cragBaseClearance: number | undefined;
   let cragRingSamples: number | undefined;
   if (grounding && !transform && placement.asset === "mountain") {
-    // Probe the outermost vertices of the lowest ring, not a bounding-box centre.
+    // Lowest peripheral vertex per angular sector: a narrow buried stem must not support
+    // a wide scan collar hanging above the downhill ground.
     const box = geometry.boundingBox;
     if (!box) throw new Error(`Crag '${placement.id}' has no bounds`);
-    const vertices = geometry.getAttribute("position");
-    const ring: (Vector3 | undefined)[] = Array.from({ length: 16 });
-    const centre = box.getCenter(new Vector3());
-    for (let i = 0; i < vertices.count; i++) {
-      const point = new Vector3().fromBufferAttribute(vertices, i);
-      if (point.y > box.min.y + (box.max.y - box.min.y) * 0.18) continue;
-      const angle = Math.atan2(point.z - centre.z, point.x - centre.x);
-      const bin = Math.min(15, Math.floor(((angle + Math.PI) / (2 * Math.PI)) * 16));
-      const held = ring[bin];
-      if (
-        !held ||
-        Math.hypot(point.x - centre.x, point.z - centre.z) >
-          Math.hypot(held.x - centre.x, held.z - centre.z)
-      )
-        ring[bin] = point;
-    }
     model.updateMatrix();
+    const centre = box.getCenter(new Vector3()).applyMatrix4(model.matrix);
+    const sectors = Array.from({ length: 16 }, () => ({ reach: 0, vertices: [] as Vector3[] }));
+    const vertices = geometry.getAttribute("position");
+    for (let i = 0; i < vertices.count; i++) {
+      const point = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(model.matrix);
+      const dx = point.x - centre.x;
+      const dz = point.z - centre.z;
+      const bin = Math.min(15, Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 16));
+      const sector = sectors[bin];
+      if (!sector) continue;
+      sector.reach = Math.max(sector.reach, Math.hypot(dx, dz));
+      sector.vertices.push(point);
+    }
     let highestGap = Number.NEGATIVE_INFINITY;
     cragRingSamples = 0;
-    for (const vertex of ring) {
-      if (!vertex) continue;
-      const point = vertex.applyMatrix4(model.matrix);
-      const contact = groundAt(placement, point.toArray()).height;
+    for (const sector of sectors) {
+      let lowest: Vector3 | undefined;
+      for (const point of sector.vertices)
+        if (
+          Math.hypot(point.x - centre.x, point.z - centre.z) >= sector.reach * 0.75 &&
+          (!lowest || point.y < lowest.y)
+        )
+          lowest = point;
+      if (!lowest) continue;
+      const contact = groundAt(placement, lowest.toArray()).height;
       if (contact === null) throw new Error(`Missing ground under crag ring '${placement.id}'`);
-      highestGap = Math.max(highestGap, point.y - contact);
+      highestGap = Math.max(highestGap, lowest.y - contact);
       cragRingSamples++;
     }
     if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);

@@ -114,7 +114,10 @@ export const BIOMES: Record<WorldName, IBiome> = {
         diffuse: "cliff_side/cliff_side_diff_1k.jpg",
         normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
       },
-      rock: GROUND_MAPS.rock,
+      rock: {
+        diffuse: "cliff_side/cliff_side_diff_1k.jpg",
+        normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
+      },
     },
     sun: { color: 0xffe0ad, intensity: 4.8, direction: [160, 140, 85] },
     sky: { turbidity: 3.5, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.8 },
@@ -198,12 +201,12 @@ export function biomeWeights(
   );
   const polygon = smoothstep(0.025, 0.11, cells.y.sub(cells.x));
   const mats = smoothstep(
-    0.48,
-    0.78,
+    0.47,
+    0.77,
     float(0.52)
-      .add(positionWorld.x.mul(0.049).add(positionWorld.z.mul(0.0216)).sin().mul(0.27))
-      .add(positionWorld.z.mul(0.0516).sub(positionWorld.x.mul(0.0238)).add(1.3).sin().mul(0.24))
-      .add(positionWorld.x.mul(0.0994).add(positionWorld.z.mul(0.0732)).sin().mul(0.12)),
+      .add(positionWorld.x.mul(0.343).add(positionWorld.z.mul(0.1566)).sin().mul(0.27))
+      .add(positionWorld.z.mul(0.3741).sub(positionWorld.x.mul(0.1666)).add(1.3).sin().mul(0.24))
+      .add(positionWorld.x.mul(0.6958).add(positionWorld.z.mul(0.5307)).sin().mul(0.12)),
   );
   return {
     dirt:
@@ -214,7 +217,12 @@ export function biomeWeights(
             .mul(mats.oneMinus())
         : smoothstep(0.08, 0.5, hollow).mul(0.55),
     moss:
-      biome.world === "tundra" ? mats.mul(snow.oneMinus()).mul(mix(0.72, 0.98, polygon)) : float(0),
+      biome.world === "tundra"
+        ? mats
+            .mul(smoothstep(-0.2, 0.22, drift).mul(0.85).add(0.15))
+            .mul(snow.oneMinus())
+            .mul(mix(0.72, 0.98, polygon))
+        : float(0),
     rock:
       biome.world === "alpine"
         ? stone
@@ -264,7 +272,7 @@ export function alpineSnowCover(): Node<"float"> {
   const drift = mx_fractal_noise_float(positionWorld.mul(0.033), 3);
   const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
   return smoothstep(54, 88, positionWorld.y.add(drift.mul(22)))
-    .mul(smoothstep(0.67, 0.84, normalWorldGeometry.y))
+    .mul(smoothstep(0.45, 0.78, normalWorldGeometry.y))
     .mul(float(1).sub(exposure.mul(0.28)));
 }
 
@@ -274,17 +282,17 @@ export function desertRockColor(sample: Node<"vec3">): Node<"vec3"> {
   const warp = mx_fractal_noise_float(positionWorld.mul(vec3(0.012, 0.003, 0.012)), 3).mul(5);
   const height = positionWorld.y.add(warp);
   const beds = mx_noise_float(vec3(0, height.mul(1.55), 0));
-  const fine = height.mul(4.1).add(beds.mul(2.8)).sin().mul(0.035);
-  const ledge = smoothstep(0.38, 0.62, mx_noise_float(vec3(0, height.mul(0.19), 0))).mul(0.11);
+  const fine = height.mul(4.1).add(beds.mul(2.8)).sin().mul(0.05);
+  const ledge = smoothstep(0.38, 0.62, mx_noise_float(vec3(0, height.mul(0.19), 0))).mul(0.18);
   const varnish = smoothstep(
     -0.18,
     0.28,
     mx_fractal_noise_float(positionWorld.mul(vec3(0.42, 0.004, 0.42)), 3),
   )
     .mul(normalWorldGeometry.y.abs().oneMinus())
-    .mul(0.18);
+    .mul(0.4);
   return vec3(1.52, 0.9, 0.5)
     .mul(grain)
-    .mul(beds.mul(0.11).add(fine).add(1).sub(ledge))
+    .mul(beds.mul(0.24).add(fine).add(1).sub(ledge))
     .mul(mix(vec3(1), vec3(0.55, 0.48, 0.42), varnish));
 }

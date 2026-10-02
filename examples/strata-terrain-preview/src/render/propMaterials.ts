@@ -45,8 +45,6 @@ import {
   normalViewGeometry,
   normalWorld,
   normalize,
-  output,
-  positionGeometry,
   positionLocal,
   positionWorld,
   pow,

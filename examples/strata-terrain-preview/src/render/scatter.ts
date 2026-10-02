@@ -49,7 +49,7 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
   if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
   if (data.world === "tundra")
-    return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 1.4, z * 1.2) - 0.48) / 0.3);
+    return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
   return clamp01((42 - slope) / 20) * clamp01((66 - height) / 28);
 }
 
@@ -274,11 +274,19 @@ export function scatterProps(
         const sz = z + (random() - 0.5) * 12;
         if (slopeDegrees(data, sx, sz) < 32 || clampedHeight(data, sx, sz) < 48 || random() > 0.82)
           continue;
-        put("mountain", sx, sz, (30 + random() * 50) / 24);
+        const metres = 30 + random() * 50;
+        put("mountain", sx, sz, metres / 24);
         const fall = data.field.normalAt(sx, sz);
         const length = Math.hypot(fall.x, fall.z) || 1;
+        const overlapX = sx + (fall.x / length) * metres * 0.28;
+        const overlapZ = sz + (fall.z / length) * metres * 0.28;
+        if (
+          clampedHeight(data, overlapX, overlapZ) > 42 &&
+          slopeDegrees(data, overlapX, overlapZ) > 28
+        )
+          put("mountain", overlapX, overlapZ, Math.max(30, metres * 0.85) / 24);
         // A broad toe of small angular debris, widening downhill from each exposed wall.
-        for (let k = 0; k < 18; k++) {
+        for (let k = 0; k < 28; k++) {
           const down = 16 + random() * 24;
           const across = (random() - 0.5) * down;
           const tx = sx + (fall.x * down - fall.z * across) / length;
@@ -360,16 +368,28 @@ export function scatterProps(
     const drift = temperate
       ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
       : tundra
-        ? clamp01((forestWeight(x * 1.4, z * 1.2) - 0.48) / 0.3) *
-          clamp01((forestWeight(x * 3.1, z * 2.7) - 0.35) / 0.3)
-        : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
+        ? clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3) *
+          clamp01((forestWeight(x * 10.1, z * 8.7) - 0.2) / 0.5)
+        : desert
+          ? 0.08 + 0.6 * clamp01((forestWeight(x * 6.3, z * 5.7) - 0.5) / 0.3)
+          : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
     if (random() > density * drift) return;
     put(
       "grass",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.25 : 0.55) + random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
+      (temperate ? 0.8 : tundra ? 0.45 : desert ? 0.95 : 0.55) +
+        random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
     );
+    if (desert) {
+      for (let tuft = 0; tuft < 3; tuft++)
+        put(
+          "grass",
+          x + (random() - 0.5) * 1.4,
+          z + (random() - 0.5) * 1.4,
+          0.65 + random() * 0.55,
+        );
+    }
     if (random() < (desert ? 0.65 : tundra ? 0.95 : 0.3))
       put(
         "scrub",
@@ -377,8 +397,8 @@ export function scatterProps(
         z + (random() - 0.5),
         (desert ? 0.8 : tundra ? 0.55 : 0.9) + random() * (tundra ? 0.5 : 0.6),
       );
-    if (tundra && random() < 0.055)
-      put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.28 + random() * 0.25);
+    if (tundra && random() < 0.02)
+      put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
   };
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
   for (
