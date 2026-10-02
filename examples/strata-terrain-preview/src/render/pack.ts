@@ -80,12 +80,12 @@ for (let i = 0; i < 5; i++) {
 }
 for (const [asset, heights] of Object.entries({
   sapling: [1.1, 2.1, 3.0, 1.6],
-  grass: [0.3, 0.55, 0.75, 0.45, 0.95, 0.16, 0.2, 0.14],
-  scrub: [0.085, 0.065, 0.018, 0.14, 0.22, 0.11, 0.3, 0.19],
-  poppy: [0.38, 0.5, 0.42, 0.4, 0.3, 0.55, 0.45, 0.62],
-  fern: [0.7, 0.6, 0.85, 0.5, 0.95, 0.65],
-  bush: [0.9, 0.55, 1.4, 0.75],
-  litter: [0.42, 0.55, 0.34],
+  grass: [0.3, 0.55, 0.75, 0.45],
+  scrub: [0.085, 0.065, 0.018],
+  poppy: [0.38, 0.5, 0.42, 0.4],
+  fern: [0.7, 0.6, 0.85],
+  bush: [0.9, 0.55],
+  litter: [0.42, 0.55],
   boulder: [2.1, 5.2, 2.5],
   riverrock: [0.8],
   scree: [5.8],
@@ -102,19 +102,19 @@ for (const one of WORLD_ROCKS) STONE.add(one.asset);
  * Which licensed model each variant of a temperate understory layer draws.
  *
  * The table is the game's, not the bake's: a species is a line here and the variant index is what
- * the placement hash picks, so a wood grows eight grass species, eight ground-foliage mounds, six
- * ferns, eight flower species and four understorey conifers without any placement rule knowing a
+ * the placement hash picks, so a wood grows four grass species, three ground-foliage mounds, three
+ * ferns, four flower species and four understorey conifers (one draw per species) without any placement rule knowing a
  * filename. Every entry names a model out of a pack the canopy already cooks, so a layer costs a
  * mesh and no atlas.
  */
 const TEMPERATE_PATHS: Record<string, readonly string[]> = {
-  grass: ["fieldgrass/0", "field/0", "field/1", "field/2", "field/3", "mat/0", "mat/1", "mat/2"],
-  scrub: ["scrub/0", "scrub/1", "scrub/2", "tuft/0", "tuft/1", "tuft/2", "tuft/3", "tuft/4"],
-  fern: ["fern/0", "fern/1", "bracken/0", "bracken/1", "bracken/2", "bracken/3"],
-  poppy: ["poppy/0", "poppy/1", "poppy/2", "poppy/3", "bloom/0", "bloom/1", "bloom/2", "bloom/3"],
-  bush: ["thicket/0", "thicket/1", "thicket/2", "thicket/3"],
+  grass: ["fieldgrass/0", "field/0", "field/1", "field/2"],
+  scrub: ["scrub/0", "scrub/1", "scrub/2"],
+  fern: ["fern/0", "fern/1", "bracken/0"],
+  poppy: ["poppy/0", "poppy/1", "poppy/2", "poppy/3"],
+  bush: ["thicket/0", "thicket/1"],
   sapling: ["needle-spruce/0", "sapling/0", "sapling/1", "sprout/0"],
-  litter: ["litter/0", "litter/1", "litter/2"],
+  litter: ["litter/0", "litter/1"],
 };
 const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
