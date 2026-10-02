@@ -1,6 +1,9 @@
 import {
   BoxGeometry,
   DirectionalLight,
+  Frustum,
+  Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type OrthographicCamera,
@@ -66,7 +69,7 @@ function shadowWorld(): { camera: PerspectiveCamera; light: DirectionalLight; sc
 
 function nodeFor(
   light: DirectionalLight,
-  options: { invalidationDelay?: number } = {},
+  options: { clipExtents?: readonly number[]; invalidationDelay?: number } = {},
 ): VirtualShadowNode {
   const node = new VirtualShadowNode(light, {
     clipExtents: [24, 96],
@@ -189,6 +192,80 @@ function reportFromAFreshNode(light: DirectionalLight, camera: PerspectiveCamera
 }
 
 describe("the memoised caster set", () => {
+  it.each(["cluster", "wide"] as const)(
+    "finishes the coarse probe after an alpha caster, choosing %s casters",
+    (half) => {
+      const { camera, light, scene } = shadowWorld();
+      const cells = new Group();
+      scene.add(cells);
+      const cutout = caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "pine-leaves@0,0");
+      (cutout.material as MeshBasicMaterial).alphaTest = 0.5;
+      cells.add(cutout);
+      const node = nodeFor(light, { clipExtents: [24, 96, 320], invalidationDelay: 0 });
+      node.updateBefore(frameFor(camera));
+
+      // Stream a populated subtree after the first render, with an opaque trunk behind the cutout.
+      const loaded = new Group();
+      const trunk = caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "pine-trunk@0,0");
+      const wide = caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "pine-trunk@*");
+      trunk.position.set(20, 12, -48);
+      wide.position.copy(trunk.position);
+      loaded.add(trunk, wide);
+      if (half === "cluster") {
+        const secondWide = caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "oak-trunk@*");
+        loaded.add(secondWide);
+      }
+      cells.add(loaded);
+      const receiver = caster(scene, 0, "terrain-block");
+      receiver.geometry = new BoxGeometry(512, 1, 512);
+      receiver.castShadow = false;
+      receiver.receiveShadow = true;
+
+      for (const distance of [0, 32, 64]) {
+        camera.position.z = -distance;
+        loaded.position.y = distance / 8;
+        scene.updateMatrixWorld(true);
+        node.invalidateAll();
+        for (let level = 0; level < 3; level += 1) {
+          node.updateBefore(frameFor(camera));
+          if (level === 0) continue;
+          const coarse = node.stats.perLevel[level];
+          expect(coarse?.rendered).toBe(1);
+          expect(coarse?.drawsBy[half]).toBe(1);
+          expect(coarse?.draws).toBe(1);
+          const shadowLight = node.levelLights[level] as DirectionalLight;
+          shadowLight.shadow.updateMatrices(shadowLight);
+          const shadowCamera = shadowLight.shadow.camera;
+          const frustum = new Frustum().setFromProjectionMatrix(
+            new Matrix4().multiplyMatrices(
+              shadowCamera.projectionMatrix,
+              shadowCamera.matrixWorldInverse,
+            ),
+          );
+          expect(frustum.intersectsObject(half === "cluster" ? trunk : wide)).toBe(true);
+          expect(shadowCamera.far).toBeLessThan(1000);
+        }
+        expect(cutout.castShadow).toBe(true);
+      }
+      node.dispose();
+    },
+  );
+
+  it("continues the probe after a mesh with no bounding sphere", () => {
+    const { camera, light, scene } = shadowWorld();
+    const missing = caster(scene, 0, "missing-bounds");
+    vi.spyOn(missing.geometry, "computeBoundingSphere").mockImplementation(() => undefined);
+    caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "trunk");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-1");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-2");
+    scene.updateMatrixWorld(true);
+    const node = nodeFor(light);
+    node.updateBefore(frameFor(camera));
+    expect(node.stats.perLevel[0]?.drawsBy.cluster).toBe(1);
+    expect(node.stats.perLevel[0]?.draws).toBe(1);
+    node.dispose();
+  });
+
   /** Four casters: one cluster square against two wide meshes, so the cluster half wins the choice,
    *  and one on layer 0, which every level draws and no half decides. */
   function threeCasters(): {

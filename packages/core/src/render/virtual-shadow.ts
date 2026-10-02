@@ -1268,7 +1268,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         if (isAlphaCaster(mesh.material)) {
           mesh.castShadow = false;
           this.#alphaHidden.push(mesh);
-          return;
+          continue;
         }
         const chain = lodChainOf(mesh.geometry);
         const coarsest = chain?.levels[chain.levels.length - 1];
@@ -1290,7 +1290,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       } else {
         sphere = own;
       }
-      if (sphere === null || sphere === undefined) return;
+      if (sphere === null || sphere === undefined) continue;
       // The box too, and for the same reason: a sphere has to cover a 128 m tile's diagonal, so its
       // height range is the tile's diagonal rather than the tile's relief, and the window's ground
       // is then read as 180 m of cliff.
