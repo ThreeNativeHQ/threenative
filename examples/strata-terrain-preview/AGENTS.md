@@ -39,4 +39,9 @@ Every starter path lives in `src/world/terrainAssets.ts`; replace art by editing
 `pnpm --filter strata-terrain-preview test:terrain:custom` proves the swap (zero starter requests, same
 terrain arrays, a missing file fails by name; the ground samples 16 textures, so at most four layers
 take a normal map). `pnpm --filter strata-terrain-preview test:consumer` packs the terrain package and
-re-authors every world `bake.mjs` exports in an install outside the workspace.
+re-authors every world `bake.mjs` exports in an install outside the workspace, runs the shipped
+terrain-authoring workflow in a scaffold there, exports each world (and the GUI-polished fixture) as
+a full-world GLB in a plain browser page, and hands the result to a scaffolded ThreeNative game that
+builds and plays with no authoring package (`CONSUMER_GAME=skip` leaves that last stage out).
+`pnpm --filter strata-terrain-preview test:terrain:authored` polishes a world through the editor's
+real controls, reloads it and reproduces `scripts/fixtures/editor-authored.json` (`RECORD=1` rewrites it).
