@@ -941,7 +941,7 @@ describe("CI pipeline structure", () => {
     // Every release proof shares one group now, whatever triggered it: a per-ref or per-SHA key
     // is what let a promotion PR, a manual dispatch and a main CI completion hold the pool at
     // once. `native-release-proof.spec.ts` owns the setting; this is the structural backstop.
-    expect(native).toContain("group: native-release-proof");
+    expect(native).toContain("&& 'native-release-proof' ||");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_run:");
@@ -969,7 +969,11 @@ describe("CI pipeline structure", () => {
     // first, which is exactly the starvation this group exists to end (PRD-380: 7.0k
     // runner-minutes of PR proof against a pool of about three).
     const groups = [...concurrency.matchAll(/^\x20{2}group: (.*)$/gmu)].map((match) => match[1]);
-    expect(groups).toEqual(["native-release-proof"]);
+    // Proof-eligible runs share `native-release-proof`; every other run (an ordinary PR push that
+    // `gates` refuses) gets a group of its own so it can never displace a pending proof.
+    expect(groups).toEqual([
+      "${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
+    ]);
     // `false`, not a conditional: a superseded run still lets its queued consumer finish.
     expect(concurrency).toContain("cancel-in-progress: false");
   });
@@ -1000,6 +1004,10 @@ describe("CI pipeline structure", () => {
     // fail a red check on every fork PR close.
     expect(cancel).toMatch(
       /if: github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+    );
+    // The promotion PR's head is `develop`: closing it must not cancel develop's own CI runs.
+    expect(cancel).toMatch(
+      /head\.ref != 'develop' && github\.event\.pull_request\.head\.ref != 'main'/u,
     );
     expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
     expect(cancel).toContain("--json databaseId,status");

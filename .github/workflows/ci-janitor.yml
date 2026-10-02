@@ -19,7 +19,8 @@ jobs:
   cancel:
     # A fork's runs live in another repository, and its runs cannot be cancelled from here. Trying
     # would put a red check on every fork PR close, so the guard is the whole job.
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # A promotion PR's head is `develop`: its runs are develop's own CI, never a lane to sweep.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != 'develop' && github.event.pull_request.head.ref != 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

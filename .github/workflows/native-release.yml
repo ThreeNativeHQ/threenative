@@ -43,7 +43,11 @@ concurrency:
   # `cancel-in-progress: false` is unchanged and load-bearing: every cancellation in this
   # workflow's history was a proof run killed by the next push to its own branch, and a
   # candidate-keyed result is still valid for the SHA it was produced from.
-  group: native-release-proof
+  #
+  # Only a run that will prove joins the shared group. Every ordinary PR push still starts this
+  # workflow (its `gates` job then refuses it), and in one shared group those no-op runs would queue
+  # behind a real proof and replace a pending one, since a group keeps a single pending run.
+  group: ${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:

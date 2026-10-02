@@ -738,7 +738,10 @@ test("at most one release proof holds runners at a time, across branches", () =>
   // promotion PR, a manual dispatch, a tag and every main CI completion each held a runner at
   // the same time - and a two-minute join waited behind an hour of proof (PRD-380). One group,
   // no cancel: a superseded run still lets its queued consumer finish.
-  assert.match(settings, /^\x20{2}group: native-release-proof$/mu);
+  assert.match(
+    settings,
+    /^\x20{2}group: \$\{\{ \(.*\) && 'native-release-proof' \|\| format\('native-release-skip-\{0\}', github\.run_id\) \}\}$/mu,
+  );
   assert.match(settings, /^\x20{2}cancel-in-progress: false$/mu);
 });
 
