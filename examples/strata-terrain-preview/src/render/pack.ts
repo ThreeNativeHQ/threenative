@@ -51,7 +51,7 @@ import {
   biomeWeights,
   desertRockColor,
 } from "./biomes.js";
-import { lightNeedles } from "./propMaterials.js";
+import { type IPropGround, createRockGround, lightNeedles } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
 
 interface IPackSpecies {
@@ -186,17 +186,11 @@ function surface(
       material.aoNode = mix(0.15, 0.8, root);
     }
     if (stone) {
-      const base = attribute<"float">("groundBlend", "float");
       const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
-      const moss = base
-        .mul(world === "alpine" ? 0.12 : 0.9)
-        .add(
-          normalWorldGeometry.y
-            .max(0)
-            .mul(growth)
-            .mul(world === "alpine" ? 0 : 0.38),
-        )
-        .clamp(0, 0.95);
+      const moss = normalWorldGeometry.y
+        .max(0)
+        .mul(growth)
+        .mul(world === "alpine" || world === "desert" ? 0 : 0.38);
       material.colorNode = mix(
         material.colorNode,
         world === "desert"
@@ -206,7 +200,6 @@ function surface(
             : vec3(0.045, 0.078, 0.019),
         moss,
       );
-      material.aoNode = mix(1, 0.65, base);
       if (world === "alpine" || world === "tundra") {
         // Alpine keeps the heightfield's upward-face mask across mesh seams; tundra uses its ground rule.
         const snow =
@@ -306,6 +299,7 @@ export interface IPackProps {
 export async function loadPack(
   assets?: IAssetLoader,
   world: WorldName = "forest",
+  ground?: IPropGround,
 ): Promise<IPackProps> {
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
@@ -353,6 +347,7 @@ export async function loadPack(
           ),
         )
       : [];
+  const rockGround = await createRockGround(assets, ground, BIOMES[world]);
   const loaded = await Promise.all(
     selected.map(async (one) => {
       if (!assets) return undefined;
@@ -462,16 +457,8 @@ export async function loadPack(
           geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
         }
       }
-      if (stone) {
-        const blend = Float32Array.from({ length: positions.count }, (_, i) =>
-          Math.max(
-            0,
-            Math.min(1, (0.48 - positions.getY(i) / Math.max(0.01, size.y * factor)) / 0.28),
-          ),
-        );
-        geometry.setAttribute("groundBlend", new BufferAttribute(blend, 1));
-      }
       const material = surface(source, one.asset, world, rockface[2]);
+      if (stone) rockGround?.apply(material);
       if (source !== mesh.material) source.dispose();
       const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
       built.push({ geometry, material });
@@ -483,6 +470,7 @@ export async function loadPack(
   return {
     parts,
     dispose: () => {
+      rockGround?.dispose();
       for (const one of built) {
         one.geometry.dispose();
         one.material.dispose();

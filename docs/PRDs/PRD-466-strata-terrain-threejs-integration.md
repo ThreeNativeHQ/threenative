@@ -2116,3 +2116,19 @@ Local checkpoints: **aaa0c4b62**, **a9c844015**, **83f612795**, followed by the
 final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
 (**6.4 GiB**): it is unmerged and holds requested local licensed assets/captures,
 so it cannot be removed under the cleanup rules.
+
+### 2026-10-02 — Round 18 material lane (in progress)
+
+Ground sampling now has near detail, middle textures and distant macro bands;
+all steep layers project on three axes. Shared turf UVs/albedo and baked-height
+contact normals join rock bases to the landscape. Optional normalized flow and
+sediment arrays default to zero and reject malformed values. Snow placement
+stays in the existing biome rule; this lane changes its surface response.
+Capability review reused Heightfield, existing ground maps and Three.js TSL;
+no engine package changed. Static proof: example tsc PASS, example Biome PASS,
+terrain vitest **69/69 PASS**, optional-mask scratch check PASS. Baseline crops
+are in `examples/strata-terrain-preview/artifacts/playtest/material-before/`;
+zero console/runtime errors, but baseline CPU windows exceeded 4 ms. Fresh
+visual proof and both final arms are pending the machine-wide capture queue.
+The only additive cross-lane edit passes existing baked data into `loadPack`
+in `src/game.ts`; all vegetation and lighting decisions remain untouched.

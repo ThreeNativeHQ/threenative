@@ -538,7 +538,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       const buildProps = async (): Promise<void> => {
         const [prepared, pack] = await Promise.all([
           loadPreparedProps(ctx.assets),
-          loadPack(ctx.assets, world),
+          loadPack(ctx.assets, world, data),
         ]);
         preparedDispose = () => {
           prepared.dispose();

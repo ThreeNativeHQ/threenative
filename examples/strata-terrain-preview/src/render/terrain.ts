@@ -16,6 +16,7 @@ import {
 } from "three";
 import {
   abs,
+  attribute,
   clamp,
   dot,
   float,
@@ -66,6 +67,9 @@ export interface IBakedWorld {
   waterLevel: number | null;
   lakes?: readonly IBakedLake[];
   rivers?: readonly IBakedRiver[];
+  /** Optional erosion observations; old bakes keep their curvature-based surface. */
+  flow?: number[];
+  sediment?: number[];
 }
 
 /**
@@ -138,13 +142,68 @@ const WET_SAND = {
 const MEADOW = vec3(0.47, 0.72, 0.4);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
-function tiledUV(key: LayerKey, scale = 1, plane: Node<"vec2"> = positionWorld.xz): Node<"vec2"> {
+export function tiledUV(
+  key: LayerKey,
+  scale = 1,
+  plane: Node<"vec2"> = positionWorld.xz,
+): Node<"vec2"> {
   const base = plane.div(GROUND_TILE[key] * scale);
   const warp = vec2(
     mx_noise_float(positionWorld.mul(0.025)),
     mx_noise_float(positionWorld.mul(0.025).add(vec3(17, 0, 29))),
   );
   return rotateUV(base, float(scale === 1 ? 0.38 : -0.73), vec2(0)).add(warp.mul(0.35));
+}
+
+/** Shared floor sampling: two rotated scales, with continuous world-space blend weights. */
+export function groundLayer(
+  source: Texture,
+  key: LayerKey,
+  plane = positionWorld.xz,
+): Node<"vec4"> {
+  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const far = smoothstep(10, 70, positionView.length());
+  const mid = mix(
+    texture(source, tiledUV(key, 1, plane)),
+    texture(source, tiledUV(key, 2.35, plane)),
+    mix(patch.mul(0.65), patch.mul(0.5).add(0.25), far),
+  );
+  const near = mix(
+    mid,
+    texture(source, tiledUV(key, 0.23, plane)),
+    oneMinus(smoothstep(5, 24, positionView.length())).mul(0.2),
+  );
+  return mix(
+    near,
+    texture(source, tiledUV(key, 18, plane)),
+    smoothstep(100, 380, positionView.length()).mul(0.72),
+  );
+}
+
+/** Turf colour shared by the landscape and soil banked against a rock. */
+export function groundTurf(
+  sampled: Node<"vec3">,
+  biome?: IBiome,
+  hollow: Node<"float"> = float(0),
+): Node<"vec3"> {
+  const distance = positionView.length();
+  const broad = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.006), 2);
+  const dry = smoothstep(-0.45, 0.45, broad.sub(hollow.mul(0.06)));
+  const tufts = mx_noise_float(positionWorld.mul(0.75))
+    .mul(0.22)
+    .mul(oneMinus(smoothstep(45, 140, distance)))
+    .add(1);
+  const temperate = !biome || biome.world === "forest" || biome.world === "coastal";
+  if (!temperate) {
+    const tint = vec3(...biome.grassTint);
+    if (biome.world !== "alpine") return sampled.mul(tint);
+    const cover = vec3(0.075, 0.12, 0.028).mul(mix(0.91, 1.08, dry));
+    return mix(sampled.mul(tint), cover, smoothstep(65, 180, distance).mul(0.85));
+  }
+  const field = mix(vec3(0.042, 0.072, 0.018), vec3(0.062, 0.102, 0.029), dry)
+    .mul(tufts)
+    .mul(mix(0.92, 1.08, smoothstep(0.6, -0.6, hollow)));
+  return mix(sampled.mul(MEADOW), field, smoothstep(32, 115, distance).mul(0.86));
 }
 
 /**
@@ -162,9 +221,9 @@ interface IRelief {
   readonly tilt: Node<"vec3">;
 }
 
-function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRelief {
+function planarRelief(source: Texture, uv: Node<"vec2">, strength: number, angle = 0.38): IRelief {
   const sample = texture(source, uv);
-  const tangent = rotateUV(sample.xy.mul(2).sub(1), float(-0.38), vec2(0));
+  const tangent = rotateUV(sample.xy.mul(2).sub(1), float(-angle), vec2(0));
   return {
     crevice: sample.z,
     tilt: vec3(tangent.x, 0, tangent.y).mul(strength),
@@ -183,10 +242,18 @@ function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRel
  * tangential direction, which is what a wall projection always does without this.
  */
 function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IRelief {
-  const tile = float(GROUND_TILE[key]).mul(roughnessScale);
-  const x = texture(source, positionWorld.zy.div(tile)).xyz.mul(2).sub(1);
-  const y = texture(source, positionWorld.xz.div(tile)).xyz.mul(2).sub(1);
-  const z = texture(source, positionWorld.xy.div(tile)).xyz.mul(2).sub(1);
+  const tap = (plane: Node<"vec2">) => {
+    const sampled = texture(source, tiledUV(key, roughnessScale, plane));
+    const tangent = rotateUV(
+      sampled.xy.mul(2).sub(1),
+      float(roughnessScale === 1 ? -0.38 : 0.73),
+      vec2(0),
+    );
+    return vec3(tangent, sampled.z.mul(2).sub(1));
+  };
+  const x = tap(positionWorld.zy);
+  const y = tap(positionWorld.xz);
+  const z = tap(positionWorld.xy);
   const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
   return {
@@ -263,12 +330,11 @@ function sandRipples(direction?: Node<"vec2">): Node<"vec3"> {
  * its own length.
  */
 function triplanarAlbedo(source: Texture, key: LayerKey, scale = 1): Node<"vec4"> {
-  const tile = float(GROUND_TILE[key] * scale);
   const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
-  const x = texture(source, positionWorld.zy.div(tile));
-  const y = texture(source, positionWorld.xz.div(tile));
-  const z = texture(source, positionWorld.xy.div(tile));
+  const x = texture(source, tiledUV(key, scale, positionWorld.zy));
+  const y = texture(source, tiledUV(key, scale));
+  const z = texture(source, tiledUV(key, scale, positionWorld.xy));
   return weight.x.mul(x).add(weight.y.mul(y)).add(weight.z.mul(z)) as Node<"vec4">;
 }
 
@@ -329,7 +395,11 @@ export function createGroundMaterial(
     oneMinus(smoothstep(data.size / 2, data.size / 2 + 28, outside)),
   );
   // Material placement follows the actual landform, never the bake's brown blob palette.
-  const drainage = smoothstep(0.04, 0.3, hollow).mul(smoothstep(0.003, 0.05, steep));
+  const flow = attribute<"float">("terrainFlow", "float");
+  const sediment = attribute<"float">("terrainSediment", "float");
+  const drainage = smoothstep(0.04, 0.3, hollow)
+    .mul(smoothstep(0.003, 0.05, steep))
+    .max(flow.mul(0.65));
   const rib = smoothstep(-0.02, -0.45, hollow);
   const alpine = smoothstep(38, 66, positionWorld.y.add(breakUp.mul(5)));
   // No recorded sea level means an inland world, and an inland world has no beach.
@@ -358,7 +428,7 @@ export function createGroundMaterial(
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
     // has to be the one that speaks for the shore; painted dirt steps aside where it does.
     dirt: max(
-      drainage.mul(0.18),
+      drainage.mul(0.18).max(sediment.mul(0.5)),
       smoothstep(0.025, 0.18, steep)
         .mul(smoothstep(-0.12, 0.32, breakUp))
         .mul(0.48),
@@ -383,7 +453,19 @@ export function createGroundMaterial(
   if (!otherBiome) {
     // Ordinary forest hills carry turf; reserve exposed soil for drainage banks.
     if (biome?.world === "forest" || biome === undefined)
-      weights.dirt = drainage.mul(0.18).mul(sand.oneMinus());
+      weights.dirt = drainage.mul(0.18).max(sediment.mul(0.5)).mul(sand.oneMinus());
+    if (biome?.world === "forest" || biome === undefined) {
+      // The placement field's stand frequencies: litter stays under mature stands, close to the eye.
+      const stand = float(0.52)
+        .add(positionWorld.x.mul(0.035).add(positionWorld.z.mul(0.018)).sin().mul(0.27))
+        .add(positionWorld.z.mul(0.043).sub(positionWorld.x.mul(0.017)).add(1.3).sin().mul(0.24))
+        .add(positionWorld.x.mul(0.071).add(positionWorld.z.mul(0.061)).sin().mul(0.12));
+      const litter = smoothstep(0.58, 0.82, stand)
+        .mul(smoothstep(-0.12, 0.28, mx_noise_float(positionWorld.mul(1.1))))
+        .mul(oneMinus(smoothstep(8, 38, positionView.length())))
+        .mul(0.52);
+      weights.dirt = weights.dirt.max(litter);
+    }
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
     if (biome?.world === "coastal") {
       const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
@@ -419,7 +501,6 @@ export function createGroundMaterial(
    * 2.6 m is a dozen pixels wide from fifty metres away, and the middle distance goes to a wash. The
    * two are blended rather than switched so the crossover has no seam to find.
    */
-  const flatLayer = (key: LayerKey): boolean => key !== "rock" && key !== "sand";
 
   // Keep colour and tangent relief on the same rotated projections and scales.
   const rockTap = (source: Texture, plane: Node<"vec2">, relief = false): Node<"vec4"> => {
@@ -445,21 +526,12 @@ export function createGroundMaterial(
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
-    const flat = mix(
-      texture(diffuse, tiledUV(key)),
-      texture(diffuse, tiledUV(key, 2.35)),
-      tileBlend,
-    );
+    const flat = groundLayer(diffuse, key);
     if (biome?.world === "tundra" && (key === "grass" || key === "dirt" || key === "moss")) {
       // The same rotated two-scale floor and walls continue across the resident edge.
       const axis = abs(normalWorldGeometry).pow(4);
       const share = axis.div(axis.x.add(axis.y).add(axis.z));
-      const tap = (plane: Node<"vec2">) =>
-        mix(
-          texture(diffuse, tiledUV(key, 1, plane)),
-          texture(diffuse, tiledUV(key, 2.35, plane)),
-          tileBlend,
-        );
+      const tap = (plane: Node<"vec2">) => groundLayer(diffuse, key, plane);
       const sampled = share.x
         .mul(tap(positionWorld.zy))
         .add(share.y.mul(flat))
@@ -470,8 +542,6 @@ export function createGroundMaterial(
           ? vec4(sampled.rgb.mul(vec3(1.08, 1.07, 0.65)), sampled.a)
           : sampled;
     }
-    if (flatLayer(key))
-      return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
       otherBiome && key === "rock"
         ? (() => {
@@ -486,6 +556,7 @@ export function createGroundMaterial(
           })()
         : triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
+    if (key === "snow" && biome) return vec4(blended.rgb.mul(vec3(...biome.snowTint)), blended.a);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
@@ -496,16 +567,27 @@ export function createGroundMaterial(
       if (otherBiome && biome.world === "desert") stone = desertRockColor(blended.rgb);
       if (otherBiome && biome.world === "alpine") stone = alpineRockColor(blended.rgb);
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
-      const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
-      const distant = vec3(...(otherBiome ? biome.distantStone : [0.16, 0.17, 0.155])).mul(
-        weathering,
-      );
+      const weathering = mx_fractal_noise_float(positionWorld.mul(vec3(0.005, 0.011, 0.005)), 2)
+        .mul(0.18)
+        .add(1);
+      const large = triplanarAlbedo(diffuse, key, 16).rgb;
+      const massif =
+        biome?.world === "alpine"
+          ? alpineRockColor(large)
+          : biome?.world === "desert"
+            ? desertRockColor(large)
+            : large.mul(vec3(...(otherBiome ? biome.stoneTint : [0.44, 0.46, 0.42])));
+      const distant = mix(
+        vec3(...(otherBiome ? biome.distantStone : [0.16, 0.17, 0.155])),
+        massif,
+        0.65,
+      ).mul(weathering);
       return vec4(
         mix(
           stone,
           distant,
           smoothstep(35, 220, positionView.length()).mul(
-            biome?.world === "alpine" ? 0 : otherBiome ? 0.28 : 0.65,
+            biome?.world === "alpine" ? 0.28 : otherBiome ? 0.32 : 0.65,
           ),
         ),
         blended.a,
@@ -542,7 +624,16 @@ export function createGroundMaterial(
   // flat past twenty metres.
   const reliefOf = (key: LayerKey, strength: number): IRelief => {
     const source = layer(key).normal;
-    if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
+    if (source === undefined)
+      return {
+        crevice: float(1),
+        tilt:
+          key === "sand"
+            ? sandRipples().mul(oneMinus(smoothstep(8, 35, positionView.length())))
+            : key === "snow"
+              ? microGrain().mul(0.4)
+              : vec3(0),
+      };
     held.add(source);
     if (key === "rock") {
       const walls = otherBiome
@@ -563,21 +654,28 @@ export function createGroundMaterial(
         : triplanarRelief(source, key);
       return {
         crevice: walls.crevice,
-        tilt: walls.tilt
-          .mul(strength)
-          .mul(mix(1, otherBiome ? 0.45 : 0.18, smoothstep(24, 160, positionView.length()))),
+        tilt: mix(
+          walls.tilt.mul(strength),
+          triplanarRelief(source, key, 12).tilt.mul(strength * 0.45),
+          smoothstep(80, 320, positionView.length()),
+        ),
       };
     }
     const near = planarRelief(source, tiledUV(key), strength);
-    const coarse = planarRelief(source, tiledUV(key, 2.35), strength * 0.6);
+    const coarse = planarRelief(source, tiledUV(key, 2.35), strength * 0.6, -0.73);
     const flat: IRelief = {
       crevice: mix(near.crevice, coarse.crevice, tileBlend),
-      tilt: mix(near.tilt, coarse.tilt, tileBlend),
+      tilt: mix(near.tilt, coarse.tilt, tileBlend)
+        .add(
+          planarRelief(source, tiledUV(key, 0.18), strength * 0.42, -0.73).tilt.mul(
+            oneMinus(smoothstep(6, 28, positionView.length())),
+          ),
+        )
+        .mul(mix(1, 0.12, smoothstep(60, 240, positionView.length()))),
     };
-    if (flatLayer(key)) return flat;
     // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
     // dirt sample at theirs, which is why a cliff's grass fringe keeps the same grain as the meadow.
-    const walls = triplanarRelief(source, key, 0.55);
+    const walls = triplanarRelief(source, key);
     const blended: IRelief = {
       crevice: mix(walls.crevice, flat.crevice, planarShare),
       tilt: mix(walls.tilt.mul(strength), flat.tilt, planarShare),
@@ -593,47 +691,7 @@ export function createGroundMaterial(
   };
 
   const grassRelief = reliefOf("grass", 0.38);
-  // Metre-scale tufts survive the grass photograph's mips beyond individual blades.
-  const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
-    .mul(0.55)
-    .add(1);
-  const meadowDry = smoothstep(-0.2, 0.24, macro.add(mottling.mul(0.6)).sub(hollow.mul(0.18)));
-  const meadowValue = mix(0.62, 1.18, smoothstep(0.6, -0.6, hollow));
-  const flowers = smoothstep(0.3, 0.47, mx_noise_float(positionWorld.mul(0.95))).mul(
-    smoothstep(0.05, 0.3, mottling),
-  );
-  const farGrass = mix(
-    vec3(0.025, 0.055, 0.013),
-    biome?.world === "forest" || biome === undefined
-      ? vec3(0.06, 0.11, 0.035)
-      : vec3(0.12, 0.105, 0.035),
-    meadowDry,
-  )
-    .mul(cover)
-    .mul(meadowValue)
-    .add(vec3(0.11, 0.09, 0.04).mul(flowers));
-  // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
-  // Other biomes keep their own ground tint; the green far-field belongs to the temperate meadow.
-  let albedo: Node<"vec4"> = otherBiome
-    ? albedoOf("grass").mul(vec3(...biome.grassTint))
-    : vec4(
-        mix(
-          albedoOf("grass").rgb.mul(MEADOW),
-          farGrass,
-          smoothstep(32, 115, positionView.length()).mul(0.86),
-        ),
-        1,
-      );
-  if (biome?.world === "alpine") {
-    // Keep unresolved grass texels out of the alpine horizon.
-    const distantCover = vec3(0.075, 0.12, 0.028)
-      .mul(cover)
-      .mul(mix(0.85, 1.12, patch));
-    albedo = vec4(
-      mix(albedo.rgb, distantCover, smoothstep(65, 160, positionView.length()).mul(0.85)),
-      1,
-    );
-  }
+  let albedo: Node<"vec4"> = vec4(groundTurf(albedoOf("grass").rgb, biome, hollow), 1);
   // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
@@ -695,7 +753,7 @@ export function createGroundMaterial(
       );
   const tone = otherBiome
     ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
-    : mix(vec3(0.72, 0.82, 0.63), vec3(1.08, 1.08, 0.88), dryness);
+    : mix(vec3(0.9, 0.95, 0.84), vec3(1.03, 1.04, 0.95), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
@@ -727,7 +785,15 @@ export function createGroundMaterial(
     continuation,
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
   material.roughnessNode = mix(
-    otherBiome ? mix(0.94, 0.82, snowCover) : mix(0.84, 0.98, dryness),
+    mix(
+      otherBiome ? 0.94 : mix(0.88, 0.98, dryness),
+      float(0.91).sub(
+        smoothstep(0.48, 0.68, mx_noise_float(positionWorld.mul(60)))
+          .mul(oneMinus(smoothstep(3, 14, positionView.length())))
+          .mul(0.5),
+      ),
+      snowCover,
+    ),
     0.48,
     curvature.wetBank,
   );
@@ -753,7 +819,12 @@ export function createGroundMaterial(
   const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
-  material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
+  const crystals = microGrain()
+    .mul(snowCover)
+    .mul(oneMinus(smoothstep(4, 22, positionView.length())));
+  material.normalNode = transformNormalToView(
+    normalize(normalWorldGeometry.add(tangent).add(crystals)),
+  );
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
   });
@@ -821,6 +892,34 @@ export function createTerrain(
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 
+  for (const [key, name] of [
+    ["flow", "terrainFlow"],
+    ["sediment", "terrainSediment"],
+  ] as const) {
+    const values = data[key];
+    if (
+      values &&
+      (values.length !== geometry.getAttribute("position").count ||
+        values.some((value) => !Number.isFinite(value) || value < 0 || value > 1))
+    )
+      throw new RangeError(`Baked terrain ${key} must have one finite 0..1 value per vertex`);
+    geometry.setAttribute(
+      name,
+      new Float32BufferAttribute(values ?? new Float32Array(data.resolution ** 2), 1),
+    );
+    const edgeValues = new Float32Array(edgePositions.count);
+    if (values)
+      for (let vertex = 0; vertex < (data.resolution - 1) * 4; vertex++) {
+        const column = Math.round(
+          (edgePositions.getX(vertex) / data.size + 0.5) * (data.resolution - 1),
+        );
+        const row = Math.round(
+          (edgePositions.getZ(vertex) / data.size + 0.5) * (data.resolution - 1),
+        );
+        edgeValues[vertex] = values[row * data.resolution + column] ?? 0;
+      }
+    horizonGeometry.setAttribute(name, new Float32BufferAttribute(edgeValues, 1));
+  }
   const curvature = buildCurvature(data, field);
   if (assets !== undefined)
     void loadGroundMaps(

@@ -42,12 +42,15 @@ import {
   max,
   mix,
   mx_noise_float,
+  normalMap,
   normalViewGeometry,
   normalWorld,
+  normalWorldGeometry,
   normalize,
   positionLocal,
   positionWorld,
   pow,
+  rotateUV,
   smoothstep,
   texture,
   textureSize,
@@ -63,6 +66,7 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import {
   FERN_MAPS,
   FIR_MAPS,
+  GROUND_MAPS,
   IMPOSTOR_CARD,
   type ISurfaceMaps,
   NEEDLE_ATLAS,
@@ -71,8 +75,15 @@ import {
   PROP_MAPS,
   SOIL_MAP,
 } from "../world/terrainAssets.js";
-import { type IBiome, alpineRockAlbedo, alpineRockColor, alpineSnowCover } from "./biomes.js";
+import {
+  type IBiome,
+  alpineRockAlbedo,
+  alpineRockColor,
+  alpineSnowCover,
+  biomeWeights,
+} from "./biomes.js";
 import type { IPropMaterials } from "./props.js";
+import { groundLayer, groundTurf, tiledUV } from "./terrain.js";
 
 /** How much a mip level shrinks a needle card's alpha; see {@link mipCompensatedCutoff}. */
 const MIP_ALPHA_SCALE = 0.25;
@@ -314,7 +325,11 @@ export interface IPropGround {
 const GROUND_BLEND = { reach: 0.7, soilTile: 3.4 } as const;
 
 /** The ground's height under a fragment, from the same baked heights the terrain was built from. */
-function groundHeight(ground: IPropGround): { node: Node<"float">; texture: DataTexture } {
+function groundHeight(ground: IPropGround): {
+  node: Node<"float">;
+  normal: Node<"vec3">;
+  texture: DataTexture;
+} {
   const heights = new DataTexture(
     Uint16Array.from(ground.heights, DataUtils.toHalfFloat),
     ground.resolution,
@@ -325,8 +340,24 @@ function groundHeight(ground: IPropGround): { node: Node<"float">; texture: Data
   heights.minFilter = LinearFilter;
   heights.magFilter = LinearFilter;
   heights.needsUpdate = true;
-  const at = positionWorld.xz.div(float(ground.size)).add(0.5);
-  return { node: texture(heights, at).r as unknown as Node<"float">, texture: heights };
+  const at = positionWorld.xz
+    .div(float(ground.size))
+    .add(0.5)
+    .mul((ground.resolution - 1) / ground.resolution)
+    .add(0.5 / ground.resolution);
+  const texel = 1 / ground.resolution;
+  const step = ground.size / (ground.resolution - 1);
+  const dx = texture(heights, at.add(vec2(texel, 0))).r.sub(
+    texture(heights, at.sub(vec2(texel, 0))).r,
+  );
+  const dz = texture(heights, at.add(vec2(0, texel))).r.sub(
+    texture(heights, at.sub(vec2(0, texel))).r,
+  );
+  return {
+    node: texture(heights, at).r as unknown as Node<"float">,
+    normal: normalize(vec3(dx.negate(), step * 2, dz.negate())),
+    texture: heights,
+  };
 }
 
 /**
@@ -359,22 +390,81 @@ function intoGround(
   );
 }
 
-function stoneSurface(
-  maps: { diffuse?: Texture; normal?: Texture },
-  height?: Node<"float">,
-  soil?: Texture,
+/** The landscape's floor maps continue up stone, measured above the actual baked ground. */
+export async function createRockGround(
+  assets?: IAssetLoader,
+  ground?: IPropGround,
+  biome?: IBiome,
 ) {
+  if (!ground) return undefined;
+  const under = groundHeight(ground);
+  const paths = biome?.maps ?? GROUND_MAPS;
+  const [grass, relief, snow] = await Promise.all([
+    map(assets, paths.grass.diffuse, false),
+    paths.grass.normal ? map(assets, paths.grass.normal, true) : undefined,
+    biome?.world === "alpine" || biome?.world === "tundra"
+      ? map(assets, paths.snow.diffuse, false)
+      : undefined,
+  ]);
+  return {
+    apply(material: MeshStandardNodeMaterial): void {
+      if (!grass || !material.colorNode) return;
+      const share = groundShare(under.node);
+      const floor = groundTurf(groundLayer(grass, "grass").rgb, biome);
+      // Steep ground exposes the same stone; only turf-bearing contact faces take the floor.
+      const soil = share.mul(smoothstep(0.5, 0.88, under.normal.y));
+      let contact = floor;
+      if (snow && biome) {
+        const cover =
+          biomeWeights(
+            biome,
+            float(1).sub(under.normal.y),
+            float(0),
+            mx_noise_float(positionWorld.mul(0.05)),
+          ).snow ?? float(0);
+        contact = mix(contact, groundLayer(snow, "snow").rgb.mul(vec3(...biome.snowTint)), cover);
+      }
+      material.colorNode = mix(material.colorNode as Node<"vec3">, contact, soil);
+      material.aoNode = mix(1, 0.86, share);
+      const lit =
+        material.normalNode ??
+        (material.normalMap
+          ? normalMap(texture(material.normalMap))
+          : transformNormalToView(normalWorldGeometry));
+      const tilt = relief
+        ? rotateUV(texture(relief, tiledUV("grass")).xy.mul(2).sub(1), float(-0.38), vec2(0)).mul(
+            0.22,
+          )
+        : vec2(0);
+      const normal = normalize(under.normal.add(vec3(tilt.x, 0, tilt.y)));
+      material.normalNode = normalize(
+        mix(lit as Node<"vec3">, transformNormalToView(normal), soil.mul(0.82)),
+      );
+      material.roughnessNode = mix(
+        (material.roughnessNode as Node<"float"> | null) ?? float(material.roughness),
+        0.94,
+        soil,
+      );
+    },
+    dispose(): void {
+      for (const source of [under.texture, grass, relief, snow]) source?.dispose();
+    },
+  };
+}
+
+function stoneSurface(maps: { diffuse?: Texture; normal?: Texture }) {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.93, side: FrontSide });
   const tile = float(TILE.stone);
   const weight = abs(normalWorld).normalize();
-  const up = smoothstep(float(0.3), float(0.8), weight.y);
   if (maps.diffuse === undefined) material.colorNode = vec3(0.42, 0.43, 0.38);
   else {
-    // Moss grows on the upward faces and washes off the steep ones, and that difference is also the
-    // cue that makes a boulder read as sitting in a meadow rather than resting on one.
-    const steep = texture(maps.diffuse, positionWorld.xz.div(tile.mul(0.55)));
-    const flat = texture(maps.diffuse, positionWorld.xz.div(tile.mul(1.6)));
-    material.colorNode = mix(steep, flat, up);
+    // Each wall reads its own projection rather than stretching an XZ photograph.
+    const axis = abs(normalWorldGeometry).pow(4);
+    const share = axis.div(axis.x.add(axis.y).add(axis.z));
+    material.colorNode = share.x
+      .mul(texture(maps.diffuse, positionWorld.zy.div(tile)).rgb)
+      .add(share.y.mul(texture(maps.diffuse, positionWorld.xz.div(tile)).rgb))
+      .add(share.z.mul(texture(maps.diffuse, positionWorld.xy.div(tile)).rgb));
   }
   if (maps.normal !== undefined) {
     const source = maps.normal;
@@ -388,8 +478,6 @@ function stoneSurface(
       .mul(1.15);
     material.normalNode = transformNormalToView(normalize(normalWorld.add(relief)));
   }
-  if (maps.diffuse !== undefined)
-    intoGround(material, material.colorNode as Node<"vec3">, groundShare(height), soil);
   return material;
 }
 
@@ -903,7 +991,8 @@ export async function createPropSurfaces(
   }
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 
-  const stoneMaterial = stoneSurface(stone, under?.node, soil);
+  const stoneMaterial = stoneSurface(stone);
+  const rockGround = await createRockGround(assets, ground, biome);
   const materials: IPropMaterials = {
     bark: barkMaterial,
     crown: crownMaterial,
@@ -945,6 +1034,7 @@ export async function createPropSurfaces(
       smoothstep(0.12, 0.82, alpineSnowCover()),
     );
   }
+  rockGround?.apply(stoneMaterial);
   let disposed = false;
   return {
     inputs: {
@@ -962,6 +1052,7 @@ export async function createPropSurfaces(
       disposed = true;
       for (const material of Object.values(materials) as Material[]) material.dispose();
       for (const texture of textures) texture.dispose();
+      rockGround?.dispose();
     },
     materials,
   };
