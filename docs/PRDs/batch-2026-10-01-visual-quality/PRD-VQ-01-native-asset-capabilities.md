@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-01 — Native asset compatibility follows the selected runtime and actual decoders
 
-**Status:** PARTIAL — 2026-10-02. Bounded desktop/unknown-runtime fail-closed repair implemented; mobile selected-artifact resolution and packaged-loader qualification remain open.
+**Status:** PARTIAL — 2026-10-02. Bounded desktop/unknown-runtime fail-closed repair implemented and packaged Linux QuickJS fallback rendered on the hosted lane; mobile selected-artifact resolution and compressed-decoder qualification remain open.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/d9ac5b4e97f6b1383bd163d91619cffa7c6c0ef5/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 0 / correctness.
 **Dependencies:** None. This is a build/runtime contract repair, not permission to remove compatibility guards.
 
@@ -64,7 +64,7 @@ Record encoded bytes, decoded texture/geometry bytes and peak load memory per co
 
 Physical Android performance and thermals require a named phone and are separate from emulator correctness. Missing codec qualifications must remain individual exclusions.
 
-This executor has no GPU device, Android SDK/adb or KVM. Xvfb is denied with EPERM; browser/native pixels and emulator correctness are unrun. These limitations do not qualify any codec. The owner explicitly requires screenshot proofs for every PR (2026-10-02); no actual relevant runtime screenshot has been captured, so this PR remains draft. Test logs and synthetic images are not screenshot proof.
+This local executor has no GPU device, Android SDK/adb or KVM, and Xvfb is unavailable. The hosted Linux ARM64 lane now provides real packaged QuickJS fallback pixels below. Browser and Android decoder correctness remain unrun. The owner's per-PR screenshot requirement is satisfied for this bounded fallback; the PR remains draft because full PRD acceptance and remaining platform gates are open.
 
 ## Completion record
 
@@ -94,3 +94,14 @@ Hosted attempt [36995485869](https://github.com/ThreeNativeHQ/threenative/action
 
 
 Hosted attempt [36996645116](https://github.com/ThreeNativeHQ/threenative/actions/runs/36996645116), source `cedacefcab3360d5cc344ef071649f57782ac9b5`, reconfirmed build/package/payload checks but exposed the full admission rule: the **entire diagnostics assertion family is web-only**, independently of its individual booleans. No pixels were captured. A regression now replays the real native handshake through `connectPlaytestBridgeTransport`, not only its capability-name calculator; it failed with the exact hosted observation error, then passed after the scenario was limited to supported startup/resources families. Native console cleanliness and ready/compile-settled checks are mandatory in the verifier instead, with missing readiness, empty console evidence, GPU loss, validation and JavaScript errors all tested to fail. The complete focused set passes 34/34 and verifier types pass. No engine target-admission guard changed.
+
+
+### Actual packaged native screenshot — 2026-10-02
+
+[Hosted run 36998104447](https://github.com/ThreeNativeHQ/threenative/actions/runs/36998104447) **passed**, executing source `46a759ad885cede29e0fbb2c719ed75151c5baec` on `ubuntu-24.04-arm`. The selected runtime is QuickJS/wgpu, runtime SHA-256 `da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042`; the packaged game SHA-256 is `e20910ccaf495d5455bcba4fa74299fb6f7dd86718e0802488dbb6970cab883d`.
+
+The original 960×640 native `device.screenshot` was downloaded, ZIP/image digests verified, and visually inspected. The Meshopt-source cube, Draco-source torus and PNG panel all visibly carry their authored textures after decoder-free cooking. Eight live assertions pass, including both loaded/textured models, decoded vertex presence, advancing frames/pose, and actual startup milestones. Native readiness is `ready` with settled compilation; strict host-console checks pass and the report contains no diagnostics. The named adapter is Mesa llvmpipe (LLVM 20.1.2, 128 bits), so this is rendered correctness on a hosted software adapter, not hardware-performance evidence. Authored KTX2 remains refused before publication, preserving the already packaged executable byte-for-byte.
+
+![Actual packaged QuickJS framebuffer: Meshopt and Draco sources normalized before execution, with a standalone PNG](../../verification/vq01/quickjs-native.png)
+
+[Provenance and scope](../../verification/vq01/README.md), [machine-readable provenance](../../verification/vq01/provenance.json), and [unchanged runner summary](../../verification/vq01/quickjs-native-summary.json). The PNG SHA-256 is `1ad43cda8e816431b0ab9993066b087c9283351f304ade2c1765eebf8e349c81`. This verifies the bounded desktop QuickJS fallback and screenshot request. It does not tick the unchanged web, Android, actual compressed-decoder or full lifecycle acceptance boxes.
