@@ -26,8 +26,9 @@
       {
         "id": "motion",
         "path": "frame",
-        "gte": 6,
-        "allowTrivial": "At least six completed GPU frames including the first history seed must exist."
+        "gte": 4,
+        "allowTrivial": "One initial GPU frame and three requested deterministic frames must complete; warmup waits do not advance this bridge.",
+        "changed": true
       },
       {
         "id": "motion",

@@ -153,6 +153,17 @@ paths, which have their own lifetimes.
 
 ## Verification
 
+First actual hosted capture: [run 36991957955](https://github.com/ThreeNativeHQ/threenative/actions/runs/36991957955)
+on `b1a8a9bef55b4dd1e05f7a4120d5d8122273fb81` produced the unchanged
+[missing-history progress PNG](../../verification/prd269/without-history-progress.png) and
+[artifact/adapter provenance](../../verification/prd269/progress-provenance.json). The actual
+velocity MRT has zero moving pixels with bookkeeping removed; static and first-frame maxima
+are also zero. The gate caught a fixture-count mistake: warmup waits do not call deterministic
+steps, so the actual frame advanced 1 to 4, not 1 to 6. The scenario now requires `changed: true`
+and at least four frames. The tracked variant was not reached in that run; it remains pending.
+No device-loss warning was accepted. This is progress evidence, not completed acceptance.
+
+
 2026-10-02 screenshot qualification in progress: the opt-in `velocity.html` fixture renders
 an authored two-sub-draw `BatchedMesh` through the current source's `SceneRenderProjection`
 with `projection: false`, then reads the actual velocity MRT. Its left panel is the colour
