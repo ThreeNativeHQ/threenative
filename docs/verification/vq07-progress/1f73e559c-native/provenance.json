@@ -1,0 +1,1895 @@
+{
+  "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+  "pass": false,
+  "executionHost": {
+    "platform": "linux",
+    "architecture": "arm64"
+  },
+  "nativeArtifacts": {
+    "runtimeSha256": "da16138cc37938a14ce6831476aa58972a0d469ba2172b6a06faf6d1d56c6042",
+    "bundleSha256": "d2be9b3d0efa3247ff63c772421f75b77e8ea1fd9b271c4791ec7934f88c3e86"
+  },
+  "qualification": "Partial Linux ARM64 native-host software-rendered correctness on Mesa llvmpipe. Fifteen captures passed strict per-arm native guards; native resize aborted the host and the full native gate failed. No completed native resize or hardware-performance claim.",
+  "runId": 37005493900,
+  "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/37005493900",
+  "artifactId": 11226555526,
+  "artifactSha256": "cc5cc8f973b8edc9f16a188f3ae68f1e0afb6b2f508ee4a392df222191587af5",
+  "acceptedArms": [
+    {
+      "mode": "off",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 4,
+        "stableTextureFrames": 4
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "zero",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "fog",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "inside",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "sunOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "pointOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "overlap",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "half",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "wallOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "blackOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "scatter",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "scatterSunOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "scatterPointOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "lifecycle",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    },
+    {
+      "mode": "lifecycleOff",
+      "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+      "pass": true,
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "resources": {
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3
+      },
+      "diagnostics": [],
+      "lights": {
+        "directional": {
+          "name": "fog-directional",
+          "type": "DirectionalLight",
+          "shadow": "ordinary-map"
+        },
+        "point": {
+          "name": "fog-point",
+          "type": "PointLight",
+          "shadow": "none",
+          "range": 8
+        }
+      }
+    }
+  ],
+  "postCaptureMetrics": {
+    "zeroIdentity": true,
+    "offIdentity": true,
+    "lights": {
+      "baselineMaxRgb": 0,
+      "wallMaxRgb": 0,
+      "roi": {
+        "x": 260,
+        "y": 155,
+        "width": 150,
+        "height": 90
+      },
+      "wallRoi": {
+        "x": 184,
+        "y": 216,
+        "width": 18,
+        "height": 18
+      },
+      "evaluationRoi": {
+        "x": 0,
+        "y": 0,
+        "width": 500,
+        "height": 400
+      },
+      "calibrationRoi": {
+        "x": 515,
+        "y": 25,
+        "width": 110,
+        "height": 110
+      },
+      "calibrationMinimum": 146,
+      "calibrationMaxDifference": 0,
+      "sun": {
+        "meanRgbDelta": 15.957703703703704,
+        "changedPixelRatio": 0.9933333333333333
+      },
+      "point": {
+        "meanRgbDelta": 48.772123456790126,
+        "changedPixelRatio": 1
+      },
+      "thresholds": {
+        "minMeanRgbDelta": 1,
+        "minChangedPixelRatio": 0.1,
+        "maxBlackRgb": 0,
+        "minCalibrationRgb": 32,
+        "maxCalibrationDifference": 0
+      },
+      "pass": true
+    }
+  },
+  "postCaptureMetricMethod": "After downloading and digest-checking the failed-run artifact, decoded actual PNGs were evaluated with fogLightPixelMetrics exported from the exact source verifier; exact pixel identities were compared from decoded bytes. These cross-arm checks did not execute in the hosted script because resize aborted first.",
+  "resizeFailure": {
+    "reportSha256": "82f0d784bd28aaae09a4f2e2120710604d3fedd413ba2140c0d8d595f76d7e33",
+    "diagnostics": [
+      {
+        "code": "TN_PLAYTEST_HOST_EXITED",
+        "fix": {
+          "instruction": "Inspect the named host output for the first native or JavaScript error; rerun the same scenario after fixing it."
+        },
+        "message": "Device mailbox operation '20' exceeded 120000ms.; the host process has exited \u2014 last host output: Error in wgpuSurfaceGetCurrentTexture: Validation Error | Caused by: |   Surface image is already acquired | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace | fatal runtime error: failed to initiate panic, error 3656715680, aborting | [Mystral] Caught signal SIGABRT, exiting gracefully",
+        "severity": "error",
+        "suggestion": "Inspect the named host output for the first native or JavaScript error; rerun the same scenario after fixing it."
+      }
+    ],
+    "consoleFilePresent": false,
+    "screenshotPresent": false,
+    "note": "Missing console.json causes a secondary verifier ENOENT. The preserved report identifies the primary native surface acquisition validation failure and SIGABRT."
+  },
+  "images": {
+    "off": {
+      "file": "off.png",
+      "sha256": "340699e0cb4c8740fd083df7b0ed1484e3364efae2b6ce17f0e117f1e73e9d15",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "off",
+        "ready": true,
+        "builds": 1,
+        "disposedGraphs": 0,
+        "createdTargets": 0,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 0,
+        "scatteringOnly": false,
+        "textures": 5,
+        "settledRenderFrames": 4,
+        "stableTextureFrames": 4,
+        "targetWidth": 0,
+        "targetHeight": 0,
+        "targets": 0,
+        "pixels": 0,
+        "steps": 0,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "fog": {
+      "file": "fog.png",
+      "sha256": "95e2d1a14559df4a6778916e3192d15127d59e4e83b9a76f433e7c829add464a",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "fog",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "inside": {
+      "file": "inside.png",
+      "sha256": "1bec85d68b3bed2d79b8eeb7e3fd4f3aa4f64140f1e9e44165971c49b123c9bf",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "inside",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": false,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": true,
+        "sun": true,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "blackOff": {
+      "file": "blackOff.png",
+      "sha256": "b3d4f1282739ab51813d412fc278fe6ec8555ab44baaf68e145e4007ca4bc0ea",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "blackOff",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 0,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 0,
+        "scatteringOnly": true,
+        "textures": 5,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 0,
+        "targetHeight": 0,
+        "targets": 0,
+        "pixels": 0,
+        "steps": 0,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "scatter": {
+      "file": "scatter.png",
+      "sha256": "eca0f87d4e38a72c378753f62cdeaadbdc14901193b33716ebe64daef3e0be26",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "scatter",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": true,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "scatterSunOff": {
+      "file": "scatterSunOff.png",
+      "sha256": "d1412a75a5612ff4653692c1c9314102124e135335f17ef0d4daff9857e4be49",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "scatterSunOff",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": true,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": false,
+        "point": true,
+        "overlaps": false
+      }
+    },
+    "scatterPointOff": {
+      "file": "scatterPointOff.png",
+      "sha256": "5b272a565aa3eca8c45b4dea7671f3183d6f91c0f2cde2bf95ced43151b144dc",
+      "capture": {
+        "adapter": {
+          "architecture": "unknown",
+          "description": "Mesa 25.2.8-0ubuntu0.24.04.3 (LLVM 20.1.2)",
+          "device": "llvmpipe (LLVM 20.1.2, 128 bits)",
+          "vendor": "llvmpipe"
+        },
+        "browserArgs": [],
+        "captureMethod": "device.screenshot",
+        "rendererKind": "webgpu",
+        "target": "desktop",
+        "viewport": {
+          "height": 400,
+          "width": 640
+        }
+      },
+      "diagnostics": [],
+      "state": {
+        "mode": "scatterPointOff",
+        "ready": true,
+        "builds": 2,
+        "disposedGraphs": 1,
+        "createdTargets": 1,
+        "releasedTargets": 0,
+        "releasedMaterials": 0,
+        "liveTargets": 1,
+        "scatteringOnly": true,
+        "textures": 10,
+        "settledRenderFrames": 3,
+        "stableTextureFrames": 3,
+        "targetWidth": 640,
+        "targetHeight": 400,
+        "targets": 1,
+        "pixels": 256000,
+        "steps": 48,
+        "inside": false,
+        "sun": true,
+        "point": false,
+        "overlaps": false
+      }
+    }
+  },
+  "sameSourceBrowser": {
+    "artifactId": 11225682361,
+    "artifactSha256": "5cc58198f77714817c43c486cf8b83d7b7e3ef23730e4010c1026b2918740c35",
+    "pass": true,
+    "cases": 17,
+    "results": [
+      {
+        "mode": "off",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "zero",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "fog",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "inside",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "sunOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "pointOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "overlap",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "half",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "wallOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "blackOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "scatter",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "scatterSunOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "scatterPointOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "lifecycle",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "lifecycleOff",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "resizeSmall",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "mode": "resizeRestore",
+        "sourceSha": "1f73e559c7a8fa01740cc2b5b24ebec8dfc2f4e7",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "resources": {
+          "textures": 10,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "diagnostics": [],
+        "lights": {
+          "directional": {
+            "name": "fog-directional",
+            "type": "DirectionalLight",
+            "shadow": "ordinary-map"
+          },
+          "point": {
+            "name": "fog-point",
+            "type": "PointLight",
+            "shadow": "none",
+            "range": 8
+          }
+        }
+      },
+      {
+        "assertion": "zero-density pixel identity",
+        "pass": true
+      },
+      {
+        "assertion": "repeated lifecycle restores baseline pixels",
+        "pass": true
+      },
+      {
+        "assertion": "renderer texture allocation baseline",
+        "baselineResources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "restoredResources": {
+          "textures": 5,
+          "settledRenderFrames": 3,
+          "stableTextureFrames": 3
+        },
+        "pass": true
+      },
+      {
+        "assertion": "target/depth resize restores exact pixels",
+        "pass": true
+      },
+      {
+        "assertion": "isolated light-scattering pixels",
+        "baselineMaxRgb": 0,
+        "wallMaxRgb": 0,
+        "roi": {
+          "x": 260,
+          "y": 155,
+          "width": 150,
+          "height": 90
+        },
+        "wallRoi": {
+          "x": 184,
+          "y": 216,
+          "width": 18,
+          "height": 18
+        },
+        "evaluationRoi": {
+          "x": 0,
+          "y": 0,
+          "width": 500,
+          "height": 400
+        },
+        "calibrationRoi": {
+          "x": 515,
+          "y": 25,
+          "width": 110,
+          "height": 110
+        },
+        "calibrationMinimum": 146,
+        "calibrationMaxDifference": 0,
+        "sun": {
+          "meanRgbDelta": 15.958518518518519,
+          "changedPixelRatio": 0.9933333333333333
+        },
+        "point": {
+          "meanRgbDelta": 48.77553086419753,
+          "changedPixelRatio": 1
+        },
+        "thresholds": {
+          "minMeanRgbDelta": 1,
+          "minChangedPixelRatio": 0.1,
+          "maxBlackRgb": 0,
+          "minCalibrationRgb": 32,
+          "maxCalibrationDifference": 0
+        },
+        "pass": true
+      }
+    ],
+    "qualification": "Google SwiftShader browser WebGPU software correctness; includes each intermediate graph rendering before replacement, full teardown and portable target/depth resize."
+  }
+}
