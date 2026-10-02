@@ -29,7 +29,7 @@ jobs:
   scope:
     name: Change scope
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -81,7 +81,7 @@ jobs:
   typecheck:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -106,7 +106,7 @@ jobs:
     # A Markdown-only change runs no CI job: the docs lane is re-validated on the nightly run and
     # at promotion, so this job is skipped rather than spending a runner on inert prose.
     if: needs.scope.outputs.selection != 'prose'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -162,7 +162,7 @@ jobs:
   test:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -198,7 +198,7 @@ jobs:
   test-unit:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -233,7 +233,7 @@ jobs:
   test-native:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -497,7 +497,7 @@ jobs:
   test-browser:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -548,7 +548,7 @@ jobs:
   test-playtest:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -586,7 +586,7 @@ jobs:
         template:
           - starter
           - platformer
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # The scenario arithmetic this number came from moved out to `template-nonvisual`, which now
     # owns the non-visual sweep for all eight templates. What is left is `verify:golden-path` —
     # pack, scaffold, install, dev, test, build, assert, once per matrix leg — which measured 309s
@@ -747,7 +747,7 @@ jobs:
           - { template: starter, shard: "2/3" }
           - { template: starter, shard: "3/3" }
           - { template: tower-defense, shard: "1/1" }
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -846,7 +846,7 @@ jobs:
     # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
     # cancelled run has no passing checks to merge on.
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -865,7 +865,7 @@ jobs:
   benchmark:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 25
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -916,7 +916,7 @@ jobs:
   build:
     needs: [scope, build-artifacts]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -938,7 +938,7 @@ jobs:
   build-artifacts:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -982,7 +982,7 @@ jobs:
   performance-contracts:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' && !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1048,7 +1048,7 @@ jobs:
   budgets:
     needs: scope
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1170,7 +1170,7 @@ jobs:
   ci-required:
     needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -1224,7 +1224,7 @@ jobs:
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     permissions:
       contents: read

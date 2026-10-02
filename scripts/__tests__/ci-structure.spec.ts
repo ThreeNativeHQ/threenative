@@ -915,6 +915,44 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-480. Every Linux job that can move picks its runner from one expression, so the pool is
+  // changed by setting or deleting a repository variable and nothing else. A job left at a bare
+  // `ubuntu-latest` still runs, which is exactly why this has to be a spec: the pool comes up and
+  // the queue does not shrink, and nothing in a run says which half of the board ignored it.
+  const routing =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
+  // `supply-chain` runs gitleaks through `docker run`; a self-hosted container would need the host
+  // Docker socket mounted to do that, which would hand every job root on the owner's machine.
+  const hosted = new Set(["supply-chain"]);
+
+  it("routes every movable Linux job through the TN_RUNNER switch", async () => {
+    const directory = path.join(repo, ".github/workflows");
+    const routed = [
+      ".github/workflows/ci.yml",
+      ...(await readdir(directory))
+        .filter((entry) => entry.startsWith("integration-") && entry.endsWith(".yml"))
+        .map((entry) => `.github/workflows/${entry}`),
+    ].sort();
+    expect(routed.length).toBeGreaterThan(1);
+    for (const relative of routed) {
+      const source = await readFile(path.join(repo, relative), "utf8");
+      for (const [job, section] of jobSections(source)) {
+        const runsOn = section.match(/^\s+runs-on:.*$/mu)?.[0].trim();
+        if (runsOn === undefined) continue;
+        // macOS, Windows and arm64 have no tn-local counterpart, and Phase 3 moves the Linux legs
+        // of native-platforms.yml — so the expression must never appear on one of them here.
+        if (/macos|windows|arm/u.test(runsOn)) {
+          expect(runsOn, `${relative} ${job} is not Linux`).not.toContain(routing);
+          continue;
+        }
+        expect(
+          runsOn === `runs-on: ${routing}` || hosted.has(job),
+          `${relative} ${job} runs on \`${runsOn}\`: use the TN_RUNNER routing expression, or name it on the hosted allow-list`,
+        ).toBe(true);
+      }
+    }
+  });
+
   // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
   // skips the board, and `ready_for_review` starts it once the draft is marked ready.
   it("runs nothing on draft pull requests until they are marked ready", async () => {
@@ -1146,7 +1184,10 @@ describe("CI pipeline structure", () => {
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
     expect(job).not.toContain("github.event_name == 'push'");
-    expect(job).not.toContain("pull_request");
+    // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
+    // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
+    // nothing on it. What this forbids is a gate that skips pull requests.
+    expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
     expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");

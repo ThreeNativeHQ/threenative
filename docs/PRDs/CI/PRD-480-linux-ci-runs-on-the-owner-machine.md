@@ -154,17 +154,25 @@ the stack. The script fails closed when the env file or token is missing.
 
 #### Phase 2: `ci.yml` and the integration workflows route through the switch
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/workflows/integration-*.yml`,
 `scripts/__tests__/ci-structure.spec.ts`; the `integration-*.yml` template wherever agents copy it from;
 `AGENTS.md` ("Nearest lane first, CI last") plus its regenerated `CLAUDE.md` mirror.
 **Implementation:** Replace each movable Linux `runs-on` with the routing expression. `supply-chain` keeps
 `ubuntu-latest`. Extend `ci-structure.spec.ts` so every Linux job in these workflows either uses the
 exact expression or is on a named hosted allow-list (`supply-chain`), and no macOS, Windows or arm64
-job ever does.
+job ever does. 23 lines routed (18 in `ci.yml`, one each in five `integration-*.yml`); `supply-chain`
+and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-on` left hosted, and
+`native-platforms.yml` is untouched until Phase 3.
 
-- [ ] Structure spec enforces the routing. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`
-  passes, and it fails on a job left at a bare `ubuntu-latest`.
+- [x] Structure spec enforces the routing. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts`
+   — 142 passed, 0 failed. Red first: with no workflow edited the new test failed on
+   `.github/workflows/ci.yml scope runs on 'runs-on: ubuntu-latest'`; after routing, setting `budgets`
+   (ci.yml:1051) back to `ubuntu-latest` failed it again on that job and it was restored. Also green:
+   `pnpm lint` (exit 0), `pnpm check:docs` (2496 links), `pnpm sync:agents --check` (22 mirrors).
+   One pre-existing assertion had to be narrowed: `template-nonvisual` forbade the substring
+   `pull_request` anywhere in the job, which the routing expression mentions without gating on it.
+
 - [ ] With `TN_RUNNER` set, a PR run lands its Linux jobs on `tn-local`. proof: AC-1 run.
 - [ ] `AGENTS.md` says focused checks then push, not the full board, while `TN_RUNNER` is set. proof:
   `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts` pass.
