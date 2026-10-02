@@ -27,6 +27,7 @@ PRD-475 Phase 1 baseline (`docs/PRDs/unreal-like-features/PRD-475-open-world-120
 - Window fps median 45 (51, 42, 45). One window per run is the post-walk idle at 83–119 fps, which is why a whole-run average reads near 120.
 - The triangle census reads 264 M main and 23 M shadow triangles for about 318 draws, against 9.8 M `mainGpuTriangles`. It is not trusted until it is checked. `gpuShadow` read 0 in one run.
 - One earlier run of five counted 1 failed world load (`WorldCells` `failures`), not reproduced in four reruns. The count records no cell and no error.
+- **After PRD-475 cuts 1+2** (terrain super-tiles, shadow caster table; `890578e81`), clean machine (load < 3, GPU < 10%), 4+4 interleaved runs against develop: frame p50 9.55 → 7.20 ms, frame p95 20.55 → 17.22 ms, GPU p50 6.95 → 7.12, GPU p95 10.93 → 10.20, main draws 335.5 → 246.5. The develop arm's own spread (frame p50 6.4–12.0 ms) overlaps, so the ratio is directional; the branch's distribution is tighter. Still 2.1× over the 8.3 ms p95 on CPU and 1.2× on GPU.
 
 ## ThreeNative vs Godot 4.7.1 scoreboard, and three projection fixes — 2026-09-28
 

@@ -93,7 +93,7 @@ Risks:
 **Verification:** the scenario run plus the perf report. The ranking of costs decides the order of Phase 2.
 
 #### Phase 2: Cut the frame where the baseline says, in the engine
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/src/world-cells.ts`, `packages/core/src/world-gpu-scene.ts`, plus their specs. These are expected, not fixed: the baseline names the real ones.
 
 Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 ms GPU, CPU render phase 4 ms.
@@ -109,6 +109,8 @@ Cut 1 (terrain super-tiles, PRD-473 plan): landed in ec9a739ad, b9442ec5a, bc998
 Cut 1 fix: Machinefall correctness pair (same build, merge off/on) found the ring shrinking 289 → 248 because block bytes were charged to tile admission; blocks are now reported (`blockBytes`), not charged — 68a3691d2. Terrain draws 289 → 33–42, main draws p50 289–343 → 158–258.
 Cut 1 fix 2: a block kept drawing the ground of a tile that had left it — a second copy at the level the tile left, for as many frames as the one-per-frame rebuild queue took to reach it — and counted that tile twice, so the `tiles` stat drifted off 289; a departure now dissolves its block for the frames before the rebuild brings it back — f8a990abe; per-frame walk invariant `world-terrain-merge-walk.spec.ts` (red at frame 18, green after; draws stay under the unmerged ring's 81).
 Cut 2 (memoised shadow-caster table): landed in d47a24dfc; Machinefall A/B pending.
+Cut 1 fix 3: a merged block's mesh sat at the world origin while its vertices were block-local, so every block but (0,0) drew displaced ("floating slabs", white ground) — `890578e81`, two specs comparing every block vertex through `matrixWorld` with its tiles'.
+Cuts 1+2 in Machinefall (`machinefall@8107d51`, core `prd475-cut12c`), clean machine (load < 3, GPU < 10%), 4+4 interleaved against develop: frame p50 9.55 → 7.20 ms, frame p95 20.55 → 17.22 ms, render p95 20.45 → 17.10 ms, GPU p50 6.95 → 7.12 ms, GPU p95 10.93 → 10.20 ms, main draws 335.5 → 246.5; 8/8 map-walk pass, 0 console errors. Fresh blind same-pose judge, 8 poses against `artifacts/prd-475/reference/`: SAME overall (6 same, 1 better, views-v2 noted for vehicle variants and slightly thinner left forest).
 
 #### Phase 3: Hold 120 fps with the look intact
 **Status:** NOT STARTED
