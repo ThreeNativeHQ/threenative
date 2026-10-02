@@ -316,6 +316,21 @@ function orderedOps(ops: readonly CssOp[]): CssOp[] {
   return made.length === ops.length ? [...ops] : [...made, ...ops.filter(wires)];
 }
 
+/** The reconciler entry points this host calls; react-reconciler's own generics are 20 positional slots. */
+interface IReconciler {
+  createContainer(...args: readonly unknown[]): unknown;
+  updateContainerSync(
+    element: unknown,
+    container: unknown,
+    parent: unknown,
+    callback: unknown,
+  ): void;
+  flushSyncWork(): void;
+}
+
+// quality-allow: react-reconciler's generics are 20 positional slots; narrowed once to IReconciler.
+const createReconciler = ReactReconciler as unknown as (config: unknown) => IReconciler;
+
 export interface ICssUiRootOptions {
   /** The realm the bridge installs into. Defaults to `globalThis`; injected by tests and by hosts. */
   readonly scope?: Record<string, unknown>;
@@ -456,13 +471,17 @@ function hostConfig(root: ICssRoot, flush: () => void): unknown {
     trackSchedulerEvent: () => undefined,
     resolveEventType: () => null,
     resolveEventTimeStamp: () => -1.1,
+    // quality-allow: the key is react-reconciler's own host API spelling and cannot be renamed.
     // biome-ignore lint/style/useNamingConvention: exact React reconciler host API name.
     NotPendingTransition: null,
+    // quality-allow: the key is react-reconciler's own host API spelling and cannot be renamed.
     // biome-ignore lint/style/useNamingConvention: exact React reconciler host API name.
     HostTransitionContext: {
       $$typeof: Symbol.for("react.context"),
+      // quality-allow: the key is react-reconciler's own host API spelling and cannot be renamed.
       // biome-ignore lint/style/useNamingConvention: exact React context API name.
       Provider: null,
+      // quality-allow: the key is react-reconciler's own host API spelling and cannot be renamed.
       // biome-ignore lint/style/useNamingConvention: exact React context API name.
       Consumer: null,
       _currentValue: null,
@@ -518,10 +537,7 @@ export function createCssUiRoot(options: ICssUiRootOptions = {}): ICssUiRoot {
     root.postCount += 1;
     bridge.post({ ops, type: CSS_UI_MESSAGE } satisfies IUiMessage);
   };
-  // biome-ignore lint/suspicious/noExplicitAny: react-reconciler's generics are 20 positional slots.
-  const reconciler = (ReactReconciler as unknown as (config: unknown) => any)(
-    hostConfig(root, flush),
-  );
+  const reconciler = createReconciler(hostConfig(root, flush));
   const fiberRoot = reconciler.createContainer(
     root.root,
     0,
