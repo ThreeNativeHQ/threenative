@@ -2127,7 +2127,7 @@ Replace the Preetham colour override and fixed-colour height fog with LUT-derive
 sky, solar transmittance, sunward scattering and height-aware surface extinction.
 Keep the GI chain/shadows/exposure unchanged. Biome additions own weather tuning.
 
-- [ ] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures and 1:1 reference crops.
+- [x] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures (`atmosphere-candidate-3`, `atmosphere-edge`), 3/3 checks each, and 1:1 reference crops. Whole-scene Gaia parity remains open.
 - [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms.
 - [x] Required local checks pass; proof: example `tsc --noEmit` exit 0; Biome 73 files exit 0; terrain vitest 69/69; core atmosphere spec 31/31, core build exit 0.
 
@@ -2159,3 +2159,17 @@ ceiling is named in source. Both node and classic material fog are now cleared
 while the air composite is active, then restored on disposal. A remaining
 one-pixel MSAA edge is being checked with a conservative neighbouring depth
 sample in `atmosphere-edge`; full asset-mode proof remains pending.
+
+Final edge scratch proof: **3/3 checks PASS**, no console/runtime errors;
+`atmosphere-edge/desert-overview-crop.png` removes the remaining pixel line.
+The full licensed run is queued on port 5303; a lock-only exit 75 was retried
+after 30 seconds. No thresholds or scenario steps were changed.
+
+2026-10-02 23:03 UTC checkpoint: the full licensed capture has not started;
+two attempts returned lock-only exit 75, including a 600-second wait. A third
+attempt was interrupted by a termination signal while queued; restarted in a
+terminal session. Full licensed/fallback
+and ocean verification are still unverified; the fallback runner will move
+assets only after it owns the capture lock and restore them on exit. Local
+source gates are green. The shared lock, not a shader error, is the remaining
+validation constraint.
