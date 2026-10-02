@@ -1960,81 +1960,87 @@ AC-5 stays open.
 
 ### Round 17 — playable erosion and transport surfaces (2026-10-02)
 
-Complexity: 3 → LOW; risk override: none. Example landform/surface recipes own
-appearance; the headless terrain engine owns retaining its measured transport.
-Canopy assets/materials, tree/cover scatter and lighting/sky/haze/grade are excluded.
+**Delivered mechanics; performance repeatability remains open.** The last licensed
+run passes **54/54** with the installed browser CPU profiler enabled, all 17 view
+p50s ≤**3.9 ms**. Standard fallback passes **54/54**, all p50s ≤**2.5 ms**. The
+preceding unprofiled licensed run fails player/river/max-view CPU assertions,
+reaching **5.2 ms**; it passes every behaviour and render-chain assertion. This
+is not an unconditional ≤4 ms release claim. AC-5 remains open; no fresh independent
+judge or native game run is claimed. No push or merge.
 
-1. Retain hydraulic flow/sediment/deposition and thermal deposits through the public
-   evaluator, including masks and prefix-cache isolation. proof: terrain Vitest suite.
-2. Strengthen all five playable recipes; bake vertex transport and surface weights,
-   consume the same deposits for rocks, and key the existing cache on the script.
-   proof: cold/warm bake, example tsc and root Biome.
-3. Inspect full-resolution crops against the supplied Gaia references; run licensed
-   and fallback full scenarios on 5297, ocean verification and packed world export.
-   proof: erosion-final captures, all view CPU p50 ≤4 ms, test:consumer.
+Complexity: 3 → LOW; risk override: none. The headless **engine** owns transport
+observations and the shared hydraulic correction; the **example** owns appearance,
+recipes, masks and placement. Canopy-owned files and tree/cover loops, and
+sun/sky/haze/grade values, are untouched.
 
-Status: IN PROGRESS. The missing transport observation has been reproduced and
-repaired. Strong playable recipes and their transport-driven surfaces are implemented;
-final snow, visual, fallback and packed-consumer qualification are pending.
+1. Hydraulic pickup previously removed material already below the downstream bed;
+   live droplets also dumped suspended load when their step budget expired. The
+   original seeded 80 m mesa control reaches **−39.29 m**; bounded actual pickup
+   keeps it at **0.10–31.27 m**, with 34° settling prominence **1.68 m**. Wet cutoff
+   retains suspended outflow rather than pretending water dried. The regression
+   hash intentionally pins the new algorithm; noise is unchanged.
+2. All five playable recipes now use dense hydraulic rainfall and thermal settling.
+   Alpine upper bedrock keeps the 55° pass; 35° scree is confined below 65 m and a
+   connected shelf precedes weathering. Desert rainfall follows caprock construction,
+   with 34° apron settling and a final rill pass. Extreme pre-repair bakes (alpine
+   264 m/desert 1,189 m) were rejected, not shipped.
+3. Canonical-grid flow, carried sediment, deposition and talus are retained, with
+   mask/opacity scaling and prefix-cache isolation, then baked at 0.001 precision.
+   One existing RGBA mask sampler supplies slope/flow scour, deposited gravel and
+   sheltered moss. Rocks/scree share the surface deposit helper. Shared alpine snow
+   and tundra snow use crisp height/slope/exposure retention. Render/collision heights
+   remain one canonical buffer; the continuation-ring mechanism is unchanged.
+4. The existing cache now includes the bake script hash alongside recipes, palette
+   and terrain build. The GUI producer refreshed its erosion-sensitive saved fixture
+   through real controls and proved live/GLB equality; consumer tolerances are unchanged.
 
-First verified increment: headless erosion retains canonical-grid flow, carried
-sediment, hydraulic deposition and thermal deposits. Mask/opacity scaling,
-determinism and caller-owned prefix-cache arrays are covered. Terrain build +
-publint and package typecheck pass; terrain Vitest **71/71** passes.
+**Final bake:** cold **48.35 s** including continuation; warm `pnpm bake` **1.504 s**,
+all output modification times unchanged. Continuation: **10.35 s / 1,695,575 bytes**.
+Total world/ring JSON on disk: **34,659,688 bytes** (forest/coast share one file).
+Grades below are self-grades against native-pixel crops and the supplied Gaia refs,
+not a new V11 judge. Broad layered alpine cliffs still fall short of Gaia; vegetation
+remains the canopy lane's work.
 
-Aggressive erosion exposed two shared algorithm defects: brush pickup removed
-material already below the downstream bed, and live droplets dumped their entire
-suspended load when their step budget ended. The original seeded 80 m mesa
-control cuts to **−39.29 m**; bounded pickup keeps it at **0.10–31.27 m** and
-34° thermal settling limits local prominence to **1.68 m**. The erosion hash
-intentionally changes to pin this correction; noise remains unchanged. Strong
-bake rejected before repair: alpine max 264.3 m, desert max 1,189.3 m. Repaired
-candidate: alpine max 124.7 m, desert max 90 m, tundra zero >1 m spikes.
-The final cutoff retains suspended material as outflow from this finite droplet
-integration; it does not pretend that water dried at a fixed step count.
+| World | Bake s | World JSON bytes | Self-grade /10 | Licensed CPU p50 ms | Fallback CPU p50 ms |
+| --- | ---: | ---: | ---: | --- | --- |
+| Forest | 6.63 | 6,585,597 | 4.5 | 3.9 / 2.3 / 2.6 / 3.5 | 2.5 / 1.7 / 2.1 / 2.5 |
+| Coastal | 6.62 | 6,613,383 | 4.0 | 3.7 / 2.6 / 3.1 / 2.3 | 1.6 / 1.8 / 1.8 / 1.6 |
+| Alpine | 8.62 | 6,731,560 | 3.5 | 2.0 / 2.1 / 2.3 | 1.5 / 1.5 / 1.6 |
+| Desert | 9.77 | 6,485,543 | 4.5 | 1.3 / 1.3 / 1.3 | 1.1 / 1.1 / 1.1 |
+| Tundra | 5.85 | 6,548,008 | 3.5 | 2.4 / 2.1 / 2.1 | 2.1 / 2.4 / 2.0 |
 
-Baseline licensed scenario PASS (50 top-level assertions), NVIDIA Turing, 1920×1080;
-`verify-ocean` PASS. Root `pnpm lint` passes with existing warnings. Root
-`pnpm typecheck` fails on missing declarations for existing glb.mjs/png.mjs test
-fixtures; root `pnpm test` fails on absent native test binaries (21 native checks)
-and the suite temporary-directory accounting check. Those are not passing gates.
-Example tsc/Biome and the placement check pass; final visual/scenario/export
-qualification is pending.
+CPU order: player/feature/overview; forest player/meadow/overview/river;
+coast player/meadow/overview/horizon. Licensed values are from the profiled full
+scenario. The preceding unprofiled values are forest **4.7/2.6/3.3/5.0**, coast
+**2.3/3.4/2.1/2.3**, alpine **2.3/2.2/2.2**, desert **1.9/1.6/1.3**, tundra
+**5.2/3.3/2.1**. A three-physical-core affinity experiment did not resolve the
+budget and caused auto-tier AO removal (`tier:low`); no render policy was weakened.
+The shared host reached load 26–29 on 24 logical CPUs. Contention is observed,
+but the exact cause of the variation is not isolated. Profile is retained for review.
 
-Playable increment: all five worlds bake measured flow, sediment, hydraulic deposits
-and thermal deposits, rounded to 0.001 per vertex. The existing cache now hashes
-its own bake script as well as recipes, palette and terrain build. Splats consume
-flow plus slope for scour, measured deposits for gravel, and shelter for moss;
-rock/scree placement reads the same deposit helper. The canonical render/collision
-height buffer and continuation geometry are unchanged. Canopy and lighting files
-are untouched. A licensed candidate passed all 54 top-level assertions, all 17 view
-p50 budgets (maximum 3.6 ms), ocean verification and the 0.5 luminance-quantile
-guard. The next candidate failed the river/max-view CPU budgets at 4.1 ms; added
-rock density is reduced before final qualification. Example tsc passes.
+**Verification:** example tsc and root example Biome pass; terrain Vitest **71/71**,
+terrain build/publint/typecheck, temperate placement/contact checks and current-source
+`test:consumer` pass. The packed install reproduces all five canonical height hashes
+and terrain/water GLBs; the edited-world handoff passes on NVIDIA Turing WebGPU.
+Both final scenarios use showcase mode on **5297**, NVIDIA Turing, **1920×1080**;
+water/lake placement, contacts, flow bindings, all 17 view windows and render stages
+pass. Both `verify-ocean` runs pass. All **22** captures per arm meet the normalized
+0.5 luminance-quantile bound against the pre-change licensed baseline; maximum
+licensed **0.333244**, fallback **0.253218**. No baseline fallback quality claim is made.
+Docs and the **180/180** selected doc checks pass. Root lint passes with existing
+warnings; root typecheck fails on existing glb.mjs/png.mjs fixture declarations,
+and root test fails on missing native binaries (21 checks) plus temporary-directory
+accounting. These are not passing gates.
 
-Qualification increment: the active shared alpine snow helper now thresholds
-elevation, geometric slope and wind exposure; tundra no longer multiplies snow
-by broad colour noise. Steep alpine faces receive exposed rock. The existing
-GUI producer (`RECORD=1 pnpm test:terrain:authored`) refreshed its erosion-sensitive
-fixture and passed live-terrain/GLB equality. Packed `pnpm test:consumer` now passes,
-including all five canonical baked-height hashes, their full-world terrain/water
-exports, and the edited-world game handoff on NVIDIA Turing WebGPU. The producer
-fixture is refreshed rather than weakening any consumer tolerance. Example tsc,
-Biome and temperate placement/contact checks pass. Warm `pnpm bake`: **1.141 s**,
-all output modification times unchanged. Docs checks and all **180/180** selected
-document checks pass. A third, unchanged-performance final run is pending: the
-preceding run failed forest player/river at 6.3/5.4 ms; Chromium/Xvfb doctor passes.
+Captures: `examples/strata-terrain-preview/artifacts/playtest/erosion-final/`,
+**22 licensed + 22 fallback**, with unscaled before/after crops. Installed profiler
+output: `erosion-final/runtime.cpuprofile`; preceding unprofiled captures remain
+in `erosion-standard-failed/`. Procedural fallback is reproduced with the local
+`artifacts/erosion-fallback.vite.config.mts`, which calls the existing loaders
+without asset access; licensed bytes remain ignored/local-only.
 
-Final alpine correction: a connected shelf core precedes weathering. Repose-angle
-scree settling is restricted to the lower 65 m catchment (12 m fade), rather than
-softening nearly every upper rock face below 105 m. Resistant upper walls keep the
-55° bedrock pass; rain reopens their drainage. Cold bake: **48.35 s** including the
-continuation; alpine is **6,731,560 bytes**, range **6.03–119.37 m**, maximum isolated
-four-neighbour prominence **2.79 m**. Example tsc/Biome pass. Licensed full scenario
-finished all 22 captures and all 17 view windows, but failed forest CPU budgets
-(maximum **6.7 ms**) and AO-stage assertions: the measured auto chain dropped AO
-with reason `tier:low`. Chromium/Xvfb and actual NVIDIA Turing identity are proven.
-A three-physical-core affinity experiment did not resolve the budget; the standard
-commands are being repeated without affinity. No AO, haze, grade or sun settings
-are changed to make those assertions pass. Final packed-consumer recheck is pending
-after this alpine recipe change.
+Task owner: Codex Round 17; branch `feat/prd-466-468-erosion`, base **615b9a9de**.
+Retained checkout:
+`/home/joao/projects/threenative/threenative-engine/.worktrees/prd-466-468-ground`,
+**6.3 GiB** (`du`), because commits are unmerged and requested captures/local assets must
+be preserved. Capture/dev processes on 5297 stopped. No forced cleanup.
