@@ -22,6 +22,7 @@ const scenario = JSON.parse(
 );
 const frames: Record<string, ILinearFrame[]> = {};
 const provenance = [];
+const velocityDiagnostics: Record<string, unknown> = {};
 let poses: unknown[] | undefined;
 for (const variant of [
   "supersampled",
@@ -29,6 +30,7 @@ for (const variant of [
   "temporal",
   "zero-velocity",
   "unchecked-history",
+  "dynamic-instances",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -125,6 +127,10 @@ for (const variant of [
   if (poses)
     assert.deepEqual(currentPoses, poses, `${variant}: exact same camera/object poses required`);
   else poses = currentPoses;
+  velocityDiagnostics[variant] = series.map(({ label, snapshots }) => ({
+    label,
+    velocity: (snapshots.temporal as { velocityProbe: unknown }).velocityProbe,
+  }));
   provenance.push({ variant, capture: report.capture, hashes });
 }
 const reference = frames.supersampled;
@@ -176,9 +182,10 @@ const summary = {
   checks,
   results,
   provenance,
+  velocityDiagnostics,
 };
 await writeFile(path.join(output, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(JSON.stringify({ checks, results }, null, 2));
+console.log(JSON.stringify({ checks, results, velocityDiagnostics }, null, 2));
 assert.ok(
   summary.pass,
   `Temporal motion quality remains unqualified: ${JSON.stringify(checks)}; actual frames and full measurements retained at ${output}`,

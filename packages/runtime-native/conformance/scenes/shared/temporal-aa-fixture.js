@@ -8,6 +8,7 @@ import {
   readVelocityPreviousWorldMatrix,
 } from "../../../../core/src/render/velocity.ts";
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
+import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 
 // Shared browser/native content. The caller owns the renderer and sole frame loop.
 export function createTemporalAAFixture(renderer, scene, camera, variant = "temporal", measurement = false) {
@@ -30,6 +31,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   rigid.position.set(-1.5, 0.6, 0.4);
   scene.add(rigid);
   const instances = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshStandardMaterial({ color: 0x60ead6 }), 3);
+  // Diagnostic only: clone inherits usage. This isolates previous-buffer upload policy while
+  // current geometry and its authored per-frame needsUpdate remain identical.
+  if (variant === "dynamic-instances") instances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(instances);
   const geometry = new THREE.BoxGeometry(0.28, 1.4, 0.25, 1, 8, 1);
   const skinIndices = [];
@@ -83,6 +87,19 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   });
   if (variant === "zero-velocity") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
+  const probeMatrix = new THREE.Matrix4();
+  const frontTriangle = geometry.groups[4].start + 18;
+  const velocityProbe = measurement && variant !== "reference" ? createTemporalVelocityProbe(renderer, scene, camera, scenePass, () => {
+    const skinned = new THREE.Vector3();
+    for (let corner = 0; corner < 3; corner++) skinned.add(character.getVertexPosition(geometry.index.getX(frontTriangle + corner), new THREE.Vector3()));
+    skinned.multiplyScalar(1 / 3).applyMatrix4(character.matrixWorld);
+    instances.getMatrixAt(0, probeMatrix);
+    return {
+      rigid: new THREE.Vector3(0, 0, 0.15).applyMatrix4(rigid.matrixWorld),
+      instance: new THREE.Vector3(0, 0, 0.16).applyMatrix4(probeMatrix).applyMatrix4(instances.matrixWorld),
+      skinned,
+    };
+  }) : null;
   let frame = 0;
   let resets = 0;
   let lastReset = null;
@@ -90,6 +107,13 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     frame, resets, lastReset, aa: temporal?.report() ?? null,
     measurement, variant, occluderVisible: measurement && occluder.visible,
     pose: { cameraX: camera.position.x, rigidX: rigid.position.x, limbZ: limb.rotation.z },
+    velocityProbe: velocityProbe?.observation() ?? null,
+    historyValues: measurement ? {
+      instances: Array.from(instances.instanceMatrix.array),
+      previousInstances: Array.from(readVelocityPreviousMatrices(instances) ?? []),
+      bones: Array.from(character.skeleton.boneMatrices),
+      previousBones: Array.from(readVelocityPreviousBoneMatrices(character) ?? []),
+    } : null,
     stages: chain.applied.stages, velocity: chain.applied.velocity,
     rigidHistory: readVelocityPreviousWorldMatrix(rigid) !== undefined,
     skinnedHistory: readVelocityPreviousBoneMatrices(character) !== undefined,
@@ -108,6 +132,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     if (frame === 20 && variant === "projection") { camera.fov = 65; camera.updateProjectionMatrix(); }
     if (frame === 20 && variant === "resize") { renderer.setSize(960, 540, false); camera.aspect = 960 / 540; camera.updateProjectionMatrix(); }
     tracker.update(scene);
+    velocityProbe?.before();
     pipeline.render();
     tracker.commit(scene);
     const result = temporal?.report();
@@ -116,7 +141,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   };
   return {
     render, observation,
+    sampleVelocity: () => velocityProbe?.read(),
     dispose: () => {
+      velocityProbe?.dispose();
       chain.dispose(); tracker.clear(); scenePass.dispose(); pipeline.dispose();
       const geometries = new Set();
       const materials = new Set();

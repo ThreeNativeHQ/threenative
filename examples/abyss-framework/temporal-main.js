@@ -28,6 +28,7 @@ async function advance(ticks) {
   for (let index = 0; index < ticks; index++) {
     await new Promise(requestAnimationFrame);
     fixture.render();
+    await fixture.sampleVelocity();
   }
   return ticks;
 }

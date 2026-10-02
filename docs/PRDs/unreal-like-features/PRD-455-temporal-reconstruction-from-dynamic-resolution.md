@@ -133,6 +133,14 @@ thresholds remain unchanged. [Complete measurements/provenance](../../verificati
 [later recovery](../../verification/prd455/motion-recovery.png) retain genuine unchanged frame bytes.
 All 80 frames remain in the workflow artifact; these four selected frames were inspected.
 
+The next diagnostic retains the same scene, resolve and thresholds and reads actual velocity MRT
+pixels at interior rigid, instanced and skinned surface points. A CPU oracle projects the same
+surface points from consecutive rendered poses using unjittered camera matrices; observations
+also retain the projection used during the draw and the tracker-scheduled instance/bone history.
+This tests NDC sign, grid scale and previous/current timing before changing blend or shader policy.
+The fixture-only readback is explicitly excluded from performance claims. Its TypeScript uses
+the existing `@types/three` 0.185.3 development cohort; the Three runtime pin remains 0.185.1.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 

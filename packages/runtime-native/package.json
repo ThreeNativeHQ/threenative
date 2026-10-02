@@ -94,6 +94,7 @@
   },
   "devDependencies": {
     "@threenative/playtest": "workspace:*",
+    "@types/three": "0.185.3",
     "esbuild": "catalog:",
     "publint": "catalog:",
     "three": "catalog:",
