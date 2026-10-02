@@ -56,7 +56,7 @@ Audit on 2026-10-02 of what an agent pays between starting a task and pushing it
 
 #### Phase 1: The pre-push hook is green and fast
 
-**Status:** IN PROGRESS — hook green and parallel; the CI-log box waits for this PR's `test` job
+**Status:** COMPLETE
 **Files:** EDIT `scripts/ci-fast.sh` (stages in parallel; scaffold typecheck moves to `ci:local` and CI),
 `biome.json` (`vcs.useIgnoreFile`), `docs/PRDs/UI/PRD-native-overlay-utility-styling.md` (broken links).
 
@@ -65,8 +65,10 @@ Audit on 2026-10-02 of what an agent pays between starting a task and pushing it
   3 of 4 red). The biome and link fixes landed directly on `develop` in `af7e25333` to unblock the
   backlog push. A never-built checkout still needs one workspace build: three drift specs import
   packages' `dist`.
-- [ ] The scaffold typecheck still runs before merge. proof: the `test` job log of one CI run lists
-  `template.spec.ts`.
+- [x] The scaffold typecheck still runs before merge. proof: the `test` job log of one CI run lists
+  `template.spec.ts`. Evidence: CI run 37049488719 (2026-10-02), job `test-unit (1/3)` 110991025981:
+  `✓ packages/create-threenative/__tests__/template.spec.ts (38 tests) 102118ms`. The unit shards run
+  plain `vitest run`, which this PR does not touch.
 
 #### Phase 2: Instructions and injections carry only what agents use
 
