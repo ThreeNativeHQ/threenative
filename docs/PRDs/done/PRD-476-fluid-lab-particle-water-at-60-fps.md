@@ -4,14 +4,14 @@
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
-**Progress:** 8/8 required boxes verified (the two frame-time boxes on frame cost, not presented fps; see Blocked on)
+**Progress:** 8/8 required boxes verified (the two frame-time boxes carry both frame cost and presented fps; see Presented fps)
 
 ## Context
 
 Absorb `/home/joao/Downloads/fluid-lab-v2.html` ("Fluid Lab 02", 238,714 bytes, SHA-256
 `e389fe7f5198c3ce4365b343281c1e34317c55082514741815e9217ad14f4ef7`) as engine capabilities, remove
 the frame-rate wall that holds it near 30 fps, and rebuild it as a sandbox game on those
-capabilities. Phases 1-3 are implemented on PR #389; the two frame-time boxes are ticked on measured frame cost; presented fps still needs a valid presentation lane.
+capabilities. Phases 1-3 are implemented on PR #389; the two frame-time boxes carry measured frame cost and presented fps on the real display.
 
 The file is a raw Three.js 0.180 (WebGL2) + Rapier 0.19 lab with eight experiments: dam break,
 splash tank, buoyancy, waterfall, fountain, whirlpool, viscosity, and ocean & rain. Its readable
@@ -131,9 +131,21 @@ Phase boxes below are the acceptance criteria; each names its proof.
 | Native host | Conformance registry case on the desktop host | New case beside `77-fluid-field` | Phase 2 box 2 |
 | Discovery | `engine_search_capabilities` → manifest built by `pnpm build` | Adds `@situation` tags; no hand-edited JSON | Phase 3 box 1 |
 
-## Blocked on
+## Presented fps
 
-- A valid presentation lane for *presented* fps (the two frame-time boxes are ticked on frame cost, with that caveat): on this machine the private Xvfb presents a trivial WebGPU page at 17–20 fps, headless Chromium falls to SwiftShader, and the real display is off limits for captures by owner directive. Unblocks: the owner allows one window on the desktop for a 60 s run, or a GPU-accelerated virtual display exists. A quiet host (other agents idle) is also needed: the runs above shared it at load average 14–50.
+Measured 2026-10-02 on the real display (`:0`, HDMI-A-1 59.96 Hz, `nvidia/turing`, RTX 2080) after the owner approved one window on it: Chromium via Playwright, vsync on, 1280x720, `requestAnimationFrame` deltas over 30 s (about 1,800 frames) after a 12 s settle, an empty-page control first in the same window (59.97 fps, p50/p95/p99 16.7/16.8/16.8 ms, so the lane is valid), frame timestamps only, no screenshots of the desktop. Final code (core defaults 8e-3 / 0.03 / 0.015, raymarch through the glass), host load 4-18 from other sessions:
+
+| scene | p50 / p95 / p99 ms | mean fps | worst frame |
+|---|---|---|---|
+| control (empty page) | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
+| sandbox Splash Tank, High (4,896 particles) | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
+| sandbox Waterfall, High | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
+| sandbox Whirlpool | 16.7 / 16.8 / 16.8 | 59.93 | 33.4 ms (1 frame) |
+| sandbox Ocean and raft | 16.7 / 16.8 / 16.8 | 59.93 | 33.4 ms (1 frame) |
+| example stress (6,000 particles) | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
+| example dam break | 16.7 / 16.8 / 16.8 | 59.70 | 150 ms (1 frame, load 18) |
+
+An earlier pass with the previous defaults and shader gave the same p50/p95/p99 on Splash High, Dam, Ocean and the 6,000-particle stress scene (one 100 ms hitch in a first Splash High run, none on the rerun). Presented fps is display-locked at 60 Hz, so this proves the frame budget holds, not headroom beyond it; headroom is the frame cost above (about 1 ms GPU per frame). Single isolated hitches (33-150 ms) appeared three times in about 12,600 frames while other sessions loaded the host; not attributed to the solver.
 
 ## Decisions
 
@@ -161,7 +173,7 @@ Phase boxes below are the acceptance criteria; each names its proof.
 
 #### Phase 1: `FluidParticles3D` runs a dam break on the GPU at 60 fps
 
-**Status:** DONE (3 of 3 boxes; frame cost, presented fps unmeasured)
+**Status:** DONE (3 of 3 boxes; frame cost and presented fps measured)
 **Files:** `packages/core/src/fluid-particles.ts` (new), `packages/core/src/index.ts` (export +
 JSDoc tags), `packages/core/__tests__/fluid-particles.spec.ts` (new),
 `examples/prd476-fluid-particles/` (new, copied from the `prd249-fluid-field` layout: `game.ts`,
@@ -174,7 +186,7 @@ compared. The example renders particles as points from `positions` (debug look o
 - [x] Option validation fails closed, passes dispatch in the documented order, `fill`/`emit`/ `drain` respect capacity, and scene removal releases buffers. proof: `pnpm exec vitest run packages/core/__tests__/fluid-particles.spec.ts` — 9/9 pass
 - [x] A released dam-break column runs across the tank and settles with mean compression ≤ 0.05 and every particle inside `bounds` (GameState resource assertions). proof: `node packages/playtest/dist/runner/cli.js examples/prd476-fluid-particles/playtests/fluid-particles.playtest.json --url http://127.0.0.1:5173 --server-command "pnpm --filter prd476-fluid-particles dev --host 127.0.0.1" --browser-recipe webgpu --headed` — pass on `nvidia/turing`: 1,638 particles, peak front x 2.9 m, final mean compression 0.0012, max speed 0.047 m/s, inBounds 1, 0 console errors (headless Chromium reports no adapter here, so `--headed` on the private Xvfb is required)
 - [x] With 6,000 particles (the source's High capacity) the splash tank holds steady-state frame p95 ≤ 16.7 ms on the Linux desktop browser with a hardware WebGPU adapter (`adapter.info` recorded, not SwiftShader). proof: `measure-steady-state-fps` skill lane against the example
-  Ticked as **frame cost on a hardware adapter, not presented fps**: GPU timestamp queries (`?bench=1&stress=1`, `window.__fluidGpuMs(30)`, `nvidia/turing`) put one solver step at 0.30–0.32 ms of GPU time at 6,000 particles; uncapped frame deltas over 6,213 frames are p50 1.2 / p95 7.4 / p99 15 ms with the host at load average ~50 (a no-fluid control showed p99 14–16 ms). Presented p95 is unmeasured: a trivial WebGPU page presents at 17–20 fps under the private Xvfb, headless and `--headless=new` fall to SwiftShader, and a bare Xvfb presents it at 8 fps.
+  Frame cost on a hardware adapter, plus presented fps on `:0` (see Presented fps: p95 16.8 ms, 59.97 fps): GPU timestamp queries (`?bench=1&stress=1`, `window.__fluidGpuMs(30)`, `nvidia/turing`) put one solver step at 0.30–0.32 ms of GPU time at 6,000 particles; uncapped frame deltas over 6,213 frames are p50 1.2 / p95 7.4 / p99 15 ms with the host at load average ~50 (a no-fluid control showed p99 14–16 ms). The private Xvfb cannot present a trivial WebGPU page above 17–20 fps, so presented fps was taken on `:0`.
 
 **Verification:** run the three proofs above; record particle count, p95 frame time and adapter
 beside the third box.
@@ -199,7 +211,7 @@ projects particles out of them; the column-height grid feeds `heightAt` through 
 
 #### Phase 3: agents find it, and the sandbox Fluid Lab runs all eight experiments at 60 fps
 
-**Status:** DONE (3 of 3 boxes; frame cost, presented fps unmeasured)
+**Status:** DONE (3 of 3 boxes; frame cost and presented fps measured)
 **Files:** `packages/core/src/index.ts` (`@situation` tags for `FluidParticles3D`; spray/droplet
 situations on `GPUParticles3D`), `packages/create-threenative/templates/sailing/AGENTS.md` or the
 capability reference the scaffold reads (one line, inside the template caps),
@@ -214,7 +226,7 @@ runs, per the sandbox `AGENTS.md`.
 - [x] `engine_search_capabilities` returns `FluidParticles3D` first for "pour water into a tank and drop a ball in it" and `GPUParticles3D` for "splash spray droplets with lifetime and gravity"; template caps still pass. proof: `pnpm build && pnpm test`, then both searches — `searchCapabilities` over the regenerated `packages/core/capabilities.json`: "pour water into a tank and drop a ball in it" → FluidParticles3D (0.70) first; "splash spray droplets with lifetime and gravity" → GPUParticles3D (3.60) first. `pnpm build` ok; `pnpm test` (create-threenative + scripts + the new spec, 2,457 tests) 2,456 pass; the one red (`quality-json.spec`, 3 unwaived suppressions in `fluid-particles.ts`) was fixed and rerun green; `pnpm typecheck`, `pnpm lint` (0 errors) and `pnpm budgets` exit 0
 - [x] A playtest cycles all eight scenes through keys 1–8 and asserts each is non-blank, changes over time, and reports a non-zero particle or wave state. proof: `node packages/playtest/dist/runner/cli.js ../sandbox/fluid-lab/playtests/experiments.playtest.json --url <preview url> --browser-recipe webgpu --headed` — pass on `nvidia/turing` (`../sandbox/fluid-lab`, pushed as ThreeNativeHQ/examples 0cdeb86): per scene `experiment`, `alive` (particles or wave energy) and `moved` (speed over 0.2 m/s or wave energy) hold at every step; the eight per-scene screenshots are 5-11 % non-background pixels (ocean 90 %); 0 console errors
 - [x] The sandbox Splash Tank at the High preset holds steady-state frame p95 ≤ 16.7 ms on the Linux desktop browser with a hardware WebGPU adapter — the case the source drops to 30 fps. proof: `measure-steady-state-fps` skill lane against the sandbox build + preview
-  Ticked as **frame cost on a hardware adapter, not presented fps**: on the High preset (4,896 particles) a fixed step is 0.26–0.33 ms of GPU time (`?bench=1&exp=2&quality=high`, `window.__fluidGpuMs(30)`, timestamp queries) and the raymarch render pass 0.28 ms (`TN_FRAME_BUDGET` `gpuMain`), under 1 ms of GPU per 16.7 ms frame; uncapped frame intervals read p95 8.5–13.4 ms over 5,000–6,500 frames per run with the host at load average 14–50, where a no-fluid control already read p99 14–16 ms. The p99 tail (30–60 ms) tracks host load, not the solver (it also appears with readback off). Presented p95 remains unmeasured (see Blocked on).
+  Frame cost on a hardware adapter, plus presented fps on `:0` (see Presented fps: p95 16.8 ms, 59.97 fps): on the High preset (4,896 particles) a fixed step is 0.26–0.33 ms of GPU time (`?bench=1&exp=2&quality=high`, `window.__fluidGpuMs(30)`, timestamp queries) and the raymarch render pass 0.28 ms (`TN_FRAME_BUDGET` `gpuMain`), under 1 ms of GPU per 16.7 ms frame; uncapped frame intervals read p95 8.5–13.4 ms over 5,000–6,500 frames per run with the host at load average 14–50, where a no-fluid control already read p99 14–16 ms. The p99 tail (30–60 ms) tracks host load, not the solver (it also appears with readback off). Presented p95 was taken on `:0` (see Presented fps).
 
 **Verification:** the three proofs; `score-build-experience` on the finished sandbox build goes
 in the PR body, not a box.
