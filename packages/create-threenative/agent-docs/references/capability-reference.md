@@ -5512,7 +5512,7 @@ export class Terrain { … }
 ```
 
 - **Use when:** author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter
-- **Constraints:** authoring stays outside the game's steady-play graph; no renderer or physics is created
+- **Constraints:** authoring stays outside the game's steady-play graph; no renderer or physics is created · units are metres with Y up; `size` is the world edge in metres (1 to 100000), centred on the origin · `resolution` counts vertices per edge and must be one of 17, 33, 65, 129, 257, 513 or 1025 · `seed` is an integer from 0 to 4294967295; one document and seed evaluate to the same arrays · `evaluate()` is synchronous on the calling thread: run it in a build script, never per frame · no art is chosen or shipped: materials, models and texture paths belong to the game
 - **Requires:** npm i @threenative/terrain
 - **Overrides:** size, resolution, seed and all layer parameters are caller choices
 

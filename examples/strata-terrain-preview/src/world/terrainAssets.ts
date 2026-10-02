@@ -13,10 +13,18 @@
 /** The surfaces that can cover ground. Order is the blend order in `src/render/terrain.ts`. */
 export type LayerKey = "grass" | "dirt" | "rock" | "moss" | "sand" | "snow";
 
-/** One ground layer's PBR images: an albedo, and relief where the surface shows it. */
+/**
+ * One ground layer's PBR images: an albedo, and relief where the surface shows it.
+ *
+ * The ground material samples 16 textures at most; the starter spends them with normals on four
+ * layers (not sand or snow), so a replacement that gives all six a normal map is refused by WebGPU.
+ */
 export interface IGroundMaps {
   readonly diffuse: string;
   readonly normal?: string;
+  /** Only the portable export reads these two; the runtime ground derives its own. */
+  readonly occlusion?: string;
+  readonly roughness?: string;
 }
 
 /** The ground's layers, and the file each one draws with. */
@@ -28,14 +36,16 @@ export const GROUND_MAPS: Record<LayerKey, IGroundMaps> = {
   grass: {
     diffuse: "leafy_grass/leafy_grass_diff_1k.jpg",
     normal: "leafy_grass/leafy_grass_nor_gl_1k.jpg",
+    occlusion: "leafy_grass/leafy_grass_ao_1k.jpg",
+    roughness: "leafy_grass/leafy_grass_rough_1k.jpg",
   },
   moss: {
     diffuse: "mossy_rock/mossy_rock_diff_1k.jpg",
     normal: "mossy_rock/mossy_rock_nor_gl_1k.jpg",
   },
   rock: {
-    diffuse: "cliff_side/cliff_side_diff_1k.jpg",
-    normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
+    diffuse: "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+    normal: "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg",
   },
   sand: { diffuse: "sand_01/sand_01_diff_1k.jpg" },
   snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
@@ -46,7 +56,7 @@ export const GROUND_TILE: Record<LayerKey, number> = {
   dirt: 3.4,
   grass: 2.6,
   moss: 3.6,
-  rock: 9,
+  rock: 3.8,
   sand: 3.2,
   snow: 12,
 };
@@ -126,8 +136,8 @@ export const PREPARED: readonly IPreparedFile[] = [
   // this only draws on CI, on a fresh clone and in a review — which is the starter that ships, and
   // a procedural lump there is the wrong first impression. Two, not three: three at two levels put
   // the pack-less meadow one draw over its ceiling.
-  { asset: "boulder", level: 0, path: `rocks/rock01-near.glb`, variant: 1 },
-  { asset: "boulder", level: 1, path: `rocks/rock01-mid.glb`, variant: 1 },
-  { asset: "boulder", level: 0, path: `rocks/boulder-near.glb`, variant: 2 },
-  { asset: "boulder", level: 1, path: `rocks/boulder-mid.glb`, variant: 2 },
+  { asset: "boulder", level: 0, path: "rocks/rock01-near.glb", variant: 1 },
+  { asset: "boulder", level: 1, path: "rocks/rock01-mid.glb", variant: 1 },
+  { asset: "boulder", level: 0, path: "rocks/boulder-near.glb", variant: 2 },
+  { asset: "boulder", level: 1, path: "rocks/boulder-mid.glb", variant: 2 },
 ];

@@ -37,12 +37,13 @@ import {
 } from "../../../packages/playtest/dist/runner/index.js";
 
 const root = resolve(".");
-const PORT = 5195;
+const PORT = 5185;
 
 /** Every path the stock mapping names. A request for any of them is a starter request. */
 const STARTER_PREFIXES = [
   "bark_brown_02/",
   "cliff_side/",
+  "rock_boulder_dry/",
   "fern_02/",
   "fir_tree_01/",
   "forest_ground_04/",
@@ -158,8 +159,15 @@ function fixtureGlb() {
       indices[face * 3 + corner] = vertex;
     });
   });
+  // Every ground and prop material samples a texture, so a marker with no UVs gives the node
+  // material a vertex attribute that is not there and WebGPU rejects the pipeline: the fixture
+  // carries a UV per corner, projected from the box's own x/y.
+  const uvs = new Float32Array((positions.length / 3) * 2);
+  for (let vertex = 0; vertex < positions.length / 3; vertex += 1)
+    uvs.set([positions[vertex * 3], positions[vertex * 3 + 1]], vertex * 2);
   const positionBytes = Buffer.from(positions.buffer);
   const normalBytes = Buffer.from(normals.buffer);
+  const uvBytes = Buffer.from(uvs.buffer);
   const indexBytes = Buffer.from(indices.buffer);
   // The JSON chunk is padded to four bytes with spaces and the BIN chunk with zeros, per the glTF
   // 2.0 container rules; a JSON parser refuses the zeros.
@@ -170,16 +178,18 @@ function fixtureGlb() {
   const bin = Buffer.concat([
     pad4(positionBytes),
     pad4(normalBytes),
+    pad4(uvBytes),
     pad4(indexBytes),
     Buffer.alloc(28),
   ]);
+  // biome-ignore lint/style/useNamingConvention: glTF spells its attribute accessors in caps.
+  const attributes = { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 };
   const json = {
     asset: { generator: "strata AC-6 fixture", version: "2.0" },
     meshes: [
       {
         name: "custom-marker",
-        // biome-ignore lint/style/useNamingConvention: glTF spells its attribute accessors in caps.
-        primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, material: 0 }],
+        primitives: [{ attributes, indices: 3, material: 0 }],
       },
     ],
     nodes: [{ mesh: 0, name: "custom-marker" }],
@@ -205,7 +215,8 @@ function fixtureGlb() {
         max: [1, 1, 1],
       },
       { bufferView: 1, componentType: 5126, count: 8, type: "VEC3" },
-      { bufferView: 2, componentType: 5123, count: 36, type: "SCALAR" },
+      { bufferView: 2, componentType: 5126, count: 8, type: "VEC2" },
+      { bufferView: 3, componentType: 5123, count: 36, type: "SCALAR" },
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: positionBytes.length, target: 34962 },
@@ -218,6 +229,12 @@ function fixtureGlb() {
       {
         buffer: 0,
         byteOffset: positionBytes.length + normalBytes.length,
+        byteLength: uvBytes.length,
+        target: 34962,
+      },
+      {
+        buffer: 0,
+        byteOffset: positionBytes.length + normalBytes.length + uvBytes.length,
         byteLength: indexBytes.length,
         target: 34963,
       },
@@ -267,6 +284,10 @@ function writeFixtures(directory) {
 function customMappingSource(files, servedRoot) {
   const one = (name) => `${servedRoot}/${name}`;
   const layer = { diffuse: one(files.albedo), normal: one(files.normal) };
+  // Sand and snow bind an albedo only. The ground material samples 16 textures at most, and the
+  // starter's own set spends exactly that with normals on four layers: a consumer who gives all six
+  // a normal map asks for 18 samplers and WebGPU rejects the pipeline.
+  const flat = { diffuse: one(files.albedo) };
   const surface = {
     diffuse: one(files.albedo),
     normal: one(files.normal),
@@ -278,8 +299,8 @@ export const GROUND_MAPS = {
   grass: ${JSON.stringify(layer)},
   moss: ${JSON.stringify(layer)},
   rock: ${JSON.stringify(layer)},
-  sand: ${JSON.stringify(layer)},
-  snow: ${JSON.stringify(layer)},
+  sand: ${JSON.stringify(flat)},
+  snow: ${JSON.stringify(flat)},
 };
 export const GROUND_TILE = { dirt: 3.4, grass: 2.6, moss: 3.6, rock: 9, sand: 3.2, snow: 12 };
 export const PROP_MAPS = { bark: ${JSON.stringify(surface)}, stone: ${JSON.stringify(surface)} };
@@ -460,15 +481,12 @@ try {
   const stock = await runArm("stock", stockSource, true);
   const custom = await runArm("custom", customSource, false);
 
-  // The scenario's own `diagnostics` assertion is compared between the arms rather than required
-  // green: the shadow-depth console errors it reports are a property of the example's renderer
-  // lifecycle and are present with the stock mapping too, so demanding they vanish here would be
-  // asserting a fix this criterion is not about. Both arms must fail it the same way — an arm that
-  // failed it *worse* is this script's business.
+  // Every assertion of the shared scenario must pass in both arms, `diagnostics` included: a
+  // consumer's own art that makes the renderer log errors has not been replaced cleanly.
   const scenarioDiagnostics = {};
   for (const arm of [stock, custom]) {
     assert(arm.assertions.length > 0, "The shared scenario published no assertions");
-    const failing = arm.assertions.filter((result) => result.id !== "diagnostics" && !result.pass);
+    const failing = arm.assertions.filter((result) => !result.pass);
     assert.deepEqual(
       failing.map((result) => result.id),
       [],

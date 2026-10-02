@@ -45,6 +45,7 @@ import { terrainPalette } from "./palette.js";
 import { createPortableGround, createPortableProps } from "./portable.js";
 import { createPropSurfaces } from "./propMaterials.js";
 import {
+  PROP_ASSETS,
   type PropGroundQuery,
   buildPropVariants,
   createProps,
@@ -584,6 +585,11 @@ export async function createEditorView(
       }
       selection.refresh();
       return resolved;
+    },
+    // This project's own placeable assets, so the recovered scatter palette is the project's art and
+    // not a starter list baked into the addon.
+    propAssets(): readonly string[] {
+      return Object.keys(PROP_ASSETS);
     },
     pick(clientX, clientY) {
       if (!mesh) return null;

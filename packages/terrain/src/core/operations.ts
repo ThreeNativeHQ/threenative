@@ -111,7 +111,9 @@ function brushWeights(
   seed: number,
 ): Float32Array {
   const centers = brushCenters(p, seed);
-  if (!centers) return mask ?? new Float32Array(s.height.length);
+  // No `at`/`points` means the layer covers the whole world. `mask` is null in that case, and a
+  // fresh Float32Array is all zeros — which reads as "weight nothing anywhere".
+  if (!centers) return mask ?? new Float32Array(s.height.length).fill(1);
   const n = s.resolution;
   const r = p.radius ?? 30;
   const cell = s.size / (n - 1);
