@@ -1418,17 +1418,29 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("non-visual-scenarios.mjs");
   });
 
-  it("keeps the measured puzzle lane split into two shards", async () => {
+  // The counts are measurements, not preferences: each one below is the shard count that puts that
+  // template's slowest slice inside the run's six-minute leg budget on run 37049488719's timings.
+  // Raising one without a new measurement is how a lane goes back to eating the run.
+  it.each([
+    ["puzzle", 2],
+    ["sailing", 2],
+    ["rain", 5],
+    ["shooter", 6],
+  ])("keeps the measured %s lane split into %i shards", async (template, count) => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "template-nonvisual");
-    const puzzleShards = [
-      ...job.matchAll(/^\s+-\s*\{\s*template:\s*puzzle\s*,\s*shard:\s*"(\d+)\/(\d+)"/gmu),
+    const shards = [
+      ...job.matchAll(
+        new RegExp(
+          `^\\s+-\\s*\\{\\s*template:\\s*${template}\\s*,\\s*shard:\\s*"(\\d+)\\/(\\d+)"`,
+          "gmu",
+        ),
+      ),
     ].map((match) => ({ index: Number(match[1]), count: Number(match[2]) }));
 
-    expect(puzzleShards, "puzzle's measured scenario lane must stay split").toEqual([
-      { index: 1, count: 2 },
-      { index: 2, count: 2 },
-    ]);
+    expect(shards, `${template}'s measured scenario lane must stay split`).toEqual(
+      Array.from({ length: count }, (_, offset) => ({ index: offset + 1, count })),
+    );
   });
 
   // A shard count above the template's scenario count is a leg that can only ever select nothing.

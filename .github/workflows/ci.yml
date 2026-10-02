@@ -195,9 +195,20 @@ jobs:
   # that job that does: the docs check, the build and the package walk each make sense once.
   #
   # Every test still runs. `vitest --shard` slices the same file list, and the slices were checked
-  # to add back up: 117 + 117 + 117 = 351 files, union identical to the unsharded suite with no
-  # file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
+  # to add back up: the slices partition the file list, union identical to the unsharded suite with
+  # no file in two shards. `scripts/__tests__/ci-structure.spec.ts` holds the matrix to that shape,
   # and `run-test-suite.sh` refuses a phase selection that would run nothing at all.
+  #
+  # Four slices, not three, because `--shard` sorts the file list by a hash of its path and slices
+  # that order, so the split is honest about file count and blind to duration. Measured on run
+  # 37049488719 the three legs ran 163s / 285s / 472s of vitest over 397s / 712s / 709s of test
+  # time, and replaying vitest's own `sha1(path)` partition over those per-file durations
+  # reproduces all three assignments exactly. At four slices the same replay predicts
+  # 80s / 114s / 211s / 320s of vitest, which with the 40-121s of job overhead measured on the same
+  # run puts three legs inside six minutes. The fourth cannot: it carries
+  # `create-threenative/__tests__/template-assets-compile.spec.ts` at 320s on its own, and no shard
+  # count splits a single file. A fifth slice would leave both of those numbers unchanged and buy
+  # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
@@ -206,7 +217,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ["1/3", "2/3", "3/3"]
+        shard: ["1/4", "2/4", "3/4", "4/4"]
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_SUITE_PHASES: unit
@@ -739,10 +750,23 @@ jobs:
     # 33734775193 `minimal` finished in 80s and `platformer` took 407s, and the run is only ever as
     # fast as its slowest leg. Timestamping platformer's step splits it as ~74s of scaffold install
     # and typecheck plus 15 scenarios at ~20s each, so the scenarios are what makes it long and
-    # they shard cleanly. Platformer and starter run in thirds. Puzzle was measured at 399s of
-    # scenario work on run 33843502361 (carry 134s, swing 255s), so it runs in two halves as well;
-    # every other template is already well under the leg it would be sharded against, and splitting
-    # them would buy nothing and pay the 74s setup twice.
+    # they shard cleanly. Every slice then has to absorb its own ~65s of leg overhead — 36-51s of
+    # checkout, install and Playwright before the step, 10-42s of target install, typecheck and
+    # display setup inside it — so the number of shards is set by the slowest slice plus that
+    # overhead, not by the total.
+    #
+    # Per-scenario seconds on run 37049488719, and the slowest slice each count predicts:
+    #   platformer 15 at ~20s -> 3 -> ~150s measured.        starter 24 -> 3 -> ~210s measured.
+    #   puzzle    10, 399s of work -> 2 -> ~197s measured.   runner/snow/rts/racing/tower-defense/
+    #   action-rpg/minimal keep one leg each; all measured under 280s.
+    #   shooter 26 at 32-47s, 922s total -> 4 -> 363s, 5 -> 356s, 6 -> 288s. Six is the count that
+    #     clears six minutes, and 65s of that is the leg overhead.
+    #   rain 5 at 331/202/222/78/61 -> 5 -> 396s. Five is its floor: five scenarios, so one per
+    #     slice, and its heaviest scenario alone is 331s of software rendering. It cannot reach six
+    #     minutes at any shard count and is left honest rather than split past its scenario count.
+    #   sailing 6 at 17/163/23/75/22/44 -> 2 -> 347s. Two slices put the 163s hull test with 119s of
+    #     sailing; a third would balance it to 250s and is the change worth making if 347s ever
+    #     measures over.
     #
     # Every scenario still runs. `shard` selects a slice of the same classifier output the whole
     # lane has always used, and the step fails closed if the slices do not add back up to the list.
@@ -760,11 +784,21 @@ jobs:
           - { template: puzzle, shard: "1/2" }
           - { template: puzzle, shard: "2/2" }
           - { template: racing, shard: "1/1" }
-          - { template: rain, shard: "1/1" }
+          - { template: rain, shard: "1/5" }
+          - { template: rain, shard: "2/5" }
+          - { template: rain, shard: "3/5" }
+          - { template: rain, shard: "4/5" }
+          - { template: rain, shard: "5/5" }
           - { template: rts, shard: "1/1" }
           - { template: runner, shard: "1/1" }
-          - { template: sailing, shard: "1/1" }
-          - { template: shooter, shard: "1/1" }
+          - { template: sailing, shard: "1/2" }
+          - { template: sailing, shard: "2/2" }
+          - { template: shooter, shard: "1/6" }
+          - { template: shooter, shard: "2/6" }
+          - { template: shooter, shard: "3/6" }
+          - { template: shooter, shard: "4/6" }
+          - { template: shooter, shard: "5/6" }
+          - { template: shooter, shard: "6/6" }
           - { template: snow, shard: "1/1" }
           - { template: starter, shard: "1/3" }
           - { template: starter, shard: "2/3" }
