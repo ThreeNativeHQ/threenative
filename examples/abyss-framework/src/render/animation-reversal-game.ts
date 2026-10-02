@@ -65,6 +65,7 @@ class AnimationReversal extends Scene {
 }
 
 export default defineGame({
+  initialState: {},
   camera: { projection: "perspective", fov: 42, near: 0.1, far: 50 },
   input: { start: { keys: ["Space"] } },
   plugins: [playtest()],

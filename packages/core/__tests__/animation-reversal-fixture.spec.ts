@@ -30,3 +30,10 @@ it("keeps the shipped CC0 mannequin's live gait continuous through nine reversal
   trace.player.dispose();
   expect(trace.player.mixer.stats.actions.total).toBe(0);
 });
+
+it("constructs the capture game before a browser starts", async () => {
+  const { default: game } = await import(
+    "../../../examples/abyss-framework/src/render/animation-reversal-game.js"
+  );
+  expect(game.ctx).toBeUndefined();
+});
