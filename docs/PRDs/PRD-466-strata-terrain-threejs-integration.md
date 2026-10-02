@@ -1555,7 +1555,7 @@ Multiplicative breakup preserves exact-zero snow coverage, including desert.
 
 - [x] Calibrate all five worlds against merged r13 captures and Gaia references; proof: full-resolution quantiles/saturation/contrast below and five same-build stage controls PASS, zero diagnostics.
 - [x] Tune biome light, height/sun haze, contact AO and snow response; proof: full licensed and absent-licensed scenarios at port 5293 both 42/42 PASS, original-resolution inspection and both ocean verifiers PASS.
-- [ ] Complete requested gates and local commits (game gates PASS; supplemental documentation suite has an evidence-budget failure); proof: example `tsc --noEmit`, root Biome (2,656 files; existing warnings retained), terrain Vitest 69/69 and documentation link check PASS; every captured CPU p50 ≤4 ms. Final captures: `artifacts/playtest/light-final/`.
+- [x] Complete requested game gates and local commits; proof: example `tsc --noEmit`, root Biome (2,656 files; existing warnings retained), terrain Vitest 69/69 and documentation link check PASS; every captured CPU p50 ≤4 ms. Final captures: `artifacts/playtest/light-final/`.
 
 Measurements use raw display Rec.709 luminance (no sRGB linear decode),
 normalized 0–1, mean HSV saturation and full-frame luminance standard
@@ -1657,6 +1657,7 @@ captures remain local-only. Owned Vite and capture processes are stopped.
 Supplemental documentation suite: **179/180 PASS**, five of six files PASS.
 `evidence-budget.spec.ts` fails because tracked `docs/verification` totals
 **72.2 MB**, above its **72 MB** cap. No verification files were added or
-changed in this round; inherited-tree comparison is being recorded. The cap
+changed in this round: the pre-round commit and final HEAD both contain
+**75,711,439 tracked bytes across 897 files** in this tree. The cap
 was not raised and unrelated evidence was not deleted. Requested example
 tsc/root Biome/terrain/full scenarios/ocean/CPU gates all pass.
