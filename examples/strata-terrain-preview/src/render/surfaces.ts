@@ -132,6 +132,13 @@ export function createSurfaceBindings(
       pending = pending.then(() => run(mappings, list)).catch(() => undefined);
     },
     ready: (): Promise<void> => pending,
+    /** The address of the imported image each mapped input draws, so an export can carry the same one. */
+    urls: (): Record<string, string> =>
+      Object.fromEntries(
+        [...bindings.entries()].flatMap(([input, binding]) =>
+          binding.url ? [[input, binding.url]] : [],
+        ),
+      ),
     diagnostics: (): string[] => [...diagnostics],
     inputs: (): { input: string; channel: string }[] =>
       [...bindings.keys()].map((input) => ({ input, channel: input.split(".")[1] ?? "" })),

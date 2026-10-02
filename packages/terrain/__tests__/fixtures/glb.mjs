@@ -58,7 +58,7 @@ const FACES = [
   ],
 ];
 
-const ATTRIBUTES = ["POSITION", "NORMAL"];
+const ATTRIBUTES = ["POSITION", "NORMAL", "TEXCOORD_0"];
 const LIGHTS = "KHR_lights_punctual";
 
 function pad(bytes, fill) {
@@ -78,6 +78,7 @@ export function buildGlb({ unit = 1, external = false, nan = false, extras = tru
   const positions = new Float32Array(24 * 3);
   const normals = new Float32Array(24 * 3);
   const indices = new Uint16Array(36);
+  const uvs = new Float32Array(24 * 2);
   FACES.forEach(([normal, corners], face) => {
     corners.forEach((corner, i) => {
       positions.set(
@@ -85,6 +86,7 @@ export function buildGlb({ unit = 1, external = false, nan = false, extras = tru
         (face * 4 + i) * 3,
       );
       normals.set(normal, (face * 4 + i) * 3);
+      uvs.set([i % 3 === 0 ? 0 : 1, i < 2 ? 0 : 1], (face * 4 + i) * 2);
     });
     indices.set(
       [0, 1, 2, 0, 2, 3].map((v) => face * 4 + v),
@@ -97,6 +99,7 @@ export function buildGlb({ unit = 1, external = false, nan = false, extras = tru
       ...new Uint8Array(positions.buffer),
       ...new Uint8Array(normals.buffer),
       ...new Uint8Array(indices.buffer),
+      ...new Uint8Array(uvs.buffer),
     ]),
     0,
   );
@@ -119,13 +122,21 @@ export function buildGlb({ unit = 1, external = false, nan = false, extras = tru
       {
         name: "trunk",
         primitives: [
-          { attributes: { [ATTRIBUTES[0]]: 0, [ATTRIBUTES[1]]: 1 }, indices: 2, material: 0 },
+          {
+            attributes: { [ATTRIBUTES[0]]: 0, [ATTRIBUTES[1]]: 1, [ATTRIBUTES[2]]: 3 },
+            indices: 2,
+            material: 0,
+          },
         ],
       },
       {
         name: "crown",
         primitives: [
-          { attributes: { [ATTRIBUTES[0]]: 0, [ATTRIBUTES[1]]: 1 }, indices: 2, material: 1 },
+          {
+            attributes: { [ATTRIBUTES[0]]: 0, [ATTRIBUTES[1]]: 1, [ATTRIBUTES[2]]: 3 },
+            indices: 2,
+            material: 1,
+          },
         ],
       },
     ],
@@ -158,11 +169,13 @@ export function buildGlb({ unit = 1, external = false, nan = false, extras = tru
       },
       { bufferView: 1, componentType: 5126, count: 24, type: "VEC3" },
       { bufferView: 2, componentType: 5123, count: 36, type: "SCALAR" },
+      { bufferView: 3, componentType: 5126, count: 24, type: "VEC2" },
     ],
     bufferViews: [
       { buffer: 0, byteOffset: 0, byteLength: 288 },
       { buffer: 0, byteOffset: 288, byteLength: 288 },
       { buffer: 0, byteOffset: 576, byteLength: 72 },
+      { buffer: 0, byteOffset: 648, byteLength: 192 },
     ],
     buffers: [
       { byteLength: bin.length },

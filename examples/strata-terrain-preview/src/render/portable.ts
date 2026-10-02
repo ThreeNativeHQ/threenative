@@ -71,6 +71,9 @@ const PORTABLE_PROP_MAPS: Record<string, { maps: string[]; cutout?: number }> = 
   pine: { maps: [rooted(NEEDLE_ATLAS)], cutout: 0.11 },
 };
 
+/** The channel each of a role's maps carries, in the order {@link pbr} lists them. */
+const CHANNELS = ["albedo", "normal", "roughness"] as const;
+
 /** The albedo a role falls back to, so a map that will not load never costs the export its shape. */
 const PORTABLE_PROP_FALLBACK: Record<string, number> = {
   bark: 0x4a3428,
@@ -146,7 +149,11 @@ export interface IPortableProps {
  * GLB. What travels is the same textures with the same colour spaces and the cutout each role's
  * alpha implies, so an exported spruce is still this game's spruce rather than a green box.
  */
-export async function createPortableProps(assets: IAssetLoader): Promise<IPortableProps> {
+export async function createPortableProps(
+  assets: IAssetLoader,
+  /** Imported images by `<surface>.<channel>` that replace a role's starter map in the export. */
+  mapped: Readonly<Record<string, string>> = {},
+): Promise<IPortableProps> {
   const materials: Record<string, MeshStandardMaterial> = {};
   const textures: Texture[] = [];
   for (const role of Object.keys(PORTABLE_PROP_FALLBACK)) {
@@ -164,9 +171,12 @@ export async function createPortableProps(assets: IAssetLoader): Promise<IPortab
     }
     const [colour, normal, roughness] = await Promise.all(
       (specification?.maps ?? []).map(
-        async (path, index) =>
+        async (starter, index) =>
           (await assets
-            .texture(path, { data: index > 0, wrap: RepeatWrapping })
+            .texture(mapped[`${role}.${CHANNELS[index] ?? ""}`] ?? starter, {
+              data: index > 0,
+              wrap: RepeatWrapping,
+            })
             .catch(() => undefined)) as Texture | undefined,
       ),
     );

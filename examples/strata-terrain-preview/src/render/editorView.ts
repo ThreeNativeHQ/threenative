@@ -936,7 +936,7 @@ export async function createEditorView(
       // This game's own PBR maps, not a fixture's checkers: an export that carried test textures
       // would prove the container and not the art, which is the half of the handoff that matters.
       const material = await createPortableGround(ctx.assets, terrain.size);
-      const portableProps = await createPortableProps(ctx.assets);
+      const portableProps = await createPortableProps(ctx.assets, surfaces.urls());
       // Every draw a placement owns, on one portable surface. A spruce is a trunk and a crown, and
       // an export that carried only the trunk would ship a hundred poles.
       const models = new Map<string, Object3D>();
@@ -948,7 +948,10 @@ export async function createEditorView(
           // The draw's own name ends in its role (`props:spruce:0:crown`), which is exactly the key
           // the portable surfaces are chosen by.
           const role = part.mesh.name.split(":").at(-1) ?? "crown";
-          const surface = portableProps.materials[role];
+          // An imported model keeps the materials its file was authored with; only the starter's own
+          // shapes are re-dressed in the portable starter surfaces.
+          const own = part.mesh.userData.ownMaterial === true ? part.mesh.material : undefined;
+          const surface = own ?? portableProps.materials[role];
           if (!surface) throw new Error(`No portable surface for prop role '${role}'`);
           const draw = new Mesh(part.mesh.geometry, surface);
           draw.name = role;

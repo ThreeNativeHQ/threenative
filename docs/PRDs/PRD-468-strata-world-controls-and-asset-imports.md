@@ -4,7 +4,7 @@
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466's public rendering/asset/export contract and PRD-467 phase 1's shared document/live session
-**Progress:** 6/8 required boxes verified
+**Progress:** 7/8 required boxes verified
 
 ## Context
 
@@ -251,7 +251,7 @@ targets using the existing Vitest/playtest/packed-consumer paths, not shipped
 scripts today. Every named camera/environment/import operation is public and
 reachable through the live authoring session rather than an internal test helper.
 
-- [ ] AC-7 [local, actor: implementing agent]: An imported-and-edited world exports as a portable terrain asset for an ordinary game. proof: planned `pnpm --filter strata-terrain-preview test:consumer` — Evidence: pending; import a custom GLB and PBR image, place/gizmo them, save/reload, export and render through isolated vanilla GLTFLoader; assert final identities/transforms and embedded image content with no external requests. All editor/imported cameras, lights and debug nodes remain absent. The export result identifies environment effects carried separately and static water where exported.
+- [x] AC-7 [local, actor: implementing agent]: An imported-and-edited world exports as a portable terrain asset for an ordinary game. proof: `pnpm --filter strata-terrain-preview test:terrain:export` (exit 0), not the planned `test:consumer`, which is the packed-install proof and is reported separately — Evidence: `scripts/verify-import-export.mjs` runs after the default-world export proof, from a fresh editor page on the saved document (the reopen) and a fresh viewer page. It registers a model authored in feet (with its own camera and light nodes) from a local path, adjusts it to metres, maps an imported PNG onto `bark.albedo`, places 6 instances, and saves one instance scaled 2x the way the individual gizmo does. The export names the committed revision and the file is read directly: 6 placement nodes with the final identities, the model's own two authored materials (not the starter's), every image embedded in the file (no `uri`), no `cameras`, no `KHR_lights_punctual`, and neither imported node name. A plain `GLTFLoader` game with no authoring code then loads it: every imported placement's world matrix equals the live editor's transform (1e-4), the scaled instance arrives with scale 2, the mapped image's centre pixel (255,0,255) is among the loaded maps, 0 lights, 0 cameras, and no request leaves the consumer's origin. `report.receivingGameSupplies` names lighting, sky/environment, fog, exposure, post-processing and live water/wind as carried separately, and `report.waterIds` carries the static river. The default-world part of the script had stale hard-coded counts from the forest lane (4 shared meshes, 202 meshes, 404 maps); they are now counted from the file itself. A model without UVs is refused by the exporter by name (`asset:<id>/<part>: missing/malformed uv`); the fixture carries them.
 
 ## Integration Ledger
 
@@ -311,7 +311,7 @@ shared validators sequentially.
 
 ### Phase 3: Image injection and explicit game handoff
 
-**Status:** IN PROGRESS — AC-5 and AC-6 are done (2026-10-02); AC-8 (the explicit game handoff) is open.
+**Status:** IN PROGRESS — AC-5 and AC-6 are done (2026-10-02, c5116502a); AC-8 (the explicit game handoff) is open.
 **Files:** proposed `editor/assetImport.ts` image validation/mapping, material and
 environment inspectors/source, `__tests__/editor-assets.spec.ts`, existing export
 integration, consumer fixture and addon agent guide; project-owned render source

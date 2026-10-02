@@ -37,6 +37,10 @@ const placements = [];
 const water = [];
 let meshes = 0;
 let pbrMaps = 0;
+let lights = 0;
+// The centre pixel of every distinct colour map, so a receiving game can tell which image arrived.
+const mapPixels = new Set();
+const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
 gltf.scene.traverse((object) => {
   if (object.userData.placementId)
     placements.push({ id: object.userData.placementId, matrix: object.matrixWorld.toArray() });
@@ -49,9 +53,21 @@ gltf.scene.traverse((object) => {
       triangles:
         (object.geometry.index?.count ?? object.geometry.getAttribute("position").count) / 3,
     });
+  if (object.isLight) lights++;
   if (object instanceof Mesh) {
     meshes++;
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      const image = material.map?.image;
+      if (image?.width) {
+        probe.canvas.width = image.width;
+        probe.canvas.height = image.height;
+        probe.drawImage(image, 0, 0);
+        mapPixels.add(
+          [
+            ...probe.getImageData(image.width >> 1, image.height >> 1, 1, 1).data.slice(0, 3),
+          ].join(),
+        );
+      }
       pbrMaps += [material.map, material.normalMap, material.roughnessMap, material.aoMap].filter(
         Boolean,
       ).length;
@@ -65,6 +81,8 @@ window.portableWorld = {
   placements,
   pbrMaps,
   water,
+  lights,
+  mapPixels: [...mapPixels],
   cameras: gltf.cameras.length,
   animations: gltf.animations.length,
   frames: 0,
