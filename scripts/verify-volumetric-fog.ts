@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,13 +7,14 @@ import { PNG } from "pngjs";
 import { type IPlaytestScenario, loadPlaytestScenario } from "../packages/playtest/dist/index.js";
 // Use the built public runner: source-runner browser callbacks under tsx may capture __name.
 import {
+  type IStandalonePlaytestReport,
   WEBGPU_BROWSER_ARGS,
+  runDesktopPlaytest,
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const fixture = path.join(root, "examples/abyss-framework/vq-fog");
-const artifacts = path.join(root, "artifacts/volumetric-fog");
 const cases = [
   ["off", "KeyO"],
   ["zero", "KeyZ"],
@@ -288,23 +290,29 @@ export function fogLightPixelMetrics(
   };
 }
 
-export function fogCaptureIsValid(report: {
-  pass: boolean;
-  capture?: {
-    rendererKind?: string;
-    adapter?: Record<string, string>;
-    viewport?: { width: number; height: number };
-  };
-  diagnostics: readonly { code: string; severity: string }[];
-}): boolean {
+export function fogCaptureIsValid(
+  report: {
+    pass: boolean;
+    capture?: {
+      rendererKind?: string;
+      adapter?: Record<string, string>;
+      viewport?: { width: number; height: number };
+    };
+    diagnostics: readonly { code: string; severity: string }[];
+  },
+  viewport = { width: 640, height: 400 },
+): boolean {
   return (
     report.pass &&
     report.capture?.rendererKind === "webgpu" &&
-    report.capture.viewport?.width === 640 &&
-    report.capture.viewport.height === 400 &&
-    Object.values(report.capture.adapter ?? {}).some(
-      (value) => value.trim() !== "" && !/^(unknown|unavailable)$/i.test(value),
-    ) &&
+    report.capture.viewport?.width === viewport.width &&
+    report.capture.viewport.height === viewport.height &&
+    ["vendor", "architecture", "device", "description"].some((key) => {
+      const value = report.capture?.adapter?.[key];
+      return (
+        typeof value === "string" && value.trim() !== "" && !/^(unknown|unavailable)$/i.test(value)
+      );
+    }) &&
     !report.diagnostics.some(
       (diagnostic) =>
         diagnostic.severity === "error" || diagnostic.code === "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
@@ -312,7 +320,75 @@ export function fogCaptureIsValid(report: {
   );
 }
 
+export function nativeFogScenario(
+  scenario: IPlaytestScenario,
+  viewport = scenario.viewport,
+): IPlaytestScenario {
+  if (!scenario.assert?.components?.length)
+    throw new Error("Native fog proof requires state predicates.");
+  return {
+    ...scenario,
+    target: "desktop",
+    viewport,
+    artifacts: { screenshots: "after", console: true },
+    assert: {
+      resources: scenario.assert.components.map(({ entity: _entity, component, ...predicate }) => ({
+        id: "state",
+        path: component,
+        ...predicate,
+      })),
+      startup: { maxEnteredMs: 120_000, maxReadyMs: 120_000 },
+    },
+  };
+}
+
+export function fogNativeCaptureIsValid(
+  report: Pick<
+    IStandalonePlaytestReport,
+    "pass" | "capture" | "diagnostics" | "runtime" | "target" | "startup" | "assertionResults"
+  >,
+  nativeConsole: unknown,
+  viewport = { width: 640, height: 400 },
+): boolean {
+  return (
+    fogCaptureIsValid(report, viewport) &&
+    report.runtime === "native" &&
+    report.target === "desktop" &&
+    report.capture?.target === "desktop" &&
+    report.capture.captureMethod === "device.screenshot" &&
+    report.startup?.phase === "ready" &&
+    report.startup.compileSettled === true &&
+    (report.assertionResults?.length ?? 0) > 0 &&
+    report.assertionResults?.every((result) => result.pass) === true &&
+    !report.diagnostics.some((diagnostic) => /DEVICE_LOST|BRIDGE_MISSING/u.test(diagnostic.code)) &&
+    Array.isArray(nativeConsole) &&
+    nativeConsole.length > 0 &&
+    nativeConsole.every(
+      (entry) =>
+        entry &&
+        typeof entry.text === "string" &&
+        typeof entry.type === "string" &&
+        entry.type !== "error" &&
+        !/\[FATAL\]|\[WebGPU\].*(?:Device error|Device lost|Failed)|validation error|device(?:[ _-]| was )?lost|(?:Type|Reference|Range|Syntax)Error|TN_(?:NATIVE_START_FAILED|ASSETS_UNRESOLVED)/iu.test(
+          entry.text,
+        ),
+    ) &&
+    nativeConsole.some((entry) => entry.text.includes("TN_NATIVE_SMOKE_FIRST_FRAME"))
+  );
+}
+
 async function main(): Promise<void> {
+  const nativeRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
+  const artifacts = path.join(
+    root,
+    "artifacts",
+    nativeRuntime === undefined ? "volumetric-fog" : "volumetric-fog-native",
+  );
+  const nativeBundle = path.join(artifacts, "fog-native.js");
+  const hash = async (file: string) =>
+    createHash("sha256")
+      .update(await readFile(file))
+      .digest("hex");
   await mkdir(artifacts, { recursive: true });
   const dirty = execFileSync("git", ["status", "--porcelain"], {
     cwd: root,
@@ -327,41 +403,110 @@ async function main(): Promise<void> {
   const results: Record<string, unknown>[] = [];
   const summary = {
     sourceSha,
+    pass: false,
+    executionHost: { platform: process.platform, architecture: process.arch },
+    nativeArtifacts: undefined as { runtimeSha256: string; bundleSha256: string } | undefined,
     qualification:
-      "Software correctness captures only; no hardware performance or native claim. Wall/shaft appearance awaits pixel inspection.",
+      nativeRuntime === undefined
+        ? "Browser WebGPU software correctness; no native or hardware-performance claim."
+        : "Linux native host software-rendered correctness; no Android, iOS, OS-window lifecycle or hardware-performance claim.",
     results,
   };
+  await writeFile(
+    path.join(artifacts, "attempt.json"),
+    JSON.stringify({
+      sourceSha,
+      runId: process.env.GITHUB_RUN_ID,
+      target: nativeRuntime === undefined ? "browser" : "desktop",
+    }),
+  );
   try {
-    for (const { mode, scenario } of await fogCaptureScenarios()) {
+    if (nativeRuntime !== undefined) {
+      execFileSync(
+        process.execPath,
+        [
+          "packages/runtime-native/scripts/bundle.mjs",
+          "--project",
+          fixture,
+          "--entry",
+          "src/game.ts",
+          "--target",
+          "desktop",
+          "--native-backend",
+          "--output",
+          nativeBundle,
+        ],
+        { cwd: root, stdio: "inherit" },
+      );
+      summary.nativeArtifacts = {
+        runtimeSha256: await hash(nativeRuntime),
+        bundleSha256: await hash(nativeBundle),
+      };
+    }
+    for (const { mode, scenario: authored } of await fogCaptureScenarios()) {
+      const scenario =
+        nativeRuntime === undefined
+          ? authored
+          : nativeFogScenario(
+              authored,
+              mode === "resizeSmall" ? { width: 320, height: 240 } : authored.viewport,
+            );
       const directory = path.join(artifacts, mode);
       await mkdir(directory, { recursive: true });
       const scenarioPath = path.join(directory, "scenario.playtest.json");
       await writeFile(scenarioPath, `${JSON.stringify(scenario, null, 2)}\n`);
       await loadPlaytestScenario(root, scenarioPath);
-      const report = await runStandalonePlaytest({
-        artifactDirectory: directory,
-        projectPath: fixture,
-        scenarioPath,
-        target: "browser",
-        headless: false,
-        allowSoftwareAdapter: true,
-        browserArgs: WEBGPU_BROWSER_ARGS,
-        port: 0,
-        url: "http://127.0.0.1:5173/",
-        timeoutMs: 120_000,
-        trace: false,
-        server: {
-          cwd: root,
-          command: `VQ_FOG_HTTP_LOG=${JSON.stringify(path.join(directory, "http-errors.jsonl"))} node examples/abyss-framework/node_modules/vite/bin/vite.js preview --config examples/abyss-framework/vq-fog/vite.config.ts --host 127.0.0.1 --port \${PORT}`,
-          timeoutMs: 60_000,
-        },
-      });
+      const report =
+        nativeRuntime === undefined
+          ? await runStandalonePlaytest({
+              artifactDirectory: directory,
+              projectPath: fixture,
+              scenarioPath,
+              target: "browser",
+              headless: false,
+              allowSoftwareAdapter: true,
+              browserArgs: WEBGPU_BROWSER_ARGS,
+              port: 0,
+              url: "http://127.0.0.1:5173/",
+              timeoutMs: 120_000,
+              trace: false,
+              server: {
+                cwd: root,
+                command: `VQ_FOG_HTTP_LOG=${JSON.stringify(path.join(directory, "http-errors.jsonl"))} node examples/abyss-framework/node_modules/vite/bin/vite.js preview --config examples/abyss-framework/vq-fog/vite.config.ts --host 127.0.0.1 --port \${PORT}`,
+                timeoutMs: 60_000,
+              },
+            })
+          : await runDesktopPlaytest({
+              artifactDirectory: directory,
+              projectPath: fixture,
+              scenarioPath,
+              target: "desktop",
+              desktop: {
+                executable: nativeRuntime,
+                hostArgs: ["run", nativeBundle, "--windowed", "--width", "640", "--height", "400"],
+              },
+              allowSoftwareAdapter: true,
+              headless: false,
+              timeoutMs: 120_000,
+              trace: false,
+              url: "",
+            });
       await writeFile(path.join(directory, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
       await writeFile(
         path.join(directory, "observations.json"),
         `${JSON.stringify(report.observations, null, 2)}\n`,
       );
-      const valid = fogCaptureIsValid(report);
+      const nativeConsole =
+        nativeRuntime === undefined
+          ? undefined
+          : JSON.parse(await readFile(path.join(directory, "console.json"), "utf8"));
+      const valid =
+        nativeRuntime === undefined
+          ? fogCaptureIsValid(report)
+          : fogNativeCaptureIsValid(report, nativeConsole, scenario.viewport);
+      const observedState = report.observations?.resources?.state?.after as
+        | Record<string, unknown>
+        | undefined;
       results.push({
         mode,
         sourceSha,
@@ -370,7 +515,7 @@ async function main(): Promise<void> {
         resources: Object.fromEntries(
           ["textures", "settledRenderFrames", "stableTextureFrames"].map((key) => [
             key,
-            report.observations?.components?.fog?.[key]?.after,
+            observedState?.[key],
           ]),
         ),
         diagnostics: report.diagnostics,
@@ -391,7 +536,11 @@ async function main(): Promise<void> {
         throw new Error(
           `VQ07 ${mode}: rejected runtime/capture diagnostics; preserve artifacts as diagnostic only.`,
         );
-      await readFile(path.join(directory, "after.png"));
+      const png = PNG.sync.read(await readFile(path.join(directory, "after.png")));
+      if (png.width !== scenario.viewport.width || png.height !== scenario.viewport.height)
+        throw new Error(
+          `VQ07 ${mode}: actual screenshot dimensions do not match the declared capture viewport.`,
+        );
     }
     const off = PNG.sync.read(await readFile(path.join(artifacts, "off/after.png")));
     const zero = PNG.sync.read(await readFile(path.join(artifacts, "zero/after.png")));
@@ -441,6 +590,13 @@ async function main(): Promise<void> {
     results.push({ assertion: "isolated light-scattering pixels", ...metrics });
     if (!metrics.pass)
       throw new Error("VQ07 isolated light-scattering/black-control pixel gates failed.");
+    if (
+      nativeRuntime !== undefined &&
+      ((await hash(nativeRuntime)) !== summary.nativeArtifacts?.runtimeSha256 ||
+        (await hash(nativeBundle)) !== summary.nativeArtifacts?.bundleSha256)
+    )
+      throw new Error("VQ07 native executable or game bundle changed during proof.");
+    summary.pass = true;
   } finally {
     await writeFile(path.join(artifacts, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
   }

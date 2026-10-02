@@ -38,6 +38,15 @@ describe("volumetric fog runtime evidence", () => {
     expect(
       fogCaptureIsValid({
         ...good,
+        capture: {
+          ...good.capture,
+          adapter: { features: "timestamp-query", vendor: "unknown", architecture: "unavailable" },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      fogCaptureIsValid({
+        ...good,
         capture: { ...good.capture, viewport: { width: 1, height: 1 } },
       }),
     ).toBe(false);

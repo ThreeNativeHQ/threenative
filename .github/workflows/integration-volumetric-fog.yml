@@ -10,6 +10,7 @@ on:
       - 'examples/abyss-framework/vq-fog/**'
       - 'examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json'
       - 'scripts/verify-volumetric-fog.ts'
+      - 'scripts/__tests__/vq-fog-native-proof.spec.ts'
       - '.github/workflows/integration-volumetric-fog.yml'
 permissions:
   contents: read
@@ -42,3 +43,61 @@ jobs:
           path: artifacts/volumetric-fog/
           retention-days: 30
           if-no-files-found: error
+  native:
+    name: Linux native fog correctness
+    needs: [capture]
+    # Reuse the proven native-platforms / native-assets ARM QuickJS route without changing defaults.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      TN_PLAYTEST_ALLOW_SOFTWARE: '1'
+      TN_PLAYTEST_NATIVE_SCREENSHOT_TIMEOUT_MS: '30000'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Build this source's public JavaScript packages
+        uses: ./.github/actions/workspace-dist
+        with:
+          save-bundles: 'false'
+          pack-archives: 'false'
+      - name: Verify native preflight and capture rejection controls
+        run: pnpm exec vitest run scripts/__tests__/vq-fog-native-proof.spec.ts --maxWorkers=1
+      - name: Restore checksum-provisioned native dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/runtime-native/third_party
+          key: native-third-party-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/runtime-native/scripts/download-deps.mjs', 'packages/runtime-native/scripts/package-android.mjs') }}
+      - name: Install the existing native lane's system prerequisites
+        run: >-
+          sudo apt-get update && sudo apt-get install -y
+          libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
+          libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
+          libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
+          libgtk-3-dev libwebkit2gtk-4.1-dev libxcomposite-dev xcompmgr
+          libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
+      - name: Build the ordinary ARM desktop host
+        run: pnpm --filter @threenative/runtime-native native:build
+      - name: Run the same authored fog and pixel gates on the native host
+        env:
+          THREENATIVE_RUNTIME_BINARY: ${{ github.workspace }}/packages/runtime-native/build/tn-linux/mystral
+        run: node --import tsx scripts/verify-volumetric-fog.ts
+      - name: Retain native screenshots, host console and executable identities
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: volumetric-fog-native-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/volumetric-fog-native/
+          retention-days: 30
+          if-no-files-found: warn

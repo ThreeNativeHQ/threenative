@@ -41,3 +41,12 @@ pnpm parity --project examples/abyss-framework/vq-fog --target desktop
 The reusable repeated-lifecycle scenario is `../playtests/vq-volumetric-fog.playtest.json`. Portable target/depth resize scenarios retain the same fog controller and require exact restored pixels. Allocation comparisons require unchanged texture counts over at least three observed completed render frames, not just elapsed time. These do not establish operating-system window resize behavior.
 
 Native execution and screenshot proof remain unverified until the host runs it; browser captures do not establish native support or hardware performance.
+
+
+The same verifier can use an already-built Linux desktop host:
+
+```sh
+THREENATIVE_RUNTIME_BINARY=/absolute/path/to/mystral node --import tsx scripts/verify-volumetric-fog.ts
+```
+
+It bundles the same `src/game.ts`, uses the public desktop mailbox runner, and retains host/game hashes plus native screenshots under `artifacts/volumetric-fog-native/`. Native scenarios use resources/startup; unsupported browser diagnostics/visual assertion families are replaced by mandatory native host-console/readiness/provenance checks and the same external pixel gates. Native `renderer.setSize` changes the backing surface, so the small-target PNG is 320×240; the restored PNG remains 640×400. The integration workflow's native job reuses the normal ARM Linux host setup after browser proof passes. Native execution is still pending; a bundle build alone does not qualify it.
