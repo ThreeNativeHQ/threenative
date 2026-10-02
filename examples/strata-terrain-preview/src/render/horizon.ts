@@ -23,6 +23,21 @@ export function createHorizonGeometry(
     [-1, 0],
     [0, -1],
   ] as const;
+  // Cache a coarse edge profile; high-frequency baked ribs should not extrude for 480 m.
+  const edgeHeight = (vertex: number) => {
+    const wrapped = (vertex + perimeter) % perimeter;
+    const side = Math.floor(wrapped / segments);
+    const along = wrapped % segments;
+    const [sx, sz] = starts[side] as readonly [number, number];
+    const [dx, dz] = directions[side] as readonly [number, number];
+    return data.heights[(sz + along * dz) * data.resolution + sx + along * dx] as number;
+  };
+  const coarseEdge = Array.from({ length: perimeter }, (_, vertex) => {
+    let total = 0;
+    for (let offset = -16; offset <= 16; offset++)
+      total += edgeHeight(vertex + offset) * (17 - Math.abs(offset));
+    return total / 289;
+  });
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
@@ -70,7 +85,11 @@ export function createHorizonGeometry(
                 crags * Math.min(1, massif * 2) * 0.5
               : hills;
       const height = data.waterLevel === null ? inland : data.waterLevel - 28;
-      positions.push(x, (data.heights[edge] as number) * (1 - blend) + height * blend, z);
+      // The collider seam is exact. Short baked rills fade into broad shoulders before the massif.
+      const detail = data.waterLevel === null ? Math.exp(-distance / 45) : 1;
+      const inherited =
+        (data.heights[edge] as number) * detail + (coarseEdge[vertex] as number) * (1 - detail);
+      positions.push(x, inherited * (1 - blend) + height * blend, z);
       colors.push(
         data.colors[edge * 3] as number,
         data.colors[edge * 3 + 1] as number,

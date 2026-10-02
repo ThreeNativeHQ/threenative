@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Heightfield } from "@threenative/core/world";
 import { Vector3 } from "three";
+import { createHorizonGeometry } from "../src/render/horizon.js";
 import {
   buildPropVariants,
   createProps,
@@ -11,7 +12,7 @@ import {
   readPropTransform,
   writePropTransform,
 } from "../src/render/props.js";
-import { scatterProps } from "../src/render/scatter.js";
+import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
 
 const data = JSON.parse(
   readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
@@ -24,6 +25,18 @@ const field = new Heightfield({
   origin: { x: 0, z: 0 },
   heights: Float32Array.from(data.heights),
 });
+// Decorative continuation must retain the exact collider seam and finite geometry.
+const horizon = createHorizonGeometry(data);
+const horizonPositions = horizon.getAttribute("position");
+for (let i = 0; i < (data.resolution - 1) * 4; i++) {
+  assert.ok(
+    Math.abs(
+      horizonPositions.getY(i) - field.heightAt(horizonPositions.getX(i), horizonPositions.getZ(i)),
+    ) < 0.00001,
+  );
+}
+assert.ok(Array.from(horizonPositions.array).every(Number.isFinite));
+horizon.dispose();
 const scatter = scatterProps({ ...data, field }, { x: 186, z: 76 }, [
   [176, 84, 10],
   [-20, -150, 10],
@@ -39,6 +52,41 @@ for (const [x, z] of [
   );
   assert.ok(grass.length > 3000, `Missing dense ground cover at ${x},${z}`);
 }
+for (const cliff of scatter.placements.filter((one) => one.asset === "cliff")) {
+  const [x, , z] = cliff.position;
+  const reach = 18 * Math.SQRT1_2 * Number(cliff.scale);
+  for (const dx of [-reach, 0, reach])
+    for (const dz of [-reach, 0, reach]) {
+      assert.ok(grassWeight({ ...data, field }, x + dx, z + dz) <= 0.05);
+      assert.ok(slopeDegrees({ ...data, field }, x + dx, z + dz) >= 43);
+    }
+}
+// The previously accepted slab crossed this grassy, shallow rotated corner.
+assert.ok(
+  !scatter.placements.some(
+    (one) =>
+      one.asset === "cliff" &&
+      Math.hypot(one.position[0] + 41.0373, one.position[2] + 94.4282) < 0.01,
+  ),
+);
+// A continuous bare inland scarp still admits embedded cliffs.
+const scarp = new Heightfield({
+  origin: { x: 0, z: 0 },
+  rows: 17,
+  columns: 17,
+  width: 512,
+  depth: 512,
+  heights: Float32Array.from(
+    { length: 17 * 17 },
+    (_, i) => 350 + ((i % 17) / 16 - 0.5) * 512 * Math.tan((52 * Math.PI) / 180),
+  ),
+});
+assert.ok(
+  scatterProps({ ...data, field: scarp, lakes: [], rivers: [] }, { x: 186, z: 76 }).counts.cliff >
+    0,
+);
+// Even steep coastal grass ledges cannot acquire the pack's rectangular cliff slab.
+assert.equal(scatterProps({ ...data, field, waterLevel: 0 }, { x: 186, z: 76 }).counts.cliff, 0);
 const materials = flatPropMaterials();
 const parts = buildPropVariants();
 const ground = () => ({ height: 0, offset: 0 });

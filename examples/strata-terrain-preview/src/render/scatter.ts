@@ -138,6 +138,20 @@ export function scatterProps(
     );
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
+    if (asset === "cliff") {
+      // Stones normalize their largest dimension to 18 m. This envelope covers every yaw.
+      const reach = 18 * Math.SQRT1_2 * scale;
+      if (
+        data.waterLevel !== null ||
+        [-reach, 0, reach].some((dx) =>
+          [-reach, 0, reach].some(
+            (dz) =>
+              grassWeight(data, x + dx, z + dz) > 0.05 || slopeDegrees(data, x + dx, z + dz) < 43,
+          ),
+        )
+      )
+        return;
+    }
     const index = counts[asset] ?? 0;
     placements.push({
       asset,

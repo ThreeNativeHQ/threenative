@@ -261,8 +261,8 @@ function sandRipples(): Node<"vec3"> {
  * floor projection to fall back on and at full density a nine-metre tile turns into fine stripes down
  * its own length.
  */
-function triplanarAlbedo(source: Texture, key: LayerKey): Node<"vec4"> {
-  const tile = float(GROUND_TILE[key]);
+function triplanarAlbedo(source: Texture, key: LayerKey, scale = 1): Node<"vec4"> {
+  const tile = float(GROUND_TILE[key] * scale);
   const axis = abs(normalWorldGeometry).pow(4);
   const weight = axis.div(axis.x.add(axis.y).add(axis.z));
   const x = texture(source, positionWorld.zy.div(tile));
@@ -544,14 +544,20 @@ export function createGroundMaterial(
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
-  const forest = mix(vec3(0.035, 0.065, 0.026), vec3(0.075, 0.09, 0.045), breakUp.add(0.5));
-  const crag = mix(vec3(0.085, 0.073, 0.06), vec3(0.19, 0.165, 0.135), strata.mul(0.6).add(0.5));
+  // Reuse the resident maps at massif scale: steep faces project onto their own axes.
+  const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
+    .rgb.mul(MEADOW)
+    .mul(mix(0.5, 0.85, breakUp.add(0.5)));
+  const crag = triplanarAlbedo(layer("rock").diffuse, "rock", 6)
+    .rgb.mul(vec3(0.48, 0.44, 0.39))
+    .mul(strata.mul(0.35).add(1));
   const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
   const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
   const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
     oneMinus(smoothstep(0.18, 0.42, steep)),
   );
-  const mountain = mix(mix(forest, crag, max(treeline, face)), vec3(0.72, 0.76, 0.78), cap);
+  const snow = triplanarAlbedo(layer("snow").diffuse, "snow", 8).rgb;
+  const mountain = mix(mix(forest, crag, max(treeline, face)), snow, cap);
   material.colorNode = mix(
     albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
     otherBiome ? albedo.rgb : mountain,
@@ -721,7 +727,10 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
     positionWorld.z.div(float(data.size)).add(0.5),
   );
   const sampled = texture(cooked, uv);
-  return { node: sampled.r, texture: cooked, wetBank: sampled.g };
+  // A clamped wet boundary texel must not become a stripe across the continuation mesh.
+  const outside = max(abs(positionWorld.x), abs(positionWorld.z));
+  const resident = oneMinus(smoothstep(data.size / 2 - spacing * 2, data.size / 2, outside));
+  return { node: sampled.r, texture: cooked, wetBank: sampled.g.mul(resident) };
 }
 
 /**
