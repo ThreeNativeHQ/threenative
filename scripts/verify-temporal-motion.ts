@@ -9,7 +9,10 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
-import { requireTemporalRenderEvidence } from "./temporal-aa-evidence.js";
+import {
+  requireTemporalRenderEvidence,
+  writeTemporalMotionSummary,
+} from "./temporal-aa-evidence.js";
 import {
   type ILinearFrame,
   linearFrame,
@@ -52,6 +55,12 @@ for (const variant of [
   "unchecked-history-open",
   "nearest-history",
   "nearest-history-open",
+  "resolve-linear",
+  "resolve-cubic",
+  "resolve-cubic-open",
+  "resolve-cubic-strict",
+  "resolve-cubic-strict-open",
+  "resolve-cubic-strict-zero",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -169,7 +178,14 @@ const results = Object.fromEntries(
     .map(([name, frames]) => [name, measureSequence(reference, frames, 8)]),
 );
 const causalReveals = Object.fromEntries(
-  ["temporal", "strict-rejection", "unchecked-history", "nearest-history"].map((policy) => {
+  [
+    "temporal",
+    "strict-rejection",
+    "unchecked-history",
+    "nearest-history",
+    "resolve-cubic",
+    "resolve-cubic-strict",
+  ].map((policy) => {
     const candidate = frames[policy];
     const open = frames[`${policy}-open`];
     assert.ok(candidate && open, `Matched open-history control missing: ${policy}`);
@@ -212,6 +228,44 @@ const checks = {
   uncheckedHistoryDetected: unchecked.staleFraction > 0.1,
   zeroVelocityDetected: zeroVelocity.movingEdgeError > temporal.movingEdgeError * 1.02,
 };
+const linearProof = provenance.find((arm) => arm.variant === "resolve-linear");
+const installedProof = provenance.find((arm) => arm.variant === "temporal");
+assert.ok(linearProof && installedProof);
+const authoredLinearEquivalent = linearProof.hashes.every(
+  (frame, index) => frame.sha256 === installedProof.hashes[index]?.sha256,
+);
+const candidates = Object.fromEntries(
+  ["resolve-cubic", "resolve-cubic-strict"].map((name) => {
+    const result = results[name];
+    assert.ok(result);
+    return [
+      name,
+      {
+        qualification:
+          name === "resolve-cubic-strict"
+            ? "Candidate measurement with a matched zero-velocity control; all reported checks still required"
+            : "Diagnostic only: no matched zero-velocity control; excluded from qualification",
+        authoredLinearEquivalent,
+        edgeImprovement: result.edgeError < baseline.edgeError * 0.95,
+        stabilityImprovement: result.residualInstability < baseline.residualInstability * 0.95,
+        revealRecovery: result.reveal.slice(1).every((frame) => frame.staleFraction <= 0.01),
+        causalRedRecovery: causalReveals[name]
+          ?.slice(1)
+          .every((frame) => frame.redTintFraction <= 0.01),
+        // Both comparisons are reported: a sharper edge alone is insufficient for qualification.
+        excursionsNoWorseThanNoAA:
+          result.neighbourhoodOvershootFraction <= baseline.neighbourhoodOvershootFraction,
+        excursionsNoWorseThanInstalled:
+          result.neighbourhoodOvershootFraction <= temporal.neighbourhoodOvershootFraction,
+        matchedZeroVelocityDetected:
+          name === "resolve-cubic-strict"
+            ? (results["resolve-cubic-strict-zero"]?.movingEdgeError ?? 0) >
+              (result.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02
+            : null,
+      },
+    ];
+  }),
+);
 const summary = {
   qualification:
     "Matched full-resolution AA measurement only. Software WebGPU; no native, reconstruction or GPU performance claim. Rejection fraction remains unmeasured.",
@@ -238,16 +292,15 @@ const summary = {
     "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
   causalMethod:
     "Each policy is paired with the same temporal sequence whose red marker was never drawn. Positive red excess subtracts any positive shared green/blue change, normalised by marker red minus control red. This diagnostic separates red tint from neutral brightening/darkening; the original projection score and gate remain unchanged.",
-  pass: Object.values(checks).every(Boolean),
+  authoredLinearEquivalent,
+  candidates,
   checks,
   results,
   causalReveals,
   provenance,
   velocityDiagnostics,
 };
-await writeFile(path.join(output, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
-console.log(JSON.stringify({ checks, results, causalReveals }, null, 2));
-assert.ok(
-  summary.pass,
-  `Temporal motion quality remains unqualified: ${JSON.stringify(checks)}; actual frames and full measurements retained at ${output}`,
+console.log(
+  JSON.stringify({ checks, authoredLinearEquivalent, candidates, results, causalReveals }, null, 2),
 );
+await writeTemporalMotionSummary(path.join(output, "summary.json"), summary);

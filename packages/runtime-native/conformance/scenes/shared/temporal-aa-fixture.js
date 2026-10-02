@@ -7,6 +7,7 @@ import {
   readVelocityPreviousMatrices,
   readVelocityPreviousWorldMatrix,
 } from "../../../../core/src/render/velocity.ts";
+import { createExperimentalTemporalResolve } from "../../../../create-threenative/templates/starter/src/render/temporalResolve.ts";
 import { createTemporalAA } from "../../../../create-threenative/templates/starter/src/render/temporalAA.ts";
 import { createTemporalVelocityProbe } from "./temporal-velocity-probe.ts";
 
@@ -74,7 +75,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
         temporal = createTemporalAA(input, scenePass.getTextureNode("depth"), context.velocityNode, camera);
         // Diagnostic: normalized depth range is at most 1, so only the upstream edge bypass
         // is disabled. Its disocclusion threshold and history blend remain identical.
-        if (policy === "strict-rejection") temporal.node.edgeDepthDiff = 1;
+        if (policy === "strict-rejection" || policy.startsWith("resolve-cubic-strict")) temporal.node.edgeDepthDiff = 1;
         // Causal probe only: suppress bilinear diffusion of repeatedly reprojected history.
         // Nearest sampling can introduce motion snapping; it is not a proposed quality policy.
         if (policy === "nearest-history") {
@@ -86,6 +87,11 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
           setupCount++;
           if (camera.view?.enabled) setupDuringJitter++;
           const result = setup(builder);
+          if (policy.startsWith("resolve-")) {
+            temporal.node._resolveMaterial.colorNode = createExperimentalTemporalResolve(
+              temporal.node, builder.renderer, policy === "resolve-linear" ? "linear" : "catmull-rom",
+            );
+          }
           if (policy === "unchecked-history") {
           // Fixture-only negative control: actually render an unchecked 95% history blend.
           // This bypasses depth rejection AND neighbourhood clipping; it is not a product mode
@@ -99,7 +105,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       dispose: () => temporal?.dispose(),
     }],
   });
-  if (variant === "zero-velocity") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
+  if (variant === "zero-velocity" || variant === "resolve-cubic-strict-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
   const probeMatrix = new THREE.Matrix4();
   const frontTriangle = geometry.groups[4].start + 18;

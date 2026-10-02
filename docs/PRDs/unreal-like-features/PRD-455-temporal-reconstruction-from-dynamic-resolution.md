@@ -366,3 +366,46 @@ current/previous matrix GPU bytes through the installed renderer readback API af
 three draws. No extra render is introduced, and diagnostic readback remains excluded from any
 performance claim. The canonical PR393 worker is investigating a fresh-wrapper/shared-buffer
 upload hypothesis; no engine repair is duplicated here.
+
+
+Actual GPU readback at source `aabfa0272b486d345010d00aadeeb042e6cf2b39`, run `37008638293`,
+confirms the recompile cause. Frame 23 creates four fresh current-matrix attribute wrappers over
+the existing GPU buffer. Each backend create call sees that buffer already present and uploads
+nothing: GPU current Y remains -0.6924691796 from frame 22 despite CPU Y=-0.6999545693.
+Previous GPU Y correctly advances to -0.6924691796, so the velocity becomes zero. Frame 24 issues
+an update and catches up. All 208 PNGs remain byte-identical and diagnostics empty.
+[Exact actual-upload and GPU-byte evidence](../../verification/prd455/matrix-upload.json) is
+forwarded to PR393's owner; the engine repair remains canonical there.
+
+The experimental generated `temporalResolve.ts` now retains Three.js 0.185.1's resolve equations
+with source attribution and MIT notice, then offers an explicit linear/Catmull–Rom history
+sampling comparison. It creates no target and owns no jitter, depth copy, frame loop or history
+lifetime. The kernel's independently evaluated polynomial tests cover sample-centre identity,
+constant/linear/quadratic reconstruction and negative lobes. The actual quality gate is still red
+from the previous source; these CPU tests do not qualify the new filter.
+
+The maintained candidate run adds an authored-linear arm, cubic and cubic+strict-rejection arms,
+matching never-occluded controls and a matched cubic+strict zero-velocity control, for 304 total
+frames. Authored-linear output must be byte-identical to the installed temporal arm before any
+cubic finding is interpretable. Original scores and thresholds remain; additional candidate
+reports compare edge error, instability, both reveal diagnostics and neighbourhood excursions
+against both no-AA and the installed temporal arm. The cubic filter clamps negative history
+samples before the existing variance clip. Ringing and cost remain open until measured.
+
+
+Frozen candidate review checkpoint: 135 focused tests pass, including all 13 actual generated
+scaffold hashes; only starter changes. Root types, error-level lint, quality scanner, fixture
+build, documentation links, evidence budget and instruction mirrors pass. Evidence JSON was
+formatted without changing parsed values or PNG bytes. Independent review is required before
+publishing this shader increment or running its hosted comparison. No candidate quality result
+is claimed and all remaining acceptance boxes stay open.
+
+Review correction: authored-linear equivalence now participates in the aggregate pass and has
+its own assertion after the complete summary is saved. A mismatch invalidates cubic
+interpretation even if every original quality check passes; the failure names the retained
+artifact. Red-green regressions cover both passing and failing original checks. Non-strict
+cubic is explicitly diagnostic-only because it lacks a matched zero-velocity control and is
+excluded from qualification. No original quality threshold or runtime arm changed.
+Empty check sets also save `pass: false` before throwing a missing-checks error; equivalence
+failure retains precedence. The new false-pass regression went red-green; both empty-set paths
+and the existing checks now pass.

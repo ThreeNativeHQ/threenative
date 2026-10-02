@@ -1,6 +1,12 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { IPlaytestReport } from "../../packages/playtest/src/report.js";
-import { requireTemporalRenderEvidence } from "../temporal-aa-evidence.js";
+import {
+  requireTemporalRenderEvidence,
+  writeTemporalMotionSummary,
+} from "../temporal-aa-evidence.js";
 
 function report(): Pick<IPlaytestReport, "capture" | "diagnostics"> & { pass: boolean } {
   return {
@@ -54,4 +60,78 @@ describe("temporal render evidence", () => {
     failed.pass = false;
     expect(() => requireTemporalRenderEvidence(failed, "temporal")).toThrow();
   });
+});
+
+describe("temporal motion summary", () => {
+  it.each([true, false])(
+    "retains an unqualified artifact for missing checks (equivalence=%s)",
+    async (authoredLinearEquivalent) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const filename = path.join(directory, "summary.json");
+      const measurement = { authoredLinearEquivalent, checks: {}, results: { retained: true } };
+      try {
+        const error = await writeTemporalMotionSummary(filename, measurement).then(
+          () => null,
+          (error: Error) => error,
+        );
+        expect(JSON.parse(await readFile(filename, "utf8"))).toEqual({
+          ...measurement,
+          pass: false,
+        });
+        expect(error?.message).toContain(
+          authoredLinearEquivalent
+            ? "Missing temporal quality checks"
+            : "Authored-linear equivalence failed",
+        );
+        expect(error?.message).toContain(filename);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each([true, false])(
+    "retains failed equivalence evidence before rejecting cubic interpretation (quality=%s)",
+    async (qualityPass) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const filename = path.join(directory, "summary.json");
+      const measurement = {
+        authoredLinearEquivalent: false,
+        checks: { edgeImprovement: qualityPass },
+        results: { temporal: { edgeError: 0.05 }, "resolve-cubic": { edgeError: 0.04 } },
+      };
+      try {
+        const error = await writeTemporalMotionSummary(filename, measurement).then(
+          () => null,
+          (error: Error) => error,
+        );
+        expect(JSON.parse(await readFile(filename, "utf8"))).toEqual({
+          ...measurement,
+          pass: false,
+        });
+        expect(error?.message).toContain("Authored-linear equivalence failed");
+        expect(error?.message).toContain("cubic interpretation is invalid");
+        expect(error?.message).toContain(filename);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each([true, false])(
+    "preserves the original quality gate (quality=%s)",
+    async (qualityPass) => {
+      const directory = await mkdtemp(path.join(tmpdir(), "temporal-summary-"));
+      const filename = path.join(directory, "summary.json");
+      try {
+        const result = writeTemporalMotionSummary(filename, {
+          authoredLinearEquivalent: true,
+          checks: { edgeImprovement: qualityPass },
+        });
+        if (qualityPass) await expect(result).resolves.toBeUndefined();
+        else await expect(result).rejects.toThrow("Temporal motion quality remains unqualified");
+        expect(JSON.parse(await readFile(filename, "utf8")).pass).toBe(qualityPass);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });

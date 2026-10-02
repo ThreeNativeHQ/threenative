@@ -6,6 +6,7 @@ on:
       - 'packages/core/src/render/velocity.ts'
       - 'packages/core/__tests__/temporal-chain.spec.ts'
       - 'packages/create-threenative/templates/starter/src/render/temporalAA.ts'
+      - 'packages/create-threenative/templates/starter/src/render/temporalResolve.ts'
       - 'packages/create-threenative/__tests__/temporal*.spec.ts'
       - 'packages/runtime-native/conformance/scenes/shared/temporal-aa*.js'
       - 'packages/runtime-native/conformance/scenes/shared/temporal-velocity-probe.ts'
@@ -35,7 +36,7 @@ jobs:
       - run: pnpm --filter @threenative/playtest build
       - uses: ./.github/actions/playwright-chromium
       - name: Validate actual TRAANode and history lifecycle contracts
-        run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts packages/create-threenative/__tests__/temporal-initial-projection.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts scripts/__tests__/temporal-aa-quality.spec.ts --maxWorkers=2
+        run: pnpm exec vitest run packages/core/__tests__/temporal-chain.spec.ts packages/core/__tests__/render-chain.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/create-threenative/__tests__/temporal-aa.spec.ts packages/create-threenative/__tests__/temporal-initial-projection.spec.ts packages/create-threenative/__tests__/temporal-resolve.spec.ts packages/runtime-native/__tests__/temporal-velocity-probe.spec.ts scripts/__tests__/temporal-aa-evidence.spec.ts scripts/__tests__/temporal-aa-quality.spec.ts --maxWorkers=2
       - name: Render temporal motion and reset variants
         run: node --import tsx scripts/verify-temporal-aa.ts
       - name: Measure matched temporal motion and disocclusion

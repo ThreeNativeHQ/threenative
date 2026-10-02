@@ -198,7 +198,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "796246a9183426c22979bb9c49903c3956be1a8940c608f5486a01d7435fb760",
   snow: "af162bb24db940f4bd7f7c598f354a4a9505d3ea269cf1256690281a3148c88c",
   // PRD-455: measured combined PRD-269 patch and starter temporal helper.
-  starter: "53bed98864239d87dda3f1d3df7b8333a812987a18de8db2e3afb4af338e4e97",
+  starter: "548f63a8b59f99ea2a02648e376fb1e8cfcdacd3e7846b45a2a4a324c48d7521",
   "tower-defense": "0a3e86fdac6ab2e0c68d7cab9247f74fb8f3d33f02f675111752341e57838763",
 };
 
@@ -298,6 +298,7 @@ const STARTER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/worldEnvironment.ts",
   "src/render/temporalAA.ts",
+  "src/render/temporalResolve.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",

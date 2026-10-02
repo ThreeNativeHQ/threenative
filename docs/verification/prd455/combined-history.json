@@ -26,10 +26,7 @@
     "height": 360,
     "referenceRasterScale": 4,
     "colourSpace": "linear RGB decoded from opaque sRGB screenshots",
-    "frames": [
-      21,
-      36
-    ],
+    "frames": [21, 36],
     "revealFrame": 29,
     "edgeGradientThreshold": 0.08,
     "ghostInteriorInset": 2,
@@ -64,7 +61,7 @@
         {
           "afterReveal": 2,
           "meanAbsoluteError": 0.022229826447319603,
-          "meanStaleWeight": 5.2429127694620634e-05,
+          "meanStaleWeight": 5.2429127694620634e-5,
           "staleFraction": 0
         },
         {
@@ -509,43 +506,43 @@
       {
         "afterReveal": 1,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 5.198796191591118e-06,
+        "meanRedHistoryWeight": 5.198796191591118e-6,
         "meanAbsoluteDifference": 0.023052133752759517
       },
       {
         "afterReveal": 2,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 1.8998382581319428e-06,
+        "meanRedHistoryWeight": 1.8998382581319428e-6,
         "meanAbsoluteDifference": 0.01129767082254255
       },
       {
         "afterReveal": 3,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 2.8428601838819947e-06,
+        "meanRedHistoryWeight": 2.8428601838819947e-6,
         "meanAbsoluteDifference": 0.009641044285068893
       },
       {
         "afterReveal": 4,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 3.952788303900283e-06,
+        "meanRedHistoryWeight": 3.952788303900283e-6,
         "meanAbsoluteDifference": 0.0082489736221334
       },
       {
         "afterReveal": 5,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 3.964929838498436e-06,
+        "meanRedHistoryWeight": 3.964929838498436e-6,
         "meanAbsoluteDifference": 0.004318525503161014
       },
       {
         "afterReveal": 6,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 8.535322246144726e-06,
+        "meanRedHistoryWeight": 8.535322246144726e-6,
         "meanAbsoluteDifference": 0.0011243888733207582
       },
       {
         "afterReveal": 7,
         "redTintFraction": 0,
-        "meanRedHistoryWeight": 7.878976084107144e-06,
+        "meanRedHistoryWeight": 7.878976084107144e-6,
         "meanAbsoluteDifference": 0.0009587984684020005
       }
     ],
@@ -642,50 +639,23 @@
       "samples": [
         {
           "name": "rigid",
-          "pixel": [
-            252,
-            158
-          ],
-          "actualNdc": [
-            0.0023345947265625,
-            0
-          ],
-          "expectedNdc": [
-            0.0023336333931303355,
-            0
-          ],
+          "pixel": [252, 158],
+          "actualNdc": [0.0023345947265625, 0],
+          "expectedNdc": [0.0023336333931303355, 0],
           "errorPixels": 0.0003076266982926512
         },
         {
           "name": "instance",
-          "pixel": [
-            280,
-            249
-          ],
-          "actualNdc": [
-            -0.0005936622619628906,
-            0
-          ],
-          "expectedNdc": [
-            -0.0005937474406430138,
-            -0.0028975577742268444
-          ],
+          "pixel": [280, 249],
+          "actualNdc": [-0.0005936622619628906, 0],
+          "expectedNdc": [-0.0005937474406430138, -0.0028975577742268444],
           "errorPixels": 0.5215604000730732
         },
         {
           "name": "skinned",
-          "pixel": [
-            408,
-            177
-          ],
-          "actualNdc": [
-            -0.0005698204040527344,
-            0.00012922286987304688
-          ],
-          "expectedNdc": [
-            -0.0005664736148008331,
-            0.00012195016486890933
-          ],
+          "pixel": [408, 177],
+          "actualNdc": [-0.0005698204040527344, 0.00012922286987304688],
+          "expectedNdc": [-0.0005664736148008331, 0.00012195016486890933],
           "errorPixels": 0.0016913576615481482
         }
       ]
