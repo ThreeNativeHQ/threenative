@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { mkdir, writeFile } from "node:fs/promises";
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
@@ -290,7 +291,12 @@ const fingerprint = createHash("sha256")
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");
 
-if (!process.argv.includes("--force")) {
+// Only the process that asked for a bake may skip it. Other scripts import this module for the
+// recipes and must still get them, so `process.exit` is not an option here: it would take the
+// importer down with it before its first line of output.
+const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+let baked = false;
+if (isEntry && !process.argv.includes("--force")) {
   try {
     const stamp = new URL(".bake-stamp", outputDir);
     const [old, out] = await Promise.all([readFile(stamp, "utf8"), stat(stamp)]);
@@ -309,36 +315,38 @@ if (!process.argv.includes("--force")) {
     ).some(Boolean);
     if (old.trim() === fingerprint && !stale) {
       console.log("Worlds are already baked from this recipe and terrain build; nothing to do.");
-      process.exit(0);
+      baked = true;
     }
   } catch {
     // No stamp yet: bake.
   }
 }
 
-const worlds = {};
-for (const [name, terrain] of Object.entries(recipes)) {
-  const state = terrain.evaluate();
-  const mesh = bakeMesh(state, { palette: terrainPalette });
-  worlds[name] = {
-    size: state.size,
-    resolution: state.resolution,
-    heights: Array.from(state.height),
-    colors: Array.from(mesh.colors),
-    rivers: state.rivers,
-    waterLevel: state.waters.find((water) => water.kind === "ocean")?.level ?? null,
-    lakes: state.waters
-      .filter((water) => water.kind === "lake")
-      .map(({ id, at, radius, level }) => ({ id, at, radius, level })),
-  };
+if (!baked) {
+  const worlds = {};
+  for (const [name, terrain] of Object.entries(recipes)) {
+    const state = terrain.evaluate();
+    const mesh = bakeMesh(state, { palette: terrainPalette });
+    worlds[name] = {
+      size: state.size,
+      resolution: state.resolution,
+      heights: Array.from(state.height),
+      colors: Array.from(mesh.colors),
+      rivers: state.rivers,
+      waterLevel: state.waters.find((water) => water.kind === "ocean")?.level ?? null,
+      lakes: state.waters
+        .filter((water) => water.kind === "lake")
+        .map(({ id, at, radius, level }) => ({ id, at, radius, level })),
+    };
+  }
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(
+    new URL("../src/world/baked.json", import.meta.url),
+    JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
+  );
+  for (const [name, world] of Object.entries(worlds))
+    if (!drawn.has(name))
+      await writeFile(new URL(`${name}.json`, outputDir), JSON.stringify(world));
+  await writeFile(new URL(".bake-stamp", outputDir), `${fingerprint}\n`);
+  console.log("Baked five seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
 }
-await mkdir(outputDir, { recursive: true });
-await writeFile(
-  new URL("../src/world/baked.json", import.meta.url),
-  JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
-);
-for (const [name, world] of Object.entries(worlds))
-  if (!drawn.has(name))
-    await writeFile(new URL(`../src/world/${name}.json`, import.meta.url), JSON.stringify(world));
-await writeFile(new URL(".bake-stamp", outputDir), `${fingerprint}\n`);
-console.log("Baked five seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
