@@ -831,14 +831,22 @@ desert-mesa,desert-overview,tundra-plain,tundra-overview}.png`, inspected at nat
 Decisions: use existing cooked spruces/saplings and Kite stone, with procedural/CC0 fallbacks;
 no palms. Fab reports inspected: conifer saplings, Kite, ground foliage, meadow flowers,
 ferns, grasses, spruce and palms. No suitable desert pack was found. No licensed files are
-committed. A full license-absent scenario is running with all three local served roots hidden
-under a restoration trap; its verdict is pending.
+committed. A full license-absent scenario passes **35/35**, exit 0, with console/network/runtime
+errors **0/0/0** (`/tmp/worlds-cc0.log`); all existing local served asset roots were hidden for
+the run and restored by the exit trap. Captures are in `artifacts/playtest/worlds-cc0/`.
+Fallback frame-window p50: meadow **1.7 ms**, overview **1.8 ms**, alpine **1.5 ms**, desert
+**1.0 ms**, tundra **1.2 ms**. Its ocean visual checks also pass. Direct `?world=alpine` startup
+passes **6/6** with zero errors (`/tmp/worlds-url.log`, captures in `artifacts/playtest/worlds-url/`).
+The final example build passes and emits three separate lazy world chunks; the existing main
+chunk is 13.7 MB and each new world chunk is 4.7–4.9 MB before gzip, so lazy loading does not
+mean a small initial bundle. Documentation link checks and six document/CI-contract test files
+pass (**180 tests**).
 
 Honest visual verdict: **improved, below Unreal/Gaia**. Alpine has the ridge/snow/treeline
 composition but still lacks Gaia's irregular exposed bedrock and bright snow fans; desert
 mesa walls need stronger geological detail; tundra's vegetation remains coarse and its ice lake
 is absent. AC-5 stays open, including final art/atmosphere and the per-starter cooked budget.
-Native is unverified. The 1.4 GiB worktree is retained for unpushed commits and local licensed art.
+Native is unverified. The 1.5 GiB worktree is retained for unpushed commits, local licensed art and browser captures.
 
 ### AC-5 round 9 — coastal, sky and distance (2026-10-02)
 
