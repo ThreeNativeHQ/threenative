@@ -18,11 +18,32 @@ import { type ICtx, Scene, baseGeometryOf, defineGame } from "../../../../core/d
 import { playtest } from "../../../../core/dist/playtest.js";
 import { DecalField, bulletHoleTexture } from "../../../templates/shooter/src/render/decals.js";
 
+type ResidencySample = { renderCalls: number; geometries: number; textures: number; bytes: number };
+
+/** The framework owns the loop: cumulative render calls, not info.frame or fixed ticks, advance. */
+export function observeResidency(
+  previous: ResidencySample & { stableFrames: number },
+  current: ResidencySample,
+  ready: boolean,
+): void {
+  if (!Object.values(current).every((value) => Number.isFinite(value) && value >= 0))
+    throw new Error("Decal fixture renderer residency is unavailable.");
+  if (!ready) {
+    Object.assign(previous, current, { stableFrames: 0 });
+    return;
+  }
+  if (current.renderCalls === previous.renderCalls) return;
+  const stable =
+    current.geometries === previous.geometries &&
+    current.textures === previous.textures &&
+    current.bytes === previous.bytes;
+  Object.assign(previous, current, { stableFrames: stable ? previous.stableFrames + 1 : 1 });
+}
+
 /** Portable, opt-in runtime proof. Neither the shooter entry nor its authored look is changed. */
 export function createDecalFixture(hideDecals = false, atlasFade = false, hideDuringFade = false) {
   let generation = 0;
-  const residency: { generation: number; geometries: number; textures: number; bytes: number }[] =
-    [];
+  const residency: (ResidencySample & { generation: number; stableFrames: number })[] = [];
   class DecalRoom extends Scene {
     #source: Object3D | undefined;
     #dispose = () => {};
@@ -34,6 +55,7 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
 
     override enter(ctx: ICtx) {
       generation += 1;
+      ctx.state.set({ residencyGeneration: 0 });
       const source = this.#source?.getObjectByProperty("isMesh", true);
       if (!(source instanceof Mesh)) throw new Error("Decal fixture receiver did not load.");
       const camera = ctx.camera as PerspectiveCamera;
@@ -139,6 +161,14 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
       let motionError = 0;
       let lodHit = false;
       let maxDrawCalls = 0;
+      let residencySampled = false;
+      const residencyObservation = {
+        renderCalls: (ctx.renderer.raw as WebGPURenderer).info.render.calls,
+        stableFrames: 0,
+        geometries: -1,
+        textures: -1,
+        bytes: -1,
+      };
       const base = baseGeometryOf(left);
       if (base.index?.count !== 384)
         throw new Error("Decal fixture LOD0 must contain 128 triangles.");
@@ -176,6 +206,7 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
           averageOpacity: active === 0 ? 0 : opacitySum / active,
           residency,
           residencySamples: residency.length,
+          stableResidencyFrames: residencyObservation.stableFrames,
           // Compare after the first reset, so one-time renderer startup caches are warmed.
           ...(baseline === undefined
             ? {}
@@ -246,18 +277,27 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
           lodHit = true;
         }
         frames += 1;
-        if (frames === 60) {
-          const memory = (ctx.renderer.raw as WebGPURenderer).info.memory;
-          if (![memory.geometries, memory.textures, memory.total].every(Number.isFinite))
-            throw new Error("Decal fixture renderer residency is unavailable.");
+        const info = (ctx.renderer.raw as WebGPURenderer).info;
+        observeResidency(
+          residencyObservation,
+          {
+            renderCalls: info.render.calls,
+            geometries: info.memory.geometries,
+            textures: info.memory.textures,
+            bytes: info.memory.total,
+          },
+          lodHit && left.geometry.index?.count === 6 && info.render.drawCalls >= field.capacity,
+        );
+        if (!residencySampled && residencyObservation.stableFrames >= 3) {
           residency.push({
             generation,
-            geometries: memory.geometries,
-            textures: memory.textures,
-            bytes: memory.total,
+            ...residencyObservation,
           });
           // Retain the warm baseline and the latest samples even during manual repeated resets.
           if (residency.length > 8) residency.splice(2, 1);
+          residencySampled = true;
+          ctx.state.set({ residencyGeneration: generation });
+          console.info(`TN_DECAL_FIXTURE:${JSON.stringify(observation())}`);
         }
         if (frames % 30 === 0) console.info(`TN_DECAL_FIXTURE:${JSON.stringify(observation())}`);
       };
@@ -271,7 +311,7 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
   return defineGame({
     camera: { far: 100, fov: 48, near: 0.1, projection: "perspective" },
     display: { maxFps: 60 },
-    initialState: {},
+    initialState: { residencyGeneration: 0 },
     input: {
       motion: { keys: ["KeyM"] },
       remove: { keys: ["KeyX"] },

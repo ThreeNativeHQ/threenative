@@ -9,8 +9,31 @@ import { evaluateRichPlaytestAssertions } from "../../playtest/src/assertion-eva
 import { screenshotObservations } from "../../playtest/src/runner/steps.js";
 import { loadPlaytestScenario } from "../../playtest/src/scenario.js";
 import { DecalField, bulletHoleTexture } from "../templates/shooter/src/render/decals.js";
+import { observeResidency } from "./fixtures/bounded-decals/game.js";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("requires stable completed render intervals rather than simulated ticks for residency", () => {
+  const previous = { renderCalls: 10, stableFrames: 0, geometries: -1, textures: -1, bytes: -1 };
+  const current = { renderCalls: 10, geometries: 258, textures: 4, bytes: 6500000 };
+  for (let tick = 0; tick < 90; tick += 1) observeResidency(previous, current, true);
+  expect(previous.stableFrames).toBe(0);
+  for (const calls of [14, 18, 22]) {
+    current.renderCalls = calls;
+    observeResidency(previous, current, true);
+  }
+  expect(previous.stableFrames).toBe(3); // One observation per interval, not four internal passes.
+  current.renderCalls = 26;
+  current.geometries += 1;
+  current.bytes += 576;
+  observeResidency(previous, current, true);
+  expect(previous.stableFrames).toBe(1);
+  observeResidency(previous, current, false);
+  expect(previous.stableFrames).toBe(0);
+  expect(() => observeResidency(previous, { ...current, bytes: Number.NaN }, true)).toThrow(
+    /residency/i,
+  );
+});
 
 async function evaluateCapturedPixels(
   scenarioName: string,
