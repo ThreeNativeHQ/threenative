@@ -432,6 +432,24 @@ describe("velocity provisioning on the shipped path", () => {
     expect(renderer.velocityEnabled).toBe(true);
   });
 
+  it("gives temporal nodes the scene-side velocity node, not its texture, through the context", () => {
+    // Three's TRAANode reads `builder.context.velocity` and jitters it with setProjectionMatrix;
+    // handing it the pass texture threw on every frame of every game that requested `traa`.
+    const scenePass = pass(new Scene(), new PerspectiveCamera());
+    let output: unknown;
+    const renderer = { ...stubRenderer(), setOutputNode: (node: unknown) => (output = node) };
+    new RenderChain({
+      renderer,
+      input: scenePass.getTextureNode("output"),
+      request: { stages: ["traa"], velocity: { pass: scenePass } },
+      stages: [{ build: (input) => input ?? {}, name: "traa" }],
+      report: () => undefined,
+    });
+
+    const velocity = (output as { value?: { velocity?: unknown } }).value?.velocity;
+    expect(velocity).toBeInstanceOf(VelocityNode);
+  });
+
   it("does not allocate velocity for temporal stages dropped by tier or provider checks", () => {
     const tierOffPass = pass(new Scene(), new PerspectiveCamera());
     const tierOffChain = new RenderChain({
