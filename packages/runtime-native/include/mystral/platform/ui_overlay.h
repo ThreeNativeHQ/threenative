@@ -64,6 +64,24 @@ void setUiOverlayAttached(bool attached);
  */
 bool attachDesktopUiOverlay(const std::string& uiRoot);
 
+/**
+ * Bring up the CSS UI backend over the game window, serving the built UI from `uiRoot`.
+ *
+ * The other backend, and the only one with no browser in it: the same `src/ui/` tree is laid out
+ * and rasterised on the CPU by the `native/css-ui` crate, and its premultiplied RGBA8 frames reach
+ * the compositor through the seam below exactly as the web view's reach it. Selected by
+ * `ui.renderer: "native-css"` rather than by the overlay being present, because a Linux session
+ * with no WebKitGTK must still be able to have a HUD.
+ *
+ * Returns false and names the reason when the document could not be created. A game that asked for
+ * this renderer must never get no UI in silence: the two look identical from a screenshot and only
+ * one of them is a bug. Sets the same `uiOverlayAttached()` the web path does, so the composite,
+ * the pointer route and the ready gate read one flag whichever backend is up.
+ *
+ * Compiled in by `TN_ENABLE_CSS_UI`; a build without it refuses rather than pretending.
+ */
+bool attachDesktopCssUi(const std::string& uiRoot);
+
 /** Give the desktop overlay its slice of the frame. A no-op where nothing is attached. */
 void pumpUiOverlay();
 
@@ -88,6 +106,9 @@ struct UiOverlayFrame {
      * Android's `ImageReader` hands back `RGBA_8888`; cairo's `ARGB32` on a little-endian host is
      * already `BGRA8Unorm`. The compositor picks its texture format from this rather than guessing,
      * because a wrong pick renders the page with red and blue swapped.
+     *
+     * The CSS UI backend always sets it: premultiplied `RGBA8` is what its CPU rasteriser produces,
+     * on every platform.
      */
     bool isRgba = false;
 };

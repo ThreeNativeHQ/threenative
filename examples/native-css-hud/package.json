@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "build:web": "vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:desktop": "threenative build --target desktop",
+    "verify:desktop": "node scripts/verify-desktop.mjs"
   },
   "dependencies": {
     "@threenative/core": "workspace:*",
@@ -18,10 +20,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
+    "@threenative/runtime-native": "workspace:*",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/three": "0.185.3",
     "@vitejs/plugin-react": "catalog:",
+    "create-threenative": "workspace:*",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"

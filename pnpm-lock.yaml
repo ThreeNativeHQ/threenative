@@ -365,6 +365,9 @@ importers:
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.3(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
+      '@threenative/runtime-native':
+        specifier: workspace:*
+        version: link:../../packages/runtime-native
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.0
@@ -377,6 +380,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 'catalog:'
         version: 6.0.5(vite@8.2.0(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5))
+      create-threenative:
+        specifier: workspace:*
+        version: link:../../packages/create-threenative
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.3

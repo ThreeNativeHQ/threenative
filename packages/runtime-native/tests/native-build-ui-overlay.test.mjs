@@ -48,8 +48,9 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
     mkdirSync(scripts, { recursive: true });
     mkdirSync(bin, { recursive: true });
     // The real plan and the real overlay build, so the library path asserted below is the one the
-    // script derives rather than one the test wrote.
-    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs']) {
+    // script derives rather than one the test wrote. The CSS UI builder is copied too: the plan
+    // imports its library-path helper, so an opt-in plan run needs the module to exist.
+    for (const name of ['native-build.mjs', 'build-native-ui-overlay.mjs', 'build-native-css-ui.mjs']) {
       copyFileSync(
         new URL(`../scripts/${name}`, import.meta.url),
         join(scripts, name),
@@ -89,6 +90,31 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
     assert.match(
       commands,
       /-DTHREENATIVE_UI_OVERLAY_LIBRARY=.*libthreenative_ui_overlay\.a/u,
+    );
+    assert.doesNotMatch(commands, /TN_ENABLE_CSS_UI/u);
+
+    // The CSS UI backend is opt-in, and opting in has to build the crate before CMake asks for it —
+    // otherwise the configure fails naming a static library nobody compiled.
+    const opted = spawnSync(process.execPath, [join(scripts, 'native-build.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        TN_TEST_LOG: log,
+        TN_ENABLE_CSS_UI: '1',
+      },
+    });
+    assert.equal(opted.status, 0, opted.stderr);
+    const optedCommands = readFileSync(log, 'utf8');
+    assert.match(
+      optedCommands,
+      /cargo build --release --manifest-path .*native\/css-ui\/Cargo\.toml --lib/u,
+    );
+    assert.match(optedCommands, /-DTN_ENABLE_CSS_UI=ON/u);
+    assert.match(
+      optedCommands,
+      /-DTHREENATIVE_CSS_UI_LIBRARY=.*libthreenative_css_ui\.a/u,
     );
   },
 );

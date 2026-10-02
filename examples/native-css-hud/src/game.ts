@@ -1,6 +1,6 @@
 import { type ICtx, Scene, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
-import { BoxGeometry, Mesh, MeshStandardMaterial, PointLight } from "three";
+import { BoxGeometry, Color, Mesh, MeshStandardMaterial, PointLight } from "three";
 
 /**
  * Everything the playtest and the HUD agree on.
@@ -14,7 +14,13 @@ export type GameState = {
   uiReady: boolean;
 };
 
-const canvas = (document.getElementById("canvas") ?? undefined) as HTMLCanvasElement | undefined;
+declare global {
+  var canvas: HTMLCanvasElement | undefined;
+}
+
+// The page sets `globalThis.canvas` (index.html); the native host provides the same global, so the
+// portable game reads one name on both targets and never touches `document`.
+const hostCanvas = globalThis.canvas;
 
 class Cube extends Scene<GameState> {
   static override readonly initialState: GameState = {
@@ -24,6 +30,8 @@ class Cube extends Scene<GameState> {
   };
 
   override enter(ctx: ICtx<GameState>) {
+    // The dark clear colour the browser reference page paints, so both targets agree on "nothing here".
+    ctx.scene.background = new Color(0x18181b);
     ctx.camera.position.set(2, 2, 3);
     ctx.camera.lookAt(0, 0, 0);
     const light = ctx.add(new PointLight(0xffffff, 40));
@@ -38,8 +46,8 @@ class Cube extends Scene<GameState> {
 }
 
 const game: ReturnType<typeof defineGame<GameState>> = defineGame<GameState>({
-  canvas,
-  inputTarget: canvas,
+  canvas: hostCanvas,
+  inputTarget: hostCanvas,
   plugins: [playtest()],
   scenes: { cube: Cube },
   start: "cube",

@@ -32,6 +32,9 @@
   <body>
     <canvas id="canvas" width="1280" height="720"></canvas>
     <div id="tn-ui"></div>
+    <script>
+      globalThis.canvas = document.getElementById("canvas");
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
