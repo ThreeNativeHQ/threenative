@@ -54,6 +54,12 @@ const FULL_JOBS = [
   "performance-contracts",
   "native-platforms",
 ];
+// Every check the plan can require, in the order the plan declares it. A reused run has to have
+// concluded every leg of the set its own profile requires; the reporting jobs are not evidence.
+const BOARD_JOBS = [...FULL_JOBS, "lint", "supply-chain"];
+// Strength, not identity: a stronger source profile may serve a weaker requirement, never the reverse.
+const TARGET_RANKS = { main: 2, develop: 1, other: 0 };
+const NATIVE_RANKS = { full: 2, reduced: 1, none: 0 };
 
 export function selectionPlan(
   selection,
@@ -290,16 +296,200 @@ export function findReusableRun(root, candidateSha) {
   };
 }
 
-/** The only part of a reuse that git cannot settle: whether the source run passed its own verdict. */
-export function sourceVerdict(runId) {
-  const listed = ghApi(`actions/runs/${String(runId)}/jobs?per_page=100`);
+/**
+ * The only part of a reuse that git cannot settle. An identical tree is not the same validation:
+ * PRD-380 gives an ordinary pull request a reduced native matrix and this planner already lets a
+ * clean develop pull request skip the lane, so the source run has to prove what this run proves —
+ * the same or a stronger target tier and native tier, every job and matrix leg this run requires,
+ * and the same runner class. Nothing in a tree carries a repository variable or a runner image, so
+ * all of it comes back from the Actions API, and every gap is a miss that runs the board.
+ */
+export function sourceVerdict({ runId, current }) {
+  const record = ghApi(`actions/runs/${runId}`);
+  if ("error" in record) return { error: record.error, code: "CI_REQUIRED_SOURCE_UNKNOWN" };
+  const run = record.value;
+  if (run?.status !== "completed" || run?.conclusion !== "success") {
+    return {
+      error: `CI run ${runId} did not complete successfully`,
+      code: "CI_REQUIRED_SOURCE_UNKNOWN",
+    };
+  }
+  // A dispatch is the explicit audit a person asked for, so it is never the evidence a run leans on.
+  if (!REUSE_EVENTS.has(run.event)) {
+    return {
+      error: `CI run ${runId} is a ${String(run.event)} run, which is never a reuse source`,
+      code: "CI_REQUIRED_SOURCE_COVERAGE",
+    };
+  }
+  const listed = runJobs(runId);
+  if ("error" in listed) return { error: listed.error, code: "CI_REQUIRED_SOURCE_UNKNOWN" };
+  const jobs = listed.jobs;
+  const verdict = jobs.find((job) => job.name === "ci-required");
+  if (verdict === undefined) {
+    return {
+      error: `CI run ${runId} reports no ci-required job`,
+      code: "CI_REQUIRED_SOURCE_UNKNOWN",
+    };
+  }
+  if (verdict.conclusion !== "success") {
+    return {
+      error: `CI run ${runId} reported ci-required as ${String(verdict.conclusion)}`,
+      code: "CI_REQUIRED_SOURCE_NOT_SUCCESS",
+    };
+  }
+  // The native tier is the lane's own evidence, not its presence: a develop pull request that waived
+  // the lane leaves a skipped `native-platforms` behind, and that proves nothing about native code.
+  const source = {
+    profile: validationProfile({
+      eventName: run.event,
+      baseRef: sourceBase(run),
+      nativeRequired: jobs.some(
+        (job) => boardName(job.name) === "native-platforms" && job.conclusion === "success",
+      ),
+    }),
+    jobs,
+  };
+  const miss = coverageMiss(current, source);
+  if (miss !== "") return { error: miss, code: "CI_REQUIRED_SOURCE_COVERAGE" };
+  return { succeeded: true, conclusion: verdict.conclusion, profile: source.profile };
+}
+
+/**
+ * What this run demands of a source: its profile, the runner class its routing chose, and the board
+ * jobs and matrix legs its own job graph carries. `exempt` names the board jobs the plan waived —
+ * the native lane on a clean develop pull request — so the requirement set is the plan's, not the
+ * job graph's, because a waived job is still listed, as a skip.
+ */
+export function currentRun({ eventName, baseRef = "", exempt = [] }) {
+  const listed = runJobs(process.env.GITHUB_RUN_ID ?? "");
+  if ("error" in listed) return listed;
+  const jobs = listed.jobs;
+  // One class across every job this run was given a runner. Two classes would mean a per-job routing
+  // this check cannot model, so it is a miss until that mapping exists (PRD-480).
+  const classes = new Set(jobs.map(runnerClass).filter((value) => value !== "unknown"));
+  if (classes.size !== 1) {
+    return { error: "this run's jobs do not report a single runner class" };
+  }
+  return {
+    profile: validationProfile({
+      eventName,
+      baseRef,
+      nativeRequired: !exempt.includes("native-platforms"),
+    }),
+    runnerClass: [...classes][0],
+    required: jobs
+      .map((job) => job.name)
+      .filter((name) => boardName(name) !== null && !exempt.includes(boardName(name))),
+  };
+}
+
+/** Every way a source run can fail to cover what this run requires. An empty string means it can. */
+export function coverageMiss(current, source) {
+  const weaker = profileMiss(current.profile, source.profile);
+  if (weaker !== "") return weaker;
+  for (const name of current.required) {
+    const ran = source.jobs.find((job) => job.name === name);
+    if (ran === undefined) return `the source run never ran ${name}`;
+    if (ran.conclusion !== "success") {
+      return `the source run's ${name} concluded ${String(ran.conclusion)}`;
+    }
+    const on = runnerClass(ran);
+    if (on !== current.runnerClass) {
+      return `the source run's ${name} ran on ${on} while this run routes to ${current.runnerClass}`;
+    }
+  }
+  return "";
+}
+
+/**
+ * The validation profile a run has to prove. `main` is a promotion or a main push, `develop` an
+ * ordinary pull request or the merge queue on develop, `other` any run whose target the API does not
+ * report — which ranks lowest, because an unproven target never stands in for a proven one. The
+ * native tier follows the target: an ordinary pull request owes the reduced matrix PRD-380 gives it,
+ * everything else the full one, and a run owing no lane owes none.
+ */
+export function validationProfile({ eventName, baseRef = "", nativeRequired = false }) {
+  const target =
+    baseRef === "main"
+      ? "main"
+      : baseRef === "develop" || eventName === "merge_group"
+        ? "develop"
+        : "other";
+  return { target, native: nativeRequired ? (target === "develop" ? "reduced" : "full") : "none" };
+}
+
+/** Equal or stronger, axis by axis. Weaker on either axis is a miss. */
+function profileMiss(current, source) {
+  for (const [axis, ranks] of [
+    ["target", TARGET_RANKS],
+    ["native", NATIVE_RANKS],
+  ]) {
+    if ((ranks[source[axis]] ?? -1) < (ranks[current[axis]] ?? -1)) {
+      return `the source run proved ${axis} ${String(source[axis])}, this run requires ${String(current[axis])}`;
+    }
+  }
+  return "";
+}
+
+/**
+ * Hosted or self-hosted, from the labels and runner name the jobs API reports. Anything else is
+ * `unknown`, and an unknown class never matches: no tree proves which image ran.
+ */
+export function runnerClass(job) {
+  const labels = Array.isArray(job?.labels) ? job.labels.map(String) : [];
+  if (labels.includes("self-hosted")) {
+    return labels.some((label) => label.startsWith("tn-")) ? "tn-local" : "self-hosted";
+  }
+  const hosted = [...labels, String(job?.runner_name ?? "")].some(
+    (label) => /^(?:ubuntu|macos|windows)-/u.test(label) || label.startsWith("GitHub Actions"),
+  );
+  return hosted ? "hosted" : "unknown";
+}
+
+/** The board job a check belongs to: a matrix leg and a reusable-workflow prefix included. */
+function boardName(name) {
+  return (
+    BOARD_JOBS.find(
+      (board) => name === board || name.startsWith(`${board} `) || name.startsWith(`${board}/`),
+    ) ?? null
+  );
+}
+
+/** One read of a run's job list. Unreadable, malformed or truncated is a miss. */
+function runJobs(runId) {
+  if (!/^\d+$/u.test(runId ?? "")) return { error: "the run id is missing or malformed" };
+  const listed = ghApi(`actions/runs/${runId}/jobs?per_page=100`);
   if ("error" in listed) return listed;
   const jobs = listed.value?.jobs;
-  if (!Array.isArray(jobs))
-    return { error: "the source run's job listing could not be interpreted" };
-  const verdict = jobs.find((job) => job?.name === "ci-required");
-  if (verdict === undefined) return { error: `CI run ${String(runId)} reports no ci-required job` };
-  return { succeeded: verdict.conclusion === "success", conclusion: verdict.conclusion };
+  if (
+    !Array.isArray(jobs) ||
+    jobs.some((job) => typeof job?.name !== "string" || job.name === "")
+  ) {
+    return { error: `CI run ${runId}'s job listing could not be interpreted` };
+  }
+  // A truncated page would silently shrink the requirement set, so `total_count` has to agree with it.
+  if ((listed.value?.total_count ?? 0) > jobs.length) {
+    return { error: `CI run ${runId} reports more jobs than this read returns` };
+  }
+  return { jobs };
+}
+
+/**
+ * The branch a source run had to pass. `base_ref` is null on every run record in this repository,
+ * so a pull request's base comes from the pull requests its commit belongs to. Nothing readable is
+ * no base, which ranks as `other` and therefore can never stand in for a promotion.
+ */
+function sourceBase(run) {
+  if (typeof run?.base_ref === "string" && run.base_ref !== "") return run.base_ref;
+  if (run?.event !== "pull_request" || !/^[0-9a-f]{40}$/u.test(run.head_sha ?? "")) return "";
+  const listed = ghApi(`commits/${run.head_sha}/pulls`);
+  if ("error" in listed || !Array.isArray(listed.value)) return "";
+  const bases = new Set(
+    listed.value
+      .map((pull) => pull?.base?.ref)
+      .filter((base) => typeof base === "string" && base !== ""),
+  );
+  return bases.size === 1 ? [...bases][0] : "";
 }
 
 function reuseEligible(options) {
@@ -434,20 +624,32 @@ export function classify(options) {
 function reuseOrKeep(plan, options, candidateSha) {
   if (plan.selection !== "full" || !reuseEligible(options)) return plan;
   const found = findReusableRun(options.root, candidateSha);
-  if (!("runId" in found)) {
-    // Fail closed means run the work. The reason carries why, so a run that ran the board for no
-    // stated reason cannot be confused with one that never looked.
-    return selectionPlan(
+  // Fail closed means run the work. The reason carries why, so a run that ran the board for no
+  // stated reason cannot be confused with one that never looked.
+  const unavailable = (error) =>
+    selectionPlan(
       "full",
-      `${plan.reason}; tree reuse unavailable: ${found.error}`,
+      `${plan.reason}; tree reuse unavailable: ${error}`,
       plan.files,
       candidateSha,
       plan.native,
     );
-  }
+  if (!("runId" in found)) return unavailable(found.error);
+  const current = currentRun({
+    eventName: options.eventName,
+    baseRef: options.target ?? "",
+    // The plan states exactly which checks this run owes, so a source cannot be credited with
+    // standing in for a lane this run itself waived.
+    exempt: Object.entries(plan.jobs)
+      .filter(([, job]) => !job.required)
+      .map(([name]) => name),
+  });
+  if ("error" in current) return unavailable(current.error);
+  const verdict = sourceVerdict({ runId: found.runId, current });
+  if (!("succeeded" in verdict)) return unavailable(verdict.error);
   return selectionPlan(
     "reused",
-    `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}`,
+    `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}, which proves a ${verdict.profile.target}/${verdict.profile.native} profile on this run's runner class`,
     plan.files,
     candidateSha,
     false,

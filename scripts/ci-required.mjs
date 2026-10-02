@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { sourceVerdict, validatePlan } from "./ci-change-scope.mjs";
+import { currentRun, sourceVerdict, validatePlan } from "./ci-change-scope.mjs";
 
 try {
   const needs = JSON.parse(process.env.TN_CI_NEEDS ?? "null");
@@ -40,15 +40,24 @@ try {
       );
     }
   }
-  // PRD-481. The scope job proved the source run tested this exact tree; what only the API can
-  // settle is whether that run's own verdict went green, and a reuse this job cannot confirm is
-  // not a pass.
-  const source = plan.reusedRunId === 0 ? { succeeded: true } : sourceVerdict(plan.reusedRunId);
-  if ("error" in source) throw new Error(`CI_REQUIRED_SOURCE_UNKNOWN: ${source.error}`);
-  if (!source.succeeded)
-    throw new Error(
-      `CI_REQUIRED_SOURCE_NOT_SUCCESS: CI run ${String(plan.reusedRunId)} reported ci-required as ${String(source.conclusion)}`,
-    );
+  // PRD-481. The scope job proved the source run tested this exact tree and covered this run's
+  // profile; what only the API can settle is whether that run's own verdict went green and whether
+  // it really did conclude every leg, and a reuse this job cannot confirm is not a pass.
+  let source = { succeeded: true };
+  if (plan.reusedRunId > 0) {
+    const target = process.env.TN_CI_BASE_REF ?? "";
+    // A reuse plan states nothing about what was required — every job in it reads exempt — so the
+    // gate re-checks what policy owes each target. An ordinary develop pull request's native
+    // requirement is a property of its diff, which only the scope job resolved and checked there.
+    const current = currentRun({
+      eventName: process.env.TN_CI_EVENT,
+      baseRef: target,
+      exempt: target === "develop" ? ["native-platforms"] : [],
+    });
+    if ("error" in current) throw new Error(`CI_REQUIRED_ROUTING_UNKNOWN: ${current.error}`);
+    source = sourceVerdict({ runId: plan.reusedRunId, current });
+    if ("error" in source) throw new Error(`${source.code}: ${source.error}`);
+  }
   const failures = [];
   const lines = [
     "## Required CI verdict",
@@ -61,7 +70,7 @@ try {
     lines.splice(
       3,
       0,
-      `Reused verdict from CI run \`${String(plan.reusedRunId)}\` (ci-required: ${String(source.conclusion)})`,
+      `Reused verdict from CI run \`${String(plan.reusedRunId)}\` (${String(source.profile.target)}/${String(source.profile.native)} profile, ci-required: ${String(source.conclusion)})`,
     );
   }
   for (const [name, job] of Object.entries(plan.jobs)) {

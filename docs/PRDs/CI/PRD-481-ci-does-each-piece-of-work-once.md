@@ -49,16 +49,32 @@ reuses a stale pass. The same failure happened earlier with `native-platforms` p
 
 **Tree reuse.** The `scope` job computes the tree SHA of the candidate it checked out (for a PR, the
 merge ref). It then looks for a completed, successful `CI` run whose checked-out candidate has that
-exact tree, found through the Actions API, never by a name a job can write. On a hit it emits
-`selection: reused` with the source run id. Every board job skips, and `ci-required` passes only when
-the source run's `ci-required` passed. The key is the whole tree: it contains every source file, the
-lockfile, the workflows and the scripts, so there is no input to forget.
+exact tree, found through the Actions API, never by a name a job can write. An identical tree is not
+the same validation, so a source run also has to cover what this run proves. All five must hold or
+the board runs:
+
+1. the checked-out candidate trees are identical;
+2. the source is a completed CI run of this repository, read through the Actions API, and not a
+   `workflow_dispatch` — an audit a person asked for is never the evidence another run leans on;
+3. the source ran the full board: every board job and matrix leg this run requires concluded
+   `success` there, none skipped. `native-platforms` arrives from the Actions API as one check,
+   because a reusable workflow's legs stay inside the caller;
+4. the source's validation profile is equal or stronger, axis by axis — the target tier
+   (`main` > `develop` > unproven) and the native matrix tier (`full` > `reduced` > `none`). A run
+   record in this repository reports no `base_ref`, so a source's target comes from the pull requests
+   its commit belongs to, and an unprovable one ranks lowest;
+5. the source's jobs ran on this run's own runner class (hosted or `tn-local`, from the jobs API), and
+   its `ci-required` concluded `success` — the one part of a verdict no repository can compute for
+   itself.
+
+On a hit the job emits `selection: reused` with the source run id and the profile that justified it.
+Every board job skips, and `ci-required` re-reads that run and repeats 3–5 before it passes.
 
 - **Applies to:** the `develop → main` promotion PR, `push: main`, re-pushes and rebases with an
   unchanged tree, and the merge group below.
-- **Never applies to:** `workflow_dispatch`, which stays an explicit full audit. Nightly reuses
-  Monday to Saturday; Sunday's nightly is always full, to catch drift in the runner image and network
-  dependencies.
+- **Never applies to:** `workflow_dispatch`, which stays an explicit full audit as a reuse target and
+  as a reuse source. Nightly reuses Monday to Saturday; Sunday's nightly is always full, because its
+  subject is the runner image and the network, which an unchanged tree cannot vouch for.
 
 **Merge queue on `develop`.** `ci.yml` gains `merge_group`. GitHub then tests the exact result a merge
 would produce before it lands, which closes today's gap: two PRs merged back to back put a tree
@@ -96,6 +112,14 @@ sized to land at about 4–6 min each.
   whole-repo tree, recorded only by a successful CI run, and never on a hand-listed set of inputs. AGENTS.md
   "Never cache test verdicts" becomes "Reuse a verdict only for an identical whole-repo tree that CI
   itself passed".
+- 2026-10-02 (review by Astra, adopted): same tree is not same validation. A reduced pass must never
+  satisfy a fuller requirement — PRD-380 gives an ordinary pull request a reduced native matrix, and
+  this planner already lets a clean develop pull request skip `native-platforms` — so reuse needs an
+  identical tree **and** a source run whose validation profile covers this run's. A git tree also
+  carries neither repository variables (`vars.TN_CI_FORCE_FULL`, `vars.TN_DEVELOP_CI_ENABLED`) nor a
+  mutable runner image, so the profile is read back from the Actions API and anything unreadable is a
+  miss that runs the board. The weekly full run is the backstop for what a tree cannot see, not a
+  substitute for it.
 
 ## Execution Phases
 
@@ -110,11 +134,16 @@ skip it.
 
 - [ ] A promotion PR whose tree already passed reports `reused`, under 2 min. proof: CI run id plus the
   source run id it cites.
-- [x] A tree that changed by one byte runs the full board. proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`,
-  with a case where the trees differ by one file and a case where the API errors. Evidence: 2026-10-02,
-  25 passed (5 before the implementation were red: identical tree, one-file change, API error, the
-  reused verdict). The suite stubs `gh` on `PATH`; the miss reasons are asserted too, so a full run that
-  never looked cannot read like one that looked and found nothing.
+- [x] A tree that changed by one byte runs the full board, and a tree that already passed is reused
+  only when a source run covers this run's validation profile. proof:
+  `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`, with a case where the trees differ by one
+  file, a case where the API errors, and the four coverage cases: a develop pull request's pass cited
+  for a promotion, a source that never ran a matrix leg this run requires, a source whose jobs ran on
+  another runner class, and a promotion pass satisfying a develop pull request. Evidence: 2026-10-02,
+  30 passed (those four plus the reused verdict were red before the implementation); the same run also
+  clears `ci-structure`, `ci-efficiency`, `sync-agent-docs` and `primary-docs`. The suite stubs `gh` on
+  `PATH`; the miss reasons are asserted too, so a full run that never looked cannot read like one that
+  looked and found nothing.
 - [ ] `develop` merges go through the merge queue, and an unchanged-base merge group reuses. proof: merge
   group run id.
 
