@@ -108,8 +108,10 @@ edit; do not overwrite another agent/human's work with an old document. Complete
 atomic JSON saves also update the shared view. Invalid disk saves retain the last
 valid preview and show a diagnostic; restore a valid save before submitting more
 patches. Editor imports, workers, watchers and the document stay out of the game
-runtime. Bake committed data before handing it to the game. The currently shipped
-GLB action remains terrain-only; complete portable world export is in development.
+runtime. Bake committed data before handing it to the game. The editor's GLB action and
+`exportWorldGLB` from `@threenative/terrain/export` write the whole resolved world (terrain,
+props, final transforms, embedded PBR maps); the root `encodeGLB` stays terrain-only. The full
+operation list, units and patch rules ship in `node_modules/@threenative/terrain/AGENT_GUIDE.md`.
 
 For individual props, save `placementOverrides` in the authoring document, keyed
 by evaluated placement `id`. Each entry contains `position: [x,y,z]`, a unit

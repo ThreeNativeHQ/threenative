@@ -6648,7 +6648,8 @@
       "requires": ["npm i @threenative/terrain"],
       "signature": "export class Terrain { … }",
       "situations": [
-        "author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter"
+        "author seeded terrain with noise, sculpting, erosion, roads, rivers and scatter",
+        "generate a procedural heightmap landscape or island for a game"
       ],
       "summary": "Ordered, stable-ID terrain authoring with synchronous atomic transactions.",
       "supersedes": [],
@@ -6917,7 +6918,8 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export async function exportWorldGLB(input: IWorldGLBInput): Promise<IWorldGLBExport> { … }",
       "situations": [
-        "export terrain, resolved models and final manual placement transforms as a portable GLB"
+        "export terrain, resolved models and final manual placement transforms as a portable GLB",
+        "export the whole terrain world as one glb for another three.js project"
       ],
       "summary": "Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.",
       "supersedes": [],

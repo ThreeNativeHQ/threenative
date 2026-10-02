@@ -204,6 +204,7 @@ function staticModel(source: Object3D, name: string, terrain = false): Object3D 
  * Export a committed evaluated world using ordinary glTF 2.0 nodes and embedded PBR images.
  * @requires npm i -D @threenative/terrain
  * @situation export terrain, resolved models and final manual placement transforms as a portable GLB
+ * @situation export the whole terrain world as one glb for another three.js project
  * @constraint browser authoring (FileReader/canvas); caller supplies all appearance and coherent baked water; root and /three remain headless
  * @example const output = await exportWorldGLB({ revision, snapshotTime: 0, state, terrain, assets, transforms });
  * @override actual static models, final matrices and baked PBR maps are supplied by the game
