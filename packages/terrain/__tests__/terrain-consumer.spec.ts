@@ -121,9 +121,11 @@ describe("public terrain consumer", () => {
       .erode({ id: "erode", method: "hydraulic", droplets: 90, maxSteps: 15 })
       .erode({ id: "talus", method: "thermal", iterations: 3, talus: 32 })
       .evaluate();
-    // Generated from the supplied source, not from this port.
+    // Generated from the supplied source, not from this port. The hydraulic pass changed when
+    // erosion and deposition moved onto a brush (it used to leave single-cell spikes); the noise
+    // coefficients that feed it are untouched.
     expect(createHash("sha256").update(state.height).digest("hex")).toBe(
-      "5c87602a09f53f566bed9326dc1fc5f51901e883ef0ef0d6519bf498d7587c65",
+      "f58707a3bc5f3c71c015fb2a578547b29cc0e15e264558b4c438c51d329b88cc",
     );
   });
 
