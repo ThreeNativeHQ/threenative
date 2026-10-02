@@ -71,7 +71,7 @@ describe("volumetric fog runtime evidence", () => {
       process.cwd(),
       "examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json",
     );
-    expect(scenario.steps).toHaveLength(11);
+    expect(scenario.steps).toHaveLength(15);
   });
 });
 
@@ -133,9 +133,9 @@ it("runs the committed lifecycle and return-to-off scenarios, with actual releas
   const scenarios = await fogCaptureScenarios();
   const lifecycle = scenarios.find(({ mode }) => mode === "lifecycle")?.scenario;
   const off = scenarios.find(({ mode }) => mode === "lifecycleOff")?.scenario;
-  expect(lifecycle?.steps).toHaveLength(11);
+  expect(lifecycle?.steps).toHaveLength(15);
   expect(lifecycle?.steps[0]?.press).toEqual(["KeyF"]);
-  expect(off?.steps).toHaveLength(14);
+  expect(off?.steps).toHaveLength(18);
   expect(lifecycle?.assert?.components).toEqual(
     expect.arrayContaining([expect.objectContaining({ component: "releasedTargets", equals: 3 })]),
   );
@@ -192,4 +192,17 @@ it("waits for measured render stability instead of treating fixed ticks as rende
     path: "stableTextureFrames",
     gte: 3,
   });
+});
+
+it("presents each intermediate lifecycle graph before the following transition", async () => {
+  const scenario = (await fogCaptureScenarios()).find(({ mode }) => mode === "lifecycle")?.scenario;
+  const steps = scenario?.steps ?? [];
+  const inputs = steps.flatMap((step, index) => (step.press === undefined ? [] : [index]));
+  expect(inputs).toHaveLength(5);
+  for (const [at, index] of inputs.entries()) {
+    const boundary = steps[(inputs[at + 1] ?? steps.length) - 1];
+    expect(boundary?.waitForResource).toEqual({ id: "state", path: "stableTextureFrames", gte: 3 });
+    expect(boundary?.label).toMatch(/rendered$/);
+    expect((inputs[at + 1] ?? steps.length) - 1).toBeGreaterThan(index);
+  }
 });

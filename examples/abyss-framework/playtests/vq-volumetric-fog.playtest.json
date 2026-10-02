@@ -19,6 +19,16 @@
       "waitFrames": 60
     },
     {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "initial-fog-rendered"
+    },
+    {
       "press": ["KeyI"],
       "holdTicks": 1,
       "release": true
@@ -26,6 +36,16 @@
     {
       "kind": "wait",
       "waitFrames": 20
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "inside-rendered"
     },
     {
       "press": ["KeyO"],
@@ -37,6 +57,16 @@
       "waitFrames": 20
     },
     {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "off-rendered"
+    },
+    {
       "press": ["KeyF"],
       "holdTicks": 1,
       "release": true
@@ -44,6 +74,16 @@
     {
       "kind": "wait",
       "waitFrames": 20
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true,
+      "label": "fog-return-rendered"
     },
     {
       "press": ["KeyC"],
@@ -61,7 +101,8 @@
         "gte": 3
       },
       "timeoutMs": 30000,
-      "release": true
+      "release": true,
+      "label": "rebuild-rendered"
     }
   ],
   "assert": {
