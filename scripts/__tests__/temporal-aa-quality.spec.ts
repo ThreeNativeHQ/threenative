@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { linearFrame, measureCausalReveal, measureSequence } from "../temporal-aa-quality.js";
+import {
+  linearFrame,
+  measureBlueProfile,
+  measureCausalReveal,
+  measureSequence,
+} from "../temporal-aa-quality.js";
 
 const image = (width: number, height: number, colour: (x: number, y: number) => number[]) => ({
   width,
@@ -13,6 +18,26 @@ const image = (width: number, height: number, colour: (x: number, y: number) => 
 });
 
 describe("temporal sequence measurements", () => {
+  it("reports signed column coverage without clamping dark deficits or changing RGB integration", () => {
+    const frame = {
+      width: 4,
+      height: 2,
+      rgb: Float64Array.from([
+        0, 0, 0.5, 0, 0, 0.25, 0, 0, 0.75, 0, 0, 0, 0, 0, 0.5, 0, 0, 0.5, 0, 0, 1, 0, 0, 0,
+      ]),
+    };
+    expect(measureBlueProfile(frame, { x: 1, y: 0, width: 2, height: 2 }, 0.5)).toEqual({
+      columnMeans: [0.375, 0.875],
+      backgroundBlue: 0.5,
+      integratedContrast: 0.25,
+    });
+    expect(() => measureBlueProfile(frame, { x: 3, y: 0, width: 2, height: 2 }, 0.5)).toThrow(
+      /bounds/,
+    );
+    expect(() => measureBlueProfile(frame, { x: 0, y: 0, width: 0, height: 2 }, 0.5)).toThrow(
+      /bounds/,
+    );
+  });
   it("integrates the supersampled reference in linear light rather than averaging encoded sRGB", () => {
     const result = linearFrame(
       image(2, 2, (x) => (x === 0 ? [0, 0, 0] : [255, 255, 255])),

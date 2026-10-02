@@ -12,6 +12,38 @@ export interface ILinearFrame {
   rgb: Float64Array;
 }
 
+/** Diagnostic profile: column-mean linear blue, summed above a supplied reference background. */
+export function measureBlueProfile(
+  frame: ILinearFrame,
+  region: { x: number; y: number; width: number; height: number },
+  backgroundBlue: number,
+) {
+  const { x, y, width, height } = region;
+  assert.ok(
+    [x, y, width, height].every(Number.isInteger) &&
+      x >= 0 &&
+      y >= 0 &&
+      width > 0 &&
+      height > 0 &&
+      x + width <= frame.width &&
+      y + height <= frame.height &&
+      Number.isFinite(backgroundBlue),
+    "Invalid profile bounds or background",
+  );
+  const columnMeans = Array.from({ length: width }, (_, column) => {
+    let sum = 0;
+    for (let row = y; row < y + height; row++)
+      sum += at(frame.rgb, (row * frame.width + x + column) * 3 + 2);
+    assert.ok(Number.isFinite(sum), "Nonfinite profile pixels");
+    return sum / height;
+  });
+  return {
+    columnMeans,
+    backgroundBlue,
+    integratedContrast: columnMeans.reduce((sum, blue) => sum + blue - backgroundBlue, 0),
+  };
+}
+
 /** Integrate a higher-raster reference over each display pixel, in linear RGB. */
 export function linearFrame(
   image: { width: number; height: number; data: Uint8Array },

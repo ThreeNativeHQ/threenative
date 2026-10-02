@@ -16,6 +16,7 @@ import {
 import {
   type ILinearFrame,
   linearFrame,
+  measureBlueProfile,
   measureCausalReveal,
   measureSequence,
 } from "./temporal-aa-quality.js";
@@ -61,6 +62,9 @@ for (const variant of [
   "resolve-cubic-strict",
   "resolve-cubic-strict-open",
   "resolve-cubic-strict-zero",
+  "resolve-cubic-strict-ordinary",
+  "resolve-cubic-strict-ordinary-open",
+  "resolve-cubic-strict-ordinary-zero",
 ]) {
   const artifactDirectory = path.join(output, variant);
   await mkdir(artifactDirectory, { recursive: true });
@@ -185,6 +189,7 @@ const causalReveals = Object.fromEntries(
     "nearest-history",
     "resolve-cubic",
     "resolve-cubic-strict",
+    "resolve-cubic-strict-ordinary",
   ].map((policy) => {
     const candidate = frames[policy];
     const open = frames[`${policy}-open`];
@@ -235,16 +240,18 @@ const authoredLinearEquivalent = linearProof.hashes.every(
   (frame, index) => frame.sha256 === installedProof.hashes[index]?.sha256,
 );
 const candidates = Object.fromEntries(
-  ["resolve-cubic", "resolve-cubic-strict"].map((name) => {
+  ["resolve-cubic", "resolve-cubic-strict", "resolve-cubic-strict-ordinary"].map((name) => {
     const result = results[name];
     assert.ok(result);
     return [
       name,
       {
         qualification:
-          name === "resolve-cubic-strict"
-            ? "Candidate measurement with a matched zero-velocity control; all reported checks still required"
-            : "Diagnostic only: no matched zero-velocity control; excluded from qualification",
+          name === "resolve-cubic"
+            ? "Diagnostic only: no matched zero-velocity control; excluded from qualification"
+            : name === "resolve-cubic-strict-ordinary"
+              ? "Diagnostic ordinary-blend experiment with matched open-history and zero-velocity controls; all original quality bars retained"
+              : "Candidate measurement with a matched zero-velocity control; all reported checks still required",
         authoredLinearEquivalent,
         edgeImprovement: result.edgeError < baseline.edgeError * 0.95,
         stabilityImprovement: result.residualInstability < baseline.residualInstability * 0.95,
@@ -258,13 +265,23 @@ const candidates = Object.fromEntries(
         excursionsNoWorseThanInstalled:
           result.neighbourhoodOvershootFraction <= temporal.neighbourhoodOvershootFraction,
         matchedZeroVelocityDetected:
-          name === "resolve-cubic-strict"
-            ? (results["resolve-cubic-strict-zero"]?.movingEdgeError ?? 0) >
+          name !== "resolve-cubic"
+            ? (results[`${name}-zero`]?.movingEdgeError ?? 0) >
               (result.movingEdgeError ?? Number.POSITIVE_INFINITY) * 1.02
             : null,
       },
     ];
   }),
+);
+const fenceRegion = { x: 165, y: 140, width: 55, height: 55 };
+const fenceProfiles = Object.fromEntries(
+  Object.entries(frames).map(([name, sequence]) => [
+    name,
+    sequence.map((frame, index) => ({
+      frame: index + 21,
+      ...measureBlueProfile(frame, fenceRegion, reference[index]?.rgb[2] ?? Number.NaN),
+    })),
+  ]),
 );
 const summary = {
   qualification:
@@ -287,13 +304,21 @@ const summary = {
     zeroVelocityMinimumRelativeDegradation: 0.02,
     movingEdgeRegion: "reference RGB saturation above 0.25 excluding the red reveal marker",
     maximumRigidVelocityErrorPixels: 0.01,
+    fenceProfile: {
+      region: fenceRegion,
+      method:
+        "Diagnostic only: mean linear blue per column, then sum(columnMean - matching reference pixel(0,0).blue); signed deficits are not clamped. All 16 frames reported; no change to quality gates.",
+    },
   },
   negativeControl:
     "unchecked-history renders a 95% unchecked history blend; it bypasses both depth rejection and neighbourhood clipping and does not isolate their individual effects",
   causalMethod:
     "Each policy is paired with the same temporal sequence whose red marker was never drawn. Positive red excess subtracts any positive shared green/blue change, normalised by marker red minus control red. This diagnostic separates red tint from neutral brightening/darkening; the original projection score and gate remain unchanged.",
+  ordinaryBlendExperiment:
+    "resolve-cubic-strict-ordinary changes only the final blend from luminance-reweighted flickerReduction to mix(clippedHistoryColor, currentColor, currentWeight). The previously computed currentWeight, sampling, clipping, rejection, jitter and history are identical. Fence profiles are diagnostic; a local contrast gain cannot qualify the whole image.",
   authoredLinearEquivalent,
   candidates,
+  fenceProfiles,
   checks,
   results,
   causalReveals,

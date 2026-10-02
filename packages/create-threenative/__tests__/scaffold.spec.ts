@@ -200,7 +200,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "ca1be259a30ea384c357f75d383dd3f89ed7f03f06ea44d06410f19796b63c8d",
   snow: "cf3ebc053e6593542a1bc9f6c2e264f55006aac0ae23eebf88ce8bb153f39403",
   // PRD-455: measured combined PRD-269 uploader patch and generated temporal source.
-  starter: "232f7ce706319ebb0eb3f8aa8b9e8549a6931f73eb01d0544e45cb8cc076994e",
+  starter: "ddd9b483534f7f9b82ccba6ec228d077148cbb5f91768e3ad3b08deb0f125385",
   "tower-defense": "8cceaa559322107fd42b7fadfebc5c0e84c669cda74b5b354c7812adca45d6f4",
 };
 

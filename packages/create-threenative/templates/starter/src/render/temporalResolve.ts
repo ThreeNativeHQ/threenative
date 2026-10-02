@@ -104,6 +104,7 @@ export function createExperimentalTemporalResolve(
   source: TRAANode,
   renderer: { reversedDepthBuffer: boolean; logarithmicDepthBuffer: boolean },
   interpolation: "linear" | "catmull-rom",
+  blend: "luminance" | "ordinary" = "luminance",
 ) {
   const node = source as TRAANode & IPinnedResolveState;
   const logarithmicToPerspectiveDepth = (depth: Node<"float">) => {
@@ -333,7 +334,11 @@ export function createExperimentalTemporalResolve(
 
     // flicker reduction based on luminance weighing
 
-    const output = flickerReduction(currentColor, clippedHistoryColor, currentWeight);
+    // Diagnostic only: ordinary blending isolates luminance reweighting at the same weight.
+    const output =
+      blend === "ordinary"
+        ? mix(clippedHistoryColor, currentColor, currentWeight)
+        : flickerReduction(currentColor, clippedHistoryColor, currentWeight);
 
     return output;
   });

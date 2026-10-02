@@ -444,3 +444,27 @@ unchanged. Authored-linear equivalence still passes, while the same image-qualit
 and the inspected [corrected recompile frame](../../verification/prd455/recompile-corrected-frame-23.png)
 are retained. Existing cubic/reference images remain valid because their bytes are unchanged.
 Further resolve changes await a fresh critique of these measured remaining errors.
+
+Fresh critique identifies lost thin-fence coverage and dark cubic excursions as the largest
+remaining problems. The next bounded diagnostic changes only the final cubic+strict blend:
+ordinary `mix(clippedHistoryColor, currentColor, currentWeight)` replaces luminance reweighting,
+at the identical previously computed current weight. Sampling, clipping, rejection, jitter,
+history lifetime and every original quality threshold remain unchanged. Matching never-occluded
+and zero-velocity arms accompany it, for 352 frames total. Real pinned-WGSL regression verifies
+that the diagnostic removes luminance reweighting and uses the existing weight directly;
+omitted and explicit luminance settings compile identically. No default changes.
+
+A new diagnostic records mean linear blue per column over x=165–219/y=140–194, then sums each
+column's signed difference from the matching reference background pixel (0,0). All sixteen
+profiles are reported without clamping dark deficits. Its
+[baseline measured on the existing combined source](../../verification/prd455/fence-profile-baseline.json)
+gives frame-28 contrast 3.7238601 for reference, 2.3472733 installed and 2.9720493 cubic+strict.
+The arithmetic is documented independently of the critic's unrecorded calculation. The
+full-image edge, instability, reveal, causal and excursion measures remain authoritative;
+a local contrast improvement alone cannot qualify the candidate. Increased shimmer or bright
+halos remain explicit risks. If the deficit does not consistently shrink across the sequence,
+reject this hypothesis instead of tuning blend constants. Hosted execution awaits review of
+this diagnostic increment; no ordinary-blend image-quality result is claimed yet.
+Frozen diagnostic checkpoint: 141 focused tests pass, including actual WGSL generation and
+all thirteen generated scaffold hashes. Root types/error-level lint, fixture build, docs,
+instruction mirrors and the 71.3 MB evidence budget pass. Full runtime qualification is pending.

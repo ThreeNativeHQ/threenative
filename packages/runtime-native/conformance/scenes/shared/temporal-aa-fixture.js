@@ -90,6 +90,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
           if (policy.startsWith("resolve-")) {
             temporal.node._resolveMaterial.colorNode = createExperimentalTemporalResolve(
               temporal.node, builder.renderer, policy === "resolve-linear" ? "linear" : "catmull-rom",
+              policy.startsWith("resolve-cubic-strict-ordinary") ? "ordinary" : "luminance",
             );
           }
           if (policy === "unchecked-history") {
@@ -105,7 +106,7 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
       dispose: () => temporal?.dispose(),
     }],
   });
-  if (variant === "zero-velocity" || variant === "resolve-cubic-strict-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
+  if (variant === "zero-velocity" || variant === "resolve-cubic-strict-zero" || variant === "resolve-cubic-strict-ordinary-zero") scenePass.setMRT(scenePass.getMRT().merge(mrt({ velocity: vec2(0) })));
   if (variant === "reference") pipeline.outputNode = scenePass;
   const probeMatrix = new THREE.Matrix4();
   const frontTriangle = geometry.groups[4].start + 18;
