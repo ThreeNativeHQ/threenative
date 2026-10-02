@@ -1431,6 +1431,7 @@ set(TN_RUNTIME_SCRIPT_NAMES
     audio-context-constructor
     audio-source-properties
     audio-gain-param
+    audio-param
     audio-panner-properties
     canvas2d-properties
 )

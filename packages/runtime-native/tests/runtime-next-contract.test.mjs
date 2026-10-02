@@ -55,6 +55,7 @@ const RUNTIME_SCRIPT_HASHES = {
   'audio-context-constructor.js': 'c3436f70b2597d2d953f780a3388c24b7e60fa3697796973d5002d0c378de227',
   'audio-source-properties.js': 'e631cdd093d660c0ada6f9cf23e0627a2bd1f16d22d8c003c52d7f86419d29ef',
   'audio-gain-param.js': 'd12e77670eaafe552e90d9fcc78a95d51f872922880bb95b8d51e1bad23b9723',
+  'audio-param.js': '375719b8424e57c24aec55ccf012d7e7048c39c72af4dfa25c5ee96bc722e683',
   'audio-panner-properties.js': '347b79924b271915fce4259f5cd1ca48ce334d59d76b18730014bd1670cf1cea',
   'canvas2d-properties.js': 'e9bd1ff7562fca7cb16ec1c57ffb05aee9dbead65e1d38cebb9d2d710af5bdf7',
 };
@@ -67,6 +68,7 @@ const RUNTIME_SCRIPT_LOADERS = {
   'audio-context-constructor.js': 'evalAudioScript',
   'audio-source-properties.js': 'evalAudioScript',
   'audio-gain-param.js': 'evalAudioScript',
+  'audio-param.js': 'evalAudioScript',
   'audio-panner-properties.js': 'evalAudioScript',
   'canvas2d-properties.js': 'evalCanvasScript',
 };

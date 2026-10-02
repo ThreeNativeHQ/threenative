@@ -173,6 +173,9 @@ importers:
       '@threenative/assets':
         specifier: workspace:*
         version: link:../../packages/assets
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.0

@@ -81,6 +81,16 @@ Concretely, when you touch this package:
   holds the shape: `vacuous-assertion.spec.ts`, `silent-drop.spec.ts`,
   `evidence-required.spec.ts`. Add to those rather than starting a new pattern.
 
+## Captured tone
+
+`assert.tone[]` bounds `mean`, `p1`, `p50`, `p99` in display luminance bytes and
+`clipFraction`, `blackFraction` in 0..1. Every metric takes inclusive min/max; at least one
+bound is required. `atStep` selects a named step, otherwise the final capture is used.
+Tone requests survive disabled convenience screenshots and fail on absent captures. The browser
+and device paths retain their shared PNG histogram as TN_TONE under observations.tone. The game's
+bridge never supplies these host measurements. The offline command
+`threenative-playtest tone <png...>` prints identical metrics and a frame-average row.
+
 ## One scenario, four targets
 
 `--target browser|android|desktop|ios` runs the same scenario file against a browser, an Android
@@ -409,6 +419,10 @@ from the registry at apply time, or a target coincident with the subject is a NA
 (`TN_PLAYTEST_SETUP_UNAPPLIED`), never a silent skip. One entity may be placed by only one
 of `setup.entities` / `setup.place`.
 
+A `click` step's `at` is viewport pixels `{ x, y }`, a registered entity `{ entity }`, or (browser
+only) a DOM element `{ element: { id } | { selector } }` clicked at the centre of its live box. Prefer
+the element form for interface controls: pixel positions move with the fonts a machine has
+installed, which is how a rain scenario passed locally and missed its switch on CI.
 Steps can also carry `{ kind: "aimAt", target: { x, z } | { entity }, pitch?, waitTicks?, screenshot?, label? }`.
 The runner samples the subject's current position, computes yaw/pitch toward the target,
 and applies them through the setup channel as quaternion data — no CDP mouse events and no
@@ -429,6 +443,9 @@ deprecated `holdFrames` and `waitFrames` aliases remain accepted for compatibili
 treated as ticks when the bridge exposes `runtime.fixedStep`; `warmupFrames` remains a genuine
 requestAnimationFrame warmup. Never introduce a wall-clock sleep or a millisecond-based step
 into scenario semantics.
+
+`"reducedMotion": "reduce"` (web target only) opens the page with `prefers-reduced-motion: reduce`
+emulated before navigation, so a game that suppresses flashes or motion for it can prove so.
 
 **Ticks are not the clock a launch runs on.** A run advances ticks as fast as the machine allows,
 so a whole scenario can complete during a launch that has not finished — and everything the

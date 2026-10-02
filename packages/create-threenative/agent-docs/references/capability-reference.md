@@ -3,7 +3,7 @@
 
 # Capability reference
 
-Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:starter`, and `three`,
+Every public class and function export represented by this manifest across `@threenative/assets`, `@threenative/core`, `@threenative/metahuman`, `@threenative/physics`, `@threenative/playtest`, `@threenative/raw-unreal`, `@threenative/ueformat`, `@threenative/ui`, `template:rain`, `template:starter`, and `three`,
 generated from the doc tags the engine itself compiles, so this page cannot disagree with
 the code. Look here before writing a replacement; ask `engine_search_capabilities` when an
 MCP server is available.
@@ -618,8 +618,8 @@ model.step(1 / 60, { turn: -1, pitch: 0.4 });
 export class AudioBus { … }
 ```
 
-- **Use when:** play a sound effect with a volume bus · mute or adjust a category of game audio · keep a gunshot audible at 20 metres by tuning positional falloff · play cannon, wave, and ship sound effects
-- **Constraints:** create buses before playing clips and dispose them with the game · refDistance and rolloffFactor tune positional falloff and apply to playAt only
+- **Use when:** play a sound effect with a volume bus · mute or adjust a category of game audio · keep a gunshot audible at 20 metres by tuning positional falloff · hold a loud mix below clipping with a compressor on the bus · play cannon, wave, and ship sound effects
+- **Constraints:** create buses before playing clips and dispose them with the game · refDistance and rolloffFactor tune positional falloff and apply to playAt only · compressor takes threshold, knee, ratio, attack and release from the game and takes effect on the bus sum
 - **Supersedes (writing this fails `pnpm budgets`):** new Audio(
 
 ```ts
@@ -1284,7 +1284,7 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
 - **Constraints:** geometry, color, and timing remain supplied by the game
 
 ```ts
@@ -2093,7 +2093,7 @@ defineGame({ display: { maxFps: 60 }, scenes: { Play } });
 export class Scheduler { … }
 ```
 
-- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve
+- **Use when:** delay an enemy patrol transition · run a callback every simulation tick · tween a numeric property with a game-owned curve · a countdown timer: end the level when its time limit runs out
 - **Constraints:** dispose returned handles when the owning scene exits · ease receives progress in the range 0 to 1 and its return value is the interpolation factor
 
 ```ts
@@ -2358,7 +2358,7 @@ invalidateStatic(drawbridge);
 export class TracerPool3D { … }
 ```
 
-- **Use when:** show where a hitscan round went · draw incoming fire without spawning projectiles
+- **Use when:** show where a hitscan round went · show each round a weapon fires, one tracer per trigger press · draw incoming fire without spawning projectiles
 - **Constraints:** the surface comes from the game; pooling, travel, and fading belong to the engine · update once per frame and dispose with the owning scene
 
 ```ts
@@ -2892,7 +2892,7 @@ const capabilities = getWorldCapabilities({ limits: adapter.limits, cpuFallbackI
 export class Heightfield extends Group implements IComputeDriven { … }
 ```
 
-- **Use when:** build terrain geometry and collision from one game-authored height function · generate a terrain a player can walk across · query the same ground height or normal that a player sees and collides with · ask how high the ground is here · build islands and coastlines from terrain
+- **Use when:** build terrain geometry and collision from one game-authored height function · generate a terrain a player can walk across · query the same ground height or normal that a player sees and collides with · ask how high the ground is here · build islands and coastlines from terrain · keep a collider or other copy of a deforming terrain in step without rescanning the whole field (`trackChanges`)
 - **Constraints:** sampleHeight owns the terrain shape and stays in game source; the framework stores and interpolates its output · rows and columns are vertex counts; geometry is row-major z-then-x and collider export transposes once into Rapier's column-major matrix order
 - **Overrides:** rows, columns, width, depth, origin, and sampleHeight are explicit on every field
 
@@ -2945,6 +2945,43 @@ export async function loadWorldHeightmap(url: string): Promise<Uint16Array> { �
 
 ```ts
 const data = await loadWorldHeightmap("/world/terrain/heightmap.u16");
+```
+
+### `snowDiscFootprint`
+
+`function` — A circular contact footprint, sized from a radius the caller measures. The shape a sphere, a ball, a wheel or a probe presses into snow, and the default the physics binding derives from a sphere's contact geometry. Flat inside the radius, eased over the softness band, with a raised rim just outside it.
+
+```ts
+export function snowDiscFootprint( radius: number, options: ISnowDiscFootprintOptions = { … }
+```
+
+- **Use when:** press a ball, wheel or probe into snow · give a sphere a physically sized snow contact instead of a boot shape
+- **Constraints:** radius is metres; the footprint never grows with load, only deeper
+- **Overrides:** softness widens the eased edge without changing the contact radius
+
+```ts
+const footprint = snowDiscFootprint(0.25);
+```
+
+### `SnowField`
+
+`class` — Persistent snow deformation over one canonical heightfield. Snow keeps four channels per cell — indentation, displaced bank, compaction and disturbance — and writes the combined surface (`terrain + depth + bank - indent`) back into the heightfield it was given. Queries, rendered geometry and collider export therefore all read one surface, and no second terrain representation exists. The field is numeric only: it never chooses a boot, a tread, a particle, a material or a camera. Games supply terrain heights, the snow depth, the contact profile and the response coefficients; this class owns the storage, the load-dependent penetration and the bounded recovery. It is a heightfield approximation — not granular snow, displaced-volume conservation, avalanches, melting or a calibrated material law.
+
+```ts
+export class SnowField { … }
+```
+
+- **Use when:** leave footprints, tracks and tyre ruts in snow that persist and fill in over time · let a pushed sphere carve a connected track and a dropped one settle into a crater · store snow deformation that rendered geometry and collision both read · reset a snowfield between rounds or change its depth at runtime · show how packed the snow is where people have walked or objects have rested
+- **Constraints:** the field composes onto a Heightfield; construct the terrain first and let this own the surface · zero depth is bare ground: contacts register no indentation at all · out-of-region heightAt and normalAt follow Heightfield's error contract; sample returns zeros
+- **Requires:** @threenative/core/world Heightfield as the canonical terrain and surface
+- **Overrides:** depth, hardness, yieldFraction, maxBank and responseTime name the response coefficients
+
+```ts
+import { Heightfield } from "@threenative/core/world";
+const terrain = Heightfield.fromSampler({ rows: 129, columns: 129, width: 64, depth: 64, origin: { x: 0, z: 0 }, sampleHeight: (x, z) => Math.sin(x * 0.1) * 0.5 });
+const snow = new SnowField({ field: terrain, depth: 0.28, hardness: 0.3 });
+snow.stamp({ x: 0, z: 0, area: 0.074, load: 784, duration: 0.1, footprint: snowDiscFootprint(0.12) });
+snow.recover(1 / 60, 0.0012, 0.4);
 ```
 
 ### `TerrainTiles`
@@ -3118,6 +3155,39 @@ export class Area3D { … }
 const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
 ```
 
+### `attachSnowPhysics`
+
+`function` — Drive a `SnowField` from real solved contacts. The binding creates the snow surface collider from the field's own canonical samples and keeps it in step with them, so a body lands on the surface a query would report. Each fixed step it reads the solver's persistent contacts — not collision start/stop events, which carry no point or load — deforms the snow only where a contact is supported and loaded downward, then republishes the surface before the next step. Airborne bodies, side contacts and unrelated colliders never deform anything. A dropped sphere settles on the surface it made; a pushed one rotates and carves a connected track without its transform being copied anywhere. Footprints come from the body's own collision shape and orientation unless the game supplies one. Contact load is `impulse / deltaTime * loadScale`: a solver impulse over a step, which estimates a contact force and is not measured. `observe().loadProvenance` says so.
+
+```ts
+export function attachSnowPhysics(options: ISnowPhysicsOptions): ISnowPhysicsBinding { … }
+```
+
+- **Use when:** leave footprints and tracks where physical bodies actually touch snow · let a dropped or pushed sphere carve and settle into deformable snow · make a crate, capsule or ball compress the surface it rests on
+- **Constraints:** register `rapier()` before attaching, and call `step` once per fixed step after the physics step · the backend must expose persistent solved contacts and in-place shape refresh; one that does not fails at attach · verified on browser WebGPU and the native Linux desktop host; Android and iOS share the native seam but have not run it · automatic profiles cover sphere, box and capsule; any other shape needs an explicit footprint
+- **Requires:** @threenative/core/world SnowField as the surface it deforms
+- **Overrides:** loadScale, supportNormal, colliderTolerance, deposition, wind, collisionLayer and collisionMask name the binding's own behaviour
+
+```ts
+const snowPhysics = attachSnowPhysics({ physics: ctx.physics, snow, bodies: [ball] });
+afterPhysics(ctx, (dt) => snowPhysics.step(dt));
+```
+
+### `boxFootprint`
+
+`function` — A rectangular contact: the face a box rests on, in the contact's own frame. Coverage is full across the face and fades just outside it; the bank rises beyond that.
+
+```ts
+export function boxFootprint(halfWidth: number, halfDepth: number): ISnowFootprint { … }
+```
+
+- **Use when:** let a crate, platform or plank press a rectangular pit into snow · imprint a box's own footprint rather than a circle around it
+- **Constraints:** halfWidth and halfDepth are metres; rotation comes from the contact, not the footprint
+
+```ts
+const footprint = boxFootprint(0.4, 0.25);
+```
+
 ### `buildStaticColliders`
 
 `function` — Build fixed trimesh bodies from the meshes a game authored in a scene root.
@@ -3147,6 +3217,21 @@ export class Buoyancy3D { … }
 
 ```ts
 new Buoyancy3D({ body, surface: field, hullPoints, density: 1_000, drag: 4 });
+```
+
+### `capsuleFootprint`
+
+`function` — A stadium contact: a rectangle of half-length `halfHeight` and half-width `radius`, capped by two half-discs of `radius`. The shape a capsule lies on, so a knocked-over body sinks along a line instead of at a point. Coverage is full across the body's own width and fades just outside it, so the body's edge never rests on a half-pressed rim; the bank rises beyond that.
+
+```ts
+export function capsuleFootprint(halfHeight: number, radius: number): ISnowFootprint { … }
+```
+
+- **Use when:** let a fallen capsule, limb or barrel leave a linear imprint in snow · give a capsule a shape-appropriate snow contact instead of a sphere's dot
+- **Constraints:** radius and halfHeight are metres and never grow with load
+
+```ts
+const footprint = capsuleFootprint(0.5, 0.2);
 ```
 
 ### `CharacterBody3D`
@@ -5466,6 +5551,23 @@ export function useUiState<TState extends object>(): TState | undefined;
 const score = useUiState<GameState, number>((state) => state.score);
 ```
 
+## `src/audio/storm.ts`
+
+### `createStormAudio`
+
+`function` — The storm's sound as generated source, mixed through the engine's own `AudioBus`: a rain hiss, a wind bed, and thunder queued strike by strike and delayed and filtered by how far away it was struck.
+
+```ts
+createStormAudio(ctx: ICtx<GameState>): IStormAudio
+```
+
+- **Use when:** rain hiss, wind bed, thunder, a storm you can hear · delay thunder by the distance it was struck · sound that follows pause, mute and tab visibility · audio that queues strikes instead of cutting each other off
+- **Constraints:** `queueStrike({ at, metres })` queues: a second strike does not overwrite one still crossing the air, and `at` is absolute simulation time, which is what lets a strike survive a freeze. · Two holds, kept apart so neither latches the other: `setSilenced` is the game's own pause intent, `setHidden` is the UI realm or engine lifecycle visibility. The bus is released only when both are clear. · `update(state)` is the frame's truth and is called once per frame after the simulation advances; `debug()` is what a playtest reads back. · The caller owns entity registration, updates and disposal; creating the helper does not register it. · Audio begins only after a user gesture — the bus's unlock error is surfaced rather than swallowed. · The three clips are baked by `tools/make-storm-audio.mjs` from the study's own maths; this file plays them, it does not synthesise them live. · The helper requests the source's compressor settings ahead of master gain: threshold -15 dB, knee 30 dB, ratio 5, attack 0.003 s and release 0.25 s. · Each thunder voice is a labelled `thunder` cue, so a playtest's `audio` assertion reads it from the runtime ledger; the rain kit's `playtests/lightning.playtest.json` proves one cue after a strike, sounded only once the strike's `distance / 343` delay had passed. · This entry describes the Rain starter scaffold's own generated `src/audio/storm.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/audio/storm.ts — register the returned helper, call update(state) after advancing the simulation, and dispose it with the owning scene
+```
+
 ## `src/game.ts`
 
 ### `renderer.matrixWorld`
@@ -5514,6 +5616,74 @@ renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }
 
 ```ts
 renderer: { projection: false } // in threenative.config.ts
+```
+
+## `src/render/lightning.ts`
+
+### `createStormLightning`
+
+`function` — A branching lightning bolt as generated Rain source: `makeBolt(end, random)` walks a 30-segment channel down from the cloud deck with side branches, and one additive camera-facing ribbon draw (gaussian core inside a wide halo) shows it while the caller's flash envelope is above zero. `strike(position, random)` returns where the bolt entered the sky.
+
+```ts
+createStormLightning(scene: Scene, camera: PerspectiveCamera): IStormLightning
+```
+
+- **Use when:** generate branching lightning ribbon geometry · a lightning strike that lights the scene and the clouds · a camera-facing ribbon or beam that stays the same pixel width at any distance · a flash envelope that stutters rather than fades once
+- **Constraints:** Pass the game's seeded random so a strike is reproducible; a non-finite position or random value throws rather than drawing NaN geometry. · The buffers hold the worst case (30 channel segments plus 24 branches of 9) and are allocated once; a strike rewrites them and opens the draw range, never reallocating. · `update(flash)` takes an envelope already gated on photosensitivity mode by the caller; below 0.003 the mesh is hidden. Register it with `alwaysRender`: its quads are projected by its own vertex stage, so its bounds say nothing about where it lands. · It depth-tests against the coast's written depth, so a bolt behind the headland is hidden by it. · This entry describes the Rain starter scaffold's own generated `src/render/lightning.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/render/lightning.ts — the bolt; src/state.ts `flashAt` for the envelope; src/scenes/Boot.ts strike() for the thunder delay
+```
+
+## `src/render/noise-volume.ts`
+
+### `createNoiseVolume`
+
+`function` — The 64³ RGBA cloud noise volume as generated Rain source: `{ data: Uint8Array, texture: Data3DTexture }`. Its authored seed, octave weights and source-exact generator define the storm's cloud shapes.
+
+```ts
+createNoiseVolume(): INoiseVolume
+```
+
+- **Use when:** generate a 3D noise volume instead of shipping one as an asset · rebuild the storm's clouds procedurally at startup · tileable 3D noise that does not crease at the edges · four octave scales packed into one texture
+- **Constraints:** Seed 13291 uses the source's mulberry32 sequence. The generated volume matches all 1,048,576 reference bytes; changing the authored seed or generator changes its appearance. · Two distinct failure channels, not one: `TN_NOISE_CHANNEL` is a channel value that does not fit a byte, `TN_NOISE_LENGTH` is a byte count that does not fill the volume. Both throw rather than uploading a volume the shader would read wrong. · 64³ of RGBA is 1 MiB, and `NOISE_SIZE` is what the loops and the byte count are written against; changing the size changes the memory cost with it. · Indices wrap at every face, which is what makes the volume tile, and the fractional part is smoothed by `f²(3 − 2f)` so lattice edges do not show as creases in the cloud. · This entry describes the Rain starter scaffold's own generated `src/render/noise-volume.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/render/noise-volume.ts — edit the seed, the lattices or the channel weights there
+```
+
+## `src/render/rain.ts`
+
+### `createStormRain`
+
+`function` — Camera-anchored falling rain as generated Rain source: one instanced draw whose vertex stage hashes each drop from its index, wraps it in a 66 × 30 × 66 m cell that follows the camera in 12 m steps, and projects a quad stretched along its own fall — no particle simulation, no texture.
+
+```ts
+createStormRain(scene: Scene, camera: PerspectiveCamera): IStormRain
+```
+
+- **Use when:** rain streaks around the camera · thousands of falling drops in one draw · rain that leans with the wind and lights up in a lightning flash
+- **Constraints:** The drawn count is `round(rainBudget × weather.rain)` for the tier, read back from `geometry.instanceCount` (`instanceCount`), not from the budget. · Stateless by design: a drop's position is a function of its index and the clock, so pausing the clock freezes the rain and nothing accumulates. `GPUParticles3D` is the engine's emitter with lifetimes; reach for it when drops must spawn, live and die. · Register it with `alwaysRender`: the vertex stage places every drop, so the geometry's own bounds do not. · This entry describes the Rain starter scaffold's own generated `src/render/rain.ts`, not a `@threenative/` or three export — there is no installed package to import it from.
+
+```ts
+src/render/rain.ts — the drop maths; `STUDY_TIERS` in src/render/quality.ts for the per-tier budget
+```
+
+## `src/render/world.ts`
+
+### `createWeatherWorld`
+
+`function` — The raymarched coastal storm as generated source: one screen quad whose TSL shader draws the sky, the sea, the coast, the road, the forest and the lamps, and whose wet ground reflects them, written from the uniforms the game feeds it each frame. The sky it samples is the live cloud pass this call builds, not a stand-in gradient. Returns `{ quad, update(options), dispose() }`.
+
+```ts
+createWeatherWorld(scene: Scene, camera: PerspectiveCamera): IWeatherWorld
+```
+
+- **Use when:** a procedural storm, sea, coastline or open horizon drawn from maths rather than geometry · rain and wind that change how a scene looks without swapping a mesh · a lightning flash that lights the coast and the sky at once · wet reflections on a ground plane · sky that darkens as cloud cover rises
+- **Constraints:** `update` takes `{ elapsed, flash, weather, strike, quality }`: absolute seconds, a flash envelope already gated on the photosensitivity switch by the caller, the bolt's entry point in the cloud deck in metres (what the clouds glow around and the coast is lit from), and a quality name of `performance | balanced | high | ultra`. · The tier's cloud resolution share, march steps and reflection switch come from `STUDY_TIERS` in src/render/quality.ts; `performance` skips the 36-step reflection march, so a low tier loses reflections, not the coast. `clouds()` reads back the cloud target the renderer really drew and its steps. · Its colours and lights are uniforms set once from src/render/palette.ts, sky.ts, lighting.ts and materials.ts; the shader itself is generated from tools/tempest-*.frag by tools/generate-shaders.mjs — edit the .frag, not the generated file. · The engine's `Scene` and `PerspectiveCamera` are injected as arguments; the file holds no engine lifetime of its own. `dispose()` removes the quad and disposes the geometry, material and sky texture — the scene does not do it for you. · The quad has `frustumCulled = false`, because its two-metre bounds would otherwise be culled the moment the camera looks along the coast. · The cloud pass is built first and its texture feeds the world shader (sampled with the render-target flip); `update` also drives the clouds. Rain streaks and the bolt are separate draws: `createStormRain`, `createStormLightning`. · This entry describes the Rain starter scaffold's own generated `src/render/world.ts`, not a `@threenative/` or three export — there is no installed package to import it from. Appearance lives in that source with no package import at all; nothing in packages/ decides how this storm looks.
+
+```ts
+src/render/world.ts — edit the shader there, or the weather it is fed from src/state.ts
 ```
 
 ## `src/render/worldEnvironment.ts`
