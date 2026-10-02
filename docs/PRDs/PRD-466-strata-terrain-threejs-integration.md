@@ -2139,3 +2139,14 @@ No flow/sediment bake has landed yet; normalized optional arrays are ready
 and their absent/present/malformed/seam cases pass the scratch check.
 The only additive cross-lane edit passes existing baked data into `loadPack`
 in `src/game.ts`; all vegetation and lighting decisions remain untouched.
+
+Material checkpoint: the first full licensed candidate completed **49/52 checks**,
+with **zero console errors** and all 17 steady-view CPU p50s **≤4.0 ms**.
+Its throughout-step CPU assertion reached **4.7 ms** while walking; two render-chain
+assertions fail because automatic tier `low` drops `ambientOcclusion` (minimum
+`medium`). That render policy belongs to the GI lane and was not changed here.
+Ocean verification PASS. The candidate is retained as `material-candidate-full/licensed/`.
+A final surface correction changes the shared sand-ripple phase from division to
+cycles/metre × 2π: the stated 25 cm spacing previously produced roughly 25 m bands.
+The same helper now fades these fine ripples by 35 m in all callers. Fresh licensed
+and fallback full proofs are required on this source. Example tsc PASS after this fix.

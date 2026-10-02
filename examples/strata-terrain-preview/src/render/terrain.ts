@@ -383,11 +383,14 @@ function sandRipples(direction?: Node<"vec2">): Node<"vec3"> {
   const phase = positionWorld.x
     .mul(across.x)
     .add(positionWorld.z.mul(across.y))
-    .div(RIPPLE.frequency);
+    .mul(RIPPLE.frequency * Math.PI * 2);
   const wobble = mx_noise_float(positionWorld.mul(0.09)).mul(RIPPLE.wander);
   const crest = phase.add(wobble).sin();
   // The tilt is along the fall line, so the crests face the sea.
-  return vec3(across.x, 0, across.y).mul(crest).mul(RIPPLE.strength);
+  return vec3(across.x, 0, across.y)
+    .mul(crest)
+    .mul(RIPPLE.strength)
+    .mul(oneMinus(smoothstep(8, 35, positionView.length())));
 }
 
 /**
@@ -666,12 +669,7 @@ export function createGroundMaterial(
     if (source === undefined)
       return {
         crevice: float(1),
-        tilt:
-          key === "sand"
-            ? sandRipples().mul(oneMinus(smoothstep(8, 35, positionView.length())))
-            : key === "snow"
-              ? microGrain().mul(0.4)
-              : vec3(0),
+        tilt: key === "sand" ? sandRipples() : key === "snow" ? microGrain().mul(0.4) : vec3(0),
       };
     held.add(source);
     if (key === "rock") {
@@ -725,11 +723,7 @@ export function createGroundMaterial(
     .mul(biome?.world === "alpine" ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
     .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
   if (biome?.world === "desert")
-    normal = normal.add(
-      sandRipples(vec2(0.53, 0.85))
-        .mul(weights.grass)
-        .mul(float(1).sub(smoothstep(65, 220, positionView.length()))),
-    );
+    normal = normal.add(sandRipples(vec2(0.53, 0.85)).mul(weights.grass));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   let snowCover: Node<"float"> = float(0);
