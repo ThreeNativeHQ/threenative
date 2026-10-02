@@ -25,6 +25,15 @@ if ! node scripts/ci-change-scope.mjs --event pull_request --target "$target" \
   --base "${TN_CI_BASE:-origin/$target}" --head "${TN_CI_HEAD:-HEAD}" --local; then exit 2; fi
 echo 'ci:fast is bounded drift verification only; use ci:local --affected or --full for selected local checks. Native platforms are not executed here.'
 
+# A fresh worktree has no `dist`, and three drift specs import packages through it: say so plainly
+# instead of failing with three "Failed to resolve entry" stacks.
+for pkg in assets physics create-threenative; do
+  [ -d "packages/$pkg/dist" ] || {
+    echo "ci:fast: packages/$pkg/dist is missing; this checkout needs one workspace build before it can push." >&2
+    exit 2
+  }
+done
+
 declare -a names=() cmds=()
 add() { names+=("$1"); cmds+=("$2"); }
 add lint      'pnpm lint'
