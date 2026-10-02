@@ -64,10 +64,10 @@ import {
   FERN_MAPS,
   FIR_MAPS,
   IMPOSTOR_CARD,
+  type ISurfaceMaps,
   NEEDLE_ATLAS,
   NEEDLE_SURFACE,
   PINE_ATLAS,
-  type ISurfaceMaps,
   PROP_MAPS,
   SOIL_MAP,
 } from "../world/terrainAssets.js";
@@ -610,7 +610,6 @@ function needleMaterial(
   sway(material, seconds, WIND.amplitude.crown);
   return material;
 }
-
 
 /**
  * Bracken: each card one photographed frond, cut by the atlas's own alpha.

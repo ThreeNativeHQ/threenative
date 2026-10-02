@@ -18,7 +18,6 @@
 // sitting in the texture that was already sampled for the tilt: a texel the map painted as facing
 // away from the sky is a crevice, and darkening it costs no binding at all.
 import type { IAssetLoader } from "@threenative/core";
-import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.js";
 import { Heightfield } from "@threenative/core/world";
 import {
   type BufferGeometry,
@@ -59,6 +58,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
+import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.js";
 
 export interface IBakedWorld {
   size: number;
