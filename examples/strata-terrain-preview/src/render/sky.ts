@@ -69,7 +69,7 @@ export const SUN = {
  * built on, and the sea's far edge is gone before it reaches its own boundary.
  */
 const RIG = {
-  sky: { turbidity: 3.4, rayleigh: 2.9, mieCoefficient: 0.004, mieDirectionalG: 0.82 },
+  sky: { turbidity: 2.4, rayleigh: 2.2, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
   /**
    * Sky fill from above, bounce from below. This is the only thing standing between a spruce's
    * shadow and a hole in the meadow, and at 0.9 the shadows on the hillside read as ink: a real
