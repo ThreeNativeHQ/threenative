@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-455 — Fewer rendered pixels reconstruct into a stable full-resolution frame
 
-**Status:** PROPOSED — filed 2026-09-26.  
+**Status:** IN PROGRESS — full-resolution temporal-AA milestone first (owner, 2026-10-02).  
 **Priority:** highest-value rendering project after the streaming quick wins.  
 **Complexity:** 8 → HIGH. The renderer already has the difficult prerequisites; the remaining risk is history correctness and proving reconstruction wins more GPU time than it costs.  
 **Depends on:** the landed motion-history implementation from PRD-269 (`packages/core/src/render/velocity.ts`, commit `3630847a`), the existing `RenderChain`, and [PRD-384 adaptive resolution](../PRD-384-adaptive-resolution-gpu-headroom.md).
@@ -50,6 +50,18 @@ the existing full-resolution path remains the baseline.
   public knobs, if any survive measurement, are correctness/performance limits rather than a visual
   style.
 
+## Implementation order (owner direction, 2026-10-02)
+
+First qualify plain full-resolution temporal AA using the installed Three.js 0.185.1 TRAANode,
+RenderChain and VelocityTracker. The generated game owns the opt-in provider and history-reset
+policy; no template default changes. Add a deterministic shared fixture, CPU regressions and a
+maintained headed WebGPU screenshot lane before attempting lower-resolution reconstruction.
+Then extend the existing renderer sizing seam to distinguish internal and display dimensions,
+retain one scaler, and qualify the original reconstruction/visual/performance outcomes below.
+Every PR revision retains actual runtime screenshots when the hosted capture lane can execute;
+CPU-only checks never qualify image quality or native/hardware performance. Do not promote this
+experimental path or mark the draft ready before the outstanding acceptance evidence exists.
+
 ## Integration ledger
 
 | Existing surface | Change |
@@ -59,17 +71,19 @@ the existing full-resolution path remains the baseline.
 | `packages/core/src/resolution-scaler.ts` | No new policy. Expose/consume the resolved scale and reset history on size transitions. |
 | `packages/runtime-native/conformance/scenes/shared/` | Add one reconstruction scene that runs the same source on browser/native targets. |
 
-## Phase 1 — Define history correctness before chasing image quality
+### Phase 1 — Define history correctness before chasing image quality
+
+- [ ] Full-resolution temporal AA is opt-in generated source, uses the existing velocity source and resets history on discontinuity. **proof:** focused TRAANode/RenderChain tests and the deterministic runtime temporal fixture with actual screenshots; native qualification remains separately reported.
 
 - [ ] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion.
 - [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
 
-## Phase 2 — Prove motion stability on content that exposes temporal defects
+### Phase 2 — Prove motion stability on content that exposes temporal defects
 
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
-## Phase 3 — Keep it only if it buys real frame time
+### Phase 3 — Keep it only if it buys real frame time
 
 - [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full-resolution rendering while meeting the Phase-2 visual thresholds. **proof:** paired fixed-route browser WebGPU and desktop-native table records internal pixels, reconstruction cost, total GPU/render p50/p95 and visual metrics; no “FPS only” verdict.
 - [ ] Automatic resolution can move between at least three scales during one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. **proof:** scripted scaler route records scale transitions, history resets, render-target allocation count and per-stage cost; repeated up/down cycles end at the initial allocation baseline.
