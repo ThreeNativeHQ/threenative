@@ -381,7 +381,9 @@ async function executeClickStep(
   }
   const point = "entity" in target
     ? await entityClickPoint(bridge, target.entity)
-    : { x: target.x, y: target.y };
+    : "element" in target
+      ? await elementClickPoint(page, target.element)
+      : { x: target.x, y: target.y };
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0
     || point.x > viewport.width || point.y > viewport.height) {
     throw clickError(
@@ -398,6 +400,27 @@ async function executeClickStep(
   await page.mouse.move(point.x, point.y);
   await page.mouse.down({ button: "left" });
   await page.mouse.up({ button: "left" });
+}
+
+/** The centre of a visible DOM element, read off the live page rather than a layout guess. */
+async function elementClickPoint(
+  page: Page,
+  element: { id?: string; selector?: string },
+): Promise<{ x: number; y: number }> {
+  const selector = element.id === undefined ? (element.selector ?? "") : `#${cssEscapeId(element.id)}`;
+  const box = await page.locator(selector).first().boundingBox().catch(() => null);
+  if (box === null || box.width <= 0 || box.height <= 0) {
+    throw clickError(
+      `Click target element '${selector}' is not on the page or has no visible box.`,
+      "Name an element the page renders at this step, by id or CSS selector.",
+    );
+  }
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** `CSS.escape` for an id, so an id with punctuation still selects exactly that element. */
+function cssEscapeId(id: string): string {
+  return id.replace(/[^A-Za-z0-9_-]/gu, (character) => `\\${character}`);
 }
 
 async function entityClickPoint(

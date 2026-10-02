@@ -143,7 +143,12 @@ describe("template quality tiers", () => {
         const renderer = {
           kind: "webgpu",
           raw: {},
-          createRenderChain: () => ({ applied: { dropped: [], stages: [] }, dispose() {} }),
+          // A working chain runs what it was asked for; a kit that fails closed when its own
+          // stage is missing (rain) must see it applied, as it would on a real renderer.
+          createRenderChain: (options?: { request?: { stages?: readonly string[] } }) => ({
+            applied: { dropped: [], stages: [...(options?.request?.stages ?? [])] },
+            dispose() {},
+          }),
         };
         const reported = (environment: Parameters<typeof post.setupPost>[3]): string => {
           info.mockClear();

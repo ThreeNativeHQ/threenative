@@ -72,7 +72,10 @@ describe("shipped templates", () => {
     const root = await makeTempDir(`threenative-template-assets-${template}-`);
     const { target } = await createProject({ install: false, target: template, template }, root);
     const config = await loadConfig(target);
-    expect(config.assets).toBeUndefined();
+    // Defaults everywhere, except per-clip audio declarations: those configure the audio pass
+    // (rain ships its baked float storm clips unconditioned, with their loops declared) rather
+    // than skipping it, and the compile below runs through them.
+    expect(Object.keys(config.assets ?? {}).filter((key) => key !== "audio")).toEqual([]);
     // Exercise the actual scaffold's config seam, including kits with no source assets.
     const result = await compileAssets({
       cwd: target,

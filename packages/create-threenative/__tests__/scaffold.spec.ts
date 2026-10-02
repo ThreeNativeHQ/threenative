@@ -85,6 +85,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // capability reference derived from it, and every scaffold embeds both, so exporting one public
 // symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
 // also carries its chasers' route change.
+// Recomputed 2026-10-02 for create-threenative 0.2.8: every template pins the scaffolder version.
 // Recomputed 2026-08-31 from the values CI measured, not from a local run.
 //
 // These were updated three times in a row and were wrong all three times, because they were
@@ -180,17 +181,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed again 2026-10-01 after merging the quality/post chain into this branch and landing
   // the rts sim's order, queue and event-record fixes: `rts` alone moves, and it is the only one of
   // the eleven that carries `src/sim/`. Measured through createProject on the merged tree.
-  "action-rpg": "e477cb8fe35157325e234e07bcbb3e7b09a69bb43c94ff2f591f7ee02bc30c48",
-  minimal: "62875da8b839633c518a8f52eb66ebb74a421c271f21bf6a0cdce54b83642082",
-  platformer: "b09a698711561333be22eefa98e9d0b454124bda9a9dcb6a72fad3fd156e5ed5",
-  puzzle: "759634702a6da8c8f70203aeaa5ac6d7163fd275920a084fcbfc10477562edc3",
-  racing: "384c151639f267d1fa530fd3f0b71f7cd5a2249b5eb4817598d35050cedbe3c6",
-  rts: "d2c9eaa70d55b4f99943448444e43e107bbaadea1a4162474a35ffb494a94a62",
-  runner: "d52219261507b0949aeb96f0d865adf81f9dddae6a8ee99f050e21e3ec3c6977",
-  sailing: "718fd70cef653ec6ccdf99ea1dc8a0510479974e19d95acdca60ec1411c0fe10",
-  shooter: "0369a3a146585111d7d2355b887ae7a22b5278e17a84d0324949f3c8ad8c1933",
-  starter: "53d57f84f19160bec1e15147366e0f9bc8fd06d03f11bf050d23fda3a236e239",
-  "tower-defense": "b87e3a3626c0ef744cf24cf106b1e85a51c010856f2f6acc60f6bf7c65f27246",
+  // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
+  // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
+  // all thirteen trees, rain and snow included, were re-measured through createProject.
+  "action-rpg": "7303ff74e0a1e38346f7907924b3e7a8c5bc87b71991ae7468321d7d1cfdcc95",
+  minimal: "ba165bc6b0cf67d083a0c5bfe1377bef851e7b47e50579b680fa53126a8bd4c8",
+  platformer: "6d1b064fc45436c3202e4e3c7b3425ac3e42733ba73c2c5bc723e83073703713",
+  puzzle: "f5e6efac3f4414a9d70fa4fc7caeddb729b5c780d7e609988cf601d7b0a87896",
+  racing: "32320ec0aafa27374a88bf4e2de4f364a859cf1cb414f10a5e70a2f0b951ff24",
+  rain: "8c9872de6f9d1447feea9facbd9a7f7f92c862a753780d15238fa946332085ef",
+  rts: "45a4cd67b5c4e6dbba60ea6813636effc6ecaa294acc9f5ae49262fc64141b1c",
+  runner: "3348101ae79785e5e286df38628f13e747b91f1ea6527fa71acd9d62f767d3a3",
+  sailing: "69b54c3c07cf4fe65f4cd06f1ce315750d198332129425b031853f1022d2e99b",
+  shooter: "386f6bca602b4939bf9d860d5cadba0ede803adef95222faedbdc8e33d205590",
+  snow: "f6555492e02901960b8d733568f4f9c07ae1e11baa03e95b9b498d24c3eee1c6",
+  starter: "064de9e02c8b09cd378fdf42186b499580e474d323717eecbe4edb59964b94f6",
+  "tower-defense": "2967805234d96f52d79a398463ddb980658a53efafecf4b7a8ecf33ad1a5679f",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

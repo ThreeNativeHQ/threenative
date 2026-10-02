@@ -400,6 +400,11 @@ const AUTHORING_GITIGNORE_RULES = [
   ".env",
   ".env.*",
   "!.env.example",
+  // The asset pipeline's compiled outputs: any project with an assets/ folder gets them in public/
+  // on its first dev run or build. Hand-owned public files (favicon, icons) stay committed.
+  "public/assets.manifest.json",
+  "public/bake.receipt.json",
+  "public/*.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].*",
 ] as const;
 /** Backticked paths and Markdown links share one prefix so both readers resolve identically. */
 const REFERENCE_TOKEN_PATTERN = new RegExp(

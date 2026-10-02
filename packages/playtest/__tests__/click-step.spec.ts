@@ -38,6 +38,46 @@ test("click drives a browser pointer down and up at viewport pixels", async () =
   expect(calls).toEqual([["move", 320, 180], ["down"], ["up"]]);
 });
 
+test("click resolves a DOM element target to the centre of its live box, and refuses a missing one", async () => {
+  const calls: Array<[string, number?, number?]> = [];
+  const selectors: string[] = [];
+  const boxes: Record<string, { x: number; y: number; width: number; height: number } | null> = {
+    "#cinematic": { height: 15, width: 27, x: 1354, y: 540 },
+    "#gone": null,
+  };
+  const page = {
+    context: () => ({ newCDPSession: async () => ({ send: async () => undefined }) }),
+    evaluate: async () => undefined,
+    keyboard: { down: async () => undefined, up: async () => undefined },
+    locator: (selector: string) => {
+      selectors.push(selector);
+      return { first: () => ({ boundingBox: async () => boxes[selector] ?? null }) };
+    },
+    mouse: {
+      down: async () => calls.push(["down"]),
+      move: async (x: number, y: number) => calls.push(["move", x, y]),
+      up: async () => calls.push(["up"]),
+    },
+  } as unknown as Page;
+  const run = (element: { id?: string; selector?: string }) =>
+    runStep(
+      page,
+      undefined,
+      { at: { element }, kind: "click", release: true } as never,
+      { height: 900, width: 1440 },
+      undefined,
+      [],
+      { heldKeys: new Set(), pointerButtons: 0, pointers: new Map() },
+      undefined,
+      true,
+    );
+
+  await run({ id: "cinematic" });
+  expect(calls).toEqual([["move", 1367.5, 547.5], ["down"], ["up"]]);
+  await expect(run({ id: "gone" })).rejects.toThrow(/'#gone' is not on the page/u);
+  expect(selectors).toEqual(["#cinematic", "#gone"]);
+});
+
 test("wheel input delivers exactly one browser input sample", async () => {
   const calls: Array<[number, number]> = [];
   let deliveredSamples = 0;
