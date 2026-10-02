@@ -580,8 +580,11 @@ impl CssUi {
                     Op::Remove { id } => {
                         let node = ids.remove(id).expect("validated");
                         m.remove_and_drop_node_with(node, &mut |dropped| {
-                            ids.retain(|_, v| *v != dropped);
-                            callers.remove(&dropped);
+                            // `ids` and `callers` are one-to-one, so the caller id of a dropped
+                            // node is the one entry to drop — no scan of the whole map per node.
+                            if let Some(caller) = callers.remove(&dropped) {
+                                ids.remove(&caller);
+                            }
                             freed.insert(dropped);
                         });
                     }
@@ -1132,6 +1135,43 @@ impl EventHandler for Recorder<'_> {
 mod tests {
     use super::*;
 
+    /// Bytes currently held by the heap, so one test can prove that a removed subtree is released.
+    /// The counter is unconditional from process start, so a measurement is a delta between two
+    /// reads and never has to know what was allocated before it started.
+    pub(crate) mod heap {
+        use std::alloc::{GlobalAlloc, Layout, System};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        pub static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+        pub struct Counting;
+
+        unsafe impl GlobalAlloc for Counting {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                let ptr = unsafe { System.alloc(layout) };
+                if !ptr.is_null() {
+                    LIVE.fetch_add(layout.size(), Ordering::Relaxed);
+                }
+                ptr
+            }
+            unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+                LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+                unsafe { System.dealloc(ptr, layout) }
+            }
+            unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new: usize) -> *mut u8 {
+                let out = unsafe { System.realloc(ptr, layout, new) };
+                if !out.is_null() {
+                    LIVE.fetch_add(new, Ordering::Relaxed);
+                    LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
+                }
+                out
+            }
+        }
+
+        #[global_allocator]
+        static ALLOC: Counting = Counting;
+    }
+
     fn ui() -> CssUi {
         CssUi::new(480, 320, 1.0).expect("document")
     }
@@ -1279,6 +1319,79 @@ mod tests {
         // Id 2 went with its parent, so it is free too.
         ui.post(&format!(r#"{{"ops":[{}]}}"#, make(2, "span")))
             .expect("id 2 was freed with its subtree");
+    }
+
+    #[test]
+    fn mounting_and_disposing_repeatedly_releases_every_node() {
+        // A HUD is mounted and disposed over and over (a menu opens, a panel closes), so a removed
+        // subtree must leave nothing behind. Read three ways, because a leak in any of them is the
+        // same bug: the document's node tree and our two id maps by count, and the heap by bytes.
+        // The heap is what caught the last one — blitz's change set kept one entry per node ever
+        // created, which no count here sees.
+        use tests::heap::LIVE;
+        const ROWS: u32 = 50;
+        const CELLS: u32 = 4;
+        const CYCLES: u32 = 600;
+
+        fn mount(ui: &mut CssUi, from: u32) {
+            let mut ops = Vec::new();
+            let mut id = from;
+            for _ in 0..ROWS {
+                let row = id;
+                id += 1;
+                ops.push(make(row, "div"));
+                ops.push(format!(
+                    r#"{{"op":"append","parent":{BODY_ID},"child":{row}}}"#
+                ));
+                for _ in 0..CELLS {
+                    let cell = id;
+                    let text = id + 1;
+                    id += 2;
+                    ops.push(make(cell, "div"));
+                    ops.push(format!(r#"{{"op":"text","id":{text},"text":"x"}}"#));
+                    ops.push(format!(
+                        r#"{{"op":"append","parent":{cell},"child":{text}}}"#
+                    ));
+                    ops.push(format!(r#"{{"op":"append","parent":{row},"child":{cell}}}"#));
+                }
+            }
+            ui.post(&format!(r#"{{"ops":[{}]}}"#, ops.join(",")))
+                .expect("mount");
+            let removals: Vec<String> = (0..ROWS)
+                .map(|r| {
+                    format!(
+                        r#"{{"op":"remove","id":{}}}"#,
+                        from + r * (CELLS * 2 + 1)
+                    )
+                })
+                .collect();
+            ui.post(&format!(r#"{{"ops":[{}]}}"#, removals.join(",")))
+                .expect("dispose");
+        }
+        fn counts(ui: &CssUi) -> (usize, usize, usize) {
+            (ui.doc.node_count(), ui.ids.len(), ui.callers.len())
+        }
+
+        let mut ui = ui();
+        mount(&mut ui, 1);
+        let first = counts(&ui);
+        let heap_first = LIVE.load(Ordering::Relaxed);
+        for c in 1..CYCLES {
+            mount(&mut ui, 1 + (c * 7) % 100_000);
+            assert_eq!(counts(&ui), first, "cycle {c} changed the node counts");
+        }
+        let grew = LIVE
+            .load(Ordering::Relaxed)
+            .saturating_sub(heap_first);
+        // {CYCLES} x {nodes} nodes is well over a megabyte if any of them are retained, so a
+        // quarter-megabyte of drift is noise (a neighbour test's own frame buffer) rather than a
+        // leak; a leak of one entry per node is three times that.
+        assert!(
+            grew < 256 * 1024,
+            "{CYCLES} mount/dispose cycles retained {grew} bytes"
+        );
+        // Back to the bare document the UI was constructed with: the document, html, head, body.
+        assert_eq!(first.0, 4, "the document root and its three elements");
     }
 
     #[test]

@@ -179,6 +179,25 @@ impl<B: Brush> Layout<B> {
         align(&mut self.data, alignment, options);
     }
 
+    /// Move every line box by `dy` along the block axis, leaving the layout's own `height()` (the
+    /// extent of the content) alone.
+    ///
+    /// A container whose content box is taller than its content aligns that content rather than
+    /// growing to fill the box: `<button>` centres its content, whatever `display` the author
+    /// wrote. The line boxes are where that content's geometry lives, so one shift here reaches
+    /// every consumer of the layout — painting, hit testing, `getClientRects()` — instead of an
+    /// offset that each of them would have to add.
+    pub fn shift_lines(&mut self, dy: f32) {
+        if dy == 0.0 {
+            return;
+        }
+        for line in &mut self.data.lines {
+            line.metrics.baseline += dy;
+            line.metrics.block_min_coord += dy;
+            line.metrics.block_max_coord += dy;
+        }
+    }
+
     /// Returns the index and `Line` object for the line containing the
     /// given byte `index` in the source text.
     pub(crate) fn line_for_byte_index(&self, index: usize) -> Option<(usize, Line<'_, B>)> {

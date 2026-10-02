@@ -1,6 +1,10 @@
 use blitz_traits::node_id::NodeId;
+use markup5ever::local_name;
 use parley::{AlignmentOptions, IndentOptions};
-use style::values::specified::box_::DisplayOutside;
+use style::computed_values::text_wrap_mode::T as TextWrapMode;
+use style::values::computed::Overflow as StyloOverflow;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
+use style::values::specified::text::TextOverflowSide;
 use style::values::{computed::CSSPixelLength, generics::text::GenericTextIndent};
 use taffy::{
     AvailableSpace, BlockContext, BlockFormattingContext, BoxSizing, CollapsibleMarginSet,
@@ -15,6 +19,7 @@ use parley::YieldData;
 use taffy::{Clear, Float, prelude::TaffyMaxContent};
 
 use super::resolve_calc_value;
+use crate::node::TextLayout;
 use crate::BaseDocument;
 
 impl BaseDocument {
@@ -644,6 +649,14 @@ impl BaseDocument {
             },
         );
 
+        // `text-overflow: ellipsis`: once the line is broken, the clusters that do not fit have to
+        // go so the ellipsis can stand in for them, and Parley cannot drop trailing clusters from a
+        // shaped layout (a `nowrap` line is never broken in the first place). So the cut prefix is
+        // re-shaped with a U+2026 appended, into its own layout that is what gets painted. This is
+        // the whole single-line case: CSS UI 4 §3.3 puts the ellipsis at the end of the line, and
+        // the element's own box is measured from `layout`, which still holds the whole line.
+        self.ellipsize_inline_layout(node_id, &mut inline_layout, width, alignment);
+
         #[allow(unused_mut)]
         let mut height = inline_layout.layout.height();
 
@@ -697,6 +710,33 @@ impl BaseDocument {
             ),
         }
         .maybe_max(container_pb.sum_axes().map(Some));
+
+        // A `<button>` centres its content in its content box whatever `display` the author
+        // wrote: the button's box is not its content box (Blink's `LayoutNGButton`, Gecko's
+        // `-moz-button-content`), so a fixed-height button's label is not top-aligned. Only a
+        // flow-rooted inside display is that button box — `display: flex`/`grid` is the author's
+        // own layout, where the user-agent sheet's `align-items` governs instead (the
+        // `button-centring` fixture measures `block`, `inline-block` and `flex`).
+        //
+        // Only the content's own height is known here, so this centres the line boxes: a button
+        // whose content is a block box stays top-aligned, which is the case the browser oracle
+        // does not cover.
+        let is_button = self.nodes[node_id]
+            .element_data()
+            .is_some_and(|el| el.name.local == local_name!("button"));
+        let centres_content = is_button
+            && self.nodes[node_id].primary_styles().is_some_and(|s| {
+                matches!(
+                    s.get_box().display.inside(),
+                    DisplayInside::Flow | DisplayInside::FlowRoot
+                )
+            });
+        let content_height = (final_size.height - content_box_inset.sum_axes().height).max(0.0);
+        if centres_content && height < content_height {
+            inline_layout
+                .layout
+                .shift_lines((content_height - height) / 2.0);
+        }
 
         let container_direction = self.nodes[node_id].style().direction;
 
@@ -865,6 +905,89 @@ impl BaseDocument {
                 && final_size.height == 0.0
                 && measured_size.height == 0.0,
         }
+    }
+
+    /// `text-layout::ellipsize`: replace `text_layout.ellipsized` with the longest prefix of the
+    /// line that fits `width` once the U+2026 has taken its share of it, shaped in the line's own
+    /// font. `None` — no ellipsis to draw — for anything that does not overflow, or whose
+    /// `text-overflow` is not `ellipsis` on a single line with a clipped content box.
+    fn ellipsize_inline_layout(
+        &mut self,
+        node_id: NodeId,
+        text_layout: &mut TextLayout,
+        width: f32,
+        alignment: parley::layout::Alignment,
+    ) {
+        text_layout.ellipsized = None;
+        let Some(styles) = self.nodes[node_id].primary_styles() else {
+            return;
+        };
+        // CSS UI 4 §3.3: an ellipsis stands in for the clipped end of a *line*, so only the
+        // single-line case is modelled here — a `nowrap` line that cannot wrap, on a content box
+        // that actually clips. `text-overflow: <string>` and the multi-line case are not.
+        let ellipsis = matches!(
+            styles.get_text().text_overflow.second,
+            TextOverflowSide::Ellipsis
+        ) && styles.get_inherited_text().text_wrap_mode == TextWrapMode::Nowrap
+            && !matches!(styles.get_box().overflow_x, StyloOverflow::Visible)
+            // A line the box cannot hold is the only thing an ellipsis has anything to say about.
+            && text_layout.layout.full_width() > width;
+        if !ellipsis {
+            return;
+        }
+
+        let scale = self.viewport.scale();
+        let style = crate::stylo_to_parley::style(node_id, &styles);
+        let collapse_mode = crate::stylo_to_parley::white_space_collapse(
+            styles.get_inherited_text().white_space_collapse,
+        );
+        let mut font_ctx = self.font_ctx.lock().expect("font context");
+        // The ellipsis is a character like any other, so it is shaped through the same font query
+        // as the line it stands in for — and its advance is what decides where the line is cut.
+        let advance = {
+            let mut builder = self.layout_ctx.tree_builder(&mut font_ctx, scale, true, &style);
+            builder.push_text("\u{2026}");
+            let (mut ellipsis, _) = builder.build();
+            ellipsis.break_all_lines(None);
+            ellipsis.width()
+        };
+
+        // The last cluster that fits, counting from the line's own advances. Logical order, which
+        // is left-to-right text: a right-to-left line is cut at its start instead, as the rest of
+        // this text stack already is.
+        let limit = width - advance;
+        let mut cut = 0;
+        let mut x = 0.0;
+        'scan: for line in text_layout.layout.lines() {
+            for run in line.runs() {
+                for cluster in run.clusters() {
+                    if x + cluster.advance() > limit {
+                        break 'scan;
+                    }
+                    x += cluster.advance();
+                    cut = cluster.text_range().end;
+                }
+            }
+        }
+        // Nothing fit, so there is no prefix to keep the ellipsis after.
+        if cut == 0 {
+            return;
+        }
+
+        let text = format!("{}\u{2026}", &text_layout.text[..cut]);
+        let mut builder = self.layout_ctx.tree_builder(&mut font_ctx, scale, true, &style);
+        builder.set_white_space_mode(collapse_mode);
+        builder.push_text(&text);
+        let mut ellipsized = Box::new(parley::layout::Layout::default());
+        builder.build_into(&mut ellipsized);
+        ellipsized.break_all_lines(Some(width));
+        ellipsized.align(
+            alignment,
+            AlignmentOptions {
+                align_when_overflowing: false,
+            },
+        );
+        text_layout.ellipsized = Some(ellipsized);
     }
 }
 

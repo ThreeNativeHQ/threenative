@@ -810,6 +810,12 @@ impl ElementCx<'_, '_> {
                     panic!("Tried to render node marked as inline root that does not have an inline layout: {:?}", self.node);
                 });
 
+            // `text-overflow: ellipsis` cuts the line it paints: what the viewer sees is the
+            // prefix that fitted plus a U+2026, laid out as its own inline layout by blitz-dom.
+            // The element's own box is still measured from the whole line, so this is a paint-time
+            // choice and nothing else reads it.
+            let painted = text_layout.ellipsized.as_deref().unwrap_or(&text_layout.layout);
+
             let transform =
                 self.transform * Affine::translate((pos.x * self.scale, pos.y * self.scale));
 
@@ -817,7 +823,7 @@ impl ElementCx<'_, '_> {
             // behind the text and selection highlight.
             crate::text::draw_inline_backgrounds(
                 scene,
-                text_layout.layout.lines(),
+                painted.lines(),
                 self.context.dom,
                 transform,
                 self.node.id,
@@ -825,20 +831,14 @@ impl ElementCx<'_, '_> {
 
             // Render text selection highlight (if any) using cached selection ranges
             if let Some(&(sel_start, sel_end)) = self.context.selection_ranges.get(&self.node.id) {
-                crate::text::draw_text_selection(
-                    scene,
-                    &text_layout.layout,
-                    transform,
-                    sel_start,
-                    sel_end,
-                );
+                crate::text::draw_text_selection(scene, painted, transform, sel_start, sel_end);
             }
 
             // Render text
             let mut draw_text_context = self.context.draw_text_context.borrow_mut();
             crate::text::stroke_text(
                 scene,
-                text_layout.layout.lines(),
+                painted.lines(),
                 self.context.dom,
                 transform,
                 self.scale,

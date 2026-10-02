@@ -210,13 +210,31 @@ export const FIXTURES = [
     ],
   },
   {
-    // Strict: a missing "..." glyph is a semantic failure, not a rasteriser difference, and on a
-    // frame this small it must cost more than the whole-frame glyph allowance can hide.
+    // Strict: a missing "..." glyph is a semantic failure, not a rasteriser difference, and it must
+    // cost more than the whole-frame glyph allowance can hide. That takes a frame whose *achievable*
+    // whole-frame SSIM clears the 0.99 bar in the first place: at 160x48 the two rasterisers
+    // disagree by 0.9886 with both sides rendering the identical line (`text-overflow: clip`), so
+    // the bar measured FreeType against vello_cpu and no engine could pass it. At 160x96 the same
+    // identical-line score is 0.9946, the missing ellipsis scores 0.981, and the ellipsis scores
+    // 0.9947 — the bar separates the two, as a strict fixture has to.
     name: "text-ellipsis",
-    size: [160, 48],
+    size: [160, 96],
     strict: true,
     css: "p{margin:0;background:#2a2a30}.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:120px}",
     tree: [h("p", { class: "ell" }, t("An ellipsised line that is far too long"))],
+  },
+  {
+    // The negative control for `text-overflow: ellipsis`: the same box twice, one line that fits
+    // and one that does not. A line that fits must come out exactly as it would with no
+    // `text-overflow` at all — no U+2026, no truncation — which is the half of the behaviour that
+    // `text-ellipsis`, overflowing by construction, cannot show.
+    name: "text-overflow-fits",
+    size: [200, 80],
+    css: "p{margin:0;height:24px;background:#2a2a30;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:120px}",
+    tree: [
+      h("p", {}, t("Fits inside")),
+      h("p", { style: "margin-top:8px" }, t("Far too long to fit inside")),
+    ],
   },
   {
     name: "inline-runs",
@@ -313,6 +331,23 @@ export const FIXTURES = [
       h("div", { class: "grp" }, h("div", { class: "kid" })),
       h("div", { class: "mq" }),
       h("div", { class: "rm" }),
+    ],
+  },
+  {
+    // A button's box is not its content box: Chromium centres the label whatever `display` the
+    // author wrote (its own html.css says `align-items: flex-start`, so an author `display: flex`
+    // is *not* centred). One fixture per half of that: the two displays the browser centres, and
+    // the one it does not.
+    name: "button-centring",
+    size: [280, 200],
+    css: `
+      button{font:inherit;width:120px;height:60px;margin:8px;border:0;background:#2563eb;color:#fff}
+      .ib{display:inline-block}
+      .fx{display:flex}
+    `,
+    tree: [
+      h("button", { class: "ib", type: "button" }, t("Fire")),
+      h("button", { class: "fx", type: "button" }, t("Reload")),
     ],
   },
   // ---- user-agent defaults -----------------------------------------------------------------

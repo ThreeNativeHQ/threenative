@@ -25,7 +25,15 @@ impl TextBrush {
 pub struct TextLayout {
     pub text: String,
     pub content_widths: Option<ContentWidths>,
+    /// The layout as shaped: every cluster of `text`, at the font's own advances. This is what
+    /// sizes the box, so `text-overflow: ellipsis` must not replace it — a wider content box has to
+    /// be able to break the whole line again.
     pub layout: parley::layout::Layout<TextBrush>,
+    /// The line as `text-overflow: ellipsis` cut it: the prefix that fits, then a U+2026 shaped in
+    /// the line's own font. `Some` only while the line actually overflows, and it is what gets
+    /// painted; `layout` still holds the whole line, which is what keeps the element's own box —
+    /// and a resize — honest.
+    pub ellipsized: Option<Box<parley::layout::Layout<TextBrush>>>,
 }
 
 impl TextLayout {

@@ -381,6 +381,11 @@ pub(crate) fn make_device(
 }
 
 impl BaseDocument {
+    /// The number of live nodes in the document's node tree.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Create a new (empty) [`BaseDocument`] with the specified configuration
     pub fn new(config: DocumentConfig) -> Self {
         static ID_GENERATOR: AtomicUsize = AtomicUsize::new(1);
@@ -875,6 +880,12 @@ impl BaseDocument {
     /// it so that stale NodeIds are never dereferenced after the slot is freed.
     pub(crate) fn remove_node_from_tree(&mut self, node_id: NodeId) -> Option<Node> {
         self.clear_interaction_state_for_removed_node(node_id);
+        // Every node is created through `create_node`, which records it here for the accessibility
+        // tree; nothing ever drained that record, so a document that mounts and disposes panels
+        // (which is what a HUD does) kept one entry per node it had ever built, forever. The set
+        // describes the nodes that changed *and are still live*, so freeing the node frees its
+        // record — the one place every removal funnels through.
+        self.changed_nodes.remove(&node_id);
         self.nodes.remove(node_id)
     }
 
