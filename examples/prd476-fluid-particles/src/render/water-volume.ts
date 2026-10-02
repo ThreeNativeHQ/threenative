@@ -109,7 +109,7 @@ export function createWaterVolume(
     // one that starts in air travels until it meets the surface.
     const entry = origin.add(direction.mul(near));
     const inside = density(entry).greaterThan(DENSITY_THRESHOLD);
-    previous.assign(density(entry));
+    previous.assign(density(origin.add(direction.mul(t))));
     Loop(steps, () => {
       const p = origin.add(direction.mul(t));
       const d = density(p);

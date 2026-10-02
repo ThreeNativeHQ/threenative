@@ -145,6 +145,12 @@ Measured 2026-10-02 on the real display (`:0`, HDMI-A-1 59.96 Hz, `nvidia/turing
 | example stress (6,000 particles) | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
 | example dam break | 16.7 / 16.8 / 16.8 | 59.70 | 150 ms (1 frame, load 18) |
 
+Headroom with the final shader and defaults (uncapped `requestAnimationFrame` intervals, vsync off, private Xvfb, host load 6-9, about 13,000 frames per scene): example 6,000-particle stress p50 1.0 / p95 4.8 / p99 7.8 ms and 6.9 ms on the rerun; sandbox Splash Tank High p50 1.0-1.1 / p95 4.6-4.7 / p99 8.8-9.1 ms; sandbox Waterfall High p50 1.0-1.1 / p95 4.9-5.0 / p99 8.7-10.3 ms. Mean 1.4-1.6 ms, so about 10x under the 16.7 ms budget with the through-the-glass raymarch included.
+
+Native: the `fluid-particles-desktop` playtest bundles the example, which now defaults to the raymarch, and passes on the native host (770 frames); it asserts state, not pixels. The `fluid-particles` conformance case renders its own scene through `conformance.js` and still matches the web capture (pixel mismatch 0, ΔE 0) with the new defaults.
+
+Known limits of the raymarch look (fresh-eyes review, not fixed): a ray that starts under water ends at the first sparse voxel (a spray gap) and shows the underside colour, so a splash seen through the glass can show holes; the sample clamp reads the lowest 0.26 m (1.2 spacings) as full-density, so a film thinner than that can vanish; rays that end on a side or back wall show a flat water colour. The surface seen from above is unaffected.
+
 An earlier pass with the previous defaults and shader gave the same p50/p95/p99 on Splash High, Dam, Ocean and the 6,000-particle stress scene (one 100 ms hitch in a first Splash High run, none on the rerun). Read the 16.8 ms p95 as the display period (59.96 Hz is 16.68 ms) plus rAF timestamp resolution of about 0.1 ms, not as a missed frame: every counted frame landed on a vsync, and the only misses are the three single-frame hitches below. Presented fps is display-locked at 60 Hz, so this proves the frame budget holds, not headroom beyond it; headroom is the frame cost above (about 1 ms GPU per frame). Single isolated hitches (33-150 ms) appeared three times in about 12,600 frames while other sessions loaded the host; not attributed to the solver.
 
 ## Decisions

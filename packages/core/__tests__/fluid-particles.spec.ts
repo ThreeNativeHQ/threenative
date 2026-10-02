@@ -212,6 +212,13 @@ describe("FluidParticles3D", () => {
     expect(water.steps).toBe(0);
   });
 
+  it("defaults to water-like damping, not a jelly", () => {
+    const water = new FluidParticles3D({ capacity: 8 });
+    expect(water.viscosity).toBeLessThanOrEqual(0.02);
+    expect(water.cohesion).toBeLessThanOrEqual(0.05);
+    expect(water.vorticity).toBeGreaterThanOrEqual(0.01);
+  });
+
   it("round-trips the live solver knobs and rejects negative ones", () => {
     const water = new FluidParticles3D({ capacity: 8 });
     water.viscosity = 0.5;
