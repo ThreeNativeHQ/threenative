@@ -10,6 +10,7 @@ import {
 } from "@threenative/physics";
 import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
+import { loadPreparedProps } from "./render/prepared.js";
 import { createPropSurfaces } from "./render/propMaterials.js";
 import {
   type PropGroundQuery,
@@ -293,9 +294,11 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         waterLevel: data.waterLevel,
       };
       const scatter = scatterProps(propField, BENCHMARK[world].focus);
-      const propParts = buildPropVariants();
+      let propParts = buildPropVariants();
       const flat = flatPropMaterials();
       let props: ReturnType<typeof createProps> | undefined;
+      let building = false;
+      let preparedDispose: (() => void) | undefined;
       let released = false;
       let surfacesDispose: (() => void) | undefined;
       // Ground contact is a ray query against the drawn terrain and the terrain's collider, never
@@ -322,7 +325,18 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           offset: originY - field.heightAt(originX, originZ),
         };
       };
-      const buildProps = (): void => {
+      // The prepared CC0 art is asked for here rather than in `enter`, and the variants it fills
+      // are not built again: a game with the prepared models has real firs and real boulders, a
+      // game without them has the procedural spruce and the procedural boulder, and neither waits
+      // on the other. One load, because `afterPhysics` runs every frame.
+      const buildProps = async (): Promise<void> => {
+        const prepared = await loadPreparedProps(ctx.assets);
+        preparedDispose = prepared.dispose;
+        propParts = buildPropVariants(prepared.parts);
+        if (released) {
+          prepared.dispose();
+          return;
+        }
         props = createProps(scatter.placements, groundAt, propParts, flat);
         ctx.add(props.object);
         ctx.entities.add("props", {
@@ -344,6 +358,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
             released = true;
             surfacesDispose?.();
             flat.dispose();
+            preparedDispose?.();
             props?.dispose();
             for (const parts of propParts.values())
               for (const part of parts) part.geometry.dispose();
@@ -451,7 +466,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         // The props are placed here rather than in `enter`: their ground query asks the stepped
         // world where the surface is, and neither the ray tree nor the collider answers before the
         // solver has run once.
-        if (props === undefined) buildProps();
+        if (props === undefined && !building) {
+          building = true;
+          void buildProps();
+        }
         frames++;
         ctx.state.set({
           world,
@@ -490,6 +508,9 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       // Three framings, all fixed in world metres: the one the player walks behind, the eye-height
       // meadow view the rubric asks for, and the overview. They are data rather than a camera rig
       // so a capture at seed 73 is the same picture on every machine.
+      // Distance detail, once the camera is placed for this frame: a prepared tree draws from its
+      // full geometry inside the near band and from the mid level beyond it, with a fifth of the
+      // band of slack so a camera on the boundary does not alternate the tree between two levels.
       const { poses, views } = BENCHMARK[world];
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
@@ -499,6 +520,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);
           ctx.camera.lookAt(actor.position.x, actor.position.y + 2, actor.position.z - 12);
+          props?.setLevels(ctx.camera.position);
           return;
         }
         // A view this world has no framing for falls back to its overview rather than throwing:
@@ -512,6 +534,9 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
             ? at(pose.look[0], pose.look[1], pose.lookUp)
             : new Vector3(pose.look[0], pose.lookY, pose.look[1]),
         );
+        // After the camera is placed, not before: the band is a function of where the eye is, and
+        // the framing is what moved it.
+        props?.setLevels(ctx.camera.position);
       });
     }
 

@@ -168,6 +168,19 @@ const NEEDLE_ATLAS = "needle-atlas.png";
 /** Its relief: RG a tangent-space normal per needle, B the occlusion the canopy drops on itself. */
 const NEEDLE_SURFACE = "needle-surface.png";
 
+/**
+ * The prepared fir's own maps, which are Poly Haven's atlas of twig cards at one texture per map.
+ *
+ * Its arms are packed the usual way: occlusion in red, roughness in green, metal in blue. This
+ * surface binds all three, which is the whole reason the prepared crown costs two files rather
+ * than the six a per-material atlas would need.
+ */
+const FIR_MAPS = {
+  arms: "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
+  normal: "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
+  surface: "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
+} as const;
+
 /** Load one starter map, or nothing. A prop still draws without it, on its own colours. */
 async function map(assets: IAssetLoader | undefined, path: string, data: boolean) {
   if (assets === undefined) return undefined;
@@ -324,6 +337,81 @@ function mipCompensatedCutoff(mip: Node<"float">) {
  */
 const SOLID = { from: 3, to: 5.5 } as const;
 
+/**
+ * One alpha-tested needle surface, built from whichever atlas it is handed.
+ *
+ * The same shader for both crowns in the starter, because they are the same decision about light:
+ * a needle card is one cell thick, so a wrapped diffuse and a backlight through the card are most
+ * of what makes a canopy read as lit rather than as a green cutout. What differs is where the
+ * atlas came from — the generated one carries its relief and its occlusion in two files of its
+ * own, and Poly Haven's carries a real normal map and a packed arms map — so the relief and the
+ * occlusion are read from whichever pair it is given.
+ */
+function needleMaterial(
+  atlas: Texture | undefined,
+  relief: Texture | undefined,
+  arms: Texture | undefined,
+  seconds: Node<"float">,
+): MeshStandardNodeMaterial {
+  const material = new MeshStandardNodeMaterial({
+    metalness: 0,
+    // Double-sided: the far side of a spruce from across a meadow is mostly the backs of its
+    // cards, and a single-sided crown shows its own absence there.
+    side: DoubleSide,
+  });
+  material.alphaTest = CUTOUT;
+  if (atlas === undefined) {
+    material.colorNode = vec3(0.09, 0.24, 0.11);
+    // A needle is waxy, not varnished, and rougher than the bark below it on purpose.
+    material.roughness = 0.96;
+    sway(material, seconds, WIND.amplitude.crown);
+    return material;
+  }
+  const mip = mipLevels(atlas);
+  const card = texture(atlas);
+  const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
+  material.map = atlas;
+  material.alphaTestNode = mipCompensatedCutoff(mip.worst);
+  // The card's own occlusion: how much sky a texel buried in the spray can see. This is the
+  // "near-black undersides" fix as a *texture* rather than as a colour lift — the interior of a
+  // spray is darker than its fringe because its neighbours are in the way, which is a fact about
+  // the geometry of the needles rather than a constant.
+  const occlusion =
+    arms !== undefined ? texture(arms).r : relief === undefined ? float(1) : texture(relief).b;
+  // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
+  // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
+  // a tint above white is not a lighter needle, it is a blown highlight.
+  const needle = card.rgb
+    .mul(
+      mix(
+        vec3(0.9, 1.0, 0.86),
+        vec3(1.28, 1.34, 1.12),
+        smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
+      ),
+    )
+    .mul(occlusion);
+  // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
+  // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
+  // to ink against the sky. It is a *scale* towards the colour's own peak, not a per-channel
+  // maximum: a floor applied per channel lifts a dark needle's blue and red along with its green,
+  // and the darkest texels come out grey.
+  const peak = needle.r.max(needle.g).max(needle.b).max(float(0.0001));
+  const lifted = needle.mul(float(CANOPY.floor).div(peak).max(float(1)));
+  material.colorNode = vec4(lifted, mix(card.a, float(1), solid));
+  if (relief !== undefined) {
+    // Poly Haven's twig atlas carries a real tangent-space normal, so it goes in as one; the
+    // generated atlas carries a height field instead, and `bumpMap` turns that into relief.
+    if (arms === undefined) material.normalNode = bumpMap(texture(relief), float(0.55));
+    else material.normalMap = relief;
+  }
+  if (arms !== undefined) material.roughnessNode = texture(arms).g.mul(0.35).add(0.6);
+  else material.roughness = 0.96;
+  // And the light coming *through* the card, which the standard shading cannot produce.
+  material.emissiveNode = canopyTranslucency(0.1);
+  sway(material, seconds, WIND.amplitude.crown);
+  return material;
+}
+
 /** The colour a poppy is at the far edge of a meadow, where its petal is a handful of texels. */
 const POPPY_RED = 0xd41f16;
 
@@ -377,61 +465,18 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   if (bark.roughness !== undefined) barkMaterial.roughnessMap = bark.roughness;
   sway(barkMaterial, seconds, WIND.amplitude.bark);
 
-  const crownMaterial = new MeshStandardNodeMaterial({
-    metalness: 0,
-    // Double-sided: the far side of a spruce from across a meadow is mostly the backs of its
-    // cards, and a single-sided crown shows its own absence there.
-    side: DoubleSide,
-  });
-  crownMaterial.alphaTest = CUTOUT;
-  if (atlas === undefined) crownMaterial.colorNode = vec3(0.09, 0.24, 0.11);
-  else {
-    const mip = mipLevels(atlas);
-    const card = texture(atlas);
-    const solid = smoothstep(float(SOLID.from), float(SOLID.to), mip.area);
-    crownMaterial.map = atlas;
-    crownMaterial.alphaTestNode = mipCompensatedCutoff(mip.worst);
-    // The card's own occlusion, from the relief atlas's blue channel: how much sky a texel buried in
-    // the spray can see. This is the "near-black undersides" fix as a *texture* rather than as a
-    // colour lift — the interior of a spray is darker than its fringe because its neighbours are in
-    // the way, which is a fact about the geometry of the needles rather than a constant.
-    const occlusion = relief === undefined ? float(1) : texture(relief).b;
-    // New growth at the tips is lighter than the shaded interior: the same gradient the grass has,
-    // driven by the sway weight, which is a share of the tree's own height. Both ends stay under 1 —
-    // a tint above white is not a lighter needle, it is a blown highlight, and a forest of them
-    // reads as a field of white cutouts.
-    const needle = card.rgb
-      .mul(
-        mix(
-          vec3(0.9, 1.0, 0.86),
-          vec3(1.28, 1.34, 1.12),
-          smoothstep(float(0.15), float(0.95), attribute<"float">("sway", "float")),
-        ),
-      )
-      .mul(occlusion);
-    // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
-    // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
-    // to ink against the sky — which is what the last captures showed.
-    //
-    // It is a *scale* towards the colour's own peak, not a per-channel maximum, and that distinction
-    // is the whole of it: a floor applied per channel lifts a dark needle's blue and red along with
-    // its green, and the darkest texels come out grey, so the crown washes to pale sage the moment
-    // the floor goes up. Scaling until the brightest channel reaches the floor keeps the hue and the
-    // saturation, and still only touches the texels that are below it.
-    const peak = needle.r.max(needle.g).max(needle.b).max(float(0.0001));
-    const lifted = needle.mul(float(CANOPY.floor).div(peak).max(float(1)));
-    crownMaterial.colorNode = vec4(lifted, mix(card.a, float(1), solid));
-    // The needle relief. `bumpMap` perturbs the surface normal from the height derivatives of the
-    // texture, so one generated normal per needle is what gives each card a surface; without it a
-    // crown is a stack of flat quads, which is exactly what the last captures showed.
-    if (relief !== undefined) crownMaterial.normalNode = bumpMap(texture(relief), float(0.55));
-    // And the light coming *through* the card, which the standard shading cannot produce.
-    crownMaterial.emissiveNode = canopyTranslucency(0.1);
-  }
-  // A needle is waxy, not varnished, and at 0.87 the relief's own highlights came back as a silver
-  // wash over every card facing the sun. Rougher than the bark below it on purpose.
-  crownMaterial.roughness = 0.96;
-  sway(crownMaterial, seconds, WIND.amplitude.crown);
+  const crownMaterial = needleMaterial(atlas, relief, undefined, seconds);
+  const firMaps = await Promise.all([
+    map(assets, FIR_MAPS.surface, false),
+    map(assets, FIR_MAPS.normal, true),
+    map(assets, FIR_MAPS.arms, true),
+  ]);
+  textures.push(...firMaps.filter((found): found is Texture => found !== undefined));
+  // The prepared fir cuts against its own atlas, so it needs its own instance of the same
+  // surface: two atlases are two textures, and a shared material could only sample one of them.
+  const needlesMaterial = needleMaterial(firMaps[0], firMaps[1], firMaps[2], seconds);
+
+  sway(needlesMaterial, seconds, WIND.amplitude.crown);
 
   const grassMaterial = new MeshStandardNodeMaterial({
     metalness: 0,
@@ -500,6 +545,7 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     bark: barkMaterial,
     crown: crownMaterial,
     grass: grassMaterial,
+    needles: needlesMaterial,
     petal: petalMaterial,
     stem: stemMaterial,
     stone: stoneSurface(stone),

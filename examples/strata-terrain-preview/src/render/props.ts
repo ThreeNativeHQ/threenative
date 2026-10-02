@@ -34,24 +34,44 @@ const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
 
 /** How many variants of each prop the starter builds, and the seed they are built from. */
 export const VARIANTS = {
-  boulder: 3,
+  // One procedural boulder: the four prepared CC0 ones replace it as variants, and one is left so
+  // the procedural path is a live variant rather than a fallback nothing reaches.
+  boulder: 1,
   grass: 2,
   poppy: 2,
   spruce: 3,
   seed: 0x9e3779b9,
 } as const;
 
-/** The atlas cell each variant of a spruce uses for its crown, so a variant reads as one tree. */
-const SPRUCE_CELLS = [ATLAS_CELLS.dense, ATLAS_CELLS.open, ATLAS_CELLS.tip];
+/**
+ * How many prepared CC0 variants of each prop the starter's prepared art provides.
+ *
+ * The fir's two variants are behind `SCATTER_PREPARED_FIR` in `prepared.ts`, which is off on the
+ * measurement printed there, so the spruce count is the procedural tree's own.
+ */
+const PREPARED_VARIANTS = { boulder: 3, spruce: 0 } as const;
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
 const BOULDER_BURIAL = 0.2;
 
-export type PropRole = "bark" | "crown" | "stone" | "grass" | "petal" | "stem";
+export type PropRole = "bark" | "crown" | "needles" | "stone" | "grass" | "petal" | "stem";
+
+/**
+ * Metres at which a prepared prop steps down one detail level, and the slack that keeps a
+ * camera walking the boundary from stepping it up and down again.
+ *
+ * The bands are the game's, because the triangle budget behind them is the game's: a prop is drawn
+ * from its full prepared detail inside `near` and from the mid level past it. The hysteresis is a
+ * fifth of the band rather than a fixed number of metres, so the same slack works for a two-metre
+ * rock and a fourteen-metre tree.
+ */
+export const LOD_BANDS = { hysteresis: 0.2, mid: 60, near: 22 } as const;
 
 export interface IPropPart {
   readonly geometry: BufferGeometry;
+  /** Which detail level this part is. `0` is the full one; a variant with only it never steps. */
+  readonly level?: number;
   readonly role: PropRole;
   /** Which variant of the prop this part belongs to; parts of one variant always agree. */
   readonly variant: number;
@@ -63,11 +83,22 @@ export interface IPropPart {
  * Building the whole set up front is what makes placement cheap and what keeps the draw count
  * bounded: three spruce variants times two parts is six draws for every tree in the world, not one
  * per tree. The caller decides which variant each placement gets.
+ *
+ * A `prepared` map replaces the variants it names: indices 0 and 1 of the spruce are the two
+ * prepared CC0 firs and index 2 is the procedural one, so both sets are live at once and the
+ * procedural tree stays a variant rather than becoming dead code. The indices it does not name
+ * are still built, which is what the editor's own scene gets when it has no prepared art.
  */
-export function buildPropVariants(): Map<string, IPropPart[]> {
+export function buildPropVariants(
+  prepared?: ReadonlyMap<string, IPropPart[]>,
+): Map<string, IPropPart[]> {
   const variants = new Map<string, IPropPart[]>();
-  const spruces = spruceVariants(VARIANTS.spruce, VARIANTS.seed);
-  for (const [index, spruce] of spruces.entries()) {
+  // Two seeds' worth, so a prepared variant does not cost a procedural one the indices after it
+  // would have needed.
+  const spruces = spruceVariants(PROP_COUNTS.spruce, VARIANTS.seed);
+  for (let index = 0; index < PROP_COUNTS.spruce; index += 1) {
+    const spruce = spruces[index];
+    if (spruce === undefined) continue;
     variants.set(`spruce:${index}`, [
       { geometry: spruce.trunk, role: "bark", variant: index },
       // Each variant leans on a different needle card, so three spruce silhouettes are three
@@ -75,10 +106,20 @@ export function buildPropVariants(): Map<string, IPropPart[]> {
       { geometry: spruce.crown, role: "crown", variant: index },
     ]);
   }
-  for (let i = 0; i < VARIANTS.boulder; i += 1)
+  for (let i = 0; i < PROP_COUNTS.boulder; i += 1) {
+    const ready = prepared?.get(`boulder:${i}`);
+    if (ready) {
+      variants.set(`boulder:${i}`, [...ready]);
+      continue;
+    }
     variants.set(`boulder:${i}`, [
-      { geometry: boulder((VARIANTS.seed ^ (i * 0x85ebca6b)) >>> 0), role: "stone", variant: i },
+      {
+        geometry: boulder((VARIANTS.seed ^ (i * 0x85ebca6b)) >>> 0),
+        role: "stone",
+        variant: i,
+      },
     ]);
+  }
   for (let i = 0; i < VARIANTS.grass; i += 1)
     variants.set(`grass:${i}`, [
       { geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0), role: "grass", variant: i },
@@ -93,13 +134,20 @@ export function buildPropVariants(): Map<string, IPropPart[]> {
   return variants;
 }
 
-/** The prop names this starter knows, and how many variants each has. */
-export const PROP_ASSETS: Record<string, number> = {
-  boulder: VARIANTS.boulder,
+/**
+ * The prop names this starter knows, and how many variants each has.
+ *
+ * A prepared variant is counted whether or not its model loaded: the count is the starter's
+ * layout, and a game with no prepared art still hashes into the same five boulders.
+ */
+const PROP_COUNTS = {
+  boulder: VARIANTS.boulder + PREPARED_VARIANTS.boulder,
   grass: VARIANTS.grass,
   poppy: VARIANTS.poppy,
-  spruce: VARIANTS.spruce,
-};
+  spruce: VARIANTS.spruce + PREPARED_VARIANTS.spruce,
+} as const;
+
+export const PROP_ASSETS: Record<string, number> = PROP_COUNTS;
 
 export type PropGroundQuery = (
   placement: IPlacement,
@@ -223,6 +271,8 @@ export interface IPropMaterials {
   readonly bark: Material;
   readonly crown: Material;
   readonly grass: Material;
+  /** The prepared CC0 fir's own cutout, sampled against Poly Haven's twig atlas. */
+  readonly needles: Material;
   readonly petal: Material;
   readonly stem: Material;
   readonly stone: Material;
@@ -245,6 +295,7 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
       side: DoubleSide,
       vertexColors: true,
     }),
+    needles: new MeshStandardMaterial({ color: 0x24401f, roughness: 0.94, side: DoubleSide }),
     petal: new MeshStandardMaterial({ color: 0xb8181a, roughness: 0.75, side: DoubleSide }),
     stem: new MeshStandardMaterial({
       color: 0xffffff,
@@ -262,12 +313,38 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
   };
 }
 
+/** One variant's placements, their poses, and the draws each detail level of it owns. */
+interface IVariantGroup {
+  readonly entries: { instance: IPropInstance; pose: Matrix4 }[];
+  /** One mesh per level per role, so a level is one draw and the matrix write reaches all of them. */
+  readonly levels: Map<number, InstancedMesh[]>;
+  /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
+  readonly state: Uint8Array;
+}
+
 /**
- * Place every prop and build one instanced mesh per (asset, variant, role).
+ * Which detail level a placement draws at, and when it is allowed to change its mind.
+ *
+ * A step down happens at the band, and a step back up only once the camera has come a fifth
+ * further inside it. Without that slack a camera sitting on a boundary assigns a different level
+ * to the same tree on alternate frames, which reads as the tree flickering rather than as a
+ * change of detail.
+ */
+export function levelFor(distance: number, current: number, levelCount: number): number {
+  const band = current === 0 ? LOD_BANDS.near : LOD_BANDS.mid;
+  if (distance > band && current + 1 < levelCount) return current + 1;
+  if (distance < band * (1 - LOD_BANDS.hysteresis) && current > 0) return current - 1;
+  return current;
+}
+
+/**
+ * Place every prop and build one instanced mesh per (asset, variant, level, role).
  *
  * The grouping is what bounds the draw count: a forest of 200 spruces across three variants is six
  * draws, not six hundred, because every copy of a variant shares one geometry and one material and
- * differs only by its matrix.
+ * differs only by its matrix. A variant with more than one detail level owns one mesh per level per
+ * role, and {@link setPropLevels} refills them from the camera each frame; a variant with one never
+ * touches its matrices again.
  */
 export function createProps(
   placements: readonly IPlacement[],
@@ -320,7 +397,10 @@ export function createProps(
     object.clear();
     byId.clear();
     groups.clear();
+    banded.length = 0;
   }
+  /** Every variant with more than one detail level, which is the only thing that refills. */
+  const banded: IVariantGroup[] = [];
   try {
     for (const [key, entries] of groups) {
       const chosen = parts.get(key);
@@ -332,30 +412,44 @@ export function createProps(
         : chosen.some((part) => part.role === "stone")
           ? "stone"
           : chosen[0]?.role;
-      for (const part of chosen) {
-        const batch = new InstancedBatch({
-          geometry: part.geometry,
-          material: materials[part.role],
-        });
-        for (const entry of entries) batch.add(entry.pose);
-        const mesh = batch.build({
-          name: `props:${key}:${part.role}`,
-          parent: object,
-          // Crowns and bark cast; grass does too, because its own shadow is most of its depth. The
-          // poppy's petals and stems do not, at five centimetres they only cost the shadow pass.
-          castShadow: part.role !== "petal" && part.role !== "stem",
-          receiveShadow: true,
-        });
-        if (!mesh) throw new Error(`Empty prop batch '${key}:${part.role}'`);
-        mesh.userData.placementIds = entries.map((entry) => entry.instance.placement.id);
-        meshes.push(mesh);
-        entries.forEach((entry, index) => {
-          entry.instance.parts.push({ index, mesh });
-          if (part.role === bodyRole) {
-            entry.instance.mesh = mesh;
-            entry.instance.index = index;
-          }
-        });
+      const levels = [...new Set(chosen.map((part) => part.level ?? 0))].sort((a, b) => a - b);
+      const byLevel = new Map<number, InstancedMesh[]>();
+      for (const level of levels) {
+        const levelParts = chosen.filter((part) => (part.level ?? 0) === level);
+        for (const part of levelParts) {
+          const batch = new InstancedBatch({
+            geometry: part.geometry,
+            material: materials[part.role],
+          });
+          for (const entry of entries) batch.add(entry.pose);
+          const mesh = batch.build({
+            name: `props:${key}:${part.role}`,
+            parent: object,
+            // Crowns and bark cast; grass does too, because its own shadow is most of its depth. The
+            // poppy's petals and stems do not, at five centimetres they only cost the shadow pass.
+            castShadow: part.role !== "petal" && part.role !== "stem",
+            receiveShadow: true,
+          });
+          if (!mesh) throw new Error(`Empty prop batch '${key}:${part.role}'`);
+          mesh.userData.placementIds = entries.map((entry) => entry.instance.placement.id);
+          meshes.push(mesh);
+          const list = byLevel.get(level) ?? [];
+          list.push(mesh);
+          byLevel.set(level, list);
+          entries.forEach((entry, index) => {
+            entry.instance.parts.push({ index, mesh });
+            if (part.role === bodyRole) {
+              entry.instance.mesh = mesh;
+              entry.instance.index = index;
+            }
+          });
+        }
+      }
+      if (levels.length > 1) {
+        // Every level's mesh was filled with every placement at build time, so the bounding sphere
+        // `InstancedBatch` computed is already the union over the levels — the same bound, correct
+        // for whichever subset a frame happens to draw, and computed once.
+        banded.push({ entries, levels: byLevel, state: new Uint8Array(entries.length) });
       }
       for (const entry of entries) {
         if (entry.instance.mesh === undefined)
@@ -363,7 +457,46 @@ export function createProps(
         byId.set(entry.instance.placement.id, entry.instance);
       }
     }
-    return { object, meshes, byId, dispose };
+    const origin = new Vector3();
+    const levelCount = new Map<IVariantGroup, number>();
+
+    /**
+     * Refill every banded variant from the camera.
+     *
+     * One pass over the placements per variant, one matrix write per draw the placement lands in,
+     * and the draw counts follow. A frame that changes nothing still writes the same matrices,
+     * which is the price of not sorting the placements by level: the work is a few hundred matrix
+     * copies for a forest, against a sort that would move a tree's editor index every frame.
+     */
+    const seenFrom = new Vector3(Number.NaN, 0, 0);
+    const setLevels = (camera: Vector3): void => {
+      // Only when the eye has actually moved. A benchmark framing holds the camera still for
+      // hundreds of frames and the assignment cannot change, and every refill re-uploads each
+      // level's whole instance buffer — which is a cost the frame pays whether the answer moved
+      // or not.
+      if (seenFrom.distanceToSquared(camera) < 0.25 ** 2) return;
+      seenFrom.copy(camera);
+      for (const group of banded) {
+        const levels = levelCount.get(group) ?? 0;
+        const counts = new Array<number>(levels).fill(0);
+        for (const [index, entry] of group.entries.entries()) {
+          origin.setFromMatrixPosition(entry.pose);
+          const level = levelFor(origin.distanceTo(camera), group.state[index] ?? 0, levels);
+          group.state[index] = level;
+          const slot = counts[level] ?? 0;
+          for (const mesh of group.levels.get(level) ?? []) mesh.setMatrixAt(slot, entry.pose);
+          counts[level] = slot + 1;
+        }
+        for (const [level, list] of group.levels) {
+          for (const mesh of list) {
+            mesh.count = counts[level] ?? 0;
+            mesh.instanceMatrix.needsUpdate = true;
+          }
+        }
+      }
+    };
+    for (const group of banded) levelCount.set(group, group.levels.size);
+    return { object, meshes, byId, dispose, setLevels };
   } catch (error) {
     dispose();
     throw error;
