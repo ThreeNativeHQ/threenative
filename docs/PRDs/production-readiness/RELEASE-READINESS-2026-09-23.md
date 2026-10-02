@@ -1,5 +1,37 @@
 # Release readiness — 2026-09-23
 
+## Status 2026-10-02
+
+**The 0.3.4 cohort is published; `alpha:bar` A1 passes (6 of 7, A6 deferred).** `runtime-native-v0.3.4`
+is a finalized release (promotions #385, #386, #387 merged). On npm: `core`, `physics`, `playtest`,
+`runtime-native`, `ui` 0.3.4; `assets` 0.3.5; `raw-unreal`, `ueformat`, `threenative-blender-mcp` 0.1.4;
+`threenative-engine-mcp` 0.2.4; `@threenative/metahuman` 0.1.0 (new); `create-threenative` 0.2.8.
+`scripts/verify-registry-install.ts` against the registry passes 22/22 (npm and pnpm, including
+`doctor`, `native`, `android`, `mcp`).
+
+What it took, so the next cut does not repeat it:
+
+- **The hosted `npm-release` run cannot publish.** Its N-1 upgrade proof asserts frame time and
+  visuals, which fail on the runner's SwiftShader adapter (run 36969644927). The cohort was published
+  locally with `pnpm release --skip-gates --yes` on a GPU host, behind a load gate (frame p95 read 34 to
+  112 ms against the 33 ms budget while other lanes ran; it passed once load stayed under 8). The gate
+  was not changed. PRD-196's last box (hosted `clean-room` run) stays open for the same reason.
+- **`doctor` demanded one version across all `@threenative` packages**, but the cohort ships `assets`
+  at 0.3.5 on purpose, so the registry clean-room failed on `npm:doctor`. It now compares the
+  major.minor series (`d43e0016e`); that needed `create-threenative` 0.2.8, published by hand with
+  `pnpm --filter create-threenative publish` because `pnpm release` refuses a partial cohort.
+- **`publish:check` refused the scaffolder tarball**: `templates/rain/tools/verify-noise-volume.mjs`
+  imported a `.js` name for a shipped `.ts` file (`6c8858d74`).
+- Native consumer proof fixes landed on `develop`: software-adapter declaration on the hosted emulator,
+  iOS no longer gates `finalize`, and a retry for dropped adb logcat transports.
+
+The local publish carries no npm provenance (not CI). The Android registry proof needs JDK 17 and
+`ANDROID_HOME`; the default JDK 27 on the operator machine fails Gradle.
+
+**Still open:** a `develop` to `main` promotion carrying the doctor and rain fixes, PRD-064's web
+60 fps arm, PRD-366 physical devices, PRD-399, the `fast-uri` highs (no fixed upstream release), and
+a way to run the upgrade proof on hosted CI (a GPU lane, or a deliberate software-adapter design).
+
 ## Status 2026-10-01
 
 Inspected on `develop` at `ffe9986f5` (`origin/develop` fetched 2026-10-01). Only the rows in
@@ -239,5 +271,5 @@ These fold into [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public
 - **New (2026-10-01):** PRD-064's status line still reads 2026-09-25 and does not record PR #361's
   2026-09-30 desktop-pair measurement.
 
-**Next action (under two minutes):** run `pnpm alpha:bar --write` to re-green A7; then decide
-whether to cut the 0.3.4 cohort, whose `v*` tag push is PRD-196's last box.
+**Next action (under two minutes):** promote `develop` to `main` (merge commit) so `main` carries the
+doctor and rain fixes; the cohort itself is published (see Status 2026-10-02).
