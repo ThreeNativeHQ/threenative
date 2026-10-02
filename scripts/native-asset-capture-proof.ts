@@ -50,11 +50,13 @@ export function inspectNativeAssetScreenshot(bytes: Buffer) {
 export function assertNativeAssetCapture(
   report: Pick<
     IStandalonePlaytestReport,
-    "pass" | "assertionResults" | "capture" | "diagnostics" | "runtime" | "target"
+    "pass" | "assertionResults" | "capture" | "diagnostics" | "runtime" | "target" | "startup"
   >,
   nativeConsole: unknown,
 ): void {
   assert.equal(report.pass, true, JSON.stringify(report.diagnostics));
+  assert.equal(report.startup?.phase, "ready", "Native world never reached ready");
+  assert.equal(report.startup.compileSettled, true, "Native compilation never settled");
   assert.equal(report.runtime, "native");
   assert.equal(report.target, "desktop");
   assert.equal(report.capture?.captureMethod, "device.screenshot");

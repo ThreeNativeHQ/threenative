@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import { expect, test } from "vitest";
 import { requiredPlaytestCapabilities } from "../../packages/playtest/src/assertion-schema.js";
+import { PLAYTEST_PROTOCOL_LIMITS } from "../../packages/playtest/src/protocol.js";
+import {
+  type IBridgeTransport,
+  connectPlaytestBridgeTransport,
+} from "../../packages/playtest/src/runner/bridgeClient.js";
 import { validatePlaytestScenario } from "../../packages/playtest/src/scenario.js";
 import {
   assertNativeAssetCapture,
@@ -43,6 +48,7 @@ function image(missingRegion = -1, transparent = false): Buffer {
 function report(): Parameters<typeof assertNativeAssetCapture>[0] {
   return {
     pass: true,
+    startup: { phase: "ready", progress: 1, compileSettled: true, rule: "compile-settled" },
     runtime: "native",
     target: "desktop",
     assertionResults: [{ pass: true, id: "resources.0" }],
@@ -113,8 +119,9 @@ test("native scenario retains supported diagnostics without requesting an unavai
     "vq01",
   );
   expect(requiredPlaytestCapabilities(scenario, "desktop")).not.toContain("runtime.diagnostics");
-  expect(scenario.assert?.diagnostics?.noConsoleErrors).toBe(true);
-  expect(scenario.assert?.diagnostics?.runtimeReady).toBe(true);
+  expect(scenario.assert?.diagnostics).toBeUndefined();
+  expect(requiredPlaytestCapabilities(scenario, "desktop")).toContain("runtime.startup");
+  expect(scenario.assert?.startup?.maxReadyMs).toBe(120000);
 });
 
 test("native console evidence cannot be omitted or empty", () => {
@@ -130,4 +137,46 @@ test("unclassified error-labelled native lines remain fatal", () => {
       { type: "error", text: "Unexpected host failure" },
     ]),
   ).toThrow("Unexpected host failure");
+});
+
+test("the actual native bridge preflight accepts the fixture's assertion families", async () => {
+  const scenario = validatePlaytestScenario(
+    JSON.parse(
+      readFileSync(
+        "examples/abyss-framework/playtests/vq-native-asset-capabilities.playtest.json",
+        "utf8",
+      ),
+    ),
+    "vq01",
+  );
+  // Minimal subset of the real QuickJS handshake captured in run 36996645116.
+  const transport: IBridgeTransport = {
+    capabilities: ["browser.console", "browser.screenshot"],
+    waitForBridge: async () => true,
+    close: async () => {},
+    async call<T>(method: string): Promise<T> {
+      if (method === "describe")
+        return {
+          capabilities: ["runtime.resources", "runtime.fixedStep", "runtime.startup"],
+          limits: PLAYTEST_PROTOCOL_LIMITS,
+          name: "@threenative/playtest/three",
+          protocolVersion: 1,
+        } as T;
+      if (method === "ready") return { ready: true } as T;
+      throw new Error(`Unexpected preflight call: ${method}`);
+    },
+  };
+  await expect(
+    connectPlaytestBridgeTransport(transport, scenario, 1000, "desktop"),
+  ).resolves.toBeDefined();
+});
+
+test("native ready and settled compilation cannot be omitted or inferred from pixels", () => {
+  for (const startup of [
+    undefined,
+    { phase: "loading", progress: 0.9, compileSettled: true, rule: "compile-settled" },
+    { phase: "ready", progress: 1, compileSettled: false, rule: "compile-settled" },
+  ]) {
+    expect(() => assertNativeAssetCapture({ ...report(), startup }, cleanConsole)).toThrow();
+  }
 });

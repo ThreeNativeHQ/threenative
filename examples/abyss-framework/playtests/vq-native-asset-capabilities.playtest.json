@@ -17,12 +17,6 @@
     "console": true
   },
   "assert": {
-    "diagnostics": {
-      "noConsoleErrors": true,
-      "noRuntimeDiagnostics": false,
-      "runtimeReady": true,
-      "runtimeDiagnosticsOptOutReason": "The native bridge does not expose runtime.diagnostics. This native-only fixture instead requires no console errors, live readiness, and verifier checks of every native console line for device loss, GPU validation, JavaScript and loader failures."
-    },
     "resources": [
       {
         "id": "state",
@@ -53,6 +47,10 @@
         "gte": 0.05,
         "allowTrivial": "The native warm-up can already advance both authored animation tracks."
       }
-    ]
+    ],
+    "startup": {
+      "maxEnteredMs": 120000,
+      "maxReadyMs": 120000
+    }
   }
 }
