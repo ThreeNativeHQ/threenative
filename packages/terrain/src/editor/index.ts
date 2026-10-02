@@ -98,6 +98,13 @@ export interface IEditorView {
   frame(): void;
   registerAsset?(id: string, object: unknown): void;
   cameras?(): IViewCamera;
+  /**
+   * The whole rendered revision as a portable GLB: terrain, resolved models with their final
+   * transforms, this game's baked water and its portable PBR surfaces. Optional because a headless
+   * or DOM-free view has nothing to encode from; the export card then says so rather than quietly
+   * falling back to the terrain-only worker export.
+   */
+  exportCurrentWorld?(): Promise<{ name: string; mime: string; bytes: Uint8Array }>;
   dispose(): void;
 }
 

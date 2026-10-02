@@ -69,7 +69,9 @@ class ExportConsumer extends Scene<State> {
           Boolean,
         ).length;
     });
-    if (!manual || placements !== 100 || meshes !== 101 || pbrMaps !== 4)
+    // The whole exported world: terrain, two PBR sets and a river, the 100 placements' 200 draws,
+    // and the water's one. The counts are measured, not assumed, so a partial load fails here.
+    if (!manual || placements !== 100 || meshes !== 202 || pbrMaps !== 404)
       throw new Error("Portable GLB consumer did not load the complete export fixture");
     ctx.state.set({
       placements,

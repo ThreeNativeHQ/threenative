@@ -18,11 +18,7 @@ import {
   focusCamera,
 } from "@threenative/terrain/editor";
 import type { IAuthoringDocument } from "@threenative/terrain/editor/server";
-import {
-  type IWorldGLBExport,
-  type IWorldGLBInput,
-  exportWorldGLB,
-} from "@threenative/terrain/export";
+import { type IWorldGLBExport, exportWorldGLB } from "@threenative/terrain/export";
 import {
   Box3,
   BufferAttribute,
@@ -30,6 +26,7 @@ import {
   Color,
   DirectionalLight,
   FogExp2,
+  Group,
   HemisphereLight,
   Line,
   LineBasicMaterial,
@@ -45,6 +42,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { landformPose } from "./landforms.js";
 import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
+import { createPortableGround, createPortableProps } from "./portable.js";
 import { createPropSurfaces } from "./propMaterials.js";
 import {
   type PropGroundQuery,
@@ -56,6 +54,7 @@ import {
 } from "./props.js";
 import { createPropSelection } from "./selection.js";
 import { createTerrain } from "./terrain.js";
+import { type IWaterSurface, bakeWater } from "./water.js";
 
 /** A landmark frames the ground it sits on, not the height of a building. */
 const LANDMARK_RADIUS = 0.5;
@@ -87,10 +86,10 @@ export async function createEditorView(
     inspectSelection(): ReturnType<ReturnType<typeof createPropSelection>["inspect"]>;
     projectPlacement(id: string): [number, number] | undefined;
     inspectHandles(): ReturnType<ReturnType<typeof createPropSelection>["handles"]>;
-    exportCurrentWorld(
-      material: MeshStandardMaterial,
-      water?: IWorldGLBInput["water"],
-    ): Promise<IWorldGLBExport>;
+    /** Every water body the rendered revision contains, and how much geometry it drew. */
+    inspectWater(): { id: string; triangles: number }[];
+    /** The whole rendered world as a portable GLB: this game's PBR maps and its baked water. */
+    exportCurrentWorld(): Promise<IWorldGLBExport>;
   }
 > {
   let ctx!: ICtx<EditorState>;
@@ -99,6 +98,9 @@ export async function createEditorView(
   let terrain: ITerrainState | undefined;
   let sea: ReturnType<typeof createOcean> | undefined;
   let water: Mesh | undefined;
+  // The exported world's water, and the meshes drawn live: one bake, used by both, so what the
+  // editor shows is what the GLB carries rather than two shapes that only agree sometimes.
+  let waterSurfaces: IWaterSurface[] = [];
   let props: ReturnType<typeof createProps> | undefined;
   // The loop's settling frame can tick before the surfaces exist; the view answers when it can.
   // biome-ignore lint/style/useConst: the settling frame reads this before the line that assigns it.
@@ -534,6 +536,23 @@ export async function createEditorView(
       }
       if (data.waterLevel !== null && !sea) sea = ctx.add(createOcean());
       const nextWater = data.waterLevel === null || !sea ? undefined : createWaterMesh(sea, data);
+      // Water comes out of the evaluated state, never out of the recipe's intent: the ribbon is the
+      // carved bed and the flooded extent is the mask the evaluator resolved, so a baked surface and
+      // the live scene are the same body rather than two shapes that agree by accident.
+      const nextWaterSurfaces = bakeWater(state, (x, z) => sampleHeight(state, x, z));
+      for (const previous of waterSurfaces) {
+        ctx.scene.remove(previous.mesh);
+        previous.mesh.geometry.dispose();
+        (previous.mesh.material as MeshStandardMaterial).dispose();
+      }
+      waterSurfaces = nextWaterSurfaces;
+      // An ocean body is drawn by the spectral sea above; its baked twin is for the export, because
+      // a GLB cannot carry a per-frame simulation. Everything else is drawn from the bake, which is
+      // what puts a river in an editor preview that had none.
+      for (const entry of waterSurfaces) {
+        if (state.waters.find((candidate) => candidate.id === entry.id)?.kind === "ocean") continue;
+        ctx.add(entry.mesh);
+      }
       if (mesh) {
         ctx.scene.remove(mesh);
         mesh.geometry.dispose();
@@ -640,7 +659,7 @@ export async function createEditorView(
     inspectHandles() {
       return selection.handles();
     },
-    async exportCurrentWorld(material, waterSnapshots) {
+    async exportCurrentWorld() {
       const accepted = await controller.snapshot();
       if (
         !terrain ||
@@ -653,14 +672,28 @@ export async function createEditorView(
         renderedRecipe !== JSON.stringify(authoring.recipe)
       )
         throw new Error("World export needs the accepted rendered revision");
-      const assets = new Map<string, Object3D>();
+      // This game's own PBR maps, not a fixture's checkers: an export that carried test textures
+      // would prove the container and not the art, which is the half of the handoff that matters.
+      const material = await createPortableGround(ctx.assets, terrain.size);
+      const portableProps = await createPortableProps(ctx.assets);
+      // Every draw a placement owns, on one portable surface. A spruce is a trunk and a crown, and
+      // an export that carried only the trunk would ship a hundred poles.
+      const models = new Map<string, Object3D>();
       const transforms = new Map<string, Matrix4>();
       for (const instance of props.byId.values()) {
-        if (!assets.has(instance.placement.asset)) {
-          const model = new Mesh(instance.mesh.geometry, instance.mesh.material);
-          model.name = instance.placement.asset;
-          assets.set(instance.placement.asset, model);
+        const model = new Group();
+        model.name = instance.placement.asset;
+        for (const part of instance.parts) {
+          // The draw's own name ends in its role (`props:spruce:0:crown`), which is exactly the key
+          // the portable surfaces are chosen by.
+          const role = part.mesh.name.split(":").at(-1) ?? "crown";
+          const surface = portableProps.materials[role];
+          if (!surface) throw new Error(`No portable surface for prop role '${role}'`);
+          const draw = new Mesh(part.mesh.geometry, surface);
+          draw.name = role;
+          model.add(draw);
         }
+        models.set(instance.placement.id, model);
         instance.mesh.updateWorldMatrix(true, false);
         const matrix = new Matrix4();
         instance.mesh.getMatrixAt(instance.index, matrix);
@@ -668,19 +701,33 @@ export async function createEditorView(
       }
       const geometry = mesh.geometry.clone();
       geometry.setAttribute("uv", new BufferAttribute(bakeMesh(terrain).uvs, 2));
+      // The water is already static geometry baked from this rendered revision, so it is its own
+      // snapshot: `elapsed` is the instant it was measured at, and nothing about it can go stale
+      // because nothing about it is simulated.
+      const water = waterSurfaces.map((entry) => ({
+        id: entry.id,
+        object: entry.mesh,
+        time: elapsed,
+        staleFrames: 0,
+      }));
       try {
         return await exportWorldGLB({
           revision: accepted.revision,
           snapshotTime: elapsed,
           state: applyPlacementOverrides(terrain, accepted.document.placementOverrides ?? {}),
           terrain: new Mesh(geometry, material),
-          assets,
+          models,
           transforms,
-          ...(waterSnapshots ? { water: waterSnapshots } : {}),
+          ...(water.length ? { water } : {}),
         });
       } finally {
         geometry.dispose();
+        material.dispose();
+        portableProps.dispose();
       }
+    },
+    inspectWater() {
+      return waterSurfaces.map((entry) => ({ id: entry.id, triangles: entry.triangles }));
     },
     noteRevision(revision, ms): void {
       requestedRevision = revision;
