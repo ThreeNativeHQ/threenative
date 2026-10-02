@@ -128,20 +128,29 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 ## Execution Phases
 
 #### Phase 1: The runner stack comes up and takes jobs
-
-**Status:** NOT STARTED
-**Files:** NEW `tools/ci-runners/Dockerfile`, NEW `tools/ci-runners/compose.yml`, NEW
+**Status:** IN PROGRESS — stack files built, runners not yet brought up
+**Files:** NEW `tools/ci-runners/Dockerfile`, NEW `tools/ci-runners/entrypoint.sh`, NEW
 `scripts/ci-runners.sh` (`up [N]`, `down`, `status`; default N = 4, read from the env file).
-**Implementation:** Ubuntu 24.04 runner image with the tool set above. Compose service with
-`replicas: N`, `cpus: 4`, `mem_limit: 16g`, `restart: always`, and ephemeral repo-scoped registration
-with labels `tn-local`. `up` waits for N online runners via `gh api repos/{owner}/{repo}/actions/runners`
-before `gh variable set TN_RUNNER --body tn-local`. `down` deletes the variable first, then stops the
-stack. The script fails closed when the env file or token is missing.
+
+Deviation from the plan below, owner-approved 2026-10-02: **no compose.yml.** A host-side loop of
+`docker run --rm` replaces the compose service, because `restart: always` restarts the *same*
+container — same filesystem, same hostname — and the ephemeral claim here is a fresh one of both
+per job.
+
+**Implementation:** Ubuntu 24.04 runner image with the tool set above. One loop per slot
+(`setsid nohup`), `cpus 4`, `memory 16g`, and ephemeral repo-scoped registration with labels
+`tn-local`. `up` waits for N online runners via `gh api repos/{owner}/{repo}/actions/runners`
+before `gh variable set TN_RUNNER --body tn-local`. `down` deletes the variable first, then stops
+the stack. The script fails closed when the env file or token is missing.
+
 
 - [ ] `scripts/ci-runners.sh up` brings 4 runners online with label `tn-local`. proof:
-  `scripts/ci-runners.sh status` lists 4 online runners.
+  `scripts/ci-runners.sh status` lists 4 online runners. Not started: `status` reports
+  `TN_RUNNER=unset`, 0 containers, 0 online runners on 2026-10-02.
 - [ ] A runner container recreates itself after its job and keeps no state from it. proof: two
   consecutive dispatched jobs report different container hostnames and an empty `/tmp`.
+  Not started: the image's `/tmp` is empty in a fresh container (`ls -A /tmp | wc -l` → 0), which
+  is one container's worth of the claim.
 
 #### Phase 2: `ci.yml` and the integration workflows route through the switch
 
