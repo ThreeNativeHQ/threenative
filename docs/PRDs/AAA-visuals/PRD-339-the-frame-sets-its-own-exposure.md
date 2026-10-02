@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-339 — the frame sets its own exposure
 
-**Status:** PROPOSED — filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** IN PROGRESS — implementation started 2026-10-02 from `d7277838`; original
+measurement at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). Judged with
 [PRD-341](./PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
 tell whether this landed. Source studied: [TheLongSilence](https://github.com/achimala/TheLongSilence)
@@ -106,26 +107,61 @@ a convention missing from there does not exist.
   compute histogram is a separate PRD if a game ever needs one.
 - No per-object or per-region exposure.
 
+## Implementation phases
+
+### Phase 1 — authored adaptation and metering contract
+
+- [ ] Generated exposure controls validate inputs and adapt in log2 with authored asymmetric rates, cut response, reset and disabled measurement. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure.spec.ts`
+- [ ] Reduction dimensions follow the drawing buffer without invalidating 1×1 history. proof:
+  `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure.spec.ts`
+
+### Phase 2 — opt-in GPU graph and lifecycle
+
+- [ ] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/world-environment-lifetime.spec.ts`
+- [ ] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure.spec.ts`
+
+### Phase 3 — repeatability and runtime qualification
+
+- [ ] Bright/dark and disabled fixture scenarios exercise the real reduction and adaptation path. proof: PRD-339 exposure fixture playtest, with source-SHA and adapter-tagged canvas screenshots on this PR
+- [ ] Settle and cold-boot tone assertions meet acceptance criteria 1–3 using PRD-341's tone gate. proof: exposure fixture playtest plus ten cold boots using `assert.tone`
+
+## Implementation decisions
+
+- 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
+  game source. That outranks this PRD's historical core filename below: implement in generated
+  `src/render/`, using ordinary Three node lifecycle, while retaining the same functional acceptance.
+  No new core exposure API or framework appearance defaults are admitted by this change.
+- Existing tonemapping, render loop and scene pass are reused. No default picture changes until
+  actual runtime evidence qualifies the path. A software adapter can prove correctness pixels,
+  never hardware performance or native parity.
+
+## Blocked on
+
+- Native desktop runtime proof (acceptance criterion 4) requires a working native host/display lane;
+  this cloud executor has no GPU, KVM or display socket permission. Native contract registration
+  and portable fixture work remain in scope; no native success is claimed from browser pixels.
+- Final tone qualification consumes PRD-341's gate on its separate PR; do not duplicate the metric.
+
 ## Acceptance criteria
 
-1. **The settle time is independent of the size of the change.** A playtest scenario cuts the camera
+- [ ] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
    between a bright pose and a dark pose eleven stops apart, and between two poses one stop apart,
    and asserts both reach within 0.25 stops of their steady value inside the same frame budget.
    *Red-green:* replace the `log2` interpolation in `auto-exposure.ts` with `mix(prev, cur, rate)` on
    raw luminance; the eleven-stop leg must fail with the measured settle time in the failure text
    while the one-stop leg still passes. Paste both.
-2. **A cold boot into a pose is repeatable.** Ten runs of the same scenario at the same pose report
+- [ ] **A cold boot into a pose is repeatable.** proof: `ten exposure fixture cold boots and PRD-341 assert.tone`. Ten runs of the same scenario at the same pose report
    p99 luminance within a 10% band (PRD-341's `assert.tone` supplies the number).
    *Red-green:* set `snapGain` to 0 so the cut response never engages; the run must go red on spread.
-3. **Off does not mean unmeasured.** With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
+- [ ] **Off does not mean unmeasured.** proof: `disabled exposure playtest`. With `enabled: false`, `TN_AUTO_EXPOSURE` still prints a
    measured luminance and `applied=false`, and the frame's exposure is exactly the game's constant.
    *Red-green:* early-return from `update()` when disabled; the marker assertion fails.
-4. **It runs on native.** A `--target desktop` playtest of the same scenario reports the same
+- [ ] **It runs on native.** proof: `desktop exposure playtest and verify-native-contracts.mjs`. A `--target desktop` playtest of the same scenario reports the same
    applied exposure within tolerance, and a native contract test covers the reduction chain without
    a display (see the native contract lane in `packages/runtime-native/AGENTS.md`).
    *Red-green:* the contract case is registered in all five places a new native target needs; a
    missing registration must fail `verify-native-contracts.mjs`, not skip.
-5. **The framework picks no number.** `packages/core/src/render/auto-exposure.ts` contains no
+- [ ] **The framework picks no number.** proof: `auto-exposure.spec.ts boundary assertion`. `packages/core/src/render/auto-exposure.ts` contains no
    default clamp, weight curve or rate that is not `1`, `0` or an identity. A grep in the spec
    enforces it.
 
