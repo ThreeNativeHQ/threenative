@@ -1538,3 +1538,92 @@ procedural needles and faceted untextured crags retain obvious fallback geometry
 The absent-licensed lane proves functionality, not visual parity. Final documentation
 link check PASS (**2,386 links**); no licensed bytes, ocean source, biomes.ts,
 otherBiome appearance branch or bake recipe is committed.
+### AC-5 Worlds round 4 — alpine/desert/tundra composition (2026-10-02)
+
+Complexity: 2 → LOW; risk override: none. Existing game appearance and three bake
+recipes only. Integration unchanged: Digit3/4/5 → shared scene → biome surfaces,
+licensed optional models or procedural fallback. Forest/coast code, recipes and
+licensed asset bytes are protected; no push/merge or purchases.
+
+1. Embed fewer 30–80 m elongated alpine crags, measure their lower vertex ring
+   against drawn terrain, share RockFace003 tint/projection with terrain, align
+   upward-face snow, darken existing licensed spruce/sapling art, dress talus feet.
+2. Replace candy stripes with thin warped low-contrast sediment beds and varnish;
+   move desert rocks to wall feet/cap rims, add wash-side scrub and dune ripples.
+   Diagnose tundra AO alpha contamination before retaining a fix; cluster cover
+   into mats/sedge/shrubs with connected bare gravel.
+3. Run example tsc, example Biome error gate, terrain Vitest, full licensed and
+   fallback scenarios on port 5297. Judge six full-resolution captures; per-view
+   CPU p50 ≤4 ms, protected forest/coast luminance p05/p50/p95 delta ≤0.5.
+
+Final licensed and absent-licensed results below. Final captures:
+`artifacts/playtest/worlds-r4-final/`.
+
+Baseline licensed and absent-licensed full scenarios PASS (42/42 each), terrain
+Vitest 69/69 PASS. No models recooked; forest/coast capture identity is now pinned
+in `artifacts/playtest/worlds-r4-baseline/` and its `fallback/` directory.
+Tundra cause confirmed by changing only the other-biome AO multiplier from scalar
+RGBA multiplication to `vec4(vec3(occlusion), 1)`: the full-resolution alpha-only
+capture loses the white/blue grass bases while all grass material/root settings
+remain identical. `worlds-r4-tundra-alpha/` scenario 4/4 PASS, zero diagnostics.
+The previously retained root-output darkening read black and was removed.
+
+Composition pass1: enhanced full licensed scenario 44/44 PASS, zero diagnostics;
+example tsc and example Biome error gate PASS. Alpine ridge/overview CPU p50
+2.3/2.0 ms, desert 1.3/1.2 ms, tundra 2.0/2.3 ms. Actual alpine lower-ring
+ray probes pass the burial and nonempty-observation assertions. The rock layer
+and scanned ribs now sample the same RockFace003 world projection and tint;
+scans are normalized to 24 m after elongation, then placed at 30–80 m.
+Licensed spruce/sapling models are retained, with a darker other-biome tint.
+Full-resolution pass1 review rejects completion: alpine ribs are better embedded
+but still isolated; desert thin beds are too faint and ripple normals form eddies;
+tundra cover mask leaves the defining foreground bare. Further composition tuning
+is required. AO-only blue cover pixels in the fixed ROI fell 5,856 → 0.
+
+Composition passes2/3: bounded three-world scenarios 12/12 PASS each. Rejected
+rotated desert texture projection, thin photo grass/flattened saplings in tundra,
+and a narrow alpine bake experiment that produced an artificial spiked wall.
+The original alpine heightfield recipe is retained; appearance comes from
+elongated, overlapping scans and their shared world-space RockFace003 material.
+The revised grounding probes the lowest peripheral vertex in each angular sector,
+so a buried narrow scan stem cannot qualify a floating wide collar. Final licensed
+alpine: 128 crag instances, 2,048 terrain-contact probes, maximum lower-ring
+clearance −0.5 m; initial burial is 82% of transformed height, with additional
+sinking where the measured downhill ring requires it. Talus fans now widen at
+crag feet. Licensed spruce/sapling tint and needle emission are subdued.
+
+Final licensed full scenario on port5297: **44/44 PASS**, zero diagnostics;
+example `pnpm exec tsc --noEmit` PASS, root example Biome error gate PASS (71 files),
+terrain Vitest **69/69 PASS**. CPU frame-window p50: alpine ridge/overview
+2.0/2.0 ms, desert mesa/overview 1.3/1.4 ms, tundra plain/overview 2.1/1.9 ms.
+All ten scenario CPU p50 assertions pass, including protected forest walking views.
+All nine protected forest/coast captures pass RGB-weighted luminance p05/p50/p95
+comparison against the untouched merged baseline: maximum absolute delta **0.2864**
+on the 0–255 scale (limit0.5). No licensed assets were recooked or modified.
+
+Full-resolution licensed review (1920×1080): alpine **5.5/10**, desert **6/10**,
+tundra **5.5/10**. Alpine now has embedded fall-line ribs and contiguous lower
+faces with upward-facing textured snow, but broad heightfield slopes remain smooth
+and scan silhouettes remain identifiable. Desert has subdued irregular thin beds,
+wall varnish, foot/rim rocks, dry clustered cover, dune ripples and a dry tributary;
+distant sand tiling and rounded mesa outlines remain. Tundra has connected bare
+gravel between sedge/lichen/shrub patches and no white/blue blade bases; dark
+broadleaf cutouts and sparse distant cover remain. These are improvements, not
+AAA acceptance; AC-5 stays open.
+
+Final absent-licensed full scenario: **44/44 PASS**, zero diagnostics. CPU p50:
+alpine ridge/overview 1.5/1.4 ms, desert mesa/overview 1.2/1.2 ms, tundra
+plain/overview 1.9/1.8 ms. All ten per-view CPU assertions are ≤4 ms; fallback
+crag contact also reports 128 instances, 2,048 probes, maximum clearance −0.5 m.
+The nine protected absent-licensed forest/coast captures pass all three luminance
+quantiles, maximum absolute delta **0.0532** (limit0.5). Both final runs use
+hardware NVIDIA Turing WebGPU and 1920×1080 captures. Full-resolution fallback
+grades: alpine 3/10 (faceted light-grey ribs), desert 5/10 (orange faceted talus,
+dark procedural grass), tundra 5/10 (black faceted stones, clustered sedge without
+white roots). Fallback qualifies function; it does not qualify licensed art parity.
+
+Delivery: captures and harness console output remain local at
+`artifacts/playtest/worlds-r4-final/` and `fallback/`; licensed packs restored with
+no hidden leftovers, no purchases or asset-byte changes. Implementation commits
+`ca278ae0e`, `658b8a0ba`, `b3c158951` plus the final notes commit are local only;
+no push/merge. Worktree retained for the unmerged branch and unfinished AC-5.

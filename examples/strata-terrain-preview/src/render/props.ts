@@ -276,6 +276,7 @@ export function buildPropVariants(
       }
       const fallback = boulder(VARIANTS.seed ^ variant);
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
+        if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
         const size = fallback.boundingBox?.getSize(new Vector3());
         const scale =
@@ -320,6 +321,8 @@ export interface IPropInstance {
   geometry: BufferGeometry;
   grounding: boolean;
   clearance: number | null;
+  cragBaseClearance?: number;
+  cragRingSamples?: number;
   /** Every draw of this placement, so a transform write reaches all of them. */
   parts: { mesh: InstancedMesh; index: number }[];
 }
@@ -381,16 +384,69 @@ function preparePose(
         (placement.id.endsWith(":outcrop")
           ? 0.35
           : placement.asset === "mountain"
-            ? 0.7
+            ? 0.82
             : crag
               ? 0.55
               : BOULDER_BURIAL) * height;
     }
   }
+  let cragBaseClearance: number | undefined;
+  let cragRingSamples: number | undefined;
+  if (
+    grounding &&
+    !transform &&
+    placement.asset === "mountain" &&
+    !placement.id.endsWith(":outcrop")
+  ) {
+    // Lowest peripheral vertex per angular sector: a narrow buried stem must not support
+    // a wide scan collar hanging above the downhill ground.
+    const box = geometry.boundingBox;
+    if (!box) throw new Error(`Crag '${placement.id}' has no bounds`);
+    model.updateMatrix();
+    const centre = box.getCenter(new Vector3()).applyMatrix4(model.matrix);
+    const sectors = Array.from({ length: 16 }, () => ({ reach: 0, vertices: [] as Vector3[] }));
+    const vertices = geometry.getAttribute("position");
+    for (let i = 0; i < vertices.count; i++) {
+      const point = new Vector3().fromBufferAttribute(vertices, i).applyMatrix4(model.matrix);
+      const dx = point.x - centre.x;
+      const dz = point.z - centre.z;
+      const bin = Math.min(15, Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * 16));
+      const sector = sectors[bin];
+      if (!sector) continue;
+      sector.reach = Math.max(sector.reach, Math.hypot(dx, dz));
+      sector.vertices.push(point);
+    }
+    let highestGap = Number.NEGATIVE_INFINITY;
+    cragRingSamples = 0;
+    for (const sector of sectors) {
+      let lowest: Vector3 | undefined;
+      for (const point of sector.vertices)
+        if (
+          Math.hypot(point.x - centre.x, point.z - centre.z) >= sector.reach * 0.75 &&
+          (!lowest || point.y < lowest.y)
+        )
+          lowest = point;
+      if (!lowest) continue;
+      const contact = groundAt(placement, lowest.toArray()).height;
+      if (contact === null) throw new Error(`Missing ground under crag ring '${placement.id}'`);
+      highestGap = Math.max(highestGap, lowest.y - contact);
+      cragRingSamples++;
+    }
+    if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);
+    const sink = Math.max(0, highestGap + 0.5);
+    model.position.y -= sink;
+    cragBaseClearance = highestGap - sink;
+  }
   model.updateMatrix();
   if (!new Float32Array(model.matrix.elements).every(Number.isFinite))
     throw new Error(`Transform exceeds the renderer range for '${placement.id}'`);
-  return { matrix: model.matrix.clone(), grounding, clearance: snap.clearance };
+  return {
+    matrix: model.matrix.clone(),
+    grounding,
+    clearance: snap.clearance,
+    cragBaseClearance,
+    cragRingSamples,
+  };
 }
 export function preparePropTransform(
   instance: IPropInstance,
@@ -419,6 +475,8 @@ export function writePropTransform(
   }
   instance.grounding = prepared.grounding;
   instance.clearance = prepared.clearance;
+  instance.cragBaseClearance = prepared.cragBaseClearance;
+  instance.cragRingSamples = prepared.cragRingSamples;
 }
 export function readPropTransform(instance: IPropInstance): IPlacementOverride {
   const matrix = instance.pose;
@@ -583,6 +641,8 @@ export function createProps(
     entries.push({
       instance: {
         clearance: pose.clearance,
+        cragBaseClearance: pose.cragBaseClearance,
+        cragRingSamples: pose.cragRingSamples,
         grounding: pose.grounding,
         index: 0,
         // Filled in below once this group's meshes exist; the trunk draw is the one the editor

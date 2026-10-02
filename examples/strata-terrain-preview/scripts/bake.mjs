@@ -374,11 +374,11 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   })
   .terrace({
     id: "benches",
-    step: 8,
-    softness: 0.13,
-    strength: 0.96,
+    step: 13,
+    softness: 0.42,
+    strength: 0.45,
     offset: 2,
-    mask: Mask.height(18, 1e9, 6),
+    mask: Mask.and(Mask.height(18, 1e9, 6), Mask.noise(66, 0.62, 97, 0.12)),
   })
   .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 74, falloff: 0.15 })
   .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 90, falloff: 0.15 })
@@ -386,6 +386,16 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .erode({ id: "aprons", method: "thermal", talus: 57, iterations: 5, rate: 0.12 })
   .smooth({ id: "cliff-settle", iterations: 1, strength: 0.12 })
   .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
+  .stamp({
+    id: "wind-roll",
+    at: [80, 40],
+    radius: [100, 18],
+    amplitude: 2,
+    shape: "ridge",
+    rotation: -32,
+    roughness: 0.04,
+    mask: Mask.height(-1e9, 22, 4),
+  })
   .stamp({
     id: "dune-west",
     at: [80, 95],
@@ -434,6 +444,22 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     width: 12,
     depth: 3,
     shoulder: 12,
+    water: false,
+    material: "sand",
+    enforceDownhill: true,
+  })
+  .river({
+    id: "wash-tributary",
+    followTerrain: true,
+    points: [
+      [160, null, 45],
+      [95, null, 30],
+      [55, null, 10],
+      [20, null, -5],
+    ],
+    width: 4,
+    depth: 1.2,
+    shoulder: 6,
     water: false,
     material: "sand",
     enforceDownhill: true,

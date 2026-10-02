@@ -9,6 +9,8 @@ import {
   type Material,
   type Mesh,
   type MeshStandardMaterial,
+  RepeatWrapping,
+  type Texture,
   Vector3,
 } from "three";
 import {
@@ -37,8 +39,15 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
-import { WORLD_ROCKS } from "../world/terrainAssets.js";
-import type { WorldName } from "./biomes.js";
+import { GROUND_MAPS, ROCKFACE_MAPS, WORLD_ROCKS } from "../world/terrainAssets.js";
+import {
+  BIOMES,
+  type WorldName,
+  alpineRockAlbedo,
+  alpineRockColor,
+  alpineSnowCover,
+  desertRockColor,
+} from "./biomes.js";
 import { lightNeedles } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
 
@@ -90,6 +99,7 @@ function surface(
   source: MeshStandardMaterial,
   asset: string,
   world: WorldName,
+  snowMap?: Texture,
 ): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
@@ -110,7 +120,7 @@ function surface(
     const tint =
       cutout && canopy
         ? otherBiome
-          ? ([0.34, 0.95, 0.18] as const)
+          ? ([0.3, 0.42, 0.32] as const)
           : ([0.6, 0.78, 0.34] as const)
         : cutout && asset !== "poppy"
           ? otherBiome
@@ -143,13 +153,9 @@ function surface(
             ? vec3(0.94, 0.98, 1.02)
             : vec3(0.7, 0.78, 0.61),
       );
-    if (world === "desert" && stone) {
-      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const strata = sin(
-        positionWorld.y.mul(0.8).add(mx_noise_float(positionWorld.mul(0.04)).mul(0.4)),
-      );
-      material.colorNode = vec3(1.65, 0.86, 0.43).mul(grain).mul(strata.mul(0.16).add(1));
-    }
+    if (world === "desert" && stone) material.colorNode = desertRockColor(sampled.rgb);
+    if (world === "alpine" && stone)
+      material.colorNode = alpineRockColor(alpineRockAlbedo(source.map));
     if (otherBiome && cutout && !canopy)
       material.colorNode = sampled.rgb.mul(
         world === "desert"
@@ -157,6 +163,10 @@ function surface(
           : world === "tundra"
             ? vec3(0.64, 0.67, 0.42)
             : vec3(0.72, 0.8, 0.55),
+      );
+    if (world === "desert" && asset === "grass")
+      material.colorNode = vec3(1.28, 0.94, 0.52).mul(
+        dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722)),
       );
     if (world === "tundra" && cutout && !canopy) {
       const root = smoothstep(0.015, 0.14, positionGeometry.y);
@@ -167,8 +177,13 @@ function surface(
       const base = attribute<"float">("groundBlend", "float");
       const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
       const moss = base
-        .mul(0.9)
-        .add(normalWorldGeometry.y.max(0).mul(growth).mul(0.38))
+        .mul(world === "alpine" ? 0.12 : 0.9)
+        .add(
+          normalWorldGeometry.y
+            .max(0)
+            .mul(growth)
+            .mul(world === "alpine" ? 0 : 0.38),
+        )
         .clamp(0, 0.95);
       material.colorNode = mix(
         material.colorNode,
@@ -181,11 +196,15 @@ function surface(
       );
       material.aoNode = mix(1, 0.65, base);
       if (world === "alpine") {
-        const drift = mx_noise_float(positionWorld.mul(0.06));
-        const snow = smoothstep(70, 110, positionWorld.y.add(drift.mul(18))).mul(
-          smoothstep(0.7, 0.92, normalWorldGeometry.y),
+        // The same upward-face mask and snow tint as the heightfield, across every mesh seam.
+        const snow = smoothstep(0.12, 0.82, alpineSnowCover());
+        material.colorNode = mix(
+          material.colorNode,
+          (snowMap ? texture(snowMap, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9)).mul(
+            vec3(...BIOMES.alpine.snowTint),
+          ),
+          snow,
         );
-        material.colorNode = mix(material.colorNode, vec3(0.78, 0.82, 0.87), snow);
       }
     }
     if (cutout) {
@@ -225,6 +244,8 @@ function surface(
       if (canopy) {
         lightNeedles(material, material.aoNode as Node<"float">);
         if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
+        if (world === "alpine" && material.emissiveNode)
+          material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
       } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
     }
   }
@@ -261,7 +282,8 @@ export async function loadPack(
         ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
           one.asset,
         )) ||
-      (world === "tundra" && ["sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
+      (world === "tundra" &&
+        ["scrub", "sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
       (world === "desert" &&
         ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
   );
@@ -272,6 +294,8 @@ export async function loadPack(
         path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
       })),
     );
+  if (world === "tundra")
+    selected.push({ asset: "bush", variant: 0, path: "scrub/0", metres: 0.45 });
   if (world === "alpine" || world === "desert")
     selected.push(
       ...WORLD_ROCKS.filter((one) =>
@@ -281,6 +305,19 @@ export async function loadPack(
         path: one.path.replace(/^temperate\//, "").replace(/\.glb$/, ""),
       })),
     );
+  const rockface =
+    world === "alpine" && assets
+      ? await Promise.all(
+          [ROCKFACE_MAPS.diffuse, ROCKFACE_MAPS.normal, GROUND_MAPS.snow.diffuse].map(
+            (path, index) =>
+              path
+                ? assets
+                    .texture(path, { data: index === 1, wrap: RepeatWrapping })
+                    .catch(() => undefined)
+                : undefined,
+          ),
+        )
+      : [];
   const loaded = await Promise.all(
     selected.map(async (one) => {
       if (!assets) return undefined;
@@ -306,7 +343,12 @@ export async function loadPack(
     root.traverse((object) => {
       const mesh = object as Mesh;
       if (!mesh.isMesh || Array.isArray(mesh.material)) return;
-      const source = mesh.material as MeshStandardMaterial;
+      let source = mesh.material as MeshStandardMaterial;
+      if (world === "alpine" && stone && rockface[0]) {
+        source = source.clone();
+        source.map = rockface[0];
+        source.normalMap = rockface[1] ?? null;
+      }
       if (!source.map) return;
       // One whole-model scale/base for all sections: scaling each part separately detached crowns.
       const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
@@ -314,7 +356,13 @@ export async function loadPack(
       const centredStone = stone && (world === "forest" || world === "coastal");
       geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
       geometry.scale(factor, factor, factor);
-      if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 0.5, 1.35);
+      if (world === "alpine" && one.asset === "mountain") {
+        geometry.scale(0.65, 1.45, 1.8);
+        const longest = Math.max(size.x * 0.65, size.y * 1.45, size.z * 1.8) * factor;
+        geometry.scale(24 / longest, 24 / longest, 24 / longest);
+      }
+      if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 1, 1.35);
+      if (world === "tundra" && one.asset === "bush") geometry.scale(0.18, 1, 0.18);
       if (world === "tundra" && one.asset === "scrub") geometry.scale(2.8, 1.2, 2.8);
       if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
       if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
@@ -350,7 +398,8 @@ export async function loadPack(
         );
         geometry.setAttribute("groundBlend", new BufferAttribute(blend, 1));
       }
-      const material = surface(source, one.asset, world);
+      const material = surface(source, one.asset, world, rockface[2]);
+      if (source !== mesh.material) source.dispose();
       const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
       built.push({ geometry, material });
       entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });

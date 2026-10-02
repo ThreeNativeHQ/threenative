@@ -54,7 +54,7 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
   if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
   if (data.world === "tundra")
-    return clamp01((30 - slope) / 22) * (0.25 + 0.4 * forestWeight(x * 1.4, z * 1.2));
+    return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
   return clamp01((42 - slope) / 20) * clamp01((66 - height) / 28);
 }
 
@@ -176,6 +176,21 @@ export function scatterProps(
       )
         return;
     }
+    if (alpine && asset === "mountain" && (Math.abs(x) > half - 48 || Math.abs(z) > half - 48))
+      return;
+    if (desert && ["boulder", "scree", "volcanic", "reveal"].includes(asset)) {
+      const height = clampedHeight(data, x, z);
+      const slope = slopeDegrees(data, x, z);
+      const neighbours = [
+        [-18, 0],
+        [18, 0],
+        [0, -18],
+        [0, 18],
+      ].map(([dx, dz]) => clampedHeight(data, x + (dx ?? 0), z + (dz ?? 0)));
+      const foot = height < 30 && slope < 35 && Math.max(...neighbours) > height + 12;
+      const rim = height > 40 && slope < 24 && Math.min(...neighbours) < height - 12;
+      if (!foot && !rim) return;
+    }
     const index = counts[asset] ?? 0;
     const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
     const bedded = temperate && ["boulder", "riverrock", "scree"].includes(asset);
@@ -260,29 +275,42 @@ export function scatterProps(
     for (let i = 0; i < (temperate ? 2 : 0); i++)
       put("fern", x + (random() - 0.5) * 7, z + (random() - 0.5) * 7, 0.7 + random() * 0.6);
   }
-  // Overlapping scans dress the heightfield rather than leaving isolated lawn boulders.
-  if (alpine || desert) {
-    for (let z = -half + 12; z < half - 12; z += 9)
-      for (let x = -half + 12; x < half - 12; x += 9) {
+  // Ribs overlap along fall lines; the ground remains visible as gullies and snow shelves.
+  if (alpine) {
+    for (let z = -half + 48; z < half - 48; z += 24)
+      for (let x = -half + 48; x < half - 48; x += 24) {
+        const sx = x + (random() - 0.5) * 12;
+        const sz = z + (random() - 0.5) * 12;
+        if (slopeDegrees(data, sx, sz) < 32 || clampedHeight(data, sx, sz) < 48 || random() > 0.82)
+          continue;
+        const metres = 30 + random() * 50;
+        put("mountain", sx, sz, metres / 24);
+        const fall = data.field.normalAt(sx, sz);
+        const length = Math.hypot(fall.x, fall.z) || 1;
+        const overlapX = sx + (fall.x / length) * metres * 0.28;
+        const overlapZ = sz + (fall.z / length) * metres * 0.28;
+        if (
+          clampedHeight(data, overlapX, overlapZ) > 42 &&
+          slopeDegrees(data, overlapX, overlapZ) > 28
+        )
+          put("mountain", overlapX, overlapZ, Math.max(30, metres * 0.85) / 24);
+        // A broad toe of small angular debris, widening downhill from each exposed wall.
+        for (let k = 0; k < 28; k++) {
+          const down = 16 + random() * 24;
+          const across = (random() - 0.5) * down;
+          const tx = sx + (fall.x * down - fall.z * across) / length;
+          const tz = sz + (fall.z * down + fall.x * across) / length;
+          if (slopeDegrees(data, tx, tz) < 38) put("scree", tx, tz, 0.08 + random() * 0.28);
+        }
+      }
+  }
+  if (desert) {
+    for (let z = -half + 18; z < half - 18; z += 9)
+      for (let x = -half + 18; x < half - 18; x += 9) {
         const sx = x + (random() - 0.5) * 7;
         const sz = z + (random() - 0.5) * 7;
-        const slope = slopeDegrees(data, sx, sz);
-        const height = clampedHeight(data, sx, sz);
-        if (
-          slope > 42 &&
-          (alpine ? height > 48 : height < 25 || height > 65) &&
-          random() < (alpine ? 0.85 : 0.6)
-        )
-          put(
-            alpine ? "mountain" : "volcanic",
-            sx,
-            sz,
-            alpine ? (18 + random() * 22) / 24 : 0.65 + random() * 0.65,
-          );
-        else if (desert && height > 35 && slope > 8 && slope < 35 && random() < 0.55)
-          put("reveal", sx, sz, 0.6 + random() * 0.7);
-        else if (desert && slope > 18 && slope < 40 && random() < 0.22)
-          put("volcanic", sx, sz, 0.4 + random() * 0.5);
+        if (random() < 0.7) put("volcanic", sx, sz, 0.24 + random() * 0.48);
+        if (random() < 0.5) put("reveal", sx, sz, 0.4 + random() * 0.6);
       }
   }
   // Rock clusters follow exposed slopes rather than evenly spaced lawn ornaments.
@@ -348,7 +376,12 @@ export function scatterProps(
       return;
     const drift = temperate
       ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
-      : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
+      : tundra
+        ? clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3) *
+          clamp01((forestWeight(x * 10.1, z * 8.7) - 0.2) / 0.5)
+        : desert
+          ? 0.08 + 0.6 * clamp01((forestWeight(x * 6.3, z * 5.7) - 0.5) / 0.3)
+          : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
     if (random() > density * drift) return;
     put(
       "grass",
@@ -359,40 +392,51 @@ export function scatterProps(
         : temperate
           ? 0.8
           : tundra
-            ? 0.25
-            : 0.55) +
+            ? 0.45
+            : desert
+              ? 0.95
+              : 0.55) +
         random() * (temperate ? 0.65 : tundra ? 0.3 : 0.5),
     );
-    if (!desert && random() < (tundra ? 0.85 : 0.3))
+    if (desert) {
+      for (let tuft = 0; tuft < 3; tuft++)
+        put(
+          "grass",
+          x + (random() - 0.5) * 1.4,
+          z + (random() - 0.5) * 1.4,
+          0.65 + random() * 0.55,
+        );
+    }
+    if (random() < (desert ? 0.65 : tundra ? 0.95 : 0.3))
       put(
         "scrub",
         x + (random() - 0.5),
         z + (random() - 0.5),
-        (tundra ? 0.25 : 0.9) + random() * (tundra ? 0.3 : 0.6),
+        (desert ? 0.8 : tundra ? 0.55 : 0.9) + random() * (tundra ? 0.5 : 0.6),
       );
-    if (tundra && random() < 0.055)
-      put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.28 + random() * 0.25);
+    if (tundra && random() < 0.02)
+      put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.6 + random() * 0.45);
   };
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
   for (
     let z = -half + 3;
     z < half - 3;
-    z += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 2.4 : 3.5
+    z += temperate ? SCATTER.grassCell : desert ? 7 : tundra ? 1.8 : 3.5
   )
     for (
       let x = -half + 3;
       x < half - 3;
-      x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 2.4 : 3.5
+      x += temperate ? SCATTER.grassCell : desert ? 7 : tundra ? 1.8 : 3.5
     )
       cover(
-        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 2.2 : 3),
-        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 2.2 : 3),
+        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 6 : tundra ? 1.7 : 3),
+        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 6 : tundra ? 1.7 : 3),
         0.7,
       );
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
-    const eyeStep = temperate ? 0.34 : desert ? 3 : tundra ? 0.55 : 0.6;
+    const eyeStep = temperate ? 0.34 : desert ? 1.8 : tundra ? 0.5 : 0.6;
     const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
     for (let dz = -eyeReach; dz < eyeReach; dz += eyeStep)
       for (let dx = -eyeReach; dx < eyeReach; dx += eyeStep) {
