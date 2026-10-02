@@ -35,13 +35,14 @@ const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
 /** How many variants of each prop the starter builds, and the seed they are built from. */
 export const VARIANTS = {
   boulder: 3,
-  bush: 1,
-  fern: 2,
-  grass: 4,
-  poppy: 4,
-  sapling: 3,
-  scrub: 3,
+  bush: 4,
+  fern: 6,
+  grass: 8,
+  poppy: 8,
+  sapling: 4,
+  scrub: 8,
   spruce: 5,
+  litter: 3,
   seed: 0x9e3779b9,
 } as const;
 
@@ -68,6 +69,7 @@ const DRAW_REACH: Record<string, number> = {
   poppy: 65,
   sapling: 160,
   bush: 120,
+  litter: 26,
   boulder: 170,
   riverrock: 100,
   scree: 190,
@@ -76,7 +78,7 @@ const DRAW_REACH: Record<string, number> = {
   volcanic: 400,
   reveal: 260,
 };
-const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy"]);
+const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
@@ -263,6 +265,8 @@ export function buildPropVariants(
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);
   }
+  for (let i = 0; i < VARIANTS.litter; i += 1)
+    variants.set(`litter:${i}`, prepared?.get(`litter:${i}`) ?? []);
   for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
     for (
       let variant = 0;
@@ -508,8 +512,9 @@ export function variantFor(placement: IPlacement, asset: string): number {
     hash ^= placement.id.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  // Full trees dominate; the two half-crown forms are occasional stand variation.
-  return asset === "spruce" ? ([0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4][hash % 11] ?? 0) : hash % count;
+  // Full trees dominate; the half-crown forms are occasional stand variation, and the mix leans on
+  // the two Kite pines evenly — pack.ts reads the variant through `variant % 2`.
+  return asset === "spruce" ? ([0, 1, 0, 1, 2, 0, 1, 0, 1, 3, 4][hash % 11] ?? 0) : hash % count;
 }
 
 export interface IPropMaterials {
