@@ -177,6 +177,8 @@ export interface IRendererLike {
   renderOverlay(scene: Object3D, camera: Camera): void;
   /** Removes the output pipeline; an expected input only clears that still-current graph. */
   clearOutputNode?(expectedNode?: unknown): void;
+  /** Internal ownership query: superseded chains stop automatic observation without disposal. */
+  isOutputNodeCurrent?(node: unknown): boolean;
   /** Creates the core-owned chain seam without making generated render source import the package. */
   createRenderChain?: (options: Omit<IRenderChainOptions, "renderer">) => RenderChain;
   /** Feeds automatic render-chain tiers the completed frame-budget window. */
@@ -781,6 +783,7 @@ function wrapRenderer(
       outputPipeline = nextPipeline;
       outputInput = node;
     },
+    isOutputNodeCurrent: (node) => outputPipeline !== undefined && node === outputInput,
     clearOutputNode: (expectedNode) => {
       if (expectedNode !== undefined && expectedNode !== outputInput) return;
       outputPipeline?.dispose();

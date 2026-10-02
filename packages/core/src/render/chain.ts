@@ -53,7 +53,8 @@ export interface IRenderChainVelocityResult {
 export interface IRenderChainRenderer {
   readonly kind: RendererKind;
   readonly raw: unknown;
-  clearOutputNode?(): void;
+  clearOutputNode?(expectedNode?: unknown): void;
+  isOutputNodeCurrent?(node: unknown): boolean;
   /** Internal renderer seam used to turn on core-owned previous-frame bookkeeping for active temporal stages. */
   setRenderChainVelocityEnabled?(enabled: boolean): void;
   /** Install a graph and identify the authored world pass that follows the rendered scene root. */
@@ -275,6 +276,7 @@ export class RenderChain {
   #ownedVelocityPass: IVelocityRenderPass | undefined = undefined;
   #ownedVelocityMrt: MRTNode | null | undefined = undefined;
   #disposed = false;
+  #installedNode: unknown;
   #applied: IRenderChainApplied;
 
   constructor(renderer: IRenderChainRenderer, options?: Omit<IRenderChainOptions, "renderer">);
@@ -422,6 +424,7 @@ export class RenderChain {
     if (stages.length > 0) {
       try {
         this.#renderer.setOutputNode(node, this.#worldPass ?? this.#requestVelocity.pass);
+        this.#installedNode = node;
       } catch (error) {
         const reason = `install:${errorMessage(error)}`;
         dropped.push(...stages.map((name) => ({ name, reason })));
@@ -429,10 +432,13 @@ export class RenderChain {
         contributions.length = 0;
         for (const definition of builtStageDefinitions) definition.dispose?.();
         builtStageDefinitions.length = 0;
-        this.#renderer.clearOutputNode?.();
+        // A renderer may throw after partially installing this attempt. Clear that identity,
+        // then the prior owned graph, without touching an unrelated replacement.
+        this.#renderer.clearOutputNode?.(node);
+        this.#clearOwnedOutput();
       }
     } else {
-      this.#renderer.clearOutputNode?.();
+      this.#clearOwnedOutput();
     }
 
     const activeVelocity = stages.some((name) =>
@@ -467,6 +473,7 @@ export class RenderChain {
   /** Samples the active temporal stage's completed velocity result after rendering. */
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
+    if (this.#renderer.isOutputNodeCurrent?.(this.#installedNode) === false) return this.#applied;
     const requiresMeasurement = this.#applied.stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
@@ -492,7 +499,8 @@ export class RenderChain {
   /** Feed the chain the same render-window evidence used by the frame budget. */
   observeFrameBudget(window: IRenderChainBudgetWindow): RenderChainTier {
     if (this.#disposed) throw new Error("RenderChain.observeFrameBudget called after dispose().");
-    if (!this.#automatic) return this.#tier;
+    if (!this.#automatic || this.#renderer.isOutputNodeCurrent?.(this.#installedNode) === false)
+      return this.#tier;
     const renderP95 = window.phases.render?.p95;
     if (typeof renderP95 !== "number" || !Number.isFinite(renderP95) || renderP95 < 0) {
       throw new Error("RenderChain frame budget render.p95 must be a finite non-negative number.");
@@ -530,8 +538,14 @@ export class RenderChain {
     this.#disposeActiveStages();
     this.#restoreOwnedVelocityOutput();
     this.#renderer.setRenderChainVelocityEnabled?.(false);
-    this.#renderer.clearOutputNode?.();
+    this.#clearOwnedOutput();
     forgetReport(this.#renderer);
+  }
+
+  #clearOwnedOutput(): void {
+    if (this.#installedNode === undefined) return;
+    this.#renderer.clearOutputNode?.(this.#installedNode);
+    this.#installedNode = undefined;
   }
 
   #setMeasurement(measurement: IRenderChainVelocityMeasurement | undefined, emit: boolean): void {

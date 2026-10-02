@@ -119,6 +119,17 @@ it("disposes a base-colour PassNode without mistaking its borrowed texture for a
 it.each(["texture", "rtt"])("leaves caller-owned %s resources alive", (kind) => {
   const supplied = kind === "rtt" ? rtt(vec4(0.2, 0.3, 0.4, 1)) : texture(new Texture());
   const release = vi.spyOn(supplied.value, "dispose");
+  const borrowedRtt =
+    Reflect.get(supplied, "isRTTNode") === true
+      ? (supplied as unknown as {
+          renderTarget: { dispose(): void };
+          _quadMesh: { material: { dispose(): void } };
+        })
+      : undefined;
+  const targetRelease =
+    borrowedRtt === undefined ? undefined : vi.spyOn(borrowedRtt.renderTarget, "dispose");
+  const materialRelease =
+    borrowedRtt === undefined ? undefined : vi.spyOn(borrowedRtt._quadMesh.material, "dispose");
   const applied = new WorldEnvironment({ bloomEnabled: false, screenSpaceAA: "disabled" }).apply(
     { kind: "webgpu", raw: {}, setOutputNode: () => {}, clearOutputNode: () => {} },
     new Scene(),
@@ -128,5 +139,9 @@ it.each(["texture", "rtt"])("leaves caller-owned %s resources alive", (kind) => 
   applied.dispose?.();
   applied.dispose?.();
   expect(release).not.toHaveBeenCalled();
+  if (targetRelease !== undefined) expect(targetRelease).not.toHaveBeenCalled();
+  if (materialRelease !== undefined) expect(materialRelease).not.toHaveBeenCalled();
+  borrowedRtt?.renderTarget.dispose();
+  borrowedRtt?._quadMesh.material.dispose();
   supplied.value.dispose();
 });

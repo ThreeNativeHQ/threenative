@@ -932,6 +932,88 @@ describe("createRenderer", () => {
     }
   });
 
+  it("keeps a direct replacement when an older render chain is disposed", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const rawRender = vi.fn();
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: rawRender,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const previous = renderer.createRenderChain?.({
+        input: {},
+        request: { stages: ["bloom"], tier: "high" },
+        stages: [{ name: "bloom", build: (input) => input }],
+      });
+      expect(previous?.applied.stages).toEqual(["bloom"]);
+      const direct = {};
+      renderer.setOutputNode(direct);
+      previous?.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+      expect(rawRender).not.toHaveBeenCalled();
+      renderer.clearOutputNode?.(direct);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("does not resurrect a superseded automatic chain during budget observation", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: () => {},
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const build = vi.fn((input) => input);
+      const previous = renderer.createRenderChain?.({
+        input: {},
+        request: { stages: ["bloom"], tier: "auto" },
+        stages: [{ name: "bloom", build }],
+      });
+      renderer.setOutputNode({});
+      for (let index = 0; index < 4; index += 1) {
+        renderer.observeRenderChainBudget?.({ phases: { render: { p95: 40 } } });
+        renderer.observeRenderChainFrame?.();
+      }
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(previous?.disposed).toBe(false);
+      previous?.dispose();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("replaces and disposes only the framework-owned output pipeline", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
