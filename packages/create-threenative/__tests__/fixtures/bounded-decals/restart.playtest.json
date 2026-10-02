@@ -77,6 +77,30 @@
           "height": 540,
           "minNonblankPixelRatio": 0.15
         }
+      },
+      {
+        "region": {
+          "x": 270,
+          "y": 185,
+          "width": 170,
+          "height": 125,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
+      },
+      {
+        "region": {
+          "x": 550,
+          "y": 190,
+          "width": 95,
+          "height": 90,
+          "minNonblankPixelRatio": 0.9,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "maxDarkPixelRatio": 0.2
+        }
       }
     ]
   }

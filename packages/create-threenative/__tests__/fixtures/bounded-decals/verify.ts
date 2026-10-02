@@ -24,13 +24,14 @@ if (!process.argv.includes("--build-only")) {
     "bin/vite.js",
   );
   const results = [];
-  for (const name of ["static", "motion", "teardown", "restart"]) {
+  for (const name of ["static", "motion", "teardown", "restart", "hidden-decals"]) {
+    const hidden = name === "hidden-decals";
     const directory = join(artifacts, name);
     const report = await runStandalonePlaytest({
       artifactDirectory: directory,
       projectPath: fixture,
-      scenarioPath: join(fixture, `${name}.playtest.json`),
-      url: "http://127.0.0.1:4173/",
+      scenarioPath: join(fixture, `${hidden ? "static" : name}.playtest.json`),
+      url: `http://127.0.0.1:4173/${hidden ? "?hideDecals=1" : ""}`,
       port: 0,
       server: {
         command: `${JSON.stringify(process.execPath)} ${JSON.stringify(vite)} preview --host 127.0.0.1 --port $PORT --strictPort --outDir ${JSON.stringify(site)}`,
@@ -63,8 +64,7 @@ if (!process.argv.includes("--build-only")) {
       (diagnostic) =>
         diagnostic.severity === "error" || diagnostic.code === "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
     );
-    const qualified =
-      report.pass &&
+    const observed =
       report.capture?.rendererKind === "webgpu" &&
       Object.values(report.capture.adapter).some((value) => value.length > 0) &&
       disallowedDiagnostics.length === 0 &&
@@ -81,25 +81,44 @@ if (!process.argv.includes("--build-only")) {
       measurement.maxDrawCalls > 0 &&
       Number.isFinite(measurement.motionError) &&
       measurement.motionError <= 1e-6;
+    const failedAssertions = report.assertionResults?.filter((assertion) => !assertion.pass);
+    const negativeControlPassed =
+      hidden &&
+      !report.pass &&
+      report.capture?.rendererKind === "webgpu" &&
+      Object.values(report.capture.adapter).some((value) => value.length > 0) &&
+      screenshotPresent &&
+      // Require both receiver interiors to lose their mark pixels while every counter,
+      // LOD, runtime and whole-frame assertion still passes. A crash is not a control.
+      JSON.stringify(failedAssertions?.map(({ id }) => id).sort()) ===
+        JSON.stringify(["visual.1.region.darkPixels", "visual.2.region.darkPixels"]) &&
+      report.diagnostics.length === 2 &&
+      report.diagnostics.every(({ code }) => code === "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED");
     results.push({
       name,
       sourceSha,
-      qualified,
+      qualified: !hidden && report.pass && observed,
+      ...(hidden ? { negativeControlPassed } : {}),
       measurement,
       capture: report.capture,
       screenshot: screenshotPresent ? screenshot : null,
       diagnostics: report.diagnostics,
+      visual: report.observations?.visual,
     });
     await writeFile(
       join(artifacts, "summary.json"),
       `${JSON.stringify({ sourceSha, correctnessOnly: true, results }, null, 2)}\n`,
     );
   }
-  if (results.some((result) => !result.qualified))
+  if (
+    results.some((result) =>
+      result.name === "hidden-decals" ? !result.negativeControlPassed : !result.qualified,
+    )
+  )
     throw new Error(
       "VQ11 runtime qualification failed; retained frames are diagnostic only. Inspect artifacts/vq11-decals/summary.json.",
     );
   console.info(
-    `VQ11_DECAL_PROOF ${JSON.stringify({ sourceSha, captures: results.length, correctnessOnly: true })}`,
+    `VQ11_DECAL_PROOF ${JSON.stringify({ sourceSha, captures: results.length, hiddenDecalsRejected: true, correctnessOnly: true })}`,
   );
 }

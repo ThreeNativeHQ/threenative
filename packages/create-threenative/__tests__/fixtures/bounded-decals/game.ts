@@ -16,7 +16,7 @@ import { playtest } from "../../../../core/dist/playtest.js";
 import { DecalField, bulletHoleTexture } from "../../../templates/shooter/src/render/decals.js";
 
 /** Portable, opt-in runtime proof. Neither the shooter entry nor its authored look is changed. */
-export function createDecalFixture() {
+export function createDecalFixture(hideDecals = false) {
   let generation = 0;
   class DecalRoom extends Scene {
     #source: Object3D | undefined;
@@ -88,6 +88,9 @@ export function createDecalFixture() {
         }
         const slot = receiver.children.at(-1);
         if (!(slot instanceof Mesh)) throw new Error("Decal fixture has no projected slot.");
+        // Negative control: preserve real picking, projection, allocations and observations,
+        // but suppress the material's actual draw. The pixel gate must reject this scene.
+        slot.material.visible = !hideDecals;
         created += 1;
         slot.geometry.addEventListener("dispose", () => {
           released += 1;

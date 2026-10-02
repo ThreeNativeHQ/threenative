@@ -1,12 +1,65 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { Mesh, PerspectiveCamera, Scene, Vector2, Vector3 } from "three";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAssetLoader } from "../../core/src/assets.js";
 import { baseGeometryOf, updateModelLods } from "../../core/src/model-lod.js";
 import { ScenePicker } from "../../core/src/picking.js";
+import { evaluateRichPlaytestAssertions } from "../../playtest/src/assertion-evaluators.js";
+import { screenshotObservations } from "../../playtest/src/runner/steps.js";
+import { loadPlaytestScenario } from "../../playtest/src/scenario.js";
 import { DecalField, bulletHoleTexture } from "../templates/shooter/src/render/decals.js";
 
 afterEach(() => vi.unstubAllGlobals());
+
+async function evaluateCapturedPixels(scenarioName: string, captureName: string) {
+  const fixture = fileURLToPath(new URL("./fixtures/bounded-decals/", import.meta.url));
+  const loaded = await loadPlaytestScenario(fixture, `${scenarioName}.playtest.json`);
+  const scenario = { ...loaded, assert: { visual: loaded.assert?.visual } };
+  const png = await readFile(
+    new URL(
+      `../../../docs/verification/vq11-decals-36989297734/${captureName}.png`,
+      import.meta.url,
+    ),
+  );
+  return evaluateRichPlaytestAssertions({
+    scenario,
+    report: {
+      diagnostics: [],
+      distance: 0,
+      entity: "",
+      expectMoved: false,
+      frames: 1,
+      trivialityOptOuts: [],
+      observations: {
+        console: [],
+        hud: {},
+        network: [],
+        resources: {},
+        visual: screenshotObservations(undefined, png, scenario),
+      },
+    },
+  }).assertions;
+}
+
+it("rejects a real screenshot missing the right receiver despite a nonblank lit scene", async () => {
+  const assertions = await evaluateCapturedPixels("static", "teardown");
+  expect(assertions.find(({ id }) => id === "visual.0.region")?.pass).toBe(true);
+  expect(assertions.filter(({ pass }) => !pass).map(({ id }) => id)).toEqual([
+    "visual.2.region.maxDarkPixels",
+  ]);
+});
+
+it.each(["static", "motion", "teardown", "restart"])(
+  "recognizes visible marks inside the %s receiver regions of actual hosted captures",
+  async (name) => {
+    const assertions = await evaluateCapturedPixels(name, name === "restart" ? "static" : name);
+    expect(assertions.filter(({ id }) => id.endsWith(".region.darkPixels"))).toHaveLength(
+      name === "teardown" ? 1 : 2,
+    );
+    expect(assertions.every(({ pass }) => pass)).toBe(true);
+  },
+);
 
 it("projects real framework hits onto the fixture's authored surface after actual LOD selection", async () => {
   const glb = await readFile(

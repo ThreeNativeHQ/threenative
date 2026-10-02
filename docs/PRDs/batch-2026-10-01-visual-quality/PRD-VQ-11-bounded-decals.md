@@ -71,7 +71,7 @@ Measure draw calls and geometry bytes at the cap. Batch only compatible marks wh
 ## Blocked on
 
 Skinned/deforming receivers require a separate demand-backed extension and are not silently treated as rigid meshes.
-Browser/native visual qualification needs a runnable fixture and GPU/runtime lane. The current container has no `/dev/dri` or `/dev/kvm`; `node packages/playtest/dist/runner/cli.js doctor --text` exits 2 because `adb` is absent. These limits do not block the still-unimplemented CPU-testable projection, receiver and LOD work.
+Linux-native qualification needs a runnable native host/display or device lane; the portable entry must be bundled and its assets staged before that run. The current container has no `/dev/dri` or `/dev/kvm`; the actual browser attempt fails without an X display/Xvfb. Hosted browser WebGPU now supplies actual frames, so this does not block browser qualification or still-doable atlas/fade and repeated lifecycle work.
 
 ## Completion record
 
@@ -105,3 +105,10 @@ Update the phase boxes and this PRD only after the named proof runs. Record actu
 - Exact unmodified captures: [static](../../verification/vq11-decals-36989297734/static.png), [rigid motion](../../verification/vq11-decals-36989297734/motion.png), [receiver teardown](../../verification/vq11-decals-36989297734/teardown.png). Both plates visibly carry marks, the right plate and its marks move together, and removing it leaves only the left plate/marks. [Raw summary](../../verification/vq11-decals-36989297734/summary.json) preserves capture provenance and observations: cap 256, 321 creations, 65 releases, 275,028 geometry bytes and 516 maximum reported draw calls; teardown leaves 128 marks/193 releases; restart reaches generation 2.
 - The summary's historical `qualified: true` means the then-current verifier passed. Independent review found that counters and whole-frame nonblank pixels alone do not prove visible decals. These images are human-inspected progress; a same-pose visible-effect discriminator and hidden-decal negative control are being added before automated visible qualification. Phase 3 remains open.
 - Native execution, authored atlas/fade controls, repeated projected-scene GPU residency, full acceptance and independent final review remain open. The PR stays draft.
+
+2026-10-02 automatic visible-mark gate repair:
+
+- A regression evaluated the real retained teardown PNG against the static scenario: the old whole-frame nonblank gate incorrectly accepted the missing right receiver. Five regression cases failed before adding receiver-region assertions and pass afterward. The checks reuse maintained playtest pixel measurement/evaluation; no screenshot is generated or edited by unit tests.
+- Each present receiver now has an interior ROI (left 270,185 / 170 × 125; right 550,190 / 95 × 90). At maximum luminance 0.35 the dark-pixel ratio must be between 0.01 and 0.20, excluding both empty bright plates and the dark background. Actual retained marked captures measure roughly 0.052–0.057. These thresholds are pinned before the new hosted run.
+- The verifier also runs the same static fixture with projected materials hidden. Picking, projection buffers, slot counts and LOD remain active; only real mark rendering is disabled. The control must fail exactly both receiver dark-pixel assertions while all other assertions pass and no unrelated diagnostics appear. Actual hosted execution of this new control is pending; it is not yet claimed as passing proof.
+- Fresh scoped validation: 39/39 tests pass across six focused/adjacent suites; package typecheck and real Vite fixture build pass. Changed-file lint passes with two existing fixture complexity warnings. Root aggregate checks are not rerun here. Phase and acceptance boxes remain unchanged pending the hosted control and remaining PRD work.

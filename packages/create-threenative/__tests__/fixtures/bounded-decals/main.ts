@@ -1,5 +1,5 @@
 import { createDecalFixture } from "./game.js";
-const game = createDecalFixture();
+const game = createDecalFixture(new URLSearchParams(location.search).get("hideDecals") === "1");
 void game
   .start()
   .then(() => {
