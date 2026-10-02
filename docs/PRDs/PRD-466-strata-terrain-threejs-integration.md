@@ -1256,3 +1256,13 @@ notches; restore the already-green recipe. AC-5 stays open; Unreal quality is un
 Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra water;
 desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
 Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
+
+#### 2026-10-02 V7 judge (merged forest r10 + worlds r2, bdb719570)
+
+Full scenario green on the merge (exit 0, no console/network errors). Fresh judge subagent, full
+resolution against the Gaia references: forest 3.5, coastal 4.5, alpine 3.5, desert 2.5, tundra 3.0,
+**overall 3.6/10**. Top defects: foliage alpha fringe (white/blue specks on spruce and grass cards),
+un-eroded smooth landforms with no cliff faces, blotchy dark AO/shadow patches, flat macro ground
+tiling, tundra sky blow-out. The judge's "posterisation" claim on `river.png` did not reproduce at 1:1
+(smooth gradients; the defect there is a featureless horizon mountain). Captures:
+`docs/verification/visuals/strata/v7-*.jpg` (v6 removed). AC-5 stays open.
