@@ -312,7 +312,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         debug: () => ({
           grounded: player.grounded,
           position: actor.position.toArray(),
-          visible: actor.visible,
+          visible: actor.visible && actor.material.visible,
           horizon: {
             seamGap: mesh.userData.horizonSeamGap,
             samples: mesh.userData.horizonSeamSamples,
@@ -813,7 +813,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.beforeRender(() => {
         renderedFrames[world]++;
         const view = ctx.state.getState().view;
-        actor.visible = view === "player" && !ctx.state.getState().showcase;
+        actor.material.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);

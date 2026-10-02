@@ -1671,9 +1671,9 @@ restarted the slope. The candidate uses uniform disc sampling/noise acceptance,
 narrow upright scrub, consistent ground normals/triplanar projections, and
 continues the measured edge tangent. Snow blend is untouched.
 
-Capsule: main.ts accepts `?showcase=1`; only the Mesh visibility changes, and
-interactive walking defaults to its previous body/camera. Static cameras hide
-the body via Mesh visibility. Shadow-only change: 4096 map edges, refreshStep
+Capsule: main.ts accepts `?showcase=1`; only the render material visibility changes,
+and interactive walking defaults to its previous body/camera. The old guard hid
+only non-player cameras, so the scripted walk still drew the capsule. Shadow-only change: 4096 map edges, refreshStep
 [0.2, 0.125], unchanged [24, 320] extents and all sun/sky/haze values.
 
 Verified first pass: example tsc exit 0; root Biome exit 0 (warnings only);
@@ -1706,3 +1706,25 @@ candidate. Terrain Vitest initially 60/69 with parallel Vite connection resets;
 `pnpm exec vitest run packages/terrain/__tests__ --no-file-parallelism` then
 **69/69 PASS**. Capture lock timeout exit75 was retried unchanged. Final
 50-assertion licensed/fallback runs and full-resolution acceptance are pending.
+
+Round 15 final refinement checkpoint: the pre-final licensed and absent-licensed
+runs each passed **50/50**, with no diagnostics and all 17 poses observed; maximum
+CPU p50 was 3.6 / 2.6 ms respectively. Original absent-licensed control also passed
+44/44. Exit75 lock waits were retried unchanged; candidate source/baked bytes
+and all licensed mounts were restored exactly after that comparison.
+
+A 1:1 tundra crop exposed radial facets from carrying raw edge derivatives too
+far. The final collar keeps the local tangent at its seam, then fades its derivative
+over 12 m to the same 33-sample broad edge filter used for heights. Coastal
+subdivision stays at its original 192 rings. Capsule hiding reuses material
+visibility, preserving the mesh in the shadow collector's measured receiver pool;
+its effective render visibility is asserted at both start and scripted walk. This
+tests the cause of a coastal p05 drift (3.7152 on the 0–255 luminance scale),
+rather than changing light/grade values. Fresh final captures are in progress.
+Example tsc and root Biome PASS after these edits; Biome reports warnings only.
+
+Final visibility/receiver-pool comparison: coastal ocean early/late p05/p50/p95
+now differ by at most 0.1272 from the merged licensed control, versus the earlier
+3.7152 drift. Horizon-sea still differs by 0.7678, predominantly in animated water;
+that raw quantile observation is open until final review. No atmosphere value
+was adjusted to hide it. Final licensed scenario is currently through desert.

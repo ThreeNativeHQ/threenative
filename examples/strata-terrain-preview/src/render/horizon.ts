@@ -22,8 +22,15 @@ export function createHorizonGeometry(
 ): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
-  // Alpine fine crags alias across long radial cells; retain broad massif relief.
-  const rings = landform === "alpine" ? 384 : landform === "mountain" ? 256 : 192;
+  // Subdivide eroded land; retain the coastal world's original submerged collar.
+  const rings =
+    data.waterLevel !== null
+      ? 192
+      : landform === "alpine"
+        ? 384
+        : landform === "mountain"
+          ? 256
+          : 192;
   const noise = new ImprovedNoise();
   const starts = [
     [0, 0],
@@ -46,13 +53,15 @@ export function createHorizonGeometry(
     const [dx, dz] = directions[side] as readonly [number, number];
     return data.heights[(sz + along * dz) * data.resolution + sx + along * dx] as number;
   };
-  const coarseEdge = Array.from({ length: perimeter }, (_, vertex) => {
-    let total = 0;
-    for (let offset = -16; offset <= 16; offset++)
-      total += edgeHeight(vertex + offset) * (17 - Math.abs(offset));
-    return total / 289;
-  });
-  const edgeSlope = coarseEdge.map((_, vertex) => {
+  const smoothEdge = (sample: (vertex: number) => number) =>
+    Array.from({ length: perimeter }, (_, vertex) => {
+      let total = 0;
+      for (let offset = -16; offset <= 16; offset++)
+        total += sample(vertex + offset) * (17 - Math.abs(offset));
+      return total / 289;
+    });
+  const coarseEdge = smoothEdge(edgeHeight);
+  const rawEdgeSlope = coarseEdge.map((_, vertex) => {
     const side = Math.floor(vertex / segments);
     const along = vertex % segments;
     const [sx, sz] = starts[side] as readonly [number, number];
@@ -62,6 +71,9 @@ export function createHorizonGeometry(
     const normal = field?.normalAt(x, z);
     return normal ? -(normal.x * x + normal.z * z) / ((normal.y * data.size) / 2) : 0;
   });
+  const edgeSlope = smoothEdge(
+    (vertex) => rawEdgeSlope[(vertex + perimeter) % perimeter] as number,
+  );
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
@@ -102,10 +114,15 @@ export function createHorizonGeometry(
           : landform === "plain"
             ? Math.exp(-((distance / 80) ** 2))
             : Math.exp(-distance / 45);
+      // Continue the local tangent at the seam, then its broad profile, not long radial rills.
+      const slope =
+        (edgeSlope[vertex] as number) +
+        ((rawEdgeSlope[vertex] as number) - (edgeSlope[vertex] as number)) *
+          Math.exp(-distance / 12);
       const inherited =
         (data.heights[edge] as number) * detail +
         (coarseEdge[vertex] as number) * (1 - detail) +
-        (landform === "plain" ? (edgeSlope[vertex] as number) * distance * detail : 0);
+        (landform === "plain" ? slope * distance * detail : 0);
       positions.push(x, inherited * (1 - blend) + height * blend, z);
       colors.push(
         data.colors[edge * 3] as number,

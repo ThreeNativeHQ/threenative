@@ -918,6 +918,14 @@
         "component": "visible",
         "atSteps": [
           {
+            "label": "grounded",
+            "equals": false
+          },
+          {
+            "label": "walk",
+            "equals": false
+          },
+          {
             "label": "meadow-close",
             "equals": false
           },
