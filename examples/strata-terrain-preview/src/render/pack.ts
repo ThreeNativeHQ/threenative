@@ -89,7 +89,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
     map: source.map,
     normalMap: canopy ? null : source.normalMap,
     roughness: stone ? 0.96 : 1,
-    specularIntensity: cutout ? 0.02 : 0.3,
+    specularIntensity: canopy ? 0 : cutout ? 0.02 : 0.3,
     metalness: 0,
   });
   if (source.map) {
@@ -98,12 +98,14 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
     // Cooked albedo is already sRGB (KTX2 DFD transfer=2); never apply a second decode or lift.
     const tint =
       cutout && canopy
-        ? ([0.5, 0.88, 0.22] as const)
+        ? ([0.34, 0.95, 0.18] as const)
         : cutout && asset !== "poppy"
           ? ([0.55, 0.82, 0.42] as const)
           : asset === "poppy"
             ? ([1, 1, 0.85] as const)
-            : ([1, 1, 1] as const);
+            : canopy && source.name === "branch"
+              ? ([0.45, 0.38, 0.25] as const)
+              : ([1, 1, 1] as const);
     material.colorNode = sampled.rgb.mul(vec3(...tint));
     if (stone) {
       const base = attribute<"float">("groundBlend", "float");
@@ -142,7 +144,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
       );
       material.alphaTestNode = float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
-      if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(canopy ? 0.012 : 0.025);
+      if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(canopy ? 0.035 : 0.025);
     }
   }
   if (!stone) {

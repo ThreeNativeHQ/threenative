@@ -462,11 +462,16 @@ export function createGroundMaterial(
   };
 
   const grassRelief = reliefOf("grass", 0.38);
+  // Metre-scale tufts survive the grass photograph's mips beyond individual blades.
+  const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
+    .mul(0.55)
+    .add(1);
+  const farGrass = vec3(0.055, 0.1, 0.019).mul(cover);
   // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
   let albedo: Node<"vec4"> = vec4(
     mix(
       albedoOf("grass").rgb.mul(MEADOW),
-      vec3(0.085, 0.13, 0.026),
+      farGrass,
       smoothstep(32, 115, positionView.length()).mul(0.55),
     ),
     1,
