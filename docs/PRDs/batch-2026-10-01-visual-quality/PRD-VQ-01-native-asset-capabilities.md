@@ -29,7 +29,7 @@ Reuse `runtimeHasWebAssembly`, `assertNativeAssetsCompatible`, asset compiler de
 
 ## Execution phases
 
-The unit proof paths now exist; the Phase 3 scenario paths remain **planned implementation targets**, not passing runtime proof. Reuse an existing equivalent test or scenario after inspecting current code, and update the canonical proof path rather than adding a duplicate. Follow [EXECUTE.md](https://github.com/ThreeNativeHQ/threenative/blob/d9ac5b4e97f6b1383bd163d91619cffa7c6c0ef5/docs/PRDs/batch-2026-10-01-visual-quality/EXECUTE.md) for fixture setup, variables, review and repository gates.
+The unit proof paths and the desktop fallback scenario now exist. Browser and Android execution remain unrun; the existence of the shared scenario is not passing runtime proof. Reuse an existing equivalent test or scenario after inspecting current code, and update the canonical proof path rather than adding a duplicate. Follow [EXECUTE.md](https://github.com/ThreeNativeHQ/threenative/blob/d9ac5b4e97f6b1383bd163d91619cffa7c6c0ef5/docs/PRDs/batch-2026-10-01-visual-quality/EXECUTE.md) for fixture setup, variables, review and repository gates.
 
 ### Phase 1 — One capability decision
 
@@ -43,7 +43,8 @@ The unit proof paths now exist; the Phase 3 scenario paths remain **planned impl
 
 - [ ] Make bundling and loading retain exactly the declared decoders and invalidate stale cook-cache entries. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
   Partial: cook keys include explicit decoder capabilities and selected desktop runtime SHA-256; QuickJS/unknown desktop bundles use the existing refusing stubs. Decoder versions, KTX2 block-format validation and manifest-versus-payload verification remain open.
-- [ ] Create separate tiny textured/animated fixtures for KTX2, Meshopt and Draco; assert decoded texture content and geometry rather than only a successful import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts`.
+- [ ] Create separate tiny textured/animated fixtures for KTX2, Meshopt and Draco; assert decoded texture content and geometry rather than only a successful import. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-native-asset-capabilities.spec.ts packages/create-threenative/__tests__/vq-native-fixture.spec.ts`.
+  Partial: generated Meshopt and Draco textured/animated inputs are compared against decoder-free cooked files for exact decoded positions, triangle counts, animation samples and texture pixels. Authored KTX2 is encoded by the existing texture pass and explicitly refused; no packaged KTX2 decode is claimed.
 
 ### Phase 3 — Qualify the visible result
 
@@ -77,3 +78,13 @@ Update the phase boxes and this PRD only after the named proof runs. Record actu
 - `pnpm --filter @threenative/assets build` and `pnpm --filter create-threenative build`: passed including declaration output and publint. Scoped create-threenative and assets TypeScript checks passed. Root lint passed with warnings; agent mirrors regenerated.
 - Aggregate qualification is **not green**: root `pnpm test` stops before tests at tsx IPC `listen EPERM`; root `pnpm typecheck` was killed with exit 137. The broader native consumer lane has two unavailable-`jar` failures, separately reproduced using its unchanged baseline test source. Full build, GPU/native scenarios, decoder memory/lifecycle measurements and actual packaged-loader codec pixels remain unverified.
 - All phase and acceptance boxes intentionally remain open. No full Phase 1, Phase 2, native decoder admission, visual result or PRD completion is claimed by this patch.
+
+
+### Native screenshot qualification lane — 2026-10-02 (prepared, unrun)
+
+- `examples/abyss-framework/vq-assets/` is a separate opt-in fixture; the ordinary example is unchanged. It loads two actual cooked GLBs and a PNG through `ctx.assets`, then advances their authored clips with `AnimationPlayer`. The checker colours belong to those assets, not to a drawn diagnostic overlay.
+- `node --import tsx scripts/verify-native-asset-capabilities.ts` requires a real QuickJS executable in `THREENATIVE_RUNTIME_BINARY`, builds through the actual desktop resolver/cook/bundle/packager, verifies decoded payload equality, the exact runtime prefix in the packaged executable and the published build-report digest, then proves an authored KTX2 refusal preserves that same package. `runDesktopPlaytest` drives the resulting executable and captures its framebuffer with the existing mailbox transport.
+- `.github/workflows/integration-native-assets.yml` uses the existing Linux ARM64 QuickJS/wgpu source-build lane, checksum-locked native provisioner and normal read-only `pull_request` permissions. Hosted software rasterization is explicitly declared; no hardware-performance claim is permitted. No credentials, guard exemptions or runtime defaults change.
+- Local checks: 25/25 focused capability/real-fixture/capture-validator tests passed; fixture and focused verifier TypeScript checks passed; assets and CLI packages rebuilt with declarations/publint. The actual QuickJS fixture bundle was built and contains no `WebAssembly` reference. The scenario validates and workflow YAML parses; CI structure/needs checks pass 141/141. The local native verifier refuses at the explicit missing-runtime requirement before any runtime claim.
+- Capture acceptance is fail-closed: native `device.screenshot` provenance, nonempty passed live assertions, named WebGPU adapter, no lost-device/errors, exact 960×640 framebuffer, and both authored checker colours in opaque pixels in each of the three specimen regions. The transparent-RGB negative test failed before the alpha guard and passes with it. A lifecycle test confirms the fixture's owned sRGB texture clone and cached original are each disposed once, including a repeated exit. Published PNGs must be original runner bytes with matching SHA-256 and source/run provenance.
+- No new screenshot or hosted-run PASS is claimed in this commit. Full mobile/cohort, packaged-decoder and lifecycle acceptance stays open.
