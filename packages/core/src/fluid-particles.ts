@@ -120,6 +120,12 @@ const MAX_STIRS = 4;
 const MAX_DRAINS = 4;
 const FIXED_POINT = 1000;
 const COMPRESSION_SCALE = 100000;
+/** Column height of a column whose water is roofed by a collider; `sample` reads past it. */
+const COVERED = -1e30;
+const COVERED_SEARCH = 8;
+/** Half-width, in columns, of the box filter `sample` averages. */
+const SURFACE_FILTER = 2;
+const MIN_OPEN_COLUMNS = 4;
 
 function positive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0)
@@ -511,6 +517,8 @@ export class FluidParticles3D extends Group {
           });
         });
       });
+      // Colliders push outward, possibly past the container: the container wins.
+      point.assign(clamp(point, vec3(...min3), vec3(...max3)));
     };
 
     this.#inject = computeKernel("fluidParticles.inject", capacity, () => {
@@ -811,18 +819,67 @@ export class FluidParticles3D extends Group {
       ).toWriteOnly();
     });
 
+    /** Is `point` inside any collider? Used to tell a column roofed by a body from open water. */
+    const insideCollider = (point: TslNode): TslNode => {
+      const inside = nodeVar(float(0));
+      Loop({ start: uint(0), end: this.#colliderCount, type: "uint" }, ({ i }: { i: TslNode }) => {
+        const a = this.#colliderA.element(i);
+        const b = this.#colliderB.element(i);
+        const offset = point.sub(a.xyz);
+        If(a.w.lessThan(0.5), () => {
+          If(length(offset).lessThan(b.x), () => {
+            inside.assign(float(1));
+          });
+        }).Else(() => {
+          const rows = this.#colliderRows.map((row) => row.element(i).xyz);
+          const local = abs(
+            vec3(
+              dot(rows[0] as TslNode, offset),
+              dot(rows[1] as TslNode, offset),
+              dot(rows[2] as TslNode, offset),
+            ),
+          );
+          If(local.x.lessThan(b.x).and(local.y.lessThan(b.y)).and(local.z.lessThan(b.z)), () => {
+            inside.assign(float(1));
+          });
+        });
+      });
+      return inside;
+    };
+
     this.#columnHeights = computeKernel("fluidParticles.columns", vx * vz, () => {
       If(instanceIndex.greaterThanEqual(uint(vx * vz)), () => Return());
       const ix = instanceIndex.mod(uint(vx));
       const iz = instanceIndex.div(uint(vx));
       const top = nodeVar(float(min3[1]));
+      const topLayer = nodeVar(int(-1));
       Loop({ start: int(0), end: int(vy), type: "int" }, ({ i: layer }: { i: TslNode }) => {
         const voxel = ix.add(uint(layer).mul(uint(vx))).add(iz.mul(uint(vx * vy)));
         If(volumeBuffer.element(voxel).greaterThan(0.5), () => {
           top.assign(float(layer).add(1).mul(voxelSize).add(min3[1]));
+          topLayer.assign(layer);
         });
       });
-      readout.element(uint(READOUT_HEADER).add(instanceIndex)).assign(top);
+      // A body on the column displaces its water: what is left under it is the hull's underside
+      // (or the bare floor), not the free surface. Flag such a column so `sample` reads its
+      // neighbours. `topLayer + 1` is the first voxel above the water, or the floor when dry.
+      const covered = nodeVar(float(0));
+      for (const above of [0, 1, 2]) {
+        const centre = vec3(
+          float(ix).add(0.5).mul(voxelSize).add(min3[0]),
+          float(topLayer.add(1 + above))
+            .add(0.5)
+            .mul(voxelSize)
+            .add(min3[1]),
+          float(iz).add(0.5).mul(voxelSize).add(min3[2]),
+        );
+        If(insideCollider(centre).greaterThan(0.5), () => {
+          covered.assign(float(1));
+        });
+      }
+      readout
+        .element(uint(READOUT_HEADER).add(instanceIndex))
+        .assign(select(covered.greaterThan(0.5), float(COVERED), top));
     });
 
     this.#readback = new GPUReadback({ attribute: readout.value, everyFrames: readbackEvery });
@@ -998,27 +1055,37 @@ export class FluidParticles3D extends Group {
   }
 
   /**
-   * Free-surface height above `(x, z)` from the newest landed GPU copy; `bounds.min.y` where the
-   * column holds no water or nothing has landed yet. Shaped for `Buoyancy3D`'s `surface`.
+   * Free-surface height near `(x, z)`, box-filtered over open columns of the newest landed GPU
+   * copy; `bounds.min.y` where no water is near or nothing has landed yet. Shaped for `Buoyancy3D`'s `surface`.
    */
   sample(x: number, z: number, _time = 0): { readonly height: number } {
     const data = this.#readback.data;
     const floor = this.bounds.min[1];
     if (data === undefined) return { height: floor };
     const [columns, rows] = this.#columns;
-    const fx = clampNumber((x - this.bounds.min[0]) / this.voxelSize - 0.5, 0, columns - 1);
-    const fz = clampNumber((z - this.bounds.min[2]) / this.voxelSize - 0.5, 0, rows - 1);
-    const x0 = Math.floor(fx);
-    const z0 = Math.floor(fz);
-    const x1 = Math.min(columns - 1, x0 + 1);
-    const z1 = Math.min(rows - 1, z0 + 1);
-    const at = (cx: number, cz: number): number =>
-      data[READOUT_HEADER + cx + cz * columns] ?? floor;
-    const tx = fx - x0;
-    const tz = fz - z0;
-    const top = at(x0, z0) * (1 - tx) + at(x1, z0) * tx;
-    const bottom = at(x0, z1) * (1 - tx) + at(x1, z1) * tx;
-    return { height: top * (1 - tz) + bottom * tz };
+    const cx = Math.round(
+      clampNumber((x - this.bounds.min[0]) / this.voxelSize - 0.5, 0, columns - 1),
+    );
+    const cz = Math.round(
+      clampNumber((z - this.bounds.min[2]) / this.voxelSize - 0.5, 0, rows - 1),
+    );
+    // A box-filter over the open columns near the point: splash noise averages out, and a column
+    // roofed by a body (flagged COVERED) is read through the open water around it, widening until
+    // enough of it is found.
+    for (let radius = SURFACE_FILTER; radius <= COVERED_SEARCH; radius += 1) {
+      let sum = 0;
+      let found = 0;
+      for (let pz = Math.max(0, cz - radius); pz <= Math.min(rows - 1, cz + radius); pz += 1)
+        for (let px = Math.max(0, cx - radius); px <= Math.min(columns - 1, cx + radius); px += 1) {
+          const value = data[READOUT_HEADER + px + pz * columns] ?? COVERED;
+          if (value > COVERED / 2) {
+            sum += value;
+            found += 1;
+          }
+        }
+      if (found >= MIN_OPEN_COLUMNS) return { height: sum / found };
+    }
+    return { height: floor };
   }
 
   /** Surface height at `(x, z)`; see {@link sample}. */

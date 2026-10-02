@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@threenative/core": "workspace:*",
+    "@threenative/physics": "workspace:*",
     "@threenative/playtest": "workspace:*",
     "three": "catalog:"
   },

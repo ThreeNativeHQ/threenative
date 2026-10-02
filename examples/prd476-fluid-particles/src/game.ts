@@ -1,41 +1,20 @@
 import { FluidParticles3D, type ICtx, Scene, type SceneFrame, defineGame } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
+import { type IPhysicsContext, rapier } from "@threenative/physics";
+import { CouplingScene } from "./coupling.js";
 import { createPointsView } from "./render/points.js";
-
-export interface IFluidParticlesState extends Record<string, unknown> {
-  count: number;
-  steps: number;
-  meanCompression: number;
-  maxSpeed: number;
-  frontX: number;
-  peakFrontX: number;
-  minY: number;
-  maxY: number;
-  inBounds: number;
-  released: number;
-  staleFrames: number;
-}
+import { type IFluidParticlesState, INITIAL_STATE } from "./state.js";
 
 /** The dam gate comes out after this many fixed steps (0.8 s, as in the lab). */
 const GATE_STEPS = 48;
 const GATE = { kind: "box", center: [-0.9, 2.4, 0], halfExtents: [0.05, 2.4, 1.6] } as const;
 
-class DamBreakScene extends Scene<IFluidParticlesState> {
-  static override readonly initialState: IFluidParticlesState = {
-    count: 0,
-    steps: 0,
-    meanCompression: 1,
-    maxSpeed: 99,
-    frontX: 0,
-    peakFrontX: 0,
-    minY: 0,
-    maxY: 0,
-    inBounds: 0,
-    released: 0,
-    staleFrames: 0,
-  };
+class DamBreakScene extends Scene<IFluidParticlesState, IPhysicsContext> {
+  static override readonly initialState: IFluidParticlesState = INITIAL_STATE;
 
-  override enter(ctx: ICtx<IFluidParticlesState>): SceneFrame<IFluidParticlesState> {
+  override enter(
+    ctx: ICtx<IFluidParticlesState, IPhysicsContext>,
+  ): SceneFrame<IFluidParticlesState, IPhysicsContext> {
     const water = new FluidParticles3D({ capacity: 6000 });
     ctx.add(water);
     ctx.add(createPointsView(water, ctx.scene, ctx.camera));
@@ -95,12 +74,15 @@ class DamBreakScene extends Scene<IFluidParticlesState> {
   }
 }
 
-const game = defineGame<IFluidParticlesState>({
+const game = defineGame<IFluidParticlesState, IPhysicsContext>({
   step: 1 / 60,
-  plugins: [playtest()],
+  plugins: [rapier({ gravity: { x: 0, y: -9.81, z: 0 } }), playtest()],
   render: { preferWebGPU: true },
-  scenes: { dam: DamBreakScene },
-  start: "dam",
+  scenes: { coupling: CouplingScene, dam: DamBreakScene },
+  start:
+    new URLSearchParams(globalThis.location?.search ?? "").get("scene") === "coupling"
+      ? "coupling"
+      : "dam",
 });
 
 export default game;
