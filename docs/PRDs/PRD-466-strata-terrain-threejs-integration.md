@@ -2150,3 +2150,12 @@ candidate was discarded after foreground washout; its scratch run also observed
 4.2 ms CPU windows (one resource assertion failed, no console/runtime errors).
 Lower-density tuning is being captured in `atmosphere-candidate-2`; full licensed
 and fallback proof remain pending. The main Gaia acceptance stays open.
+
+Third scratch candidate: **3/3 checks PASS**, no console/runtime errors, every
+observed CPU window ≤4 ms. `atmosphere-candidate-3/*-crop.png` keeps near detail
+and clearer alpine peaks, with smaller cloud cells towards the horizon. The
+finite decorative continuation fades to the same sky radiance; its 2.3 km
+ceiling is named in source. Both node and classic material fog are now cleared
+while the air composite is active, then restored on disposal. A remaining
+one-pixel MSAA edge is being checked with a conservative neighbouring depth
+sample in `atmosphere-edge`; full asset-mode proof remains pending.

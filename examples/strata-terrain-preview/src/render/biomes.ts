@@ -61,6 +61,7 @@ export interface IBiome {
     readonly mie: number;
     readonly radiance: number;
     readonly distanceScale: number;
+    readonly horizonFade: readonly [number, number];
   };
   readonly skyRadiance: number;
   readonly saturation: number;
@@ -88,7 +89,7 @@ const temperate: IBiome = {
     height: 120,
     sunScatter: 0.32,
   },
-  atmosphere: { mie: 0.008, radiance: 1.1, distanceScale: 12 },
+  atmosphere: { mie: 0.008, radiance: 1.1, distanceScale: 12, horizonFade: [1600, 2300] },
   skyRadiance: 0.27,
   saturation: 0.8,
   skySaturation: 1,
@@ -104,7 +105,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     sun: { ...temperate.sun, intensity: 5.2, direction: [-180, 150, -120] },
     fill: { ...temperate.fill, intensity: 0.66 },
     haze: { ...temperate.haze, density: 0.0008 },
-    atmosphere: { mie: 0.014, radiance: 1.1, distanceScale: 18 },
+    atmosphere: { mie: 0.014, radiance: 1.1, distanceScale: 18, horizonFade: [1600, 2300] },
     exposure: 2 ** -0.38,
     saturation: 0.93,
   },
@@ -136,7 +137,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 105,
       sunScatter: 0.28,
     },
-    atmosphere: { mie: 0.003, radiance: 1, distanceScale: 8 },
+    atmosphere: { mie: 0.003, radiance: 1, distanceScale: 8, horizonFade: [1900, 2400] },
     skyRadiance: 0.24,
     saturation: 0.86,
     skySaturation: 0.9,
@@ -177,7 +178,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 90,
       sunScatter: 0.22,
     },
-    atmosphere: { mie: 0.024, radiance: 1.2, distanceScale: 20 },
+    atmosphere: { mie: 0.024, radiance: 1.2, distanceScale: 20, horizonFade: [1100, 2200] },
     skyRadiance: 0.27,
     saturation: 0.94,
     exposure: 2 ** -0.52,
@@ -217,7 +218,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 35,
       sunScatter: 0.18,
     },
-    atmosphere: { mie: 0.011, radiance: 0.8, distanceScale: 18 },
+    atmosphere: { mie: 0.011, radiance: 0.8, distanceScale: 18, horizonFade: [1600, 2300] },
     skyRadiance: 0.13,
     saturation: 0.96,
     exposure: 2 ** -0.28,

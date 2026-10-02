@@ -12,9 +12,11 @@ import {
   output,
   pass,
   saturation,
+  screenSize,
   screenUV,
   smoothstep,
   uniform,
+  vec2,
   vec3,
   vec4,
 } from "three/tsl";
@@ -179,19 +181,22 @@ export function installOutdoorOcclusion(
   if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
   const look = biome ?? BIOMES.forest;
   const previousFog = scene.fogNode;
+  const previousClassicFog = scene.fog;
   const atmosphere = scene.getObjectByName("world-atmosphere");
   if (!(atmosphere instanceof Atmosphere))
     throw new Error("Outdoor sky must be added before its air.");
   // Disable the rig's legacy material fog; air is composited once after the lit scene.
-  const heightFog = vec4(output);
-  scene.fogNode = heightFog;
+  scene.fogNode = null;
+  scene.fog = null;
   // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
+  // An uncovered MSAA depth sample must not leave a one-pixel terrain edge against the sky.
+  const airDepth = depth.r.min(depth.sample(screenUV.add(vec2(0, screenSize.y.reciprocal()))).r);
   const cameraWorld = uniform(camera.matrixWorld);
   const surface = cameraWorld.mul(
-    vec4(getViewPosition(screenUV, depth.r, uniform(camera.projectionMatrixInverse)), 1),
+    vec4(getViewPosition(screenUV, airDepth, uniform(camera.projectionMatrixInverse)), 1),
   ).xyz;
   const air = aerialPerspective(
     atmosphere,
@@ -205,7 +210,7 @@ export function installOutdoorOcclusion(
   const airOutput = mix(
     air,
     world.getTextureNode("output"),
-    depth.r.greaterThanEqual(0.999999).toFloat(),
+    airDepth.greaterThanEqual(1).toFloat(),
   );
   const normals = world.getTextureNode("normal");
   const contact = ao(depth, normals, camera);
@@ -261,7 +266,8 @@ export function installOutdoorOcclusion(
     ],
   });
   return () => {
-    if (scene.fogNode === heightFog) scene.fogNode = previousFog;
+    if (scene.fogNode === null) scene.fogNode = previousFog;
+    if (scene.fog === null) scene.fog = previousClassicFog;
     chain.dispose();
     world.dispose();
     contact.dispose();

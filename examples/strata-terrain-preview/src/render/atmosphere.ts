@@ -102,17 +102,23 @@ export function aerialPerspective(
     density.mul(0.65).add(0.35).mul(look.atmosphere.distanceScale),
   );
   const zenith = air.sunTransmittance(vec3(0, 1, 0)) as Node<"vec3">;
-  const transmission = enabled ? zenith.max(0.0001).pow(opticalDistance.div(8)) : vec3(1);
-  // At landscape distances the light entering the ray is the horizon sky in the same azimuth.
-  const horizon = normalize(vec3(direction.x, float(0.035), direction.z));
-  const scattering = skyRadiance(air, horizon, sun, look);
+  // ponytail: the decorative continuation ends at 2.3 km; extend it before increasing this weather cutoff.
+  const boundary = smoothstep(
+    look.atmosphere.horizonFade[0],
+    look.atmosphere.horizonFade[1],
+    ray.length(),
+  );
+  const transmission = enabled
+    ? zenith.max(0.0001).pow(opticalDistance.div(8)).mul(boundary.oneMinus())
+    : vec3(1);
+  const scattering = skyRadiance(air, direction, sun, look);
   return vec4(input.rgb.mul(transmission).add(scattering.mul(transmission.oneMinus())), input.a);
 }
 
 /** The cumulus deck. Every number is this game's weather. */
 const CLOUDS = {
   /** Noise cells across the whole sky. Fewer is a bigger, calmer deck. */
-  scale: 7.5,
+  scale: 1.5,
   /**
    * Vertical stretch of the field, and it is a stretch and not a squash for the reason it looks like
    * one: the field is sampled in view *direction*, so multiplying y up by three makes each cell
@@ -161,7 +167,10 @@ export function cloudDome(air: Atmosphere, sun: Node<"vec3">, look: IBiome): Mes
   });
   // The only coordinate a sky has is the direction to the fragment.
   const direction = normalize(positionLocal);
-  const field = vec3(direction.x, direction.y.mul(CLOUDS.stretch), direction.z).mul(CLOUDS.scale);
+  // Ray intersection with a cloud layer: distant cells shrink towards the horizon.
+  const field = vec3(direction.x, direction.y.mul(CLOUDS.stretch), direction.z)
+    .div(direction.y.max(0.08))
+    .mul(CLOUDS.scale);
   const puff = mx_fractal_noise_float(field, 4, 2, 0.5);
   const bank = mx_fractal_noise_float(field.mul(0.3), 2, 2, 0.5);
   // Density sampled towards the live sun approximates self-shadow inside each soft puff.
