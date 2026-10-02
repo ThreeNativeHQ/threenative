@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PNG } from "pngjs";
+import { assertCaptureNotBlank } from "../packages/playtest/dist/capture.js";
 import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
@@ -108,7 +108,10 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
     assert.equal(observed.lastReset?.resetReason, reset);
   }
   for (const filename of ["before.png", "after.png"]) {
-    const image = PNG.sync.read(await readFile(path.join(artifactDirectory, filename)));
+    const image = assertCaptureNotBlank(
+      await readFile(path.join(artifactDirectory, filename)),
+      `${variant}/${filename}`,
+    );
     assert.ok(
       image.width >= 960 && image.height >= 540,
       `${variant}: actual canvas capture required`,

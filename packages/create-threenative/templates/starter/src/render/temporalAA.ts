@@ -46,6 +46,22 @@ export function createTemporalAA(
     _resolveRenderTarget: RenderTarget;
     setViewOffset(width: number, height: number): void;
   };
+  const setup = node.setup.bind(node);
+  node.setup = (builder) => {
+    // NodeBuilder schedules child passes before this update only when setup declares them.
+    // Upstream TRAANode otherwise discovers these while drawing its resolve material, too late
+    // for same-frame dimensions/depth. Follow Three's GaussianBlur/FSR1 dependency pattern.
+    // Runtime NodeBuilder API, absent from the pinned @types/three declaration.
+    const properties = (
+      builder as unknown as {
+        getNodeProperties(node: Node): Record<string, Node>;
+      }
+    ).getNodeProperties(node);
+    properties.temporalColour = node.beautyNode;
+    properties.temporalDepth = depth;
+    properties.temporalVelocity = velocity;
+    return setup(builder);
+  };
   const projection = new Matrix4().copy(camera.projectionMatrix);
   let pending: TemporalResetReason | null = "initial";
   let disposed = false;

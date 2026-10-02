@@ -42,11 +42,24 @@ function fixture() {
     _resolveRenderTarget: RenderTarget;
   };
   node.setSize(1280, 720);
-  temporal.node.setup({ context: { velocity }, renderer: {} } as unknown as NodeBuilder);
-  return { camera, copies, events, frame, node, scenePass, temporal };
+  const dependencies: Record<string, unknown> = {};
+  temporal.node.setup({
+    context: { velocity },
+    renderer: {},
+    getNodeProperties: () => dependencies,
+  } as unknown as NodeBuilder);
+  return { camera, copies, dependencies, events, frame, node, scenePass, temporal };
 }
 
 describe("opt-in full-resolution temporal AA", () => {
+  it("registers input-pass dependencies before temporal update and sizing", () => {
+    const { dependencies, temporal, scenePass } = fixture();
+    expect(Object.values(dependencies)).toContain(temporal.node.beautyNode);
+    expect(Object.values(dependencies)).toContain(temporal.node.depthNode);
+    expect(Object.values(dependencies)).toContain(temporal.node.velocityNode);
+    temporal.dispose();
+    scenePass.dispose();
+  });
   it("seeds current colour on first use and a camera cut, not ordinary frames", () => {
     const { temporal, frame, copies, events, scenePass, node } = fixture();
     temporal.node.updateBefore(frame);

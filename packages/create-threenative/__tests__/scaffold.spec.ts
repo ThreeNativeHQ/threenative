@@ -195,7 +195,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   shooter: "d5a0cf3706e7a0b621fa9290564ac896467b256154d7f6abdf75ca4c36aade91",
   snow: "d59cab83418e9636bb9b48f8b802b3c36defdc5889e4a03c96b1167b7a4f2623",
   // PRD-455: starter-only opt-in temporalAA.ts plus its ownership/qualification paragraph.
-  starter: "5a9466593ad0b5569cb95214d8735e605151423c4a2b1764260da4fd41c20c5f",
+  starter: "5a1f04f175829638cff912a8479194b5f5e56289b56d57a69be0452551a6f12d",
   "tower-defense": "d50982f0cdfe90786e0042e7d7113d847856c9d9eed71673adfb42e6a9349287",
 };
 

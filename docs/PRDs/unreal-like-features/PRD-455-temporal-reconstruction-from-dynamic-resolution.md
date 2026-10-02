@@ -136,6 +136,15 @@ as a generic missing-bridge error. Error diagnostics take precedence over absent
 without weakening either requirement. Full root lint was run: five new fixture format/declaration
 errors were corrected; a fresh whole-root error-level check then passed (existing warnings remain).
 
+Hosted run `36989246532` exposes the actual temporal startup failure: the colour/depth/velocity
+size guard runs before the lazy scene-pass dependency. The wrapper now registers the three input
+nodes in NodeBuilder properties, following upstream GaussianBlur/FSR1's dependency mechanism, so
+Three updates the existing input pass before temporal sizing/resolve; no second draw loop is added.
+The dependency regression fails before this change and passes afterward. The verifier additionally
+runs the existing `assertCaptureNotBlank` guard on every PNG: the failed temporal artifact has one
+colour and is correctly rejected, while the clean reference has 1,641 colours and passes unchanged
+thresholds. Pending hosted execution must establish the repaired temporal arm before acceptance.
+
 ## Runtime screenshot progress
 
 - [Diagnostic no-AA reference](../../verification/prd455/diagnostic-reference.png), hosted run
