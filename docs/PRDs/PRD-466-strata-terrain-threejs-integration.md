@@ -802,7 +802,7 @@ walk **0.146/0.392/0.503**, river **0.173/0.376/0.806**.
 Final verdict remains **improved, below the Unreal/Gaia target**: broad fan forms and soft
 mountain silhouettes still need work. AC-5 stays open. No push; native unverified.
 
-### AC-5 forest round 9 — 2026-10-02 (working increment)
+### AC-5 forest round 9 — 2026-10-02
 
 Game-owned materials now reduce needle specular/glow, apply radial crown AO, prefer full
 spruces (9/11 selections), shorten half-crown variants, and repair the all-zero normals in
@@ -835,6 +835,34 @@ root Biome error gate pass. Full 1920×1080 captures live in
 `examples/strata-terrain-preview/artifacts/playtest/round9-cover/`.
 Independent visual review finds improved canopy colour, rock contact and flower scale,
 but cyan-grey crown interiors and yellow-olive hilltops still miss the reference.
+
+Final lane increment reduces the dry ground's red multiplier from 1.35 to 1.05,
+strengthens continuous moss at rock contacts, adds patchy growth on upward faces,
+and caps crown sky AO at 0.12–0.58 (interior–exterior). The shaded crown is darker,
+but this does **not** resolve its cyan-grey response. Albedo replaced by fixed green
+on masked leaves and then every tree section, followed by fully opaque leaf cards,
+retains the blue shaded faces. This rules out needle albedo and background gaps as
+sole causes; the lighting source remains unresolved. Upward-bent normals worsen the
+white sheen and were discarded. Every diagnostic material override is removed.
+
+The parallel overview gullies survive constant ground albedo, geometric normals and
+material AO disabled: `artifacts/playtest/round9-geometry-diagnostic/overview.png`.
+They are geometry in the baked heightfield; this lane leaves the bake recipe alone.
+The scalar alpha-test fix reaches crown shadow overrides, but the sheared shadow's
+softness/clip selection is not claimed fixed: the player chase camera changes its
+framing between runs. The separately owned sky rig retains bias/normalBias and clip
+selection; no engine or sky code changed.
+
+Final `round9-crown-ao` run: **24/24 PASS, 0 console errors, no diagnostics**;
+meadow/overview engine frame p50 **2.6/3.2 ms**, both below 8 ms. Full 1920×1080
+captures: `examples/strata-terrain-preview/artifacts/playtest/round9-crown-ao/`.
+Example typecheck and root Biome error gate pass. Existing temperate procedural
+geometry/placement checks pass; preparation syntax and the targeted zero-normal
+repair exercise pass (51,594 repaired normals, none zero). The whole licensed
+library recook and native runtime remain unverified. No licensed bytes committed;
+no push. Verdict: improved forest material/cover/contact/flower scale, **below the
+Unreal/Gaia target; AC-5 remains open**. This active PR checkout is retained for the
+other lane and later acceptance work.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [x] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: PASS 2026-10-02 — one script runs the shared `playtests/terrain.playtest.json` twice over the same generator, the same render modules and the same baked arrays, differing only in `src/world/terrainAssets.ts`: the committed bytes, then a consumer's table naming five 8×8 procedural PNGs and one hand-written 12-triangle GLB the script writes into a temporary directory. Every scenario assertion, `diagnostics` included, passes in both arms (0 console errors each). The replacement reached the renderer — the 12-triangle fixture is among the drawn props and no stock node has that triangle count; the custom arm resolved 5 files, all 5 from its own `/__custom-art/` root and 0 of the 27 starter files the stock arm resolved, so the two arms are distinguishable. The generator is untouched: `world`, `contactSamples`, `maxContactError` (3.12e-05 m), `bilinearDifference` (1.5 m) and `sampleSlopeRange` are identical across arms. `propInstances` is deliberately recorded rather than compared (2130 stock, 1990 custom): the placement set is the generator's and identical, but the consumer's own variants replace the starter's four prepared files, so a different instance count is the correct answer. A third arm whose needle atlas names a file nobody wrote makes the same checker both arms went through throw, and the throw names `absent-needle-atlas.png`. The committed table is restored and byte-compared in the run's `finally`, so no arm can leave the repository pointing at temporary fixtures. The first custom run failed `diagnostics` on 26 console errors, both fixture faults and both now fixed in the fixture: the marker GLB had no UVs, and the consumer table gave all six ground layers a normal map, which is 18 samplers against WebGPU's 16 per stage (the starter spends the 16 with normals on four layers) — a truthful constraint on custom ground art, recorded in the script.

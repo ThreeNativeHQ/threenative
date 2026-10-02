@@ -109,8 +109,11 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
     material.colorNode = sampled.rgb.mul(vec3(...tint));
     if (stone) {
       const base = attribute<"float">("groundBlend", "float");
-      const growth = mx_noise_float(positionWorld.mul(2.1)).mul(0.2).add(0.75);
-      const moss = base.add(normalWorldGeometry.y.max(0).mul(0.22)).mul(growth).clamp(0, 0.9);
+      const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
+      const moss = base
+        .mul(0.9)
+        .add(normalWorldGeometry.y.max(0).mul(growth).mul(0.38))
+        .clamp(0, 0.95);
       material.colorNode = mix(material.colorNode, vec3(0.045, 0.078, 0.019), moss);
       material.aoNode = mix(1, 0.65, base);
     }
@@ -123,7 +126,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
       if (canopy) {
         const inner = attribute<"float">("inner", "float");
         material.colorNode = material.colorNode.mul(mix(0.42, 1, inner));
-        material.aoNode = mix(0.28, 1, inner);
+        material.aoNode = mix(0.12, 0.58, inner);
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));

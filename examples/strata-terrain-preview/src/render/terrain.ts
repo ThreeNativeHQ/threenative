@@ -518,7 +518,7 @@ export function createGroundMaterial(
     0.22,
     macro.add(mottling.mul(0.24)).sub(hollow.mul(0.035)).add(alpine.mul(0.06)),
   );
-  const tone = mix(vec3(0.48, 0.76, 0.34), vec3(1.35, 1.13, 0.72), dryness);
+  const tone = mix(vec3(0.48, 0.76, 0.34), vec3(1.05, 1.13, 0.72), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
