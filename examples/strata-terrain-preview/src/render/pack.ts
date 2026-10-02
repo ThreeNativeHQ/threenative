@@ -11,6 +11,7 @@ import {
   Vector3,
 } from "three";
 import {
+  cameraViewMatrix,
   dFdx,
   dFdy,
   float,
@@ -56,9 +57,9 @@ for (let i = 0; i < 5; i++) {
 }
 for (const [asset, heights] of Object.entries({
   sapling: [1.1, 2.1, 3.0],
-  grass: [0.42, 0.65, 0.8, 0.45],
+  grass: [0.28, 0.4, 0.5, 0.32],
   scrub: [0.085, 0.065, 0.018],
-  poppy: [0.35, 0.48, 0.5, 0.3],
+  poppy: [0.55, 0.75, 0.62, 0.6],
   fern: [0.7, 0.6],
   boulder: [2.1, 5.2, 2.5],
   riverrock: [0.8],
@@ -78,7 +79,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
   const cutout = !stone && source.alphaTest > 0;
   const material = new MeshStandardNodeMaterial({
     map: source.map,
-    normalMap: stone ? source.normalMap : null,
+    normalMap: stone || asset === "poppy" ? source.normalMap : null,
     roughness: stone ? 0.88 : 0.92,
     metalness: 0,
   });
@@ -87,13 +88,23 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
     const sampled = texture(source.map, uv());
     // These atlases were authored for Unreal exposure. A small lift and leaf transmission retain
     // shaded needle detail under this game's AgX curve without washing bark or flowers white.
-    material.colorNode = sampled.rgb.mul(
-      vec3(...(cutout && asset !== "poppy" ? ([1.55, 1.65, 1.25] as const) : ([1, 1, 1] as const))),
-    );
+    const tint =
+      cutout && (asset === "spruce" || asset === "sapling")
+        ? ([0.45, 1.25, 0.6] as const)
+        : cutout && asset !== "poppy"
+          ? ([0.95, 1.1, 0.85] as const)
+          : asset === "poppy"
+            ? ([0.7, 0.7, 0.7] as const)
+            : ([1, 1, 1] as const);
+    material.colorNode = sampled.rgb.mul(vec3(...tint));
     if (cutout) {
       material.side = DoubleSide;
       material.shadowSide = DoubleSide;
-      material.alphaToCoverage = true;
+      // Needle cards shade as a soft canopy volume, independent of their planar face normals.
+      if (asset !== "poppy")
+        material.normalNode = vec3(positionGeometry.x.mul(0.12), 1, positionGeometry.z.mul(0.12))
+          .normalize()
+          .transformDirection(cameraViewMatrix);
       const image = source.map.image as { width?: number; height?: number };
       const size = vec2(image?.width ?? 2048, image?.height ?? 2048);
       const mip = max(
@@ -102,7 +113,7 @@ function surface(source: MeshStandardMaterial, asset: string): MeshStandardNodeM
       );
       material.alphaTestNode = float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
-      if (asset !== "poppy") material.emissiveNode = sampled.rgb.mul(0.28);
+      if (asset !== "poppy") material.emissiveNode = sampled.rgb.mul(0.14);
     }
   }
   if (!stone) {

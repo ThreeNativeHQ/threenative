@@ -142,7 +142,7 @@ export function scatterProps(
     counts[asset] = index + 1;
   };
   const nearEye = (x: number, z: number) =>
-    clearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius);
+    clearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius * 1.6);
   const cells = new Map<string, [number, number]>();
   for (
     let tries = 0;

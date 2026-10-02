@@ -61,6 +61,18 @@ export const VARIANTS = {
  * on the meadow, and the shadow of a knee-high plant under a pine is already inside it. Wildwood's
  * `LAYERS` marks the same three layers `castShadows: false`, and its numbers agree.
  */
+const DRAW_REACH: Record<string, number> = {
+  grass: 72,
+  scrub: 85,
+  fern: 90,
+  poppy: 65,
+  sapling: 160,
+  bush: 120,
+  boulder: 170,
+  riverrock: 100,
+  scree: 190,
+  cliff: 300,
+};
 const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy"]);
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
@@ -629,12 +641,7 @@ export function createProps(
           entry.instance.parts = [];
           origin.setFromMatrixPosition(entry.pose);
           const distance = origin.distanceTo(camera);
-          const reach = (
-            { grass: 72, scrub: 85, fern: 90, poppy: 65, sapling: 160, bush: 120 } as Record<
-              string,
-              number
-            >
-          )[group.asset];
+          const reach = DRAW_REACH[group.asset];
           if (reach !== undefined && distance > reach) continue;
           const level = levelFor(distance, group.state[index] ?? 0, levels);
           group.state[index] = level;

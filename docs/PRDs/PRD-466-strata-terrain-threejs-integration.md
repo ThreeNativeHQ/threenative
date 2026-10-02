@@ -582,7 +582,14 @@ Its only failures were the previous 24-batch ceiling and the pre-existing
 `ShadowDepthTexture used in a submit` diagnostics. The ceiling is now **56** for the
 requested species and adult-tree distance levels. Initial captures exposed bare
 seedling silhouettes at distance; the current cook uses reduced full trees instead.
-Final captures, repeated performance and licensed-folder-absent proof are still pending.
+The second checkpoint removes near-black full-tree crowns with game-owned soft volume normals;
+card-normal, shadow and storage probes are retained only in ignored capture artifacts. Leaf-only
+colour grading keeps bark neutral; meadow flowers retain their own normal maps and stand above
+shorter grass. Meadow eyes now have 16 m clearings. Rock distance culling lowered the round-5
+submitted totals to 34,482,893 meadow / 14,064,346 overview triangles across all passes, at
+**2.3 ms / 2.1 ms** respectively; **54 batches**, only the known shadow diagnostic failed.
+Example typecheck, lint and the compact scatter/edit check pass at this checkpoint.
+Final repeated performance and licensed-folder-absent proof are still pending.
 **AC-5 remains open**; this is a Temperate increment and no Unreal-level verdict is claimed.
 
 #### Terrain relief pass (2026-10-02), Evidence: measured, plus four engine bugs
