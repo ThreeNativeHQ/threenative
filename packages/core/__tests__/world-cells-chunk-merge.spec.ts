@@ -7,6 +7,7 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  type Camera,
   DirectionalLight,
   FrontSide,
   Frustum,
@@ -182,7 +183,12 @@ function meshesIn(root: Object3D): Mesh[] {
 function shadowDraws(
   world: WorldCells,
   half: "cluster" | "wide",
-  observe?: (meshes: Mesh[], level: number) => void,
+  observe?: (
+    meshes: Mesh[],
+    level: number,
+    depth: { near: number; far: number },
+    camera: Camera,
+  ) => void,
 ): Mesh[][] {
   const scene = new Scene();
   const camera = new PerspectiveCamera(60, 1, 0.1, 900);
@@ -252,7 +258,21 @@ function shadowDraws(
           mesh.material as Material,
           null as never,
         );
-      observe?.(draws[index] as Mesh[], index);
+      observe?.(
+        draws[index] as Mesh[],
+        index,
+        { near: shadowCamera.near, far: shadowCamera.far },
+        shadowCamera,
+      );
+      for (const mesh of draws[index] as Mesh[])
+        mesh.onAfterRender(
+          {} as never,
+          scene,
+          shadowCamera,
+          mesh.geometry,
+          mesh.material as Material,
+          null as never,
+        );
     };
   });
   for (const mover of node.moverNodes)
@@ -752,6 +772,93 @@ describe("a hand-placed chunk merged by material", () => {
       expect(world.stats().residentKeys).toEqual([]);
       expect(world.getObjectByName("world-chunk")).toBeUndefined();
       for (const spy of disposed) expect(spy).toHaveBeenCalled();
+      world.dispose();
+    },
+  );
+
+  it.each(["cluster", "wide"] as const)(
+    "does no retained proxy index writes or uploads after warming each %s level",
+    async (half) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const { group } = preservedChunk();
+      const follow = { position: { ...FOLLOW } };
+      const { chunk, world } = await attached(group, {
+        follow,
+        chunkMergeMaxTriangles: 1,
+        shadows: { cast: true, receive: true },
+      });
+      const proxies = meshesIn(chunk).filter((mesh) => !mesh.layers.isEnabled(0));
+      const levels: {
+        camera: Camera;
+        gates: number[];
+        indices: BufferAttribute[];
+        triangles: string[];
+      }[] = [];
+      const positions = proxies.map((proxy) => proxy.geometry.getAttribute("position"));
+      shadowDraws(world, half, (drawn, level, _depth, camera) => {
+        levels[level] = {
+          camera,
+          gates: proxies.map((proxy) => Reflect.get(proxy, "casterMinDiameter") as number),
+          indices: proxies.map((proxy) => proxy.geometry.getIndex() as BufferAttribute),
+          triangles: trianglesOf(drawn),
+        };
+      });
+      expect(new Set(levels.map((level) => JSON.stringify(level.triangles))).size).toBe(3);
+      const indices = [...new Set(levels.flatMap((level) => level.indices))];
+      const writes = indices.map((index) => vi.spyOn(index.array as Uint32Array, "set"));
+      const versions = indices.map((index) => index.version);
+      const geometries = new Set(proxies.map((proxy) => proxy.geometry));
+      const scene = new Scene();
+      const render = (level: (typeof levels)[number]) => {
+        proxies.forEach((proxy, part) => {
+          Reflect.set(proxy, "casterMinDiameter", level.gates[part]);
+          proxy.onBeforeRender(
+            {} as never,
+            scene,
+            level.camera,
+            proxy.geometry,
+            proxy.material as Material,
+            null as never,
+          );
+          expect(proxy.geometry.getAttribute("position")).toBe(positions[part]);
+          geometries.add(proxy.geometry);
+        });
+      };
+      for (let frame = 0; frame < 6; frame += 1)
+        for (const level of levels) {
+          render(level);
+          proxies.forEach((proxy, part) =>
+            expect(proxy.geometry.getIndex()).toBe(level.indices[part]),
+          );
+          expect(trianglesOf(proxies)).toEqual(level.triangles);
+        }
+      expect(indices.map((index, at) => index.version - (versions[at] as number))).toEqual(
+        indices.map(() => 0),
+      );
+      expect(writes.map((spy) => spy.mock.calls.length)).toEqual(indices.map(() => 0));
+      // A changed level must still update immediately, without invalidating either other level.
+      const changed = levels[0] as (typeof levels)[number];
+      changed.gates = proxies.map(() => Number.POSITIVE_INFINITY);
+      render(changed);
+      expect(trianglesOf(proxies)).toEqual([]);
+      for (const level of levels.slice(1)) {
+        const before = level.indices.map((index) => index.version);
+        render(level);
+        expect(trianglesOf(proxies)).toEqual(level.triangles);
+        expect(level.indices.map((index) => index.version)).toEqual(before);
+      }
+      // More than three cameras reuse the bounded geometry pool, which eviction releases whole.
+      const held = levels[1] as (typeof levels)[number];
+      for (let extra = 0; extra < 6; extra += 1) render({ ...held, camera: held.camera.clone() });
+      expect(geometries.size).toBeLessThanOrEqual(proxies.length * 3);
+      const disposed = [...geometries].map((geometry) => vi.spyOn(geometry, "dispose"));
+      follow.position.x += 4 * CELL_SIZE;
+      for (let pass = 0; pass < 40 && world.stats().residentKeys.length > 0; pass += 1) {
+        world.update();
+        await flush();
+      }
+      expect(world.stats().residentKeys).toEqual([]);
+      for (const spy of disposed) expect(spy).toHaveBeenCalledOnce();
       world.dispose();
     },
   );

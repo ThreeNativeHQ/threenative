@@ -2547,13 +2547,45 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
   // The source frustums below decide the exact inputs; the union must not veto that decision.
   proxy.frustumCulled = false;
   const geometry = proxy.geometry;
-  const index = geometry.getIndex() as BufferAttribute;
-  const complete = (index.array as Uint32Array).slice();
-  const selected = new Uint8Array(sources.length).fill(255);
+  const complete = ((geometry.getIndex() as BufferAttribute).array as Uint32Array).slice();
+  const levels = new Map<Camera, { geometry: BufferGeometry; selected: Uint8Array }>();
+  const disposeLevels = (event: { target: unknown }) => {
+    const geometries = new Set([geometry]);
+    for (const level of levels.values()) geometries.add(level.geometry);
+    for (const held of geometries) held.removeEventListener("dispose", disposeLevels);
+    for (const held of geometries) if (held !== event.target) held.dispose();
+    levels.clear();
+  };
+  geometry.addEventListener("dispose", disposeLevels);
   const frustum = new Frustum();
   const projection = new Matrix4();
   const sphere = new Sphere();
-  proxy.onBeforeRender = (_renderer, _scene, camera) => {
+  proxy.onBeforeRender = function (_renderer, _scene, camera) {
+    let level = levels.get(camera);
+    if (level === undefined) {
+      if (levels.size === 3) {
+        // ponytail: three resident camera buffers; extra cameras reuse the oldest slot.
+        const oldest = levels.keys().next().value as Camera;
+        level = levels.get(oldest) as { geometry: BufferGeometry; selected: Uint8Array };
+        levels.delete(oldest);
+        level.selected.fill(255);
+      } else {
+        const perLevel = levels.size === 0 ? geometry : new BufferGeometry();
+        if (perLevel !== geometry) {
+          perLevel.setAttribute("position", geometry.getAttribute("position"));
+          perLevel.setIndex(new BufferAttribute(new Uint32Array(complete.length), 1));
+          perLevel.boundingSphere = geometry.boundingSphere;
+          perLevel.addEventListener("dispose", disposeLevels);
+        }
+        level = { geometry: perLevel, selected: new Uint8Array(sources.length).fill(255) };
+      }
+      levels.set(camera, level);
+    }
+    // Three fetches the render object after this hook and detects geometry identity changes,
+    // even when different cameras share a render object. Exact projection stand-ins use `this`.
+    this.geometry = level.geometry;
+    const index = level.geometry.getIndex() as BufferAttribute;
+    const selected = level.selected;
     frustum.setFromProjectionMatrix(
       projection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse),
       camera.coordinateSystem,
@@ -2590,7 +2622,7 @@ function selectChunkShadowParts(proxy: Mesh, sources: readonly Mesh[]): void {
       }
       index.needsUpdate = true;
     }
-    geometry.setDrawRange(0, count);
+    level.geometry.setDrawRange(0, count);
   };
 }
 
