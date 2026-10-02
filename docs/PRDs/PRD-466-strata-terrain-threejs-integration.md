@@ -1300,3 +1300,21 @@ Earlier clear-crown cold ablations were already clear before the edit and cannot
 prove specular/transmission causality. Terrain patches were too brown in this
 iteration and are being reduced. Alpine/desert baseline luminance p05/p50/p95
 deltas ≤0.061; tundra deltas reach 2.715, under investigation before acceptance.
+
+Round-11 diagnosis resolved: a same-camera fresh pale-crown baseline stays pale
+with zero direct/hemisphere light, no received shadows, or specular removed.
+Bypassing the chain clears it; disabling only the AO stage (same fog and MRT)
+clears it too. The game-authored AO/denoise path contaminates overlapping cutouts.
+Forest/coast omit that stage; atlas cooking and transmission are unchanged.
+Material radial occlusion still provides dark crown interiors. Terrain dark
+blobs persist without AO/shadows/normal relief: shaded rock faces with dark
+albedo, now lighter weathered rock and measured appearance bounce.
+
+`forest-r11-pass4`: all behaviour/contact/ocean and four forest budget assertions
+PASS (meadow/overview/river/player aggregate p50 2.2/2.3/3.2/3.2 ms); shared
+scenario FAIL solely on the absent empty-chain console marker. Replaced that
+assertion with the public chain report (missing=-1 fails) and actual AO graph
+contribution observed in each protected biome (3/3). Tundra control now matches
+as well: pass3 all six p05/p50/p95 deltas ≤0.065. Final runs pending after denser
+worldwide temperate cover and final horizon/stone grading. Typecheck, Biome,
+69 terrain tests and temperate placement checks PASS. No Unreal-level claim.

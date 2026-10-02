@@ -598,14 +598,14 @@
         "path": "meadowFrameP50",
         "gte": 0.01,
         "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen.",
-        "lte": 8
+        "lte": 4
       },
       {
         "id": "GameState",
         "path": "overviewFrameP50",
         "gte": 0.01,
         "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view.",
-        "lte": 8
+        "lte": 4
       },
       {
         "id": "GameState",
@@ -728,15 +728,31 @@
           }
         ],
         "allowTrivial": "Both baked kettle ponds must produce distinct material groups in the drawn lake mesh."
-      }
-    ],
-    "renderChain": {
-      "stages": {
-        "includes": ["ambientOcclusion"]
       },
-      "contributions": {
-        "graphOutputChanged": ["ambientOcclusion"]
+      {
+        "id": "GameState",
+        "path": "riverFrameP50",
+        "gte": 0.01,
+        "lte": 4
+      },
+      {
+        "id": "GameState",
+        "path": "playerFrameP50",
+        "gte": 0.01,
+        "lte": 4
+      },
+      {
+        "id": "GameState",
+        "path": "otherBiomeAO",
+        "gte": 3,
+        "allowTrivial": "Each protected biome must actually apply AO and change the render graph during its visit; temperate cutouts use material occlusion instead."
+      },
+      {
+        "id": "GameState",
+        "path": "temperateAOStages",
+        "equals": 0,
+        "allowTrivial": "Read the installed chain directly: a missing report is -1 and fails. Forest/coast must omit screen-space AO; otherBiomeAO separately observes the three protected worlds."
       }
-    }
+    ]
   }
 }

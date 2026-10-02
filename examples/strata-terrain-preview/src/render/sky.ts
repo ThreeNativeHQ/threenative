@@ -295,6 +295,9 @@ export function installOutdoorOcclusion(
     float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
   );
   scene.fogNode = heightFog;
+  // Screen-space AO/denoise paints pale panels over temperate cutouts (isolated at full resolution).
+  // Keep crown occlusion and real shadows; the other worlds retain their existing AO stage.
+  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
@@ -309,7 +312,7 @@ export function installOutdoorOcclusion(
   const chain = renderer.createRenderChain({
     input: world.getTextureNode("output"),
     worldPass: world,
-    request: { stages: ["ambientOcclusion"], tier: "auto" },
+    request: { stages: otherBiome ? ["ambientOcclusion"] : [], tier: "auto" },
     targetFps: 30,
     stages: [
       {

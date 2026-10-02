@@ -95,7 +95,7 @@ export const SCATTER = {
   spruceSpacing: 4.6,
   spruceCount: 3200,
   spruceAttempts: 80000,
-  grassCell: 1.6,
+  grassCell: 1.2,
   grassFull: 22,
   grassThin: 62,
   seed: 466_468,
