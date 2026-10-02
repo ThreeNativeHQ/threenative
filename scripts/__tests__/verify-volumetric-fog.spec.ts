@@ -61,7 +61,7 @@ describe("volumetric fog runtime evidence", () => {
       process.cwd(),
       "examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json",
     );
-    expect(scenario.steps).toHaveLength(8);
+    expect(scenario.steps).toHaveLength(10);
   });
 });
 
@@ -123,14 +123,15 @@ it("runs the committed lifecycle and return-to-off scenarios, with actual releas
   const scenarios = await fogCaptureScenarios();
   const lifecycle = scenarios.find(({ mode }) => mode === "lifecycle")?.scenario;
   const off = scenarios.find(({ mode }) => mode === "lifecycleOff")?.scenario;
-  expect(lifecycle?.steps).toHaveLength(8);
-  expect(off?.steps).toHaveLength(10);
+  expect(lifecycle?.steps).toHaveLength(10);
+  expect(lifecycle?.steps[0]?.press).toEqual(["KeyF"]);
+  expect(off?.steps).toHaveLength(12);
   expect(lifecycle?.assert?.components).toEqual(
-    expect.arrayContaining([expect.objectContaining({ component: "releasedTargets", equals: 2 })]),
+    expect.arrayContaining([expect.objectContaining({ component: "releasedTargets", equals: 3 })]),
   );
   expect(off?.assert?.components).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ component: "releasedTargets", equals: 3 }),
+      expect.objectContaining({ component: "releasedTargets", equals: 4 }),
       expect.objectContaining({ component: "liveTargets", equals: 0 }),
     ]),
   );

@@ -121,8 +121,8 @@ export async function fogCaptureScenarios() {
       (component) => ({
         entity: "fog",
         component,
-        equals: component === "liveTargets" ? 0 : 3,
-        allowTrivial: "After three actual fog graphs, off returns the owned allocation baseline.",
+        equals: component === "liveTargets" ? 0 : 4,
+        allowTrivial: "After four actual fog graphs, off returns the owned allocation baseline.",
       }),
     ),
   );

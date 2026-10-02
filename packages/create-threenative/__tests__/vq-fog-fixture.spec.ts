@@ -91,11 +91,11 @@ describe("fog qualification fixture", () => {
   });
   it("observes actual target/material release events across rebuild and off", () => {
     const f = fixture();
-    for (const mode of ["inside", "off", "fog", "rebuild", "off"]) f.select(mode);
+    for (const mode of ["fog", "inside", "off", "fog", "rebuild", "off"]) f.select(mode);
     expect(f.state.getState()).toMatchObject({
-      createdTargets: 3,
-      releasedTargets: 3,
-      releasedMaterials: 3,
+      createdTargets: 4,
+      releasedTargets: 4,
+      releasedMaterials: 4,
       liveTargets: 0,
       targets: 0,
     });
