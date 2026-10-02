@@ -1,0 +1,54 @@
+name: Integration velocity history
+on:
+  pull_request:
+    paths:
+      - 'packages/core/src/renderProjection.ts'
+      - 'packages/core/src/render/velocity.ts'
+      - 'packages/core/src/render/batched-velocity.ts'
+      - 'packages/core/__tests__/render-velocity.spec.ts'
+      - 'patches/three@0.185.1.patch'
+      - 'packages/playtest/**'
+      - 'examples/abyss-framework/velocity-main.ts'
+      - 'examples/abyss-framework/src/render/velocityReadback.ts'
+      - 'examples/abyss-framework/velocity.html'
+      - 'examples/abyss-framework/velocity.vite.config.ts'
+      - 'examples/abyss-framework/velocity.tsconfig.json'
+      - 'examples/abyss-framework/playtests/velocity-history.playtest.json'
+      - 'scripts/verify-velocity-history.ts'
+      - 'scripts/velocity-capture-proof.ts'
+      - 'scripts/__tests__/velocity-capture-proof.spec.ts'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/integration-velocity-history.yml'
+permissions:
+  contents: read
+jobs:
+  velocity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - name: Build this commit's public bridge and runner
+        run: pnpm --filter @threenative/playtest build
+      - name: Verify motion history and fail-closed capture guards
+        run: pnpm exec vitest run --maxWorkers=1 scripts/__tests__/velocity-capture-proof.spec.ts packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts packages/core/__tests__/renderProjection.spec.ts
+      - name: Check the exact source-wired fixture types
+        run: pnpm exec tsc --noEmit -p examples/abyss-framework/velocity.tsconfig.json
+      - name: Render actual authored batch velocity and missing-history control
+        run: pnpm exec tsx scripts/verify-velocity-history.ts
+      - name: Retain runtime PNGs, readbacks and exact adapter provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: velocity-history-${{ github.event.pull_request.head.sha }}
+          path: artifacts/velocity-history
+          if-no-files-found: error

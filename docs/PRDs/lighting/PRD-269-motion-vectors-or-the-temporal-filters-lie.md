@@ -94,7 +94,7 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 
 ### Phase 3 — close original image-space acceptance
 
-- [ ] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: its scenario loads through `packages/playtest` and asserts the moving versus static sub-draw result
+- [ ] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
 - [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
 
 The two Phase 3 fixtures remain implementation work; existing CPU software rasterization is not
@@ -152,6 +152,18 @@ ships in `templates/*/src/render/` on top of this. Velocity for the atmosphere a
 paths, which have their own lifetimes.
 
 ## Verification
+
+2026-10-02 screenshot qualification in progress: the opt-in `velocity.html` fixture renders
+an authored two-sub-draw `BatchedMesh` through the current source's `SceneRenderProjection`
+with `projection: false`, then reads the actual velocity MRT. Its left panel is the colour
+attachment and its right panel is absolute x/y velocity amplified 20 times. Each deterministic
+step crosses a RAF boundary. The separate `without-history` run removes bookkeeping and must
+fail only the moving-pixel bound, while static velocity and first-frame identity stay zero.
+`integration-velocity-history.yml` retains runtime PNGs, measured resources, source SHA and
+adapter provenance even on failure. Local build and 263 focused tests pass; local capture
+cannot start because this reset environment has no usable X display or Xvfb. Hosted image-space
+results and screenshots are still pending, so no acceptance box is newly ticked here.
+
 
 2026-10-02 repair: before the fix, `render-velocity.spec.ts` reports 4 failed / 12 passed:
 missing `_previousMatricesTexture` in authored batch/frame-footprint tests, plus undefined

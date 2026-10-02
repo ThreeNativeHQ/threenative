@@ -1,0 +1,53 @@
+{
+  "name": "authored-batch-velocity-history",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 960,
+    "height": 540
+  },
+  "warmupFrames": 2,
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "moved",
+      "waitTicks": 3
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true
+    },
+    "resources": [
+      {
+        "id": "motion",
+        "path": "frame",
+        "gte": 6,
+        "allowTrivial": "At least six completed GPU frames including the first history seed must exist."
+      },
+      {
+        "id": "motion",
+        "path": "firstFrameMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "The first actual GPU frame has current equal to previous."
+      },
+      {
+        "id": "motion",
+        "path": "staticMax",
+        "lte": 1e-5,
+        "allowTrivial": "The static sub-draw must have zero measured velocity."
+      },
+      {
+        "id": "motion",
+        "path": "movingPixels",
+        "gte": 100,
+        "allowTrivial": "The moved authored sub-draw must cover at least 100 non-zero velocity pixels."
+      }
+    ]
+  }
+}
