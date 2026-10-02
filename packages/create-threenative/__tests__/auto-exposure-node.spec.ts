@@ -1,6 +1,13 @@
 import { Color, type RenderTarget, Texture } from "three";
 import { texture } from "three/tsl";
-import { NodeFrame, QuadMesh, type Renderer } from "three/webgpu";
+import {
+  NodeFrame,
+  NodeMaterial,
+  QuadMesh,
+  type Renderer,
+  WGSLNodeBuilder,
+  WebGPURenderer,
+} from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutoExposureNode } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
@@ -133,6 +140,35 @@ describe("GPU exposure lifecycle", () => {
     await Promise.resolve();
     expect(node.getObservation()).toEqual({ measured: false, applied: true });
     node.reset();
+    node.dispose();
+  });
+
+  it("builds the actual meter, reduction and log2 adaptation graphs to WGSL without a GPU", () => {
+    const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    const capabilities = Reflect.get(renderer.backend, "capabilities");
+    vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    const generated: string[] = [];
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      if (!(this.material instanceof NodeMaterial)) throw new Error("missing node material");
+      const graph = this.material.fragmentNode;
+      const builder = new WGSLNodeBuilder(this, renderer) as WGSLNodeBuilder & {
+        setShaderStage(stage: string): void;
+        flowStagesNode(node: unknown, output: string): { code: string; result: string };
+      };
+      builder.setShaderStage("fragment");
+      const flow = builder.flowStagesNode(graph, "vec4");
+      generated.push(`${flow.code}\n${flow.result}`);
+    });
+    const { node, frame } = harness();
+    node.updateBefore(frame);
+    expect(generated).toHaveLength(4);
+    expect(generated[0]?.match(/textureLoad\(/gu)).toHaveLength(16);
+    expect(generated[1]?.match(/textureLoad\(/gu)).toHaveLength(16);
+    expect(generated[3]).toContain("log2(");
+    expect(generated[3]).toContain("smoothstep(");
+    expect(generated[3]).toContain("exp(");
+    expect(generated.join("\n")).not.toContain("textureSample(");
     node.dispose();
   });
 

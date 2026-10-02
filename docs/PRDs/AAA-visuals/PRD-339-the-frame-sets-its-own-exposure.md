@@ -129,7 +129,12 @@ a convention missing from there does not exist.
 2026-10-02 fresh-environment implementation: settings/topology and GPU resource-lifecycle tests
 observed red for missing modules, then 28/28 passed after implementation. Scoped strict TypeScript
 and Biome pass. Generated `autoExposure.ts` and `exposure.ts` are feature-local source at this stage;
-no template or existing render chain has been changed. Actual shader execution, runtime screenshots,
+no template or existing render chain has been changed. The real meter/reduction/adaptation TSL
+graphs now generate WGSL through Three's builder (29 focused tests green); fixture Vite build,
+scoped strict types and 141 CI-structure/needs tests also pass. A portable scene using the existing
+engine loop and one explicit world pass now has static/cut playtests and a dedicated hosted
+`Integration exposure` capture workflow. Local runtime attempt refuses the missing X display/Xvfb;
+a fresh manager Unix-socket probe also returned EPERM. Actual GPU execution, runtime screenshots,
 settle/cold-boot assertions and native proof remain unverified. Earlier lost-workspace results are
 not evidence for this implementation.
 
@@ -146,7 +151,8 @@ not evidence for this implementation.
 ## Blocked on
 
 - Native desktop runtime proof (acceptance criterion 4) requires a working native host/display lane;
-  this cloud executor has no GPU, KVM or display socket permission. Native contract registration
+  this fresh cloud executor has no GPU/KVM, and the manager
+  re-probed Unix socket creation on 2026-10-02: EPERM. Native contract registration
   and portable fixture work remain in scope; no native success is claimed from browser pixels.
 - Final tone qualification consumes PRD-341's gate on its separate PR; do not duplicate the metric.
 
