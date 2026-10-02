@@ -232,5 +232,15 @@ for (const [name, terrain] of Object.entries({ forest, coastal, alpine, desert, 
   };
 }
 await mkdir(new URL("../src/world/", import.meta.url), { recursive: true });
-await writeFile(new URL("../src/world/baked.json", import.meta.url), JSON.stringify(worlds));
+// The bundle carries only the worlds the game draws: every baked world is a 257-square of heights
+// and colours, and importing all five made a 25 MB module the dev server took longer than a page
+// load to transform. The others are written beside it until their scenes exist.
+const drawn = new Set(["forest", "coastal"]);
+await writeFile(
+  new URL("../src/world/baked.json", import.meta.url),
+  JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
+);
+for (const [name, world] of Object.entries(worlds))
+  if (!drawn.has(name))
+    await writeFile(new URL(`../src/world/${name}.json`, import.meta.url), JSON.stringify(world));
 console.log("Baked five seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
