@@ -44,7 +44,8 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 ENV ANDROID_HOME=/usr/local/lib/android/sdk ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
 # Hosted runners run in C.UTF-8; without it javac reads sources as US-ASCII and rejects an em dash.
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
-RUN mkdir -p "$ANDROID_HOME" \
+# The emulator lane writes a udev rule before it starts; hosted has the directory, the base image does not.
+RUN mkdir -p /etc/udev/rules.d "$ANDROID_HOME" \
  && curl -fsSL https://dl.google.com/android/repository/platform-tools-latest-linux.zip -o /tmp/pt.zip \
  && unzip -q /tmp/pt.zip -d "$ANDROID_HOME" && rm /tmp/pt.zip \
  && ln -s "$ANDROID_HOME/platform-tools/adb" /usr/local/bin/adb
