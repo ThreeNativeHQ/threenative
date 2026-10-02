@@ -11,6 +11,9 @@ on:
       - 'examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json'
       - 'scripts/verify-volumetric-fog.ts'
       - 'scripts/__tests__/vq-fog-native-proof.spec.ts'
+      - 'packages/runtime-native/include/mystral/webgpu_compat.h'
+      - 'packages/runtime-native/src/webgpu/bindings_presentation.cpp'
+      - 'packages/runtime-native/tests/surface_texture_status_test.cpp'
       - '.github/workflows/integration-volumetric-fog.yml'
 permissions:
   contents: read
@@ -89,6 +92,10 @@ jobs:
           libvulkan1 mesa-vulkan-drivers vulkan-tools xvfb zlib1g-dev
       - name: Build the ordinary ARM desktop host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Verify the compiled surface acquisition status contract
+        run: |
+          cmake --build packages/runtime-native/build/tn-linux --target threenative-surface-texture-status-test --parallel 2
+          packages/runtime-native/build/tn-linux/threenative-surface-texture-status-test
       - name: Isolate native resize with no fog allocation
         id: resize-control
         # Preserve the original fog sequence even when this diagnostic reproduces the abort.

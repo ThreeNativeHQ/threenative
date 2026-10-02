@@ -2510,11 +2510,17 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     add_executable(threenative-webgpu-comprehensive-test EXCLUDE_FROM_ALL
         tests/webgpu_comprehensive_test.cpp)
     target_link_libraries(threenative-webgpu-comprehensive-test PRIVATE mystral-runtime)
+    add_executable(threenative-surface-texture-status-test EXCLUDE_FROM_ALL
+        tests/surface_texture_status_test.cpp)
+    target_link_libraries(threenative-surface-texture-status-test PRIVATE mystral-runtime)
     if(MYSTRAL_USE_DAWN)
         target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${DAWN_INCLUDE_DIR})
+        target_include_directories(threenative-surface-texture-status-test PRIVATE ${DAWN_INCLUDE_DIR})
     elseif(MYSTRAL_USE_WGPU AND TARGET wgpu::wgpu)
         target_include_directories(threenative-webgpu-comprehensive-test PRIVATE ${WGPU_TEST_INCLUDES})
+        target_include_directories(threenative-surface-texture-status-test PRIVATE ${WGPU_TEST_INCLUDES})
     endif()
+    tn_register_contract_test(threenative-surface-texture-status-test)
 
     add_executable(threenative-js-module-comprehensive-test EXCLUDE_FROM_ALL
         tests/js_module_comprehensive_test.cpp)

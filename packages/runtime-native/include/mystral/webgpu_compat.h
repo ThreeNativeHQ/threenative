@@ -254,8 +254,15 @@ inline void setupShaderModuleWGSL(WGPUShaderModuleDescriptor* desc,
 // ============================================================================
 
 inline bool wgpuSurfaceTextureStatusIsSuccess(int status) {
+#if defined(MYSTRAL_WEBGPU_DAWN) || defined(MYSTRAL_WEBGPU_WGPU_MODERN)
+    // Both modern backends return a usable acquired texture for either success status.
+    // Rejecting Suboptimal strands that image instead of presenting/releasing it.
+    return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat ||
+           status == WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal_Compat;
+#else
+    // Older headers report suboptimal separately from their single Success status.
     return status == WGPUSurfaceGetCurrentTextureStatus_Success_Compat;
-    // Note: Suboptimal is also considered success on wgpu, but Dawn maps both to Success
+#endif
 }
 
 #endif // MYSTRAL_WEBGPU_COMPAT_H

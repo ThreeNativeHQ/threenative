@@ -717,10 +717,13 @@ WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
         return createLinearPresentationTexture(state);
     }
 
-    WGPUSurfaceTexture surfaceTexture;
+    WGPUSurfaceTexture surfaceTexture = {};
     wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
 
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        // The API returns texture ownership even when the caller cannot use the result.
+        // Never strand an acquired image on a rejected status; null remains a named failure.
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
         // Fail by name. A surface that stops handing out images presents nothing, and the loop is
         // no longer paced by presenting, so this fires hundreds of times a second, which is
         // precisely how the resume defect looked from the outside: frames running away, presents
