@@ -1762,7 +1762,7 @@ was not raised and unrelated evidence was not deleted. Requested example
 tsc/root Biome/terrain/full scenarios/ocean/CPU gates all pass.
 
 
-### AC-5 round 16 — canopy and meadow (2026-10-02; IN PROGRESS)
+### AC-5 round 16 — canopy and meadow (2026-10-02; COMPLETE within lane scope)
 
 Complexity: 1 → LOW; risk override: none. Game appearance layer only.
 Integration unchanged: game → loadPack/buildPropVariants → existing InstancedBatch
@@ -1779,7 +1779,7 @@ remain gitignored and procedural art stays available. Hard stop: 20:58 UTC.
 - [x] Near canopy improves against Gaia; proof: before/candidate/after 1:1 crops under `artifacts/playtest/canopy-final/`.
 - [x] Meadow has connected blade/flower cover; proof: full-resolution meadow-close and forest-start captures.
 - [x] Licensed shared scenario and ocean pass with every measured view CPU p50 ≤4 ms; proof: `canopy-final/licensed/capture.json`, `verify-ocean.mjs`.
-- [ ] Procedural fallback shared scenario and ocean pass; proof: `canopy-final/fallback/capture.json`, `verify-ocean.mjs`.
+- [x] Procedural fallback shared scenario and ocean pass; proof: `canopy-final/fallback/capture.json`, `verify-ocean.mjs`.
 - [x] Example typecheck, root Biome and terrain vitest pass; proof: example `pnpm exec tsc --noEmit` exit 0, root Biome 72 files PASS, terrain vitest 12 files / 69 tests PASS (checkpoint; rerun if changed).
 
 Checkpoint at 19:35 UTC: baseline scenario **44/44 PASS**, zero diagnostics/console
@@ -1866,3 +1866,56 @@ The existing per-view latched medians are forest player/meadow/overview/river
 **1.9/1.7 ms**. Coastal and walk values above are captured closed-window medians.
 Thus the highest reported per-view licensed p50 is **3.1 ms**. Fallback has
 acquired the capture lock with `local-assets/` absent.
+
+### Round 16 final verification (20:54 UTC; no push or merge)
+
+**Licensed 46/46 PASS; fallback 46/46 PASS**, zero diagnostics and console errors
+in both. Both use NVIDIA Turing hardware WebGPU and the same shared scenario on
+port 5299; every captured view and every asserted step remains ≤4 ms CPU p50.
+Fallback hides the entire `local-assets/` directory, including prepared and
+Landscape Pro art; the directory is restored and the temporary holding path
+is absent. All **32 PNGs are 1920×1080** (dimension/count assertions PASS),
+16 per arm under `artifacts/playtest/canopy-final/{licensed,fallback}/`, including
+all 15 named views and the final coastal return. Comparisons remain alongside
+them. No licensed bytes or images were staged. Owned capture/server processes
+are stopped; port 5299 has no listener.
+
+Final fallback captured start/meadow/overview/river/walk CPU windows are
+**3.0/2.9/2.8/2.9/2.0 ms**; coast early/ocean/horizon/sun
+**1.9/2.0/1.7/1.8 ms**; alpine ridge/overview **1.5/1.3 ms**; desert
+mesa/overview **1.2/1.1 ms**; tundra plain/overview **1.9/2.1 ms**.
+Latched fallback per-view p50s are forest player/meadow/overview/river
+**2.9/2.1/2.6/2.9 ms**, alpine **1.5/1.4 ms**, desert **1.3/1.2 ms**,
+tundra **1.9/2.0 ms**. Final after-image windows: licensed **2.2**, fallback
+**1.8 ms**. Highest observed per-view p50 (latched or captured) is licensed
+**3.1 ms**, fallback **3.0 ms**.
+Fallback ocean probes PASS: wave change **0.652**, sun change **0.522**,
+sheltered blue fraction **1.0**.
+
+| World | Licensed self-grade /10 | Highest view CPU p50, licensed/fallback (ms) | Visual assessment |
+| --- | --- | --- | --- |
+| Forest | 4.5 | 3.1 / 3.0 | Connected photographed pine branches and dense blade mat; needle sparkle, crown mismatch to Gaia and flat far cover remain |
+| Coast | 4.5 | 2.6 / 2.0 | Original vegetation shading preserved; convincing water/glint, sparse shore |
+| Alpine | 2.5 | 2.0 / 1.5 | Chunky repeated rock forms, patchy vegetation; unchanged by this lane |
+| Desert | 3.0 | 1.3 / 1.3 | Smooth mesa forms and sparse ground; unchanged by this lane |
+| Tundra | 3.0 | 1.9 / 2.1 | Dark foreground, repeated ground and conspicuous clouds; unchanged by this lane |
+
+These are visual self-assessments, not an independent V10 judge. Main **AC-5
+remains open** and the PRD remains PARTIAL (`prd:75%`); no complete Gaia parity
+is claimed. Native/desktop/mobile and GPU-frame-rate claims are not made.
+
+Discarded fallback attempts: the first full run passed 45/46 but its tundra
+captured window was **4.2 ms**, despite a 3.2 ms latched view median; the
+unchanged final rerun is green. Another attempt stopped before assertions with
+a missing startup bridge. Scene doctor subsequently observed that bridge after
+**8.3 s**, with its default SwiftShader renderer (blank output excluded).
+The final run uses the prescribed hardware recipe, a **60,000 ms page-operation
+timeout** and the installed **300,000 ms capture-lock timeout** to avoid losing
+queue position. These change readiness/lease patience, not CPU thresholds or
+assertions. Repeated lock exit 75s and the mistyped-host startup failure are not
+passing verdicts. Tundra/form/light code was not edited to address those attempts.
+
+Local checkpoints: **aaa0c4b62**, **a9c844015**, **83f612795**, followed by the
+final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
+(**6.4 GiB**): it is unmerged and holds requested local licensed assets/captures,
+so it cannot be removed under the cleanup rules.
