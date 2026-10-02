@@ -17,7 +17,7 @@
 // are tall and every puff has a flat base; a second, coarser field, so the deck is banks with clear
 // sky between them rather than an even wash; and coverage that thickens inward, so a puff is thin
 // and bright at its fringe and dense and blue-grey at its core.
-import { Daylight, VirtualShadowNode } from "@threenative/core";
+import { Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
 import {
   BackSide,
   Color,
@@ -27,15 +27,21 @@ import {
   SphereGeometry,
   Vector3,
 } from "three";
+import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
   color,
   dot,
   float,
   max,
   mix,
+  mrt,
   mx_fractal_noise_float,
   mx_noise_float,
+  normalView,
   normalize,
+  output,
+  pass,
   positionLocal,
   pow,
   smoothstep,
@@ -80,7 +86,7 @@ const RIG = {
   /** Blue sky fill preserves detail in shade without cancelling the directional sun. */
   fill: { sky: new Color(0xa8c8e8), ground: new Color(0x464937), intensity: 0.62 },
   /** Near terrain stays clear; kilometre-scale ridges fade gradually into blue air. */
-  haze: { color: new Color(0x8ca8ba), density: 0.00065 },
+  haze: { color: new Color(0x8ca8ba), density: 0.0008 },
   /** Linear exposure for the AgX curve, as 2^EV. AgX already rolls its highlights off, so this sits
    *  below one: a temperate noon here is a bright sky and green that still has detail in it. */
   exposure: 2 ** -0.38,
@@ -262,5 +268,43 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
     },
     setSunX,
     sun,
+  };
+}
+
+/** Contact-scale occlusion through the installed chain; daylight still owns exposure and tone. */
+export function installOutdoorOcclusion(
+  ctx: Pick<ICtx, "renderer" | "scene" | "camera">,
+): () => void {
+  const { renderer, scene, camera } = ctx;
+  if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
+  const world = pass(scene, camera);
+  world.setMRT(mrt({ output, normal: normalView }));
+  const depth = world.getTextureNode("depth");
+  const normals = world.getTextureNode("normal");
+  const contact = ao(depth, normals, camera);
+  contact.radius.value = 1.2;
+  contact.scale.value = 0.8;
+  contact.samples.value = 8;
+  contact.resolutionScale = 0.5;
+  const filtered = denoise(contact.getTextureNode(), depth, normals, camera);
+  const occlusion = filtered as unknown as Node<"vec4">;
+  const chain = renderer.createRenderChain({
+    input: world.getTextureNode("output"),
+    worldPass: world,
+    request: { stages: ["ambientOcclusion"], tier: "auto" },
+    targetFps: 30,
+    stages: [
+      {
+        name: "ambientOcclusion",
+        minimumTier: "medium",
+        build: (input) => (input as Node<"vec4">).mul(mix(1, occlusion.r, 0.65)),
+      },
+    ],
+  });
+  return () => {
+    chain.dispose();
+    world.dispose();
+    contact.dispose();
+    filtered.dispose();
   };
 }

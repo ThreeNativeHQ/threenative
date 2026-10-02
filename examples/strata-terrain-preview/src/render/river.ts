@@ -50,7 +50,6 @@ import {
   pow,
   smoothstep,
   step,
-  transformNormalToView,
   uniform,
   vec2,
   vec3,
@@ -58,7 +57,7 @@ import {
   viewportSharedTexture,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { SUN, SUN_VECTOR } from "./sky.js";
 
 /** One river as the bake records it: the smoothed spline and the width of its water. */
@@ -218,8 +217,8 @@ const TINT = {
    * degrees does not reach the sky at all — it hits a trunk — and without this floor the stream is a
    * strip of chrome wherever the eye is low enough for the fresnel to close.
    */
-  bank: 0x33452f,
-  bankGain: 0.62,
+  bank: 0x627660,
+  bankGain: 0.8,
 } as const;
 
 /**
@@ -406,11 +405,8 @@ function slopeGain(
 }
 
 /** The shore: the surface dissolves into the wet margin instead of ending on a triangle. */
-function shoreFade(depthM: Node<"float">, fresnel: Node<"float">): Node<"float"> {
-  return max(
-    smoothstep(float(0), float(SHORE_FADE), depthM),
-    fresnel.mul(smoothstep(float(0), float(0.06), depthM)),
-  );
+function shoreFade(depthM: Node<"float">): Node<"float"> {
+  return smoothstep(float(0), float(SHORE_FADE), depthM);
 }
 
 /**
@@ -422,7 +418,10 @@ function shoreFade(depthM: Node<"float">, fresnel: Node<"float">): Node<"float">
  * drains into, and the flat cap across the channel that leaves is the hard straight edge the bank
  * appears to be cut by. Tapered, the surface meets the ground it is over and the end dissolves.
  */
-function surfaceHeights(field: Heightfield, points: readonly (readonly number[])[]): number[] {
+export function surfaceHeights(
+  field: Heightfield,
+  points: readonly (readonly number[])[],
+): number[] {
   const last = points.length - 1;
   const raw = points.map(([x = 0, , z = 0], k) => {
     const fromEnd = Math.min(k, last - k) / RIVER.taper;
@@ -525,6 +524,7 @@ export function createRivers(
   geometry.setAttribute("flow", new BufferAttribute(new Float32Array(flows), 2));
   geometry.setAttribute("metres", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
@@ -557,7 +557,7 @@ export function createRivers(
   const dAlong = height(along.add(delta), side).sub(h0).div(delta);
   const dSide = height(along, side.add(delta)).sub(h0).div(delta);
   const patch = windPatch(here, time, RIVER.patch.metres, RIVER.patch.drift, RIVER.patch.wind);
-  const gain = slopeGain(eyeDistance, patch, depthM);
+  const gain = slopeGain(eyeDistance, patch, depthM).mul(mix(0.12, 1, detail));
   const slant = (share: number): Node<"vec3"> => {
     const alongSlope = dAlong.mul(gain.mul(share)).negate();
     const sideSlope = dSide.mul(gain.mul(share)).negate();
@@ -587,12 +587,11 @@ export function createRivers(
   const sky = mix(
     linear(TINT.bank, TINT.bankGain),
     mix(color(TINT.skyHorizon), color(TINT.skyZenith), clamp(bounced.y, float(0), float(1))),
-    // Only rays that really leave downward see the bank; a ripple tilting a ray a few degrees below
-    // the horizon still sees mostly sky, and taking the bank there turned every facet into a black blob.
-    smoothstep(float(-0.12), float(0.06), bounced.y),
+    // A low reflected ray hits the wooded bank. Blend its average green radiance into sky
+    // over a broad angle; a hard dark cutoff makes moving facets flicker as black blobs.
+    smoothstep(float(0.08), float(0.5), bounced.y),
   );
-  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
-  const shaded = compositeWater({ normal, depthM, bed, reflected: sky });
+  const shaded = compositeWater({ normal, depthM, bed, reflected: sky.mul(0.65) });
 
   // White water where the current runs over a shallow bed, and a few streaks in the channel. Broken
   // rather than ruled: the shallows only whiten where the churn is high, so the edge reads as water
@@ -603,25 +602,19 @@ export function createRivers(
     .mul(0.5)
     .add(0.5);
   const shallows = float(1).sub(smoothstep(float(0.03), float(0.18).add(churn.mul(0.24)), depthM));
-  const bank = shallows.mul(smoothstep(float(0.4), float(0.85), churn)).mul(0.7);
-  const streak = smoothstep(float(0.78), float(0.92), h0.mul(0.5).add(0.5)).mul(0.18);
+  const bank = shallows.mul(smoothstep(float(0.65), float(0.9), churn)).mul(0.12);
+  const streak = smoothstep(float(0.78), float(0.92), h0.mul(0.5).add(0.5)).mul(0.035);
   const foam = max(bank, streak.mul(smoothstep(float(0), float(OPAQUE_DEPTH), depthM)));
 
-  const material = new MeshStandardNodeMaterial({
-    metalness: 0,
-    roughness: 0.07,
+  const material = new MeshBasicNodeMaterial({
     transparent: true,
     depthWrite: false,
   });
-  // The water's own colour is light coming *through* it, already lit by the frame beneath, so it goes
-  // in as emission; the lit channel carries only the foam and the sun's glint on the surface.
-  material.colorNode = color(TINT.foam).mul(foam);
-  material.emissiveNode = shaded.mul(float(1).sub(foam));
-  material.roughnessNode = mix(float(0.07), float(0.8), foam);
-  material.normalNode = transformNormalToView(normal);
+  // The composite already contains lit refraction, reflected sky and one sun glint, as on the lake.
+  material.colorNode = mix(shaded, linear(TINT.foam, 0.65), foam);
   // The last hand's depth of water dissolves into the gravel instead of the bank cutting the surface
   // like a blade.
-  material.opacityNode = shoreFade(depthM, fresnel);
+  material.opacityNode = shoreFade(depthM);
 
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);
@@ -649,20 +642,38 @@ export interface IBakedLake {
 }
 
 /** The furthest the basin reaches on a bearing: where the drawn ground crosses the level. */
-function waterlineRadius(field: Heightfield, centre: readonly number[], level: number): number {
-  const [cx = 0, , cz = 0] = centre;
+export function waterlineRadius(
+  field: Heightfield,
+  centre: readonly number[],
+  level: number,
+): number {
+  const [cx = 0, cz = 0] = centre;
   if (field.heightAt(cx, cz) >= level) return 0;
   const bearings = 24;
   let furthest = 0;
   for (let index = 0; index < bearings; index += 1) {
     const angle = (index / bearings) * Math.PI * 2;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
     let wet = 0;
-    let dry = 260;
+    let dry = Math.min(
+      (field.width / 2 - Math.sign(dx) * (cx - field.origin.x)) / Math.max(Math.abs(dx), 1e-6),
+      (field.depth / 2 - Math.sign(dz) * (cz - field.origin.z)) / Math.max(Math.abs(dz), 1e-6),
+    );
+    const cell = Math.max(field.width / (field.columns - 1), field.depth / (field.rows - 1));
+    // Stop at the first bank: binary-searching the whole ray can jump a dry ridge into another pond.
+    for (let distance = cell; distance < dry; distance += cell) {
+      if (field.heightAt(cx + dx * distance, cz + dz * distance) >= level) {
+        dry = distance;
+        break;
+      }
+      wet = distance;
+    }
     // Eighteen halvings is under two centimetres at this scale, well inside the ground's own two-metre
     // sample spacing, so more of them would be measuring nothing.
     for (let halving = 0; halving < 18; halving += 1) {
       const mid = (wet + dry) / 2;
-      if (field.heightAt(cx + Math.cos(angle) * mid, cz + Math.sin(angle) * mid) < level) wet = mid;
+      if (field.heightAt(cx + dx * mid, cz + dz * mid) < level) wet = mid;
       else dry = mid;
     }
     furthest = Math.max(furthest, (wet + dry) / 2);
@@ -686,7 +697,7 @@ export function createLakes(
   const lake = lakes[0];
   if (lake === undefined) return undefined;
   if (lakes.length > 1) throw new Error("The Temperate lake surface draws one lake; got more.");
-  const [cx = 0, , cz = 0] = lake.at;
+  const [cx = 0, cz = 0] = lake.at;
   const reach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
   if (reach <= 0) return undefined;
 
@@ -698,8 +709,14 @@ export function createLakes(
 
   const place = (index: number, radius: number, spoke: number): void => {
     const angle = (spoke / spokes) * Math.PI * 2;
-    const x = cx + Math.cos(angle) * radius;
-    const z = cz + Math.sin(angle) * radius;
+    const x = Math.max(
+      field.origin.x - field.width / 2,
+      Math.min(field.origin.x + field.width / 2, cx + Math.cos(angle) * radius),
+    );
+    const z = Math.max(
+      field.origin.z - field.depth / 2,
+      Math.min(field.origin.z + field.depth / 2, cz + Math.sin(angle) * radius),
+    );
     const depth = Math.min(MAX_BAKED_DEPTH, Math.max(0, lake.level - field.heightAt(x, z)));
     positions[index * 3] = x;
     positions[index * 3 + 1] = lake.level;
@@ -748,6 +765,7 @@ export function createLakes(
   geometry.setAttribute("waveDepth", new BufferAttribute(waveDepths, 1));
   geometry.setAttribute("metres", new BufferAttribute(metreDepths, 1));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
 
   const surface = new WaterSurface3D({
@@ -910,8 +928,7 @@ export function createLakes(
   );
   material.colorNode = mix(below, shaded, eyeIsAbove);
   // From underneath there is no shore to dissolve into and the ceiling is opaque.
-  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
-  material.opacityNode = mix(float(1), shoreFade(depthM, fresnel), eyeIsAbove);
+  material.opacityNode = mix(float(1), shoreFade(depthM), eyeIsAbove);
 
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);

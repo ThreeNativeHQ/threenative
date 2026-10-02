@@ -21,7 +21,7 @@ import {
 } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
-import { type IOutdoorSky, createOutdoorSky } from "./render/sky.js";
+import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
 import { createTerrain } from "./render/terrain.js";
 import baked from "./world/baked.json";
 
@@ -136,6 +136,7 @@ const initialState = {
   waveSamples: 0,
   waveRange: 0,
   sampleSlopeRange: 0,
+  lakePlacementError: 1,
   sunX: -180,
   propDraws: 0,
   propInstances: 0,
@@ -201,7 +202,11 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       ctx.add(sky.daylight);
       ctx.add(sky.sun);
       this.#sky = sky;
-      ctx.entities.add("sun", { object: sky.sun, debug: () => ({ x: sky.sunX }) });
+      ctx.entities.add("sun", {
+        object: sky.sun,
+        debug: () => ({ x: sky.sunX }),
+        dispose: installOutdoorOcclusion(ctx),
+      });
 
       const actor = new Mesh(
         new CapsuleGeometry(0.35, 1.0, 6, 12),
@@ -304,6 +309,14 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const lake = createLakes(data.lakes, field);
       this.#lake = lake;
       if (lake) {
+        const centre = lake.mesh.geometry.getAttribute("position");
+        const at = data.lakes[0]?.at;
+        ctx.state.set({
+          lakePlacementError: Math.hypot(
+            centre.getX(0) - (at?.[0] ?? 0),
+            centre.getZ(0) - (at?.[1] ?? 0),
+          ),
+        });
         ctx.add(lake.mesh);
         ctx.entities.add("lake", { mesh: lake.mesh, dispose: () => lake.dispose() });
       }
@@ -669,7 +682,8 @@ const game = defineGame<TerrainState, IPhysicsContext>({
         group.p50s.push(window.frame.p50);
         group.p99s.push(window.frame.p99);
         group.triangles.push(
-          Object.values(window.passes ?? {}).reduce((sum, pass) => sum + pass.triangles.p50, 0),
+          // The world pass is nested beneath AO; its full-screen passes submit one triangle.
+          Object.values(window.passes ?? {}).reduce((sum, pass) => sum + pass.triangles.max, 0),
         );
       }
     },

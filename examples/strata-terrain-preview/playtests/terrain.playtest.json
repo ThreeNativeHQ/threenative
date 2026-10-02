@@ -172,6 +172,12 @@
     "resources": [
       {
         "id": "GameState",
+        "path": "lakePlacementError",
+        "lte": 0.02,
+        "allowTrivial": "The drawn lake centre must match the baked [x,z] basin. The value stays at 1 when no lake is drawn, so an absent lake fails too."
+      },
+      {
+        "id": "GameState",
         "path": "grounded",
         "equals": true,
         "allowTrivial": "The character settles during warmup; grounded must still hold after the walk and scene transition."
@@ -283,6 +289,14 @@
         "gte": 1000,
         "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
       }
-    ]
+    ],
+    "renderChain": {
+      "stages": {
+        "includes": ["ambientOcclusion"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["ambientOcclusion"]
+      }
+    }
   }
 }

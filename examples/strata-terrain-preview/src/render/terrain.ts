@@ -10,7 +10,7 @@ import {
   LinearFilter,
   Mesh,
   MeshStandardMaterial,
-  RedFormat,
+  RGFormat,
   RepeatWrapping,
   type Texture,
 } from "three";
@@ -54,6 +54,7 @@ import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
 import { createHorizonGeometry } from "./horizon.js";
+import { type IBakedLake, type IBakedRiver, surfaceHeights, waterlineRadius } from "./river.js";
 
 export interface IBakedWorld {
   size: number;
@@ -61,6 +62,8 @@ export interface IBakedWorld {
   heights: number[];
   colors: number[];
   waterLevel: number | null;
+  lakes?: readonly IBakedLake[];
+  rivers?: readonly IBakedRiver[];
 }
 
 /**
@@ -80,6 +83,7 @@ export interface IGroundCurvature {
   /** +1 in a hollow, -1 on a rib, ~0 on flat ground. */
   readonly node: Node<"float">;
   readonly texture: DataTexture;
+  readonly wetBank: Node<"float">;
 }
 
 /** The layers that cover ground, ordered so the heavier surface blends over the base one. */
@@ -135,10 +139,10 @@ const MEADOW = vec3(0.43, 0.76, 0.38);
 function tiledUV(key: LayerKey, scale = 1): Node<"vec2"> {
   const base = positionWorld.xz.div(GROUND_TILE[key] * scale);
   const warp = vec2(
-    mx_noise_float(positionWorld.mul(0.035)),
-    mx_noise_float(positionWorld.mul(0.035).add(vec3(17, 0, 29))),
+    mx_noise_float(positionWorld.mul(0.025)),
+    mx_noise_float(positionWorld.mul(0.025).add(vec3(17, 0, 29))),
   );
-  return rotateUV(base, float(0.38), vec2(0)).add(warp.mul(0.7));
+  return rotateUV(base, float(scale === 1 ? 0.38 : -0.73), vec2(0)).add(warp.mul(0.35));
 }
 
 /**
@@ -351,10 +355,10 @@ export function createGroundMaterial(
     // concave slope the ground is covered by what has fallen into it, which is the moss above, so the
     // steepness term is scaled down in a hollow rather than replaced: bare rock still shows at a
     // scarp's foot where the ground is steep and the debris has not arrived yet.
-    rock: max(
-      smoothstep(0.065, 0.25, steep.add(rib.mul(0.035))),
-      alpine.mul(smoothstep(0.018, 0.13, steep)).mul(0.8),
-    ),
+    // Soil holds on ordinary hills; only scarps expose bedrock (34–48 degrees).
+    rock: smoothstep(0.17, 0.33, steep.add(rib.mul(0.018)))
+      .mul(mix(0.65, 1, smoothstep(12, 70, positionWorld.y)))
+      .mul(oneMinus(smoothstep(0.15, 0.8, hollow).mul(0.25))),
     snow: smoothstep(float(SNOW.from), float(SNOW.to), positionWorld.y).mul(
       smoothstep(SNOW.sheds, 0.06, steep),
     ),
@@ -364,7 +368,9 @@ export function createGroundMaterial(
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
   // to find anywhere between.
-  const far = smoothstep(float(14), float(52), positionView.length()).mul(0.35);
+  const far = smoothstep(float(10), float(70), positionView.length());
+  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  const tileBlend = mix(patch.mul(0.65), patch.mul(0.5).add(0.25), far);
   // How much of a layer is projected onto the ground plane and how much onto the walls. Zero on the
   // meadow, one on a cliff, and eased across the thirty-five degrees where a planar projection stops
   // being an approximation and becomes a smear.
@@ -380,12 +386,16 @@ export function createGroundMaterial(
    * 2.6 m is a dozen pixels wide from fifty metres away, and the middle distance goes to a wash. The
    * two are blended rather than switched so the crossover has no seam to find.
    */
-  const flatLayer = (key: LayerKey): boolean => key === "snow";
+  const flatLayer = (key: LayerKey): boolean => key !== "rock" && key !== "sand";
 
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
-    const flat = mix(texture(diffuse, tiledUV(key)), texture(diffuse, tiledUV(key, 2.35)), far);
+    const flat = mix(
+      texture(diffuse, tiledUV(key)),
+      texture(diffuse, tiledUV(key, 2.35)),
+      tileBlend,
+    );
     if (flatLayer(key)) return flat;
     const walls = triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
@@ -393,11 +403,14 @@ export function createGroundMaterial(
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const stone = mix(blended.rgb, vec3(grey), 0.25).mul(vec3(0.85, 0.9, 0.94));
+      const stone = mix(blended.rgb, vec3(grey), 0.35).mul(vec3(0.48, 0.44, 0.39));
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
-      const distant = vec3(0.3, 0.31, 0.29).mul(weathering);
-      return vec4(mix(stone, distant, smoothstep(35, 220, positionView.length())), blended.a);
+      const distant = vec3(0.115, 0.105, 0.088).mul(weathering);
+      return vec4(
+        mix(stone, distant, smoothstep(35, 220, positionView.length()).mul(0.65)),
+        blended.a,
+      );
     }
     if (key !== "sand" || data.waterLevel === null) return blended;
     const wet = wetness();
@@ -414,14 +427,16 @@ export function createGroundMaterial(
       const walls = triplanarRelief(source, key);
       return {
         crevice: walls.crevice,
-        tilt: walls.tilt.mul(strength).mul(oneMinus(smoothstep(24, 130, positionView.length()))),
+        tilt: walls.tilt
+          .mul(strength)
+          .mul(mix(1, 0.18, smoothstep(24, 160, positionView.length()))),
       };
     }
     const near = planarRelief(source, tiledUV(key), strength);
     const coarse = planarRelief(source, tiledUV(key, 2.35), strength * 0.6);
     const flat: IRelief = {
-      crevice: mix(near.crevice, coarse.crevice, far),
-      tilt: mix(near.tilt, coarse.tilt, far),
+      crevice: mix(near.crevice, coarse.crevice, tileBlend),
+      tilt: mix(near.tilt, coarse.tilt, tileBlend),
     };
     if (flatLayer(key)) return flat;
     // Rock's strata are metres across, so its wall projection samples at its own tile size; grass and
@@ -447,7 +462,9 @@ export function createGroundMaterial(
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
   // third sampler on the grass layer is a third of the budget for detail nobody can name.
-  let normal = grassRelief.tilt.mul(weights.grass).add(microGrain().mul(weights.grass));
+  let normal = grassRelief.tilt
+    .mul(weights.grass)
+    .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   for (const key of LAYERS) {
@@ -460,7 +477,15 @@ export function createGroundMaterial(
     // No displacement maps in these starter sets: normal relief breaks the blend edge,
     // while slope, elevation and curvature determine which surface belongs here.
     const reliefHeight = relief.crevice.sub(0.8).mul(0.12).add(breakUp.mul(0.045));
-    const over = smoothstep(0.12, 0.82, weight.add(reliefHeight));
+    // The photograph's relief and metre-scale breakup cut pockets into the soil/rock boundary.
+    const rockHeight = dot(surface.rgb, vec3(0.2126, 0.7152, 0.0722))
+      .sub(0.1)
+      .mul(0.7)
+      .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
+    const over =
+      key === "rock"
+        ? smoothstep(0.34, 0.51, weight.add(rockHeight))
+        : smoothstep(0.12, 0.82, weight.add(reliefHeight));
     albedo = mix(albedo, surface, over);
     normal = mix(normal, relief.tilt, over);
   }
@@ -472,9 +497,31 @@ export function createGroundMaterial(
   const dryness = smoothstep(-0.18, 0.22, macro.sub(hollow.mul(0.16)).add(alpine.mul(0.06)));
   const tone = mix(vec3(0.52, 0.82, 0.46), vec3(1.23, 1.06, 0.83), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
-  material.colorNode = albedo.rgb.mul(mix(vec3(1), tone, vegetation));
+  const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
+  const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
+  const forest = mix(vec3(0.035, 0.065, 0.026), vec3(0.075, 0.09, 0.045), breakUp.add(0.5));
+  const crag = mix(vec3(0.085, 0.073, 0.06), vec3(0.19, 0.165, 0.135), strata.mul(0.6).add(0.5));
+  const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
+  const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
+  const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
+    oneMinus(smoothstep(0.18, 0.42, steep)),
+  );
+  const mountain = mix(mix(forest, crag, max(treeline, face)), vec3(0.72, 0.76, 0.78), cap);
+  material.colorNode = mix(
+    albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
+    mountain,
+    continuation,
+  ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
+  material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
+  // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
+  const rockNormal = layer("rock").normal;
+  const mountainTilt =
+    rockNormal === undefined
+      ? vec3(0)
+      : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
+  const tilt = mix(normal, mountainTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-  const tangent = normal.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)));
+  const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
@@ -533,7 +580,7 @@ export function createTerrain(
   mesh.add(horizon);
   geometry.addEventListener("dispose", () => horizon.geometry.dispose());
 
-  const curvature = buildCurvature(data);
+  const curvature = buildCurvature(data, field);
   if (assets !== undefined)
     void loadGroundMaps(assets)
       .then((maps) => createGroundMaterial(data, maps, curvature))
@@ -564,7 +611,7 @@ export function createTerrain(
  *
  * One curvature binding plus six albedos, four normals and four shadow maps is fifteen.
  */
-function buildCurvature(data: IBakedWorld): IGroundCurvature {
+function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature {
   const resolution = data.resolution;
   const heights = data.heights;
   const spacing = data.size / (resolution - 1);
@@ -573,7 +620,20 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
       Math.min(resolution - 1, Math.max(0, row)) * resolution +
         Math.min(resolution - 1, Math.max(0, column))
     ] as number;
-  const pixels = new Uint16Array(resolution * resolution);
+  const lakes = (data.lakes ?? []).map((lake) => ({
+    ...lake,
+    reach: waterlineRadius(field, lake.at, lake.level),
+  }));
+  const rivers = (data.rivers ?? []).flatMap((river) => {
+    const levels = surfaceHeights(field, river.points);
+    return river.points.map(([x = 0, , z = 0], index) => ({
+      x,
+      z,
+      level: levels[index] as number,
+    }));
+  });
+  // Both channels share one sampler: measured concavity and the water's actual wet margin.
+  const pixels = new Uint16Array(resolution * resolution * 2);
   for (let row = 0; row < resolution; row += 1) {
     for (let column = 0; column < resolution; column += 1) {
       const laplacian =
@@ -583,12 +643,28 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
         at(row + 4, column) -
         4 * at(row, column);
       // An eight-metre neighbourhood picks out channels and hollows, suppressing tiny baked bumps.
-      pixels[row * resolution + column] = DataUtils.toHalfFloat(
+      const index = (row * resolution + column) * 2;
+      pixels[index] = DataUtils.toHalfFloat(
         Math.max(-1, Math.min(1, (laplacian / (spacing * spacing * 16)) * 36)),
       );
+      const x = column * spacing - data.size / 2;
+      const z = row * spacing - data.size / 2;
+      const height = at(row, column);
+      const margin = (level: number): number =>
+        Math.max(0, Math.min(1, (level + 1.1 - height) / 1.1));
+      let wet = 0;
+      for (const lake of lakes) {
+        const distance = Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0));
+        if (distance <= lake.reach + 3) wet = Math.max(wet, margin(lake.level));
+      }
+      for (const station of rivers) {
+        if (Math.hypot(x - station.x, z - station.z) <= 13)
+          wet = Math.max(wet, margin(station.level));
+      }
+      pixels[index + 1] = DataUtils.toHalfFloat(wet);
     }
   }
-  const cooked = new DataTexture(pixels, resolution, resolution, RedFormat, HalfFloatType);
+  const cooked = new DataTexture(pixels, resolution, resolution, RGFormat, HalfFloatType);
   cooked.minFilter = LinearFilter;
   cooked.magFilter = LinearFilter;
   cooked.wrapS = ClampToEdgeWrapping;
@@ -598,7 +674,8 @@ function buildCurvature(data: IBakedWorld): IGroundCurvature {
     positionWorld.x.div(float(data.size)).add(0.5),
     positionWorld.z.div(float(data.size)).add(0.5),
   );
-  return { node: texture(cooked, uv).r, texture: cooked };
+  const sampled = texture(cooked, uv);
+  return { node: sampled.r, texture: cooked, wetBank: sampled.g };
 }
 
 /**

@@ -605,6 +605,143 @@ worn dirt scatter, `river.png` the lake sitting in the basin the traced stream f
 open** — this fixes terrain only; the five environments' art, atmosphere and the coastal/alpine/
 desert/tundra *defining views* are not yet captured and judged.
 
+### AC-5 ground round 2 — 2026-10-02 (continuation)
+
+First increment preserves the retained rock height blend and mountain layering, then reduces
+the grass warp (the stronger warp drew swirls), blends rotated texture scales with the same
+mask in colour and normals, retains distant stone detail, and refines the horizon mesh.
+Rock is brown-grey and restricted to scarps; distant scenery has forest, rock and high snow
+bands. Directly inspected captures: `examples/strata-terrain-preview/artifacts/playtest/round2-material/`
+(`meadow-close.png`, `overview.png`, `forest-walk.png`, `river.png`). Full-frame display-space
+Y p05/p50/p95: meadow **0.236/0.431/0.738**, overview **0.217/0.402/0.484**,
+walk **0.078/0.385/0.495**, river **0.012/0.415/0.815**; these are image statistics, not
+linear-light luminance or a visual-quality score. Existing WebGPU scenario, NVIDIA/Turing,
+passes every resource assertion (595 contact samples, max error **0.000004 m**); only
+`diagnostics` fails, with the known destroyed `ShadowDepthTexture` errors after the coastal
+switch. Meadow/overview engine frame p50: **3.9/3.3 ms**, excluding presented-frame gaps.
+Example typecheck and root lint pass (lint warnings remain); terrain tests **60/60** pass.
+An interrupted capture was invalidated by a measurement rebaking JSON during Vite play;
+the recorded retry ran with no file writes. Decisions: reuse existing maps and daylight,
+keep appearance in game source, leave the collider and other lanes untouched. Gullies,
+water and contact AO remain the next increments; the mountains still need stronger relief.
+**AC-5 remains open; this is an improvement, not an Unreal-level verdict.**
+
+Second increment: forest hydraulic inertia/load/bite are reduced, with a 34° talus and
+16 settling iterations. `node scripts/measure-spikes.mjs`: **1 spike, worst 1.7 m** (was 3).
+The stream's existing curved route still ends in the same basin: measured rendered stream
+end **10.55 m**, lake bed **10.26 m**, level **12.4 m**; its 4,540 m² connected flooded
+component reaches no world edge. No engine package changed. A game bug was reproduced:
+the bake stores lake centres as `[x,z]`, while the renderer read `[x,y,z]`, drawing at
+z=0 or returning no lake. Both consumers now read the actual centre; shore tracing stays
+inside the resident heightfield and stops at the first bank. The existing playtest now
+fails on missing/misplaced lake geometry (`lakePlacementError`, observed **0 m**).
+Wet banks share the curvature texture's second channel, with lower roughness and darker
+soil. The stream uses the lake's existing radiance composite without a second PBR glint;
+foam and shallow-edge opacity are reduced. Inspected `artifacts/playtest/round2-water/`
+captures now show a reflective lake in its basin; **the small upstream white strip remains**,
+so this does not claim the stream defect finished. Meadow/overview frame p50 **3.2/4.0 ms**;
+full-frame display Y p05/p50/p95: meadow **0.225/0.434/0.738**, overview
+**0.209/0.402/0.483**, walk **0.070/0.386/0.493**, river **0.181/0.411/0.822**.
+All resource assertions pass; only known coastal shadow-texture `diagnostics` fails.
+Example typecheck, root lint (warnings only) and terrain tests **60/60** pass.
+
+
+Third increment: the walked-view dark trench was traced by the actual chase-camera ray to
+`[-141,153]`, on the building pad's cut, rather than the hydraulic drainage. Widening that
+pad's existing falloff from 0.35 to 0.75 reduces its sampled wall maximum from **53.44° to
+42.80°**; the inspected walk now shows a graded bank. Spike check remains **1 / 1.7 m**.
+The distant ground normal no longer carries subpixel grass grain; the horizon has denser
+radial sampling, stronger ridges, a lower high-snow band and slightly thicker aerial haze.
+Installed GTAO plus denoise runs at half resolution with eight samples through the existing
+`ambientOcclusion` RenderChain stage, automatically dropping below medium tier. It uses the
+template's normal MRT: the first depth-derived-normal attempt failed on multisampled depth
+and was discarded. Both stage-presence and actual graph-contribution assertions now pass.
+The per-view geometry floor now measures peak submitted triangles within each pass window:
+AO nests the world pass alongside single-triangle full-screen passes, whose median alone
+incorrectly reported two triangles. Full scenario passes all resources and AO assertions;
+only **391 shadow-texture diagnostics errors** fail (three occur at startup; the coastal switch dominates the rest). WebGPU only; no native
+claim. Engine frame p50 meadow/overview **1.8/2.2 ms**, excluding presentation gaps. Previous
+complete-window GPU medians with/without AO were **9.65/9.28 ms**, not an isolated AO benchmark.
+Inspected `artifacts/playtest/round2-ao/`: display Y p05/p50/p95 meadow
+**0.239/0.446/0.737**, overview **0.254/0.414/0.491**, walk **0.142/0.391/0.500**,
+river **0.204/0.413/0.821**. Example typecheck, root lint (warnings only), terrain tests
+**60/60** pass. Stream glints now fade with footprint, but its distant white reach remains
+unfinished; mountain faces remain more procedural than the reference. AC-5 stays open.
+
+
+Fourth increment: a refraction ablation leaves the white upstream strip unchanged,
+locating its source in low-angle sky reflection. The stream now blends the average wooded
+bank into sky over a broad angle, retaining green bank radiance instead of the earlier black
+facets. The sampled stream patch's display Y median falls **0.580 → 0.321**; the inspected
+reach is green-blue, with the existing shallow-depth edge and wet terrain margin. Refraction
+was restored; no debug colour or constant-bed substitution remains. Rounded ridge cusps
+remove regular silhouette teeth, secondary ridges vary the outline, and the existing rock
+normal map is reused at **30.4 m** scale on distant rock faces. High snow, rock faces and
+forest-dark lower slopes remain separate from the resident ground. A trial raising the hill
+stamp roughness to 0.25 added a spike without a clear drainage improvement; it was rejected.
+Final recipe remains **1 spike / 1.7 m**, with the same basin and curved stream route. Basin
+measurement after the retained pad edit: **4,540 m²**, no world-edge flood, bed **10.26 m**,
+level **12.4 m**, rendered stream end **10.55 m**. The pad edit is far from this basin.
+
+Delivery WebGPU scenario: **23/24 assertions pass**; only diagnostics fails (**390** counted
+console errors, all destroyed `ShadowDepthTexture`; console artifact contains 391 entries).
+Stage presence and graph contribution pass. AO introduces three startup errors of this
+same class before the larger known coastal failure; this renderer issue is unresolved.
+Contacts: **595**, maximum measured error **0.000004 m**, lake placement error **0 m**.
+Meadow/overview engine frame p50: **1.2/1.6 ms**, excluding presentation gaps; forest-only
+GPU median across **49 window p50s: 22.81 ms**. Presented-window median is **100 ms** in
+this stepped capture run: neither the CPU metric nor the GPU statistic claims player FPS.
+Example typecheck, root lint (1,054 warnings, no errors), terrain tests **60/60**, and diff
+whitespace check pass on this delivery source. No push and no native verification.
+
+Final captures and runner provenance: `examples/strata-terrain-preview/artifacts/playtest/round2-final/`
+(`meadow-close.png`, `overview.png`, `forest-walk.png`, `river.png`, `capture.json`, `console.json`).
+Full-frame linear-light luminance p05/p50/p95, decoded from captured sRGB:
+meadow **0.048/0.168/0.494**, overview **0.054/0.147/0.210**,
+walk **0.017/0.128/0.209**, river **0.030/0.135/0.617**.
+Display-space Y for comparison with earlier increments: meadow **0.239/0.444/0.729**,
+overview **0.254/0.416/0.494**, walk **0.138/0.389/0.492**, river **0.188/0.399/0.806**.
+
+Verdict per defect: rock/grass tiling materially improved; the walked-view pad trench is
+softened, but some radial drainage fans remain; distant layering and detail are improved,
+but mountain form still reads more procedural than Gaia; the white stream reach is repaired
+and the lake now occupies its actual basin; installed AO is visibly active within the observed
+median GPU budget, with the startup shadow issue disclosed above. **Below the Unreal-level
+target: AC-5 remains open.** Decisions: use installed maps/RenderChain, reuse the existing
+wet/curvature binding, repair the game lake coordinate bug in both consumers, reject the
+extra-spike recipe, and leave engine packages and other lanes untouched.
+
+
+Fifth/final increment: the remaining drainage fans receive a bounded increase in the existing
+valley domain warp, **25 → 40 m**. A 55 m trial curved the drainage but let the connected
+flood component reach the world edge, so it was rejected. The retained 40 m overview has
+more curved drainage; the pad's graded bank remains intact. Actual final spike check:
+**2 spikes, worst 1.5 m** (the incoming control had 3; the previous increment had 1 / 1.7 m).
+Tradeoff accepted for more curved form and a lower worst excursion. The basin remains at
+the same authored centre and level: **1.20 m** depth, **4,796 m²** connected flood, **no
+world edge**. Rechecked existing stream route against this field: end surface **11.49 m**
+enters the **12.4 m** lake, **zero uphill steps**, minimum interior station depth **0.88 m**.
+The connected basin did not move, so the existing curved control points are retained.
+
+This capture supersedes the fourth increment's final statistics and files above. All
+resource and AO assertions pass (**23/24** total); diagnostics alone fails with **392**
+counted destroyed-shadow-texture errors (393 console-artifact entries of that same class).
+The disclosed three startup errors remain. Contacts **595**, max error **0.000004 m**,
+lake placement error **0 m**. Meadow/overview engine frame p50 **1.4/2.2 ms**; forest-only
+GPU median across **49 window p50s: 19.09 ms**. Presented-window median **100 ms** during
+stepped capture; no player-FPS claim. Example typecheck, root lint (warnings only), terrain
+**60/60**, and diff whitespace check pass. The final recipe and results are committed; captures remain local, with generated
+JSON/local licensed art kept out of the index.
+
+`artifacts/playtest/round2-final/` now holds the retained 40 m captures and runner provenance;
+`round2-before-warp/` preserves the previous pictures. Final full-frame linear-light
+luminance p05/p50/p95: meadow **0.054/0.168/0.494**, overview **0.055/0.147/0.209**,
+walk **0.019/0.130/0.219**, river **0.026/0.118/0.617**. Display Y:
+meadow **0.256/0.444/0.729**, overview **0.258/0.417/0.492**,
+walk **0.146/0.392/0.503**, river **0.173/0.376/0.806**.
+Final verdict remains **improved, below the Unreal/Gaia target**: broad fan forms and soft
+mountain silhouettes still need work. AC-5 stays open. No push; native unverified.
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [x] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: PASS 2026-10-02 — one script runs the shared `playtests/terrain.playtest.json` twice over the same generator, the same render modules and the same baked arrays, differing only in `src/world/terrainAssets.ts`: the committed bytes, then a consumer's table naming five 8×8 procedural PNGs and one hand-written 12-triangle GLB the script writes into a temporary directory. Every scenario assertion, `diagnostics` included, passes in both arms (0 console errors each). The replacement reached the renderer — the 12-triangle fixture is among the drawn props and no stock node has that triangle count; the custom arm resolved 5 files, all 5 from its own `/__custom-art/` root and 0 of the 27 starter files the stock arm resolved, so the two arms are distinguishable. The generator is untouched: `world`, `contactSamples`, `maxContactError` (3.12e-05 m), `bilinearDifference` (1.5 m) and `sampleSlopeRange` are identical across arms. `propInstances` is deliberately recorded rather than compared (2130 stock, 1990 custom): the placement set is the generator's and identical, but the consumer's own variants replace the starter's four prepared files, so a different instance count is the correct answer. A third arm whose needle atlas names a file nobody wrote makes the same checker both arms went through throw, and the throw names `absent-needle-atlas.png`. The committed table is restored and byte-compared in the run's `finally`, so no arm can leave the repository pointing at temporary fixtures. The first custom run failed `diagnostics` on 26 console errors, both fixture faults and both now fixed in the fixture: the marker GLB had no UVs, and the consumer table gave all six ground layers a normal map, which is 18 samplers against WebGPU's 16 per stage (the starter spends the 16 with normals on four layers) — a truthful constraint on custom ground art, recorded in the script.
 - [x] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: PASS 2026-10-02 — `pnpm build` exit 0 (53 s), `pnpm capabilities:check` fresh (400 entries, 393 of 393 package-backed entries resolvable), `pnpm exec vitest run packages/engine-mcp/__tests__/terrain-discovery.spec.ts` green, and `pnpm --filter strata-terrain-preview test:consumer` green (~12 s) from tarballs installed outside the workspace. Through the packed `threenative-engine-mcp` and the packed manifest, four queries resolve at rank 0 to the public import: a request-scope island prompt and "procedural heightmap landscape" to `Terrain` in `@threenative/terrain`, "export the terrain as a glb for another three.js project" to `exportWorldGLB` in `@threenative/terrain/export`, "open the terrain brush and layer GUI" to `mountTerrainEditor` in `@threenative/terrain/editor`. `Terrain`'s constraints now state metres with Y up and the 1 to 100000 size, the seven allowed resolutions (17 to 1025), the 0 to 4294967295 seed and that one document and seed give the same arrays (the consumer re-evaluates all five worlds and matches the game's baked heights hash-for-hash), the synchronous `evaluate()`, and that materials, models and texture paths belong to the game; a negative control that asserts a wrong unit fails by name. All eleven packed templates and a fresh `createProject` scaffold carry the terrain pointer in both AGENTS.md and CLAUDE.md, list no authoring dependency, and `terrain-authoring.md` names the install, the editor server entry, `exportWorldGLB` and the shipped `AGENT_GUIDE.md`; the packed editor entry exports `mountTerrainEditor` and `TerrainEditorController`. Not covered: the `capability-examples` spec fails on `@threenative/metahuman`, `raw-unreal`, `ueformat` and `ui` modules that are not built in this checkout (no terrain entry in its list). Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.

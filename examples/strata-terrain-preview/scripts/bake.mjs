@@ -16,7 +16,7 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     base: 0,
     amplitude: 14,
     scale: 110,
-    warp: 25,
+    warp: 40,
     octaves: 3,
     mode: "billow",
   })
@@ -28,7 +28,16 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shape: "mountain",
     roughness: 0.17,
   })
-  .erode({ id: "weathering", method: "hydraulic" })
+  // Less momentum follows curved troughs; a smaller sediment load leaves rounded banks.
+  .erode({
+    id: "weathering",
+    method: "hydraulic",
+    inertia: 0.08,
+    capacity: 3,
+    erosion: 0.025,
+    deposition: 0.35,
+    evaporation: 0.035,
+  })
   // One settling pass over the carved surface. Every droplet leaves the edge of its own dimple, and
   // without this the hillside is pocked rather than weathered. It is one pass, not two: a second
   // flattens the whole hill into rolling dough with no rill left anywhere on it.
@@ -36,9 +45,9 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   // Rills and small crests, added after the settle so they survive it. Placed before, the pass
   // above erases them; placed after the talus, the talus slides them off again.
   .noise({ id: "detail", base: 0, amplitude: 3, scale: 60, warp: 12, octaves: 4, mode: "ridged" })
-  // Material past 36 degrees slides to its lowest neighbour and piles as a fan at the foot of the
+  // Material past 34 degrees slides to its lowest neighbour and piles as a fan at the foot of the
   // slope; without this the talus is either absent or a single-cell spike.
-  .erode({ id: "talus", method: "thermal", talus: 36, iterations: 12 })
+  .erode({ id: "talus", method: "thermal", talus: 34, iterations: 16 })
   // The ridged detail is a crest, and a crest is a single-cell spike until something settles it. The
   // scree pass below is the last one, so the world needs one light pass after it, not only before.
   .smooth({ id: "drift", iterations: 1, strength: 0.4 })
@@ -68,7 +77,7 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shoulder: 8,
   })
   // The pad takes the local terrain height; its blend reaches as far as the deepest cut or fill.
-  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, falloff: 0.35 })
+  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, falloff: 0.75 })
   .paint({ id: "pad-surface", at: [-120, 150], radius: 18, material: "dirt" })
   .river({
     id: "river",
