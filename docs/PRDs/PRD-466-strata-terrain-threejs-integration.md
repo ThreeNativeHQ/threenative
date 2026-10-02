@@ -1455,7 +1455,7 @@ Full scenario green on both merges (exit 0, no console/network errors). Fresh ju
 Crown cyan fringe gone (AO multiplied canvas alpha). Remaining: alpine crags read as a repeated boulder pile
 on a smooth cone; threshold-stencil snow; desert strata as even horizontal bands with rocks on walls;
 tundra Voronoi crack tiling; painted rock patches and lawn-like far meadow; clay-like coast land; weak
-contact shadowing. Captures: `docs/verification/visuals/strata/v8-*.jpg`. AC-5 stays open.
+contact shadowing. Captures: `docs/verification/visuals/strata/v8-*.jpg` (superseded by v9). AC-5 stays open.
 ### AC-5 forest/coast round 12 — 2026-10-02 (verified iteration; AC-5 open)
 
 Forest/coast source appearance only, from merged forest-round-11/worlds-round-3 tip.
@@ -1627,3 +1627,13 @@ Delivery: captures and harness console output remain local at
 no hidden leftovers, no purchases or asset-byte changes. Implementation commits
 `ca278ae0e`, `658b8a0ba`, `b3c158951` plus the final notes commit are local only;
 no push/merge. Worktree retained for the unmerged branch and unfinished AC-5.
+
+#### 2026-10-02 V9 judge (merged forest r12 + worlds r4, 284824d79)
+
+Combined scenario green (exit 0, 0 failed assertions, no console errors). Fresh judge with 1:1 crops:
+forest 4.2, coastal 4.5, alpine 3.0, desert 3.5, tundra 3.0, **overall 3.9/10** (V8 3.8). Gains: alpine crags
+embedded as ribs, layered desert beds with foot talus, tundra grass fringe gone (AO multiplied canvas alpha),
+rocky coast shoreline. Structural defects that persist across rounds: card-spruce shading (olive, no
+transmission), smooth un-eroded continuation mountains, noise-blob snow, coarse far shadow cascade
+(stair-stepping), flat light, visible player capsule. Captures: `docs/verification/visuals/strata/v9-*.jpg`.
+AC-5 stays open.
