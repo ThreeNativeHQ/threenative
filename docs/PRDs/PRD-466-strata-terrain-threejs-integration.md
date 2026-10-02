@@ -924,6 +924,24 @@ excluded. `check-temperate.mts` passes (3,200 spruces, 1 qualifying inland cliff
 0 cliffs in the coastal placement control). Example typecheck and root Biome error
 gate pass. Browser visual/assertion qualification is pending: the other lane holds
 the shared capture lease; no successful full-scenario run is claimed yet.
+Second working increment: review found a rotated cliff corner crossing grass. The
+filter now checks a conservative 3×3 yaw envelope of the pack stone's normalized
+maximum dimension. The placement check passes with 0 forest/coastal cliffs and a
+positive continuous-scarp fixture; the demonstrated rotated-corner placement is
+rejected. A fresh read-only review finds no remaining concrete guard defect.
+The forest-only `drainage-breakup` warped noise precedes hydraulic erosion. Bake
+and spike scripts pass (2 spikes, worst 1.5 m); all 69 terrain tests pass. Lake
+centre stays below water (11.2015 → 11.2158 m versus 12.4 m); wet cells inside its
+radius change 994 → 987 and the river remains downhill. Coastal baked data is
+byte-equivalent. The basin did not require retracing. Local overview relief varies
+more, but the distant parallel ribs still need work; this is partial visual progress.
+The full candidate (including the pending crown material) passes 24/24 assertions,
+0 console errors, meadow/overview frame p50 2.2/2.4 ms at 1920×1080. Captures:
+`examples/strata-terrain-preview/artifacts/playtest/round10-candidate/`.
+Crown visuals are still being qualified before their commit. Example typecheck,
+root Biome error gate and document checks pass. The first root Biome invocation
+had an import-order error in an uncommitted probe; it was corrected and rerun
+successfully before this increment. No native or Unreal-level visual claim.
 AC-5 remains open pending visual acceptance of all five environments.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.

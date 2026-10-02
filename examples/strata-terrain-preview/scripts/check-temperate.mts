@@ -41,16 +41,37 @@ for (const [x, z] of [
 }
 for (const cliff of scatter.placements.filter((one) => one.asset === "cliff")) {
   const [x, , z] = cliff.position;
-  const reach = 9 * Number(cliff.scale);
-  assert.ok(grassWeight({ ...data, field }, x, z) <= 0.05);
-  for (const [px, pz] of [
-    [x - reach, z],
-    [x + reach, z],
-    [x, z - reach],
-    [x, z + reach],
-  ])
-    assert.ok(slopeDegrees({ ...data, field }, px, pz) >= 43);
+  const reach = 18 * Math.SQRT1_2 * Number(cliff.scale);
+  for (const dx of [-reach, 0, reach])
+    for (const dz of [-reach, 0, reach]) {
+      assert.ok(grassWeight({ ...data, field }, x + dx, z + dz) <= 0.05);
+      assert.ok(slopeDegrees({ ...data, field }, x + dx, z + dz) >= 43);
+    }
 }
+// The previously accepted slab crossed this grassy, shallow rotated corner.
+assert.ok(
+  !scatter.placements.some(
+    (one) =>
+      one.asset === "cliff" &&
+      Math.hypot(one.position[0] + 41.0373, one.position[2] + 94.4282) < 0.01,
+  ),
+);
+// A continuous bare inland scarp still admits embedded cliffs.
+const scarp = new Heightfield({
+  origin: { x: 0, z: 0 },
+  rows: 17,
+  columns: 17,
+  width: 512,
+  depth: 512,
+  heights: Float32Array.from(
+    { length: 17 * 17 },
+    (_, i) => 350 + ((i % 17) / 16 - 0.5) * 512 * Math.tan((52 * Math.PI) / 180),
+  ),
+});
+assert.ok(
+  scatterProps({ ...data, field: scarp, lakes: [], rivers: [] }, { x: 186, z: 76 }).counts.cliff >
+    0,
+);
 // Even steep coastal grass ledges cannot acquire the pack's rectangular cliff slab.
 assert.equal(scatterProps({ ...data, field, waterLevel: 0 }, { x: 186, z: 76 }).counts.cliff, 0);
 const materials = flatPropMaterials();

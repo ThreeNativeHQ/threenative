@@ -28,6 +28,18 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shape: "mountain",
     roughness: 0.17,
   })
+  // Break the eastern slope's parallel drainage before erosion, away from the western lake basin.
+  .noise({
+    id: "drainage-breakup",
+    base: 0,
+    amplitude: 7,
+    scale: 43,
+    warp: 33,
+    octaves: 3,
+    lacunarity: 1.87,
+    seed: 127,
+    mask: Mask.rectangle([176, 24], [300, 464], -11, 0.6),
+  })
   // Less momentum follows curved troughs; a smaller sediment load leaves rounded banks.
   .erode({
     id: "weathering",

@@ -129,17 +129,16 @@ export function scatterProps(
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
     if (asset === "cliff") {
-      // The 18 m slab needs an inland scarp across its footprint, never a coastal grass ledge.
-      const reach = 9 * scale;
+      // Stones normalize their largest dimension to 18 m. This envelope covers every yaw.
+      const reach = 18 * Math.SQRT1_2 * scale;
       if (
         data.waterLevel !== null ||
-        grassWeight(data, x, z) > 0.05 ||
-        [
-          [x - reach, z],
-          [x + reach, z],
-          [x, z - reach],
-          [x, z + reach],
-        ].some(([px = 0, pz = 0]) => slopeDegrees(data, px, pz) < 43)
+        [-reach, 0, reach].some((dx) =>
+          [-reach, 0, reach].some(
+            (dz) =>
+              grassWeight(data, x + dx, z + dz) > 0.05 || slopeDegrees(data, x + dx, z + dz) < 43,
+          ),
+        )
       )
         return;
     }
