@@ -5,7 +5,8 @@ export function emitTone({ assertions, diagnostics, input, scenarioAssertions }:
   for (const [index, expected] of (scenarioAssertions.tone ?? []).entries()) {
     const label = expected.atStep ?? "after.png";
     const frames = input.report.observations?.tone;
-    const frame = Array.isArray(frames) ? frames.find((entry) => entry !== null && typeof entry === "object" && (expected.atStep === undefined
+    // A step may use the reserved-looking name "after". The terminal capture is appended last.
+    const frame = Array.isArray(frames) ? frames.slice().reverse().find((entry) => entry !== null && typeof entry === "object" && (expected.atStep === undefined
       ? entry.atStep === undefined && entry.label === "after.png"
       : entry.atStep === expected.atStep)) : undefined;
     if (frame?.code !== "TN_TONE" || !TONE_METRICS.every((key) => typeof frame[key] === "number"

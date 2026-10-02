@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { PNG } from "pngjs";
 import { expect, test } from "vitest";
@@ -11,13 +11,30 @@ import { preflightDisplay } from "../src/runner/runner-support.js";
 import { validatePlaytestScenario } from "../src/scenario.js";
 import type { IDevicePlaytestTransport } from "../src/runner/deviceTransport.js";
 
+test("tone qualification uses the built runner for browser callback serialization", async () => {
+  const verifier = await readFile(new URL("../../../scripts/verify-tone-exposure.ts", import.meta.url), "utf8");
+  expect(verifier).toContain('from "../packages/playtest/dist/runner/index.js"');
+  expect(verifier).not.toMatch(/from ["'][^"']*\/src\/runner\//);
+});
+
+test("tone fixture supplies a favicon without an unrelated network request", async () => {
+  const html = await readFile(new URL("../../../examples/abyss-framework/tone.html", import.meta.url), "utf8");
+  expect(html).toMatch(/<link\s+rel="icon"\s+href="data:,"/);
+});
+
 const png = new PNG({ width: 256, height: 1 });
 for (let value = 0; value < 256; value += 1) png.data.set([value, value, value, 255], value * 4);
 const pixels = PNG.sync.write(png);
+const darkPng = new PNG({ width: 256, height: 1 });
+for (let value = 0; value < 256; value += 1) {
+  const shade = Math.round(value / 4);
+  darkPng.data.set([shade, shade, shade, 255], value * 4);
+}
+const darkPixels = PNG.sync.write(darkPng);
 
-async function run(target: "android" | "desktop" | "ios", assert: unknown, screenshots: false | "after" = false) {
+async function run(target: "android" | "desktop" | "ios", assert: unknown, screenshots: false | "after" = false, earlyAfter = false) {
   const projectPath = await makeTempDir("tone-runner-");
-  await writeFile(join(projectPath, "tone.json"), JSON.stringify({ schemaVersion: 1, name: "tone", assert, artifacts: { screenshots }, steps: [{ label: "landed", waitTicks: 1 }] }));
+  await writeFile(join(projectPath, "tone.json"), JSON.stringify({ schemaVersion: 1, name: "tone", assert, artifacts: { screenshots }, steps: earlyAfter ? [{ screenshot: "after", waitTicks: 1 }, { waitTicks: 1 }] : [{ label: "landed", waitTicks: 1 }] }));
   let tick = 0;
   const captured: string[] = [];
   // Only the external transport is substituted; the real runner, decoder, evaluator and
@@ -38,11 +55,20 @@ async function run(target: "android" | "desktop" | "ios", assert: unknown, scree
     mailboxPaths: { request: "request", response: "response" },
     driver: {
       prepare: async () => undefined, stop: async () => undefined, isAlive: async () => true, captureConsole: async () => [],
-      screenshot: async (path) => { captured.push(basename(path)); await writeFile(path, pixels); },
+      screenshot: async (path) => { captured.push(basename(path)); await writeFile(path, earlyAfter && captured.length > 1 ? darkPixels : pixels); },
     },
   });
-  return { report, captured };
+  return { report, captured, projectPath };
 }
+
+test.each(["android", "desktop", "ios"] as const)("%s final tone uses the final pixels when an earlier step is named after", async (target) => {
+  const { report, captured, projectPath } = await run(target, { tone: [{ mean: { min: 100 } }] }, false, true);
+  expect(captured).toEqual(["after.png", "after.png"]);
+  const finalTone = inspectFrame(await readFile(join(projectPath, "artifacts/after.png"))).tone;
+  expect(finalTone?.mean).toBe(32);
+  expect(report.pass).toBe(false);
+  expect(report.assertionResults).toContainEqual(expect.objectContaining({ id: "tone.0.mean", pass: false, details: expect.objectContaining({ observed: finalTone?.mean }) }));
+});
 
 test.each(["android", "desktop", "ios"] as const)("%s captures requested tone despite disabled convenience screenshots", async (target) => {
   const { report, captured } = await run(target, { tone: [{ atStep: "landed", mean: { min: 100 } }, { p99: { min: 200 } }] });

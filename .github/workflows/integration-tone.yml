@@ -10,6 +10,8 @@ on:
       - 'examples/abyss-framework/playtests/tone.playtest.json'
       - 'examples/abyss-framework/package.json'
       - 'scripts/verify-tone-exposure.ts'
+      - 'scripts/tone-capture-proof.ts'
+      - 'scripts/__tests__/tone-capture-proof.spec.ts'
       - 'scripts/non-visual-scenarios.mjs'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -37,7 +39,7 @@ jobs:
       - name: Build this commit's standalone bridge and runner
         run: pnpm --filter @threenative/playtest build
       - name: Validate histogram and fail-closed assertion paths
-        run: pnpm exec vitest run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts
+        run: pnpm exec vitest run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts scripts/__tests__/tone-capture-proof.spec.ts
       - name: Render underexposed and restored scene through the real runner
         run: pnpm test:tone
       - name: Retain runtime screenshots and exact adapter evidence

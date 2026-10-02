@@ -166,3 +166,12 @@ conformance. The script requires both exposure verdicts, actual PNG files, nonem
 identity and WebGPU provenance; it never accepts a missing capture as proof. Local playtest and
 fixture typechecks pass; fixture/capture/primary-doc focused suite: 52 tests passed. Runtime
 screenshots must still be produced by the hosted run and inspected before promotion.
+
+Independent review and hosted retry checkpoint: the first hosted run (36986610377) built and
+passed 43 tests, then failed before capture because the source-imported runner's serialized
+callback referenced a tsx helper. The verifier now uses the built public runner and preserves
+attempt/failure diagnostics. Three driver regressions reproduced an earlier `after.png` capture
+incorrectly satisfying a final-frame assertion; newest matching final observations now win.
+The pixel-proof verifier separately rejects software-device-loss warnings and unrelated errors
+even in its expected-underexposed arm. Runtime screenshot qualification remains open until the
+corrected hosted run produces inspected evidence; none of these CPU checks substitutes for it.
