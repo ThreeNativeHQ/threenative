@@ -1,0 +1,786 @@
+{
+  "sourceSha": "4cfc3c2024da1cb37533dc67fd07679e364c27f6",
+  "capture": {
+    "adapter": {
+      "architecture": "swiftshader",
+      "vendor": "google",
+      "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+      "limit.maxBindGroups": "4",
+      "limit.maxTextureDimension2D": "8192",
+      "limit.maxStorageBufferBindingSize": "1073741824"
+    },
+    "browserArgs": [
+      "--ozone-platform=x11",
+      "--enable-unsafe-webgpu",
+      "--disable-gpu-sandbox",
+      "--ignore-gpu-blocklist",
+      "--enable-features=Vulkan"
+    ],
+    "captureMethod": "page.screenshot",
+    "rendererKind": "webgpu",
+    "target": "web",
+    "viewport": {
+      "height": 540,
+      "width": 960
+    }
+  },
+  "diagnostics": [
+    {
+      "code": "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+      "message": "Screenshot region at (270, 185) contained 0 dark pixels, below required ratio 0.01.",
+      "severity": "error",
+      "suggestion": "Check whether the expected foreground silhouette occupies the asserted raster region."
+    },
+    {
+      "code": "TN_PLAYTEST_REGION_DARK_PIXEL_RATIO_FAILED",
+      "message": "Screenshot region at (550, 190) contained 0 dark pixels, below required ratio 0.01.",
+      "severity": "error",
+      "suggestion": "Check whether the expected foreground silhouette occupies the asserted raster region."
+    }
+  ],
+  "diagnosticsPolicy": {
+    "noConsoleErrors": true,
+    "noNetworkErrors": true,
+    "noRuntimeDiagnostics": true,
+    "runtimeReady": true
+  },
+  "distance": 0,
+  "entity": "",
+  "expectMoved": false,
+  "frames": 90,
+  "trivialityOptOuts": [
+    {
+      "id": "component.decals.active.value",
+      "reason": "Real projected marks survive more than 256 impacts and eviction."
+    },
+    {
+      "id": "component.decals.geometryBytes.value",
+      "reason": "Measures actual projected GPU-upload buffer bytes, not an empty field."
+    },
+    {
+      "id": "component.decals.renderTriangles.value",
+      "reason": "The loaded 128-triangle authored receiver actually selects its two-triangle LOD."
+    },
+    {
+      "id": "component.decals.generation.value",
+      "reason": "The restart input must construct a new scene; unchanged initial state is not evidence."
+    }
+  ],
+  "target": "web",
+  "observations": {
+    "components": {
+      "decals": {
+        "generation": {
+          "before": 1,
+          "after": 1
+        },
+        "active": {
+          "before": 256,
+          "after": 256
+        },
+        "capacity": {
+          "before": 256,
+          "after": 256
+        },
+        "created": {
+          "before": 320,
+          "after": 321
+        },
+        "released": {
+          "before": 64,
+          "after": 65
+        },
+        "geometryBytes": {
+          "before": 259896,
+          "after": 259794
+        },
+        "maxDrawCalls": {
+          "before": 0,
+          "after": 4
+        },
+        "motionError": {
+          "before": 0,
+          "after": 0
+        },
+        "receiverMotion": {
+          "before": 0,
+          "after": 0
+        },
+        "lodHit": {
+          "before": false,
+          "after": true
+        },
+        "renderTriangles": {
+          "before": 2,
+          "after": 2
+        },
+        "receiverRemoved": {
+          "before": false,
+          "after": false
+        }
+      }
+    },
+    "componentSeries": [
+      {
+        "label": "lod-and-pool",
+        "snapshots": {
+          "decals": {
+            "generation": 1,
+            "active": 256,
+            "capacity": 256,
+            "created": 321,
+            "released": 65,
+            "geometryBytes": 259794,
+            "maxDrawCalls": 4,
+            "motionError": 0,
+            "receiverMotion": 0,
+            "lodHit": true,
+            "renderTriangles": 2,
+            "receiverRemoved": false
+          }
+        },
+        "tick": 150
+      }
+    ],
+    "console": [
+      {
+        "source": "browser-console",
+        "text": "TN_RENDER_PROJECTION:{\"projecting\":false,\"reasonCode\":\"belowMeshFloor\",\"reason\":\"fewer than 200 batchable meshes; the mirror would cost more than it saves\",\"sourceRenderables\":0,\"resultDrawCandidates\":0,\"batches\":0,\"instancedBatches\":0,\"materialBatches\":0,\"skinnedBatches\":0,\"projectedObjects\":0,\"exactObjects\":0,\"exact\":{},\"materialChecks\":\"spread\",\"materialChecksPerFrame\":512,\"materialCheckStaleFrames\":0}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "THREE.WebGPURenderer: Timestamp tracking is disabled.",
+        "type": "warning"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":320,\"released\":64,\"geometryBytes\":259896,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":false,\"renderTriangles\":128,\"receiverRemoved\":false}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":320,\"released\":64,\"geometryBytes\":259896,\"maxDrawCalls\":0,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":false,\"renderTriangles\":128,\"receiverRemoved\":false}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":259794,\"maxDrawCalls\":4,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":259794,\"maxDrawCalls\":4,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false}",
+        "type": "info"
+      },
+      {
+        "source": "browser-console",
+        "text": "TN_DECAL_FIXTURE:{\"generation\":1,\"active\":256,\"capacity\":256,\"created\":321,\"released\":65,\"geometryBytes\":259794,\"maxDrawCalls\":4,\"motionError\":0,\"receiverMotion\":0,\"lodHit\":true,\"renderTriangles\":2,\"receiverRemoved\":false}",
+        "type": "info"
+      }
+    ],
+    "hud": {},
+    "network": [],
+    "pipelineCensus": {
+      "version": 1,
+      "complete": true,
+      "overflowed": false,
+      "unsupported": false,
+      "limit": 512,
+      "clock": {
+        "originMs": 212,
+        "source": "performance"
+      },
+      "backend": {
+        "kind": "webgpu",
+        "identity": "webgpu:dN"
+      },
+      "build": {
+        "identity": "@threenative/core@0.3.4"
+      },
+      "adapter": {
+        "identity": "webgpu:architecture=swiftshader|vendor=google",
+        "thermal": "unavailable"
+      },
+      "firstPresent": {
+        "boundaryMs": 66,
+        "eventsSettled": 1
+      },
+      "counts": {
+        "lookups": 3,
+        "creations": 3,
+        "failures": 0,
+        "pending": 0,
+        "uniquePrograms": 2,
+        "uniquePipelines": 3,
+        "recordedEvents": 3,
+        "droppedEvents": 0,
+        "deviceCreations": 3,
+        "directCreations": 0
+      },
+      "events": [
+        {
+          "sequence": 1,
+          "programIdentity": "00fc0a8ad03630cc/458120a84b226496",
+          "pipelineIdentity": "backend-pipeline-1",
+          "kind": "render",
+          "pass": "output",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1299,
+            "hash": "00fc0a8ad03630cc"
+          },
+          "fragment": {
+            "bytes": 1595,
+            "hash": "458120a84b226496"
+          },
+          "provenance": {
+            "material": {
+              "id": 15,
+              "name": "outputColorTransform",
+              "type": "NodeMaterial"
+            },
+            "object": {
+              "id": 17,
+              "name": "Output Color Transform",
+              "uuid": "877e2c7e-ca92-4a57-9951-fca4484531a2"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 64.39999999999418,
+          "settledMs": 65.39999999999418,
+          "serviceMs": 1,
+          "beforeFirstPresent": true
+        },
+        {
+          "sequence": 2,
+          "programIdentity": "2eb07d0bdc0da0c6/e792f11cd4d28ee0",
+          "pipelineIdentity": "backend-pipeline-2",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1953,
+            "hash": "2eb07d0bdc0da0c6"
+          },
+          "fragment": {
+            "bytes": 14203,
+            "hash": "e792f11cd4d28ee0"
+          },
+          "provenance": {
+            "material": {
+              "id": 18,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 20,
+              "name": "mesh_0",
+              "uuid": "62353851-9af3-4c64-8c92-22dc5af3cb64"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 272.0999999999767,
+          "settledMs": 272.19999999998254,
+          "serviceMs": 0.10000000000582077,
+          "beforeFirstPresent": false
+        },
+        {
+          "sequence": 3,
+          "programIdentity": "2eb07d0bdc0da0c6/e792f11cd4d28ee0",
+          "pipelineIdentity": "backend-pipeline-3",
+          "kind": "render",
+          "pass": "main-clipped",
+          "mode": "sync",
+          "status": "created",
+          "vertex": {
+            "bytes": 1953,
+            "hash": "2eb07d0bdc0da0c6"
+          },
+          "fragment": {
+            "bytes": 14203,
+            "hash": "e792f11cd4d28ee0"
+          },
+          "provenance": {
+            "material": {
+              "id": 20,
+              "type": "MeshStandardMaterial"
+            },
+            "object": {
+              "id": 22,
+              "uuid": "1542e84a-b64e-4a20-9976-3cc960edc945"
+            },
+            "unknown": false
+          },
+          "reasons": [
+            "unknown-structural-difference"
+          ],
+          "startedMs": 289.0999999999767,
+          "settledMs": 289.19999999998254,
+          "serviceMs": 0.10000000000582077,
+          "beforeFirstPresent": false
+        }
+      ],
+      "incompleteReasons": []
+    },
+    "resources": {
+      "state": {
+        "before": {},
+        "after": {}
+      },
+      "GameState": {
+        "before": {},
+        "after": {}
+      },
+      "assets": {
+        "before": {
+          "receiver": {
+            "glb": {
+              "url": "receiver.glb",
+              "via": "manifest"
+            }
+          }
+        },
+        "after": {
+          "receiver": {
+            "glb": {
+              "url": "receiver.glb",
+              "via": "manifest"
+            }
+          }
+        }
+      }
+    },
+    "resourceSeries": [
+      {
+        "label": "lod-and-pool",
+        "snapshots": {
+          "state": {},
+          "GameState": {},
+          "assets": {
+            "receiver": {
+              "glb": {
+                "url": "receiver.glb",
+                "via": "manifest"
+              }
+            }
+          }
+        },
+        "tick": 150
+      }
+    ],
+    "runtimeDiagnostics": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeDiagnosticsBefore": {
+      "recentRuntimeErrors": [],
+      "runtimeReadouts": [],
+      "scene": {
+        "renderedEntities": []
+      }
+    },
+    "runtimeObservations": {
+      "gameplayBefore": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 11,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 11,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplay": {
+        "animation": {},
+        "contacts": [],
+        "states": {},
+        "tags": {},
+        "transitions": [],
+        "audio": {
+          "cues": {},
+          "paused": 0,
+          "pooled": 0,
+          "queued": 0,
+          "recentCues": [],
+          "unsupported": [],
+          "voices": 0
+        },
+        "world": {
+          "seed": 11,
+          "runtime": {
+            "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "core": "0.3.4",
+            "randomState": 11,
+            "rapier": null,
+            "step": 0.016666666666666666
+          }
+        }
+      },
+      "gameplaySeries": [
+        {
+          "gameplay": {
+            "animation": {},
+            "contacts": [],
+            "states": {},
+            "tags": {},
+            "transitions": [],
+            "audio": {
+              "cues": {},
+              "paused": 0,
+              "pooled": 0,
+              "queued": 0,
+              "recentCues": [],
+              "unsupported": [],
+              "voices": 0
+            },
+            "world": {
+              "seed": 11,
+              "runtime": {
+                "agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                "core": "0.3.4",
+                "randomState": 11,
+                "rapier": null,
+                "step": 0.016666666666666666
+              }
+            }
+          },
+          "label": "lod-and-pool",
+          "tick": 150
+        }
+      ]
+    },
+    "scene": {
+      "background": "color:#17232f",
+      "camera": {
+        "far": 100,
+        "forward": [
+          0,
+          -0.18032786885245905,
+          -0.9836065573770492
+        ],
+        "fov": 48,
+        "near": 0.1,
+        "position": [
+          0,
+          4.5,
+          12
+        ],
+        "type": "PerspectiveCamera"
+      },
+      "lights": [
+        {
+          "color": "#ffefd2",
+          "intensity": 3,
+          "type": "DirectionalLight",
+          "visible": true
+        },
+        {
+          "color": "#dbeaff",
+          "intensity": 1.5,
+          "type": "AmbientLight",
+          "visible": true
+        }
+      ],
+      "materials": {
+        "MeshStandardMaterial": 3,
+        "MeshBasicMaterial": 256
+      },
+      "objects": 262,
+      "truncated": false,
+      "worldExtent": {
+        "max": [
+          7.5,
+          4.4,
+          5
+        ],
+        "min": [
+          -7.5,
+          -0.17500000298023224,
+          -5
+        ]
+      }
+    },
+    "signals": [],
+    "signalSeries": [
+      {
+        "label": "lod-and-pool",
+        "signals": [],
+        "tick": 150
+      }
+    ],
+    "startup": {
+      "phase": "ready",
+      "progress": 1,
+      "compileSettled": true,
+      "timeline": {
+        "loadStartedMs": 228.19999999998254,
+        "enteredMs": 428,
+        "compileSettledMs": 926.3999999999942,
+        "frameworkReadyMs": 926.3999999999942,
+        "readyMs": 926.3999999999942
+      },
+      "rule": "compile-settled"
+    },
+    "visual": {
+      "changedPixelRatio": 0,
+      "comparisonSource": "before-after",
+      "nonblankRegions": [
+        {
+          "height": 540,
+          "width": 960,
+          "x": 0,
+          "y": 0,
+          "minNonblankPixelRatio": 0.15,
+          "darkPixelRatio": 0.5417457561728395,
+          "nonblankPixelRatio": 1
+        },
+        {
+          "height": 125,
+          "width": 170,
+          "x": 270,
+          "y": 185,
+          "maxDarkPixelRatio": 0.2,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "minNonblankPixelRatio": 0.9,
+          "darkPixelRatio": 0,
+          "nonblankPixelRatio": 1
+        },
+        {
+          "height": 90,
+          "width": 95,
+          "x": 550,
+          "y": 190,
+          "maxDarkPixelRatio": 0.2,
+          "maxLuminance": 0.35,
+          "minDarkPixelRatio": 0.01,
+          "minNonblankPixelRatio": 0.9,
+          "darkPixelRatio": 0,
+          "nonblankPixelRatio": 1
+        }
+      ]
+    }
+  },
+  "artifactDirectory": "/home/runner/work/threenative/threenative/artifacts/vq11-decals/hidden-decals",
+  "assertionResults": [
+    {
+      "id": "visual.0.region",
+      "pass": true,
+      "details": {
+        "after": true,
+        "expected": {
+          "equals": true
+        },
+        "minimum": 0.15,
+        "observed": 1
+      }
+    },
+    {
+      "id": "visual.1.region",
+      "pass": true,
+      "details": {
+        "after": true,
+        "expected": {
+          "equals": true
+        },
+        "minimum": 0.9,
+        "observed": 1
+      }
+    },
+    {
+      "id": "visual.1.region.darkPixels",
+      "pass": false,
+      "details": {
+        "maximumLuminance": 0.35,
+        "minimumDarkPixelRatio": 0.01,
+        "observedDarkPixelRatio": 0
+      }
+    },
+    {
+      "id": "visual.1.region.maxDarkPixels",
+      "pass": true,
+      "details": {
+        "maximumDarkPixelRatio": 0.2,
+        "observedDarkPixelRatio": 0
+      }
+    },
+    {
+      "id": "visual.2.region",
+      "pass": true,
+      "details": {
+        "after": true,
+        "expected": {
+          "equals": true
+        },
+        "minimum": 0.9,
+        "observed": 1
+      }
+    },
+    {
+      "id": "visual.2.region.darkPixels",
+      "pass": false,
+      "details": {
+        "maximumLuminance": 0.35,
+        "minimumDarkPixelRatio": 0.01,
+        "observedDarkPixelRatio": 0
+      }
+    },
+    {
+      "id": "visual.2.region.maxDarkPixels",
+      "pass": true,
+      "details": {
+        "maximumDarkPixelRatio": 0.2,
+        "observedDarkPixelRatio": 0
+      }
+    },
+    {
+      "details": {
+        "after": 256,
+        "before": 256,
+        "component": "active",
+        "entity": "decals",
+        "expected": {
+          "component": "active",
+          "entity": "decals",
+          "allowTrivial": "Real projected marks survive more than 256 impacts and eviction.",
+          "equals": 256
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.decals.active.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 321,
+        "before": 320,
+        "component": "created",
+        "entity": "decals",
+        "expected": {
+          "component": "created",
+          "entity": "decals",
+          "allowTrivial": "320 initial marks plus a real post-LOD raycast hit.",
+          "gte": 321
+        },
+        "trivial": false
+      },
+      "id": "component.decals.created.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 259794,
+        "before": 259896,
+        "component": "geometryBytes",
+        "entity": "decals",
+        "expected": {
+          "component": "geometryBytes",
+          "entity": "decals",
+          "allowTrivial": "Measures actual projected GPU-upload buffer bytes, not an empty field.",
+          "gte": 1
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.decals.geometryBytes.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 2,
+        "before": 2,
+        "component": "renderTriangles",
+        "entity": "decals",
+        "expected": {
+          "component": "renderTriangles",
+          "entity": "decals",
+          "allowTrivial": "The loaded 128-triangle authored receiver actually selects its two-triangle LOD.",
+          "equals": 2
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.decals.renderTriangles.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "after": 1,
+        "before": 1,
+        "component": "generation",
+        "entity": "decals",
+        "expected": {
+          "component": "generation",
+          "entity": "decals",
+          "allowTrivial": "The restart input must construct a new scene; unchanged initial state is not evidence.",
+          "equals": 1
+        },
+        "trivial": true,
+        "trivialityOptOut": true
+      },
+      "id": "component.decals.generation.value",
+      "pass": true
+    },
+    {
+      "details": {
+        "consoleErrors": 0,
+        "networkErrors": 0,
+        "policy": {
+          "noConsoleErrors": true,
+          "noNetworkErrors": true,
+          "noRuntimeDiagnostics": true,
+          "runtimeReady": true
+        },
+        "runtimeDiagnostics": 0
+      },
+      "id": "diagnostics",
+      "pass": true
+    }
+  ],
+  "pass": false,
+  "runtime": "web",
+  "scenario": "vq11-static",
+  "startup": {
+    "phase": "ready",
+    "progress": 1,
+    "compileSettled": true,
+    "timeline": {
+      "loadStartedMs": 228.19999999998254,
+      "enteredMs": 428,
+      "compileSettledMs": 926.3999999999942,
+      "frameworkReadyMs": 926.3999999999942,
+      "readyMs": 926.3999999999942
+    },
+    "rule": "compile-settled"
+  },
+  "trivialityOptOutCount": 4,
+  "url": "http://127.0.0.1:38363/?hideDecals=1"
+}
