@@ -25,6 +25,7 @@ import type {
   Layer,
   MaterialId,
   OperationType,
+  SplinePoint,
 } from "./types.js";
 
 /** Every operation the evaluator applies, in application order. */
@@ -153,69 +154,189 @@ interface ISplineParams {
   readonly water?: boolean;
   readonly waterWidth?: number;
   readonly color?: string | number;
-  readonly points?: readonly (readonly [number, number, number])[];
-  readonly from?: readonly [number, number, number];
-  readonly to?: readonly [number, number, number];
+  readonly points?: readonly SplinePoint[];
+  readonly from?: SplinePoint;
+  readonly to?: SplinePoint;
+  readonly followTerrain?: boolean;
+  readonly maxGrade?: number;
+  readonly maxCut?: number;
+  readonly maxFill?: number;
+  readonly seed?: number;
 }
 
 type SplineLayer = Extract<Layer, { type: "road" | "river" | "ramp" }>;
+
+/**
+ * True when the spline reads the ground it crosses instead of its authored elevations: either the
+ * recipe asks for it or a control point leaves its elevation out, which keeps existing absolute
+ * documents meaning exactly what they meant.
+ */
+export function followsTerrain(source: readonly SplinePoint[], followTerrain?: boolean): boolean {
+  return followTerrain ?? source.some((point) => !Number.isFinite(point[1]));
+}
+
+/**
+ * Grades a spline to the ground it crosses: sample the pre-operation height along the centreline,
+ * low-pass it along arc length so a knoll becomes a ramp rather than a wall, then hold the result
+ * inside the grade and cut/fill limits. Deterministic: the pass reads only the heights it is given.
+ */
+function gradeToGround(
+  s: ITerrainState,
+  points: [number, number, number][],
+  p: ISplineParams,
+): void {
+  const at = (k: number): [number, number, number] => points[k] as [number, number, number];
+  const run = (k: number): number => {
+    const a = at(k - 1);
+    const b = at(k);
+    return Math.hypot(b[0] - a[0], b[2] - a[2]);
+  };
+  const bed = points.map(([x, , z]) => sampleHeight(s, x, z));
+  let spacing = 0;
+  for (let k = 1; k < points.length && spacing === 0; k += 1) spacing = run(k);
+  spacing ||= 3;
+  const window = Math.max(1, Math.round(Math.max(8, p.width ?? 12) / spacing));
+  const profile = bed.slice();
+  for (let pass = 0; pass < 2; pass += 1) {
+    const next = profile.slice();
+    for (let k = 0; k < profile.length; k += 1) {
+      let sum = 0;
+      let count = 0;
+      for (let j = Math.max(0, k - window); j <= Math.min(profile.length - 1, k + window); j += 1) {
+        sum += profile[j] as number;
+        count += 1;
+      }
+      next[k] = sum / count;
+    }
+    for (let k = 0; k < profile.length; k += 1) profile[k] = next[k] as number;
+  }
+  const maxCut = p.maxCut ?? 2.5;
+  const maxFill = p.maxFill ?? 1.5;
+  const grade = p.maxGrade ?? 0.12;
+  // Sweep the profile against its neighbours until it stops moving; the last backward sweep is
+  // what makes every segment provably inside the grade limit.
+  const limit = (k: number): number => grade * Math.max(0.5, run(k));
+  for (let round = 0; round < 16; round += 1) {
+    let moved = 0;
+    for (let k = 1; k < profile.length; k += 1) {
+      const y = clamp(
+        profile[k] as number,
+        (profile[k - 1] as number) - limit(k),
+        (profile[k - 1] as number) + limit(k),
+      );
+      moved += Math.abs(y - (profile[k] as number));
+      profile[k] = y;
+    }
+    for (let k = profile.length - 2; k >= 0; k -= 1) {
+      const y = clamp(
+        profile[k] as number,
+        (profile[k + 1] as number) - limit(k + 1),
+        (profile[k + 1] as number) + limit(k + 1),
+      );
+      moved += Math.abs(y - (profile[k] as number));
+      profile[k] = y;
+    }
+    if (moved < 1e-4) break;
+  }
+  // Leaving the ground is the hard limit, not the grade: where the ground itself is steeper than
+  // `maxGrade`, the road is steep too rather than standing in a trench.
+  for (let k = 0; k < profile.length; k += 1)
+    profile[k] = clamp(
+      profile[k] as number,
+      (bed[k] as number) - maxCut,
+      (bed[k] as number) + maxFill,
+    );
+  for (let k = 0; k < points.length; k += 1) at(k)[1] = profile[k] as number;
+}
 
 function applySpline(s: ITerrainState, layer: SplineLayer, mask: Float32Array | null): void {
   const p: ISplineParams = layer.params;
   const river = layer.type === "river";
   const ramp = layer.type === "ramp";
-  const source = ramp
-    ? [p.from as readonly [number, number, number], p.to as readonly [number, number, number]]
-    : (p.points ?? []);
+  const seed = p.seed ?? s.seed;
+  const raw = ramp ? [p.from, p.to] : (p.points ?? []);
+  const follows = followsTerrain(raw as readonly SplinePoint[], p.followTerrain);
+  const source = (raw as readonly SplinePoint[]).map(
+    ([x, y, z]) => [x, Number.isFinite(y) ? (y as number) : 0, z] as [number, number, number],
+  );
   const points = splinePoints(
     source,
     Math.max(1, (p.width ?? 12) * 0.22),
     !ramp && p.smooth !== false,
   );
+  if (follows) gradeToGround(s, points, p);
   const half = (p.width ?? 12) / 2;
   const shoulder = p.shoulder ?? half;
   const extent = half + shoulder;
+  const depth = p.depth ?? 4;
+  const alpha = layer.opacity ?? 1;
   const n = s.resolution;
   const cell = s.size / (n - 1);
   const dist = new Float32Array(n * n).fill(Number.POSITIVE_INFINITY);
   const target = new Float32Array(n * n);
-  const alpha = layer.opacity ?? 1;
-  for (let k = 1; k < points.length; k += 1) {
-    const a = points[k - 1] as [number, number, number];
-    const b = points[k] as [number, number, number];
-    const dx = b[0] - a[0];
-    const dz = b[2] - a[2];
-    const den = dx * dx + dz * dz;
-    if (den < 1e-12) continue;
-    const xmin = clamp(Math.floor((Math.min(a[0], b[0]) - extent + s.size / 2) / cell), 0, n - 1);
-    const xmax = clamp(Math.ceil((Math.max(a[0], b[0]) + extent + s.size / 2) / cell), 0, n - 1);
-    const zmin = clamp(Math.floor((Math.min(a[2], b[2]) - extent + s.size / 2) / cell), 0, n - 1);
-    const zmax = clamp(Math.ceil((Math.max(a[2], b[2]) + extent + s.size / 2) / cell), 0, n - 1);
-    for (let z = zmin; z <= zmax; z += 1) {
-      for (let x = xmin; x <= xmax; x += 1) {
-        const wx = world(s, x);
-        const wz = world(s, z);
-        const t = clamp(((wx - a[0]) * dx + (wz - a[2]) * dz) / den);
-        const d = Math.hypot(wx - a[0] - t * dx, wz - a[2] - t * dz);
-        const i = z * n + x;
-        if (d < (dist[i] as number)) {
-          dist[i] = d;
-          target[i] = lerp(a[1], b[1], t);
+  const bed = new Float32Array(n * n);
+  // The blend widens with the vertical step it has to absorb, so the corridor is rasterized twice:
+  // once to price the profile against the ground, then again over the wider blend that needs.
+  const floor = river ? 1.5 * depth : 0;
+  let reach = extent;
+  const raster = (): void => {
+    dist.fill(Number.POSITIVE_INFINITY);
+    for (let k = 1; k < points.length; k += 1) {
+      const a = points[k - 1] as [number, number, number];
+      const b = points[k] as [number, number, number];
+      const dx = b[0] - a[0];
+      const dz = b[2] - a[2];
+      const den = dx * dx + dz * dz;
+      if (den < 1e-12) continue;
+      const xmin = clamp(Math.floor((Math.min(a[0], b[0]) - reach + s.size / 2) / cell), 0, n - 1);
+      const xmax = clamp(Math.ceil((Math.max(a[0], b[0]) + reach + s.size / 2) / cell), 0, n - 1);
+      const zmin = clamp(Math.floor((Math.min(a[2], b[2]) - reach + s.size / 2) / cell), 0, n - 1);
+      const zmax = clamp(Math.ceil((Math.max(a[2], b[2]) + reach + s.size / 2) / cell), 0, n - 1);
+      for (let z = zmin; z <= zmax; z += 1) {
+        for (let x = xmin; x <= xmax; x += 1) {
+          const wx = world(s, x);
+          const wz = world(s, z);
+          const t = clamp(((wx - a[0]) * dx + (wz - a[2]) * dz) / den);
+          const d = Math.hypot(wx - a[0] - t * dx, wz - a[2] - t * dz);
+          const i = z * n + x;
+          if (d < (dist[i] as number)) {
+            dist[i] = d;
+            target[i] = lerp(a[1], b[1], t);
+            bed[i] = s.height[i] as number;
+          }
         }
       }
     }
+  };
+  raster();
+  let worst = 0;
+  for (let i = 0; i < dist.length; i += 1)
+    if ((dist[i] as number) <= extent)
+      worst = Math.max(worst, Math.abs((target[i] as number) - (bed[i] as number)));
+  if (floor + 1.5 * worst > 0.05) {
+    reach = extent + floor + 1.5 * worst;
+    raster();
   }
   const material = MATERIAL_IDS.indexOf(p.material ?? (river ? "mud" : "road"));
   for (let i = 0; i < s.height.length; i += 1) {
     const d = dist[i] as number;
-    if (d > extent) continue;
-    const w = (1 - smoothstep(half, extent, d)) * (mask?.[i] ?? 1) * alpha;
+    if (d > reach) continue;
+    const pre = bed[i] as number;
+    // A cut or a fill gets a wider, gentler shoulder, so nothing stands on a retaining step.
+    const edge = Math.min(reach, extent + floor + 1.5 * Math.abs((target[i] as number) - pre));
+    const blend = 1 - smoothstep(half, edge, d);
+    const w = blend * blend * (mask?.[i] ?? 1) * alpha;
     let y = target[i] as number;
     if (river) {
       const bowl = 1 - 0.35 * clamp(d / half) ** 2;
-      y = Math.min(s.height[i] as number, y - (p.depth ?? 4) * bowl);
+      // The same seeded noise field widens the bed off-centre, which is what a point bar is.
+      const bars =
+        1 +
+        0.22 *
+          noise2(world(s, i % n) / (half * 8), world(s, Math.floor(i / n)) / (half * 8), seed + 7);
+      y = Math.min(pre, y - depth * bowl * bars * blend);
     }
-    s.height[i] = lerp(s.height[i] as number, y, w);
+    s.height[i] = lerp(pre, y, w);
     if (material >= 0) paintWeights(s, i, material, w * (river ? 0.85 : 1));
   }
   if (river && p.water !== false)
@@ -281,13 +402,40 @@ export function applyOperation(s: ITerrainState, layer: Layer): void {
       if (type === "sculpt")
         for (let i = 0; i < s.height.length; i += 1)
           s.height[i] = (s.height[i] as number) + (p.strength ?? 5) * w(i);
-      if (type === "flatten")
-        for (let i = 0; i < s.height.length; i += 1)
-          s.height[i] = lerp(
-            s.height[i] as number,
-            ("height" in p ? p.height : undefined) ?? 0,
-            w(i) * clamp(p.strength ?? 1),
+      if (type === "flatten") {
+        const level = "height" in p ? p.height : undefined;
+        if (typeof level !== "number" || !Number.isFinite(level)) {
+          // No authored elevation: level the pad to the ground already under it, then let the blend
+          // reach as far as the deepest cut or fill so the rim is a batter, not a wall.
+          const covered = brushWeights(s, p, mask, seed);
+          let sum = 0;
+          let total = 0;
+          for (let i = 0; i < s.height.length; i += 1) {
+            const share = (covered[i] as number) * opacity;
+            sum += (s.height[i] as number) * share;
+            total += share;
+          }
+          const target = total > 0 ? sum / total : 0;
+          let delta = 0;
+          for (let i = 0; i < s.height.length; i += 1)
+            if ((covered[i] as number) > 0)
+              delta = Math.max(delta, Math.abs((s.height[i] as number) - target));
+          const graded = brushWeights(
+            s,
+            { ...p, radius: (p.radius ?? 30) + 1.5 * delta },
+            mask,
+            seed,
           );
+          for (let i = 0; i < s.height.length; i += 1)
+            s.height[i] = lerp(
+              s.height[i] as number,
+              target,
+              (graded[i] as number) * opacity * clamp(p.strength ?? 1),
+            );
+        } else
+          for (let i = 0; i < s.height.length; i += 1)
+            s.height[i] = lerp(s.height[i] as number, level, w(i) * clamp(p.strength ?? 1));
+      }
       if (type === "paint") {
         const channel = MATERIAL_IDS.indexOf(("material" in p ? p.material : undefined) ?? "dirt");
         for (let i = 0; i < s.height.length; i += 1)

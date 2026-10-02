@@ -37,6 +37,7 @@ import {
   log2,
   max,
   mix,
+  normalViewGeometry,
   normalWorld,
   normalize,
   positionLocal,
@@ -391,6 +392,12 @@ interface INeedleLook {
   readonly tip: readonly [number, number, number];
   /** How much light comes *through* the card. */
   readonly light: number;
+  /**
+   * Light the cards with the normals their geometry carries — the crown's outward direction, from
+   * `spruce.ts` — on both faces, and darken by the `inner` attribute toward the trunk. A crown lit
+   * this way shades as one volume instead of as a stack of separately lit paddles.
+   */
+  readonly bent?: boolean;
 }
 
 /** The shared grade: new growth is lighter than the shaded interior, and both ends stay honest. */
@@ -457,7 +464,15 @@ function needleMaterial(
   seconds: Node<"float">,
   look: Partial<INeedleLook> = {},
 ): MeshStandardNodeMaterial {
-  const { cutout = CUTOUT, floor = CANOPY.floor, ramp = SOLID, tint, tip, light = 0.1 } = look;
+  const {
+    cutout = CUTOUT,
+    floor = CANOPY.floor,
+    ramp = SOLID,
+    tint,
+    tip,
+    light = 0.1,
+    bent = false,
+  } = look;
   const material = new MeshStandardNodeMaterial({
     metalness: 0,
     // Double-sided: the far side of a spruce from across a meadow is mostly the backs of its
@@ -495,6 +510,12 @@ function needleMaterial(
       ),
     )
     .mul(occlusion)
+    // The fringe of a cut texel is the atlas's empty colour bleeding in through the filter, which is
+    // pale: dark it toward the needle so a spray's edge is a needle tip rather than a white hairline.
+    .mul(mix(float(0.45), float(1), smoothstep(float(cutout * 0.6), float(0.92), card.a)))
+    // Deep inside the crown a needle sees little sky: the trunk end of a branch is the dark of a
+    // spruce, and its tips are where the light is.
+    .mul(bent ? mix(float(0.3), float(1), attribute<"float">("inner", "float")) : float(1))
     .mul(tint ? vec3(...tint) : vec3(1));
   // The floor. Nothing in a canopy is black: a needle in the shade is lit by the needles around it
   // and by the ground under the tree, so the shaded half of a crown has to keep a floor or it goes
@@ -529,6 +550,9 @@ function needleMaterial(
     if (arms === undefined) material.normalNode = bumpMap(texture(relief), float(0.55));
     else material.normalMap = relief;
   }
+  // The geometry's own normal, unflipped on the back face: the bent crown normal is the same on both
+  // sides of a card, which is the point — the far face of a sunlit branch is still on the sun side.
+  if (bent) material.normalNode = normalViewGeometry;
   if (arms !== undefined) material.roughnessNode = texture(arms).g.mul(0.35).add(0.6);
   else material.roughness = 0.96;
   // And the light coming *through* the card, which the standard shading cannot produce.
@@ -590,7 +614,22 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
   if (bark.roughness !== undefined) barkMaterial.roughnessMap = bark.roughness;
   sway(barkMaterial, seconds, WIND.amplitude.bark);
 
-  const crownMaterial = needleMaterial(atlas, relief, undefined, seconds);
+  // A Norway spruce is a dark blue-green, not the atlas's yellow-olive: the grade pulls red and blue down
+  // and keeps green, and the higher cut lets the fringe of each spray break up into needles instead of
+  // closing into a smooth-edged paddle.
+  const crownMaterial = needleMaterial(atlas, relief, undefined, seconds, {
+    bent: true,
+    cutout: 0.52,
+    // Low, because the floor is a lift *to* this level: at the shared 0.14 every needle darker than it
+    // comes out exactly 0.14, and a crown whose texels all share one brightness is a flat paddle with
+    // the needle detail scaled away.
+    floor: 0.03,
+    // Half the shared glow: with the crown lit as a volume its sun side already faces the light, and
+    // the full translucency on top of that washed the near trees out to pale grey-green.
+    light: 0.05,
+    tint: [0.5, 0.7, 0.6],
+    tip: [1.08, 1.14, 1.04],
+  });
   const firMaps = await Promise.all([
     map(assets, FIR_MAPS.surface, false),
     map(assets, FIR_MAPS.normal, true),

@@ -69,7 +69,7 @@ export const SUN = {
  * built on, and the sea's far edge is gone before it reaches its own boundary.
  */
 const RIG = {
-  sky: { turbidity: 3.4, rayleigh: 2.9, mieCoefficient: 0.004, mieDirectionalG: 0.82 },
+  sky: { turbidity: 2.4, rayleigh: 2.2, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
   /**
    * Sky fill from above, bounce from below. This is the only thing standing between a spruce's
    * shadow and a hole in the meadow, and at 0.9 the shadows on the hillside read as ink: a real
@@ -83,7 +83,7 @@ const RIG = {
    * quarters into the next one, which is the difference between a landscape with distance in it and
    * a green plane that stops.
    */
-  haze: { color: new Color(0xa9c4d8), density: 0.0028 },
+  haze: { color: new Color(0xa9c4d8), density: 0.0017 },
   /** Linear exposure for the AgX curve, as 2^EV. AgX already rolls its highlights off, so this sits
    *  below one: a temperate noon here is a bright sky and green that still has detail in it. */
   exposure: 2 ** -0.18,

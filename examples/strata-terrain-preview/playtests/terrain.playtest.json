@@ -49,6 +49,20 @@
     },
     {
       "kind": "input",
+      "label": "river-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "river",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "river"
+    },
+    {
+      "kind": "input",
       "label": "player-view",
       "press": "KeyV",
       "holdTicks": 2,
