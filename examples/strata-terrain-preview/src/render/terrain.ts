@@ -688,12 +688,16 @@ export function createGroundMaterial(
   const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
     .rgb.mul(MEADOW)
     .mul(mix(0.5, 0.85, breakUp.add(0.5)));
-  const crag = mix(
-    triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
-    triplanarAlbedo(layer("rock").diffuse, "rock", 14),
-    patch.mul(0.25).add(0.15),
-  )
-    .rgb.mul(vec3(0.62, 0.66, 0.67))
+  const crag = (
+    biome?.world === "coastal"
+      ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
+      : mix(
+          triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
+          triplanarAlbedo(layer("rock").diffuse, "rock", 14),
+          patch.mul(0.25).add(0.15),
+        )
+  ).rgb
+    .mul(vec3(0.62, 0.66, 0.67))
     .mul(strata.mul(0.35).add(1));
   const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
   const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
@@ -729,10 +733,9 @@ export function createGroundMaterial(
     rockNormal === undefined
       ? vec3(0)
       : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
-  const tilt =
-    biome?.world === "tundra"
-      ? normal
-      : mix(normal, biome?.world === "alpine" ? vec3(0) : mountainTilt, continuation);
+  // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.
+  const distantTilt = biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
+  const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));

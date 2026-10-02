@@ -1728,3 +1728,25 @@ now differ by at most 0.1272 from the merged licensed control, versus the earlie
 3.7152 drift. Horizon-sea still differs by 0.7678, predominantly in animated water;
 that raw quantile observation is open until final review. No atmosphere value
 was adjusted to hide it. Final licensed scenario is currently through desert.
+
+Final form replan: the alpine crop still showed isolated cones. The doubtful
+assumption was that aggressive hydraulic bites over broad ridged noise would
+produce connected eroded ridges. The installed erosion implementation explicitly
+warns that large bites leave spikes. Broad shoulders now use warped FBM; ridged
+spurs/couloirs remain at two smaller scales, with erosion 0.04 and 200,000 droplets.
+The public recipe rejects brushRadius and explicit droplets above 200,000; those
+unsupported inputs were removed without changing or bypassing engine validation.
+Alpine distant rock previously zeroed all normal relief; its existing triplanar
+rock relief now survives, weighted by rock, with snow weights unchanged.
+
+Measured final fresh bake: **16.70 s total**, **7.09 s** continuation erosion,
+**1,717,497 JSON bytes**. Licensed replan passed **50/50**, zero diagnostics,
+maximum CPU p50 3.5 ms; fallback also passed 50/50 before the final coastal shader
+scope correction. Example tsc/root Biome pass on that correction. The coastal
+world keeps its original single rock projection scale as well as 192 collar rings
+and 2048 maps. This does not resolve the horizon-sea raw quantile miss: the
+projection-cause hypothesis is rejected. Do not claim the complete 0.5 luminance
+hold; no sun/sky/haze/grade/GTAO/snow values were changed to compensate. Final
+scope-corrected captures and a bounded shadow-map cost control are running.
+
+Scope-corrected licensed final: **50/50 PASS**, zero diagnostics; maximum CPU p50 3.9 ms. Final absent-licensed rerun remains pending.
