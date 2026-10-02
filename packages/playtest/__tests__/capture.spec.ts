@@ -71,3 +71,14 @@ test("a dark but varied game frame remains accepted below the bright-pixel thres
   expect(stats.luminanceStdDev).toBeGreaterThanOrEqual(0.02);
   expect(stats.maxLuminance).toBeLessThanOrEqual(0.5);
 });
+
+test("tone reports all six statistics from a 256-bin display-luminance histogram", () => {
+  const stats = inspectFrame(image(Array.from({ length: 256 }, (_, value) => [value, value, value, 255])));
+  expect(stats.tone).toEqual({ mean: 127.5, p1: 2, p50: 127, p99: 253, clipFraction: 1 / 256, blackFraction: 1 / 256 });
+});
+
+test("tone uses Rec.709 luminance and ignores fully transparent pixels", () => {
+  const stats = inspectFrame(image([[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 255, 0]]));
+  expect(stats.tone).toEqual({ mean: (54 + 182 + 18) / 3, p1: 18, p50: 54, p99: 182, clipFraction: 0, blackFraction: 0 });
+  expect(inspectFrame(image([[255, 255, 255, 0]])).tone).toBeUndefined();
+});

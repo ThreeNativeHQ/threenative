@@ -426,6 +426,11 @@ census test fails, and `pnpm publish:check` refuses the tree.
       observed red on 2026-09-26 with the `sdkmanager` line deleted. Not yet executed: no `v*` tag
       push has run this job since the provisioning landed, so the step is proven locally and the
       hosted run is still the missing proof.
+      2026-10-02: the `v0.3.4` tag push (run 36969644927, `2b6887fe`) failed in `publish` before
+      `clean-room` ran, because the N-1 upgrade proof asserts frame time and visuals and cannot
+      pass on the runner's SwiftShader adapter (`TN_PLAYTEST_SOFTWARE_ADAPTER`). The cohort was
+      published locally instead and the same verifier passed 22/22 there with JDK 17
+      (`npm:android` and `pnpm:android` included), so the box stays open until a hosted run reports it.
 
 **Wiring:**
 
