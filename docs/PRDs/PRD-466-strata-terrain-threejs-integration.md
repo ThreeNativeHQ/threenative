@@ -556,6 +556,66 @@ was **not** raised. With the folder absent the world grows the procedural spruce
 and poppy as before; that fallback run is recorded with this note. AC-5 stays open: one environment's
 vegetation is not five.
 
+#### Temperate forest replacement (2026-10-02), Evidence: partial visual increment
+
+The game cooks the owner's Project Nature spruce/grass/ground/flower/fern art and Epic
+Kite photoscanned boulders, river rock, scree and cliff into gitignored
+`local-assets/temperate/` via `scripts/prep-fab-temperate.mjs`. Source atlas bindings,
+opacity channels and aligned GLB views are repaired before the installed meshopt/UASTC
+cook; duplicate sections are joined. The chosen 27 source models comprise three full,
+two half and three small spruces, four grasses, four flowers (including red), three ground
+clumps, two ferns, five rocks and one cliff. Five reduced adult-tree distance models are
+included. The output is **111,163,436 bytes (111.16 MB)**, below the 120 MB limit.
+Licensed bytes remain local; no licensed asset is tracked.
+
+The former 140-tree ceiling becomes **3,200 noise-masked spruce placements** at a
+3.4 m minimum spacing, with clearings, **4,144 saplings** at stand edges and **6,320
+ferns**. Grass follows the rendered meadow slope/elevation mask instead of the obsolete
+baked colour palette. Coarse cover spans meadows; 28 cm sampling fills nearby meadow
+and river eyes. **139,460 grass placements** combine photographed stalks with low,
+olive generated basal blades; **41,785 ground clumps** fill intervening ground.
+**1,317 photographed flowers** replace cartoon poppies when the pack is present.
+Stone placements are **795 boulders, 54 river rocks, 55 scree and 3 cliffs**.
+Total placements: **197,133**.
+
+Appearance remains game-owned: whole-model scaling aligns tree sections, soft canopy
+volume normals brighten crowns, leaf-only grading preserves bark, photographed stones
+retain diffuse/normal maps, and alpha-to-coverage on the observed 4x-MSAA WebGPU renderer
+uses a distance-graded cutoff without dither. Existing `InstancedBatch` groups species,
+variants and distance levels. Adult spruces use two mesh levels, with reduced adult shapes
+at 60 m; this increment does not add impostors. Small cover and rocks have distance culling;
+small cover casts no shadows. Canonical poses and compact slot IDs preserve editor changes
+through refills. Moving a culled prop into view invalidates assignments even with a stationary
+camera, and refills refresh bounds. The runnable scatter/edit check reproduces these cases.
+
+Final current-code WebGPU repeats, `artifacts/playtest/final-1/` and `final-2/`:
+
+| Run | Meadow frame p50 | Overview frame p50 | Allocated prop batches | Meadow / overview submitted triangles |
+| --- | --- | --- | --- | --- |
+| final-1 | 2.2 ms | 1.4 ms | 58 | 59,308,158 / 14,170,902 |
+| final-2 | 2.3 ms | 1.5 ms | 58 | 59,308,158 / 14,170,902 |
+
+These are logged frame-cost measurements and submitted triangles across passes, not GPU FPS.
+`propDraws` counts allocated batches; the ceiling rises from 24 to **60** for the requested
+species, tree levels and basal cover, supported by both measured runs below 8 ms.
+Both runs pass every behavioural assertion and fail only the pre-existing destroyed
+`ShadowDepthTexture used in a submit` console diagnostic (378/382 console errors;
+zero network errors or runtime diagnostic entries). Coastal captures are excluded as instructed.
+The entire `local-assets` folder was moved away once: `artifacts/playtest/fallback/`
+visibly renders procedural trees, cover and flowers; every behavioural assertion passes,
+with **40 batches and 1.6/1.6 ms**, only the same shadow diagnostic. The folder is restored.
+
+Example typecheck, repository lint (pre-existing warnings), the runnable
+`node --import tsx examples/strata-terrain-preview/scripts/check-temperate.mts`,
+document links and agent mirror checks pass. Native and the full implementation suite were
+not run. Three checkpoint commits preceded the final evidence commit; one checkpoint gap
+was 32 minutes rather than the requested maximum 30 minutes.
+
+Fresh visual review of final captures: grass continuity, photographed rocks and forest density
+are substantially improved. Grass still reads pale/card-like, crowns remain noisy and drooping,
+and the meadow lacks the reference's rich olive shading and strong red flower drifts.
+**AC-5 remains open**: this is a working Temperate increment, below the Gaia/Unreal target.
+
 #### Terrain relief pass (2026-10-02), Evidence: measured, plus four engine bugs
 
 Owner feedback on the round-4 captures: *"everything too plane and thin. No erosion, cliffs, etc.

@@ -239,7 +239,7 @@
       {
         "id": "GameState",
         "path": "propDraws",
-        "lte": 24,
+        "lte": 60,
         "allowTrivial": "A ceiling on the prop draws, which holds for every frame rather than changing at one: its value is the price of the instancing, and a run that only ever saw it once would prove nothing."
       },
       {
