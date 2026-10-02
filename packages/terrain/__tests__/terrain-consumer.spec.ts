@@ -14,6 +14,28 @@ import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "thr
 import { describe, expect, it } from "vitest";
 
 describe("public terrain consumer", () => {
+  it("applies a brush operation over the whole world when no brush is given", () => {
+    // A layer with no `at`/`points` means "everywhere", not "nowhere": the whole-grid fallback
+    // used to allocate an uninitialised Float32Array, which is all zeros, so a brushless `smooth`
+    // was silently a no-op and a brushless `sculpt` moved nothing.
+    const rough = () =>
+      new Terrain({ size: 64, resolution: 33, seed: 1 }).noise({
+        id: "n",
+        amplitude: 12,
+        scale: 9,
+      });
+    const before = rough().evaluate().height;
+    const smoothed = rough().smooth({ id: "sm", iterations: 4 }).evaluate().height;
+    let moved = 0;
+    for (let i = 0; i < before.length; i += 1)
+      moved += Math.abs((before[i] as number) - (smoothed[i] as number));
+    expect(moved / before.length).toBeGreaterThan(0.001);
+
+    const sculpted = rough().sculpt({ id: "up", strength: 5 }).evaluate().height;
+    for (let i = 0; i < sculpted.length; i += 1)
+      expect((sculpted[i] as number) - (before[i] as number)).toBeCloseTo(5, 5);
+  });
+
   it("rejects missing or nonnumeric height samples before changing a recipe", () => {
     const terrain = new Terrain({ size: 16, resolution: 17 });
     const before = terrain.toJSON();
