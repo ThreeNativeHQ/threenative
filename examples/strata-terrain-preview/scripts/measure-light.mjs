@@ -47,8 +47,8 @@ function measure(path) {
     width,
     height,
     mean: round(mean),
-    quantiles: [0.05, 0.25, 0.5, 0.75, 0.95].map((q) =>
-      round(luminance[Math.floor(q * (luminance.length - 1))]),
+    quantiles: [0.05, 0.25, 0.5, 0.75, 0.95].map(
+      (q) => luminance[Math.floor(q * (luminance.length - 1))],
     ),
     saturation: round(saturation / luminance.length),
     contrast: round(Math.sqrt(squares / luminance.length - mean * mean)),

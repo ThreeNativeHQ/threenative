@@ -1547,8 +1547,8 @@ reused. The mechanism is already shipped; per-world appearance belongs here.
 No licensed asset bytes, push or merge are authorized in this round.
 
 - [ ] Calibrate all five worlds against the merged r13 captures and Gaia references; proof: full-resolution display-luminance p05/p25/p50/p75/p95, saturation and standard deviation, same-build `?off=` stage ablations.
-- [ ] Tune biome sun/fill, height haze with sunward scattering, alpha-preserving contact AO and soft snow response; proof: licensed/fallback shared scenario at 5293, ocean verifier and full-resolution inspection.
-- [ ] Complete requested gates and local commits; proof: example tsc, root Biome, terrain Vitest, every captured view CPU p50 ≤4 ms and normalized quantile deltas ≤0.5; final captures `artifacts/playtest/light-final/`.
+- [x] Tune biome sun/fill, height haze with sunward scattering, alpha-preserving contact AO and soft snow response; proof: licensed/fallback shared scenario at 5293, ocean verifier and full-resolution inspection.
+- [x] Complete requested gates and local commits; proof: example tsc, root Biome, terrain Vitest, every captured view CPU p50 ≤4 ms and normalized quantile deltas ≤0.5; final captures `artifacts/playtest/light-final/`.
 
 Merged r13 reference measurements (normalized display RGB luminance, no linear
 decode): Gaia forest mean **0.3726**, q05/q25/q50/q75/q95
@@ -1606,6 +1606,57 @@ captured CPU frame-window p50s **1.2–3.9 ms**; grounded **3.1 ms**, walk
 observations, not GPU timing or a steady-state FPS claim. Ocean verifier
 **PASS**: waves **61.97%**, sun **54.12%**, sheltered blue **100%**.
 All five normalized quantiles across all 15 matched views stay within **0.5**
-of the fresh pre-edit baseline (maximum absolute delta **0.0993**).
+of the fresh pre-edit baseline (maximum absolute delta **0.0994**).
 Source is frozen for serial same-build stage ablations; absent-licensed proof
 remains pending. The main PRD remains PARTIAL and AC-5 open.
+
+Final matched licensed measurement (fresh pre-edit baseline → frozen final;
+raw display Rec.709 luminance normalized 0–1, mean HSV saturation; σ is
+full-frame luminance standard deviation). Quantile tolerance 0.5 means 127.5
+display levels; it is a preservation guard, not a parity grade.
+
+| World / representative view | p05/p25/p50/p75/p95 before → after | Saturation before → after | σ before → after | Max quantile delta, every world view |
+| --- | --- | --- | --- | --- |
+| Forest / meadow-close | 0.0056/0.1189/0.2406/0.3691/0.7170 → 0.0316/0.1943/0.3095/0.4075/0.6731 | 0.6156 → 0.4968 | 0.2047 → 0.1775 | 0.0994 — within 0.5 |
+| Coast / coastal-ocean | 0.1310/0.2586/0.3534/0.5321/0.8583 → 0.1423/0.2633/0.3585/0.5343/0.8376 | 0.3888 → 0.3620 | 0.2237 → 0.2137 | 0.0392 — within 0.5 |
+| Alpine / alpine-ridge | 0.1538/0.3588/0.4410/0.6191/0.7109 → 0.2053/0.3867/0.4645/0.5594/0.6855 | 0.2761 → 0.2689 | 0.1767 → 0.1431 | 0.0798 — within 0.5 |
+| Desert / desert-mesa | 0.3682/0.4628/0.4986/0.5385/0.6258 → 0.3931/0.4967/0.5423/0.5734/0.6374 | 0.4399 → 0.4173 | 0.0833 → 0.0895 | 0.0473 — within 0.5 |
+| Tundra / tundra-plain | 0.1117/0.2101/0.4070/0.7113/0.8020 → 0.0801/0.2017/0.3686/0.6564/0.7955 | 0.1885 → 0.1900 | 0.2513 → 0.2436 | 0.0549 — within 0.5 |
+
+Original-resolution self-review (out of 5; not a fresh sealed judge): forest
+**4.0**, coast **4.5**, alpine **2.5**, desert **3.0**, tundra **3.0**.
+Forest has more readable warm key light and less saturation, but needle noise
+and dull ground remain; its σ decreases rather than matching Gaia's contrast.
+Coast preserves convincing water/glint with a softer sky seam. Alpine's
+luminance spread moves toward Gaia, but repeated boulders, green trees and
+the large cloud sky dominate the miss. Desert contrast σ increases slightly
+(**0.0833 → 0.0895**), yet smooth mesas remain. Tundra is darker (preserved
+within **0.0549**, not claimed better), with conspicuous ground repetition.
+No independent quality-score increase or complete Gaia parity is claimed.
+
+The first frozen grade arm was interrupted by SIGTERM (143); its replacement
+captured all worlds without console/runtime errors but the temporary diagnostic
+scenario's `contactSamples >= 1` was already true at startup. Its own
+TN_PLAYTEST_ASSERTION_TRIVIAL verdict is rejected. The diagnostic arm now
+requires `changed:true` and is rerun without changing the rendering build.
+
+Re-plan after the same diagnostic sentinel failed twice: `changed:true`
+does not suppress the separate already-true `gte` comparison. Contact
+behavior is already proved by the unchanged full 42-assertion scenario.
+Stage controls now assert renderer diagnostics only and retain the existing
+fixed five-world camera poses; they are image ablations, not a replacement
+behavior gate. Valid controls are written separately under
+`artifacts/playtest/light-final/ablations/`; old interrupted/fixture-failed
+arms are excluded. The full absent-licensed scenario runs first.
+
+Final absent-licensed shared scenario `artifacts/playtest/light-final/fallback/`:
+**42/42 PASS**, zero console errors/diagnostics; all 15 captured CPU p50s
+**1.0–2.6 ms**. Final view medians forest meadow/overview/river/player
+**1.8/2.1/2.7/2.3 ms**, alpine ridge/overview **1.5/1.5 ms**, desert
+**1.1/1.1 ms**, tundra **2.2/2.2 ms**. Ocean verifier **PASS**: waves
+**64.15%**, sun **51.41%**, sheltered blue **100%**. Both licensed folders
+were absent during capture and restored by the trap; restoration is verified.
+This is functional fallback proof; the paired before/after quantile table is
+licensed-only. Quantile guards now use unrounded measurements, with rounding
+only in the displayed PRD table, so the 0.5 boundary cannot pass by rounding.
+The frozen render build's representative stage controls are running.
