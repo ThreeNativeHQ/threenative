@@ -11,10 +11,19 @@ await renderer.init();
 const scene = new Scene();
 const camera = new PerspectiveCamera(50, 1280 / 720, 0.1, 100);
 const fixture = createTemporalAAFixture(renderer, scene, camera, new URLSearchParams(location.search).get("variant") ?? "temporal");
-for (let index = 0; index < 20; index++) fixture.render();
+// Three advances NodeUpdateType.FRAME from its existing animation clock. Multiple synchronous
+// renders would reuse one temporal result, so each deterministic step waits for that boundary.
+async function advance(ticks) {
+  for (let index = 0; index < ticks; index++) {
+    await new Promise(requestAnimationFrame);
+    fixture.render();
+  }
+  return ticks;
+}
+await advance(20);
 installThreePlaytestBridge({
   camera, scene, renderer,
-  fixedStep: async (ticks) => { for (let index = 0; index < ticks; index++) fixture.render(); return ticks; },
+  fixedStep: advance,
   resources: { read: () => ({ temporal: fixture.observation() }) },
   tick: () => fixture.observation().frame,
 });

@@ -115,6 +115,20 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 - [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full-resolution rendering while meeting the Phase-2 visual thresholds. **proof:** paired fixed-route browser WebGPU and desktop-native table records internal pixels, reconstruction cost, total GPU/render p50/p95 and visual metrics; no “FPS only” verdict.
 - [ ] Automatic resolution can move between at least three scales during one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. **proof:** scripted scaler route records scale transitions, history resets, render-target allocation count and per-stage cost; repeated up/down cycles end at the initial allocation baseline.
 
+### Current execution notes
+
+Fresh full core CPU directory: 175 test files passed, 2,209 tests passed, two skipped, using pinned
+pnpm and `--maxWorkers=1`. The initial full-directory attempt exposed a child-command environment
+failure in the hot-subpath declaration test; the correct environment passed that test, then the
+entire directory was rerun green. This is still not the complete repository board.
+Hosted run `36987345933` advances past the bundled-runner repair but fails the strict console-error
+guard on one 404 in the reference fixture. The next fixture serves its compiled build and declares
+an explicit data favicon. Every fixed step now waits for Three's existing RAF frame boundary, and
+the verifier requires the AA resolve count to equal the fixture count. The verifier also rejects
+`TN_PLAYTEST_SOFTWARE_DEVICE_LOST` even when the generic runner downgrades it to a warning; unit
+regressions retain that fail-closed requirement. No visual acceptance box is inferred from a green
+CPU gate or the diagnostic reference frame.
+
 ## Runtime screenshot progress
 
 - [Diagnostic no-AA reference](../../verification/prd455/diagnostic-reference.png), hosted run

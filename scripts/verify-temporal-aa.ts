@@ -8,6 +8,8 @@ import {
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
 
+import { requireTemporalRenderEvidence } from "./temporal-aa-evidence.js";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "artifacts/temporal-aa");
 await mkdir(output, { recursive: true });
@@ -26,7 +28,7 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
     scenarioPath: "playtests/temporal-aa.playtest.json",
     server: {
       command:
-        "pnpm exec vite --config temporal.vite.config.ts --host 127.0.0.1 --port $PORT --strictPort",
+        "pnpm exec vite build --config temporal.vite.config.ts && pnpm exec vite preview --config temporal.vite.config.ts --host 127.0.0.1 --port $PORT --strictPort",
       timeoutMs: 60_000,
     },
     timeoutMs: 60_000,
@@ -51,12 +53,7 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
     path.join(artifactDirectory, "report.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
-  assert.ok(
-    report.capture && Object.values(report.capture.adapter).some((value) => value.length > 0),
-    `${variant}: adapter provenance required`,
-  );
-  assert.equal(report.capture.rendererKind, "webgpu", `${variant}: expected WebGPU`);
-  assert.equal(report.pass, true, `${variant}: ${JSON.stringify(report.diagnostics)}`);
+  requireTemporalRenderEvidence(report, variant);
   const observed = report.observations?.resources?.temporal?.after as
     | {
         frame: number;
@@ -65,6 +62,7 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
         skinnedHistory: boolean;
         instancedHistory: boolean;
         aa: {
+          frame: number;
           inputWidth: number;
           inputHeight: number;
           outputWidth: number;
@@ -91,6 +89,11 @@ for (const variant of ["reference", "temporal", "cut", "projection", "resize"] a
   } else {
     assert.deepEqual(observed.stages, ["traa"]);
     assert.ok(observed.aa, `${variant}: temporal result absent`);
+    assert.equal(
+      observed.aa.frame,
+      observed.frame,
+      `${variant}: every counted step must actually resolve`,
+    );
     assert.equal(observed.aa.historyValid, true, `${variant}: history must recover after reset`);
     assert.equal(observed.aa.inputWidth, variant === "resize" ? 960 : 1280);
     assert.equal(observed.aa.inputHeight, variant === "resize" ? 540 : 720);
