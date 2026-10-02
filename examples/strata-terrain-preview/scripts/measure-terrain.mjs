@@ -4,11 +4,17 @@ const t0 = Date.now();
 const worlds = await import("./bake.mjs");
 const loadMs = Date.now() - t0;
 
+const { hypot } = Math;
 const NAMES = ["forest", "coastal", "alpine", "desert", "tundra"];
 const NEIGHBOURS = [
-  [-1, -1], [0, -1], [1, -1],
-  [-1, 0], [1, 0],
-  [-1, 1], [0, 1], [1, 1],
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
 ];
 const round = (v) => Math.round(v * 10) / 10;
 const pct = (a, b) => Math.round((a / b) * 1000) / 10;
@@ -17,8 +23,8 @@ function stats(state) {
   const n = state.resolution;
   const cell = state.size / (n - 1);
   const h = state.height;
-  let min = Infinity;
-  let max = -Infinity;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
   for (const v of h) {
     if (v < min) min = v;
     if (v > max) max = v;
@@ -32,7 +38,7 @@ function stats(state) {
     for (let x = 1; x < n - 1; x += 1) {
       const i = z * n + x;
       const hv = h[i];
-      let maxNeighbour = -Infinity;
+      let maxNeighbour = Number.NEGATIVE_INFINITY;
       let sum = 0;
       for (const [dx, dz] of NEIGHBOURS) {
         const v = h[(z + dz) * n + x + dx];
@@ -44,7 +50,7 @@ function stats(state) {
         spikes += 1;
         worst = Math.max(worst, prominence);
       }
-      const grade = Math.hypot(h[i + 1] - h[i - 1], h[i + n] - h[i - n]) / (2 * cell);
+      const grade = hypot(h[i + 1] - h[i - 1], h[i + n] - h[i - n]) / (2 * cell);
       const slope = (Math.atan(grade) * 180) / Math.PI;
       if (slope > 30) steep30 += 1;
       if (slope > 45) steep45 += 1;
