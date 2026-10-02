@@ -347,16 +347,21 @@ export function createGroundMaterial(
   const weights: Record<LayerKey, Node<"float">> = {
     // The bake painted its beach in the same red-over-green as its dirt, so the height rule above
     // has to be the one that speaks for the shore; painted dirt steps aside where it does.
-    dirt: drainage.mul(0.4).mul(sand.oneMinus()),
+    dirt: max(
+      drainage.mul(0.18),
+      smoothstep(0.025, 0.18, steep)
+        .mul(smoothstep(-0.12, 0.32, breakUp))
+        .mul(0.48),
+    ).mul(sand.oneMinus()),
     grass: float(1),
-    moss: drainage.mul(smoothstep(0.02, 0.14, steep)).mul(0.48),
+    moss: drainage.mul(smoothstep(0.02, 0.14, steep)).mul(0.24),
     sand,
     // Rock shows where the ground is steep *and* convex — the nose of a rib, the face of a scarp. On a
     // concave slope the ground is covered by what has fallen into it, which is the moss above, so the
     // steepness term is scaled down in a hollow rather than replaced: bare rock still shows at a
     // scarp's foot where the ground is steep and the debris has not arrived yet.
     // Soil holds on ordinary hills; only scarps expose bedrock (34–48 degrees).
-    rock: smoothstep(0.17, 0.33, steep.add(rib.mul(0.018)))
+    rock: smoothstep(0.12, 0.3, steep.add(rib.mul(0.04)).add(breakUp.mul(0.025)))
       .mul(mix(0.65, 1, smoothstep(12, 70, positionWorld.y)))
       .mul(oneMinus(smoothstep(0.15, 0.8, hollow).mul(0.25))),
     snow: smoothstep(float(SNOW.from), float(SNOW.to), positionWorld.y).mul(
@@ -457,7 +462,20 @@ export function createGroundMaterial(
   };
 
   const grassRelief = reliefOf("grass", 0.38);
-  let albedo = albedoOf("grass").mul(MEADOW);
+  // Metre-scale tufts survive the grass photograph's mips beyond individual blades.
+  const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
+    .mul(0.55)
+    .add(1);
+  const farGrass = vec3(0.055, 0.1, 0.019).mul(cover);
+  // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
+  let albedo: Node<"vec4"> = vec4(
+    mix(
+      albedoOf("grass").rgb.mul(MEADOW),
+      farGrass,
+      smoothstep(32, 115, positionView.length()).mul(0.55),
+    ),
+    1,
+  );
   // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
@@ -490,12 +508,17 @@ export function createGroundMaterial(
     normal = mix(normal, relief.tilt, over);
   }
   // Concavity occludes sky bounce, leaving direct sunlight physically separate.
-  material.aoNode = mix(float(1), float(0.65), smoothstep(0.12, 0.8, hollow));
+  material.aoNode = mix(float(1), float(0.88), smoothstep(0.2, 0.85, hollow));
 
   // 50–200 metre vegetation tones survive texture mipmapping in the overview.
-  const macro = mx_fractal_noise_float(positionWorld.mul(0.006), 3);
-  const dryness = smoothstep(-0.18, 0.22, macro.sub(hollow.mul(0.16)).add(alpine.mul(0.06)));
-  const tone = mix(vec3(0.52, 0.82, 0.46), vec3(1.23, 1.06, 0.83), dryness);
+  const macro = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
+  const mottling = mx_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
+  const dryness = smoothstep(
+    -0.18,
+    0.22,
+    macro.add(mottling.mul(0.24)).sub(hollow.mul(0.035)).add(alpine.mul(0.06)),
+  );
+  const tone = mix(vec3(0.48, 0.76, 0.34), vec3(1.05, 1.13, 0.72), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
