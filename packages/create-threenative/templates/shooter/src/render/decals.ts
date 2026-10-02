@@ -1,7 +1,6 @@
 import {
   DataTexture,
   DoubleSide,
-  type Material,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
@@ -127,7 +126,7 @@ const scratchNormal = new Vector3();
 
 /** One family of marks: its own material, its own slots, its own recycle cursor. */
 type Variant = {
-  readonly slots: Mesh[];
+  readonly slots: Mesh<PlaneGeometry, MeshBasicMaterial>[];
   readonly material: MeshBasicMaterial;
   cursor: number;
 };
@@ -138,6 +137,7 @@ export class DecalField<TVariant extends string> {
   readonly #offset: number;
   #placed = 0;
   #capacity = 0;
+  #disposed = false;
   /** Slots stop being submitted once their pipeline exists. See `settle`. */
   #settled = false;
 
@@ -148,6 +148,7 @@ export class DecalField<TVariant extends string> {
       countPerVariant: number;
       /** Edge length of one mark in metres, before the per-place scale multiplier. */
       size: number;
+      /** Borrowed: the caller retains ownership and disposes this after its last user. */
       map: Texture;
       /** Tint per variant: a hole in steel keeps a colder rim than one in wood. */
       tints: Readonly<Record<TVariant, number>>;
@@ -168,7 +169,7 @@ export class DecalField<TVariant extends string> {
         side: DoubleSide,
         transparent: true,
       });
-      const slots: Mesh[] = [];
+      const slots: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
       for (let index = 0; index < options.countPerVariant; index += 1) {
         const mesh = new Mesh(this.#geometry, material.clone());
         // Present from the first frame at a size nothing can see, so this material's pipeline is
@@ -261,9 +262,14 @@ export class DecalField<TVariant extends string> {
   }
 
   dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
     for (const family of this.#variants.values()) {
-      for (const mesh of family.slots) mesh.removeFromParent();
-      (family.material as Material).dispose();
+      for (const mesh of family.slots) {
+        mesh.removeFromParent();
+        mesh.material.dispose();
+      }
+      family.material.dispose();
     }
     this.#variants.clear();
     this.#geometry.dispose();
