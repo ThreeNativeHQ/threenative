@@ -140,7 +140,7 @@ const MAPS: Record<LayerKey, { diffuse: string; normal?: string }> = {
 const OCCLUSION = 0.5;
 
 /** Where the snow line sits, in metres, and the slope above which it cannot settle. */
-const SNOW = { from: 52, to: 70, sheds: 0.22 };
+const SNOW = { from: 145, to: 195, sheds: 0.22 };
 
 /**
  * The beach band, in metres above the bake's own sea level.
@@ -178,7 +178,7 @@ const WET_SAND = {
  * wants June, so this trades red for green on that one layer and leaves the texture's own detail,
  * its normal map and every other surface alone.
  */
-const MEADOW = vec3(0.54, 0.92, 0.42);
+const MEADOW = vec3(0.43, 0.76, 0.38);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
 function tiledUV(key: LayerKey, _tiles: number, scale = 1): Node<"vec2"> {
@@ -360,7 +360,10 @@ export function createGroundMaterial(
   const steep = clamp(slope.add(breakUp.mul(0.05)), 0, 1);
   // +1 in a hollow, -1 on a rib. The two ends of the ground's own shape, which slope cannot tell
   // apart: a gully and a nose are both steep, and they are not the same surface.
-  const hollow = curvature.node;
+  const outside = max(abs(positionWorld.x), abs(positionWorld.z));
+  const hollow = curvature.node.mul(
+    oneMinus(smoothstep(data.size / 2, data.size / 2 + 28, outside)),
+  );
   // Material placement follows the actual landform, never the bake's brown blob palette.
   const drainage = smoothstep(0.08, 0.5, hollow).mul(smoothstep(0.004, 0.07, steep));
   const rib = smoothstep(-0.02, -0.45, hollow);
@@ -440,6 +443,10 @@ export function createGroundMaterial(
     const blended = mix(walls, flat, planarShare);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
+    if (key === "rock") {
+      const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
+      return vec4(mix(blended.rgb, vec3(grey), 0.65).mul(vec3(0.85, 0.9, 0.94)), blended.a);
+    }
     if (key !== "sand" || data.waterLevel === null) return blended;
     const wet = wetness();
     return vec4(blended.rgb.mul(mix(float(1), WET_SAND.darken, wet)), blended.a);
