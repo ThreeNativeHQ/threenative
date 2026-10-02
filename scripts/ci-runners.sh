@@ -76,10 +76,10 @@ start_slot() {
     while [ ! -e "$1/stop" ]; do
       docker run --rm \
         --label tn-ci-runner=1 \
-        $5 \
+        $4 \
         --env-file "$2" \
         -e TN_RUNNER_REPO="$3" \
-        -e TN_RUNNER_LABELS="$6" \
+        -e TN_RUNNER_LABELS="$5" \
         tn-ci-runner || sleep 10
     done
   ' _ "$state" "$env_file" "$repo" "$shape" "$labels" >"$state/$slot.log" 2>&1 &
