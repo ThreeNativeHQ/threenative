@@ -1,3 +1,4 @@
+import type { IPlaytestToneObservation } from "../tone.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -287,6 +288,7 @@ async function runDevicePlaytestInternal(
       // One armed capture per sample; absent means the bridge does no geometry work at all.
       ...(scenario.assert?.geometry === undefined ? {} : { geometry: scenario.assert.geometry }),
     } as const;
+    const tone: IPlaytestToneObservation[] = [];
     const before = await bridge.sample(sampleRequest);
     const pathEntity = scenario.assert?.movement?.pathLength === undefined
       ? undefined
@@ -446,11 +448,10 @@ async function runDevicePlaytestInternal(
           : [];
         labeledSamples.push({ label: step.label, signals, snapshot });
       }
-      if (step.screenshot !== undefined) {
-        await captureDeviceScreenshot(
-          target,
-          join(config.artifactDirectory, `${safePart(step.screenshot)}.png`),
-        );
+      const wantsStepTone = step.label !== undefined && scenario.assert?.tone?.some(({ atStep }) => atStep === step.label) === true;
+      if (step.screenshot !== undefined || wantsStepTone) {
+        const label = step.screenshot === undefined ? `tone-${index}.png` : `${safePart(step.screenshot)}.png`;
+        await captureDeviceScreenshot(target, join(config.artifactDirectory, label), tone, label, step.label);
       }
       if (step.release && pressed !== undefined) {
         const released = typeof pressed === "string" ? [pressed] : [...pressed];
@@ -510,8 +511,8 @@ async function runDevicePlaytestInternal(
     appendPosition(pathPositions, after, pathEntity);
     metrics?.stop();
     await metrics?.sampleNow("after").catch(() => undefined);
-    if (scenario.artifacts?.screenshots !== false) {
-      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"));
+    if (scenario.artifacts?.screenshots !== false || scenario.assert?.tone?.some(({ atStep }) => atStep === undefined) === true) {
+      await captureDeviceScreenshot(target, join(config.artifactDirectory, "after.png"), tone, "after.png");
     }
     if (!(await target.driver.isAlive())) {
       return failureReport(config, scenario, playtestDiagnostic(
@@ -548,6 +549,7 @@ async function runDevicePlaytestInternal(
         ? undefined
         : { ...startupOutcome.startup, rule: startupOutcome.rule },
       lifecycle?.observation(),
+      tone,
     );
     // Same artifacts as the browser target: a diagnostic that names console.json must find it
     // there whichever target produced the run.
@@ -621,9 +623,13 @@ async function runDevicePlaytestInternal(
 async function captureDeviceScreenshot(
   target: IDevicePlaytestTarget,
   path: string,
+  tone: IPlaytestToneObservation[],
+  label: string,
+  atStep?: string,
 ): Promise<void> {
   await target.driver.screenshot(path);
-  assertCaptureNotBlank(await readFile(path), path);
+  const stats = assertCaptureNotBlank(await readFile(path), path);
+  if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
 }
 
 /**

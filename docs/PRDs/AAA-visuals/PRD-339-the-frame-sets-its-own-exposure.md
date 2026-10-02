@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** PROPOSED — filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). Judged with
-[PRD-341](./PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
+[PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md), which is the only way to
 tell whether this landed. Source studied: [TheLongSilence](https://github.com/achimala/TheLongSilence)
 `src/gfx/PostFX.js`, the `LUM_FRAG` / `REDUCE_FRAG` / `ADAPT_FRAG` chain.
 
