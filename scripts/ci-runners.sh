@@ -22,7 +22,9 @@ LABEL=tn-local
 VARIABLE=TN_RUNNER
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
-DEFAULT_SLOTS=4
+DEFAULT_SLOTS=5
+# Cores never given to a slot, so the owner's desktop stays responsive under a full board.
+HOST_CORES=2
 ONLINE_TIMEOUT_SECONDS=300
 
 fail() {
@@ -65,7 +67,7 @@ start_slot() {
     while [ ! -e "$1/stop" ]; do
       docker run --rm \
         --label tn-ci-runner=1 \
-        --cpuset-cpus "$4" --memory 16g \
+        --cpuset-cpus "$4" --memory 12g --memory-swap 12g --oom-score-adj 800 \
         --env-file "$2" \
         -e TN_RUNNER_REPO="$3" \
         tn-ci-runner || sleep 10
@@ -113,7 +115,8 @@ up() {
   # ponytail: assumes Linux's usual sibling numbering (CPU k and k + nproc/2 share a core); read
   # /sys/devices/system/cpu/cpu*/topology/thread_siblings_list if a host numbers them otherwise.
   local half=$(( $(nproc) / 2 ))
-  [ $(( slots * 2 )) -le "$half" ] || fail 2 "$slots slots need $(( slots * 2 )) cores; this host has $half"
+  [ $(( slots * 2 + HOST_CORES )) -le "$half" ] \
+    || fail 2 "$slots slots need $(( slots * 2 )) cores plus $HOST_CORES for the host; this host has $half"
   local slot base
   for slot in $(seq 1 "$slots"); do
     base=$(( (slot - 1) * 2 ))
