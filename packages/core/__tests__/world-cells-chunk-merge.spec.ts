@@ -6,7 +6,9 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  DirectionalLight,
   FrontSide,
+  Frustum,
   Group,
   InstancedMesh,
   InterleavedBufferAttribute,
@@ -15,9 +17,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  Scene,
   Vector3,
 } from "three";
 import { PerspectiveCamera } from "three";
+import type { NodeBuilder, NodeFrame } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DISCRETE_LOD_SCHEMA_VERSION,
@@ -25,7 +29,11 @@ import {
   TN_DISCRETE_LOD,
   lodChainOf,
 } from "../src/model-lod.js";
-import { VIRTUAL_SHADOW_CASTER_LAYER } from "../src/render/virtual-shadow.js";
+import {
+  VIRTUAL_SHADOW_CASTER_LAYER,
+  VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
+  VirtualShadowNode,
+} from "../src/render/virtual-shadow.js";
 import type { IRendererLike } from "../src/renderer.js";
 import { isStatic } from "../src/static-transform.js";
 import { type IWorldPackage, WorldCells } from "../src/world.js";
@@ -167,6 +175,71 @@ function meshesIn(root: Object3D): Mesh[] {
     if ((object as Mesh).isMesh === true) found.push(object as Mesh);
   });
   return found;
+}
+
+/** Observe the real level probe's draw inputs at three's shadow-render boundary, without a GPU. */
+function shadowDraws(world: WorldCells, half: "cluster" | "wide"): Mesh[][] {
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(60, 1, 0.1, 900);
+  camera.position.copy(CHUNK_ORIGIN).add(new Vector3(0, 10, 0));
+  const light = new DirectionalLight();
+  light.position.copy(CHUNK_ORIGIN).add(new Vector3(60, 200, -40));
+  light.target.position.copy(CHUNK_ORIGIN);
+  light.castShadow = true;
+  scene.add(world, camera, light, light.target);
+  for (const layer of [VIRTUAL_SHADOW_CASTER_LAYER, VIRTUAL_SHADOW_WIDE_CASTER_LAYER]) {
+    const count = layer === VIRTUAL_SHADOW_WIDE_CASTER_LAYER && half === "cluster" ? 3 : 1;
+    for (let index = 0; index < count; index += 1) {
+      const batch = new Mesh(new BoxGeometry(8, 8, 8), surface);
+      batch.position.copy(CHUNK_ORIGIN);
+      batch.castShadow = true;
+      batch.layers.set(layer);
+      scene.add(batch);
+    }
+  }
+  scene.updateMatrixWorld(true);
+  const node = new VirtualShadowNode(light, {
+    clipExtents: [24, 96, 320],
+    invalidationDelay: 0,
+    marker: false,
+    minCasterTexels: 0,
+  });
+  node.setup({
+    context: {},
+    material: {},
+    renderer: { shadowMap: { enabled: true } },
+  } as unknown as NodeBuilder);
+  const draws: Mesh[][] = [];
+  node.levelNodes.forEach((levelNode, index) => {
+    (levelNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+      const levelLight = node.levelLights[index] as DirectionalLight;
+      levelLight.shadow.updateMatrices(levelLight);
+      const shadowCamera = levelLight.shadow.camera;
+      expect(shadowCamera.layers.isEnabled(VIRTUAL_SHADOW_CASTER_LAYER)).toBe(half === "cluster");
+      expect(shadowCamera.layers.isEnabled(VIRTUAL_SHADOW_WIDE_CASTER_LAYER)).toBe(half === "wide");
+      const frustum = new Frustum().setFromProjectionMatrix(
+        new Matrix4().multiplyMatrices(
+          shadowCamera.projectionMatrix,
+          shadowCamera.matrixWorldInverse,
+        ),
+      );
+      draws[index] = meshesIn(world).filter(
+        (mesh) =>
+          mesh.visible &&
+          mesh.castShadow &&
+          shadowCamera.layers.test(mesh.layers) &&
+          (!mesh.frustumCulled || frustum.intersectsObject(mesh)),
+      );
+    };
+  });
+  for (const mover of node.moverNodes)
+    (mover as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => undefined;
+  for (let time = 1; time <= 3; time += 1)
+    node.updateBefore({ camera, renderer: {}, time } as unknown as NodeFrame);
+  expect(draws).toHaveLength(3);
+  node.dispose();
+  world.removeFromParent();
+  return draws;
 }
 
 function markers(): string[] {
@@ -484,6 +557,20 @@ describe("a hand-placed chunk merged by material", () => {
     world.dispose();
   });
 
+  it.each(["cluster", "wide"] as const)(
+    "draws merged chunk shadows when a level selects %s casters",
+    async (half) => {
+      vi.spyOn(console, "info").mockImplementation(() => undefined);
+      const { group } = shadowChunkModel();
+      const { chunk, world } = await attached(group, { shadows: { cast: true, receive: true } });
+      const proxy = chunk.getObjectByName("world-chunk-shadow") as Mesh;
+      expect(proxy).toBeDefined();
+      const draws = shadowDraws(world, half);
+      for (const level of draws) expect(level).toContain(proxy);
+      world.dispose();
+    },
+  );
+
   it("collapses the chunk's shadow bill into one position-only proxy per side", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const { cutout, group, opaque } = shadowChunkModel();
@@ -510,8 +597,10 @@ describe("a hand-placed chunk merged by material", () => {
       "TN_WORLD_CHUNK_MERGE meshes=16 draws=5 bytes=13440 uploaded=0 instancedExpanded=0 keptInstanced=0 shadowDraws=1",
     ]);
     expect(meshesIn(chunk)).toHaveLength(5);
-    // On the layer the level shadow cameras draw and the main camera never does, and nothing else.
-    expect(proxy.layers.mask).toBe(1 << VIRTUAL_SHADOW_CASTER_LAYER);
+    // On both caster halves and off the main camera's layer.
+    expect(proxy.layers.mask).toBe(
+      (1 << VIRTUAL_SHADOW_CASTER_LAYER) | (1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER),
+    );
     expect(proxy.castShadow).toBe(true);
     expect(proxy.receiveShadow).toBe(false);
     // The group's own material, by reference: the side it is grouped by is that material's own

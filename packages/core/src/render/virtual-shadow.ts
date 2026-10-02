@@ -1405,14 +1405,17 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // What this level would submit from each half, counted as it goes: a hidden caster submits
       // nothing, so it is not in either bill. A key-wide mesh spans the whole ring, so the level
       // keeps it whether or not the window reaches it — the cull, not the choice, decides that one.
-      if ((mesh.layers.mask & clusterLayer) !== 0) {
+      // A chunk proxy belongs to both halves and costs the same whichever one is chosen.
+      const bothHalves =
+        (mesh.layers.mask & (clusterLayer | wideLayer)) === (clusterLayer | wideLayer);
+      if (!bothHalves && (mesh.layers.mask & clusterLayer) !== 0) {
         if (Math.hypot(_sphere.center.x - centre.x, _sphere.center.z - centre.z) <= window)
           clusterDraws += 1;
-      } else if ((mesh.layers.mask & wideLayer) !== 0) {
+      } else if (!bothHalves && (mesh.layers.mask & wideLayer) !== 0) {
         wideDraws += 1;
       }
       // The same bill by kind, for what the level's chosen layers end up submitting. Only a caster
-      // counts, and the merged per-chunk proxies — named `<name>-shadow`, on the cluster layer —
+      // counts, and the merged per-chunk proxies — named `<name>-shadow`, on both halves —
       // are bucketed apart from the batches they stand in for so they are not counted twice. The
       // small layer and layer 0's own casters take no part in the cluster/wide choice above.
       if (mesh.castShadow === true) {
@@ -1445,13 +1448,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (index === 0 || prewarming)
       level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
     // The bill the chosen layers will actually submit: a half that was not picked submits none of
-    // its meshes, and the proxies on the cluster layer go with that half.
+    // its meshes. Chunk proxies belong to both halves, so either choice submits them once.
     const chosenCluster = clustered || prewarming;
     const chosenWide = !clustered || prewarming;
     const chosenSmall = index === 0 || prewarming;
     const by = stat.drawsBy;
     by.cluster = chosenCluster ? nCluster : 0;
-    by.chunkProxy = chosenCluster ? nChunk : 0;
+    by.chunkProxy = nChunk;
     by.wide = chosenWide ? nWide : 0;
     by.small = chosenSmall ? nSmall : 0;
     by.layer0 = nLayer0;

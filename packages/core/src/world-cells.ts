@@ -2415,7 +2415,7 @@ const worldOwned = new WeakSet<Material>();
  * grouped by `side` — the one thing a depth material does read — collapses that bill to one draw per
  * side.
  *
- * The proxy lives alone on `VIRTUAL_SHADOW_CASTER_LAYER`, the layer the level shadow cameras draw and
+ * The proxy lives on both caster halves, the layers the level shadow cameras draw and
  * the main camera never does, and is counted by the same `#probe` window test as the scatter caster
  * clusters, so a level whose window does not reach the chunk drops it for free. Nothing here decides
  * how anything looks: the covered meshes keep the game's own materials and keep drawing the main pass
@@ -2455,6 +2455,7 @@ function buildChunkShadowProxies(
     const proxy = new Mesh(shadowProxyGeometry(group.meshes, label), material);
     proxy.name = `${CHUNK_NAME}-shadow`;
     proxy.layers.set(VIRTUAL_SHADOW_CASTER_LAYER);
+    proxy.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
     proxy.castShadow = true;
     proxy.receiveShadow = false;
     markStatic(proxy);
