@@ -6,7 +6,7 @@ prd_contract: v1
 
 **Status:** PROPOSED — filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). Judged with
-[PRD-341](./PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md). Source studied:
+[PRD-341](../done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md). Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `src/world/Fleet.js:57-140`, the
 `BEACON_VERT` / `BEACON_FRAG` pair and the `BEACON_HDR` note.
 

@@ -4,9 +4,12 @@ prd_contract: v1
 
 # PRD-341 — a frame's tone is a number, and the number is a gate
 
-**Status:** PARTIAL — implementation started 2026-10-02 from `d7277838`; original proposal
+**Status:** DONE — implementation and all five acceptance criteria qualified on browser
+SwiftShader WebGPU at `0ea7e29a0ff18717d33b8bce3300ec0568fea842`; required full CI is
+still pending before merge. No native or hardware-performance qualification is claimed.
+Implementation started 2026-10-02 from `d7277838`; original proposal
 filed 2026-09-03, measured at `43d03e6a`. Batch:
-[docs/PRDs/AAA-visuals](./README.md). **Land this first** — it is what makes every other PRD in the
+[docs/PRDs/AAA-visuals](../AAA-visuals/README.md). **Land this first** — it is what makes every other PRD in the
 batch judgeable, and it is the cheapest thing here. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `tools/levels.mjs`, `tools/judgeset.mjs`.
 
@@ -112,23 +115,38 @@ nothing still leaves the numbers behind for the next round.
 
 ## Acceptance criteria
 
-- [ ] **A misexposed frame is red.** proof: `pnpm test:tone`. The example fixture renders a scene with `toneMappingExposure`
+- [x] **A misexposed frame is red.** proof: `pnpm test:tone`. The example fixture renders a scene with `toneMappingExposure`
    pinned two stops under; a `tone` assertion bounding `mean` and `p99` fails, and the failure text
    names both the measured and the required value.
    *Red-green:* the mutation **is** the pinned exposure — restore it and the same assertion passes.
-   Paste both.
-- [ ] **An empty bound set throws.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. A `tone` assertion with no bounds fails schema validation with a
+   Paste both. Verified: [run 36988379892](https://github.com/ThreeNativeHQ/threenative/actions/runs/36988379892)
+   measured underexposed mean 89.55505316840278 / p99 136 versus required mean 140..210 /
+   p99 >=230; exactly four named/final bounds failed. Restored mean 170.49870985243055 /
+   p99 254 passed the same bounds. Both images and full failure text are retained below.
+- [x] **An empty bound set throws.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. A `tone` assertion with no bounds fails schema validation with a
    named error before the run starts.
    *Red-green:* soften the schema to allow it; `assertion-schema.spec.ts` goes red.
-- [ ] **A missing capture fails, it does not skip.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`. A `tone` assertion at a step that produced no
+   Verified in the current `tone.spec.ts` schema cases: temporarily removing the two empty-bound
+   guards caused three expected failures (`{}`, `{atStep: "landed"}`, `{mean: {}}`); restored
+   source passed. The built loader throws `TN_PLAYTEST_SCENARIO_INVALID` before execution.
+- [x] **A missing capture fails, it does not skip.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`. A `tone` assertion at a step that produced no
    frame reports a failure naming the step.
    *Red-green:* return `undefined` from the evaluator when the capture is absent; the fail-closed
-   spec goes red.
-- [ ] **The CLI table matches the assertion.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. `cli.js tone` on a frame and `assert.tone` on the same
+   spec goes red. Verified: replacing missing/invalid-capture handling with `return undefined`
+   caused all four missing-capture cases to fail. Restored source reports
+   `TN_PLAYTEST_TONE_UNOBSERVED` naming `landed`; removing observations from the real restored
+   report likewise names `rendered`. The registry fallback also remains fail-closed.
+- [x] **The CLI table matches the assertion.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. `cli.js tone` on a frame and `assert.tone` on the same
    frame report the same six numbers, to the printed precision.
    *Red-green:* change the histogram bin count in one path only; the cross-check spec goes red.
-- [ ] **It works where captures work.** proof: `pnpm test:tone` plus the frameless-lane exclusion test in `tone.spec.ts`. The delete-test lane rule applies — this needs a GPU lane, so
+   Verified: temporarily selecting 128 bins only for the CLI made the cross-check fail
+   (p1 2.01 instead of 2.00; p50 126.50 instead of 127.00; clip/black 0.78% instead of 0.39%).
+   Restored built `cli.js tone` matched all six decoded and asserted values on all four hosted
+   PNGs, including the frame-average row, to printed precision.
+- [x] **It works where captures work.** proof: `pnpm test:tone` plus the frameless-lane exclusion test in `tone.spec.ts`. The delete-test lane rule applies — this needs a GPU lane, so
    the scenario lives on `pnpm test:templates`, not on CI's frame-less template runner.
+   Verified: `test:templates` invokes `test:tone`; the tone-only exclusion regression passes,
+   and the dedicated hosted WebGPU lane produced inspected real captures at the source SHA above.
 
 ## Out of scope
 
@@ -188,3 +206,40 @@ Underexposed (expected tone assertion failure):
 Restored (tone assertions pass):
 
 ![Restored runtime calibration](../../verification/prd341/restored.png)
+
+
+## Acceptance audit — 2026-10-02
+
+At exact source `0ea7e29a0ff18717d33b8bce3300ec0568fea842`, each mutation above was applied
+in an isolated worktree, observed failing for its intended contract, then removed.
+`node node_modules/vitest/vitest.mjs run --maxWorkers=1` over `capture.spec.ts`, `tone.spec.ts`,
+`tone-runner.spec.ts`, `generated-assertion-validators.spec.ts` (all under
+`packages/playtest/__tests__/`) and `scripts/__tests__/tone-capture-proof.spec.ts` passed
+56 tests after exact-source restoration. No mutation was published.
+
+The built offline CLI, histogram decode and six exact-bound assertions agreed on both named
+and final PNGs from each runtime arm:
+
+| Frame | mean | p1 | p50 | p99 | clip% | black% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Underexposed (named and final) | 89.56 | 6.00 | 95.00 | 136.00 | 0.00 | 0.39 |
+| Restored (named and final) | 170.50 | 22.00 | 180.00 | 254.00 | 0.78 | 0.39 |
+| Four-frame average | 130.03 | 14.00 | 137.50 | 195.00 | 0.39 | 0.39 |
+
+The ordinary package build wrapper hit the local tsx IPC `EPERM` restriction. Its equivalent
+steps passed using `node --import tsx scripts/generate-assertion-validators.ts --check`,
+`pnpm --filter @threenative/playtest exec tsup --config tsup.config.ts`, and
+`pnpm --filter @threenative/playtest exec publint --strict`: 30 validators current, ESM and
+declarations built, strict package lint passed. This does not claim a full-root test pass.
+
+All original feature acceptance criteria are satisfied. Required full CI and final merge
+qualification remain pending; archiving the implemented PRD does not waive those gates.
+Earlier checkpoints above retain the state and blockers observed at each point in the work.
+
+Archive checks: `node --import tsx scripts/check-doc-links.ts` passed 2,398 links;
+`node --import tsx scripts/check-evidence-budget.ts` passed the unchanged byte caps; the citation
+scanner classifies both screenshots and provenance as `cited-by-done-prd`. The six-file prose
+regression lane passed 178 tests and hit the existing tsx IPC restriction in two evidence-budget
+subprocess cases (long evidence record and many small files); their `EPERM` exits are not passes.
+The real-tree budget regression passed, and required hosted CI retains responsibility for the
+restricted subprocess checks.
