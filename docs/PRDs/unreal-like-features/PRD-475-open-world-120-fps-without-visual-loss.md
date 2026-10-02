@@ -1,6 +1,6 @@
 # PRD-475 — Machinefall's open world at 120 fps with no visual loss
 
-**Status:** IN PROGRESS
+**Status:** PARTIAL — merged at prd:25% on João's 2026-10-02 call; the walking p95 boxes (AC-1, AC-2, Phase 2 targets, Phase 3 guard) continue in PRD-478
 **Complexity:** 5 (MEDIUM) — 6–10 engine files (+2), engine and Machinefall release separately (+2), GPU-pass state (+1 risk); risk override: none
 **Owner:** João
 **Depends on:** PRD-473 (merged at 75% in #375 as `a602467db`)
@@ -79,6 +79,8 @@ Risks:
 - 2026-10-01 (João, via this PRD): PRD-473's AC-5 (map-walk at 120 fps) moves here. PRD-473 keeps its mechanisms: GPU cull, bundles, impostors, HLOD and fallback.
 - 2026-10-01: the visual reference is develop `a602467db`, the look restored in #375, and not the older `pr375-binding` build.
 - 2026-10-01: a merged super-tile was drawn a whole `blockOrigin` from the tiles it replaced — its geometry is written relative to the block origin and the mesh was left at (0, 0, 0), so every block away from the origin showed as floating slabs over a hole where the ground is; unit tests only ever merged an island at the origin, where the two agree.
+- 2026-10-02 (João): stop tuning and "stabilize and merge what you can". This PRD merges with its shipped cuts: idle frame p50 2.6–4.8 ms vs develop 5–7, walking render p50 7.0–8.4 vs 8.3–10.4, and AC-3 holding. Walking p95 stays at 19–26 ms (develop 18–25) and moves to PRD-478 (frame architecture: per-draw refresh only on changed inputs, streaming in a worker, GPU-driven shadow casters). The boxes stay open here rather than being ticked on unmet targets.
+- 2026-10-02: the bridge-pose van shading is a capture race, not a shipped regression. The van band reads 30.89 / 31.05 / 31.47 across repeated captures of the same build, and develop `a602467db` itself read 31.0472 in `artifacts/prd-475/bisect-van2`. Our builds land on 31.47 more often (cut12i 3/3, cut12k 2/3, cut12m 1/3); the cause is open in PRD-478 alongside the shadow-level cadence.
 
 ## Execution Phases
 
@@ -132,6 +134,8 @@ Neighbor-LOD scan fix: `world-tiles-cost.spec.ts` red: 75 resident-map lookups, 
 Frame-work follow-up (2026-10-02): the shared measured frame budget (c13e35a5e: streaming after the draw, deferred in shadow frames, forced within 3) was reverted in c823efa91. Machinefall cut12l (core `7deb743a39daa13e`) clean-ab5 pairs 1-3: walking render p95 26-35 ms vs develop 21.5-24.7, p50 no better; blind ab9 7/8 equal, 1 LOSS (walk-04 bridge: cliff shadow missing on the vans) that a recapture did not repeat (van-band luminance 30.8937 = develop); pop road band 25.940 = develop, pop judge: no late objects. Deferring stacked the backlog rather than spreading it. The two exact scan cuts above stay.
 
 Render-loop node-key fix (2026-10-02, source/unit lane): reuse `three/tsl`'s stock constant shadow-colour node across VirtualShadowNode's per-level materials. Red: 9 prewarmed casters held 2 node states; green: 1, gate cache misses 34 → 21 (compiler stubbed), with unchanged source index ranges, materials and instance counts per pass. All 39 settled submissions still refresh inside three; 0 render-object creations/geometry swaps and 0 late builds for prewarmed keys. Gates: core 2246 passed, 2 skipped; typecheck exit 0; lint 0 errors, 1012 warnings, exit 0; quality 183 findings, exit 0. Browser timing and same-pose GPU output remain unverified; Phase 2 stays open.
+
+Shared shadow colour (2026-10-02): `1299c6a91` shares three's constant shadow colorNode across the virtual levels, so identical level shaders reuse one node-builder state (`world-cells-shadow-prewarm.spec.ts` red: 2 states for 9 casters, expected 1; loading-gate cache misses 34 → 21). cut12n blind ab11: 7 equal, 1 win (develop's bridge-deck capture missed trees), 0 losses; pop band 25.940 = develop.
 
 #### Phase 3: Hold 120 fps with the look intact
 **Status:** NOT STARTED
