@@ -163,122 +163,258 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     ],
   })
   .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 });
-// Mountain / Alpine: a massif and a side ridge over foothills, crags only where it is high, and
-// snow that holds on the flatter high ground while the steep faces stay bare rock.
+// Alpine: intersecting arêtes, cirque headwalls and a glacial trough. Settle talus below
+// the exposed faces without relaxing the entire massif to the scree angle.
 export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
-  .noise({ id: "foothills", base: 12, amplitude: 26, scale: 160, warp: 40, octaves: 6 })
-  .noise({
-    id: "valleys",
-    base: 0,
-    amplitude: 18,
-    scale: 100,
-    warp: 30,
-    octaves: 3,
-    mode: "billow",
+  .noise({ id: "foothills", base: 16, amplitude: 18, scale: 180, warp: 35, octaves: 4 })
+  .stamp({
+    id: "snow-shelf",
+    at: [0, -60],
+    radius: [172, 145],
+    amplitude: 105,
+    shape: "mesa",
+    roughness: 0.025,
+    blend: "max",
+    offset: 16,
   })
   .stamp({
-    id: "summit",
-    at: [30, -40],
-    radius: [215, 180],
-    amplitude: 158,
-    shape: "mountain",
-    roughness: 0.18,
-  })
-  .stamp({
-    id: "side-ridge",
-    at: [-120, 70],
-    radius: [175, 120],
-    amplitude: 70,
+    id: "main-arete",
+    at: [15, -65],
+    radius: [165, 120],
+    amplitude: 132,
     shape: "ridge",
-    roughness: 0.18,
+    rotation: -22,
+    roughness: 0.025,
+    blend: "max",
+    offset: 16,
   })
-  // A broad summit snowfield, cut before weathering so its rim drains and erodes with the massif.
-  .flatten({ id: "summit-snowfield", at: [30, -40], radius: 62, height: 120, falloff: 0.5 })
-  // Crags only where it is high: ridged noise over the whole massif roughened the foothills past
-  // 30 degrees, which is a rockfall, not a mountain.
+  .stamp({
+    id: "side-arete",
+    at: [-100, 15],
+    radius: [150, 90],
+    amplitude: 112,
+    shape: "ridge",
+    rotation: 58,
+    roughness: 0.03,
+    blend: "max",
+    offset: 16,
+  })
+  .stamp({
+    id: "east-horn",
+    at: [55, -95],
+    radius: [120, 90],
+    amplitude: 140,
+    shape: "ridge",
+    rotation: 78,
+    roughness: 0.08,
+    blend: "max",
+    offset: 20,
+  })
+  .stamp({
+    id: "west-horn",
+    at: [-80, -40],
+    radius: [130, 85],
+    amplitude: 125,
+    shape: "ridge",
+    rotation: -38,
+    roughness: 0.075,
+    blend: "max",
+    offset: 16,
+  })
+  .stamp({
+    id: "cirque-east",
+    at: [90, -12],
+    radius: [78, 84],
+    amplitude: 36,
+    shape: "valley",
+    roughness: 0.04,
+  })
+  .stamp({
+    id: "cirque-west",
+    at: [-40, 10],
+    radius: [75, 84],
+    amplitude: 32,
+    shape: "valley",
+    roughness: 0.04,
+  })
   .noise({
     id: "crags",
     base: 0,
-    amplitude: 9,
-    scale: 38,
-    octaves: 4,
+    amplitude: 26,
+    scale: 115,
+    warp: 14,
+    octaves: 3,
+    persistence: 0.4,
     mode: "ridged",
-    mask: Mask.height(60, 1e9, 20),
+    mask: Mask.height(45, 1e9, 18),
   })
-  .erode({ id: "weathering", method: "hydraulic" })
-  .smooth({ id: "settle", iterations: 1, strength: 0.5 })
-  .noise({ id: "detail", base: 0, amplitude: 3, scale: 60, warp: 14, octaves: 4, mode: "ridged" })
-  // A 34-degree talus is loose scree: rock past that angle slides off the faces and piles in fans below,
-  // which is what puts the grey aprons under the snowline.
-  .erode({ id: "scree", method: "thermal", talus: 34, iterations: 80 })
-  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
+  .noise({
+    id: "fractures",
+    base: 0,
+    amplitude: 9,
+    scale: 35,
+    warp: 12,
+    octaves: 3,
+    persistence: 0.45,
+    mode: "ridged",
+    mask: Mask.and(Mask.height(48, 1e9, 12), Mask.slope(20, 80, 12)),
+  })
+  .terrace({
+    id: "rock-ledges",
+    step: 18,
+    softness: 0.55,
+    strength: 0.28,
+    mask: Mask.and(Mask.height(55, 170, 12), Mask.slope(26, 70, 12)),
+  })
+  .erode({
+    id: "weathering",
+    method: "hydraulic",
+    inertia: 0.05,
+    capacity: 1.2,
+    erosion: 0.008,
+    deposition: 0.2,
+    evaporation: 0.035,
+    droplets: 18000,
+  })
+  .erode({ id: "scree", method: "thermal", talus: 45, iterations: 8, rate: 0.12 })
+  .smooth({ id: "settle", iterations: 1, strength: 0.45 })
+  .river({
+    id: "glacial-trough",
+    followTerrain: true,
+    points: [
+      [-240, null, 155],
+      [-100, null, 110],
+      [20, null, 95],
+      [230, null, 130],
+    ],
+    width: 38,
+    depth: 6,
+    shoulder: 42,
+    water: false,
+    material: "rock",
+  })
   .materials({
     id: "surfaces",
     rules: [
-      { material: "dirt", mask: Mask.noise(30, 0.72, 41, 0.2), strength: 0.3 },
-      { material: "rock", mask: Mask.slope(32, 90, 8) },
-      { material: "snow", mask: Mask.and(Mask.height(85, 1e9, 12), Mask.slope(0, 38, 6)) },
+      { material: "dirt", mask: Mask.noise(38, 0.7, 41, 0.25), strength: 0.25 },
+      { material: "rock", mask: Mask.height(48, 1e9, 22), strength: 0.65 },
+      { material: "rock", mask: Mask.slope(30, 90, 8) },
+      { material: "snow", mask: Mask.and(Mask.height(70, 1e9, 18), Mask.slope(0, 36, 7)) },
     ],
   });
-
-// Desert / Canyon: a low plain with three mesas, a dune field and a dry wash cut through it — sand
-// and sandstone rather than a recoloured forest.
+// Desert: resistant caprock plateaux, stepped walls, loose aprons and wind-shaped dunes.
 export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
-  .noise({ id: "plain", base: 8, amplitude: 7, scale: 220, warp: 30, octaves: 4 })
+  .noise({ id: "plain", base: 8, amplitude: 4, scale: 220, warp: 30, octaves: 3 })
   .stamp({
     id: "mesa-west",
     at: [-140, -60],
-    radius: [80, 64],
-    amplitude: 46,
+    radius: [82, 65],
+    amplitude: 66,
     shape: "mesa",
-    // Low roughness on purpose: a mesa is a flat-topped block, and the stamp's own fbm skin at 0.25
-    // stood a metre proud of its neighbours over a tenth of the map as single-cell spikes.
-    roughness: 0.06,
+    roughness: 0.025,
   })
   .stamp({
     id: "mesa-north",
     at: [40, -170],
-    radius: [62, 90],
-    amplitude: 58,
+    radius: [68, 88],
+    amplitude: 82,
     shape: "mesa",
-    roughness: 0.06,
+    roughness: 0.025,
   })
   .stamp({
     id: "butte",
     at: [-30, 60],
-    radius: [34, 30],
-    amplitude: 40,
+    radius: [36, 31],
+    amplitude: 48,
     shape: "mesa",
+    roughness: 0.02,
+  })
+  .stamp({
+    id: "west-cleft",
+    at: [-77, -45],
+    radius: [21, 32],
+    amplitude: 16,
+    shape: "valley",
     roughness: 0.08,
   })
   .stamp({
-    id: "dunes",
-    at: [140, 130],
-    radius: [150, 120],
+    id: "north-cleft",
+    at: [4, -217],
+    radius: [25, 22],
     amplitude: 12,
-    shape: "dune",
-    roughness: 0.4,
+    shape: "valley",
+    roughness: 0.06,
   })
-  .erode({ id: "weathering", method: "hydraulic" })
-  // Terracing the mesa walls: stratified rock erodes to flat benches separated by steep risers, which
-  // is the silhouette a mesa actually has. A smooth cone at this scale is a lump, not a mesa.
-  .terrace({ id: "benches", step: 6, softness: 0.12, strength: 0.55, offset: 6 })
-  .smooth({ id: "settle", iterations: 3, strength: 0.65 })
-  .noise({ id: "detail", base: 0, amplitude: 0.8, scale: 74, warp: 10, octaves: 4, mode: "ridged" })
-  .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
-  .smooth({ id: "drift", iterations: 2, strength: 0.55 })
+  .erode({
+    id: "weathering",
+    method: "hydraulic",
+    inertia: 0.06,
+    capacity: 2,
+    erosion: 0.02,
+    deposition: 0.35,
+  })
+  .terrace({
+    id: "benches",
+    step: 8,
+    softness: 0.13,
+    strength: 0.96,
+    offset: 2,
+    mask: Mask.height(18, 1e9, 6),
+  })
+  .flatten({ id: "west-caprock", at: [-140, -60], radius: 42, height: 78, falloff: 0.15 })
+  .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 94, falloff: 0.15 })
+  .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 60, falloff: 0.12 })
+  .erode({ id: "aprons", method: "thermal", talus: 57, iterations: 5, rate: 0.12 })
+  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.35 })
+  .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
+  .stamp({
+    id: "dune-west",
+    at: [80, 95],
+    radius: [135, 24],
+    amplitude: 5,
+    shape: "ridge",
+    rotation: -32,
+    roughness: 0.05,
+  })
+  .stamp({
+    id: "dune-east",
+    at: [125, 155],
+    radius: [140, 27],
+    amplitude: 7,
+    shape: "ridge",
+    rotation: -32,
+    roughness: 0.05,
+  })
+  .stamp({
+    id: "dune-far",
+    at: [175, 205],
+    radius: [120, 28],
+    amplitude: 6,
+    shape: "ridge",
+    rotation: -32,
+    roughness: 0.06,
+  })
+  .stamp({
+    id: "dune-hollow",
+    at: [145, 145],
+    radius: [36, 70],
+    amplitude: 3,
+    shape: "valley",
+    rotation: 18,
+    roughness: 0.05,
+  })
   .river({
     id: "wash",
     followTerrain: true,
     points: [
-      [-240, null, 200],
-      [-90, null, 150],
-      [60, null, 20],
+      [-240, null, 190],
+      [-100, null, 130],
+      [30, null, 0],
       [240, null, -80],
     ],
-    width: 16,
-    depth: 5,
-    shoulder: 10,
+    width: 12,
+    depth: 3,
+    shoulder: 12,
     water: false,
     material: "sand",
     enforceDownhill: true,
@@ -287,38 +423,94 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     id: "surfaces",
     rules: [
       { material: "sand", mask: Mask.all() },
-      { material: "dirt", mask: Mask.noise(26, 0.7, 97, 0.2), strength: 0.35 },
+      { material: "dirt", mask: Mask.noise(40, 0.7, 97, 0.2), strength: 0.25 },
       { material: "rock", mask: Mask.slope(28, 90, 8) },
     ],
   });
-
-// Snow / Tundra: rolling snowfields with ridged rocky outcrops and moss where the wind strips the
-// cover; its frozen lake is an ice surface, not a fluid.
+// Tundra: rolling moraine, low ridges and kettle ponds connected by braided meltwater.
 export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
-  .noise({ id: "snowfield", base: 12, amplitude: 12, scale: 240, warp: 34, octaves: 4 })
-  .noise({ id: "folds", base: 0, amplitude: 4, scale: 170, warp: 20, octaves: 3, mode: "billow" })
-  // Outcrops in patches, not everywhere: ridged noise over the whole field roughened a third of a
-  // snowfield past 30 degrees, which is a rockfall, not tundra.
+  .noise({
+    id: "moraine",
+    base: 14,
+    amplitude: 16,
+    scale: 180,
+    warp: 45,
+    octaves: 4,
+    persistence: 0.38,
+  })
+  .stamp({
+    id: "low-ridge",
+    at: [-75, -85],
+    radius: [220, 38],
+    amplitude: 9,
+    shape: "ridge",
+    rotation: -25,
+    roughness: 0.09,
+  })
+  .stamp({
+    id: "near-moraine",
+    at: [115, 90],
+    radius: [170, 27],
+    amplitude: 5,
+    shape: "ridge",
+    rotation: -30,
+    roughness: 0.07,
+  })
   .noise({
     id: "outcrops",
     base: 0,
-    amplitude: 2.5,
-    scale: 55,
+    amplitude: 1.5,
+    scale: 42,
     octaves: 3,
     mode: "ridged",
     mask: Mask.noise(90, 0.68, 131, 0.2),
   })
-  .erode({ id: "weathering", method: "hydraulic" })
+  .erode({ id: "weathering", method: "hydraulic", capacity: 2, erosion: 0.015 })
   .smooth({ id: "settle", iterations: 1, strength: 0.5 })
-  .noise({ id: "detail", base: 0, amplitude: 0.8, scale: 74, warp: 10, octaves: 3, mode: "ridged" })
-  .erode({ id: "talus", method: "thermal", talus: 33, iterations: 12 })
-  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
+  .flatten({ id: "near-kettle-bed", at: [65, 80], radius: 30, height: 8, falloff: 0.65 })
+  .flatten({ id: "far-kettle-bed", at: [-65, -50], radius: 42, height: 9, falloff: 0.65 })
+  .river({
+    id: "meltwater",
+    points: [
+      [-210, 17, -135],
+      [-125, 14, -80],
+      [-100, 11, -90],
+      [-65, 11, -50],
+      [-30, 11, -15],
+      [0, 10.3, 5],
+      [38, 9.8, 47],
+      [65, 9.8, 80],
+      [100, 9.8, 100],
+      [160, 8, 140],
+      [250, 7, 150],
+    ],
+    width: 7,
+    depth: 1.5,
+    shoulder: 18,
+    enforceDownhill: true,
+  })
+  .river({
+    id: "braid",
+    points: [
+      [-65, 11, -50],
+      [-40, 11, -18],
+      [-30, 10.4, 40],
+      [15, 9.8, 105],
+      [65, 9.8, 80],
+    ],
+    width: 4,
+    depth: 1.2,
+    shoulder: 12,
+    enforceDownhill: true,
+  })
+  .water({ id: "near-kettle", kind: "lake", at: [65, 80], radius: 34, level: 9.8 })
+  .water({ id: "far-kettle", kind: "lake", at: [-65, -50], radius: 46, level: 11 })
   .materials({
     id: "surfaces",
     rules: [
-      { material: "snow", mask: Mask.all() },
-      { material: "moss", mask: Mask.noise(40, 0.74, 131, 0.2), strength: 0.45 },
-      { material: "rock", mask: Mask.slope(24, 90, 8) },
+      { material: "moss", mask: Mask.all() },
+      { material: "snow", mask: Mask.noise(85, 0.68, 131, 0.3), strength: 0.6 },
+      { material: "rock", mask: Mask.slope(23, 90, 8) },
     ],
   });
 // `pnpm dev` runs this on every start, and grid-scaled erosion costs ~19 s for the five worlds

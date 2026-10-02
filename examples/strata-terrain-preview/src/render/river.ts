@@ -17,9 +17,10 @@
 //   water read as water. It draws layer 0 only, which is why the water sits on `WATER_LAYER`: a
 //   water surface inside the mirrored pass samples a single-sampled depth target and fails WebGPU
 //   validation, taking the frame down with it.
-// - **The stream has no mirror, on purpose.** It falls fifteen metres over its length, so a planar
+// - **The forest stream has no mirror.** It falls fifteen metres over its length, so a planar
 //   reflection would be right at one bend and wrong everywhere else; the sky comes back by fresnel
-//   over an analytic gradient, which is most of what a moving river surface shows anyway.
+//   over an analytic gradient. Tundra channels share the kettle ponds' existing mirrors, blended
+//   by elevation, so the stream and pond meet without a reflection-colour seam.
 //
 // Nothing here decides a colour for the engine: `WaterSurface3D` measures metres and hands back the
 // frame beneath the surface and the world mirrored in it, and every number under LOOK below is this
@@ -30,6 +31,7 @@
 import { WaterSurface3D, WaveField } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   attribute,
   cameraPosition,
@@ -289,6 +291,8 @@ const RIPPLE = new WaveField({
 
 export interface IRiverWater {
   readonly mesh: Mesh;
+  /** Lake mirror sampling, shared with joining streams without another reflection pass. */
+  readonly reflectionAt?: (offset: Node<"vec2">) => Node<"vec3">;
   /** The water's clock, in seconds; the scene advances it so the playtest's time is the water's. */
   advance(elapsed: number): void;
   dispose(): void;
@@ -461,9 +465,13 @@ function ribbon(
   flows: number[],
   depths: number[],
   indices: number[],
+  limitToWidth: boolean,
 ): void {
   const { points } = river;
-  const heights = surfaceHeights(field, points);
+  const reach = limitToWidth ? river.width * 2.5 : RIVER.reach;
+  const heights = limitToWidth
+    ? points.map((point) => point[1] ?? 0)
+    : surfaceHeights(field, points);
   const base = positions.length / 3;
   const columns = RIVER.across;
   const wet: number[] = [];
@@ -478,12 +486,16 @@ function ribbon(
     const [x = 0, , z = 0] = points[k] as readonly number[];
     const y = heights[k] as number;
     for (let c = 0; c < columns; c += 1) {
-      const across = (c / (columns - 1) - 0.5) * 2 * RIVER.reach;
+      const across = (c / (columns - 1) - 0.5) * 2 * reach;
       const vx = x - dz * across;
       const vz = z + dx * across;
       positions.push(vx, y, vz);
       flows.push(dx, dz);
-      const depth = Math.min(MAX_BAKED_DEPTH, Math.max(0, y - field.heightAt(vx, vz)));
+      const depth = Math.min(
+        MAX_BAKED_DEPTH,
+        Math.max(0, y - field.heightAt(vx, vz)),
+        limitToWidth ? Math.max(0, (reach - Math.abs(across)) * 0.2) : MAX_BAKED_DEPTH,
+      );
       depths.push(depth);
       wet.push(depth > 0 ? 1 : 0);
     }
@@ -498,8 +510,16 @@ function ribbon(
       // to dissolve across; only a quad that is dry on both of its rows is dropped outright, which
       // takes the surface off the hillside rather than folding it back along the centreline.
       if (
-        (wet[a - 1] ?? 0) + (wet[b] ?? 0) + (wet[d - 1] ?? 0) + (wet[e] ?? 0) === 0 &&
-        (wet[a] ?? 0) + (wet[b] ?? 0) + (wet[d] ?? 0) + (wet[e] ?? 0) === 0
+        (wet[a - base - 1] ?? 0) +
+          (wet[b - base] ?? 0) +
+          (wet[d - base - 1] ?? 0) +
+          (wet[e - base] ?? 0) ===
+          0 &&
+        (wet[a - base] ?? 0) +
+          (wet[b - base] ?? 0) +
+          (wet[d - base] ?? 0) +
+          (wet[e - base] ?? 0) ===
+          0
       )
         continue;
       // Wound so the face points up: along × across points down, so the pair is taken the other way.
@@ -512,18 +532,26 @@ function ribbon(
 export function createRivers(
   rivers: readonly IBakedRiver[],
   field: Heightfield,
+  limitToFootprint = false,
+  lakeReflection?: (offset: Node<"vec2">) => Node<"vec3">,
 ): IRiverWater | undefined {
   if (rivers.length === 0) return undefined;
   const positions: number[] = [];
   const flows: number[] = [];
   const depths: number[] = [];
   const indices: number[] = [];
-  for (const river of rivers) ribbon(field, river, positions, flows, depths, indices);
+  const groups: { start: number; count: number }[] = [];
+  for (const river of rivers) {
+    const start = indices.length;
+    ribbon(field, river, positions, flows, depths, indices, limitToFootprint);
+    groups.push({ start, count: indices.length - start });
+  }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("flow", new BufferAttribute(new Float32Array(flows), 2));
   geometry.setAttribute("metres", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
+  for (const group of groups) geometry.addGroup(group.start, group.count, 0);
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -581,7 +609,7 @@ export function createRivers(
     .mul(smoothstep(float(0), float(0.4), depthM));
   const bed = surface.refractionAt(offset);
 
-  // No mirror: this surface falls fifteen metres over its length. The sky comes back by fresnel over
+  // The forest stream falls fifteen metres. Its sky comes back by fresnel over
   // an analytic gradient, on a floor of the wood that stands on both banks — see `TINT.bank`.
   const bounced = view.negate().reflect(reflectNormal);
   const sky = mix(
@@ -591,7 +619,8 @@ export function createRivers(
     // over a broad angle; a hard dark cutoff makes moving facets flicker as black blobs.
     smoothstep(float(0.08), float(0.5), bounced.y),
   );
-  const shaded = compositeWater({ normal, depthM, bed, reflected: sky.mul(0.65) });
+  const reflected = lakeReflection ? lakeReflection(offset) : sky.mul(0.65);
+  const shaded = compositeWater({ normal, depthM, bed, reflected });
 
   // White water where the current runs over a shallow bed, and a few streaks in the channel. Broken
   // rather than ruled: the shallows only whiten where the churn is high, so the edge reads as water
@@ -693,12 +722,65 @@ export function waterlineRadius(
 export function createLakes(
   lakes: readonly IBakedLake[],
   field: Heightfield,
+  limitToFootprint = false,
 ): IRiverWater | undefined {
   const lake = lakes[0];
   if (lake === undefined) return undefined;
-  if (lakes.length > 1) throw new Error("The Temperate lake surface draws one lake; got more.");
+  if (lakes.length > 1) {
+    const ponds = lakes
+      .map((one) => createLakes([one], field, true))
+      .filter((one) => one !== undefined);
+    if (ponds.length === 0) return undefined;
+    const geometry = mergeGeometries(
+      ponds.map((one) => one.mesh.geometry),
+      true,
+    );
+    if (!geometry) {
+      for (const pond of ponds) pond.dispose();
+      throw new Error("Lake geometries have incompatible attributes");
+    }
+    const mesh = new Mesh(
+      geometry,
+      ponds.flatMap((one) => one.mesh.material),
+    );
+    const mirrors = ponds.map((pond) => {
+      if (!pond.reflectionAt) throw new Error("A kettle pond has no mirror sampler");
+      return {
+        sample: pond.reflectionAt,
+        level: pond.mesh.geometry.getAttribute("position").getY(0),
+      };
+    });
+    mesh.layers.set(WATER_LAYER);
+    mesh.name = "lake-surfaces";
+    mesh.renderOrder = 2;
+    return {
+      mesh,
+      reflectionAt(offset) {
+        const weighted = mirrors.map((mirror) => ({
+          ...mirror,
+          weight: float(1).div(positionWorld.y.sub(mirror.level).abs().add(0.1)),
+        }));
+        const total = weighted.reduce<Node<"float">>(
+          (sum, mirror) => sum.add(mirror.weight),
+          float(0),
+        );
+        return weighted.reduce<Node<"vec3">>(
+          (sum, mirror) => sum.add(mirror.sample(offset).mul(mirror.weight.div(total))),
+          vec3(0),
+        );
+      },
+      advance(elapsed) {
+        for (const pond of ponds) pond.advance(elapsed);
+      },
+      dispose() {
+        geometry.dispose();
+        for (const pond of ponds) pond.dispose();
+      },
+    };
+  }
   const [cx = 0, cz = 0] = lake.at;
-  const reach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
+  const measuredReach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
+  const reach = limitToFootprint ? Math.min(measuredReach, lake.radius) : measuredReach;
   if (reach <= 0) return undefined;
 
   const { rings, spokes } = LAKE;
@@ -928,7 +1010,12 @@ export function createLakes(
   );
   material.colorNode = mix(below, shaded, eyeIsAbove);
   // From underneath there is no shore to dissolve into and the ceiling is opaque.
-  material.opacityNode = mix(float(1), shoreFade(depthM), eyeIsAbove);
+  const opacity = mix(float(1), shoreFade(depthM), eyeIsAbove);
+  material.opacityNode = opacity;
+  if (limitToFootprint) {
+    const edge = positionWorld.xz.sub(vec2(cx, cz)).length();
+    material.opacityNode = opacity.mul(float(1).sub(smoothstep(reach * 0.82, reach, edge)));
+  }
 
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);
@@ -937,6 +1024,7 @@ export function createLakes(
   mesh.renderOrder = 2;
   return {
     mesh,
+    reflectionAt: (offset) => surface.reflectionAt(offset) as unknown as Node<"vec3">,
     advance(elapsed) {
       time.value = elapsed;
     },

@@ -83,7 +83,11 @@ const STONE = new Set(["boulder", "riverrock", "scree", "cliff"]);
 const phase = float(instanceIndex).mul(12.9898).sin().mul(43758.545).fract().mul(6.2831);
 const gust = sin(time.mul(0.1).add(phase));
 
-function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeMaterial {
+function surface(
+  source: MeshStandardMaterial,
+  asset: string,
+  world: WorldName,
+): MeshPhysicalNodeMaterial {
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
   const canopy = asset === "spruce" || asset === "sapling";
@@ -108,7 +112,24 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
             : canopy && source.name === "branch"
               ? ([0.45, 0.38, 0.25] as const)
               : ([1, 1, 1] as const);
+    const otherBiome = world !== "forest" && world !== "coastal";
     material.colorNode = sampled.rgb.mul(vec3(...tint));
+    if (otherBiome && stone)
+      material.colorNode = sampled.rgb.mul(
+        world === "desert"
+          ? vec3(1.12, 0.8, 0.54)
+          : world === "alpine"
+            ? vec3(0.94, 0.98, 1.02)
+            : vec3(0.7, 0.78, 0.61),
+      );
+    if (otherBiome && cutout && !canopy)
+      material.colorNode = sampled.rgb.mul(
+        world === "desert"
+          ? vec3(0.85, 0.64, 0.32)
+          : world === "tundra"
+            ? vec3(0.64, 0.67, 0.42)
+            : vec3(0.72, 0.8, 0.55),
+      );
     if (stone) {
       const base = attribute<"float">("groundBlend", "float");
       const growth = smoothstep(-0.15, 0.3, mx_noise_float(positionWorld.mul(2.1)));
@@ -116,7 +137,15 @@ function surface(source: MeshStandardMaterial, asset: string): MeshPhysicalNodeM
         .mul(0.9)
         .add(normalWorldGeometry.y.max(0).mul(growth).mul(0.38))
         .clamp(0, 0.95);
-      material.colorNode = mix(material.colorNode, vec3(0.045, 0.078, 0.019), moss);
+      material.colorNode = mix(
+        material.colorNode,
+        world === "desert"
+          ? vec3(0.23, 0.16, 0.095)
+          : world === "alpine"
+            ? vec3(0.12, 0.13, 0.12)
+            : vec3(0.045, 0.078, 0.019),
+        moss,
+      );
       material.aoNode = mix(1, 0.65, base);
     }
     if (cutout) {
@@ -183,8 +212,13 @@ export async function loadPack(
       world === "forest" ||
       world === "coastal" ||
       (world === "alpine" &&
-        ["spruce", "sapling", "grass", "boulder", "scree"].includes(one.asset)) ||
-      (world === "tundra" && ["sapling", "boulder", "scree"].includes(one.asset)),
+        ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
+          one.asset,
+        )) ||
+      (world === "tundra" &&
+        ["sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)) ||
+      (world === "desert" &&
+        ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
   );
   const loaded = await Promise.all(
     selected.map(async (one) => {
@@ -250,7 +284,7 @@ export async function loadPack(
         );
         geometry.setAttribute("groundBlend", new BufferAttribute(blend, 1));
       }
-      const material = surface(source, one.asset);
+      const material = surface(source, one.asset, world);
       const role: PropRole = stone ? "stone" : source.alphaTest > 0 ? "pine" : "bark";
       built.push({ geometry, material });
       entry.push({ geometry, material, role, level: one.level ?? 0, variant: one.variant });

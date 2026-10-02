@@ -183,6 +183,10 @@ const initialState = {
   waveRange: 0,
   sampleSlopeRange: 0,
   lakePlacementError: 1,
+  lakeSurfaceCount: 0,
+  riverSurfaceCount: 0,
+  lakeTriangles: 0,
+  lakeFootprintError: 1,
   sunX: -180,
   propDraws: 0,
   propInstances: 0,
@@ -364,18 +368,33 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
       // its own layer so the lake's mirror can leave it out; the eye sees both.
       ctx.camera.layers.enable(WATER_LAYER);
-      const river = createRivers(data.rivers ?? [], field);
-      this.#river = river;
-      if (river) {
-        ctx.add(river.mesh);
-        ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
-      }
       const lake = createLakes(data.lakes ?? [], field);
       this.#lake = lake;
       if (lake) {
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
+        let lakeFootprintError = 0;
+        if (world === "tundra") {
+          const geometry = lake.mesh.geometry;
+          for (const [index, group] of geometry.groups.entries()) {
+            const pond = data.lakes?.[index];
+            if (!pond) throw new Error("A drawn pond has no baked footprint");
+            for (let i = group.start; i < group.start + group.count; i++) {
+              const vertex = geometry.index?.getX(i) ?? i;
+              lakeFootprintError = Math.max(
+                lakeFootprintError,
+                Math.hypot(
+                  centre.getX(vertex) - (pond.at[0] ?? 0),
+                  centre.getZ(vertex) - (pond.at[1] ?? 0),
+                ) - pond.radius,
+              );
+            }
+          }
+        }
         ctx.state.set({
+          lakeFootprintError,
+          lakeSurfaceCount: Math.max(1, lake.mesh.geometry.groups.length),
+          lakeTriangles: (lake.mesh.geometry.index?.count ?? 0) / 3,
           lakePlacementError: Math.hypot(
             centre.getX(0) - (at?.[0] ?? 0),
             centre.getZ(0) - (at?.[1] ?? 0),
@@ -402,6 +421,20 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       };
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.
+      const river = createRivers(
+        data.rivers ?? [],
+        field,
+        world === "tundra",
+        world === "tundra" ? lake?.reflectionAt : undefined,
+      );
+      this.#river = river;
+      if (river) {
+        ctx.state.set({
+          riverSurfaceCount: river.mesh.geometry.groups.filter((group) => group.count > 0).length,
+        });
+        ctx.add(river.mesh);
+        ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
+      }
       const scatter = scatterProps(
         propField,
         BENCHMARK[world].focus,
@@ -409,7 +442,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           .filter((pose) => pose.eye < 20)
           .map((pose) => [pose.at[0], pose.at[1], 10] as const),
       );
-      let propParts = buildPropVariants();
+      const fallbackSaplingHeight = world === "alpine" ? 2 : world === "tundra" ? 1.4 : undefined;
+      let propParts = buildPropVariants(undefined, fallbackSaplingHeight);
       const flat = flatPropMaterials();
       let props: ReturnType<typeof createProps> | undefined;
       let building = false;
@@ -464,8 +498,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         const parts = new Map([...prepared.parts, ...pack.parts]);
         // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
         const dryStone = prepared.parts.get("boulder:1");
-        if (world === "desert" && dryStone) parts.set("boulder:0", dryStone);
-        propParts = buildPropVariants(parts);
+        if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
+          parts.set("boulder:0", dryStone);
+        propParts = buildPropVariants(parts, fallbackSaplingHeight);
         if (released) {
           preparedDispose();
           return;

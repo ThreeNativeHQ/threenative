@@ -109,6 +109,7 @@ export function scatterProps(
   const temperate = data.world === undefined || data.world === "forest" || data.world === "coastal";
   const desert = data.world === "desert";
   const tundra = data.world === "tundra";
+  const alpine = data.world === "alpine";
   const treeLimit = temperate ? SCATTER.spruceCount : desert ? 0 : tundra ? 55 : 600;
   const placements: IPlacement[] = [];
   const counts: Record<string, number> = Object.fromEntries(
@@ -131,6 +132,21 @@ export function scatterProps(
   const inside = (x: number, z: number) => Math.abs(x) < half - 3 && Math.abs(z) < half - 3;
   const wet = (x: number, z: number) =>
     (data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35) ||
+    (tundra &&
+      (data.rivers ?? []).some((river) =>
+        river.points.some((b, index) => {
+          const a = river.points[index - 1];
+          if (!a) return false;
+          const dx = (b[0] ?? 0) - (a[0] ?? 0);
+          const dz = (b[2] ?? 0) - (a[2] ?? 0);
+          const t = clamp01(
+            ((x - (a[0] ?? 0)) * dx + (z - (a[2] ?? 0)) * dz) / (dx * dx + dz * dz || 1),
+          );
+          const distance = Math.hypot(x - (a[0] ?? 0) - t * dx, z - (a[2] ?? 0) - t * dz);
+          const level = (a[1] ?? 0) + t * ((b[1] ?? 0) - (a[1] ?? 0));
+          return distance < river.width * 2.5 && clampedHeight(data, x, z) < level + 0.35;
+        }),
+      )) ||
     (data.lakes ?? []).some(
       (lake) =>
         Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
@@ -170,7 +186,8 @@ export function scatterProps(
   const cells = new Map<string, [number, number]>();
   for (
     let tries = 0;
-    (counts[tundra ? "sapling" : "spruce"] ?? 0) < treeLimit && tries < SCATTER.spruceAttempts;
+    (counts[tundra || alpine ? "sapling" : "spruce"] ?? 0) < treeLimit &&
+    tries < SCATTER.spruceAttempts;
     tries++
   ) {
     const x = (random() - 0.5) * data.size;
@@ -197,10 +214,10 @@ export function scatterProps(
     if (crowded || cells.has(key)) continue;
     cells.set(key, [x, z]);
     put(
-      tundra ? "sapling" : "spruce",
+      tundra || alpine ? "sapling" : "spruce",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.45 : 0.55) + random() * (temperate ? 0.5 : 0.4),
+      (temperate ? 0.8 : tundra ? 0.45 : 1.05) + random() * (temperate ? 0.5 : 0.4),
     );
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = forestWeight(x, z) < 0.57;
@@ -226,7 +243,14 @@ export function scatterProps(
       if (temperate && random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
       continue;
     }
-    if (slope > 28 && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
+    if (slope > (temperate ? 28 : 18) && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
+    if (alpine && slope > 18 && slope < 38) {
+      for (let k = 0; k < 8; k++) {
+        const sx = x + (random() - 0.5) * 14;
+        const sz = z + (random() - 0.5) * 14;
+        if (slopeDegrees(data, sx, sz) < 42) put("scree", sx, sz, 0.12 + random() * 0.22);
+      }
+    }
     for (let k = 0; k < 2 + Math.floor(random() * 3); k++)
       put("boulder", x + (random() - 0.5) * 8, z + (random() - 0.5) * 8, 0.45 + random() * 0.8);
   }
@@ -258,13 +282,15 @@ export function scatterProps(
       grassWeight(data, x, z) < 0.22
     )
       return;
-    const drift = 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7);
+    const drift = temperate
+      ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
+      : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
     if (random() > density * drift) return;
     put(
-      desert ? "scrub" : "grass",
+      "grass",
       x,
       z,
-      (temperate ? 0.8 : 0.38) + random() * (temperate ? 0.65 : 0.35),
+      (temperate ? 0.8 : tundra ? 0.85 : 0.55) + random() * (temperate ? 0.65 : 0.5),
     );
     if (!desert && random() < 0.3)
       put("scrub", x + (random() - 0.5), z + (random() - 0.5), 0.9 + random() * 0.6);
@@ -280,7 +306,11 @@ export function scatterProps(
       x < half - 3;
       x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
     )
-      cover(x + (random() - 0.5) * 1.5, z + (random() - 0.5) * 1.5, 0.7);
+      cover(
+        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
+        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
+        0.7,
+      );
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.

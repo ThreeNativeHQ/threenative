@@ -1159,3 +1159,100 @@ exports and packed-scaffold handoff remain open. The generated API/capability
 snapshots and shipped addon guide now name the explicit `/export` contract.
 Actual vanilla/native/reassignment screenshots are tracked under
 `docs/verification/visuals/strata/` and will be attached to PR #381.
+
+### AC-5 Alpine / Desert / Tundra round 2 (2026-10-02)
+
+Complexity: 2 → LOW; risk override: none. Bounded example appearance changes using
+installed Terrain operations and shared prop/water rendering. AC-5 remains open.
+
+1. Replace rounded landforms with arêtes/cirques, mesa caprock/benches and moraine/kettle drainage.
+2. Break rock repetition, place snow by slope/exposure and dress optional props per biome.
+3. Capture defining views at 1920×1080, compare forest luminance and measure frame-window p50.
+
+Proof: bake, spike measurement, terrain Vitest; example typecheck and root Biome per commit;
+shared terrain scenario with zero console errors. Decisions: ridged noise already ships;
+thaw-season liquid tundra pools; licensed local art remains optional with procedural/CC0
+fallbacks. Forest/coast recipes stay untouched. No push or native claim.
+
+First round-2 increment: shared scenario **36/36 PASS**, zero diagnostics/console errors
+(`/tmp/worlds-r2-pass3.log`, `artifacts/playtest/worlds-r2-pass3/`), NVIDIA Turing WebGPU
+at 1920×1080. Frame-window p50 meadow/overview/alpine/desert/tundra: **2.2/2.4/1.3/1.1/2.0 ms**.
+The scenario now observes two drawn kettle-pond material groups and waits for actual water triangles.
+Terrain Vitest: **69/69 PASS**. Example typecheck and root Biome error gate pass.
+Spike counts alpine/desert/tundra: **30/11/0**, worst **2.7/2.3/0 m**. Forest meadow display
+luminance p5/p50/p95: baseline **15.5078/77.0686/176.5044**, increment
+**15.4356/77.0658/176.5044**, all differences below 0.5. Forest/coast recipes are unchanged.
+
+The initial steep alpine experiment produced 151 spikes and vertical pillars; lower hydraulic
+capacity/bite and low-rate thermal settling reduced them (the first increment still masked talus;
+the second removes that mask). Multi-lake rendering previously
+threw at tundra entry (pass1); it now merges ordinary geometry with one material group per pond,
+advancing and disposing each existing water surface. Desert optional Kite variant 0 is no longer
+overwritten by its CC0 fallback. Colour and normal projections share rotations and tile scales.
+
+Read-only review confirmed these fixes but found remaining water-footprint/prop-exclusion and
+river-width mismatches for the new tundra channels. Inspected captures remain below Gaia/Unreal:
+alpine still reads too broad and grey with weak snow/cirques; desert strata/dunes are regular;
+tundra needs clearer patterned ground and less regular cover. AC-5 stays open; a visual follow-up
+within this round is next. A run interrupted by edits timed out during a screenshot (pass2); it is
+not evidence. No licensed bytes committed, no push, native unverified.
+
+Second working increment: pass6 **36/36 PASS**, zero diagnostics/console errors before the
+braid correction; frame p50 meadow/overview/alpine/desert/tundra **2.4/2.8/1.3/1.0/1.9 ms**
+(`/tmp/worlds-r2-pass6.log`, `artifacts/playtest/worlds-r2-pass6/`). Broader arêtes and
+fracture noise remove the most conspicuous alpine needles; sandstone front light, rotated
+rock sampling, patterned tundra ground and bounded/faded ponds improve definition. The
+caps are still uneven and the water/rock appearance remains below the reference.
+
+Read-only review exposed a real shared ribbon bug: the second river's local wet array was
+indexed with global vertex indices, dropping all its quads. Synthetic two-channel proof
+failed **144 versus expected 288 indices**, then passes **144/288** after subtracting the
+base. A flooded tundra scatter fixture failed with **1,659 submerged plants**, then passes
+with **0** after excluding the interpolated stream footprint. The persistent scenario now
+waits for two non-empty river index groups. This latest browser rerun and licensed-absent
+fallback are pending; no unrun acceptance is checked. Terrain Vitest remains **69/69 PASS**;
+example typecheck and root Biome error checks pass for this increment. Forest pass5
+luminance **15.4986/76.9828/176.5004** remains within 0.5 of baseline. AC-5 stays open.
+
+Third working increment: pass7 **36/36 PASS**, zero diagnostics/console errors; both
+river index groups now contain triangles. Frame p50 meadow/overview/alpine/desert/tundra:
+**2.2/2.2/1.3/1.1/1.8 ms**. Tundra streams now reuse the kettle ponds' existing mirrors,
+blended by elevation; no new reflection pass. Pack-free run with this shader passed all
+assertions, zero diagnostics/console errors, p50 **2.4/2.3/1.3/1.0/2.1 ms**; licensed data
+was restored. Its oversized procedural saplings motivated measured fallback heights of
+2 m alpine / 1.4 m tundra, leaving licensed and temperate paths unchanged. The updated
+pack-free rerun and final licensed captures both pass, as recorded below.
+
+`pnpm exec tsx scripts/check-water.mjs` preserves the real two-channel, flooded-cover
+and small-fallback-sapling checks; all pass. Example typecheck, Biome error gate and
+example build pass. Terrain tests **69/69 PASS**. Higher alpine crag noise brought back
+an isolated needle and raised spike count from 37 to 75; retain the previous broader
+recipe (**37/9/0** spikes, worst **3.1/2.1/0 m**). Narrower rock fissure shading replaces
+camouflage patches; sandstone colour bands follow the 8 m benches more subtly.
+
+Broader checks: normal-state root lint passes. Root typecheck fails on unresolved
+`@threenative/assets` and missing `.mjs` fixture declarations in untouched package
+files; full suite reaches native tests but fails **21** assertions with absent host/test
+binaries (**1,502 passed**, **70 skipped** in that lane). No native claim. A fallback
+capture stopped during coastal while package-building tests ran; doctor passes, and a
+quiet rerun passes. The suite's generated Abyss build report was restored; no unrelated
+changes retained. AC-5 remains open: terrain/props still fall short of Gaia/Unreal.
+
+Final round-2 proof: `artifacts/playtest/worlds-r2-final/` has **36/36 PASS**, zero
+diagnostics/console errors. Frame p50 meadow/overview/alpine/desert/tundra is
+**2.1/2.2/1.2/1.1/2.2 ms**. The updated procedural fallback also passes **36/36**, zero
+errors, p50 **1.7/2.2/1.2/1.0/2.2 ms**, in `artifacts/playtest/worlds-r2-fallback/`;
+licensed assets are restored and none committed. Forest meadow luminance p5/p50/p95
+is **15.5102/77.0328/176.5686**, delta **+0.0024/-0.0358/+0.0642**, within 0.5.
+Normal-state Biome passes after restoring local assets; the temporary renamed-asset
+scan had formatting errors in licensed manifests, without source errors or edits.
+
+Full-resolution fresh review rates alpine **6/10**, desert **5/10**, tundra **5/10**
+against the requested target. Alpine still lacks layered cliff detail and continuous
+snowfields; desert walls remain rounded; tundra cover and bright water lack reference
+fidelity. Functional fallback is verified, visual parity is not. Reject the final
+desert cliff-band experiment: spikes rose 9 to 14 (worst 2.1 to 4.1 m) with angular
+notches; restore the already-green recipe. AC-5 stays open; Unreal quality is unmet.
+Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra water;
+desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
+Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
