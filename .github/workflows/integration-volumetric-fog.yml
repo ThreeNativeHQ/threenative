@@ -1,0 +1,41 @@
+name: Integration volumetric fog
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/create-threenative/templates/starter/src/render/volumetricFog.ts'
+      - 'examples/abyss-framework/vq-fog/**'
+      - 'examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json'
+      - 'scripts/verify-volumetric-fog.ts'
+      - '.github/workflows/integration-volumetric-fog.yml'
+permissions:
+  contents: read
+concurrency:
+  group: integration-volumetric-fog-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm --filter @threenative/playtest build
+      - run: pnpm --filter abyss-framework exec vite build --config vq-fog/vite.config.ts
+      - run: node --import tsx scripts/verify-volumetric-fog.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: volumetric-fog-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/volumetric-fog/
+          retention-days: 30
+          if-no-files-found: error
