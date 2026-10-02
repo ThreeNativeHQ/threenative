@@ -644,7 +644,7 @@ export function createGroundMaterial(
       .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
     const over =
       key === "snow" && otherBiome
-        ? weight.add(breakUp.mul(0.025)).clamp(0, 1)
+        ? weight.mul(float(1).add(breakUp.mul(0.025))).clamp(0, 1)
         : key === "rock"
           ? smoothstep(0.34, 0.51, weight.add(rockHeight))
           : smoothstep(0.12, 0.82, weight.add(reliefHeight));
@@ -707,7 +707,7 @@ export function createGroundMaterial(
     );
     // A little albedo-coloured bounce keeps unlit rock faces legible without changing the sky rig.
     material.emissiveNode = (material.colorNode as Node<"vec3">).mul(
-      weights.rock.max(continuation).mul(0.22),
+      weights.rock.max(continuation).mul(0.08),
     );
   }
   // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
@@ -755,6 +755,8 @@ export function createTerrain(
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
   mesh.receiveShadow = true;
+  mesh.castShadow =
+    biome?.world === "alpine" || biome?.world === "desert" || biome?.world === "tundra";
   const horizonGeometry = createHorizonGeometry(data, biome?.horizon);
   const edgePositions = horizonGeometry.getAttribute("position");
   const edgeNormals = horizonGeometry.getAttribute("normal");

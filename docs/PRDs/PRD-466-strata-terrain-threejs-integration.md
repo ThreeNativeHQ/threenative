@@ -1574,3 +1574,38 @@ readable fill while retaining a higher key/fill ratio. Inspection found
 `authored-terrain` receives shadows but never casts: test that existing
 shadow mechanism before adding another contrast effect. Final/fallback and
 same-build ablations remain pending; AC-5 remains open.
+
+Pass 1 ocean verifier **PASS** (waves **65.19%**, sun **52.65%**, sheltered
+blue **100%**); largest quantile delta across all 15 views **0.0806**.
+Local checkpoint **fde53ae59**. Pass 2 and an ablation collided in the
+runner's automatic lock-detection startup window: first error was Vulkan
+**OUT_OF_DEVICE_MEMORY** allocating `T_Scree_001_N`, followed by invalid
+bind groups and frozen placeholder captures. That run is rejected, not visual
+evidence. The extra owned browser was stopped; all subsequent runs use
+`CAPTURE_LOCK=1` and execute serially. The caster-toggle hypothesis is not
+established by this invalid run; cold repeat is pending.
+
+Cold pass 2 proves the lighting build with **42/42 PASS**, zero console errors,
+but fails this round's stricter all-capture performance gate: grounded **4.6 ms**,
+walk **4.1 ms**. Meadow quantiles **0.0056/0.1189/0.2406/0.3691/0.7170 →
+0.0319/0.1899/0.3023/0.4036/0.6731**, saturation **0.6156 → 0.4993**.
+The final candidate keeps terrain shadow casting only in alpine/desert/tundra
+and omits distant horizon casting; licensed props still cast in every world.
+The checkpoint source reviewer found noise could add snow to exact-zero
+coverage (including desert); multiplying breakup by coverage fixes that leak.
+Sky saturation now stays separate from foreground grading. Final candidate
+tsc, root Biome (**2,656 files**, warnings retained), and terrain Vitest
+(**69/69**) pass; final licensed/fallback and serial ablations are pending.
+
+Final licensed candidate `artifacts/playtest/light-final/licensed/`: **42/42 PASS**,
+zero console errors/diagnostics, NVIDIA Turing WebGPU at **1920×1080**. All 15
+captured CPU frame-window p50s **1.2–3.9 ms**; grounded **3.1 ms**, walk
+**3.9 ms**. Final view medians forest meadow/overview/river/player
+**2.3/2.8/3.0/3.3 ms**, alpine ridge/overview **2.0/2.2 ms**, desert
+**1.3/1.2 ms**, tundra **2.1/2.1 ms**. These are CPU frame-budget
+observations, not GPU timing or a steady-state FPS claim. Ocean verifier
+**PASS**: waves **61.97%**, sun **54.12%**, sheltered blue **100%**.
+All five normalized quantiles across all 15 matched views stay within **0.5**
+of the fresh pre-edit baseline (maximum absolute delta **0.0993**).
+Source is frozen for serial same-build stage ablations; absent-licensed proof
+remains pending. The main PRD remains PARTIAL and AC-5 open.

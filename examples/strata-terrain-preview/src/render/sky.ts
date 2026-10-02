@@ -373,7 +373,17 @@ export function installOutdoorOcclusion(
         after: "ambientOcclusion",
         minimumTier: "low",
         build: (input) =>
-          vec4(saturation((input as Node<"vec4">).rgb, look.saturation), (input as Node<"vec4">).a),
+          vec4(
+            saturation(
+              (input as Node<"vec4">).rgb,
+              mix(
+                look.saturation,
+                look.skySaturation,
+                smoothstep(400, 1500, world.getViewZNode().negate()),
+              ),
+            ),
+            (input as Node<"vec4">).a,
+          ),
       },
     ],
   });

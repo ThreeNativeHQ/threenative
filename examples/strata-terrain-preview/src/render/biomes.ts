@@ -51,6 +51,7 @@ export interface IBiome {
   };
   readonly skyRadiance: number;
   readonly saturation: number;
+  readonly skySaturation: number;
   readonly exposure: number;
   readonly clouds: number;
 }
@@ -64,25 +65,34 @@ const temperate: IBiome = {
   snow: [145, 195, 0.22],
   maps: GROUND_MAPS,
   horizon: "mountain",
-  sun: { color: 0xffe3b5, intensity: 5.8, direction: [-180, 110, -140], shadowRadius: 1.7 },
+  sun: { color: 0xffe3b5, intensity: 5.8, direction: [-180, 145, 80], shadowRadius: 1.7 },
   sky: { turbidity: 2, rayleigh: 3, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
   fill: { sky: 0xa8c8e8, ground: 0x464937, intensity: 0.72 },
   haze: {
     color: 0x8ca8ba,
-    density: 0.0008,
+    density: 0.00055,
     valleyDensity: 0.000006,
     height: 120,
     sunScatter: 0.32,
   },
   skyRadiance: 0.27,
   saturation: 0.8,
+  skySaturation: 1,
   exposure: 2 ** -0.26,
   clouds: 0.76,
 };
 
 export const BIOMES: Record<WorldName, IBiome> = {
   forest: temperate,
-  coastal: { ...temperate, world: "coastal" },
+  coastal: {
+    ...temperate,
+    world: "coastal",
+    sun: { ...temperate.sun, intensity: 5.2, direction: [-180, 150, -120] },
+    fill: { ...temperate.fill, intensity: 0.66 },
+    haze: { ...temperate.haze, density: 0.0008 },
+    exposure: 2 ** -0.38,
+    saturation: 0.93,
+  },
   alpine: {
     ...temperate,
     world: "alpine",
@@ -113,6 +123,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     },
     skyRadiance: 0.24,
     saturation: 0.86,
+    skySaturation: 0.9,
     fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.85 },
     clouds: 0.34,
   },
@@ -178,7 +189,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     },
     sun: { color: 0xe9efff, intensity: 2.2, direction: [-180, 65, -120], shadowRadius: 2.1 },
     sky: { turbidity: 4.2, rayleigh: 1.6, mieCoefficient: 0.002, mieDirectionalG: 0.68 },
-    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 0.78 },
+    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.05 },
     haze: {
       color: 0xb1c0c9,
       density: 0.00065,
