@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Group } from "three";
 import { Fn } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ComputeDrivenRegistry, type IComputeDriven } from "../src/compute-driven.js";
 import { defineGame } from "../src/game.js";
 import { GPUParticles3D } from "../src/particles.js";
@@ -58,58 +58,6 @@ class ComputeProbe extends Group implements IComputeDriven {
 }
 
 describe("ComputeDrivenRegistry", () => {
-  it("runs deferred render work after the world draw and clears it on stop", async () => {
-    const canvas = testCanvas();
-    const order: string[] = [];
-    let frame: ((time: number) => void) | undefined;
-    vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
-      frame = callback;
-      return 1;
-    });
-    class RenderProbe extends ComputeProbe {
-      readonly processCadence = "render" as const;
-      afterRender(): void {
-        order.push("stream");
-      }
-    }
-    const probe = new RenderProbe("cull", order);
-    class RenderScene extends Scene {
-      static override readonly initialState = {};
-      override enter(ctx: ICtx): void {
-        ctx.add(probe);
-      }
-    }
-    const game = defineGame({
-      renderer: {
-        canvas,
-        preferWebGPU: false,
-        webgl2Factory: () => ({
-          dispose: () => undefined,
-          domElement: canvas,
-          setSize: () => undefined,
-          render: () => order.push("draw"),
-        }),
-      },
-      scenes: { world: RenderScene },
-      start: "world",
-    });
-    try {
-      await game.start();
-      if (frame === undefined) throw new Error("No frame callback.");
-      frame(0);
-      await game.ctx?.startup.whenReady();
-      order.length = 0;
-      frame(16);
-      expect(order).toEqual(["cull", "draw", "stream"]);
-      game.stop();
-      expect(probe.released).toBe(true);
-      expect(order).toEqual(["cull", "draw", "stream"]);
-    } finally {
-      game.stop();
-      vi.unstubAllGlobals();
-    }
-  });
-
   it("documents fixed and render cadence", () => {
     const record = readFileSync(
       new URL("../../../docs/verification/PRD-242.md", import.meta.url),

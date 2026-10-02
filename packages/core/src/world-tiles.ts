@@ -2098,7 +2098,7 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
    * work even for an unmoved follow point. `0` once a pass wanted nothing it did not get.
    */
   get deferredAdmissions(): number {
-    return this.#deferredAdmissions || (this.#dirtyBlocks.size > 0 ? 1 : 0);
+    return this.#deferredAdmissions;
   }
 
   get warmupNodes(): readonly unknown[] {

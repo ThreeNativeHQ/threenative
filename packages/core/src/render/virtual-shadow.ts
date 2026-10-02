@@ -31,7 +31,6 @@ import {
   ShadowBaseNode,
   type UniformNode,
 } from "three/webgpu";
-import { chargeShadowWork, frameWorkBudget } from "../frame-work-budget.js";
 import { lodChainOf } from "../model-lod.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
 import {
@@ -2102,18 +2101,14 @@ export class VirtualShadowNode extends ShadowBaseNode {
           // the level needs to cover what can actually shadow it, and the casters too small for its
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
-          const workStartedAt =
-            frameWorkBudget(frame.renderer) === undefined ? undefined : performance.now();
+          this.#probe(level, centre, index, stat);
+          if (this.#autoDepth) this.#deriveDepth(level, centre);
+          this.#place(level, centre);
           try {
-            this.#probe(level, centre, index, stat);
-            if (this.#autoDepth) this.#deriveDepth(level, centre);
-            this.#place(level, centre);
             // Rendered here, not by flagging `needsUpdate`, so the mover exclusion above brackets it.
             this.#renderLevel(frame, level, false);
           } finally {
             this.#restoreHidden();
-            if (workStartedAt !== undefined)
-              chargeShadowWork(frame.renderer, performance.now() - workStartedAt);
           }
         } else {
           // A level that keeps its map is placed with the span that map was drawn with, so the next
@@ -2129,18 +2124,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // An untracked node keeps a neutral mover contribution in the shader and does no mover work.
     let moverRenders = 0;
     if (this.#casters.size > 0) {
-      const workStartedAt =
-        canRender && frameWorkBudget(frame.renderer) !== undefined ? performance.now() : undefined;
-      try {
-        for (const level of this.#levels) {
-          // A mover map draws only the tracked casters on layer 29, in a 256² map over the level's own
-          // window, so it keeps full detail: every level's world changes were already put back above.
-          if (canRender) this.#renderLevel(frame, level, true);
-          moverRenders += 1;
-        }
-      } finally {
-        if (workStartedAt !== undefined)
-          chargeShadowWork(frame.renderer, performance.now() - workStartedAt);
+      for (const level of this.#levels) {
+        // A mover map draws only the tracked casters on layer 29, in a 256² map over the level's own
+        // window, so it keeps full detail: every level's world changes were already put back above.
+        if (canRender) this.#renderLevel(frame, level, true);
+        moverRenders += 1;
       }
     }
     this.#frame += 1;

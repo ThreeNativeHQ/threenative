@@ -21,7 +21,6 @@ import { BundleGroup } from "three/webgpu";
 import { type IAssetLoader, createAssetLoader } from "./assets.js";
 import type { IComputeDriven } from "./compute-driven.js";
 import { markEngineRenderHook } from "./engine-render-hook.js";
-import { AdmissionBudget, frameWorkBudget } from "./frame-work-budget.js";
 import { InstancedBatch } from "./instanced-batch.js";
 import { mergeByMaterial } from "./merge-parts.js";
 import { type ILodChain, biasedLodDistance, lodChainOf, setLodBias } from "./model-lod.js";
@@ -479,11 +478,6 @@ export interface IWorldCellsLoadOptions {
    * costs nothing here.
    */
   readonly admissionBudgetMs?: number;
-  /** Shared measured frame allowance: auto by default, a positive ms override, or false to opt out.
-   * Shadow work establishes the auto allowance; streaming runs after the draw and each stage
-   * is forced within five frames even if every frame spends its allowance on shadows.
-   */
-  readonly frameWorkBudgetMs?: number | false;
   /**
    * Milliseconds source for the admission budget, `performance.now` by default. Injectable so a
    * test can prove the ceiling instead of hoping a machine is slow enough to show it.
@@ -3310,9 +3304,9 @@ function positiveMetres(value: number, name: string): number {
  * rather than obeyed, because a world whose budget is spent before it starts never streams at all,
  * and that is never what anyone meant to write.
  */
-function admissionBudgetMs(value: number, name = "admissionBudgetMs"): number {
+function admissionBudgetMs(value: number): number {
   if (Number.isNaN(value) || value <= 0)
-    throw new Error(`WorldCells ${name} must be a positive number of milliseconds.`);
+    throw new Error("WorldCells admissionBudgetMs must be a positive number of milliseconds.");
   return value;
 }
 
@@ -3385,6 +3379,42 @@ class ModelLoadLimiter {
         this.#pump();
       }
     }
+  }
+}
+
+/**
+ * One frame's admission allowance, shared by every path that puts streamed content on screen.
+ *
+ * A streaming world has no frame-time ceiling anywhere else: a cell row arriving builds a batch per
+ * asset run over every placement in it, a terrain tile builds every LOD level, and the game's
+ * `createCollider` runs for every resident tile — all in the one frame that discovers them. That is
+ * the 100-330 ms hitch a 60 m/s camera feels every time the ring moves, and it is admission cost,
+ * not streaming: the loads never fail.
+ *
+ * The budget is opened once per `update` and drawn down by the units it admits. A unit always
+ * finishes, so a frame spends at most the limit plus the unit that crossed it, and the rest of the
+ * backlog waits for the next frame rather than being dropped.
+ */
+class AdmissionBudget implements IAdmissionBudget {
+  readonly #limitMs: number;
+  readonly #now: () => number;
+  #spentMs = 0;
+
+  constructor(limitMs: number, now: () => number) {
+    this.#limitMs = limitMs;
+    this.#now = now;
+  }
+
+  get spentMs(): number {
+    return this.#spentMs;
+  }
+
+  admit(work: () => void): boolean {
+    if (this.#spentMs >= this.#limitMs) return false;
+    const startedAt = this.#now();
+    work();
+    this.#spentMs += this.#now() - startedAt;
+    return true;
   }
 }
 
@@ -3654,9 +3684,6 @@ export class WorldCells extends Group implements IComputeDriven {
   readonly #recordPoint = new Vector3();
   readonly #pressure = { cells: 0, instances: 0, bytes: 0 };
   readonly #budgetMs: number;
-  readonly #frameBudgetMs: number | false | undefined;
-  readonly #frameDeferred = { terrain: 0, props: 0, prewarm: 0 };
-  #frameForced = false;
   readonly #now: () => number;
   #admission = { spentMs: 0, deferred: 0, backlog: 0 };
   #instances = 0;
@@ -3792,10 +3819,6 @@ export class WorldCells extends Group implements IComputeDriven {
     };
     this.#ring = nonNegativeInteger(init.ring, "ring");
     this.#budgetMs = admissionBudgetMs(init.admissionBudgetMs ?? DEFAULT_ADMISSION_BUDGET_MS);
-    this.#frameBudgetMs =
-      init.frameWorkBudgetMs === false || init.frameWorkBudgetMs === undefined
-        ? init.frameWorkBudgetMs
-        : admissionBudgetMs(init.frameWorkBudgetMs, "frameWorkBudgetMs");
     this.#now = init.admissionNow ?? ((): number => globalThis.performance?.now() ?? Date.now());
     this.#follow = init.follow;
     this.#manifest = init.manifest;
@@ -4037,18 +4060,13 @@ export class WorldCells extends Group implements IComputeDriven {
    * and a game that does not keeps every resident record drawn.
    */
   update(renderer?: IRendererLike, camera?: Camera): void {
-    this.#update(renderer, camera);
-  }
-
-  #update(renderer?: IRendererLike, camera?: Camera, shared?: AdmissionBudget): void {
     if (this.#released) return;
-    this.#frameForced = false;
     // Kept for the chunk warm-up below: a chunk is loaded asynchronously and compiled when it
     // arrives, which can be a frame or a loading screen after the frame that gave us these.
     if (renderer !== undefined) this.#renderer = renderer;
     if (camera !== undefined) this.#camera = camera;
     // The adaptive LOD bias, before the dispatch below reads the gates it scales.
-    if (shared === undefined) this.#adaptLodBias(renderer);
+    this.#adaptLodBias(renderer);
     // The first frame that hands over a renderer is the only one that can answer whether this
     // backend can run the GPU scene, and it prints its answer once: `enable` reports, then returns
     // early for the rest of the world's life.
@@ -4095,57 +4113,53 @@ export class WorldCells extends Group implements IComputeDriven {
     // walked and re-sorted, every resident cell refiltered, every terrain tile re-levelled, all of
     // it to reach the set it already holds. Skipped while both hold. A move, a load, a build, a
     // deferred admission or a shadow level not yet told runs the pass exactly as before.
-    const residencyStale = this.#residencyStale(x, z);
-    if (residencyStale || this.#terrain.blendingTiles > 0)
-      this.#admitFrame("terrain", shared, () => {
-        if (residencyStale) {
-          this.#residencyPoint.set(x, 0, z);
-          try {
-            this.#terrain.follow({ x, z }, budget);
-            this.#terrain.process(renderer);
-          } catch (error) {
-            if (!(error instanceof TerrainTileBudgetError)) throw error;
-            this.#pressure.bytes += 1;
-          }
-          const ahead = this.#ahead(x, z);
-          this.#updateResidency(
-            {
-              x: Math.floor((ahead.x - this.#minX) / this.#cellSize),
-              z: Math.floor((ahead.z - this.#minZ) / this.#cellSize),
-            },
-            ahead.x,
-            ahead.z,
-          );
-          // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
-          // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
-          // The GPU scene selects the level per instance on the dispatch, but a build still culls at
-          // `maxDistance` from where it ran, and a placement it culled has no source record to select:
-          // with the pass skipped, ground cover built from a cell's far side never appeared as the
-          // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
-          if (this.#refilterStale(x, z)) {
-            this.#refilterPoint.set(x, 0, z);
-            this.#refilterEpoch = this.#residencyEpoch;
-            this.#updateMaxDistance(x, z);
-          }
-        } else if (
-          // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
-          // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
-          // three-frame tile morph froze on its first frame until the player moved again. Only the
-          // transition frames pay it: `blendingTiles` is 0 the rest of the time.
-          this.#terrain.blendingTiles > 0
-        ) {
-          this.#terrain.process(renderer);
-        }
-      });
+    if (this.#residencyStale(x, z)) {
+      this.#residencyPoint.set(x, 0, z);
+      try {
+        this.#terrain.follow({ x, z }, budget);
+        this.#terrain.process(renderer);
+      } catch (error) {
+        if (!(error instanceof TerrainTileBudgetError)) throw error;
+        this.#pressure.bytes += 1;
+      }
+      const ahead = this.#ahead(x, z);
+      this.#updateResidency(
+        {
+          x: Math.floor((ahead.x - this.#minX) / this.#cellSize),
+          z: Math.floor((ahead.z - this.#minZ) / this.#cellSize),
+        },
+        ahead.x,
+        ahead.z,
+      );
+      // The refilter is a scan of every resident cell, so it runs on its own cadence rather than
+      // with the residency pass above; see `#refilterStale` and `LEVEL_REFILTER_STEP_METRES`.
+      // The GPU scene selects the level per instance on the dispatch, but a build still culls at
+      // `maxDistance` from where it ran, and a placement it culled has no source record to select:
+      // with the pass skipped, ground cover built from a cell's far side never appeared as the
+      // camera walked in. With the scene on, `#staleIn` reads the cull gate alone.
+      if (this.#refilterStale(x, z)) {
+        this.#refilterPoint.set(x, 0, z);
+        this.#refilterEpoch = this.#residencyEpoch;
+        this.#updateMaxDistance(x, z);
+      }
+    } else if (
+      // A blend in flight is not a settled ring, and the blend is advanced by `process` alone —
+      // `follow` only re-levels tiles. A follow point standing still used to skip both, so a
+      // three-frame tile morph froze on its first frame until the player moved again. Only the
+      // transition frames pay it: `blendingTiles` is 0 the rest of the time.
+      this.#terrain.blendingTiles > 0
+    ) {
+      this.#terrain.process(renderer);
+    }
     const props = new AdmissionBudget(
       this.#budgetMs - Math.min(budget.spentMs, terrainMs),
       this.#now,
     );
-    if (this.#jobs.length > 0) this.#admitFrame("props", shared, () => this.#drain(props));
-    // Prewarm keeps its own mint cap, but shares the measured frame allowance before minting.
-    if (this.#prewarmQueue.length > 0)
-      this.#admitFrame("prewarm", shared, () => this.#drainPrewarm());
-    else if (Number.isFinite(this.#residencyPoint.x)) this.#drainPrewarm();
+    this.#drain(props);
+    // The prewarm runs outside the admission budget on purpose — it is not residency, it is the
+    // shader builds the residency is about to need, and the allowance that spreads those is
+    // `PREWARM_PER_UPDATE`.
+    this.#drainPrewarm();
     // One bake view per render update, after the prewarm so its own atlas allocation never delays a
     // node build the walk is waiting on, and before the levels are told so a level the bake just
     // appended is in this frame's window.
@@ -4158,9 +4172,9 @@ export class WorldCells extends Group implements IComputeDriven {
     this.#pumpFarAcquisition();
     // After the drain, so the levels are told about this update's records and not the last one's.
     this.#tellShadows();
-    // Render-cadence streaming follows the draw; its cull already ran before that draw.
-    // Explicit updates still narrow the window immediately after admission.
-    if (shared === undefined) this.#cullMainPass(camera);
+    // After the drain too, so a record admitted this update is in the window the camera draws and
+    // not one frame behind it.
+    this.#cullMainPass(camera);
     this.#reportMainCull();
     this.#admission = {
       backlog: this.#backlog(),
@@ -4383,7 +4397,6 @@ export class WorldCells extends Group implements IComputeDriven {
    * of those, so the pass is skipped; the first update after anything changes is a full pass again.
    */
   #residencyStale(x: number, z: number): boolean {
-    if (!Number.isFinite(this.#residencyPoint.x)) return true;
     if (Math.hypot(x - this.#residencyPoint.x, z - this.#residencyPoint.z) >= SETTLED_FOLLOW_METRES)
       return true;
     return (
@@ -4658,40 +4671,7 @@ export class WorldCells extends Group implements IComputeDriven {
    * main windows follow it; see {@link #cullMainPass} for why the decision is not the meshes' own.
    */
   process(renderer?: IRendererLike, camera?: Camera): void {
-    if (this.#frameBudgetMs === false || frameWorkBudget(renderer) === undefined) {
-      this.update(renderer, camera);
-      return;
-    }
-    if (renderer !== undefined) this.#renderer = renderer;
-    if (camera !== undefined) this.#camera = camera;
-    this.#adaptLodBias(renderer);
-    this.#cullMainPass(camera);
-  }
-
-  afterRender(renderer: IRendererLike, camera?: Camera): void {
-    if (this.#frameBudgetMs !== false) this.#update(renderer, camera, frameWorkBudget(renderer));
-  }
-
-  /** Each queue gets a slot within five frames; at most one forced stage per update, even under continuous shadow work. */
-  #admitFrame(
-    stage: "terrain" | "props" | "prewarm",
-    shared: AdmissionBudget | undefined,
-    work: () => void,
-  ): void {
-    if (shared === undefined) {
-      work();
-      return;
-    }
-    if (shared.admit(work, this.#frameBudgetMs === false ? undefined : this.#frameBudgetMs)) {
-      this.#frameDeferred[stage] = 0;
-      return;
-    }
-    this.#frameDeferred[stage] += 1;
-    if (this.#frameDeferred[stage] >= 3 && !this.#frameForced) {
-      this.#frameForced = true;
-      shared.admit(work, Number.POSITIVE_INFINITY);
-      this.#frameDeferred[stage] = 0;
-    }
+    this.update(renderer, camera);
   }
 
   /**

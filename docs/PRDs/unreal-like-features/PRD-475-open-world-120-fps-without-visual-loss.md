@@ -71,7 +71,6 @@ Risks:
 |---|---|---|---|
 | Develop engine in the game | Machinefall `apps/client/package.json` `file:` tarball pins and `pnpm.overrides` | Replaces the `pr375-*` pins | Phase 1 box 1 |
 | World frame cost | `?scene=map-walk` → `WorldCells.update` (`packages/core/src/world-cells.ts`) → GPU scene and `VirtualShadowNode` (`packages/core/src/render/virtual-shadow.ts`) | Changed in place; the CPU path stays as the fallback for backends without indirect draws | AC-1, AC-2 |
-| Shared frame allowance | Game render dispatch (`packages/core/src/game.ts:1635`) → measured shadow draw → after-render dispatch (`packages/core/src/game.ts:1783`) → `WorldCells.afterRender` | Reuses AdmissionBudget and existing queues; `frameWorkBudgetMs: false` keeps immediate streaming | Phase 2 frame-work follow-up |
 | Budget regression guard | Machinefall `apps/client/playtests/scenes/map-walk.playtest.json` `assert.performance` | Tightens the current `maxFrameMsP95: 250` | Phase 3 box 1 |
 
 ## Decisions
@@ -95,7 +94,7 @@ Risks:
 
 #### Phase 2: Cut the frame where the baseline says, in the engine
 **Status:** IN PROGRESS
-**Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/src/world-cells.ts`, `packages/core/src/world-gpu-scene.ts`, `packages/core/src/world-tiles.ts`, `packages/core/src/frame-work-budget.ts`, `packages/core/src/compute-driven.ts`, `packages/core/src/game.ts`, plus their specs. These are expected, not fixed: the baseline names the real ones.
+**Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/src/world-cells.ts`, `packages/core/src/world-gpu-scene.ts`, plus their specs. These are expected, not fixed: the baseline names the real ones.
 
 Budget split, to be confirmed against the baseline: shadows 2.5 ms GPU, main 5 ms GPU, CPU render phase 4 ms.
 
@@ -130,11 +129,7 @@ Active-blend scan fix: `world-tiles-cost.spec.ts` red: expected `Map.values` not
 
 Neighbor-LOD scan fix: `world-tiles-cost.spec.ts` red: 75 resident-map lookups, expected 25. Target changes already coordinate the resident ring; the extra neighbor pass is now required only for newly admitted tiles. Green: 25 lookups (50 saved/follow), identical settled positions; terrain cost and merge-walk specs 11 passed, 2 benchmark skips, exit 0.
 
-Frame-work follow-up (2026-10-02, source/unit lane; complexity 6, MEDIUM: six implementation files, a shared allowance module and deferral state): preserve settled geometry, LOD and shadow settings. Existing seam epochs and the residency/2 m refilter gate stay: changing to follow-cell-only gating would miss distance boundaries crossed inside a cell. AdmissionBudget now measures shared work with `performance.now()`; its auto allowance uses measured shadow cost, bounded by the shortest observed render interval. Static and mover shadow draws charge that allowance. Existing terrain, batch and prewarm queues run after the draw, with culling before it. Terrain follow, block rebuild, seam updates and morph advancement remain atomic; existing local caps stay. Each stage gets a slot within five frames under continuous shadow work, with at most one forced stage per update; `frameWorkBudgetMs` names the positive-ms override or false opt-out.
-
-Shared-budget red: `world-cells-admission.spec.ts` expected no terrain follow in a shadow frame, received 1; the cached-static mover spec expected 6 measured ms charged, received 0. Green: the first two shadow frames perform zero terrain follow/process calls, initial terrain runs on frame 3, queued batches stay unchanged on a refused frame, and active morph positions, seam epoch and block rebuild count remain unchanged on a refused frame. Continuous exhausted frames converge to the unbudgeted run's exact resident keys, LOD geometry and main-instance matrices with no backlog or active blends. `compute-driven.spec.ts` exercises Game.start: cull → draw → streaming, then stop releases the owner. Read-only medium-complexity review: PASS after mover accounting was covered.
-
-Final source gates: `pnpm exec vitest run packages/core --maxWorkers=2` 2248 passed, 2 benchmark skips, exit 0; `pnpm typecheck` exit 0; `pnpm lint` 0 errors, 1011 warnings, exit 0; `pnpm quality` 183 findings, exit 0. Missing checkout-local build artifacts and a declared workspace link were restored before typecheck; no dependency or lockfile changes. Browser playtests, pushes and merges are excluded by the owner; walking p95, same-pose visuals and the pop judge remain unverified. Phase 2's performance and visual boxes stay open.
+Frame-work follow-up (2026-10-02, source/unit lane; complexity 3, LOW): preserve settled geometry, LOD and shadow settings. Existing seam epochs and the residency/2 m refilter gate stay. Replace unconditional terrain blend/neighbor scans with dirty bookkeeping, then share the existing admission allowance with measured shadow work. Render-cadence culling stays before the draw; streaming runs after the draw so the actual shadow cost is known, with bounded deferral and a named override. Each fix requires a red-green operation-count/state spec; final gates are core units, typecheck, lint and quality. Browser playtests, pushes and merges are excluded by the owner; walking p95, same-pose visuals and the pop judge remain unverified here.
 
 #### Phase 3: Hold 120 fps with the look intact
 **Status:** NOT STARTED

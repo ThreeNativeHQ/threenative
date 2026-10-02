@@ -1,23 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  BoxGeometry,
-  DirectionalLight,
-  Group,
-  InstancedMesh,
-  Mesh,
-  MeshBasicMaterial,
-  type Object3D,
-  PerspectiveCamera,
-  Scene,
-} from "three";
-import type { NodeBuilder, NodeFrame } from "three/webgpu";
+import { BoxGeometry, Group, InstancedMesh, Mesh, MeshBasicMaterial, type Object3D } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ComputeDrivenRegistry } from "../src/compute-driven.js";
-import { frameWorkBudget } from "../src/frame-work-budget.js";
-import { VirtualShadowNode } from "../src/render/virtual-shadow.js";
-import type { IRendererLike } from "../src/renderer.js";
 import { type IWorldPackage, TerrainTiles, WorldCells } from "../src/world.js";
 
 /**
@@ -156,9 +141,6 @@ interface IWorldUnderTest {
 async function makeWorld(options: {
   readonly admissionBudgetMs: number;
   readonly priced?: boolean;
-  readonly prefetchSeconds?: number;
-  readonly frameWorkBudgetMs?: number | false;
-  readonly terrain?: { streamRadius: number; tileResolution: number; tileSize: number };
   readonly ring?: number;
 }): Promise<IWorldUnderTest> {
   stubFixtureFetch();
@@ -166,9 +148,6 @@ async function makeWorld(options: {
   let elapsed = 0;
   const world = await WorldCells.load({
     admissionBudgetMs: options.admissionBudgetMs,
-    ...(options.frameWorkBudgetMs === undefined
-      ? {}
-      : { frameWorkBudgetMs: options.frameWorkBudgetMs }),
     // The fresh-mesh allowance is its own ceiling; these tests measure the time budget, so an
     // unbounded world is unbounded in both.
     ...(options.admissionBudgetMs === Number.POSITIVE_INFINITY
@@ -176,8 +155,6 @@ async function makeWorld(options: {
       : {}),
     budgets,
     follow,
-    ...(options.prefetchSeconds === undefined ? {} : { prefetchSeconds: options.prefetchSeconds }),
-    ...(options.terrain === undefined ? {} : { terrain: options.terrain }),
     loadModel: async () => model(),
     ring: options.ring ?? 1,
     surface,
@@ -237,174 +214,6 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
-  it("postpones streaming in a shadow frame, bounds deferral and settles identically", async () => {
-    const terrainOptions = { streamRadius: 2, tileResolution: 17, tileSize: 32 };
-    const candidate = await makeWorld({
-      admissionBudgetMs: 1,
-      prefetchSeconds: 0,
-      priced: true,
-      terrain: terrainOptions,
-    });
-    const reference = await makeWorld({
-      admissionBudgetMs: Number.POSITIVE_INFINITY,
-      prefetchSeconds: 0,
-      frameWorkBudgetMs: false,
-      terrain: terrainOptions,
-    });
-    const scene = new Scene();
-    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
-    const raw = { shadowMap: { enabled: true } };
-    const renderer = { raw, compileAsync: async () => undefined } as unknown as IRendererLike;
-    const light = new DirectionalLight();
-    light.position.set(0, 100, 0);
-    light.castShadow = true;
-    scene.add(candidate.world, light, light.target, camera);
-    const node = new VirtualShadowNode(light, {
-      clipExtents: [24],
-      invalidationDelay: 0,
-      marker: false,
-    });
-    node.setup({ context: {}, material: {}, renderer: raw } as unknown as NodeBuilder);
-    let elapsed = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
-    for (const level of node.levelNodes) {
-      (level as unknown as { updateShadow: () => void }).updateShadow = () => {
-        elapsed += 3;
-      };
-    }
-    const registry = new ComputeDrivenRegistry();
-    registry.add(candidate.world, renderer);
-    const terrain = terrainOf(candidate.world);
-    const follow = vi.spyOn(terrain, "follow");
-    const process = vi.spyOn(terrain, "process");
-    const afterRender = () => registry.processAfterRender(renderer, camera);
-    const frame = (shadow: boolean) => {
-      elapsed += 8;
-      registry.processRender(renderer, camera);
-      if (shadow) {
-        node.invalidateAll();
-        node.updateBefore({ camera, renderer: raw, time: elapsed / 1000 } as unknown as NodeFrame);
-      }
-      afterRender();
-    };
-    try {
-      frame(true);
-      expect(node.stats.rendered).toBe(1);
-      expect(frameWorkBudget(renderer)?.spentMs).toBe(3);
-      expect(follow).not.toHaveBeenCalled();
-      expect(process).not.toHaveBeenCalled();
-      expect(candidate.world.stats().instances).toBe(0);
-      frame(true);
-      expect(follow).not.toHaveBeenCalled();
-      frame(true);
-      expect(follow).toHaveBeenCalledTimes(1);
-      await flush();
-      let queuedFrameChecked = false;
-      for (let i = 0; i < 600; i += 1) {
-        const backlog = candidate.world.stats().admission.backlog;
-        follow.mockClear();
-        process.mockClear();
-        frame(true);
-        reference.world.update(undefined, camera);
-        if (
-          !queuedFrameChecked &&
-          backlog > 0 &&
-          follow.mock.calls.length === 0 &&
-          candidate.world.stats().admission.spentMs === 0
-        ) {
-          expect(candidate.world.stats().admission.backlog).toBe(backlog);
-          expect(process).not.toHaveBeenCalled();
-          queuedFrameChecked = true;
-        }
-        await flush(1);
-        if (
-          candidate.world.stats().admission.backlog === 0 &&
-          candidate.world.stats().admission.deferred === 0 &&
-          candidate.world.stats().loadsInFlight === 0 &&
-          candidate.world.stats().loadsQueued === 0 &&
-          terrain.deferredAdmissions === 0 &&
-          terrain.blendingTiles === 0 &&
-          queuedFrameChecked
-        )
-          break;
-      }
-      // The last admitted records reach their render-camera cull on the next draw.
-      frame(true);
-      reference.world.update(undefined, camera);
-      expect(queuedFrameChecked).toBe(true);
-      expect(terrain.terrainTiles.rebuilds).toBeGreaterThan(0);
-      expect(candidate.world.stats().admission.backlog).toBe(0);
-      expect(candidate.world.stats().instances).toBeGreaterThan(0);
-      expect(candidate.world.stats().failures).toBe(0);
-      expect(candidate.world.stats().instances).toBe(reference.world.stats().instances);
-      expect(drawn(candidate.world)).toEqual(drawn(reference.world));
-      const matrices = (world: WorldCells) => {
-        const records: number[][] = [];
-        world.traverse((object) => {
-          if (object instanceof InstancedMesh && !object.name.includes("@")) {
-            for (let i = 0; i < object.count; i += 1) {
-              const matrix = Array.from(object.instanceMatrix.array.slice(i * 16, (i + 1) * 16));
-              if (matrix[15] !== 0) records.push(matrix);
-            }
-          }
-        });
-        return records.sort((a, b) => a.join(",").localeCompare(b.join(",")));
-      };
-      expect(matrices(candidate.world)).toEqual(matrices(reference.world));
-      expect(terrain.residentKeys).toEqual(terrainOf(reference.world).residentKeys);
-      expect(terrain.lodTransitions).toBe(terrainOf(reference.world).lodTransitions);
-      const positions = (tiles: TerrainTiles) =>
-        tiles.residentKeys.map((key) => {
-          const tile = tiles.getTile(key);
-          if (tile === undefined) throw new Error(`Missing tile ${key}`);
-          return {
-            key,
-            lod: tile.lodLevel,
-            levels: tile.lod.levels.map(({ object }) => [
-              ...(object as Mesh).geometry.getAttribute("position").array,
-            ]),
-          };
-        });
-      expect(positions(terrain)).toEqual(positions(terrainOf(reference.world)));
-      const before = candidate.world.stats().rebuilds;
-      frame(false);
-      expect(candidate.world.stats().rebuilds).toBe(before);
-      expect(terrain.terrainTiles).toEqual(terrainOf(reference.world).terrainTiles);
-      candidate.follow.position.x += 16;
-      reference.follow.position.x += 16;
-      candidate.world.update(undefined, camera);
-      reference.world.update(undefined, camera);
-      expect(terrain.blendingTiles).toBeGreaterThan(0);
-      const blending = positions(terrain);
-      const epoch = terrain.debug().ringEpoch;
-      const blocks = terrain.terrainTiles.rebuilds;
-      const backlog = candidate.world.stats().admission.backlog;
-      follow.mockClear();
-      process.mockClear();
-      frame(true);
-      expect(follow).not.toHaveBeenCalled();
-      expect(process).not.toHaveBeenCalled();
-      expect(positions(terrain)).toEqual(blending);
-      expect(terrain.debug().ringEpoch).toBe(epoch);
-      expect(terrain.terrainTiles.rebuilds).toBe(blocks);
-      expect(candidate.world.stats().admission.backlog).toBe(backlog);
-      for (let i = 0; i < 300; i += 1) {
-        frame(true);
-        reference.world.update(undefined, camera);
-        await flush(1);
-      }
-      expect(terrain.blendingTiles).toBe(0);
-      expect(terrain.deferredAdmissions).toBe(0);
-      expect(candidate.world.stats().admission.backlog).toBe(0);
-      expect(positions(terrain)).toEqual(positions(terrainOf(reference.world)));
-      expect(matrices(candidate.world)).toEqual(matrices(reference.world));
-    } finally {
-      node.dispose();
-      registry.clear();
-      reference.world.dispose();
-    }
-  });
-
   it("spends at most the budget plus one unit per update, however long the backlog", async () => {
     const BUDGET_MS = 2;
     const { world: cells } = await makeWorld({ admissionBudgetMs: BUDGET_MS, priced: true });
