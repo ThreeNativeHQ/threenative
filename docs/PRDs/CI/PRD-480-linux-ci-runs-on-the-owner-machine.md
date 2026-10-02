@@ -207,13 +207,37 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
 
 #### Phase 3: The Linux `native-platforms` legs move too
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — routing and image landed, live run pending
 **Files:** EDIT `.github/workflows/native-platforms.yml`, `tools/ci-runners/Dockerfile` (JDK 17, Android
 SDK, emulator, `/dev/kvm`), `scripts/__tests__/ci-structure.spec.ts`.
 **Implementation:** Route `web-reference`, `desktop-parity`, `android-emulator-parity`, `release-reports`,
 the remaining `ubuntu-24.04` jobs and the `linux-x64` rows of the `desktop` and `starter-linux` matrices.
 Keep `macos-15`, `windows-2025`, `ubuntu-24.04-arm` and `ios-simulator` hosted. The `android-emulator-runner`
 action needs `/dev/kvm` access inside the container.
+
+Decisions this phase had to make, 2026-10-02:
+
+- **`publish-android-v8` stays hosted.** It is the release write itself — `permissions: contents: write`
+  and a `gh release upload` — and no pool container is handed a token that can publish.
+  `android-v8-source` does move: it needs no secret, it is a published-asset download on every run but
+  a cold one, and its own action records a two-core cold build finishing inside the 210-minute ceiling,
+  which is this pool's slot shape.
+- **Light lane: `scope` and `networking-matrix` only.** Both are a script with no `pnpm install` and no
+  toolchain. `performance-coverage` and `release-reports` are joins too, but each installs the workspace
+  and `performance-coverage` has a five-minute ceiling, so they take a heavy slot.
+- **`desktop` has no Linux row.** Its matrix is `macOS` and `Windows` only; the movable Linux matrix row
+  is `starter-linux/linux-x64`.
+- **The KVM step had to stop asserting udev.** In the container there is no udev and `/sys` is read-only,
+  so `udevadm control --reload-rules` and `udevadm trigger` both exit 1 and took the whole emulator lane
+  with them. They are now `|| true`, which is what the step's own "report the mode, never assert it"
+  rule already says; `scripts/ci-runners.sh` passes `--device /dev/kvm` and the image's entrypoint sets
+  the node's mode before the job can read it.
+- **The image carries the pinned SDK, not the emulator.** `cmdline-tools` 16.0 with licenses accepted,
+  `platform-tools`, `platforms;android-35`, `platforms;android-36` (`compileSdk` in
+  `android/app/build.gradle.kts`), `build-tools;35.0.0` and `ndk;28.2.13676358` (`ndkVersion` there,
+  and what the workflows' own `sdkmanager` line installs), owned by `runner` because sdkmanager writes
+  into `ANDROID_HOME` at job time. `android-emulator-runner` installs `emulator` and the system image
+  itself, which is the only job that wants them. Image: 9.28 GB against the pool's 5.25 GB.
 
 - [ ] A `native-platforms` run passes with its Linux legs on `tn-local`. proof: run id plus per-job
   `runner_name`.

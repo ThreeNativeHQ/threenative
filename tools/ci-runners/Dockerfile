@@ -49,6 +49,36 @@ RUN mkdir -p "$ANDROID_HOME" \
  && unzip -q /tmp/pt.zip -d "$ANDROID_HOME" && rm /tmp/pt.zip \
  && ln -s "$ANDROID_HOME/platform-tools/adb" /usr/local/bin/adb
 
+# The SDK every routed native-platforms Android step calls into. `sdkmanager` is the whole of it:
+# `android-actions/setup-android` uses an already-installed `cmdline-tools/latest` when the version
+# matches, the workflows run their own `sdkmanager "platforms;android-35" "build-tools;35.0.0"
+# "ndk;28.2.13676358"`, and `android-emulator-runner` installs what it is missing from it. The
+# versions are the ones this repository pins — build-tools 35.0.0, which is also the emulator
+# action's own constant; platforms 35 for the parity lane's api-level and 36, which
+# packages/runtime-native/android/app/build.gradle.kts declares as compileSdk; and the NDK, which
+# that same file names in `ndkVersion` and which the Android V8 build refuses to start without.
+# Licenses are accepted at build time so none of those job-time installs stalls on a prompt.
+# `emulator` and the system image are deliberately absent: android-emulator-runner installs both
+# itself, which is the only Android job that wants them.
+ARG CMDLINE_TOOLS=12266719
+RUN set -eu; \
+    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS}_latest.zip" -o /tmp/cli.zip; \
+    mkdir -p "$ANDROID_HOME/cmdline-tools"; \
+    unzip -q /tmp/cli.zip -d "$ANDROID_HOME/cmdline-tools"; \
+    rm /tmp/cli.zip; \
+    mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"; \
+    export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"; \
+    yes | sdkmanager --licenses > /dev/null; \
+    sdkmanager --install "platform-tools" "platforms;android-35" "platforms;android-36" \
+      "build-tools;35.0.0" "ndk;28.2.13676358" > /dev/null; \
+    rm -rf "$ANDROID_HOME/.temp"; \
+    # `runner` owns the SDK, because sdkmanager writes into ANDROID_HOME at job time: the workflows \
+    # install their own packages and android-emulator-runner installs the emulator, the platform and \
+    # the system image, and a root-owned SDK fails the write as the unprivileged job user. Chowned \
+    # here rather than in a later layer, which would copy the whole SDK up and double its size. \
+    chown -R runner:runner "$ANDROID_HOME"
+ENV PATH=/usr/local/lib/android/sdk/cmdline-tools/latest/bin:$PATH
+
 COPY entrypoint.sh /home/runner/entrypoint.sh
 
 # Rust as hosted ubuntu-24.04 has it (stable, on PATH): the native physics ABI is built with cargo.

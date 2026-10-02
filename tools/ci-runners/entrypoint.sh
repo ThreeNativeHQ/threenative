@@ -6,6 +6,16 @@
 # one job, exits, and the host loop starts a fresh one. Nothing on the filesystem crosses jobs.
 set -euo pipefail
 
+# `docker run --device /dev/kvm` creates the node 0660 root:kvm, which the `runner` user cannot
+# open: `android-emulator-runner` reads `/dev/kvm` for read and write before it starts anything and
+# falls back to a software boot, which is the 474-second one native-platforms.yml's parity lane
+# exists to avoid. udev cannot fix it here — no udev runs in the container and its /sys is
+# read-only, which is why that lane's `udevadm` lines are tolerant — so the mode is set here,
+# before the job can look. Root through the runner image's passwordless sudo; no-op without KVM.
+if [ -e /dev/kvm ]; then
+  sudo chmod 0666 /dev/kvm
+fi
+
 # Fail closed and say which variable is missing. An ephemeral runner that registers without
 # TN_RUNNER_REPO would point itself at whatever repository the token defaults to.
 : "${RUNNER_ADMIN_TOKEN:?RUNNER_ADMIN_TOKEN is not set; pass the operator env file with --env-file}"

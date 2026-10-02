@@ -53,7 +53,10 @@ jobs:
   # The caller is the single selection authority. Dispatch has no exemption inputs and is full.
   scope:
     name: Validate caller selection and candidate
-    runs-on: ubuntu-latest
+    # PRD-480. `github.event` inside a `workflow_call` is the caller's event payload, so this
+    # expression reads the same `pull_request` fork flag ci.yml did when it called this file: a fork
+    # PR falls through to hosted runners and never reaches the owner's machine.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -89,7 +92,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -136,7 +139,7 @@ jobs:
     name: Android V8 source payload
     needs: scope
     if: needs.scope.outputs.selection == 'full' && inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     # 180-minute build ceiling plus 30 minutes for actions/cache/save, per the action's note.
     timeout-minutes: 210
     outputs:
@@ -186,6 +189,9 @@ jobs:
       needs.android-v8-source.outputs.published == 'false' &&
       github.event_name != 'pull_request' &&
       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    # PRD-480 leaves this one on GitHub's machines: it is the release write itself — `contents:
+    # write` and a `gh release upload` below — and no pool container is handed a token that can
+    # publish. It is named on the hosted allow-list in ci-structure.spec.ts.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -213,7 +219,7 @@ jobs:
     name: Native collector evidence coverage
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -248,7 +254,7 @@ jobs:
     name: Networking qualification matrix
     needs: [scope, android-emulator-parity, desktop-parity, desktop, ios-simulator]
     if: ${{ always() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -316,7 +322,7 @@ jobs:
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true &&
       needs.android-v8-source.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -447,8 +453,14 @@ jobs:
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+          # `|| true` on both udev calls, because the routed `tn-local` container cannot do what
+          # they do: no udev is running in it and its /sys is read-only, so `udevadm trigger`
+          # fails there for a reason that has nothing to do with acceleration. The container does
+          # not need them — `scripts/ci-runners.sh` passes `--device /dev/kvm` and the image's
+          # entrypoint sets its mode before the job starts — and a step that fails on the way to
+          # the report below costs this lane the whole emulator run.
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
           # Report the mode, never assert it. `test -w /dev/kvm` as the last line of this step —
           # copied from native-release.yml, where nothing has exercised it — turned "this runner
           # has no KVM" into a failed job, which is worse than the slow boot it was meant to fix.
@@ -740,7 +752,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection != 'prose' &&
       inputs.ios_only == false
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 20
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -812,7 +824,7 @@ jobs:
     if: >-
       needs.scope.outputs.selection == 'full' &&
       inputs.ios_only != true
-    runs-on: ubuntu-24.04
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 75
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1766,7 +1778,7 @@ jobs:
           # the one WebGPU backend that publishes an arm64 Linux archive. scripts/download-deps.mjs
           # and scripts/native-build.mjs select that route from `process.arch`.
           - platform: linux-x64
-            runner: ubuntu-24.04
+            runner: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
           - platform: linux-arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}

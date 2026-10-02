@@ -33,6 +33,15 @@ ONLINE_TIMEOUT_SECONDS=300
 # 2 GB, and the highest OOM score of any container, so a small join is what gets killed under
 # memory pressure rather than a 20-minute build.
 LIGHT_SHAPE="--cpus 1 --memory 2g --memory-swap 2g --oom-score-adj 900"
+# `/dev/kvm` for the heavy slots, and only where the host has one: `android-emulator-parity` boots a
+# checksum-locked APK under `reactivecircus/android-emulator-runner`, which reads the device for
+# read and write and otherwise falls back to a software boot. No KVM, no flag — a host without it
+# still runs the pool, just without hardware acceleration, which that lane already reports instead
+# of asserting. The light lane never gets it: nothing it runs emulates anything.
+KVM_SHAPE=""
+if [ -e /dev/kvm ]; then
+  KVM_SHAPE="--device /dev/kvm"
+fi
 
 fail() {
   local code="$1"
@@ -131,7 +140,7 @@ up() {
   for slot in $(seq 1 "$slots"); do
     base=$(( (slot - 1) * 2 ))
     start_slot "slot-$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
-      "--cpuset-cpus $base,$(( base + 1 )),$(( base + half )),$(( base + half + 1 )) --memory 12g --memory-swap 12g --oom-score-adj 800" \
+      "--cpuset-cpus $base,$(( base + 1 )),$(( base + half )),$(( base + half + 1 )) --memory 12g --memory-swap 12g --oom-score-adj 800 $KVM_SHAPE" \
       "$LABEL"
   done
   # One light slot, unpinned and quota-limited, labelled so heavy jobs cannot select it: a 10-second
