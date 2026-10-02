@@ -1501,6 +1501,33 @@
     {
       "aliases": [],
       "constraints": [
+        "add the fluid through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic",
+        "a renderer without WebGPU compute throws a named error at attach; it never draws nothing",
+        "`emit` recycles the oldest slot once `capacity` slots have been used; `fill` stops at capacity",
+        "`sample` and `stats` read a throttled GPU copy and report `staleFrames`; they are never live"
+      ],
+      "example": "const water = new FluidParticles3D({ capacity: 6000 });\nctx.add(water);\nwater.fill([-2.8, 0.1, -1.5], [-0.6, 3, 1.5]);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "iterations, viscosity, cohesion, vorticity, gravity and maxSpeed tune the solver without changing its pass order"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class FluidParticles3D extends Group { … }",
+      "situations": [
+        "pour, splash, or dam-break water that fills a container and flows around obstacles",
+        "simulate water or another liquid as particles in a fluid simulation",
+        "drop a ball or box into liquid and let it displace and float on the water",
+        "emit a stream or waterfall of particle fluid and drain it somewhere else",
+        "sample particle-fluid density or surface height in a game-owned render node"
+      ],
+      "summary": "Simulate liquid as GPU particles (pour, splash, dam break, waterfall) and expose positions, a density volume and a surface height while the game owns every look.",
+      "supersedes": [],
+      "symbol": "FluidParticles3D"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the rule is derived from the frame's own numbers; the display period comes from the host's presentation cap or the game's declared target, never a constant",
         "no verdict without a measured GPU reading and a pass census — an absent measurement is not evidence",
         "the record carries objects considered, draws per pass, triangles per draw and shadow-exempt casters, so the reader is not dependent on the ranking"
@@ -1665,6 +1692,8 @@
         "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
         "fire a cannonball projectile with cannon smoke particles",
+        "splash spray droplets with lifetime and gravity",
+        "spawn water droplets, mist, or foam bubbles above a fluid surface",
         "falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard",
         "kick up a spray of powder snow or dust where a foot or a ball lands"
       ],

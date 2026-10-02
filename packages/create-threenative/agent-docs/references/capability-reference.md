@@ -1170,6 +1170,24 @@ ctx.add(field);
 field.splat({ x: 0.5, y: 0.5 }, { x: 0.2, y: 0 }, 1);
 ```
 
+### `FluidParticles3D`
+
+`class` — Simulate liquid as GPU particles (pour, splash, dam break, waterfall) and expose positions, a density volume and a surface height while the game owns every look.
+
+```ts
+export class FluidParticles3D extends Group { … }
+```
+
+- **Use when:** pour, splash, or dam-break water that fills a container and flows around obstacles · simulate water or another liquid as particles in a fluid simulation · drop a ball or box into liquid and let it displace and float on the water · emit a stream or waterfall of particle fluid and drain it somewhere else · sample particle-fluid density or surface height in a game-owned render node
+- **Constraints:** add the fluid through `ctx.add` so renderer attachment, fixed-step dispatch, and release are automatic · a renderer without WebGPU compute throws a named error at attach; it never draws nothing · `emit` recycles the oldest slot once `capacity` slots have been used; `fill` stops at capacity · `sample` and `stats` read a throttled GPU copy and report `staleFrames`; they are never live
+- **Overrides:** iterations, viscosity, cohesion, vorticity, gravity and maxSpeed tune the solver without changing its pass order
+
+```ts
+const water = new FluidParticles3D({ capacity: 6000 });
+ctx.add(water);
+water.fill([-2.8, 0.1, -1.5], [-0.6, 3, 1.5]);
+```
+
 ### `formatSceneWarning`
 
 `function` — Warn the agent that built the scene before a human plays it: a frame whose GPU is idle while its JS render phase is longer than the display's own period is a scene-shape problem, and the engine already has the shape. On by default, printed at most once per reported window as `TN_SCENE_WARNING`, and silent on a scene that is honestly GPU-bound.
@@ -1284,7 +1302,7 @@ if (isMobile()) showTouchControls();
 export class GPUParticles3D extends Sprite implements IComputeDriven { … }
 ```
 
-- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
+- **Use when:** emit sparks, smoke, or other transient effects · update many small visual particles · trail dust, exhaust, or spray behind a moving object · emit cannon smoke and muzzle flash particles · fire a cannonball projectile with cannon smoke particles · splash spray droplets with lifetime and gravity · spawn water droplets, mist, or foam bubbles above a fluid surface · falling snowflakes, rain or ash around the player that thicken into a windy storm or blizzard · kick up a spray of powder snow or dust where a foot or a ball lands
 - **Constraints:** geometry, color, and timing remain supplied by the game
 
 ```ts
