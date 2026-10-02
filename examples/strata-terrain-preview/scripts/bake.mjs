@@ -16,7 +16,7 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     base: 0,
     amplitude: 14,
     scale: 110,
-    warp: 25,
+    warp: 40,
     octaves: 3,
     mode: "billow",
   })

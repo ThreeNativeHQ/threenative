@@ -669,7 +669,7 @@ river **0.204/0.413/0.821**. Example typecheck, root lint (warnings only), terra
 unfinished; mountain faces remain more procedural than the reference. AC-5 stays open.
 
 
-Fourth/delivery increment: a refraction ablation leaves the white upstream strip unchanged,
+Fourth increment: a refraction ablation leaves the white upstream strip unchanged,
 locating its source in low-angle sky reflection. The stream now blends the average wooded
 bank into sky over a broad angle, retaining green bank radiance instead of the earlier black
 facets. The sampled stream patch's display Y median falls **0.580 → 0.321**; the inspected
@@ -710,6 +710,37 @@ median GPU budget, with the startup shadow issue disclosed above. **Below the Un
 target: AC-5 remains open.** Decisions: use installed maps/RenderChain, reuse the existing
 wet/curvature binding, repair the game lake coordinate bug in both consumers, reject the
 extra-spike recipe, and leave engine packages and other lanes untouched.
+
+
+Fifth/final increment: the remaining drainage fans receive a bounded increase in the existing
+valley domain warp, **25 → 40 m**. A 55 m trial curved the drainage but let the connected
+flood component reach the world edge, so it was rejected. The retained 40 m overview has
+more curved drainage; the pad's graded bank remains intact. Actual final spike check:
+**2 spikes, worst 1.5 m** (the incoming control had 3; the previous increment had 1 / 1.7 m).
+Tradeoff accepted for more curved form and a lower worst excursion. The basin remains at
+the same authored centre and level: **1.20 m** depth, **4,796 m²** connected flood, **no
+world edge**. Rechecked existing stream route against this field: end surface **11.49 m**
+enters the **12.4 m** lake, **zero uphill steps**, minimum interior station depth **0.88 m**.
+The connected basin did not move, so the existing curved control points are retained.
+
+This capture supersedes the fourth increment's final statistics and files above. All
+resource and AO assertions pass (**23/24** total); diagnostics alone fails with **392**
+counted destroyed-shadow-texture errors (393 console-artifact entries of that same class).
+The disclosed three startup errors remain. Contacts **595**, max error **0.000004 m**,
+lake placement error **0 m**. Meadow/overview engine frame p50 **1.4/2.2 ms**; forest-only
+GPU median across **49 window p50s: 19.09 ms**. Presented-window median **100 ms** during
+stepped capture; no player-FPS claim. Example typecheck, root lint (warnings only), terrain
+**60/60**, and diff whitespace check pass. The final recipe and results are committed; captures remain local, with generated
+JSON/local licensed art kept out of the index.
+
+`artifacts/playtest/round2-final/` now holds the retained 40 m captures and runner provenance;
+`round2-before-warp/` preserves the previous pictures. Final full-frame linear-light
+luminance p05/p50/p95: meadow **0.054/0.168/0.494**, overview **0.055/0.147/0.209**,
+walk **0.019/0.130/0.219**, river **0.026/0.118/0.617**. Display Y:
+meadow **0.256/0.444/0.729**, overview **0.258/0.417/0.492**,
+walk **0.146/0.392/0.503**, river **0.173/0.376/0.806**.
+Final verdict remains **improved, below the Unreal/Gaia target**: broad fan forms and soft
+mountain silhouettes still need work. AC-5 stays open. No push; native unverified.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
