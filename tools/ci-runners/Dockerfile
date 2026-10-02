@@ -27,6 +27,18 @@ RUN apt-get update \
       libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
  && rm -rf /var/lib/apt/lists/*
 
+# Hosted ubuntu-24.04 ships Node 20 and gh on PATH, and jobs rely on both before any setup step:
+# the `scope` job runs `node scripts/ci-change-scope.mjs` straight after checkout.
+ARG NODE_VERSION=20.19.6
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+  | tar -xJ -C /usr/local --strip-components=1 --exclude=CHANGELOG.md --exclude=README.md --exclude=LICENSE \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update && apt-get install -y --no-install-recommends gh \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY entrypoint.sh /home/runner/entrypoint.sh
 RUN chmod 0755 /home/runner/entrypoint.sh
 
