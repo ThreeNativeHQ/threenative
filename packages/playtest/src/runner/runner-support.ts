@@ -80,7 +80,7 @@ export function preflightDisplay(
 ): IPlaytestDiagnostic | undefined {
   const takesScreenshot = scenario.artifacts?.screenshots !== false
     || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
-  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0 || (scenario.assert?.tone?.length ?? 0) > 0;
   const evaluatesFramebuffer = scenario.assert?.framebufferCoverage !== undefined;
   if (platform !== "linux" || config.headless !== true || environment.DISPLAY || environment.WAYLAND_DISPLAY || (!takesScreenshot && !evaluatesVisual && !evaluatesFramebuffer)) {
     return undefined;
@@ -196,6 +196,7 @@ export function buildReport(
   movementBaselineSnapshot: IPlaytestObservationSnapshot | undefined = undefined,
   startup: IStandalonePlaytestReport["startup"] = undefined,
   deviceLifecycle: IPlaytestObservations["deviceLifecycle"] = undefined,
+  tone: IPlaytestObservations["tone"] = undefined,
 ): IStandalonePlaytestReport {
   const movementSample = isAnonymousMovementScenario(scenario)
     ? observedMovementSample(movementSamples)
@@ -287,6 +288,7 @@ export function buildReport(
     // Honest placement reporting: what the scenario asked to override, and what applied.
     ...(setup === undefined ? {} : { setup }),
     observations: buildObservations({
+      ...(tone === undefined || tone.length === 0 ? {} : { tone }),
       console: observedConsoleEntries,
       ...(components === undefined
         ? {}

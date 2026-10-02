@@ -1,3 +1,4 @@
+import type { IPlaytestToneObservation } from "./tone.js";
 import type {
   IPlaytestComponentAssertion,
   IPlaytestDiagnosticsAssertion,
@@ -50,6 +51,7 @@ export interface IPlaytestVisualElementRegionObservation {
 }
 
 export interface IPlaytestObservations {
+  tone?: IPlaytestToneObservation[];
   animation?: unknown;
   components?: Record<string, Record<string, { after?: unknown; before?: unknown }>>;
   componentSeries?: Array<{ label: string; snapshots: Record<string, Record<string, unknown>>; tick: number }>;
