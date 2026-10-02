@@ -97,7 +97,7 @@ build no mirror and perform no eligibility scan; temporal-off must retain no his
 ### Phase 3 — close original image-space acceptance
 
 - [x] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: hosted run `36992451504` passed at `095eca85`; `pnpm exec tsx scripts/verify-velocity-history.ts` runs the actual WebGPU fixture and missing-history control
-- [ ] Qualify animated skinned geometry against a static wall with actual colour/velocity readbacks. proof: `pnpm exec tsx scripts/verify-velocity-history.ts` includes a current-as-previous bone control (hosted run pending)
+- [x] Qualify animated skinned geometry against a static wall with actual colour/velocity readbacks. proof: hosted `37006604512` at `68601527` passes the skinned arm; the current-as-previous bone control fails exactly motion/oracle assertions (stationary coverage excludes the conservative moving rectangle)
 - [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
 
 The authored BatchedMesh fixture has actual browser GPU readback and screenshot proof. The
@@ -119,13 +119,13 @@ is inferred from the CPU tests.
 
 ## Acceptance criteria
 
-- [ ] **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.** proof: PR #393 GPU fixture capture and velocity-buffer assertions (pending).
+- [ ] **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.** proof: hosted `37006604512` passes one-bone motion and current-as-previous control; exact exposed-wall coverage and the original world-transform mutation remain open.
    A fixture animates one skinned mesh in front of a static wall; the velocity buffer is non-zero
    over the mesh's screen footprint and zero over the wall, within tolerance. *Mutation:* write the
    current world matrix into the previous-transform slot and the spec fails with a zero buffer over
    the mesh.
 
-- [ ] **Per-instance motion is per-instance.** proof: hosted `37003076606` at `47e188e4` passes the browser `InstancedMesh` and `BatchedMesh` moving/static cases (0.015625-pixel maximum error); shared-transform mutation and native qualification remain open.
+- [x] **Per-instance motion is per-instance.** proof: hosted `37006604512` at `68601527` passes browser `InstancedMesh` and `BatchedMesh` moving/static cases (0.015625-pixel maximum error); shared-transform controls fail exactly static/stationary bounds at 1.06640625. Native qualification remains separately open.
    With an `InstancedMesh` where one instance moves and the
    rest are still, velocity is non-zero only over the moving instance. *Mutation:* track one
    transform for the whole `InstancedMesh` and the spec fails by marking every instance as moving.
@@ -143,7 +143,7 @@ is inferred from the CPU tests.
    target is allocated and the `render` phase is unchanged within noise. *Mutation:* allocate it
    unconditionally and the allocation spec fails naming the target.
 
-- [ ] **Bookkeeping is frame-ordered, not incidental.** proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts` plus PR #393 live colour/velocity ordering assertions (pending).
+- [x] **Bookkeeping is frame-ordered, not incidental.** proof: hosted `37006604512` at `68601527` passes eight same-frame instance writes after history update, with 0.015625-pixel velocity error and <1.2e-13-pixel colour-centroid error; premature-commit mutation fails exactly motion/oracle bounds at 64 pixels.
    Moving an object after the velocity update
    point within the same frame produces a velocity consistent with the colour pass — the two agree
    or the frame is wrong. *Mutation:* update previous transforms at draw time instead of at the
@@ -246,3 +246,16 @@ All four runtime PNGs were visually inspected. The three positive PNGs are byte-
 ## Remaining footprint and ordering fixtures (in progress)
 
 The maintained browser fixture now adds a real bone-animated `SkinnedMesh` in front of a static wall; its mutation writes the current bone pose into scheduled history. Both batched and instanced aggregate-history controls broadcast one moving-instance previous matrix to both slots, so static geometry must be falsely marked as moving. A late-write arm schedules history before writing the current instance transform; its mutation prematurely commits that new transform before the draw. These cases compare actual colour-silhouette position and signed velocity against the same current pose, and inspect all static pixels outside the moving geometry bounds. The fixed 0.05-pixel velocity bound remains; the colour centroid bound is 0.5 pixel. No readback numbers are replaced by controls. New readback guard tests went 4 failed / 3 passed to 7/7 passed; hosted execution is pending before any new acceptance tick.
+
+
+## Skinned, per-instance and frame-order GPU qualification (2026-10-02)
+
+[Hosted run 37006604512](https://github.com/ThreeNativeHQ/threenative/actions/runs/37006604512) passed all ten expected outcomes at source `68601527451c6530762a5bdcd1c52e562c6e33fe`, tree `f5ae8b1d01300313e867ebb02ec641388312a312`. Artifact `11225942712` ZIP SHA-256 `415fddc91e60806f90b63dd7b82e31ece9ed554324a3d9bf7971ba6fe0f1b177` is verified. [Full per-frame observations, assertions and adapter provenance](../../verification/prd269/velocity-37006604512.json) retain all ten arms. Unchanged PNGs were visually inspected and byte-identical captures deduplicated.
+
+- Actual Google SwiftShader WebGPU, 960 × 540, nine RAF-separated frames per arm. Batched, static/dynamic instance, skinned and late-write positives all have maximum signed velocity error 0.015625 pixel, colour-centroid error below 1.2e-13 pixel, and zero static, stationary-region, first-frame and stopped-frame velocity. Positive diagnostics are empty; no device-loss diagnostic is accepted.
+- [Skinned sphere](../../verification/prd269/skinned-37006604512.png) deforms through its bound bone. Its [current-as-previous control](../../verification/prd269/skinned-current-history-37006604512.png) preserves colour while removing all moving velocity, failing exactly movement and oracle bounds (64-pixel maximum error). The stationary check excludes a conservative moving rectangle, so it does not yet qualify every exposed wall pixel or the original world-transform mutation.
+- Both shared-transform controls produce the same [incorrect static-instance velocity](../../verification/prd269/aggregate-batch-37006604512.png): static/stationary maximum 1.06640625, failing exactly those two assertions. Ordinary per-instance arms retain zero static velocity. This qualifies the original per-instance browser criterion.
+- Eight actual instance writes after the history-update point produce colour and velocity consistent with the latest pose. Prematurely committing the current pose before drawing preserves colour but removes motion (64-pixel error), failing exactly movement and oracle bounds. This qualifies the specified same-frame ordering case.
+- Fresh local tests pass 28/28; independent fixture review passed 35 tests, strict types/Biome and its own bound-skinned CPU oracle. Earlier broader local fixture/CI checks passed 169/169. Hosted motion tests, strict types and the actual capture gate all pass.
+- Ghosting/rejection, temporal-off frame cost, native rendering and full skinned acceptance remain open. PR #398 separately observed a one-frame instance Y-velocity loss after context/material recompile despite correct CPU history and unchanged shader assignments; this lifecycle case remains under investigation and is not covered by the ordinary-frame acceptance above.
+- An unrelated inherited tone workflow failed at this head because `pnpm test:tone` is absent from the older branch base, before rendering or artifact capture. It is not a failed velocity run; synchronize merged develop changes before final full-CI qualification.
