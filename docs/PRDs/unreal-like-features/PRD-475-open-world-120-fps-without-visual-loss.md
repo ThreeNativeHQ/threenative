@@ -131,6 +131,8 @@ Neighbor-LOD scan fix: `world-tiles-cost.spec.ts` red: 75 resident-map lookups, 
 
 Frame-work follow-up (2026-10-02): the shared measured frame budget (c13e35a5e: streaming after the draw, deferred in shadow frames, forced within 3) was reverted in c823efa91. Machinefall cut12l (core `7deb743a39daa13e`) clean-ab5 pairs 1-3: walking render p95 26-35 ms vs develop 21.5-24.7, p50 no better; blind ab9 7/8 equal, 1 LOSS (walk-04 bridge: cliff shadow missing on the vans) that a recapture did not repeat (van-band luminance 30.8937 = develop); pop road band 25.940 = develop, pop judge: no late objects. Deferring stacked the backlog rather than spreading it. The two exact scan cuts above stay.
 
+Render-loop node-key fix (2026-10-02, source/unit lane): reuse `three/tsl`'s stock constant shadow-colour node across VirtualShadowNode's per-level materials. Red: 9 prewarmed casters held 2 node states; green: 1, gate cache misses 34 → 21 (compiler stubbed), with unchanged source index ranges, materials and instance counts per pass. All 39 settled submissions still refresh inside three; 0 render-object creations/geometry swaps and 0 late builds for prewarmed keys. Gates: core 2246 passed, 2 skipped; typecheck exit 0; lint 0 errors, 1012 warnings, exit 0; quality 183 findings, exit 0. Browser timing and same-pose GPU output remain unverified; Phase 2 stays open.
+
 #### Phase 3: Hold 120 fps with the look intact
 **Status:** NOT STARTED
 **Files:** Machinefall `apps/client/playtests/scenes/map-walk.playtest.json`; this PRD.

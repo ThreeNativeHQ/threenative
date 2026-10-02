@@ -16,6 +16,7 @@ import {
   abs,
   and,
   float,
+  getShadowMaterial,
   max,
   min,
   positionWorld,
@@ -1718,6 +1719,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (this.#initialised) return;
     this.#initialised = true;
     const source = this.light as DirectionalLight;
+    let shadowColor: ReturnType<typeof getShadowMaterial>["colorNode"] = null;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
       syncShadowSettings(source.shadow, levelShadow);
@@ -1750,6 +1752,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
       moverShadow.camera.layers.set(VIRTUAL_SHADOW_MOVER_LAYER);
       const light = new LevelLight(levelShadow);
       light.name = `VirtualShadowLevel${String(index)}`;
+      // quality-allow: the stock shadow node reads only position, target and shadow off its light
+      const node = shadow(light as unknown as DirectionalLight, levelShadow);
+      // Stock shadow colours are identical, but their node identities split the shader cache.
+      // Share only that constant; each level keeps its material, camera and render bindings.
+      const material = getShadowMaterial(node.light);
+      shadowColor ??= material.colorNode;
+      material.colorNode = shadowColor;
       this.#levels.push({
         appliedStep: at(this.options.refreshStep, index),
         costMs: 0,
@@ -1780,8 +1789,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // One placeholder light serves both maps: the stock node reads only its placement.
         // quality-allow: the stock shadow node reads only position, target and shadow off its light
         moverNode: shadow(light as unknown as DirectionalLight, moverShadow),
-        // quality-allow: the stock shadow node reads only position, target and shadow off its light
-        node: shadow(light as unknown as DirectionalLight, levelShadow),
+        node,
         shadow: levelShadow,
       });
     });
