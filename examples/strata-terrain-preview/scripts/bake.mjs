@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { Mask, Terrain, bakeMesh } from "@threenative/terrain";
 import { terrainPalette } from "../src/render/palette.js";
@@ -20,15 +21,25 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   })
   .erode({ id: "weathering", method: "hydraulic" })
   // One settling pass over the carved surface. Every droplet leaves the edge of its own dimple, and
-  // without this the hillside reads as pocked instead of weathered.
-  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  // without this the hillside is pocked rather than weathered. It is one pass, not two: a second
+  // flattens the whole hill into rolling dough with no rill left anywhere on it.
+  .smooth({ id: "settle", iterations: 1, strength: 0.5 })
+  // Rills and small crests, added after the settle so they survive it. Placed before, the pass
+  // above erases them; placed after the talus, the talus slides them off again.
+  .noise({ id: "detail", base: 0, amplitude: 3, scale: 60, warp: 12, octaves: 4, mode: "ridged" })
   // Material past 36 degrees slides to its lowest neighbour and piles as a fan at the foot of the
   // slope; without this the talus is either absent or a single-cell spike.
   .erode({ id: "talus", method: "thermal", talus: 36, iterations: 12 })
+  // The ridged detail is a crest, and a crest is a single-cell spike until something settles it. The
+  // scree pass below is the last one, so the world needs one light pass after it, not only before.
+  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
     id: "surfaces",
     rules: [
-      { material: "dirt", mask: Mask.noise(36, 0.67, 73, 0.14), strength: 0.55 },
+      // Bare earth is a worn band along the drainage and a scatter on the steeper ground, not one
+      // smooth blob tens of metres across: a lower frequency than the renderer's fraying can hide
+      // still reads as a brown amoeba with a hard rim.
+      { material: "dirt", mask: Mask.noise(78, 0.52, 73, 0.32), strength: 0.5 },
       { material: "rock", mask: Mask.slope(34, 90, 9) },
     ],
   })
@@ -100,10 +111,12 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     roughness: 0.24,
   })
   .erode({ id: "weathering", method: "hydraulic" })
-  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  .smooth({ id: "settle", iterations: 1, strength: 0.5 })
+  .noise({ id: "detail", base: 0, amplitude: 3, scale: 58, warp: 12, octaves: 4, mode: "ridged" })
   // The sea cliff survives because the talus is steep: 38 degrees lets the windward face stand as a
   // face while the gullies feeding it still cut back.
   .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
+  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
     id: "surfaces",
     rules: [
@@ -145,10 +158,12 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     mask: Mask.height(60, 1e9, 20),
   })
   .erode({ id: "weathering", method: "hydraulic" })
-  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  .smooth({ id: "settle", iterations: 1, strength: 0.5 })
+  .noise({ id: "detail", base: 0, amplitude: 3, scale: 60, warp: 14, octaves: 4, mode: "ridged" })
   // A 40-degree talus is scree: rock past that angle slides off the faces and piles in fans below,
   // which is what puts the grey aprons under the snowline.
   .erode({ id: "scree", method: "thermal", talus: 40, iterations: 14 })
+  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
     id: "surfaces",
     rules: [
@@ -201,7 +216,9 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   // is the silhouette a mesa actually has. A smooth cone at this scale is a lump, not a mesa.
   .terrace({ id: "benches", step: 6, softness: 0.12, strength: 0.55, offset: 6 })
   .smooth({ id: "settle", iterations: 1, strength: 0.4 })
+  .noise({ id: "detail", base: 0, amplitude: 2, scale: 54, warp: 10, octaves: 4, mode: "ridged" })
   .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
+  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .river({
     id: "wash",
     followTerrain: true,
@@ -244,8 +261,10 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
     mask: Mask.noise(90, 0.68, 131, 0.2),
   })
   .erode({ id: "weathering", method: "hydraulic" })
-  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  .smooth({ id: "settle", iterations: 1, strength: 0.5 })
+  .noise({ id: "detail", base: 0, amplitude: 2.5, scale: 64, warp: 10, octaves: 4, mode: "ridged" })
   .erode({ id: "talus", method: "thermal", talus: 33, iterations: 12 })
+  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
     id: "surfaces",
     rules: [
@@ -254,9 +273,51 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
       { material: "rock", mask: Mask.slope(24, 90, 8) },
     ],
   });
+// `pnpm dev` runs this on every start, and grid-scaled erosion costs ~19 s for the five worlds
+// against the dev server's 15 s readiness budget. The recipes are seeded and deterministic, so a
+// bake is only needed when the recipe, the palette it colours with, or the terrain build it
+// evaluates against has changed since the output was written. `bake.mjs --force` overrides.
+const recipes = { forest, coastal, alpine, desert, tundra };
+// The bundle carries only the worlds the game draws: every baked world is a 257-square of heights
+// and colours, and importing all five made a 25 MB module the dev server took longer than a page
+// load to transform. The others are written beside it until their scenes exist.
+const drawn = new Set(["forest", "coastal"]);
+const outputDir = new URL("../src/world/", import.meta.url);
+const { readFile, stat } = await import("node:fs/promises");
+const fingerprint = createHash("sha256")
+  .update(JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))))
+  .update(JSON.stringify(terrainPalette))
+  .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
+  .digest("hex");
+
+if (!process.argv.includes("--force")) {
+  try {
+    const stamp = new URL(".bake-stamp", outputDir);
+    const [old, out] = await Promise.all([readFile(stamp, "utf8"), stat(stamp)]);
+    // `drawn` worlds live inside baked.json; the rest are written beside it. Checking the drawn
+    // set's own filenames would stat files that never exist and re-bake on every start.
+    const undrawn = Object.keys(recipes).filter((name) => !drawn.has(name));
+    const stale = (
+      await Promise.all(
+        ["baked.json", ...undrawn.map((name) => `${name}.json`)].map((file) =>
+          stat(new URL(file, outputDir)).then(
+            (s) => s.mtimeMs > out.mtimeMs,
+            () => true,
+          ),
+        ),
+      )
+    ).some(Boolean);
+    if (old.trim() === fingerprint && !stale) {
+      console.log("Worlds are already baked from this recipe and terrain build; nothing to do.");
+      process.exit(0);
+    }
+  } catch {
+    // No stamp yet: bake.
+  }
+}
 
 const worlds = {};
-for (const [name, terrain] of Object.entries({ forest, coastal, alpine, desert, tundra })) {
+for (const [name, terrain] of Object.entries(recipes)) {
   const state = terrain.evaluate();
   const mesh = bakeMesh(state, { palette: terrainPalette });
   worlds[name] = {
@@ -271,11 +332,7 @@ for (const [name, terrain] of Object.entries({ forest, coastal, alpine, desert, 
       .map(({ id, at, radius, level }) => ({ id, at, radius, level })),
   };
 }
-await mkdir(new URL("../src/world/", import.meta.url), { recursive: true });
-// The bundle carries only the worlds the game draws: every baked world is a 257-square of heights
-// and colours, and importing all five made a 25 MB module the dev server took longer than a page
-// load to transform. The others are written beside it until their scenes exist.
-const drawn = new Set(["forest", "coastal"]);
+await mkdir(outputDir, { recursive: true });
 await writeFile(
   new URL("../src/world/baked.json", import.meta.url),
   JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),
@@ -283,4 +340,5 @@ await writeFile(
 for (const [name, world] of Object.entries(worlds))
   if (!drawn.has(name))
     await writeFile(new URL(`../src/world/${name}.json`, import.meta.url), JSON.stringify(world));
+await writeFile(new URL(".bake-stamp", outputDir), `${fingerprint}\n`);
 console.log("Baked five seeded 512 m / 257-vertex worlds; authoring is outside the play graph.");
