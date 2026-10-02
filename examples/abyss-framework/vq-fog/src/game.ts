@@ -6,6 +6,7 @@ import {
   Group,
   HemisphereLight,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   type PerspectiveCamera,
   PointLight,
@@ -21,6 +22,11 @@ const initialState = {
   ready: false,
   builds: 0,
   disposedGraphs: 0,
+  createdTargets: 0,
+  releasedTargets: 0,
+  releasedMaterials: 0,
+  liveTargets: 0,
+  scatteringOnly: false,
   targets: 0,
   pixels: 0,
   steps: 0,
@@ -41,13 +47,20 @@ const modes = [
   "overlap",
   "half",
   "wallOff",
+  "scatter",
+  "scatterSunOff",
+  "scatterPointOff",
+  "blackOff",
 ] as const;
 type Mode = (typeof modes)[number];
 
-class FogProbe extends GameScene<FogState> {
+export class FogProbe extends GameScene<FogState> {
   static override readonly initialState = initialState;
   #geometry = new BoxGeometry();
   #material = new MeshStandardMaterial({ color: 0x7c8a91, roughness: 0.85 });
+  #black = new MeshBasicMaterial({ color: 0x000000 });
+  #background = new Color(0x131e2a);
+  #blackBackground = new Color(0x000000);
   #sun = new DirectionalLight(0xffedce, 3);
   #point = new PointLight(0xffad60, 30, 8);
   #wall: Mesh | undefined;
@@ -57,9 +70,12 @@ class FogProbe extends GameScene<FogState> {
   #applied: Mode | undefined;
   #builds = 0;
   #disposedGraphs = 0;
+  #createdTargets = 0;
+  #releasedTargets = 0;
+  #releasedMaterials = 0;
 
   override enter(ctx: FogCtx): void {
-    ctx.scene.background = new Color(0x131e2a);
+    ctx.scene.background = this.#background;
     ctx.scene.fog = null;
     const box = (position: Vector3, scale: Vector3): Mesh => {
       const mesh = new Mesh(this.#geometry, this.#material);
@@ -77,6 +93,8 @@ class FogProbe extends GameScene<FogState> {
     box(new Vector3(3.6, 4, -5), new Vector3(2.8, 0.3, 10));
     box(new Vector3(-1.4, 1, -5), new Vector3(1, 2, 1));
     this.#wall = box(new Vector3(0.4, 1.6, 3.6), new Vector3(2, 3.2, 0.4));
+    this.#sun.name = "fog-directional";
+    this.#point.name = "fog-point";
     this.#sun.position.set(-3, 7, 1);
     this.#sun.target.position.set(0, 0, -5);
     this.#sun.castShadow = true;
@@ -105,8 +123,11 @@ class FogProbe extends GameScene<FogState> {
     for (const mode of modes) if (ctx.input.justPressed(mode)) this.#mode = mode;
     if (ctx.input.justPressed("rebuild")) this.#applied = undefined;
     this.#positionCamera(ctx);
-    this.#sun.intensity = this.#mode === "sunOff" ? 0 : 3;
-    this.#point.intensity = this.#mode === "pointOff" ? 0 : 30;
+    const scatteringOnly = this.#mode.startsWith("scatter") || this.#mode === "blackOff";
+    ctx.scene.overrideMaterial = scatteringOnly ? this.#black : null;
+    ctx.scene.background = scatteringOnly ? this.#blackBackground : this.#background;
+    this.#sun.intensity = this.#mode === "sunOff" || this.#mode === "scatterSunOff" ? 0 : 3;
+    this.#point.intensity = this.#mode === "pointOff" || this.#mode === "scatterPointOff" ? 0 : 30;
     if (this.#wall !== undefined) this.#wall.visible = this.#mode !== "wallOff";
     // Warm the ordinary directional shadow map with the first real scene frame before composing.
     if (this.#applied !== this.#mode && this.#sun.shadow.map !== null) this.#compose(ctx);
@@ -116,6 +137,11 @@ class FogProbe extends GameScene<FogState> {
       ready: this.#applied === this.#mode,
       builds: this.#builds,
       disposedGraphs: this.#disposedGraphs,
+      createdTargets: this.#createdTargets,
+      releasedTargets: this.#releasedTargets,
+      releasedMaterials: this.#releasedMaterials,
+      liveTargets: this.#createdTargets - this.#releasedTargets,
+      scatteringOnly,
       targets: observation?.renderTargets ?? 0,
       pixels: observation?.pixels ?? 0,
       steps: observation?.steps ?? 0,
@@ -154,7 +180,7 @@ class FogProbe extends GameScene<FogState> {
       reversedDepthBuffer?: boolean;
     };
     const fog = createVolumetricFog(ctx.camera as PerspectiveCamera, {
-      enabled: this.#mode !== "off",
+      enabled: this.#mode !== "off" && this.#mode !== "blackOff",
       renderer: ctx.renderer.kind,
       logarithmicDepth: raw.logarithmicDepthBuffer,
       reversedDepth: raw.reversedDepthBuffer,
@@ -181,9 +207,23 @@ class FogProbe extends GameScene<FogState> {
       fog === undefined ? {} : { baseColour: (scenePass) => fog.compose(scenePass) },
     );
     this.#fog = fog;
+    const target = fog?.target;
+    const material = fog?.material;
+    if (target !== undefined) this.#createdTargets += 1;
     this.#release = () => {
       applied.dispose?.();
+      // Count actual teardown events, not resize-driven RenderTarget invalidations.
+      const onTarget = () => {
+        this.#releasedTargets += 1;
+      };
+      const onMaterial = () => {
+        this.#releasedMaterials += 1;
+      };
+      target?.addEventListener("dispose", onTarget);
+      material?.addEventListener("dispose", onMaterial);
       fog?.dispose();
+      target?.removeEventListener("dispose", onTarget);
+      material?.removeEventListener("dispose", onMaterial);
     };
     this.#builds += 1;
     this.#applied = this.#mode;
@@ -200,6 +240,7 @@ class FogProbe extends GameScene<FogState> {
     this.#disposeGraph();
     this.#geometry.dispose();
     this.#material.dispose();
+    this.#black.dispose();
     this.#sun.dispose();
     this.#point.dispose();
   }
@@ -218,6 +259,10 @@ export default defineGame<FogState>({
     overlap: { keys: ["KeyB"] },
     half: { keys: ["KeyH"] },
     wallOff: { keys: ["KeyW"] },
+    scatter: { keys: ["KeyL"] },
+    scatterSunOff: { keys: ["KeyK"] },
+    scatterPointOff: { keys: ["KeyJ"] },
+    blackOff: { keys: ["KeyN"] },
     rebuild: { keys: ["KeyC"] },
   },
   plugins: [playtest<FogState>()],

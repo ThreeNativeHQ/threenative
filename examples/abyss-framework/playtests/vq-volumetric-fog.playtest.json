@@ -2,17 +2,48 @@
   "schemaVersion": 1,
   "name": "vq-volumetric-fog-lifecycle",
   "target": "web",
-  "viewport": { "width": 640, "height": 400 },
+  "viewport": {
+    "width": 640,
+    "height": 400
+  },
   "warmupFrames": 60,
   "steps": [
-    { "press": ["KeyI"], "holdTicks": 1, "release": true },
-    { "kind": "wait", "waitFrames": 20 },
-    { "press": ["KeyO"], "holdTicks": 1, "release": true },
-    { "kind": "wait", "waitFrames": 20 },
-    { "press": ["KeyF"], "holdTicks": 1, "release": true },
-    { "kind": "wait", "waitFrames": 20 },
-    { "press": ["KeyC"], "holdTicks": 1, "release": true },
-    { "kind": "wait", "waitFrames": 60 }
+    {
+      "press": ["KeyI"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "press": ["KeyO"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "press": ["KeyF"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 20
+    },
+    {
+      "press": ["KeyC"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitFrames": 60
+    }
   ],
   "assert": {
     "components": [
@@ -34,12 +65,57 @@
         "equals": 1,
         "allowTrivial": "Exactly the current fog RTT remains after replacement."
       },
-      { "entity": "fog", "component": "disposedGraphs", "gte": 4, "changed": true }
+      {
+        "entity": "fog",
+        "component": "disposedGraphs",
+        "gte": 4,
+        "changed": true
+      },
+      {
+        "entity": "fog",
+        "component": "createdTargets",
+        "equals": 3,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "releasedTargets",
+        "equals": 2,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "releasedMaterials",
+        "equals": 2,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      },
+      {
+        "entity": "fog",
+        "component": "liveTargets",
+        "equals": 1,
+        "allowTrivial": "Observe actual owned teardown events and the live target balance after reconstruction."
+      }
     ],
-    "diagnostics": { "noConsoleErrors": true, "noRuntimeDiagnostics": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
     "visual": [
-      { "region": { "x": 0, "y": 0, "width": 640, "height": 400, "minNonblankPixelRatio": 0.05 } }
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 400,
+          "minNonblankPixelRatio": 0.05
+        }
+      }
     ]
   },
-  "artifacts": { "screenshots": "after", "console": true, "runtimeTrace": true }
+  "artifacts": {
+    "screenshots": "after",
+    "console": true,
+    "runtimeTrace": true
+  }
 }

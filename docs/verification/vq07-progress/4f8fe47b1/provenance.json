@@ -289,5 +289,289 @@
     "fogVsOffMeanAbsoluteByteDifference": 0,
     "changedPixels": 0
   },
-  "halfVsFullMeanAbsoluteByteDifference": 0.06948697916666667
+  "halfVsFullMeanAbsoluteByteDifference": 0.06948697916666667,
+  "receiptHeadRevalidation": {
+    "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+    "runId": 36994760252,
+    "runUrl": "https://github.com/ThreeNativeHQ/threenative/actions/runs/36994760252",
+    "artifactId": 11220323995,
+    "artifactSha256": "658c454f4f1888f2b98f9b78054b7f3ae6cebedbe6327372ec844f21a058e71d",
+    "allNinePngBytesIdentical": true,
+    "results": [
+      {
+        "mode": "off",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "zero",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "fog",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "inside",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "sunOff",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "pointOff",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "overlap",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "half",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "mode": "wallOff",
+        "sourceSha": "9b2bcd7a1e9db2aa181a34c2c7fd5a060724138a",
+        "pass": true,
+        "capture": {
+          "adapter": {
+            "architecture": "swiftshader",
+            "vendor": "google",
+            "features": "bgra8unorm-storage,chromium-experimental-timestamp-query-inside-passes,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,float32-blendable,float32-filterable,indirect-first-instance,rg11b10ufloat-renderable,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,timestamp-query",
+            "limit.maxBindGroups": "4",
+            "limit.maxTextureDimension2D": "8192",
+            "limit.maxStorageBufferBindingSize": "1073741824"
+          },
+          "browserArgs": [
+            "--ozone-platform=x11",
+            "--enable-unsafe-webgpu",
+            "--disable-gpu-sandbox",
+            "--ignore-gpu-blocklist",
+            "--enable-features=Vulkan"
+          ],
+          "captureMethod": "page.screenshot",
+          "rendererKind": "webgpu",
+          "target": "web",
+          "viewport": {
+            "height": 400,
+            "width": 640
+          }
+        },
+        "diagnostics": []
+      },
+      {
+        "assertion": "zero-density pixel identity",
+        "pass": true
+      }
+    ]
+  }
 }

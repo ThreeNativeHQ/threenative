@@ -10,6 +10,8 @@ This opt-in fixture uses the starter's generated `volumetricFog.ts` and `WorldEn
 - H: half-resolution fog with depth-discontinuity fallback
 - W: remove the foreground wall so current depth changes
 - C: dispose and rebuild the current graph
+- L / K / J: scattering-only black-surface control, then directional / point light off
+- N: black no-fog control (exact zero RGB expected)
 
 The medium replaces scene fog, aerial haze and god rays. The only local light admitted here is an unshadowed finite-range point source. No temporal history is retained. The source rejects orthographic, logarithmic and reversed-depth configurations rather than pretending they are qualified.
 
@@ -23,7 +25,7 @@ pnpm --filter abyss-framework exec vite build --config vq-fog/vite.config.ts
 node --import tsx scripts/verify-volumetric-fog.ts
 ```
 
-The existing public runner provides headed Chromium, a private Xvfb, canvas captures and adapter provenance. The feature-specific hosted integration workflow invokes these commands on Ubuntu 24.04 and preserves PNGs, reports, observations and the tested source SHA under `artifacts/volumetric-fog/`. Software adapters qualify correctness only. A device-loss warning invalidates the result even if the runner reports a pass. The current verifier checks zero-density image identity; foreground-wall/shaft appearance still requires inspecting the actual captures. Do not treat the source build or WGSL generation test as runtime proof.
+The existing public runner provides headed Chromium, a private Xvfb, canvas captures and adapter provenance. The feature-specific hosted integration workflow invokes these commands on Ubuntu 24.04 and preserves PNGs, reports, observations and the tested source SHA under `artifacts/volumetric-fog/`. Software adapters qualify correctness only. A device-loss warning invalidates the result even if the runner reports a pass. The verifier checks zero-density identity, isolated directional/point scattering in a pinned room region with an exact-black foreground plate, actual teardown events over repeated graph replacement, and return-to-off pixel identity. It retains named light identities and source/adapter provenance. Foreground-wall/shaft appearance also requires inspecting the actual captures. Do not treat the source build or WGSL generation test as runtime proof.
 
 ## Native entry and lifecycle
 
