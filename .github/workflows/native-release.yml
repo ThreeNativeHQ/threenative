@@ -1059,6 +1059,9 @@ jobs:
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Run packed Android physics and negative controls on an emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # The hosted emulator renders on SwiftShader; the proof fails closed unless that is declared.
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         with:
           api-level: 35
           target: google_apis
