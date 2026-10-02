@@ -1,4 +1,4 @@
-import { type ICtx, Scene, defineGame } from "@threenative/core";
+import { type ICtx, Scene, defineGame, markStatic } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { Heightfield } from "@threenative/core/world";
 import {
@@ -170,6 +170,8 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const data = baked[world];
       const { field, mesh } = createTerrain(data, ctx.assets);
       ctx.add(mesh);
+      // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
+      markStatic(mesh);
       const ground = new RigidBody3D({
         object: mesh,
         physics: ctx.physics,
@@ -369,6 +371,9 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         }
         props = createProps(scatter.placements, groundAt, propParts, flat);
         ctx.add(props.object);
+        // The props never move either: the wind is a vertex shader and a distance band changes which
+        // instances draw, not where any object is.
+        markStatic(props.object);
         ctx.entities.add("props", {
           object: props.object,
           debug: () => ({
@@ -397,7 +402,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
         // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
         // server costs this world its bark and its needles rather than its trees.
-        void createPropSurfaces(ctx.assets).then((surfaces) => {
+        void createPropSurfaces(ctx.assets, data).then((surfaces) => {
           this.#surfaces = surfaces;
           if (released) {
             surfaces.dispose();

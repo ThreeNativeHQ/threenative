@@ -15,11 +15,15 @@
 import type { IAssetLoader } from "@threenative/core";
 import {
   Color,
+  DataTexture,
+  DataUtils,
   DoubleSide,
   FrontSide,
+  HalfFloatType,
   LinearFilter,
   LinearMipmapLinearFilter,
   type Material,
+  RedFormat,
   type Texture,
   Vector3,
 } from "three";
@@ -37,6 +41,7 @@ import {
   log2,
   max,
   mix,
+  mx_noise_float,
   normalViewGeometry,
   normalWorld,
   normalize,
@@ -280,7 +285,75 @@ function sway(base: MeshStandardNodeMaterial, clock: Node<"float">, amplitude: n
  * axis owns a different pair of world axes and the three are recombined by the surface's own blend
  * weights, which is what `src/render/terrain.ts` already does for its cliff layer.
  */
-function stoneSurface(maps: { diffuse?: Texture; normal?: Texture }) {
+/**
+ * Where a prop meets the ground, and what the ground there is made of.
+ *
+ * A boulder or a trunk that changes material in one clean line where it enters the terrain reads as
+ * an object placed on a heightfield — the "stuck on" look. Real ground climbs the base of what sits in
+ * it: soil and litter banked against a rock, dirt around a root flare. So a prop surface reads the
+ * baked heights under itself and, over the bottom of its height above that ground, fades into the
+ * forest floor's own map and turns its normal toward the ground's.
+ */
+export interface IPropGround {
+  readonly heights: readonly number[];
+  readonly resolution: number;
+  readonly size: number;
+}
+
+/** How far up a prop the ground climbs, in metres, and how far the soil map repeats. */
+const GROUND_BLEND = { reach: 0.7, soilTile: 3.4 } as const;
+
+/** The ground's height under a fragment, from the same baked heights the terrain was built from. */
+function groundHeight(ground: IPropGround): { node: Node<"float">; texture: DataTexture } {
+  const heights = new DataTexture(
+    Uint16Array.from(ground.heights, DataUtils.toHalfFloat),
+    ground.resolution,
+    ground.resolution,
+    RedFormat,
+    HalfFloatType,
+  );
+  heights.minFilter = LinearFilter;
+  heights.magFilter = LinearFilter;
+  heights.needsUpdate = true;
+  const at = positionWorld.xz.div(float(ground.size)).add(0.5);
+  return { node: texture(heights, at).r as unknown as Node<"float">, texture: heights };
+}
+
+/**
+ * The share of a fragment that is ground rather than prop, 0..1: one at the contact, none a
+ * `GROUND_BLEND.reach` above it, with a noisy edge so the soil line wanders instead of being a level.
+ */
+function groundShare(height: Node<"float"> | undefined): Node<"float"> {
+  if (height === undefined) return float(0);
+  const wander = mx_noise_float(positionWorld.mul(1.7)).mul(0.18);
+  const above = positionWorld.y.sub(height).add(wander);
+  return float(1).sub(smoothstep(float(0.02), float(GROUND_BLEND.reach), above));
+}
+
+/** Blend a surface's colour and normal into the forest floor by `share`. */
+function intoGround(
+  material: MeshStandardNodeMaterial,
+  colour: Node<"vec3">,
+  share: Node<"float">,
+  soil: Texture | undefined,
+  bendNormal = true,
+): void {
+  if (soil === undefined) return;
+  const floor = texture(soil, positionWorld.xz.div(float(GROUND_BLEND.soilTile))).rgb.mul(0.85);
+  material.colorNode = mix(colour, floor, share.mul(0.92));
+  // A surface lit through `normalMap` keeps it: a set normalNode would replace the map outright.
+  if (!bendNormal) return;
+  const lit = material.normalNode ?? transformNormalToView(normalWorld);
+  material.normalNode = normalize(
+    mix(lit as Node<"vec3">, transformNormalToView(vec3(0, 1, 0)), share.mul(0.75)),
+  );
+}
+
+function stoneSurface(
+  maps: { diffuse?: Texture; normal?: Texture },
+  height?: Node<"float">,
+  soil?: Texture,
+) {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.93, side: FrontSide });
   const tile = float(TILE.stone);
   const weight = abs(normalWorld).normalize();
@@ -305,6 +378,8 @@ function stoneSurface(maps: { diffuse?: Texture; normal?: Texture }) {
       .mul(1.15);
     material.normalNode = transformNormalToView(normalize(normalWorld.add(relief)));
   }
+  if (maps.diffuse !== undefined)
+    intoGround(material, material.colorNode as Node<"vec3">, groundShare(height), soil);
   return material;
 }
 
@@ -581,8 +656,13 @@ export interface IPropSurfaces {
  * still a trunk and the needles are still needles, which is the difference between a host with no
  * asset server and a broken scene.
  */
-export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSurfaces> {
+export async function createPropSurfaces(
+  assets?: IAssetLoader,
+  ground?: IPropGround,
+): Promise<IPropSurfaces> {
   const seconds = uniform(0) as unknown as Node<"float">;
+  const under = ground === undefined ? undefined : groundHeight(ground);
+  const soil = await map(assets, "forest_ground_04/forest_ground_04_diff_1k.jpg", false);
   const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, MAPS.bark),
     surfaceMaps(assets, MAPS.stone),
@@ -590,6 +670,8 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     map(assets, NEEDLE_SURFACE, true),
   ]);
   const textures: Texture[] = [
+    ...(under ? [under.texture] : []),
+    ...(soil ? [soil] : []),
     bark.diffuse,
     bark.normal,
     bark.roughness,
@@ -609,6 +691,14 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     // into a highlight.
     // A set colorNode replaces `map`, so the lift multiplies the sampled bark instead of standing in for it.
     barkMaterial.colorNode = texture(bark.diffuse).rgb.mul(vec3(1.85, 1.7, 1.55));
+    // The root flare dies into the soil instead of meeting it at a clean bark line.
+    intoGround(
+      barkMaterial,
+      barkMaterial.colorNode as Node<"vec3">,
+      groundShare(under?.node),
+      soil,
+      false,
+    );
   }
   if (bark.normal !== undefined) barkMaterial.normalMap = bark.normal;
   if (bark.roughness !== undefined) barkMaterial.roughnessMap = bark.roughness;
@@ -733,7 +823,7 @@ export async function createPropSurfaces(assets?: IAssetLoader): Promise<IPropSu
     petal: petalMaterial,
     pine: pineMaterial,
     stem: stemMaterial,
-    stone: stoneSurface(stone),
+    stone: stoneSurface(stone, under?.node, soil),
   };
   let disposed = false;
   return {
