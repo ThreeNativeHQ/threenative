@@ -12,7 +12,7 @@
 // move the sun under them.
 //
 // The existing cloud dome samples a soft density field and its sunward neighbourhood for shading.
-import { Daylight, type ICtx, VirtualShadowNode } from "@threenative/core";
+import { Daylight, type ICtx, VirtualShadowNode, velocityTexture } from "@threenative/core";
 import {
   BackSide,
   Color,
@@ -24,6 +24,7 @@ import {
 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
   cameraPosition,
   color,
@@ -50,7 +51,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
+import type { Node, TextureNode } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
@@ -348,8 +349,9 @@ export function installOutdoorOcclusion(
     input: world.getTextureNode("output"),
     worldPass: world,
     request: {
-      stages: ["ambientOcclusion", "grade"].filter((name) => !omitted.has(name)),
+      stages: ["ambientOcclusion", "grade", "traa"].filter((name) => !omitted.has(name)),
       tier: "auto",
+      velocity: { pass: world },
     },
     targetFps: 30,
     stages: [
@@ -385,6 +387,18 @@ export function installOutdoorOcclusion(
               ),
             ),
             (input as Node<"vec4">).a,
+          ),
+      },
+      {
+        // Alpha-tested needle, leaf and blade cards shimmer into speckle without temporal resolve.
+        name: "traa",
+        minimumTier: "medium",
+        build: (input, { velocityNode }) =>
+          traa(
+            input as Node<"vec4">,
+            depth as TextureNode,
+            (velocityNode ?? velocityTexture(world)) as TextureNode,
+            camera,
           ),
       },
     ],
