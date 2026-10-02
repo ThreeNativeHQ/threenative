@@ -351,42 +351,28 @@ function triplanarRelief(
 // Slope is 1 − cos(angle): 0.18 is 35°, not the sine of 35°.
 const TRIPLANAR_SLOPE = 0.18;
 
-/**
- * The sand's own relief: shore-aligned ripples, as a tilt in world space.
- *
- * A beach's texture is not isotropic. Waves run roughly parallel to the shore and leave ripple crests
- * parallel to it too, so the sand's strongest visual line runs *across* the fall line — and a planar
- * noise sampled in world XZ ignores that entirely, which is what the "zig-zag streaks" in the coastal
- * captures were: the tile's own diagonal ridges, following the tile grid rather than the water.
- *
- * The shore's direction is the fall line's horizontal component, which is the surface normal's own x/z
- * with y dropped: on a beach the normal points up-and-downhill, so its horizontal part points downhill,
- * and the ripples run perpendicular to that. Ripples are then a sine of the distance measured across
- * the fall line, modulated by a slow noise so the crest spacing wanders the way real ripples do, and
- * faded out where the beach is not a beach.
- */
+/** Wind ripples share one world-space phase; changing normals must not bend the phase. */
 const RIPPLE = {
   /** Crests per metre across the fall line. Real ripples are 5-20 cm apart; these read at 25 cm. */
   frequency: 4,
   /** How far the crests tilt the surface, and how much their spacing wanders. */
-  strength: 0.26,
+  strength: 0.065,
   wander: 1.4,
 } as const;
 
 function sandRipples(direction?: Node<"vec2">): Node<"vec3"> {
-  // Downhill, in world xz. Normalised so the ripple amplitude does not change with the slope.
-  const fall = direction ?? vec2(normalWorldGeometry.x, normalWorldGeometry.z);
+  // A coherent wind direction avoids radial stripes where a beach normal changes.
+  const fall = direction ?? vec2(0.83, 0.56);
   const downhill = fall.length().max(float(0.0001));
   const across = vec2(fall.x.div(downhill), fall.y.div(downhill));
-  // Distance across the shore, in metres, with a slow noise on the frequency so the crest spacing is
-  // not a perfect comb.
+  // Distance across the wind, in metres; slow noise breaks a perfect comb.
   const phase = positionWorld.x
     .mul(across.x)
     .add(positionWorld.z.mul(across.y))
     .mul(RIPPLE.frequency * Math.PI * 2);
   const wobble = mx_noise_float(positionWorld.mul(0.09)).mul(RIPPLE.wander);
   const crest = phase.add(wobble).sin();
-  // The tilt is along the fall line, so the crests face the sea.
+  // Subtle relief disappears before the crests become smaller than a pixel.
   return vec3(across.x, 0, across.y)
     .mul(crest)
     .mul(RIPPLE.strength)

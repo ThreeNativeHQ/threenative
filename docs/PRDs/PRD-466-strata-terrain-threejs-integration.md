@@ -2150,3 +2150,10 @@ A final surface correction changes the shared sand-ripple phase from division to
 cycles/metre × 2π: the stated 25 cm spacing previously produced roughly 25 m bands.
 The same helper now fades these fine ripples by 35 m in all callers. Fresh licensed
 and fallback full proofs are required on this source. Example tsc PASS after this fix.
+
+The corrected-frequency crop exposed a second root cause: ripple phase used each
+fragment's changing downhill normal, creating radial stripes. That candidate
+(`material-ripple-candidate/`) is rejected visually despite completing the full
+scenario. Ripples now use a coherent world-space wind direction and one quarter
+of the prior normal amplitude. Its 25 cm spacing and near-distance fade remain.
+Fresh full proofs run on this final source; all earlier verdicts stay qualified.
