@@ -53,6 +53,15 @@
     {
       "kind": "wait",
       "waitFrames": 60
+    },
+    {
+      "waitForResource": {
+        "id": "state",
+        "path": "stableTextureFrames",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": true
     }
   ],
   "assert": {

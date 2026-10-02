@@ -29,6 +29,12 @@ const cases = [
   ["scatterPointOff", "KeyJ"],
 ] as const;
 
+const textureBoundary = {
+  waitForResource: { id: "state", path: "stableTextureFrames", gte: 3 },
+  timeoutMs: 30_000,
+  release: true,
+};
+
 export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario {
   return {
     schemaVersion: 1,
@@ -39,6 +45,7 @@ export function fogCaptureScenario(mode: string, key: string): IPlaytestScenario
     steps: [
       { press: [key], holdTicks: 1, release: true },
       { kind: "wait", waitFrames: 60, release: true },
+      textureBoundary,
     ],
     assert: {
       components: [
@@ -142,11 +149,13 @@ export async function fogCaptureScenarios() {
     scenario.steps.push(
       { press: ["KeyR"], holdTicks: 1, release: true },
       { kind: "wait", waitFrames: 60, release: true },
+      textureBoundary,
     );
     if (mode === "resizeRestore")
       scenario.steps.push(
         { press: ["KeyT"], holdTicks: 1, release: true },
         { kind: "wait", waitFrames: 60, release: true },
+        textureBoundary,
       );
     scenario.assert?.components?.push(
       ...[
