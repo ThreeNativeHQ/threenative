@@ -138,7 +138,14 @@ a fresh manager Unix-socket probe also returned EPERM. First hosted execution at
 [run 36986637037](https://github.com/ThreeNativeHQ/threenative/actions/runs/36986637037),
 produced an inspected real 640×360 room screenshot on SwiftShader WebGPU: luminance 0.001918947,
 applied 6.4936 stops versus target 6.5515, settled=true. Its gate still failed a browser console 404;
-all-case screenshot qualification, settle/cold-boot assertions and native proof remain open. Earlier lost-workspace results are
+all-case screenshot qualification, settle/cold-boot assertions and native proof remain open.
+[Diagnostic screenshot](../../verification/prd339-exposure-proof/dark-adapted-bb34aff.png) and
+[SHA/adapter provenance](../../verification/prd339-exposure-proof/dark-adapted-bb34aff.json) are
+embedded in PR #397. The next diagnostic run, `36987636389`, conclusively recorded
+`GET /favicon.ico` → 404; only the fixture favicon is corrected. The verifier now persists the full
+report before assertions and rejects `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` even if the harness calls
+its downgraded software-device warning a pass. 36 focused tests pass; root `tsc --noEmit -p tsconfig.json`
+passes after the fixture consistently imports built public core/playtest entries. Earlier lost-workspace results are
 not evidence for this implementation.
 
 ## Implementation decisions

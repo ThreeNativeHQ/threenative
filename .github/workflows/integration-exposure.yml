@@ -34,7 +34,7 @@ jobs:
           pack-archives: 'false'
           save-bundles: 'false'
       - uses: ./.github/actions/playwright-chromium
-      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts
+      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/auto-exposure.spec.ts packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/auto-exposure-proof.spec.ts
       - name: Capture the real exposure graph
         run: node --import tsx packages/create-threenative/__tests__/fixtures/auto-exposure/verify.ts
       - uses: actions/upload-artifact@v4

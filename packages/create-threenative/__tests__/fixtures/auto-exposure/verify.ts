@@ -7,6 +7,7 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../../../../playtest/dist/runner/index.js";
+import { assertExposureProof } from "./proof.js";
 
 const fixture = dirname(fileURLToPath(import.meta.url));
 const root = resolve(fixture, "../../../../..");
@@ -61,28 +62,7 @@ if (!process.argv.includes("--build-only")) {
       join(directory, "report.json"),
       `${JSON.stringify({ sourceSha, ...report }, null, 2)}\n`,
     );
-    const messages = report.observations?.console.filter((entry) =>
-      entry.text.startsWith("TN_AUTO_EXPOSURE:"),
-    );
-    const last = messages?.at(-1);
-    if (last === undefined) throw new Error(`${item.name}: GPU exposure observation missing.`);
-    const measurement = JSON.parse(last.text.slice("TN_AUTO_EXPOSURE:".length));
-    if (
-      !report.pass ||
-      report.capture?.rendererKind !== "webgpu" ||
-      !Object.values(report.capture.adapter).some((value) => value.length > 0) ||
-      measurement.measured !== true ||
-      measurement.applied !== item.applied ||
-      typeof measurement.luminance !== "number" ||
-      measurement.luminance <= 0 ||
-      (item.applied &&
-        (measurement.settled !== true ||
-          Math.abs(measurement.targetStops - measurement.exposureStops) > 0.25)) ||
-      (!item.applied && measurement.exposureStops !== 0)
-    )
-      throw new Error(
-        `${item.name}: exposure proof failed: ${JSON.stringify({ pass: report.pass, diagnostics: report.diagnostics, measurement })}; inspect ${directory}/report.json.`,
-      );
+    const measurement = assertExposureProof(report, item.applied);
     const screenshot = join(directory, "after.png");
     if ((await stat(screenshot)).size === 0)
       throw new Error(`${item.name}: runtime screenshot missing.`);
