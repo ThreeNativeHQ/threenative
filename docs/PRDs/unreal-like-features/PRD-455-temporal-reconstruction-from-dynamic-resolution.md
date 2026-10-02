@@ -203,7 +203,7 @@ branch's generated temporal helper. Fresh combined core validation passes 176 fi
 error-level lint, documentation links and the unchanged evidence budget pass. Core rebuild and
 public playtest build/publint pass; the latter uses the identical assertion-generator check via
 `node --import tsx` because the package-script tsx CLI hits the local IPC restriction. Hosted
-measurement follows; the complete repository board remains unqualified.
+measurement is recorded below; the complete repository board remains unqualified.
 Evidence validation: 29 documentation/citation/budget tests pass; two CLI-launch tests hit the
 known environment prohibition on tsx IPC pipes. Their unchanged 1,200-line and 701-file CLI
 fixtures both pass through `node --import tsx`. The real tracked evidence budget also passes.
@@ -281,3 +281,26 @@ cannot be trusted.
 If the qualified reconstruction path does not beat the existing full-resolution path on a
 GPU-bound workload after accounting for its own cost, it stays optional/experimental rather than
 becoming a default.
+
+
+### Combined canonical motion-history result
+
+Source `e48c31b8ec63a0e74f971c4d7c9938da1eff1589`, exact PR393 input
+`47e188e41601a64decb4fe0f580037546d63b543`, hosted run `37004283653`: all 176 named
+PNG hashes verify and all eleven diagnostics are empty. Actual instance velocity now has maximum
+error 0.000986 pixel; default and dynamic instance arms produce identical PNG sequences. The
+zero-velocity negative control now correctly worsens moving-edge error: 0.04169 versus 0.03024.
+Rigid error remains at most 0.000308 pixel; skinned point error is at most 0.01558 pixel.
+
+The original quality gate still fails: edge error 0.06001 versus no-AA 0.05061, despite residual
+instability improving to 0.03119 from 0.04915. The original reveal score remains 22.6% one frame
+after reveal; causal red tint remains 11.61%, while the strict fixture control measures zero
+causal red tint throughout. No threshold or appearance policy changed. Recompilation also exposes
+a separate one-frame instance corner: frame 23 reports zero object-Y motion instead of the expected
+-0.00289756 NDC, a 0.52156-pixel error; later frames recover. That lifecycle corner remains open.
+
+[Exact combined measurements, dependency ancestry and screenshot provenance](../../verification/prd455/combined-history.json)
+and [actual combined temporal frame 30](../../verification/prd455/combined-temporal.png) retain
+unchanged renderer bytes. The frame was inspected; the matched no-AA reference bytes are unchanged
+from the earlier linked reference. The separate velocity and tone workflows also pass on this exact
+combined source, while temporal intentionally fails the unchanged quality bar.
