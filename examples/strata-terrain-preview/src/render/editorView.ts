@@ -33,6 +33,7 @@ import {
   HemisphereLight,
   Line,
   LineBasicMaterial,
+  type Material,
   Matrix4,
   Mesh,
   type MeshStandardMaterial,
@@ -47,9 +48,11 @@ import { createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPropSurfaces } from "./propMaterials.js";
 import {
+  type IPropMaterials,
   type PropGroundQuery,
   buildPropVariants,
   createProps,
+  flatPropMaterials,
   preparePropTransform,
   readPropTransform,
   writePropTransform,
@@ -421,6 +424,17 @@ export async function createEditorView(
   // material on every brush stroke.
   const propParts = buildPropVariants();
   propSurfaces = await createPropSurfaces(ctx.assets);
+  // A portable GLB cannot carry a node material: the wind, the canopy light and the shader-side
+  // grading have no glTF 2.0 representation, so the export path substitutes this game's own flat
+  // stand-in surface for the live one. Which is a colour, not the look — the exported world is a
+  // static asset for a receiving game to dress, and every appearance decision stays in game source.
+  const exportSurfaces = flatPropMaterials();
+  const portable = new Map<Material, Material>(
+    (Object.keys(propSurfaces.materials) as (keyof IPropMaterials)[]).map((role) => [
+      propSurfaces.materials[role],
+      exportSurfaces[role],
+    ]),
+  );
   const selection = createPropSelection(
     ctx,
     controls,
@@ -657,7 +671,15 @@ export async function createEditorView(
       const transforms = new Map<string, Matrix4>();
       for (const instance of props.byId.values()) {
         if (!assets.has(instance.placement.asset)) {
-          const model = new Mesh(instance.mesh.geometry, instance.mesh.material);
+          const live = instance.mesh.material;
+          if (Array.isArray(live))
+            throw new Error(`Prop '${instance.placement.id}' has a multi-material draw`);
+          const surface = portable.get(live);
+          if (!surface)
+            throw new Error(
+              `No portable surface for prop '${instance.placement.id}' (${instance.placement.asset})`,
+            );
+          const model = new Mesh(instance.mesh.geometry, surface);
           model.name = instance.placement.asset;
           assets.set(instance.placement.asset, model);
         }
@@ -689,6 +711,7 @@ export async function createEditorView(
     dispose(): void {
       selection.dispose();
       propSurfaces?.dispose();
+      exportSurfaces.dispose();
       for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
       clearWater();
       props?.dispose();
