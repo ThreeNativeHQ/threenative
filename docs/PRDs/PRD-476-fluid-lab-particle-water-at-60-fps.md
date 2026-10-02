@@ -4,14 +4,14 @@
 **Complexity:** 9 (HIGH); risk override: none.
 **Owner:** Engine implementation agent
 **Depends on:** None
-**Progress:** 0/8 required boxes verified
+**Progress:** 6/8 required boxes verified (the two frame-time boxes are open; see Blocked on)
 
 ## Context
 
 Absorb `/home/joao/Downloads/fluid-lab-v2.html` ("Fluid Lab 02", 238,714 bytes, SHA-256
 `e389fe7f5198c3ce4365b343281c1e34317c55082514741815e9217ad14f4ef7`) as engine capabilities, remove
 the frame-rate wall that holds it near 30 fps, and rebuild it as a sandbox game on those
-capabilities. This request authorizes the PRD only; nothing below has started.
+capabilities. Phases 1-3 are implemented on PR #389; the two frame-time boxes stay open until a valid presentation lane exists.
 
 The file is a raw Three.js 0.180 (WebGL2) + Rapier 0.19 lab with eight experiments: dam break,
 splash tank, buoyancy, waterfall, fountain, whirlpool, viscosity, and ocean & rain. Its readable
@@ -102,8 +102,8 @@ flowchart LR
 - Data out: `positions` / `velocities` storage nodes; a `density` 3D texture splatted each step;
   `heightAt(x, z)` from a column-height grid copied through `GPUReadback` (reports `staleFrames`);
   `stats` (`count`, `meanCompression`, `maxSpeed`) through the same throttled readback.
-- Fails closed: on a renderer without compute (WebGL2 backend) the constructor throws with a
-  named error rather than drawing nothing.
+- Fails closed: on a renderer without compute (WebGL2 backend) `attachRenderer` throws with a
+  named error rather than drawing nothing (the constructor has no renderer to ask).
 
 **The look stays in the game.** The sandbox game's `src/render/` raymarches the density volume
 (refraction, absorption, Fresnel, debug views ported from `shaders.js`) and owns spray, foam and

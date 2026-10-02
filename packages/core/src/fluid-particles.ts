@@ -161,6 +161,7 @@ function computeKernel(name: string, count: number, body: () => void): ComputeNo
 
 /** Rotate `vector` by the inverse quaternion's rows, one world-to-local basis row per axis. */
 function basisRows(rotation: Vec4): readonly [Vec3, Vec3, Vec3] {
+  finiteVec("collider.rotation", rotation, 4);
   const [x, y, z, w] = rotation;
   const length2 = x * x + y * y + z * z + w * w;
   if (length2 < 1e-12) throw new Error("FluidParticles3D collider rotation must be non-zero.");
@@ -249,6 +250,7 @@ export class FluidParticles3D extends Group {
   readonly #colliderB: TslNode;
   readonly #colliderRows: readonly [TslNode, TslNode, TslNode];
   readonly #readout: ReturnType<typeof instancedArray>;
+  readonly #buffers: readonly ReturnType<typeof instancedArray>[];
   readonly #readback: GPUReadback;
   readonly #columns: readonly [number, number];
   readonly #inject: ComputeNode;
@@ -370,6 +372,20 @@ export class FluidParticles3D extends Group {
     const stats = instancedArray(STAT_WORDS, "uint").toAtomic();
     const volumeBuffer = instancedArray(voxels, "float");
     this.#readout = instancedArray(READOUT_HEADER + vx * vz, "float");
+    this.#buffers = [
+      this.positions,
+      this.velocities,
+      previous,
+      deltas,
+      omega,
+      lambdas,
+      densities,
+      cellCount,
+      cellItems,
+      stats,
+      volumeBuffer,
+      this.#readout,
+    ];
     const readout = this.#readout;
     const positions = this.positions;
     const velocities = this.velocities;
@@ -1034,23 +1050,29 @@ export class FluidParticles3D extends Group {
     this.#assertLive("setColliders");
     if (colliders.length > this.maxColliders)
       throw new Error(`FluidParticles3D.setColliders accepts at most ${this.maxColliders}.`);
-    colliders.forEach((collider, index) => {
+    // Validate every collider before writing any, so a throw leaves the previous set intact.
+    const rows = colliders.map((collider) => {
       finiteVec("collider.center", collider.center, 3);
-      const a = this.#colliderA.array[index] as Vector4;
-      const b = this.#colliderB.array[index] as Vector4;
       if (collider.kind === "sphere") {
         positive("collider.radius", collider.radius);
-        a.set(...collider.center, 0);
-        b.set(collider.radius, 0, 0, collider.radius);
-        return;
+        return undefined;
       }
       finiteVec("collider.halfExtents", collider.halfExtents, 3);
       if (collider.halfExtents.some((half) => half <= 0))
         throw new Error("FluidParticles3D.collider.halfExtents must be positive.");
-      const rows = basisRows(collider.rotation ?? [0, 0, 0, 1]);
+      return basisRows(collider.rotation ?? [0, 0, 0, 1]);
+    });
+    colliders.forEach((collider, index) => {
+      const a = this.#colliderA.array[index] as Vector4;
+      const b = this.#colliderB.array[index] as Vector4;
+      if (collider.kind === "sphere") {
+        a.set(...collider.center, 0);
+        b.set(collider.radius, 0, 0, collider.radius);
+        return;
+      }
       a.set(...collider.center, 1);
       b.set(...collider.halfExtents, new Vector3(...collider.halfExtents).length());
-      rows.forEach((row, axis) =>
+      (rows[index] as readonly Vec3[]).forEach((row, axis) =>
         (this.#colliderRows[axis]?.array[index] as Vector4).set(row[0], row[1], row[2], 0),
       );
     });
@@ -1094,6 +1116,14 @@ export class FluidParticles3D extends Group {
   /** Surface height at `(x, z)`; see {@link sample}. */
   heightAt(x: number, z: number): number {
     return this.sample(x, z).height;
+  }
+
+  /**
+   * Fixed steps between the GPU state the newest copy holds and now; grows until the first copy
+   * lands. `sample` and `heightAt` read the same copy, so this is their age too.
+   */
+  get staleFrames(): number {
+    return this.#readback.staleFrames;
   }
 
   /** Counts and extremes from the newest landed GPU copy, or `undefined` before one lands. */
@@ -1152,6 +1182,7 @@ export class FluidParticles3D extends Group {
     this.#renderer = undefined;
     for (const node of this.warmupNodes) node.dispose();
     this.density.dispose();
+    for (const buffer of this.#buffers) buffer.value.dispose();
     this.#readback.dispose();
     this.#released = true;
   }

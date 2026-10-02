@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FluidParticles3D } from "../src/fluid-particles.js";
 import type { IRendererLike, RendererKind } from "../src/renderer.js";
 
@@ -236,5 +236,28 @@ describe("FluidParticles3D", () => {
       water.gravity = -1;
     }).toThrow("FluidParticles3D.gravity");
     expect(water.viscosity).toBe(0.5);
+  });
+
+  it("frees every storage buffer on detach", () => {
+    const water = new FluidParticles3D({ capacity: 8 });
+    water.attachRenderer(renderer([]));
+    const disposed = vi.spyOn(water.positions.value, "dispose");
+    const velocities = vi.spyOn(water.velocities.value, "dispose");
+    water.detach();
+    expect(disposed).toHaveBeenCalledOnce();
+    expect(velocities).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the previous colliders when a later one is invalid, and rejects a NaN rotation", () => {
+    const water = new FluidParticles3D({ capacity: 8 });
+    water.setColliders([{ kind: "sphere", center: [0, 1, 0], radius: 0.3 }]);
+    expect(() =>
+      water.setColliders([
+        { kind: "sphere", center: [1, 1, 0], radius: 0.3 },
+        { kind: "box", center: [0, 0, 0], halfExtents: [1, 1, 1], rotation: [Number.NaN, 0, 0, 1] },
+      ]),
+    ).toThrow("FluidParticles3D.collider.rotation");
+    expect(water.stats).toBeUndefined();
+    expect(water.staleFrames).toBe(0);
   });
 });

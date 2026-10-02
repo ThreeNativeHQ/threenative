@@ -11,6 +11,7 @@ import {
 } from "three";
 import { vec3 } from "three/tsl";
 import { Sprite, SpriteNodeMaterial } from "three/webgpu";
+import { createWaterVolume } from "./water-volume.js";
 
 /** Debug look only: one lit dot per live particle, a tank outline, a dark backdrop. */
 export function createPointsView(water: FluidParticles3D, scene: Scene, camera: Camera): Group {
@@ -28,7 +29,9 @@ export function createPointsView(water: FluidParticles3D, scene: Scene, camera: 
   const points = new Sprite(material);
   points.count = water.capacity;
   points.frustumCulled = false;
-  view.add(points);
+  const volume = new URLSearchParams(globalThis.location?.search ?? "").has("volume");
+  if (volume) view.add(createWaterVolume(water));
+  else view.add(points);
 
   const { min, max } = water.bounds;
   const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as const;
