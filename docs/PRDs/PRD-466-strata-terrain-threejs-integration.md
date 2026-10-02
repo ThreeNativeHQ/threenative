@@ -1323,3 +1323,35 @@ Closed mountain faces avoid loose scan fringes; desert scans follow fall lines,
 cap heights match the stamps, erosion is confined to the floor, and visible
 strata use a 10.6 m broad band. Latest example tsc/Biome and 69 terrain tests
 pass; final licensed/fallback and preservation measurements are pending.
+
+Final licensed candidate (40/40 PASS, zero diagnostics; NVIDIA Turing WebGPU,
+1920×1080): `artifacts/playtest/worlds-r3-final/`. Frame-window p50 ms:
+alpine ridge/overview 2.2/2.5; desert mesa/overview 1.6/1.5; tundra plain/overview
+2.4/2.0. All six full-resolution captures were inspected. Honest grades:
+alpine 5/10 (continuous scans, but chunky repeats and smooth exposed base);
+desert 4.5/10 (vertical walls/caps, but painted regular strata and sparse dressing);
+tundra 3.5/10 (bounded sun halo, but pale bases and inadequate moss/low-cover fidelity).
+AAA/Gaia is NOT achieved; AC-5 remains open.
+
+Confirmed alpine stripe source: distant half-resolution, 8-sample screen-space AO.
+Albedo/normal/shadow ablations retained banding; fading AO from 30 to 100 m removes
+it in the final full-resolution ridge. Forest/coast keep their original AO recipe.
+Tundra white bases remain unresolved: atlas, normal/specular, fog and root-output
+experiments did not establish a sufficient fix; do not claim their root cause fixed.
+The tundra-specific sky reduces the blown-out halo; ponds/braids still draw.
+
+Preservation fails overall. Linear RGB-weighted luminance quantile differences
+(p5/p50/p95, 0–255): forest meadow +0.439/-0.315/+0.136; overview
+-0.362/-0.137/-0.138; startup -0.160/-0.626/-1.052; river
++0.016/-0.305/+0.928. Coastal ocean -0.783/-0.801/+0.154;
+horizon +0.002/+0.053/0 and alternate sun 0/-0.289/0. Existing tree copies
+reduced the recook drift but did not recover the original optional model identity.
+Forest/coast render code and bake recipes are unchanged; asset preservation is unmet.
+
+Requested example tsc, Biome and 69/69 terrain units PASS. Extra root lint exits 0
+with existing warnings; root typecheck fails on missing declarations for unchanged
+terrain `.mjs` fixtures. Extra root test attempt stopped at the worktree HEAD guard
+because an increment was committed during its build; no root test pass is claimed.
+Root builds also invalidated one capture; the final licensed run had no overlapping
+build. Licensed/fallback directories are restored automatically after the final
+fallback run, whose result is pending here until the runner completes.
