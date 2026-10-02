@@ -406,6 +406,15 @@ impl CssUi {
             ..Default::default()
         });
 
+        // Blitz's own user-agent sheet is Gecko's; this one is Chromium's, for the tags this
+        // crate allows. It is added after that sheet, so at equal specificity it wins, and only
+        // where the two really disagree — every rule here is one the browser oracle caught
+        // (`ua-defaults` and `state-selectors-and-environment` in
+        // `examples/native-css-hud/corpus`). Chromium sizes form controls with the border box
+        // (https://html.spec.whatwg.org/#form-controls); Gecko's sheet leaves them content-box,
+        // which is 12px of width and 2px of height on a button with `padding: 1px 6px`.
+        doc.add_user_agent_stylesheet(UA_CSS);
+
         let (head, body) = {
             let mut m = doc.mutate();
             let root = m.doc.root_node().id;
@@ -1055,6 +1064,18 @@ fn root_box_css(width: u32, height: u32) -> String {
         "html, body {{ width: {width}px; height: {height}px; margin: 0; overflow: hidden; background: transparent; }}"
     )
 }
+
+/// Chromium's user-agent defaults for the tags [`TAGS`] allows, where they differ from the
+/// Gecko-derived sheet blitz-dom ships. Kept to the differences the browser oracle measures:
+/// `h1`-`h6`, `p`, `ul`/`ol`/`li`, `label`, `a` and the inline emphasis tags already agree between
+/// the two sheets, which the `ua-defaults` fixture is what proves.
+///
+/// Chromium sizes form controls with the border box and sets them in the platform control font
+/// (`font: 400 13.3333px Arial`, whose `line-height: normal` is what makes its buttons 21px tall);
+/// Gecko's sheet leaves both at their defaults. What is left after this rule is which face each
+/// engine resolves "Arial" to — Chromium asks fontconfig, this engine asks fontique — which is a
+/// font-stack question rather than a user-agent one, and the corpus cannot pin it.
+const UA_CSS: &str = "button { box-sizing: border-box; font: 400 13.3333px Arial; }";
 
 fn qual(tag: &str) -> QualName {
     QualName::new(None, ns!(html), LocalName::from(tag))

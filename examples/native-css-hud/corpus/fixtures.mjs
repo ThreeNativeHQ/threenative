@@ -197,7 +197,6 @@ export const FIXTURES = [
       .lh{line-height:40px}
       .ta{text-align:center}
       .tr{text-align:right}
-      .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:120px}
       .pre{white-space:pre-wrap}
       .big{font-size:22px;line-height:28px}
     `,
@@ -206,10 +205,18 @@ export const FIXTURES = [
       h("p", { class: "w7" }, t("Bold weight wraps differently from regular text here.")),
       h("p", { class: "ls ta" }, t("Spaced and centred")),
       h("p", { class: "lh tr" }, t("Tall line right")),
-      h("p", { class: "ell" }, t("An ellipsised line that is far too long")),
       h("p", { class: "pre" }, t("Keep   spaces\nand newlines")),
       h("p", { class: "big" }, t("Inventário: ação, coração, não e açúcar — pt-BR sample.")),
     ],
+  },
+  {
+    // Strict: a missing "..." glyph is a semantic failure, not a rasteriser difference, and on a
+    // frame this small it must cost more than the whole-frame glyph allowance can hide.
+    name: "text-ellipsis",
+    size: [160, 48],
+    strict: true,
+    css: "p{margin:0;background:#2a2a30}.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:120px}",
+    tree: [h("p", { class: "ell" }, t("An ellipsised line that is far too long"))],
   },
   {
     name: "inline-runs",
@@ -288,6 +295,7 @@ export const FIXTURES = [
     name: "state-selectors-and-environment",
     size: [320, 160],
     css: `
+      button{font:inherit}
       .btn{display:block;width:100px;height:36px;margin:8px;background:#2563eb;border:0;color:#fff}
       .btn:disabled{background:#555}
       .btn[aria-pressed="true"]{background:#16a34a}
@@ -305,6 +313,50 @@ export const FIXTURES = [
       h("div", { class: "grp" }, h("div", { class: "kid" })),
       h("div", { class: "mq" }),
       h("div", { class: "rm" }),
+    ],
+  },
+  // ---- user-agent defaults -----------------------------------------------------------------
+  // One fixture for the UA sheet: the fixture stylesheet styles nothing here, so every box is
+  // that tag's user-agent default. A flex column keeps sibling margins from collapsing, and the
+  // inline labels are one character each: Chromium rounds every glyph advance to a whole pixel
+  // (FreeType hinting, proven in the report) while this engine keeps the font's fractional
+  // advances, so a longer label would measure hinting drift rather than UA defaults.
+  {
+    name: "ua-defaults",
+    size: [360, 470],
+    css: `
+      .col{display:flex;flex-direction:column}
+    `,
+    tree: [
+      h(
+        "div",
+        { class: "col" },
+        h("h1", {}, t("H1")),
+        h("h2", {}, t("H2")),
+        h("h3", {}, t("H3")),
+        h("h4", {}, t("H4")),
+        h("h5", {}, t("H5")),
+        h("h6", {}, t("H6")),
+        h("p", {}, t("p")),
+        h("ul", {}, h("li", {}, t("one")), h("li", {}, t("two"))),
+        h("ol", {}, h("li", {}, t("one")), h("li", {}, t("two"))),
+        h("label", {}, t("label")),
+        h(
+          "div",
+          {},
+          t(" "),
+          h("a", {}, t("a")),
+          t(" "),
+          h("strong", {}, t("s")),
+          t(" "),
+          h("em", {}, t("e")),
+          t(" "),
+          h("b", {}, t("b")),
+          t(" "),
+          h("i", {}, t("i")),
+        ),
+        h("button", { type: "button" }, t("Btn")),
+      ),
     ],
   },
 ];

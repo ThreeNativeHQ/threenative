@@ -37,3 +37,13 @@ serde_json = "1"
 # The tests build their batches as JSON text, and the sheet fixture contains both quotes and
 # newlines, so it needs a real encoder rather than string concatenation.
 serde_json = "1"
+
+# Four upstream layout and paint gaps the browser oracle in `examples/native-css-hud/corpus`
+# proves cannot be closed from this crate alone: a hoisted `z-index` box painted a frame late, an
+# inline's box reported as its line box, `outline-offset` ignored, and line boxes without a strut.
+# `vendor/PATCHES.md` carries the hunk-by-hunk diff, why each exists, and the fixture that proves
+# it; each fix is one property, so dropping a patch is a one-line change here.
+[patch.crates-io]
+blitz-dom = { path = "vendor/blitz-dom-0.3.0-beta.2" }
+blitz-paint = { path = "vendor/blitz-paint-0.3.0-beta.2" }
+parley = { path = "vendor/parley-0.11.1" }
