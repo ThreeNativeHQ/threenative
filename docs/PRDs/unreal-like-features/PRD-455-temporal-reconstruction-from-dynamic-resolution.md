@@ -179,6 +179,19 @@ unchanged and conservative. A separate matched open-history control and red-exce
 are being added to isolate causal tint; regressions reject neutral brightening/darkening and
 recover a known 25% injected red history. The independent edge-quality bar remains red.
 
+Hosted causal run `37001381134`, source `5c071b4b757537b0fa48f780839b6a96933eafe5`, captures
+176 matched sequence frames across 11 arms with empty diagnostics. Against each policy's own
+never-occluded temporal control, standard temporal AA has red tint on 11.61% of revealed pixels
+one frame later; strict rejection has 0% in all eight reveal frames; unchecked history has 100%
+throughout. [Exact causal results and unchanged original scores](../../verification/prd455/causal-history.json)
+and the [actual matched open-history frame](../../verification/prd455/causal-open-control.png)
+retain this diagnostic. Frame bytes/hashes were checked and the selected control was inspected.
+The new causal diagnostic does not replace or weaken the original gate. Appearance experiments
+pause here until PR393's verified instance-history fix is consumed and the fixed benchmark reruns.
+Evidence validation: 29 documentation/citation/budget tests pass; two CLI-launch tests hit the
+known environment prohibition on tsx IPC pipes. Their unchanged 1,200-line and 701-file CLI
+fixtures both pass through `node --import tsx`. The real tracked evidence budget also passes.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
