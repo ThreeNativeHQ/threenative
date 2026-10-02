@@ -24,6 +24,7 @@ import {
   max,
   mix,
   mx_noise_float,
+  normalMap,
   normalWorldGeometry,
   positionGeometry,
   positionLocal,
@@ -38,7 +39,7 @@ import {
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, type Node } from "three/webgpu";
 import { WORLD_ROCKS } from "../world/terrainAssets.js";
-import type { WorldName } from "./biomes.js";
+import { BIOMES, type WorldName, biomeWeights } from "./biomes.js";
 import { lightNeedles } from "./propMaterials.js";
 import type { IPropPart, PropRole } from "./props.js";
 
@@ -180,12 +181,17 @@ function surface(
         moss,
       );
       material.aoNode = mix(1, 0.65, base);
-      if (world === "alpine") {
-        const drift = mx_noise_float(positionWorld.mul(0.06));
-        const snow = smoothstep(70, 110, positionWorld.y.add(drift.mul(18))).mul(
-          smoothstep(0.7, 0.92, normalWorldGeometry.y),
-        );
-        material.colorNode = mix(material.colorNode, vec3(0.78, 0.82, 0.87), snow);
+      if (world === "alpine" || world === "tundra") {
+        const snow = biomeWeights(
+          BIOMES[world],
+          float(1).sub(normalWorldGeometry.y),
+          float(0),
+          growth,
+        ).snow as Node<"float">;
+        material.colorNode = mix(material.colorNode, vec3(0.84, 0.87, 0.91), snow);
+        material.roughnessNode = mix(0.96, 0.82, snow);
+        if (source.normalMap)
+          material.normalNode = normalMap(texture(source.normalMap), vec2(mix(1, 0.2, snow)));
       }
     }
     if (cutout) {

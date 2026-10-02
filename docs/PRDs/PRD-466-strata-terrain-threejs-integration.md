@@ -1538,3 +1538,39 @@ procedural needles and faceted untextured crags retain obvious fallback geometry
 The absent-licensed lane proves functionality, not visual parity. Final documentation
 link check PASS (**2,386 links**); no licensed bytes, ocean source, biomes.ts,
 otherBiome appearance branch or bake recipe is committed.
+
+### AC-5 round 14 — light, atmosphere and grade (2026-10-02; in progress)
+
+Game layer: `src/render/sky.ts`, `biomes.ts`, `terrain.ts`; the installed
+Daylight/VirtualShadowNode, Three fog nodes, GTAO/denoiser and RenderChain are
+reused. The mechanism is already shipped; per-world appearance belongs here.
+No licensed asset bytes, push or merge are authorized in this round.
+
+- [ ] Calibrate all five worlds against the merged r13 captures and Gaia references; proof: full-resolution display-luminance p05/p25/p50/p75/p95, saturation and standard deviation, same-build `?off=` stage ablations.
+- [ ] Tune biome sun/fill, height haze with sunward scattering, alpha-preserving contact AO and soft snow response; proof: licensed/fallback shared scenario at 5293, ocean verifier and full-resolution inspection.
+- [ ] Complete requested gates and local commits; proof: example tsc, root Biome, terrain Vitest, every captured view CPU p50 ≤4 ms and normalized quantile deltas ≤0.5; final captures `artifacts/playtest/light-final/`.
+
+Merged r13 reference measurements (normalized display RGB luminance, no linear
+decode): Gaia forest mean **0.3726**, q05/q25/q50/q75/q95
+**0.0655/0.1815/0.3608/0.5203/0.7909**, mean HSV saturation **0.4352**,
+σ **0.2216**. Gaia alpine mean **0.4892**, quantiles
+**0.2621/0.4308/0.5097/0.5534/0.6630**, saturation **0.1689**, σ **0.1133**.
+Our meadow-close median **0.2505**, saturation **0.6224**; desert-mesa
+σ **0.0856**; alpine-ridge q05/q95 **0.1588/0.7131**. These imply lifting
+forest readable illumination while reducing saturation, increasing desert
+directional contrast, and reducing alpine sky dominance rather than applying
+one global contrast/exposure setting. Baseline scenario is running before edits.
+
+Pass 1 `artifacts/playtest/light-pass1/`: shared scenario **42/42 PASS**,
+zero diagnostics, all 15 capture-window CPU p50s **1.1–2.9 ms**; final
+per-view medians **1.1–3.1 ms**. Example tsc and root Biome **PASS**
+(2,656 files; warnings retained); terrain Vitest **69/69 PASS**.
+Alpine ridge q05/q50/q95 **0.1538/0.4410/0.7109 →
+0.2053/0.4659/0.6852**, σ **0.1767 → 0.1430**: closer to Gaia.
+Forest close saturation **0.6156 → 0.5281**, but median **0.2406 →
+0.2280**; lower sun lights camera-hidden faces, so the next pass tests a
+camera-facing afternoon direction. Tundra lost foreground light; restore
+readable fill while retaining a higher key/fill ratio. Inspection found
+`authored-terrain` receives shadows but never casts: test that existing
+shadow mechanism before adding another contrast effect. Final/fallback and
+same-build ablations remain pending; AC-5 remains open.

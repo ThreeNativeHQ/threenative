@@ -626,13 +626,14 @@ export function createGroundMaterial(
     .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
+  let snowCover: Node<"float"> = float(0);
   for (const key of LAYERS) {
     const weight = weights[key];
     // A surface takes the ground over once it *is* most of the ground. Blending every layer by a
     // share of the running total instead leaves a beach a third sand, a third grass and a third
     // dirt, which is mud with a texture on it.
     const surface = albedoOf(key);
-    const relief = reliefOf(key, key === "rock" ? 0.52 : 0.32);
+    const relief = reliefOf(key, key === "rock" ? 0.52 : key === "snow" ? 0.18 : 0.32);
     // No displacement maps in these starter sets: normal relief breaks the blend edge,
     // while slope, elevation and curvature determine which surface belongs here.
     const reliefHeight = relief.crevice.sub(0.8).mul(0.12).add(breakUp.mul(0.045));
@@ -642,9 +643,12 @@ export function createGroundMaterial(
       .mul(0.7)
       .add(mx_noise_float(positionWorld.mul(0.65)).mul(0.16));
     const over =
-      key === "rock"
-        ? smoothstep(0.34, 0.51, weight.add(rockHeight))
-        : smoothstep(0.12, 0.82, weight.add(reliefHeight));
+      key === "snow" && otherBiome
+        ? weight.add(breakUp.mul(0.025)).clamp(0, 1)
+        : key === "rock"
+          ? smoothstep(0.34, 0.51, weight.add(rockHeight))
+          : smoothstep(0.12, 0.82, weight.add(reliefHeight));
+    if (key === "snow") snowCover = over;
     albedo = mix(albedo, surface, over);
     normal = mix(normal, relief.tilt, over);
   }
@@ -691,7 +695,7 @@ export function createGroundMaterial(
     continuation,
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
   material.roughnessNode = mix(
-    otherBiome ? float(0.94) : mix(0.84, 0.98, dryness),
+    otherBiome ? mix(0.94, 0.82, snowCover) : mix(0.84, 0.98, dryness),
     0.48,
     curvature.wetBank,
   );

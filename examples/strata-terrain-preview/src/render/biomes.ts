@@ -29,7 +29,12 @@ export interface IBiome {
   readonly snow: readonly [number, number, number];
   readonly maps: Record<LayerKey, IGroundMaps>;
   readonly horizon: "mountain" | "alpine" | "mesa" | "plain";
-  readonly sun: { readonly color: number; readonly intensity: number; readonly direction: RGB };
+  readonly sun: {
+    readonly color: number;
+    readonly intensity: number;
+    readonly direction: RGB;
+    readonly shadowRadius: number;
+  };
   readonly sky: {
     turbidity: number;
     rayleigh: number;
@@ -37,7 +42,15 @@ export interface IBiome {
     mieDirectionalG: number;
   };
   readonly fill: { readonly sky: number; readonly ground: number; readonly intensity: number };
-  readonly haze: { readonly color: number; readonly density: number };
+  readonly haze: {
+    readonly color: number;
+    readonly density: number;
+    readonly valleyDensity: number;
+    readonly height: number;
+    readonly sunScatter: number;
+  };
+  readonly skyRadiance: number;
+  readonly saturation: number;
   readonly exposure: number;
   readonly clouds: number;
 }
@@ -51,11 +64,19 @@ const temperate: IBiome = {
   snow: [145, 195, 0.22],
   maps: GROUND_MAPS,
   horizon: "mountain",
-  sun: { color: 0xffeed0, intensity: 4.6, direction: [-180, 150, -120] },
+  sun: { color: 0xffe3b5, intensity: 5.8, direction: [-180, 110, -140], shadowRadius: 1.7 },
   sky: { turbidity: 2, rayleigh: 3, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
-  fill: { sky: 0xa8c8e8, ground: 0x464937, intensity: 0.62 },
-  haze: { color: 0x8ca8ba, density: 0.0008 },
-  exposure: 2 ** -0.38,
+  fill: { sky: 0xa8c8e8, ground: 0x464937, intensity: 0.72 },
+  haze: {
+    color: 0x8ca8ba,
+    density: 0.0008,
+    valleyDensity: 0.000006,
+    height: 120,
+    sunScatter: 0.32,
+  },
+  skyRadiance: 0.27,
+  saturation: 0.8,
+  exposure: 2 ** -0.26,
   clouds: 0.76,
 };
 
@@ -68,9 +89,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "alpine",
     grassTint: [0.43, 0.8, 0.35],
     stoneTint: [0.69, 0.72, 0.77],
-    snowTint: [1.6, 1.65, 1.7],
+    snowTint: [1.9, 1.93, 2],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [54, 88, 0.39],
+    snow: [48, 96, 0.39],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -81,10 +102,18 @@ export const BIOMES: Record<WorldName, IBiome> = {
       },
       rock: ROCKFACE_MAPS,
     },
-    sun: { color: 0xfff3e5, intensity: 4.6, direction: [180, 165, 140] },
+    sun: { color: 0xffe7c7, intensity: 5.2, direction: [180, 130, 140], shadowRadius: 1.5 },
     sky: { turbidity: 1.3, rayleigh: 2.1, mieCoefficient: 0.0018, mieDirectionalG: 0.8 },
-    haze: { color: 0x9aafc3, density: 0.00035 },
-    fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.65 },
+    haze: {
+      color: 0x9aafc3,
+      density: 0.0005,
+      valleyDensity: 0.000009,
+      height: 105,
+      sunScatter: 0.28,
+    },
+    skyRadiance: 0.24,
+    saturation: 0.86,
+    fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.85 },
     clouds: 0.34,
   },
   desert: {
@@ -108,11 +137,19 @@ export const BIOMES: Record<WorldName, IBiome> = {
       },
       rock: GROUND_MAPS.rock,
     },
-    sun: { color: 0xffe0ad, intensity: 4.8, direction: [160, 140, 85] },
+    sun: { color: 0xffe0ad, intensity: 6.2, direction: [160, 190, 85], shadowRadius: 1.1 },
     sky: { turbidity: 3.5, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.8 },
-    fill: { sky: 0xc2d3db, ground: 0x9e7147, intensity: 0.55 },
-    haze: { color: 0xd1b99b, density: 0.0011 },
-    exposure: 2 ** -0.48,
+    fill: { sky: 0xc2d3db, ground: 0x9e7147, intensity: 0.32 },
+    haze: {
+      color: 0xd1b99b,
+      density: 0.0011,
+      valleyDensity: 0.000004,
+      height: 90,
+      sunScatter: 0.22,
+    },
+    skyRadiance: 0.27,
+    saturation: 0.94,
+    exposure: 2 ** -0.52,
     clouds: 0.12,
   },
   tundra: {
@@ -121,9 +158,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "plain",
     grassTint: [0.94, 0.91, 0.67],
     stoneTint: [0.7, 0.74, 0.77],
-    snowTint: [1.2, 1.24, 1.28],
+    snowTint: [1.45, 1.5, 1.58],
     distantStone: [0.18, 0.2, 0.21],
-    snow: [17, 30, 0.18],
+    snow: [12, 36, 0.22],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -139,10 +176,18 @@ export const BIOMES: Record<WorldName, IBiome> = {
         normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
       },
     },
-    sun: { color: 0xe9efff, intensity: 1.6, direction: [-180, 90, -120] },
+    sun: { color: 0xe9efff, intensity: 2.2, direction: [-180, 65, -120], shadowRadius: 2.1 },
     sky: { turbidity: 4.2, rayleigh: 1.6, mieCoefficient: 0.002, mieDirectionalG: 0.68 },
-    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.15 },
-    haze: { color: 0xb1c0c9, density: 0.00065 },
+    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 0.78 },
+    haze: {
+      color: 0xb1c0c9,
+      density: 0.00065,
+      valleyDensity: 0.000012,
+      height: 35,
+      sunScatter: 0.18,
+    },
+    skyRadiance: 0.13,
+    saturation: 0.96,
     exposure: 2 ** -0.28,
     clouds: 0.9,
   },
@@ -176,13 +221,7 @@ export function biomeWeights(
     positionWorld.y.add(drift.mul(22)).add(hollow.max(0).mul(biome.world === "alpine" ? 18 : 0)),
   ).mul(
     float(1)
-      .sub(
-        smoothstep(
-          biome.world === "alpine" ? 0.16 : 0.04,
-          biome.world === "alpine" ? 0.33 : biome.snow[2],
-          steep,
-        ),
-      )
+      .sub(smoothstep(biome.world === "alpine" ? 0.16 : 0.04, biome.snow[2], steep))
       .mul(float(1).sub(exposure.mul(0.28))),
   );
   const cells = mx_worley_noise_vec2(
