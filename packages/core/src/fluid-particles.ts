@@ -284,9 +284,9 @@ export class FluidParticles3D extends Group {
     const spacing = options.spacing ?? DEFAULT_SPACING;
     const bounds = options.bounds ?? DEFAULT_BOUNDS;
     const iterations = options.iterations ?? 3;
-    const viscosity = options.viscosity ?? 0.075;
-    const cohesion = options.cohesion ?? 0.08;
-    const vorticity = options.vorticity ?? 0.003;
+    const viscosity = options.viscosity ?? 0.008;
+    const cohesion = options.cohesion ?? 0.03;
+    const vorticity = options.vorticity ?? 0.015;
     const gravity = options.gravity ?? 9.81;
     const maxSpeed = options.maxSpeed ?? 18;
     const timeStep = options.timeStep ?? 1 / 60;
@@ -579,9 +579,9 @@ export class FluidParticles3D extends Group {
             b.w.greaterThan(1.5),
             vec3(
               hash(slot.add(relative)).sub(0.5),
-              0,
+              hash(slot.add(relative).add(uint(104729))).sub(0.5),
               hash(slot.add(relative).add(uint(7919))).sub(0.5),
-            ).mul(0.008),
+            ).mul(c.w.mul(0.1)),
             vec3(0),
           );
           const placed = a.xyz.add(vec3(float(ix), float(iy), float(iz)).mul(c.w)).add(jitter);

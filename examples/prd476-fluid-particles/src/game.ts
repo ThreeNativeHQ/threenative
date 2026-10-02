@@ -15,7 +15,16 @@ class DamBreakScene extends Scene<IFluidParticlesState, IPhysicsContext> {
   override enter(
     ctx: ICtx<IFluidParticlesState, IPhysicsContext>,
   ): SceneFrame<IFluidParticlesState, IPhysicsContext> {
-    const water = new FluidParticles3D({ capacity: 6000 });
+    const query = new URLSearchParams(globalThis.location?.search ?? "");
+    const knob = (name: string): number | undefined =>
+      query.has(name) ? Number(query.get(name)) : undefined;
+    const water = new FluidParticles3D({
+      capacity: 6000,
+      viscosity: knob("visc"),
+      cohesion: knob("coh"),
+      iterations: knob("iter"),
+      vorticity: knob("vort"),
+    });
     ctx.add(water);
     ctx.add(createPointsView(water, ctx.scene, ctx.camera));
     // ?stress=1 fills the whole tank to capacity (6,000 particles) and keeps no gate.
@@ -58,6 +67,10 @@ class DamBreakScene extends Scene<IFluidParticlesState, IPhysicsContext> {
         return (raw.info?.compute?.timestamp ?? -1) / steps;
       };
     }
+    (globalThis as Record<string, unknown>).__fluidProbe = () => ({
+      steps: water.steps,
+      stats: water.stats,
+    });
     let peakFrontX = 0;
     return (frame) => {
       if (water.steps === GATE_STEPS) water.setColliders([]);

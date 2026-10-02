@@ -23,6 +23,7 @@ const {
   max,
   min,
   mix,
+  select,
   normalize,
   pow,
   positionWorld,
@@ -62,7 +63,16 @@ export function createWaterVolume(
   const extent = vec3(...water.volumeSize.map((count) => count * voxel));
   const volume = water.density;
 
-  const density = (p: N): N => texture3D(volume, p.sub(bmin).div(extent).clamp(0, 1)).x;
+  // Sample inside the walls: the field fades over the last spacing next to a wall, which would
+  // read as a free surface pressed against the glass. Clamping keeps the water full to the wall.
+  const pad = water.spacing * 1.2;
+  const inner = (p: N): N =>
+    vec3(
+      clamp(p.x, bmin.x.add(pad), bmax.x.sub(pad)),
+      max(p.y, bmin.y.add(pad)),
+      clamp(p.z, bmin.z.add(pad), bmax.z.sub(pad)),
+    );
+  const density = (p: N): N => texture3D(volume, inner(p).sub(bmin).div(extent).clamp(0, 1)).x;
   const gradient = (p: N): N => {
     const e = voxel * 1.5;
     return vec3(
@@ -95,14 +105,24 @@ export function createWaterVolume(
     const hit = float(0).toVar();
     const hitPoint = vec3(0).toVar();
     const previous = float(0).toVar();
+    // A ray that starts under water (looking through the glass) travels until it leaves the water;
+    // one that starts in air travels until it meets the surface.
+    const entry = origin.add(direction.mul(near));
+    const inside = density(entry).greaterThan(DENSITY_THRESHOLD);
+    previous.assign(density(entry));
     Loop(steps, () => {
       const p = origin.add(direction.mul(t));
       const d = density(p);
-      If(d.greaterThan(DENSITY_THRESHOLD).and(hit.lessThan(0.5)), () => {
+      const crossed = select(
+        inside,
+        d.lessThan(DENSITY_THRESHOLD),
+        d.greaterThan(DENSITY_THRESHOLD),
+      );
+      If(crossed.and(hit.lessThan(0.5)), () => {
         const k = clamp(
           float(DENSITY_THRESHOLD)
             .sub(previous)
-            .div(max(d.sub(previous), 1e-4)),
+            .div(max(d.sub(previous).abs(), 1e-4).mul(select(inside, float(-1), float(1)))),
           0,
           1,
         );
@@ -114,7 +134,22 @@ export function createWaterVolume(
       t.addAssign(stride);
     });
 
-    // Shading at the surface: gradient normal, refracted floor, Fresnel, sun glint.
+    // Through the glass: Beer-Lambert along the path in water, then whatever the ray reaches.
+    const farPoint = origin.add(direction.mul(far));
+    const leave = select(hit.greaterThan(0.5), hitPoint, farPoint);
+    const path = clamp(leave.sub(entry).length().mul(2.2), 0, 6);
+    const trans = exp(absorption.mul(path).negate());
+    const sideBody = mix(deep, shallow, clamp(float(1.1).sub(path.mul(0.25)), 0, 1));
+    const underside = mix(sky(vec3(direction.x, direction.y.negate(), direction.z)), shallow, 0.35);
+    const onFloor = leave.y.lessThan(lo[1] + 0.05);
+    const sideEnd = select(
+      hit.greaterThan(0.5),
+      underside,
+      select(onFloor, floorColor(leave).mul(0.8), mix(deep, shallow, 0.45)),
+    );
+    const sideColor = sideEnd.mul(trans).add(sideBody.mul(vec3(1).sub(trans)));
+
+    // From the air: gradient normal, refracted floor, Fresnel, sun glint.
     const normal = normalize(
       gradient(hitPoint)
         .negate()
@@ -125,7 +160,6 @@ export function createWaterVolume(
     const bent = refract(direction, normal, float(1 / 1.33));
     const toFloor = max(hitPoint.y.sub(lo[1]), 0.02).div(max(bent.y.negate(), 0.05));
     const floorPoint = hitPoint.add(bent.mul(toFloor));
-    // Path length through water, from the hit to the floor, drives the colour.
     const through = clamp(toFloor, 0, 6);
     const transmittance = exp(absorption.mul(through).negate());
     const body = mix(deep, shallow, clamp(through.mul(-0.4).add(1.2), 0, 1));
@@ -137,8 +171,9 @@ export function createWaterVolume(
       clamp(dot(reflect(direction, normal), normalize(vec3(0.4, 0.8, 0.3))), 0, 1),
       90,
     ).mul(1.2);
-    const color = mix(refracted, mirror, fresnel).add(sun);
-    return vec4(color, hit);
+    const airColor = mix(refracted, mirror, fresnel).add(sun);
+    const color = select(inside, sideColor, airColor);
+    return vec4(color, select(inside, float(1), hit));
   });
 
   const material = new MeshBasicNodeMaterial({
