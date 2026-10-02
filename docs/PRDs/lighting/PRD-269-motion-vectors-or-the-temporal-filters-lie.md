@@ -124,7 +124,7 @@ is inferred from the CPU tests.
    current world matrix into the previous-transform slot and the spec fails with a zero buffer over
    the mesh.
 
-- [ ] **Per-instance motion is per-instance.** proof: PR #393 `InstancedMesh` and `BatchedMesh` per-instance GPU assertions (pending).
+- [ ] **Per-instance motion is per-instance.** proof: hosted `37003076606` at `47e188e4` passes the browser `InstancedMesh` and `BatchedMesh` moving/static cases (0.015625-pixel maximum error); shared-transform mutation and native qualification remain open.
    With an `InstancedMesh` where one instance moves and the
    rest are still, velocity is non-zero only over the moving instance. *Mutation:* track one
    transform for the whole `InstancedMesh` and the spec fails by marking every instance as moving.
@@ -235,3 +235,9 @@ Packaging/scaffolding follow-up: 73/74 initially passed; the byte-stability pin 
 Independent review found and reproduced a consumer-upgrade refusal: the prior `dcbc5131` patch's changed hunks matched neither stock nor the candidate. The exact prior files (Git blobs from develop `416ffd7c`) now have a four-file migration with full old/output blob checks. Every file is still preflighted before any writes; unknown edits refuse. The real upgrade regressions were **2 failed / 5 passed** before this repair and now pass for LF and CRLF, idempotence, and one-byte tamper refusal without partial writes. Fresh-stock and packed-consumer coverage remains green (**15/15** upgrade/packaging tests). This migration does not accept arbitrary historical or custom patches.
 
 Final local core lane after the upgrade repair: **2,221 passed, 2 skipped, 175 files** (`pnpm exec vitest run --maxWorkers=1 packages/core`, 114.77 s). Independent review cleared the renderer repair and verified actual packed prior-version LF/CRLF upgrades, byte equality, idempotence and tamper refusal; its final uploader/static sanity lane passed 30/30. The hosted MRT extension remains the next proof gate; original acceptance stays open pending actual execution.
+
+## Repaired instance velocity: actual WebGPU proof
+
+[Run 37003076606](https://github.com/ThreeNativeHQ/threenative/actions/runs/37003076606) passed at source `47e188e41601a64decb4fe0f580037546d63b543`. Artifact `11224711152` has verified ZIP SHA-256 `bca60e256985287d5eeeda1b7942d17ef5a3c5b5a056f35f7093520a7a1ae667`. On Google SwiftShader WebGPU, the authored `BatchedMesh`, default `InstancedMesh` and `DynamicDrawUsage` arms each rendered nine RAF-separated frames and matched the signed current-minus-previous oracle within **0.015625 pixel**, below the fixed **0.05-pixel** bound. First-frame, static-footprint and stopped-frame velocity were exactly **0**; the moving footprint contained **25,676** nonzero pixels. Positive diagnostics were empty. The actual missing-history batch control measured **64 pixels** of error and failed exactly the movement and oracle assertions.
+
+All four runtime PNGs were visually inspected. The three positive PNGs are byte-identical, so one unchanged image is retained for them: [repaired instance velocity](../../verification/prd269/instanced-37003076606.png), [missing-history control](../../verification/prd269/without-history-37003076606.png), and [full adapter/readback/provenance](../../verification/prd269/velocity-37003076606.json). Left halves are actual colour; right halves visualize actual velocity. These captures qualify the explicit browser cases, not native rendering, skinned deformation, active temporal rejection or hardware cost. The original acceptance checkboxes remain open where their complete proof is still pending.
