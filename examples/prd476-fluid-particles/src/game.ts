@@ -41,6 +41,22 @@ class DamBreakScene extends Scene<IFluidParticlesState, IPhysicsContext> {
         await device?.queue.onSubmittedWorkDone();
         return (performance.now() - start) / steps;
       };
+      // GPU-side cost per step from timestamp queries (browser `allow_unsafe_apis` dawn feature);
+      // the pool holds 2,048 queries at two per pass, so keep `steps` under ~40.
+      const raw = ctx.renderer.raw as {
+        backend?: { trackTimestamp?: boolean };
+        info?: { compute?: { timestamp?: number } };
+        resolveTimestampsAsync?: (type: string) => Promise<number>;
+      };
+      (globalThis as Record<string, unknown>).__fluidGpuMs = async (steps: number) => {
+        if (raw.backend === undefined || raw.resolveTimestampsAsync === undefined) return -1;
+        raw.backend.trackTimestamp = true;
+        for (let step = 0; step < steps; step += 1) water.process(ctx.renderer);
+        await device?.queue.onSubmittedWorkDone();
+        await raw.resolveTimestampsAsync("compute");
+        raw.backend.trackTimestamp = false;
+        return (raw.info?.compute?.timestamp ?? -1) / steps;
+      };
     }
     let peakFrontX = 0;
     return (frame) => {
