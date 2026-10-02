@@ -93,7 +93,7 @@ const RIG = {
   /** Edge of the sky box in metres. The camera's far plane is 5000, and the box's corners are half a
    *  diagonal inside that, so this is as large as the world can carry. */
   skySize: 5000,
-  /** Two 2048-pixel clip levels cover contacts and the elevated overview, at four bindings. */
+  /** Two cached 4096-pixel levels retain four bindings; the far level resolves 15.6 cm. */
   shadowExtents: [24, 320],
 } as const;
 
@@ -227,7 +227,8 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.shadow.normalBias = 0.035;
   sun.shadow.shadowNode = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
-    mapSize: 2048,
+    mapSize: 4096,
+    refreshStep: [0.2, 0.125],
   });
   // A fixed world-origin target keeps the L-key direction independent of the following sky.
   sun.position.copy(direction);

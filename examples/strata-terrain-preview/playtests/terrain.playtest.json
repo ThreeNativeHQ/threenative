@@ -819,6 +819,65 @@
             "equals": true
           }
         ]
+      },
+      {
+        "entity": "player",
+        "component": "horizon",
+        "lte": 0.0001,
+        "allowTrivial": "Measured gap between all 1024 continuation seam vertices and their playable baked samples.",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": 0
+          },
+          {
+            "label": "desert-mesa",
+            "equals": 0
+          },
+          {
+            "label": "tundra-plain",
+            "equals": 0
+          }
+        ],
+        "path": "seamGap"
+      },
+      {
+        "entity": "player",
+        "component": "horizon",
+        "gte": 1024,
+        "allowTrivial": "Every perimeter vertex must be observed, including all four corners.",
+        "path": "samples"
+      },
+      {
+        "entity": "player",
+        "component": "visible",
+        "atSteps": [
+          {
+            "label": "meadow-close",
+            "equals": false
+          },
+          {
+            "label": "overview",
+            "equals": false
+          },
+          {
+            "label": "river",
+            "equals": false
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": false
+          },
+          {
+            "label": "desert-mesa",
+            "equals": false
+          },
+          {
+            "label": "tundra-plain",
+            "equals": false
+          }
+        ],
+        "allowTrivial": "Scripted cameras hide only the rendering mesh; ground contacts and travel still exercise its physics body."
       }
     ]
   }

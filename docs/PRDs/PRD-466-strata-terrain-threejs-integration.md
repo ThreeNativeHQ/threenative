@@ -1637,3 +1637,50 @@ rocky coast shoreline. Structural defects that persist across rounds: card-spruc
 transmission), smooth un-eroded continuation mountains, noise-blob snow, coarse far shadow cascade
 (stair-stepping), flat light, visible player capsule. Captures: `docs/verification/visuals/strata/v9-*.jpg`.
 AC-5 stays open.
+
+#### 2026-10-02 Round 15 — terrain form lane
+
+Scope: example-owned continuation ridges/drainage/talus, irregular mesa stamps
+and strata projection, shadow cascade resolution, showcase-only capsule visibility,
+and tundra cover/projection defects. Protected: sun, sky, haze, tone/grade, GTAO
+and snow blend; the parallel atmosphere lane owns them. No push or merge.
+
+Acceptance: judge all five worlds at 1920×1080 with 1:1 defect crops; improve
+or retain luminance quantiles within 0.5 where appearance is protected. Run
+example tsc, root Biome, terrain Vitest, full licensed and absent-licensed
+scenario on port 5297, all measured view p50 ≤4 ms, and verify-ocean. Final
+captures: example `artifacts/playtest/form-final/` and `fallback/`. Record
+root causes, bake time/JSON cost where applicable, grades and timings here.
+
+Work is in progress; V9 observations supply the visual red.
+
+Round 15 first implementation: continuation uses the installed 513² / 5 km
+Terrain authoring field, with domain-warped ridged massifs/spurs, hydraulic
+channels and thermal talus; runtime reads that buffer through Heightfield.
+Initial erosion 5.98 s / 1,753,308 JSON bytes; refined candidate 5.75 s /
+1,755,747 bytes. Output remains generated/ignored, as the other baked arrays do.
+The inner ring retains all 1,024 playable edge vertices. Two-scale triplanar
+RockFace003 replaces the broad distant texture scale. Desert stamps now use
+lobes, deep notches and wall channels plus detached buttes/fins; two strata
+scales have world-space offsets. Existing talus apron profiles remain.
+
+Tundra root causes: near-eye jittered grids and periodic sine acceptance,
+2.8× widened low scrub cards, a distant mountain-normal substitution on the
+plain, planar gravel/lichen on slopes, and an edge smoothing derivative that
+restarted the slope. The candidate uses uniform disc sampling/noise acceptance,
+narrow upright scrub, consistent ground normals/triplanar projections, and
+continues the measured edge tangent. Snow blend is untouched.
+
+Capsule: main.ts accepts `?showcase=1`; only the Mesh visibility changes, and
+interactive walking defaults to its previous body/camera. Static cameras hide
+the body via Mesh visibility. Shadow-only change: 4096 map edges, refreshStep
+[0.2, 0.125], unchanged [24, 320] extents and all sun/sky/haze values.
+
+Verified first pass: example tsc exit 0; root Biome exit 0 (warnings only);
+terrain Vitest 69/69 PASS; verify-ocean PASS. Pass1's ten CPU p50s all ≤4 ms
+(max 3.5), versus baseline river/player 4.1/4.5 ms. Pass1 full scenario stayed
+red: exposing debug on entity `terrain` activated the harness's streaming/
+topology gates; 9 observations were missing. Seam measurements moved into the
+existing player debug snapshot; the corrected full run is pending. No gate
+was waived. Full-res review improved mesas and cover; mountain upper faces
+were still soft, so a bounded form refinement is in progress. AC-5 stays open.

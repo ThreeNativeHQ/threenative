@@ -171,6 +171,7 @@ function median(values: readonly number[]): number {
 }
 
 const initialState = {
+  showcase: false,
   world: "forest",
   groundBiome: "baked",
   frames: 0,
@@ -305,7 +306,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       this.#player = player;
       ctx.entities.add("player", {
         mesh: actor,
-        debug: () => ({ grounded: player.grounded, position: actor.position.toArray() }),
+        debug: () => ({
+          grounded: player.grounded,
+          position: actor.position.toArray(),
+          visible: actor.visible,
+          horizon: {
+            seamGap: mesh.userData.horizonSeamGap,
+            samples: mesh.userData.horizonSeamSamples,
+          },
+        }),
         dispose: () => {
           player.dispose();
           actor.geometry.dispose();
@@ -793,7 +802,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.beforeRender(() => {
         renderedFrames[world]++;
         const view = ctx.state.getState().view;
-        actor.material.visible = view === "player";
+        actor.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);

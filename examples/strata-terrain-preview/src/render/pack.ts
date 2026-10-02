@@ -363,7 +363,7 @@ export async function loadPack(
       }
       if (world === "tundra" && one.asset === "grass") geometry.scale(1.35, 1, 1.35);
       if (world === "tundra" && one.asset === "bush") geometry.scale(0.18, 1, 0.18);
-      if (world === "tundra" && one.asset === "scrub") geometry.scale(2.8, 1.2, 2.8);
+      if (world === "tundra" && one.asset === "scrub") geometry.scale(1.1, 2, 1.1);
       if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
       if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
       // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
