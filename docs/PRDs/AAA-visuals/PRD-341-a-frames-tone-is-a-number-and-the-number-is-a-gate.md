@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-341 — a frame's tone is a number, and the number is a gate
 
-**Status:** PROPOSED — filed 2026-09-03, measured at `43d03e6a`. Batch:
+**Status:** IN PROGRESS — implementation started 2026-10-02 from `d7277838`; original proposal
+filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Land this first** — it is what makes every other PRD in the
 batch judgeable, and it is the cheapest thing here. Source studied:
 [TheLongSilence](https://github.com/achimala/TheLongSilence) `tools/levels.mjs`, `tools/judgeset.mjs`.
@@ -15,6 +16,28 @@ report two numbers where five are needed.
 
 **Complexity:** a histogram over pixels already decoded, a new assertion kind, a CLI report =
 **LOW**. An afternoon, if `assert.tone` reuses the existing capture path.
+
+## Implementation phases (2026-10-02)
+
+### Phase 1 — one measurement and a strict contract
+
+- [ ] Compute the six display-luminance metrics in the existing PNG decode. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/capture.spec.ts`
+- [ ] Reject empty, malformed and contradictory tone bounds at scenario load. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts`
+
+### Phase 2 — shared capture evidence and CLI
+
+- [ ] Evaluate tone bounds against named captures and fail on missing evidence. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts`
+- [ ] Record `TN_TONE` on browser/device captures and print identical six-number CLI rows plus an average. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`
+
+### Phase 3 — scenario proof and qualification
+
+- [ ] Ship a discoverable GPU-lane scenario and document the exact statistic/capture contract. proof: `node --import tsx scripts/check-doc-links.ts` and scenario schema test in `tone.spec.ts`
+- [ ] Run the scenario with normal and two-stops-under exposure on a capture-capable GPU lane. proof: `pnpm test:templates`; retain both measured verdicts here. Unrun in this environment; do not read CPU/PNG fixture tests as GPU proof.
+
+## Implementation decisions
+
+- 2026-10-02: keep the canonical PRD and historical measurements. The current harness uses `assert: { kind: ... }`; implement `assert.tone` as an array of frame-bound requests within that established schema rather than the historical illustrative `assert: "tone"` shape.
+- Reuse the existing PNG decode without resampling; no new decoder, render policy, or GPU readback is introduced. A 256-bin display-referred Rec.709 luminance histogram uses rounded byte bins; wholly transparent pixels are excluded, consistently with the capture guard. No visible pixels means no tone observation.
 
 ## The problem, measured at `43d03e6a`
 
