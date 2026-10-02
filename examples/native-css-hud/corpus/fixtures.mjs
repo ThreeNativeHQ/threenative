@@ -10,8 +10,9 @@ const t = (text) => ({ text });
 export const FONT = `
 @font-face{font-family:Noto;font-weight:400;src:url(NotoSans-Regular.ttf)}
 @font-face{font-family:Noto;font-weight:700;src:url(NotoSans-Bold.ttf)}
+@font-face{font-family:NotoArabic;src:url(NotoSansArabic-Regular.ttf)}
 html,body{margin:0;padding:0}
-body{font-family:Noto;font-size:16px;line-height:24px;color:#fff;background:#18181b}
+body{font-family:Noto,NotoArabic;font-size:16px;line-height:24px;color:#fff;background:#18181b}
 `;
 
 export const FIXTURES = [
@@ -392,6 +393,110 @@ export const FIXTURES = [
         ),
         h("button", { type: "button" }, t("Btn")),
       ),
+    ],
+  },
+
+  // ---- environment: root font, viewport units, breakpoints, device pixel ratio ----------
+  {
+    name: "units-rem-vw-vh-calc",
+    size: [400, 300],
+    css: `
+      html{font-size:20px}
+      .a{width:10rem;height:2rem;background:#6366f1}
+      .b{width:50vw;height:10vh;background:#22c55e;margin-top:6px}
+      .c{font-size:1.5em;width:calc(100% - 2rem);height:calc(1em + 10px);background:#f59e0b;margin-top:6px}
+      .d{width:clamp(50px,20vw,120px);height:20px;background:#ec4899;margin-top:6px}
+      .e{width:min(60%,200px);height:max(10px,2vh);background:#14b8a6;margin-top:6px}
+    `,
+    tree: [
+      h("div", { class: "a" }),
+      h("div", { class: "b" }),
+      h("div", { class: "c" }),
+      h("div", { class: "d" }),
+      h("div", { class: "e" }),
+    ],
+  },
+  {
+    name: "breakpoints-wide",
+    size: [720, 200],
+    css: `
+      .g{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;width:100%}
+      .g > div{height:40px;background:#3b82f6}
+      @media (min-width:640px){.g{grid-template-columns:repeat(4,1fr)}.g > div:nth-child(odd){background:#ef4444}}
+      @media (min-width:1024px){.g{grid-template-columns:repeat(6,1fr)}}
+    `,
+    tree: [h("div", { class: "g" }, h("div"), h("div"), h("div"), h("div"), h("div"), h("div"))],
+  },
+  {
+    name: "breakpoints-narrow",
+    size: [320, 200],
+    css: `
+      .g{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;width:100%}
+      .g > div{height:40px;background:#3b82f6}
+      @media (min-width:640px){.g{grid-template-columns:repeat(4,1fr)}.g > div:nth-child(odd){background:#ef4444}}
+      @media (min-width:1024px){.g{grid-template-columns:repeat(6,1fr)}}
+    `,
+    tree: [h("div", { class: "g" }, h("div"), h("div"), h("div"), h("div"), h("div"), h("div"))],
+  },
+  {
+    name: "dpr-2-layout-and-paint",
+    size: [240, 140],
+    dpr: 2,
+    css: `
+      .card{width:200px;margin:10px;padding:12px;border:1px solid #fff;border-radius:10px;background:#27272a;box-shadow:0 4px 8px rgba(0,0,0,.5)}
+      .card h3{margin:0;font-size:18px;line-height:24px}
+      .card p{margin:4px 0 0;font-size:13px;line-height:18px;color:#a1a1aa}
+    `,
+    tree: [
+      h(
+        "div",
+        { class: "card" },
+        h("h3", {}, t("Inventory")),
+        h("p", {}, t("12 items, 3 equipped")),
+      ),
+    ],
+  },
+
+  {
+    name: "intrinsic-sizing-and-margins",
+    size: [400, 300],
+    css: `
+      .fc{width:fit-content;background:#2563eb;padding:4px 8px;margin-bottom:6px}
+      .mx{width:max-content;max-width:150px;background:#16a34a;margin-bottom:6px}
+      .mn{width:min-content;background:#ca8a04;margin-bottom:6px}
+      .auto{width:120px;height:20px;margin:0 auto 6px;background:#9333ea}
+      .neg{width:100px;height:20px;margin:-10px 0 16px 30px;background:#dc2626}
+      .pp{width:50%;padding:5% 0 0;height:20px;background:#0891b2}
+      .row{display:flex;width:240px;background:#222;margin-top:6px}
+      .row > p{margin:0;background:#4b5563}
+      .row > p + p{background:#6b7280;min-width:0}
+    `,
+    tree: [
+      h("div", { class: "fc" }, t("Fit content")),
+      h("div", { class: "mx" }, t("Max content line that is long")),
+      h("div", { class: "mn" }, t("Min content words")),
+      h("div", { class: "auto" }),
+      h("div", { class: "neg" }),
+      h("div", { class: "pp" }),
+      h(
+        "div",
+        { class: "row" },
+        h("p", {}, t("Shrinks with intrinsic width of this text")),
+        h("p", {}, t("Second item with more words to wrap")),
+      ),
+    ],
+  },
+  {
+    name: "text-mixed-direction",
+    size: [360, 140],
+    css: `
+      p{margin:0 0 6px;width:300px;background:#2a2a30}
+      .rtl{direction:rtl}
+    `,
+    tree: [
+      h("p", {}, t("Latin text مرحبا بالعالم and more Latin")),
+      h("p", { class: "rtl" }, t("مرحبا بالعالم Hello world")),
+      h("p", {}, t("Olá, mundo — ação e coração")),
     ],
   },
 ];

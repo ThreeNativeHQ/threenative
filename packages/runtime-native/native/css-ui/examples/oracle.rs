@@ -1,6 +1,6 @@
 //! Render one corpus fixture for the browser-oracle comparison (`examples/native-css-hud/corpus`).
 //!
-//! `cargo run --release --example oracle -- <dir> <width> <height>` reads `<dir>/batch.json` (the
+//! `cargo run --release --example oracle -- <dir> <width> <height> [scale]` reads `<dir>/batch.json` (the
 //! closed mutation protocol), loads `<dir>/ui` (stylesheets, fonts, images) exactly as the host
 //! does, and writes `<dir>/frame.rgba` (the engine's premultiplied RGBA8 frame) and
 //! `<dir>/rects.json` (every node's border box in CSS pixels, keyed by the id the batch gave it).
@@ -12,14 +12,17 @@ use threenative_css_ui::CssUi;
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
-    let [_, dir, width, height] = args.as_slice() else {
-        return Err("usage: oracle <dir> <width> <height>".to_string());
+    let (dir, width, height, scale) = match args.as_slice() {
+        [_, dir, width, height] => (dir, width, height, "1"),
+        [_, dir, width, height, scale] => (dir, width, height, scale.as_str()),
+        _ => return Err("usage: oracle <dir> <width> <height> [scale]".to_string()),
     };
+    let scale: f32 = scale.parse().map_err(|e| format!("scale: {e}"))?;
     let dir = PathBuf::from(dir);
     let width: u32 = width.parse().map_err(|e| format!("width: {e}"))?;
     let height: u32 = height.parse().map_err(|e| format!("height: {e}"))?;
 
-    let mut ui = CssUi::new(width, height, 1.0)?;
+    let mut ui = CssUi::new(width, height, scale)?;
     ui.load_sheet_dir(&dir.join("ui"))?;
     let batch = std::fs::read_to_string(dir.join("batch.json")).map_err(|e| e.to_string())?;
     ui.post(&batch)?;

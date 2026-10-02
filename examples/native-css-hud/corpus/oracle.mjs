@@ -12,7 +12,7 @@
  * Usage: node corpus/oracle.mjs [fixture-name ...]    Output: corpus/out/ (gitignored) + report.json
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
@@ -26,6 +26,7 @@ const crate = join(repo, "packages", "runtime-native", "native", "css-ui");
 const fontDir = join(example, "src", "ui", "fonts");
 const out = join(here, "out");
 const EDGE_PX = 1;
+const FONT_FILES = readdirSync(fontDir).filter((f) => f.endsWith(".ttf"));
 // Whole-frame SSIM bar. 0.99 is the PRD's target; a fixture that draws glyphs gets 0.98. The two
 // rasterisers (FreeType in Chromium, vello_cpu here) anti-alias glyph edges differently, which costs
 // ~0.01 of SSIM on a text-heavy frame with every box and line break identical. That amendment was
@@ -153,7 +154,7 @@ try {
     const [width, height] = fixture.size;
     const dir = join(out, fixture.name);
     mkdirSync(join(dir, "ui"), { recursive: true });
-    for (const font of ["NotoSans-Regular.ttf", "NotoSans-Bold.ttf"]) {
+    for (const font of FONT_FILES) {
       copyFileSync(join(fontDir, font), join(dir, "ui", font));
       copyFileSync(join(fontDir, font), join(dir, font));
     }
@@ -164,7 +165,11 @@ try {
       join(dir, "page.html"),
       `<!doctype html><html><head><meta charset="utf-8"><style>${FONT}${fixture.css}</style></head><body>${fixture.tree.map(html).join("")}</body></html>`,
     );
-    const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+    const dpr = fixture.dpr ?? 1;
+    const context = await browser.newContext({
+      viewport: { width, height },
+      deviceScaleFactor: dpr,
+    });
     const page = await context.newPage();
     await page.goto(`file://${join(dir, "page.html")}`);
     await page.evaluate(async () => {
@@ -200,6 +205,7 @@ try {
         dir,
         String(width),
         String(height),
+        String(dpr),
       ],
       { cwd: crate, encoding: "utf8" },
     );
@@ -212,7 +218,7 @@ try {
     }
     const nativeRects = JSON.parse(readFileSync(join(dir, "rects.json"), "utf8"));
     const rgba = readFileSync(join(dir, "frame.rgba"));
-    const native = new PNG({ width, height });
+    const native = new PNG({ width: width * dpr, height: height * dpr });
     rgba.copy(native.data);
     writeFileSync(join(dir, "native.png"), PNG.sync.write(native));
 
@@ -242,7 +248,7 @@ try {
       }
     }
     const chrome = PNG.sync.read(readFileSync(join(dir, "chrome.png")));
-    const score = ssim(luminance(chrome), luminance(native), width, height);
+    const score = ssim(luminance(chrome), luminance(native), width * dpr, height * dpr);
     report.push({
       name: fixture.name,
       boxes: expected.length,

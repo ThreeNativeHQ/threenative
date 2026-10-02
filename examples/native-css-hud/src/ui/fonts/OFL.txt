@@ -1,6 +1,8 @@
 Noto Sans (subset to Latin, Latin-1 and common punctuation; no outline changes)
 Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
-Licensed under the SIL Open Font License, Version 1.1 (below).
+Noto Sans Arabic (subset to Basic Latin and the Arabic blocks; no outline changes)
+Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+Both licensed under the SIL Open Font License, Version 1.1 (below).
 
 Copyright (c) <dates>, <Copyright Holder> (<URL|email>),
 with Reserved Font Name <Reserved Font Name>.
