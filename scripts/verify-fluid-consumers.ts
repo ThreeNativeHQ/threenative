@@ -8,7 +8,7 @@ import {
   WEBGPU_BROWSER_ARGS,
   runStandalonePlaytest,
 } from "../packages/playtest/dist/runner/index.js";
-import { assertFluidCapture } from "./fluid-collision-proof.js";
+import { assertFluidCapture, fluidConsumerFailureDiagnostics } from "./fluid-collision-proof.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const project = path.join(root, "examples/prd476-fluid-particles");
@@ -26,9 +26,13 @@ const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], {
 const qualification =
   "Existing consumer correctness on software WebGPU; no hardware frame-time claim.";
 const variants = [];
+let activeVariant: "dam" | "coupling" | undefined;
+let failureDiagnostics: ReturnType<typeof fluidConsumerFailureDiagnostics> = null;
 try {
   execFileSync("pnpm", ["exec", "vite", "build"], { cwd: project, stdio: "inherit" });
   for (const variant of ["dam", "coupling"] as const) {
+    activeVariant = variant;
+    failureDiagnostics = null;
     const directory = path.join(output, variant);
     const scenario =
       variant === "dam"
@@ -50,6 +54,7 @@ try {
       },
       url: `http://127.0.0.1:5173/${variant === "coupling" ? "?scene=coupling" : ""}`,
     });
+    failureDiagnostics = fluidConsumerFailureDiagnostics(report.diagnostics);
     assertFluidCapture(report);
     const filenames = (await readdir(directory)).filter((name) => name.endsWith(".png"));
     const authoredImages =
@@ -89,7 +94,7 @@ try {
 } catch (error) {
   await writeFile(
     path.join(output, "failure.json"),
-    `${JSON.stringify({ sourceSha, qualification, pass: false }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, qualification, pass: false, variant: activeVariant, diagnostics: failureDiagnostics }, null, 2)}\n`,
   );
   throw error;
 }

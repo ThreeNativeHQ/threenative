@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { assertFluidCapture } from "../fluid-collision-proof.js";
+import { assertFluidCapture, fluidConsumerFailureDiagnostics } from "../fluid-collision-proof.js";
 
 const clean = {
   pass: true,
@@ -10,6 +10,35 @@ const clean = {
   },
   assertionResults: [{ id: "resources.collision", pass: true }],
 };
+
+test("retains the exact consumer timeout operation and budget without raw messages", () => {
+  expect(
+    fluidConsumerFailureDiagnostics([
+      {
+        code: "TN_PLAYTEST_OPERATION_TIMEOUT",
+        message: "Bridge operation 'advance' exceeded 365000ms.",
+      },
+    ]),
+  ).toEqual([{ code: "TN_PLAYTEST_OPERATION_TIMEOUT", operation: "advance", timeoutMs: 365000 }]);
+});
+
+test("consumer diagnostic projection rejects private text and malformed timeout metadata", () => {
+  const output = fluidConsumerFailureDiagnostics([
+    { code: "PRIVATE_TOKEN", message: "/home/private user@example.test" },
+    {
+      code: "TN_PLAYTEST_OPERATION_TIMEOUT",
+      message: "Bridge operation 'private-secret' exceeded 12ms.",
+    },
+    { code: "TN_PLAYTEST_OPERATION_TIMEOUT", message: "Bridge operation 'advance' exceeded 0ms." },
+  ]);
+  expect(output).toEqual([
+    { code: "UNRECOGNIZED_DIAGNOSTIC" },
+    { code: "TN_PLAYTEST_OPERATION_TIMEOUT" },
+    { code: "TN_PLAYTEST_OPERATION_TIMEOUT" },
+  ]);
+  expect(JSON.stringify(output)).not.toMatch(/private|secret|@|home/iu);
+  expect(fluidConsumerFailureDiagnostics(undefined)).toBeNull();
+});
 
 test("accepts a clean, identified WebGPU collision proof", () => {
   expect(() => assertFluidCapture(clean)).not.toThrow();

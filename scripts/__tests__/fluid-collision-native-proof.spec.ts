@@ -37,6 +37,7 @@ import {
   assertNativeFluidCapture,
   assertNativeFluidPixels,
   assertNativeFluidResponses,
+  nativeFluidFailureDetails,
   nativeFluidScenario,
 } from "../verify-fluid-collision-native.js";
 
@@ -311,4 +312,84 @@ test("requires raw native diagnostics capability and samples even when normalize
     ),
   ])
     expect(() => assertNativeFluidResponses(invalid, report())).toThrow();
+});
+
+test("native failure evidence preserves the timeout and original gate without leaking host text", () => {
+  const failed = {
+    pass: false,
+    diagnostics: [
+      {
+        code: "TN_PLAYTEST_BRIDGE_MISSING",
+        message: "Desktop application did not expose a playtest bridge.",
+      },
+    ],
+  };
+  const result = nativeFluidFailureDetails(
+    failed,
+    [
+      { type: "log", text: "home=/home/private-person token=very-secret-token host=private-host" },
+      {
+        type: "error",
+        text: "TN_NATIVE_START_FAILED:Cannot read properties of undefined (reading 'size'); /home/private-person/game.js token=very-secret-token https://private-host/x?key=123 email=private@example.test",
+      },
+      {
+        type: "log",
+        text: "[WebGPU] Device error (Validation): invalid buffer at C:\\Users\\PrivateName\\game.js",
+      },
+    ],
+    120000,
+  );
+  expect(result.startupTimeoutMs).toBe(120000);
+  expect(result.diagnostics).toEqual(["TN_PLAYTEST_BRIDGE_MISSING"]);
+  expect(result.hostDiagnosticChannel).toBe("observed");
+  expect(result.hostErrors?.length).toBe(2);
+  expect(result.hostErrors?.[0]?.message).toContain("Cannot read properties of undefined");
+  const published = JSON.stringify(result);
+  for (const privateText of [
+    "private-person",
+    "very-secret-token",
+    "private-host",
+    "private@example.test",
+    "PrivateName",
+    "/home/",
+    "C:",
+  ])
+    expect(published).not.toContain(privateText);
+  expect(published).not.toContain("token=");
+});
+
+test("missing or malformed native console is not reported as a clean observed channel", () => {
+  const failed = { pass: false, diagnostics: [{ code: "TN_PLAYTEST_BRIDGE_MISSING" }] };
+  for (const missing of [undefined, null, [], {}, [{ type: "error" }]]) {
+    const result = nativeFluidFailureDetails(failed, missing, 120000);
+    expect(result.hostDiagnosticChannel).toBe("unavailable");
+    expect(result.hostErrors).toBeUndefined();
+    expect(result.diagnostics).toEqual(["TN_PLAYTEST_BRIDGE_MISSING"]);
+  }
+});
+
+test("native failure publication is bounded and contains only known technical tokens", () => {
+  const input = Array.from({ length: 100 }, (_, index) => ({
+    type: "error",
+    text: `ReferenceError privateValue${index} private host credential is not defined ${"secret ".repeat(200)}`,
+  }));
+  const result = nativeFluidFailureDetails(
+    { pass: false, diagnostics: [{ code: "PRIVATE_SECRET_CODE" }] },
+    input,
+    120000,
+  );
+  expect(result.diagnostics).toEqual(["UNRECOGNIZED_DIAGNOSTIC"]);
+  expect(result.hostErrors?.length).toBeLessThanOrEqual(16);
+  expect(result.hostErrors?.every(({ message }) => message.length <= 240)).toBe(true);
+  expect(JSON.stringify(result)).not.toMatch(/private|credential|secret/iu);
+});
+
+test("native variant failure provenance resets before attempting its bundle", async () => {
+  const source = await readFile("scripts/verify-fluid-collision-native.ts", "utf8");
+  const loop = source.indexOf('for (const variant of ["gate", "gate-disabled"]');
+  const reset = source.indexOf("lastBundleSha256 = undefined;", loop);
+  const build = source.indexOf("execFileSync(", loop);
+  expect(loop).toBeGreaterThan(0);
+  expect(reset).toBeGreaterThan(loop);
+  expect(reset).toBeLessThan(build);
 });

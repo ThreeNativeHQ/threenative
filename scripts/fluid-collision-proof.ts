@@ -1,5 +1,33 @@
 import assert from "node:assert/strict";
 
+/** Keep failure diagnosis useful without publishing arbitrary browser/host messages. */
+export function fluidConsumerFailureDiagnostics(
+  diagnostics: readonly { code: string; message?: string }[] | undefined,
+) {
+  const known = new Set([
+    "TN_PLAYTEST_OPERATION_TIMEOUT",
+    "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
+    "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+    "TN_PLAYTEST_CONSOLE_ERROR",
+    "TN_PLAYTEST_BRIDGE_MISSING",
+    "TN_CAPTURE_BLANK",
+    "TN_PLAYTEST_ASSERTION_NOT_EVALUATED",
+  ]);
+  return (
+    diagnostics?.slice(0, 16).map(({ code, message }) => {
+      const safeCode = known.has(code) ? code : "UNRECOGNIZED_DIAGNOSTIC";
+      const match =
+        code === "TN_PLAYTEST_OPERATION_TIMEOUT" &&
+        message?.match(
+          /^Bridge operation '(advance|sample|ready|describe|setup|drainEvents)' exceeded ([1-9][0-9]{0,8})ms\.$/u,
+        );
+      return match
+        ? { code: safeCode, operation: match[1], timeoutMs: Number(match[2]) }
+        : { code: safeCode };
+    }) ?? null
+  );
+}
+
 /** Software rendering can prove the solver result, never the hardware frame-time criterion. */
 export function assertFluidOutcome(
   report: {

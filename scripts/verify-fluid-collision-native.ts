@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { PNG } from "pngjs";
 import type { IStandalonePlaytestReport } from "../packages/playtest/src/runner/runner.js";
 import { regionMetrics } from "../packages/playtest/src/runner/steps.js";
@@ -198,6 +199,97 @@ export function assertNativeFluidPixels(bytes: Buffer, authored: IPlaytestScenar
   }
 }
 
+const NATIVE_FAILURE_CODES = new Set([
+  "TN_PLAYTEST_BRIDGE_MISSING",
+  "TN_PLAYTEST_BRIDGE_NOT_READY",
+  "TN_PLAYTEST_CAPABILITY_MISSING",
+  "TN_PLAYTEST_OBSERVATION_UNAVAILABLE",
+  "TN_PLAYTEST_DEVICE_FAILED",
+  "TN_PLAYTEST_HOST_EXITED",
+  "TN_PLAYTEST_OPERATION_TIMEOUT",
+  "TN_PLAYTEST_STARTUP_HOST_EXITED",
+  "TN_PLAYTEST_NATIVE_SCREENSHOT_UNAVAILABLE",
+  "TN_PLAYTEST_RESOURCE_ASSERTION_FAILED",
+  "TN_PLAYTEST_CONSOLE_ERROR",
+  "TN_PLAYTEST_SOFTWARE_DEVICE_LOST",
+  "TN_CAPTURE_BLANK",
+  "TN_NATIVE_START_FAILED",
+  "TN_FATAL",
+  "TN_PLAYTEST_DEVICE_TRANSPORT",
+  "TN_PLAYTEST_MAILBOX_POLL_STALLED",
+  "TN_ASSETS_UNRESOLVED",
+]);
+const NATIVE_FAILURE_WORDS = new Set(
+  (
+    "a an and at before after cannot can could create created creating did do does error failed failure for from has have in invalid is it missing no not of on or read reading return returned the this to undefined null unavailable unsupported was were with " +
+    "properties property function constructor method object value size buffer buffers map mapped mapping mapAsync getMappedRange already pending shader wgsl validation device adapter texture storage compute queue submit requestAdapter requestDevice getArrayBufferAsync " +
+    "promise then called incompatible receiver expected received features limits canvas context renderer init compile pipeline bind group format dimension usage reference type range syntax gpu webgpu ready startup bridge native script exception unhandled rejected lost out memory parse redacted " +
+    "ReferenceError TypeError RangeError SyntaxError GPUBufferUsage GPUMapMode GPUShaderStage GPUTextureUsage navigator performance requestAnimationFrame setAnimationLoop addEventListener TextEncoder URL WeakRef FinalizationRegistry"
+  )
+    .split(/\s+/u)
+    .map((word) => word.toLowerCase()),
+);
+
+/** Publish technical failure words only; unknown text, paths, URLs and host identifiers stay private. */
+function scrubNativeFailureText(text: string): string {
+  return stripVTControlCharacters(text)
+    .replace(/https?:\/\/[^\s]+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "[redacted]")
+    .replace(/(?:[A-Za-z]:[\\/]|\/)[^\s"']+/gu, "[redacted]")
+    .replace(/[^\x20-\x7e]/gu, " ")
+    .replace(/[A-Za-z_$][A-Za-z0-9_$-]*|[0-9]+/gu, (word) =>
+      NATIVE_FAILURE_WORDS.has(word.toLowerCase()) || NATIVE_FAILURE_CODES.has(word)
+        ? word
+        : "[redacted]",
+    )
+    .replace(/(?:\[redacted\][\s:;=,.]*){2,}/gu, "[redacted] ")
+    .slice(0, 240);
+}
+
+export function nativeFluidFailureDetails(
+  report: { pass: boolean; diagnostics: readonly { code: string }[] } | undefined,
+  nativeConsole: unknown,
+  startupTimeoutMs: number,
+) {
+  const observed =
+    Array.isArray(nativeConsole) &&
+    nativeConsole.length > 0 &&
+    nativeConsole.every(
+      (entry) => entry && typeof entry.text === "string" && typeof entry.type === "string",
+    );
+  const hostErrors = observed
+    ? nativeConsole
+        .filter(
+          (entry) =>
+            entry.type === "error" ||
+            /TN_NATIVE_START_FAILED|\[WebGPU\].*(?:Device error|Device lost|Failed)|(?:Reference|Type|Range|Syntax)Error/u.test(
+              entry.text,
+            ),
+        )
+        .slice(0, 16)
+        .map(({ text }: { text: string }) => ({
+          classification:
+            /(?:Reference|Type|Range|Syntax)Error/u.exec(text)?.[0] ??
+            (/Device error.*Validation/iu.test(text)
+              ? "GPUValidation"
+              : /device.*lost/iu.test(text)
+                ? "GPUDeviceLost"
+                : /TN_NATIVE_START_FAILED/u.test(text)
+                  ? "NativeStart"
+                  : "Unclassified"),
+          message: scrubNativeFailureText(text),
+        }))
+    : undefined;
+  return {
+    startupTimeoutMs,
+    reportDiagnosticChannel: report === undefined ? "unavailable" : "observed",
+    diagnostics: report?.diagnostics.map(({ code }) =>
+      NATIVE_FAILURE_CODES.has(code) ? code : "UNRECOGNIZED_DIAGNOSTIC",
+    ),
+    hostDiagnosticChannel: observed ? "observed" : "unavailable",
+    ...(hostErrors === undefined ? {} : { hostErrors }),
+  };
+}
+
 async function main(): Promise<void> {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const project = path.join(root, "examples/prd476-fluid-particles");
@@ -237,9 +329,20 @@ async function main(): Promise<void> {
   const variants: Record<string, unknown>[] = [];
   await mkdir(output, { recursive: true });
   const authored = await loadPlaytestScenario(project, "playtests/fluid-collision.playtest.json");
-  const { runDesktopPlaytest } = await import("../packages/playtest/dist/runner/index.js");
+  const { DesktopPlaytestDriver, runDesktopPlaytest } = await import(
+    "../packages/playtest/dist/runner/index.js"
+  );
+  const startupTimeoutMs = 120_000;
+  let lastReport: IStandalonePlaytestReport | undefined;
+  let captureNativeConsole: (() => Promise<unknown>) | undefined;
+  let lastBundleSha256: string | undefined;
+  let lastVariant: string | undefined;
   try {
     for (const variant of ["gate", "gate-disabled"] as const) {
+      lastVariant = variant;
+      lastReport = undefined;
+      lastBundleSha256 = undefined;
+      captureNativeConsole = undefined;
       const artifactDirectory = path.join(output, variant);
       await mkdir(artifactDirectory, { recursive: true });
       const entry = path.join(artifactDirectory, "entry.ts");
@@ -265,23 +368,36 @@ async function main(): Promise<void> {
         { cwd: root, stdio: "inherit" },
       );
       const bundleSha256 = await hash(bundle);
+      lastBundleSha256 = bundleSha256;
       const scenarioPath = path.join(artifactDirectory, "scenario.playtest.json");
       await writeFile(scenarioPath, `${JSON.stringify(nativeFluidScenario(authored), null, 2)}\n`);
-      const report = await runDesktopPlaytest({
-        artifactDirectory,
-        projectPath: project,
-        scenarioPath,
-        target: "desktop",
-        desktop: {
-          executable: runtime,
-          hostArgs: ["run", bundle, "--windowed", "--width", "960", "--height", "540"],
+      const report = await runDesktopPlaytest(
+        {
+          artifactDirectory,
+          projectPath: project,
+          scenarioPath,
+          target: "desktop",
+          desktop: {
+            executable: runtime,
+            hostArgs: ["run", bundle, "--windowed", "--width", "960", "--height", "540"],
+          },
+          allowSoftwareAdapter: true,
+          headless: false,
+          timeoutMs: startupTimeoutMs,
+          trace: false,
+          url: "",
         },
-        allowSoftwareAdapter: true,
-        headless: false,
-        timeoutMs: 120_000,
-        trace: false,
-        url: "",
-      });
+        {
+          driverFactory: (options) => {
+            const driver = new DesktopPlaytestDriver(options);
+            // Early failure reports return before console.json is written. Retain the same driver,
+            // leaving display, mailbox, process lifetime and every qualification gate unchanged.
+            captureNativeConsole = () => driver.captureConsole();
+            return driver;
+          },
+        },
+      );
+      lastReport = report;
       const expectedFailure =
         variant === "gate-disabled" ? "resource.FluidCollision.collisionPassed" : undefined;
       // Surface the primary host failure before trying an artifact it may not have written.
@@ -331,11 +447,32 @@ async function main(): Promise<void> {
       "Native fluid: actual gate passed; missing gate failed only its collision assertion.",
     );
   } catch (error) {
+    const nativeConsole = await captureNativeConsole?.().catch(() => undefined);
+    const failure = nativeFluidFailureDetails(lastReport, nativeConsole, startupTimeoutMs);
     await writeFile(
       path.join(output, "failure.json"),
-      `${JSON.stringify({ sourceSha, qualification, pass: false }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          sourceSha,
+          sourceFiles,
+          runtimeSha256,
+          bundleSha256: lastBundleSha256,
+          variant: lastVariant,
+          qualification,
+          pass: false,
+          ...failure,
+          verifierError: scrubNativeFailureText(
+            error instanceof Error ? error.message : String(error),
+          ),
+        },
+        null,
+        2,
+      )}\n`,
     );
-    throw error;
+    console.error(
+      `Native fluid qualification failed: ${failure.diagnostics?.join(", ") || "see failure.json"}`,
+    );
+    process.exitCode = 1;
   }
 }
 
