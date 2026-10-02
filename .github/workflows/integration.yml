@@ -35,6 +35,9 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       csg: ${{ steps.filter.outputs.csg }}
       decals: ${{ steps.filter.outputs.decals }}
@@ -42,46 +45,20 @@ jobs:
       tone: ${{ steps.filter.outputs.tone }}
       vegetation: ${{ steps.filter.outputs.vegetation }}
     steps:
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          filters: |
-            csg:
-              paths:
-                - 'examples/integrations/csg/**'
-                - '.github/workflows/integration.yml'
-            decals:
-              paths:
-                - 'packages/create-threenative/templates/shooter/src/render/decals.ts'
-                - 'packages/create-threenative/templates/shooter/src/scenes/Play.ts'
-                - 'packages/create-threenative/__tests__/shooter-decals*.spec.ts'
-                - 'packages/create-threenative/__tests__/fixtures/bounded-decals/**'
-                - '.github/workflows/integration.yml'
-            ik:
-              paths:
-                - 'examples/integrations/ik/**'
-                - '.github/workflows/integration.yml'
-            tone:
-              paths:
-                - 'packages/playtest/**'
-                - 'examples/abyss-framework/src/render/toneCalibration.ts'
-                - 'examples/abyss-framework/src/tone-main.ts'
-                - 'examples/abyss-framework/tone.html'
-                - 'examples/abyss-framework/tone.vite.config.ts'
-                - 'examples/abyss-framework/playtests/tone.playtest.json'
-                - 'examples/abyss-framework/package.json'
-                - 'scripts/verify-tone-exposure.ts'
-                - 'scripts/tone-capture-proof.ts'
-                - 'scripts/__tests__/tone-capture-proof.spec.ts'
-                - 'scripts/non-visual-scenarios.mjs'
-                - 'package.json'
-                - 'pnpm-lock.yaml'
-                - '.github/actions/pnpm/**'
-                - '.github/actions/playwright-chromium/**'
-                - '.github/workflows/integration.yml'
-            vegetation:
-              paths:
-                - 'examples/integrations/vegetation/**'
-                - '.github/workflows/integration.yml'
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # One API call and a regex per lane, translated from each lane's former `paths:` globs.
+        run: |
+          set -euo pipefail
+          files="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[].filename')"
+          lane() { if grep -qE "$2" <<<"$files"; then echo "$1=true"; else echo "$1=false"; fi >> "$GITHUB_OUTPUT"; }
+          lane csg '^examples/integrations/csg/.*$|^\.github/workflows/integration\.yml$'
+          lane decals '^packages/create-threenative/templates/shooter/src/render/decals\.ts$|^packages/create-threenative/templates/shooter/src/scenes/Play\.ts$|^packages/create-threenative/__tests__/shooter-decals[^/]*\.spec\.ts$|^packages/create-threenative/__tests__/fixtures/bounded-decals/.*$|^\.github/workflows/integration\.yml$'
+          lane ik '^examples/integrations/ik/.*$|^\.github/workflows/integration\.yml$'
+          lane tone '^packages/playtest/.*$|^examples/abyss-framework/src/render/toneCalibration\.ts$|^examples/abyss-framework/src/tone-main\.ts$|^examples/abyss-framework/tone\.html$|^examples/abyss-framework/tone\.vite\.config\.ts$|^examples/abyss-framework/playtests/tone\.playtest\.json$|^examples/abyss-framework/package\.json$|^scripts/verify-tone-exposure\.ts$|^scripts/tone-capture-proof\.ts$|^scripts/__tests__/tone-capture-proof\.spec\.ts$|^scripts/non-visual-scenarios\.mjs$|^package\.json$|^pnpm-lock\.yaml$|^\.github/actions/pnpm/.*$|^\.github/actions/playwright-chromium/.*$|^\.github/workflows/integration\.yml$'
+          lane vegetation '^examples/integrations/vegetation/.*$|^\.github/workflows/integration\.yml$'
 
   csg:
     name: csg
