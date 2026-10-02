@@ -2024,3 +2024,17 @@ Biome and temperate placement/contact checks pass. Warm `pnpm bake`: **1.141 s**
 all output modification times unchanged. Docs checks and all **180/180** selected
 document checks pass. A third, unchanged-performance final run is pending: the
 preceding run failed forest player/river at 6.3/5.4 ms; Chromium/Xvfb doctor passes.
+
+Final alpine correction: a connected shelf core precedes weathering. Repose-angle
+scree settling is restricted to the lower 65 m catchment (12 m fade), rather than
+softening nearly every upper rock face below 105 m. Resistant upper walls keep the
+55° bedrock pass; rain reopens their drainage. Cold bake: **48.35 s** including the
+continuation; alpine is **6,731,560 bytes**, range **6.03–119.37 m**, maximum isolated
+four-neighbour prominence **2.79 m**. Example tsc/Biome pass. Licensed full scenario
+finished all 22 captures and all 17 view windows, but failed forest CPU budgets
+(maximum **6.7 ms**) and AO-stage assertions: the measured auto chain dropped AO
+with reason `tier:low`. Chromium/Xvfb and actual NVIDIA Turing identity are proven.
+A three-physical-core affinity experiment did not resolve the budget; the standard
+commands are being repeated without affinity. No AO, haze, grade or sun settings
+are changed to make those assertions pass. Final packed-consumer recheck is pending
+after this alpine recipe change.

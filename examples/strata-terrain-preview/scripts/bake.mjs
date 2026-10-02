@@ -271,6 +271,8 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     mode: "ridged",
     mask: Mask.and(Mask.height(48, 1e9, 12), Mask.slope(20, 80, 12)),
   })
+  // A connected snow shelf survives between the cirques; rainfall carves its rim next.
+  .flatten({ id: "shelf-core", at: [-35, -60], radius: 68, height: 104, falloff: 0.18 })
   .terrace({
     id: "rock-ledges",
     step: 18,
@@ -298,7 +300,7 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     talus: 35,
     iterations: 65,
     rate: 0.2,
-    mask: Mask.height(-1e9, 105, 20),
+    mask: Mask.height(-1e9, 65, 12),
   })
   // Rain reopens drainage after debris has settled, without the old below-bed pickup.
   .erode({
