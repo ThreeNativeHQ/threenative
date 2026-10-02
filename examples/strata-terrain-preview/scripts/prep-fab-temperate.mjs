@@ -26,7 +26,13 @@ const sharp = requireAssets("sharp");
 const { MeshoptSimplifier } = requireAssets("meshoptimizer");
 await MeshoptSimplifier.ready;
 const { NodeIO } = requireAssets("@gltf-transform/core");
-const { dedup, join: joinMeshes, weld, simplify } = requireAssets("@gltf-transform/functions");
+const {
+  dedup,
+  join: joinMeshes,
+  weld,
+  simplify,
+  normals,
+} = requireAssets("@gltf-transform/functions");
 const { compileAssets } = await import(pathToFileURL(join(REPO, "packages/assets/dist/index.js")));
 const io = new NodeIO();
 const set = (albedo, normal, mask = null, channel = 0) => ({ albedo, normal, mask, channel });
@@ -196,6 +202,17 @@ async function prepare(source, pack) {
   }
   json.buffers = [{ byteLength: cursor }];
   const document = await io.readBinary(glb(json, Buffer.concat(buffers)));
+  // One full-spruce import contains all-zero normals; do not preserve them into every cook/LOD.
+  let repair = false;
+  for (const mesh of document.getRoot().listMeshes())
+    for (const primitive of mesh.listPrimitives()) {
+      const normal = primitive.getAttribute("NORMAL");
+      if (!normal || normal.getArray().every((value) => value === 0)) {
+        primitive.setAttribute("NORMAL", null);
+        repair = true;
+      }
+    }
+  if (repair) await document.transform(normals());
   await document.transform(dedup(), joinMeshes(), weld());
   return io.writeBinary(document);
 }

@@ -62,9 +62,9 @@ export const VARIANTS = {
  * `LAYERS` marks the same three layers `castShadows: false`, and its numbers agree.
  */
 const DRAW_REACH: Record<string, number> = {
-  grass: 72,
-  scrub: 85,
-  fern: 90,
+  grass: 112,
+  scrub: 110,
+  fern: 105,
   poppy: 65,
   sapling: 160,
   bush: 120,
@@ -77,7 +77,7 @@ const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy"])
 
 /** One drawable piece of a prop: its geometry, and the role that decides its material. */
 /** The share of a boulder's height that sits below the ground. */
-const BOULDER_BURIAL = 0.2;
+const BOULDER_BURIAL = 0.32;
 
 export type PropRole =
   | "bark"
@@ -389,7 +389,8 @@ export function variantFor(placement: IPlacement, asset: string): number {
     hash ^= placement.id.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return hash % count;
+  // Full trees dominate; the two half-crown forms are occasional stand variation.
+  return asset === "spruce" ? ([0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 4][hash % 11] ?? 0) : hash % count;
 }
 
 export interface IPropMaterials {
@@ -650,6 +651,12 @@ export function createProps(
           const distance = origin.distanceTo(camera);
           const reach = DRAW_REACH[group.asset];
           if (reach !== undefined && distance > reach) continue;
+          if (reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
+            // Stable density falloff: survivors keep their authored scale, never shrink into the floor.
+            const fade = Math.max(0, (distance - 28) / (reach - 28));
+            const seed = (Math.imul(index + 1, 2654435761) >>> 0) / 4294967296;
+            if (seed > (1 - fade) ** 2) continue;
+          }
           const level = levelFor(distance, group.state[index] ?? 0, levels);
           group.state[index] = level;
           const slot = counts[level] ?? 0;
