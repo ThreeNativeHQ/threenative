@@ -164,15 +164,16 @@ function surface(
       material.colorNode = sampled.rgb.mul(vec3(0.82, 0.96, 0.88));
     // Kite's pine atlas is half live needles and half dead: cells 4 and 5 and the bare lower-branch
     // card are rust brown, so every crown wears rust dots and every trunk wears a tan spiky burst.
-    // Colour decides, not geometry — a texel warmer than its own green is dead wood, and the crown
-    // keeps its green while the dead part goes to a damp needle brown instead of orange.
-    if (kite && canopy && cutout) {
-      const dead = smoothstep(0.012, 0.085, sampled.r.sub(sampled.g));
+    // Colour decides, not geometry — a texel warmer than its own green is dead wood. This is not
+    // gated on the cutout: the bare lower branches are the one part of the pine drawn opaque, so a
+    // cutout-only mask left the worst of the tan spikes standing.
+    if (kite && canopy) {
+      const dead = smoothstep(0.008, 0.075, sampled.r.sub(sampled.g));
       const damp = material.colorNode as Node<"vec3">;
       material.colorNode = mix(
         damp,
-        damp.rgb.mul(vec3(0.34, 0.46, 0.3)),
-        dead.mul(world === "forest" ? 0.92 : 0.7),
+        damp.rgb.mul(vec3(0.3, 0.42, 0.27)),
+        dead.mul(cutout ? 0.94 : 0.8),
       );
     }
     if (!otherBiome && canopy && !cutout && !kite)

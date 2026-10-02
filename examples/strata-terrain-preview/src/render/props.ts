@@ -69,7 +69,7 @@ const DRAW_REACH: Record<string, number> = {
   poppy: 65,
   sapling: 160,
   bush: 120,
-  litter: 26,
+  litter: 16,
   boulder: 170,
   riverrock: 100,
   scree: 190,
@@ -77,6 +77,18 @@ const DRAW_REACH: Record<string, number> = {
   mountain: 650,
   volcanic: 400,
   reveal: 260,
+};
+/**
+ * Variants whose own reach is shorter than their asset's.
+ *
+ * Eight grass species is the meadow's real species count, but the three low mats are ground fuzz:
+ * past the near field they are sub-pixel, and paying a draw plus an instance-buffer upload for
+ * three of them in every far view is host cost for nothing. A variant named here draws less far.
+ */
+const VARIANT_REACH: Record<string, number> = {
+  "grass:5": 46,
+  "grass:6": 46,
+  "grass:7": 34,
 };
 const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy", "litter"]);
 
@@ -577,6 +589,8 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
 /** One variant's placements, their poses, and the draws each detail level of it owns. */
 interface IVariantGroup {
   readonly entries: { instance: IPropInstance; pose: Matrix4 }[];
+  /** This variant's `asset:variant` key, which a per-variant draw reach is named by. */
+  readonly key: string;
   /** One mesh per level per role, so a level is one draw and the matrix write reaches all of them. */
   readonly levels: Map<number, InstancedMesh[]>;
   /** Which level each placement drew last frame. The hysteresis reads it and writes it. */
@@ -734,6 +748,7 @@ export function createProps(
       // for whichever subset a frame happens to draw, and computed once.
       banded.push({
         asset: key.split(":")[0] ?? "",
+        key,
         entries,
         levels: byLevel,
         state: new Uint8Array(entries.length),
@@ -775,7 +790,7 @@ export function createProps(
           entry.instance.parts = [];
           origin.setFromMatrixPosition(entry.pose);
           const distance = origin.distanceTo(camera);
-          const reach = DRAW_REACH[group.asset];
+          const reach = VARIANT_REACH[group.key] ?? DRAW_REACH[group.asset];
           if (reach !== undefined && distance > reach) continue;
           if (reach !== undefined && ["grass", "scrub", "fern"].includes(group.asset)) {
             // Stable density falloff: survivors keep their authored scale, never shrink into the floor.

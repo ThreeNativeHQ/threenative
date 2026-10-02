@@ -321,7 +321,9 @@ export function scatterProps(
   if (temperate) {
     // The understorey is the layer the wood was missing: bracken and needle litter under a closed
     // canopy, thickets in the light gaps and along the wet ground, all keyed to the same stand mask.
-    for (let i = 0; i < 26000; i++) {
+    // Needle litter is a half-metre twig: it is worth 9000 of them and no more, because past sixteen
+    // metres it is sub-pixel and the count is pure host cost.
+    for (let i = 0; i < 14000; i++) {
       const x = (random() - 0.5) * data.size;
       const z = (random() - 0.5) * data.size;
       if (!inside(x, z) || wet(x, z) || nearEye(x, z)) continue;
