@@ -3,6 +3,7 @@ function assertRgba(data: Float32Array, width: number, height: number): void {
     throw new Error("Velocity readback requires positive image dimensions.");
   if (data.length !== width * height * 4)
     throw new Error("Velocity readback must contain one RGBA value per pixel.");
+  if (!data.every(Number.isFinite)) throw new Error("Readback contains non-finite pixels.");
 }
 
 /** Summarize actual RGBA velocity pixels: the static sub-draw occupies the left half. */
@@ -58,4 +59,43 @@ export function measureMovingColourFootprint(data: Float32Array, width: number, 
   }
   if (pixels === 0) throw new Error("Missing moving colour footprint.");
   return { pixels, centroidX: totalX / pixels };
+}
+
+/** Check the independent binary MRT coverage and its complement, including exposed wall edges. */
+export function summarizeCoveredVelocity(
+  velocity: Float32Array,
+  colour: Float32Array,
+  width: number,
+  height: number,
+  expectedX: number,
+  coverage: Float32Array,
+) {
+  assertRgba(velocity, width, height);
+  assertRgba(colour, width, height);
+  assertRgba(coverage, width, height);
+  if (!Number.isFinite(expectedX)) throw new Error("Expected motion must be finite.");
+  let footprintPixels = 0;
+  let footprintMaxErrorPixels = 0;
+  let outsideFootprintMax = 0;
+  let darkFootprintPixels = 0;
+  for (let pixel = 0; pixel < width * height; pixel += 1) {
+    const red = colour[pixel * 4];
+    const blue = colour[pixel * 4 + 2];
+    const x = velocity[pixel * 4];
+    const y = velocity[pixel * 4 + 1];
+    const id = coverage[pixel * 4];
+    if (red === undefined || blue === undefined || x === undefined || y === undefined)
+      throw new Error("Missing masked RGBA pixel.");
+    if (id !== 0 && id !== 1) throw new Error("Coverage MRT must contain exact binary IDs.");
+    if (id === 1) {
+      footprintPixels += 1;
+      darkFootprintPixels += Number(blue < 0.09 || blue - red < 0.06);
+      footprintMaxErrorPixels = Math.max(
+        footprintMaxErrorPixels,
+        Math.hypot(((x - expectedX) * width) / 2, (y * height) / 2),
+      );
+    } else outsideFootprintMax = Math.max(outsideFootprintMax, Math.hypot(x, y));
+  }
+  if (footprintPixels === 0) throw new Error("Missing moving coverage footprint.");
+  return { footprintPixels, footprintMaxErrorPixels, outsideFootprintMax, darkFootprintPixels };
 }

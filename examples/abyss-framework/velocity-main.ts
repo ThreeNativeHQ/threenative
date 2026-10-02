@@ -1,4 +1,4 @@
-import { abs, float, mix, pass, step, uv, vec2, vec4 } from "three/tsl";
+import { abs, float, mix, mrt, pass, step, uv, vec2, vec4 } from "three/tsl";
 import {
   BatchedMesh,
   Bone,
@@ -29,11 +29,18 @@ import {
   ensureVelocityOutput,
   readVelocityPreviousBoneMatrices,
   readVelocityPreviousMatrices,
+  readVelocityPreviousWorldMatrix,
 } from "../../packages/core/src/render/velocity.js";
 import { SceneRenderProjection } from "../../packages/core/src/renderProjection.js";
 import { installThreePlaytestBridge } from "../../packages/playtest/dist/three/index.js";
 import {
+  velocityCoverageNode,
+  velocityFixturePositions,
+  velocityFixtureRadius,
+} from "./src/render/velocityCoverage.js";
+import {
   measureMovingColourFootprint,
+  summarizeCoveredVelocity,
   summarizeVelocityPixels,
 } from "./src/render/velocityReadback.js";
 
@@ -52,7 +59,7 @@ scene.add(new HemisphereLight(0xb8d7ff, 0x263349, 2));
 const key = new DirectionalLight(0xffffff, 3);
 key.position.set(-2, 4, 5);
 scene.add(key);
-const geometry = new SphereGeometry(0.8, 32, 24);
+const geometry = new SphereGeometry(velocityFixtureRadius, 32, 24);
 const query = new URLSearchParams(location.search);
 const instanced = query.has("instanced");
 const dynamic = query.has("dynamic");
@@ -62,6 +69,8 @@ const currentAsPrevious = query.has("current-as-previous");
 const lateWrite = query.has("late-write");
 const prematureCommit = query.has("premature-commit");
 const recompile = query.has("recompile");
+const worldMotion = query.has("world-motion");
+const currentWorldHistory = query.has("current-world-history");
 const material = new MeshStandardMaterial({ color: 0x69c5ff, roughness: 0.38 });
 let mesh: BatchedMesh | InstancedMesh | SkinnedMesh;
 if (skinned) {
@@ -106,7 +115,10 @@ const projection = new SceneRenderProjection(scene, {
   velocity: !withoutHistory,
 });
 const scenePass = pass(scene, camera);
-ensureVelocityOutput(scenePass);
+scenePass.setMRT(
+  ensureVelocityOutput(scenePass).merge(mrt({ coverage: velocityCoverageNode(mesh, width) })),
+);
+scenePass.getTexture("coverage");
 const imageUv = vec2(uv().x.mul(2).fract(), uv().y);
 const beauty = scenePass.getTextureNode("output").sample(imageUv);
 const velocity = scenePass.getTextureNode("velocity").sample(imageUv);
@@ -127,6 +139,10 @@ let lateWrites = 0;
 let recompiles = 0;
 let oracleMaxErrorPixels = 0;
 let stoppedMax = -1;
+let footprintPixels = Number.POSITIVE_INFINITY;
+let footprintMaxErrorPixels = 0;
+let outsideFootprintMax = 0;
+let darkFootprintPixels = Number.POSITIVE_INFINITY;
 let currentX = 1.5;
 const samples: {
   frame: number;
@@ -138,7 +154,7 @@ const samples: {
   colourErrorPixels: number;
 }[] = [];
 // Includes reversals, unequal steps, a stop and a restart. One-frame-old data cannot agree by coincidence.
-const positions = [1.5, 1.35, 1.65, 1.25, 1.6, 1.45, 1.45, 1.7, 1.3];
+const positions = velocityFixturePositions;
 
 async function renderFrame() {
   // Three's NodeFrame is driven by RAF; synchronous render loops cannot prove frame history.
@@ -167,9 +183,22 @@ async function renderFrame() {
   const target = scenePass.renderTarget;
   const data = await readAttachment("velocity");
   const colour = await readAttachment("output");
+  const coverage = await readAttachment("coverage");
   const currentPoint = new Vector3(currentX, 0, 0).project(camera);
   const previousPoint = new Vector3(previousX, 0, 0).project(camera);
   const expectedX = currentPoint.x - previousPoint.x;
+  const masked = summarizeCoveredVelocity(
+    data,
+    colour,
+    target.width,
+    target.height,
+    expectedX,
+    coverage,
+  );
+  footprintPixels = Math.min(footprintPixels, masked.footprintPixels);
+  footprintMaxErrorPixels = Math.max(footprintMaxErrorPixels, masked.footprintMaxErrorPixels);
+  outsideFootprintMax = Math.max(outsideFootprintMax, masked.outsideFootprintMax);
+  darkFootprintPixels = Math.min(darkFootprintPixels, masked.darkFootprintPixels);
   const px = Math.floor((currentPoint.x * 0.5 + 0.5) * target.width);
   const py = Math.floor(target.height / 2);
   const currentMetrics = summarizeVelocityPixels(data, target.width, target.height, {
@@ -217,7 +246,8 @@ function moveGeometry(x: number): void {
   if (mesh instanceof SkinnedMesh) {
     const bone = mesh.skeleton.bones[0];
     if (bone === undefined) throw new Error("Fixture bone is missing.");
-    bone.position.x = x - 1.5;
+    if (worldMotion) mesh.position.x = x;
+    else bone.position.x = x - 1.5;
   } else {
     mesh.setMatrixAt(1, new Matrix4().makeTranslation(x, 0, 0));
     if (mesh instanceof InstancedMesh) mesh.instanceMatrix.needsUpdate = true;
@@ -225,7 +255,9 @@ function moveGeometry(x: number): void {
 }
 
 function mutateHistory(): void {
-  if (aggregateHistory && frame > 0) {
+  if (frame === 0) return;
+  if (currentWorldHistory) mutateWorldHistory();
+  if (aggregateHistory) {
     // Original per-instance mutation: one moving-instance transform is broadcast to both slots.
     const history = readVelocityPreviousMatrices(mesh);
     if (history === undefined)
@@ -233,7 +265,7 @@ function mutateHistory(): void {
     history.set(history.slice(16, 32), 0);
     if (mesh instanceof BatchedMesh) setBatchedMeshPreviousMatrices(mesh, history);
   }
-  if (currentAsPrevious && frame > 0) {
+  if (currentAsPrevious) {
     if (!(mesh instanceof SkinnedMesh)) throw new Error("Bone mutation requires a skinned mesh.");
     const history = readVelocityPreviousBoneMatrices(mesh);
     if (history === undefined) throw new Error("Bone mutation has no scheduled history.");
@@ -241,6 +273,14 @@ function mutateHistory(): void {
     if (current === null) throw new Error("Bone mutation has no current pose.");
     history.set(current);
   }
+}
+
+function mutateWorldHistory(): void {
+  if (!(mesh instanceof SkinnedMesh) || !worldMotion)
+    throw new Error("World-history mutation requires a world-moving skinned mesh.");
+  const history = readVelocityPreviousWorldMatrix(mesh);
+  if (history === undefined) throw new Error("World mutation has no scheduled history.");
+  history.copy(mesh.matrixWorld);
 }
 
 async function readAttachment(name: string): Promise<Float32Array> {
@@ -293,6 +333,12 @@ installThreePlaytestBridge({
         lateWrites,
         recompile,
         recompiles,
+        worldMotion,
+        currentWorldHistory,
+        footprintPixels,
+        footprintMaxErrorPixels,
+        outsideFootprintMax,
+        darkFootprintPixels,
         colourMaxErrorPixels,
         oracleMaxErrorPixels,
         stoppedMax,

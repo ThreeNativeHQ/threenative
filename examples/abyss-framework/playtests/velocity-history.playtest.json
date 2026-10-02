@@ -76,6 +76,32 @@
         "gte": 0,
         "lte": 0.5,
         "allowTrivial": "The rendered moving colour silhouette must agree with the current pose within half a pixel on every frame."
+      },
+      {
+        "id": "motion",
+        "path": "footprintPixels",
+        "gte": 100,
+        "allowTrivial": "The independently rasterized binary coverage must contain the moving surface in every actual frame."
+      },
+      {
+        "id": "motion",
+        "path": "footprintMaxErrorPixels",
+        "gte": 0,
+        "lte": 0.05,
+        "allowTrivial": "Every covered moving-surface pixel must match signed current-minus-previous NDC within the fixed half-float allowance, independently of lighting and colour intensity."
+      },
+      {
+        "id": "motion",
+        "path": "outsideFootprintMax",
+        "gte": 0,
+        "lte": 1e-5,
+        "allowTrivial": "Every pixel outside the exact moving coverage attachment, including all visible wall pixels at the silhouette, must have zero velocity."
+      },
+      {
+        "id": "motion",
+        "path": "darkFootprintPixels",
+        "gte": 1,
+        "allowTrivial": "Every actual frame must include covered shaded pixels that the rejected brightness/chroma mask would have excluded."
       }
     ]
   }

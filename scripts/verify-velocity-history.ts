@@ -32,7 +32,7 @@ try {
       variant: "without-history",
       query: "?without-history",
       kind: "BatchedMesh",
-      failures: ["movingPixels", "oracleMaxErrorPixels"],
+      failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
     },
     { variant: "tracked", query: "", kind: "BatchedMesh", failures: [] },
     { variant: "instanced", query: "?instanced", kind: "InstancedMesh", failures: [] },
@@ -52,27 +52,41 @@ try {
       variant: "aggregate-batch",
       query: "?aggregate-history",
       kind: "BatchedMesh",
-      failures: ["staticMax", "stationaryMax"],
+      failures: ["staticMax", "stationaryMax", "outsideFootprintMax"],
     },
     {
       variant: "aggregate-instance",
       query: "?instanced&aggregate-history",
       kind: "InstancedMesh",
-      failures: ["staticMax", "stationaryMax"],
+      failures: ["staticMax", "stationaryMax", "outsideFootprintMax"],
     },
     { variant: "skinned", query: "?skinned", kind: "SkinnedMesh", failures: [] },
+    {
+      // Diagnostic reproduction, not acceptance: attached root motion currently counts twice.
+      variant: "skinned-world-diagnostic",
+      query: "?skinned&world-motion",
+      kind: "SkinnedMesh",
+      failures: ["oracleMaxErrorPixels", "footprintMaxErrorPixels"],
+    },
+    {
+      // The wrong current-world history currently cancels the separate bind-inverse error.
+      variant: "skinned-world-current-history-diagnostic",
+      query: "?skinned&world-motion&current-world-history",
+      kind: "SkinnedMesh",
+      failures: [],
+    },
     {
       variant: "skinned-current-history",
       query: "?skinned&current-as-previous",
       kind: "SkinnedMesh",
-      failures: ["movingPixels", "oracleMaxErrorPixels"],
+      failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
     },
     { variant: "late-write", query: "?instanced&late-write", kind: "InstancedMesh", failures: [] },
     {
       variant: "premature-commit",
       query: "?instanced&late-write&premature-commit",
       kind: "InstancedMesh",
-      failures: ["movingPixels", "oracleMaxErrorPixels"],
+      failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
     },
   ];
   for (const { variant, query, kind, failures } of variants) {
@@ -126,6 +140,7 @@ try {
     const snapshot = report.observations?.resources.motion?.after;
     assert.ok(snapshot && typeof snapshot === "object" && !Array.isArray(snapshot));
     assert.ok("geometryKind" in snapshot && "lateWrites" in snapshot && "recompiles" in snapshot);
+    assert.ok("worldMotion" in snapshot && "currentWorldHistory" in snapshot);
     assert.equal(snapshot.geometryKind, kind, `${variant}: actual geometry class`);
     assert.equal(
       snapshot.lateWrites,
@@ -133,6 +148,12 @@ try {
       `${variant}: writes after scheduling`,
     );
     assert.equal(snapshot.recompiles, query.includes("recompile") ? 1 : 0, `${variant}: rebuilds`);
+    assert.equal(snapshot.worldMotion, query.includes("world-motion"), `${variant}: world motion`);
+    assert.equal(
+      snapshot.currentWorldHistory,
+      query.includes("current-world-history"),
+      `${variant}: world-history mutation`,
+    );
   }
   assert.ok(
     !(await readFile(path.join(output, "without-history/after.png"))).equals(
@@ -142,10 +163,10 @@ try {
   );
   await writeFile(
     path.join(output, "summary.json"),
-    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; includes a known attached-skinned root-motion diagnostic failure; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
-    `Velocity history: missing-history control failed and batch, instance, skinning and ordering cases passed their exact positive/mutation assertions. Artifacts: ${output}`,
+    `Velocity history: expected motion/control outcomes observed, including the known attached-skinned root-motion diagnostic failure. Full skinned acceptance remains open. Artifacts: ${output}`,
   );
 } catch (error) {
   await writeFile(
