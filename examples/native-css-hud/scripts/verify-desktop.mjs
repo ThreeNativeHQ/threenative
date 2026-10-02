@@ -7,16 +7,24 @@
  * The host must have been built with the backend: `TN_ENABLE_CSS_UI=1 pnpm native:build`.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
 
-const example = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repo = resolve(example, "..", "..");
+// `verify:desktop` proves the Tailwind arm; `verify:desktop plain` proves `plain/`, the same game
+// styled with hand-written CSS and no Tailwind in its build.
+const plain = process.argv[2] === "plain";
+const hud = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repo = resolve(hud, "..", "..");
+const example = plain ? join(hud, "plain") : hud;
+const name = plain ? "native-css-plain" : "native-css-hud";
 const runtime = join(repo, "packages", "runtime-native", "build", "tn-linux", "mystral");
 const tools = join(repo, "packages", "runtime-native", "build", "tn-linux", "mystral-tools");
-const executable = join(example, "dist-native", "native-css-hud");
+const executable = join(example, "dist-native", name);
+// The CLI by path, not `pnpm exec`: pnpm resolves the nearest package.json, which for `plain/` is the
+// Tailwind arm's, and would build that project while claiming to build this one.
+const cli = join(repo, "packages", "create-threenative", "dist", "threenative.js");
 const playtest = join(repo, "packages", "playtest", "dist", "runner", "cli.js");
 
 function run(command, args, label) {
@@ -42,7 +50,7 @@ for (const [label, file] of [
 // prebuilt host to package against. That host has no CSS backend, so packaging must refuse it by
 // name: this is the negative control. A build that passes here has packaged a host that cannot
 // start its own UI, and the proof below would not be about the shipped path.
-const consumer = spawnSync("pnpm", ["exec", "threenative", "build", "--target", "desktop"], {
+const consumer = spawnSync(process.execPath, [cli, "build", "--target", "desktop"], {
   cwd: example,
   encoding: "utf8",
 });
@@ -57,6 +65,23 @@ console.log(
 );
 rmSync(join(example, "dist-native"), { force: true, recursive: true });
 rmSync(join(example, "artifacts"), { force: true, recursive: true });
+
+if (plain) {
+  // The arm's claim is "no Tailwind in the pipeline", so the stylesheet the engine receives must
+  // be the hand-written one and nothing else: it carries `.panel`, and no Tailwind banner/layers.
+  const dir = join(example, ".threenative", "build", "ui-css");
+  const css = readdirSync(dir)
+    .filter((file) => file.endsWith(".css"))
+    .map((file) => readFileSync(join(dir, file), "utf8"))
+    .join("\n");
+  if (!css.includes(".panel") || /tailwindcss|@layer|--tw-/u.test(css)) {
+    console.error(
+      "TN_NATIVE_CSS_VERIFY_FAILED: the plain arm's stylesheet is not plain hand-written CSS.",
+    );
+    process.exit(1);
+  }
+  console.log(`plain arm stylesheet verified: ${css.length} bytes, no Tailwind markers`);
+}
 run(
   process.execPath,
   [
@@ -69,14 +94,7 @@ run(
 );
 run(
   process.execPath,
-  [
-    playtest,
-    "playtests/native-css-hud.playtest.json",
-    "--target",
-    "desktop",
-    "--executable",
-    executable,
-  ],
+  [playtest, `playtests/${name}.playtest.json`, "--target", "desktop", "--executable", executable],
   "desktop playtest",
 );
 
@@ -111,6 +129,10 @@ console.log(`native-css verified: ${backend}`);
 const NEAR = 8;
 const BLUE = [37, 99, 235];
 const CLEAR = [24, 24, 27];
+// The plain arm's `.close:hover` is `rgb(37 99 235 / 80%)` over the panel's #27272a. The pointer is
+// still over the button after the click, so the capture must show the blend: a hover rule that
+// never applied would leave BLUE and fail here.
+const HOVER = [37, 87, 196];
 
 function countNear(image, box, colour, tolerance) {
   let count = 0;
@@ -146,7 +168,12 @@ for (const capture of ["hud-before", "hud-after-click"]) {
     process.exit(1);
   }
   const image = PNG.sync.read(readFileSync(file));
-  const button = countNear(image, BUTTON, BLUE, NEAR);
+  const button = countNear(
+    image,
+    BUTTON,
+    plain && capture === "hud-after-click" ? HOVER : BLUE,
+    NEAR,
+  );
   const panel = countDifferent(image, PANEL, CLEAR, NEAR);
   painted[capture] = { button, panel };
   const failed = [];

@@ -9,7 +9,8 @@
     "build:web": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:desktop": "threenative build --target desktop",
-    "verify:desktop": "node scripts/verify-desktop.mjs"
+    "verify:desktop": "node scripts/verify-desktop.mjs",
+    "verify:desktop:plain": "node scripts/verify-desktop.mjs plain"
   },
   "dependencies": {
     "@threenative/core": "workspace:*",

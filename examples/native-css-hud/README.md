@@ -15,3 +15,9 @@ proof is the HUD, so the scene is a lit spinning cube and nothing else.
   `pnpm --filter @threenative/playtest build`. The published prebuilt host has no CSS backend and
   packaging refuses it by name, so the host must come from this checkout.
 - The scenario's click point was measured in Chromium, not guessed: 85.3 x 651 px of 1280x720.
+
+## Plain-CSS arm
+
+`plain/` is the same game styled with hand-written CSS and no Tailwind in its build. Prove it with
+`pnpm --filter threenative-native-css-hud verify:desktop:plain` (same prerequisites as above); it also
+asserts the stylesheet the engine receives carries no Tailwind markers and that `:hover` painted.
