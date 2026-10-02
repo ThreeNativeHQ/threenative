@@ -39,6 +39,14 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
  && apt-get update && apt-get install -y --no-install-recommends gh \
  && rm -rf /var/lib/apt/lists/*
 
+# Android platform-tools where hosted ubuntu-24.04 keeps its SDK: the playtest doctor resolves adb
+# through ANDROID_HOME before PATH.
+ENV ANDROID_HOME=/usr/local/lib/android/sdk ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+RUN mkdir -p "$ANDROID_HOME" \
+ && curl -fsSL https://dl.google.com/android/repository/platform-tools-latest-linux.zip -o /tmp/pt.zip \
+ && unzip -q /tmp/pt.zip -d "$ANDROID_HOME" && rm /tmp/pt.zip \
+ && ln -s "$ANDROID_HOME/platform-tools/adb" /usr/local/bin/adb
+
 COPY entrypoint.sh /home/runner/entrypoint.sh
 
 # Rust as hosted ubuntu-24.04 has it (stable, on PATH): the native physics ABI is built with cargo.
