@@ -43,9 +43,11 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
       [70, 6, 80],
       [85, 3, 240],
     ],
-    width: 12,
-    depth: 4,
-    shoulder: 8,
+    // A lowland river: a wide shallow bed and banks that lean back over twenty metres, not a canal
+    // cut four metres straight down — that cut is what painted the strata on both banks.
+    width: 14,
+    depth: 2.6,
+    shoulder: 22,
     enforceDownhill: true,
   });
 export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })

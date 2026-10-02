@@ -83,7 +83,7 @@ const RIG = {
    * quarters into the next one, which is the difference between a landscape with distance in it and
    * a green plane that stops.
    */
-  haze: { color: new Color(0xa9c4d8), density: 0.0028 },
+  haze: { color: new Color(0xa9c4d8), density: 0.0017 },
   /** Linear exposure for the AgX curve, as 2^EV. AgX already rolls its highlights off, so this sits
    *  below one: a temperate noon here is a bright sky and green that still has detail in it. */
   exposure: 2 ** -0.18,
