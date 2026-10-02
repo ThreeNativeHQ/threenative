@@ -1,0 +1,45 @@
+name: Integration bounded decals
+on:
+  pull_request:
+    paths:
+      - 'packages/create-threenative/templates/shooter/src/render/decals.ts'
+      - 'packages/create-threenative/templates/shooter/src/scenes/Play.ts'
+      - 'packages/create-threenative/__tests__/shooter-decals*.spec.ts'
+      - 'packages/create-threenative/__tests__/fixtures/bounded-decals/**'
+      - '.github/workflows/integration-decals.yml'
+  push:
+    branches: ['fix/vq11-decal-material-lifetime']
+permissions:
+  contents: read
+concurrency:
+  group: integration-decals-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  decals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          pack-archives: 'false'
+          save-bundles: 'false'
+      - uses: ./.github/actions/playwright-chromium
+      - run: pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts packages/create-threenative/__tests__/shooter-decals-fixture.spec.ts packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts packages/create-threenative/__tests__/template-runtime-cost.spec.ts
+      - name: Capture actual receiver projection, motion, removal and restart
+        run: node --import tsx packages/create-threenative/__tests__/fixtures/bounded-decals/verify.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vq11-decals-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/vq11-decals
+          if-no-files-found: error

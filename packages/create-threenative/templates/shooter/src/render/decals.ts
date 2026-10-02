@@ -1,6 +1,9 @@
 import {
+  type BufferGeometry,
   DataTexture,
   DoubleSide,
+  Euler,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   type Object3D,
@@ -11,6 +14,7 @@ import {
   UnsignedByteType,
   Vector3,
 } from "three";
+import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 
 /**
  * Bullet holes, and any other flat mark a game wants to leave stuck to a wall.
@@ -124,9 +128,101 @@ const scratchQuaternion = new Quaternion();
 const scratchRoll = new Quaternion();
 const scratchNormal = new Vector3();
 
+type DecalMesh = Mesh<BufferGeometry, MeshBasicMaterial>;
+
+/** Projection is deliberately limited to static opaque triangles under rigid/uniform transforms. */
+function validateReceiver(receiver: Mesh, geometry: BufferGeometry): void {
+  const kind = receiver as Mesh & {
+    isSkinnedMesh?: boolean;
+    isInstancedMesh?: boolean;
+    isBatchedMesh?: boolean;
+  };
+  const materials = Array.isArray(receiver.material) ? receiver.material : [receiver.material];
+  const unsupportedMaterial = materials.some((material) => {
+    const custom = material as typeof material & {
+      isShaderMaterial?: boolean;
+      displacementMap?: Texture | null;
+      positionNode?: unknown;
+      vertexNode?: unknown;
+      transmission?: number;
+    };
+    return (
+      material.transparent ||
+      material.opacity !== 1 ||
+      material.alphaTest > 0 ||
+      material.alphaHash ||
+      custom.isShaderMaterial ||
+      custom.displacementMap != null ||
+      custom.positionNode != null ||
+      custom.vertexNode != null ||
+      (custom.transmission ?? 0) > 0
+    );
+  });
+  if (
+    !receiver.isMesh ||
+    kind.isSkinnedMesh ||
+    kind.isInstancedMesh ||
+    kind.isBatchedMesh ||
+    receiver.userData.deforming === true ||
+    unsupportedMaterial ||
+    Object.values(geometry.morphAttributes).some((attributes) => attributes.length > 0) ||
+    Object.values(receiver.geometry.morphAttributes).some((attributes) => attributes.length > 0)
+  ) {
+    throw new Error("Unsupported receiver: decals require a static, opaque, non-instanced mesh.");
+  }
+  receiver.updateWorldMatrix(true, false);
+  const matrix = receiver.matrixWorld;
+  const x = new Vector3().setFromMatrixColumn(matrix, 0);
+  const y = new Vector3().setFromMatrixColumn(matrix, 1);
+  const z = new Vector3().setFromMatrixColumn(matrix, 2);
+  const length = x.lengthSq();
+  const tolerance = length * 1e-6;
+  if (
+    !matrix.elements.every(Number.isFinite) ||
+    matrix.determinant() <= 0 ||
+    length === 0 ||
+    Math.abs(y.lengthSq() - length) > tolerance ||
+    Math.abs(z.lengthSq() - length) > tolerance ||
+    Math.abs(x.dot(y)) > tolerance ||
+    Math.abs(x.dot(z)) > tolerance ||
+    Math.abs(y.dot(z)) > tolerance
+  ) {
+    throw new Error(
+      "Unsupported receiver: decals require a rigid or positive uniform-scale transform.",
+    );
+  }
+  const position = geometry.getAttribute("position");
+  const count = geometry.index?.count ?? position?.count ?? 0;
+  if (
+    position === undefined ||
+    position.itemSize !== 3 ||
+    count % 3 !== 0 ||
+    geometry.drawRange.start !== 0 ||
+    geometry.drawRange.count !== Number.POSITIVE_INFINITY
+  ) {
+    throw new Error("Unsupported receiver: decals require complete triangle geometry.");
+  }
+}
+
+/** Keep upstream clipping/UVs, but do not paint a thin receiver's reverse-facing triangles. */
+function frontFaces(geometry: BufferGeometry, normal: Vector3): number[] {
+  const position = geometry.getAttribute("position");
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  const indices: number[] = [];
+  for (let index = 0; index < position.count; index += 3) {
+    a.fromBufferAttribute(position, index);
+    b.fromBufferAttribute(position, index + 1).sub(a);
+    c.fromBufferAttribute(position, index + 2).sub(a);
+    if (b.cross(c).dot(normal) > 0) indices.push(index, index + 1, index + 2);
+  }
+  return indices;
+}
+
 /** One family of marks: its own material, its own slots, its own recycle cursor. */
 type Variant = {
-  readonly slots: Mesh<PlaneGeometry, MeshBasicMaterial>[];
+  readonly slots: DecalMesh[];
   readonly material: MeshBasicMaterial;
   cursor: number;
 };
@@ -134,6 +230,9 @@ type Variant = {
 export class DecalField<TVariant extends string> {
   readonly #variants = new Map<TVariant, Variant>();
   readonly #geometry: PlaneGeometry;
+  readonly #parent: Object3D;
+  readonly #size: number;
+  readonly #projected = new Map<DecalMesh, { receiver: Mesh; removed: () => void }>();
   readonly #offset: number;
   #placed = 0;
   #capacity = 0;
@@ -157,6 +256,8 @@ export class DecalField<TVariant extends string> {
       renderOrder?: number;
     },
   ) {
+    this.#parent = parent;
+    this.#size = options.size;
     this.#offset = options.offset ?? 0.018;
     this.#geometry = new PlaneGeometry(options.size, options.size);
     for (const [name, tint] of Object.entries(options.tints) as [TVariant, number][]) {
@@ -169,7 +270,7 @@ export class DecalField<TVariant extends string> {
         side: DoubleSide,
         transparent: true,
       });
-      const slots: Mesh<PlaneGeometry, MeshBasicMaterial>[] = [];
+      const slots: DecalMesh[] = [];
       for (let index = 0; index < options.countPerVariant; index += 1) {
         const mesh = new Mesh(this.#geometry, material.clone());
         // Present from the first frame at a size nothing can see, so this material's pipeline is
@@ -230,6 +331,7 @@ export class DecalField<TVariant extends string> {
     const mesh = family.slots[family.cursor % family.slots.length];
     family.cursor += 1;
     if (mesh === undefined) return;
+    this.#releaseProjection(mesh);
     this.#placed += 1;
     scratchNormal.copy(normal).normalize();
     scratchQuaternion.setFromUnitVectors(FORWARD, scratchNormal);
@@ -245,6 +347,126 @@ export class DecalField<TVariant extends string> {
     mesh.updateMatrixWorld(true);
   }
 
+  /**
+   * Opt-in projection: pass the existing hit object and its authored/base geometry from the game.
+   * `point`, `normal`, `depth` and the size multiplier are world-space. Returns false on a miss or
+   * absent slot. Only this receiver is clipped; nearby objects are never projected onto. The
+   * upstream corner/overlap distortion remains: keep depth narrow for thin or concave surfaces.
+   * Call `update` each frame to clean receivers removed through an ancestor subtree.
+   */
+  project(
+    receiver: Mesh,
+    geometry: BufferGeometry,
+    point: Vector3,
+    normal: Vector3,
+    variant: TVariant,
+    options: { depth: number; scale?: number },
+  ): boolean {
+    const family = this.#variants.get(variant);
+    const mesh = family?.slots[family.cursor % family.slots.length];
+    if (family === undefined || mesh === undefined) return false;
+    const size = this.#size * (options.scale ?? 1);
+    if (
+      ![
+        point.x,
+        point.y,
+        point.z,
+        normal.x,
+        normal.y,
+        normal.z,
+        size,
+        options.depth,
+        this.#offset,
+      ].every(Number.isFinite) ||
+      size <= 0 ||
+      options.depth <= 0 ||
+      !Number.isFinite(normal.lengthSq()) ||
+      normal.lengthSq() === 0
+    ) {
+      throw new Error(
+        "Invalid decal projector: finite point/normal and positive size/depth required.",
+      );
+    }
+    validateReceiver(receiver, geometry);
+    if (!this.#contains(receiver))
+      throw new Error("Unsupported receiver: mesh is outside the field's parent.");
+    const direction = normal.clone().normalize();
+    const orientation = new Quaternion().setFromUnitVectors(FORWARD, direction);
+    orientation.multiply(
+      new Quaternion().setFromAxisAngle(FORWARD, ((this.#placed + 1) * 2.399) % (Math.PI * 2)),
+    );
+    // A proxy borrows the authored geometry without ever swapping the receiver's render LOD.
+    const source = new Mesh(geometry, receiver.material);
+    source.matrixWorld.copy(receiver.matrixWorld);
+    const projected = new DecalGeometry(
+      source,
+      point,
+      new Euler().setFromQuaternion(orientation),
+      new Vector3(size, size, options.depth),
+    );
+    const indices = frontFaces(projected, direction);
+    if (indices.length === 0) {
+      projected.dispose();
+      return false;
+    }
+    projected.setIndex(indices);
+    projected.translate(
+      direction.x * this.#offset,
+      direction.y * this.#offset,
+      direction.z * this.#offset,
+    );
+    projected.applyMatrix4(new Matrix4().copy(receiver.matrixWorld).invert());
+    this.#releaseProjection(mesh);
+    mesh.geometry = projected;
+    mesh.position.set(0, 0, 0);
+    mesh.quaternion.identity();
+    mesh.scale.setScalar(1);
+    mesh.visible = true;
+    receiver.add(mesh);
+    const removed = (): void => this.#releaseProjection(mesh);
+    this.#projected.set(mesh, { receiver, removed });
+    receiver.addEventListener("removed", removed);
+    mesh.updateWorldMatrix(true, false);
+    family.cursor += 1;
+    this.#placed += 1;
+    return true;
+  }
+
+  /** Release marks before a receiver is destroyed; its geometry and material remain borrowed. */
+  removeReceiver(receiver: Mesh): void {
+    for (const [mesh, entry] of this.#projected) {
+      if (entry.receiver === receiver) this.#releaseProjection(mesh);
+    }
+  }
+
+  /** A direct removal fires synchronously; this bounded sweep also observes removed ancestors. */
+  update(): void {
+    for (const [mesh, entry] of this.#projected) {
+      if (!this.#contains(entry.receiver)) this.#releaseProjection(mesh);
+    }
+  }
+
+  #contains(object: Object3D): boolean {
+    for (let current: Object3D | null = object; current !== null; current = current.parent) {
+      if (current === this.#parent) return true;
+    }
+    return false;
+  }
+
+  #releaseProjection(mesh: DecalMesh): void {
+    const entry = this.#projected.get(mesh);
+    if (entry === undefined) return;
+    entry.receiver.removeEventListener("removed", entry.removed);
+    this.#projected.delete(mesh);
+    mesh.geometry.dispose();
+    mesh.geometry = this.#geometry;
+    this.#parent.add(mesh);
+    mesh.position.set(0, 0, 0);
+    mesh.quaternion.identity();
+    mesh.scale.setScalar(0.0001);
+    mesh.visible = false;
+  }
+
   /** Registered as an entity so a scenario can assert that a round actually left a mark. */
   debug(): { capacity: number; placed: number } {
     return { capacity: this.#capacity, placed: this.#placed };
@@ -254,6 +476,7 @@ export class DecalField<TVariant extends string> {
   clear(): void {
     for (const family of this.#variants.values()) {
       for (const mesh of family.slots) {
+        this.#releaseProjection(mesh);
         mesh.scale.setScalar(0.0001);
         if (this.#settled) mesh.visible = false;
       }
@@ -266,6 +489,7 @@ export class DecalField<TVariant extends string> {
     this.#disposed = true;
     for (const family of this.#variants.values()) {
       for (const mesh of family.slots) {
+        this.#releaseProjection(mesh);
         mesh.removeFromParent();
         mesh.material.dispose();
       }

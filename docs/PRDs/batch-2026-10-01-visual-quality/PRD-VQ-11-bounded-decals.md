@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-11 — Impact and environment decals use a bounded portable lifecycle
 
-**Status:** PARTIAL — 2026-10-02. The existing shooter decal field's owned-material teardown is repaired; the full receiver/projection feature and platform qualification remain open.
+**Status:** PARTIAL — 2026-10-02. Owned-resource teardown and opt-in bounded receiver projection are CPU-verified. Authored fade/atlas qualification and browser/native visible-result gates remain open.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 2 / high-payoff detail.
 **Dependencies:** Independent. Share receiver/base-geometry selection with existing LOD and picking paths.
 
@@ -20,6 +20,14 @@ Start from ordinary Three decal geometry and generated materials. Reuse existing
 
 Surface-color impacts and environment marks on static/rigid opaque receivers. No deferred G-buffer decal renderer, normal/roughness channel rewrite, skinned tattoo system or virtual-texture painting.
 
+### Opt-in projection implementation slice
+
+Extend the existing game-owned shooter `DecalField`; preserve `place(point, normal, variant, scale)` and its authored default scene. Add `project(receiver, geometry, point, normal, variant, { depth, scale? })`, where the game passes its existing hit object and public `baseGeometryOf(receiver)` result. The render source remains ordinary Three.js with no framework import. Upstream `DecalGeometry` clips only that receiver's borrowed geometry; the field owns the resulting buffers, keeps forward-facing triangles, applies the authored normal offset, and transforms the result into receiver-local space.
+
+Reuse existing material/slot budgets and deterministic per-variant round-robin eviction. A fixture with one 256-slot family proves the required total cap. Release projected buffers on slot replacement, clear, receiver removal and field disposal. Direct receiver removal triggers cleanup; `update()` also cleans receivers whose ancestor subtree left the field's parent. Rigid translation/rotation and positive uniform scale are supported. Reject skinned, morph/deforming, instanced/batched, transparent/cutout, mirrored, singular, sheared or nonuniformly scaled receivers explicitly. Source geometry is borrowed, is never reassigned or disposed, and may differ from the current render LOD.
+
+CPU proof belongs in `packages/create-threenative/__tests__/shooter-decals-projection.spec.ts`, alongside existing lifetime proof. An opt-in fixture will exercise real framework picking/base geometry, receiver motion, cap/eviction and teardown. Projection corner distortion and same-receiver overlapping forward-facing surfaces remain upstream limitations; the caller supplies a narrow projection depth. Browser/native and actual relevant screenshot gates remain open until executed.
+
 ## Required behavior
 
 - A cap of 256 decals in the fixture is enforced with deterministic eviction, and receiver teardown removes its marks.
@@ -33,26 +41,28 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 ### Phase 1 — Reuse projection and bound lifetime
 
-- [ ] Integrate upstream decal projection with existing picking/base-geometry data and explicit receiver support. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
-- [ ] Implement deterministic pool limits, eviction, receiver cleanup and borrowed-resource ownership. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
+- [x] Integrate upstream decal projection with existing picking/base-geometry data and explicit receiver support. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts packages/create-threenative/__tests__/shooter-decals-fixture.spec.ts` — 20 tests passed, including a real cooked GLB through the asset loader, 128-to-2-triangle LOD selection, framework picking and `baseGeometryOf`; renderer proof remains Phase 3.
+- [x] Implement deterministic pool limits, eviction, receiver cleanup and borrowed-resource ownership. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts` — 23 tests passed; 1,024 impacts retained 256 slots, released 768 evicted projected buffers, and released the remaining 256 once at teardown while retaining borrowed source geometry/map.
   - Partial, 2026-10-02: the existing generated shooter `DecalField` now releases each cloned slot material, family material and shared geometry once; its texture remains borrowed. `node node_modules/vitest/vitest.mjs run packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts` passed 4 tests after reproducing 4 failures on the original implementation. This repairs the existing 224-slot template; it does not implement the proposed 256-decal receiver/projection fixture or introduce an engine pool.
   - Caller ownership follow-up, 2026-10-02: `Play` registers its procedural decal texture in the existing scene registry after the borrowing field. The real `Play.load`/`enter` and registry teardown regression proves all 224 material disposals precede one texture disposal on each of three scene lifecycles; repeated cleanup does not redispose it, and the borrowed sky texture is retained. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/template-runtime-cost.spec.ts -t 'releases the shooter-owned decal texture'` — missing-disposal failure before the fix, pass afterward.
 
 ### Phase 2 — Preserve authored appearance and receiver motion
 
-- [ ] Add game-owned decal material/atlas composition with bounded bias and fade controls. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
-- [ ] Verify rigid receiver motion, LOD changes and repeated scene teardown without detached marks or allocation growth. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
+- [ ] Add game-owned decal material/atlas composition with bounded bias and fade controls. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts` plus the runtime fixture.
+  - Materials, tints, map, offset, projection depth and size remain game-authored. Atlas/fade controls and their visible qualification are not implemented by this slice.
+- [ ] Verify rigid receiver motion, LOD changes and repeated scene teardown without detached marks or allocation growth. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/shooter-decals-projection.spec.ts packages/create-threenative/__tests__/shooter-decals-fixture.spec.ts` plus the Phase 3 lifecycle scenario.
+  - Receiver/ancestor rigid motion, positive uniform scale, direct and ancestor removal, explicit cleanup, legacy-slot reuse and actual loader/picker LOD independence are CPU-verified. Repeated projected scene resets and GPU residency still require the runtime fixture.
   - Partial, 2026-10-02: the lifetime regression exercises 20 field construction/teardown cycles, 2,000 pooled placements, clear/reuse, zero-slot teardown and repeated `dispose()`. Real Three disposal events/spies verify owned-resource release and retention of the borrowed map. Rigid receivers, LOD changes, GPU memory and game-scene transitions are not qualified by these unit tests.
 
 ### Phase 3 — Qualify the visible result
 
-- [ ] The impact sequence covers the 256-mark cap, moving receiver and LOD boundary on browser WebGPU. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-bounded-decals.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
-- [ ] The same sequence runs on Linux native with matching pool/receiver observations and visible marks. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-bounded-decals.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
+- [ ] The impact sequence covers the 256-mark cap, moving receiver and LOD boundary on browser WebGPU. proof: `node --import tsx packages/create-threenative/__tests__/fixtures/bounded-decals/verify.ts` / `.github/workflows/integration-decals.yml` — opt-in portable fixture and static/motion/teardown/restart scenarios are built and schema-validated; actual hosted captures are pending.
+- [ ] The same sequence runs on Linux native with matching pool/receiver observations and visible marks. proof: `node packages/playtest/dist/runner/cli.js packages/create-threenative/__tests__/fixtures/bounded-decals/motion.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}` — portable `native.ts` entry is authored, but its native bundle/service must be staged with `public/receiver.glb` and `public/assets.manifest.json` and actually executed before qualification.
 
 ## Acceptance criteria
 
 - [ ] The supported receiver cases retain their marks under motion and teardown, and resource use is bounded independently of total shots fired. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.
-- [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts` plus the Phase 3 lifecycle scenario.
+- [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: the projection/lifetime CPU suites named above plus the Phase 3 restart scenario.
 
 ## Performance and promotion
 
@@ -81,3 +91,10 @@ Update the phase boxes and this PRD only after the named proof runs. Record actu
 - The same four-file focused/adjacent command above passes 14/14 tests with `--maxWorkers 1`, including the original four field-ownership regressions. Fixture Rapier/Three warnings remain visible; no real disposal implementation is replaced.
 - `node node_modules/typescript/bin/tsc --noEmit -p packages/create-threenative/tsconfig.json`: exit 0. Biome check on the changed caller and test: exit 0 with six existing complexity warnings. `node --import tsx scripts/check-doc-links.ts`: exit 0, 2,395 links checked.
 - This follow-up does not rerun aggregate root build/typecheck/test lanes while parallel rendering work is active. Browser/native qualification, actual relevant runtime screenshot proof, required CI and independent review remain open; the PR stays draft. Projection/receiver feature expansion is not included in this ownership repair.
+
+2026-10-02 opt-in receiver projection milestone:
+
+- Initial projection tests: 17 failed because the opt-in API was absent; all passed after implementation. Additional invalid-normal regression failed before its validation repair; the final projection suite passes 19 tests. The real GLB loader/LOD/picking integration passes one additional test.
+- Focused and adjacent validation: 6 files, 34 tests passed with `--maxWorkers 1` (projection, fixture, lifetime, template-runtime-cost, shooter-rig, world-environment-lifetime). Package typecheck passes. Changed-file Biome check passes with the existing texture-generator complexity warning and two fixture complexity warnings. No root aggregate build/test pass is claimed.
+- The portable real engine fixture builds through Vite, and all four scenarios pass the maintained schema validator. The local pixel-producing run reaches the maintained runner but fails closed because no usable X display/Xvfb is available. No local screenshot is claimed.
+- The hosted workflow uses the built public runner and retains actual reports/PNGs before result checks. Exact source SHA and adapter accompany each capture; software rendering is correctness-only. Error diagnostics or `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` prevent qualification even if a runner report says pass. Actual screenshot progress must be inspected and attached to the PR, including incomplete gates, before any readiness claim.
