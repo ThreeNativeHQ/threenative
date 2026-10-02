@@ -1128,7 +1128,7 @@ blended by elevation; no new reflection pass. Pack-free run with this shader pas
 assertions, zero diagnostics/console errors, p50 **2.4/2.3/1.3/1.0/2.1 ms**; licensed data
 was restored. Its oversized procedural saplings motivated measured fallback heights of
 2 m alpine / 1.4 m tundra, leaving licensed and temperate paths unchanged. The updated
-pack-free rerun and final licensed captures are in progress, not yet claimed.
+pack-free rerun and final licensed captures both pass, as recorded below.
 
 `pnpm exec tsx scripts/check-water.mjs` preserves the real two-channel, flooded-cover
 and small-fallback-sapling checks; all pass. Example typecheck, Biome error gate and
@@ -1144,3 +1144,22 @@ binaries (**1,502 passed**, **70 skipped** in that lane). No native claim. A fal
 capture stopped during coastal while package-building tests ran; doctor passes, and a
 quiet rerun passes. The suite's generated Abyss build report was restored; no unrelated
 changes retained. AC-5 remains open: terrain/props still fall short of Gaia/Unreal.
+
+Final round-2 proof: `artifacts/playtest/worlds-r2-final/` has **36/36 PASS**, zero
+diagnostics/console errors. Frame p50 meadow/overview/alpine/desert/tundra is
+**2.1/2.2/1.2/1.1/2.2 ms**. The updated procedural fallback also passes **36/36**, zero
+errors, p50 **1.7/2.2/1.2/1.0/2.2 ms**, in `artifacts/playtest/worlds-r2-fallback/`;
+licensed assets are restored and none committed. Forest meadow luminance p5/p50/p95
+is **15.5102/77.0328/176.5686**, delta **+0.0024/-0.0358/+0.0642**, within 0.5.
+Normal-state Biome passes after restoring local assets; the temporary renamed-asset
+scan had formatting errors in licensed manifests, without source errors or edits.
+
+Full-resolution fresh review rates alpine **6/10**, desert **5/10**, tundra **5/10**
+against the requested target. Alpine still lacks layered cliff detail and continuous
+snowfields; desert walls remain rounded; tundra cover and bright water lack reference
+fidelity. Functional fallback is verified, visual parity is not. Reject the final
+desert cliff-band experiment: spikes rose 9 to 14 (worst 2.1 to 4.1 m) with angular
+notches; restore the already-green recipe. AC-5 stays open; Unreal quality is unmet.
+Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra water;
+desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
+Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
