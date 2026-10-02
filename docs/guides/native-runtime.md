@@ -69,6 +69,14 @@ Check textures and sound on the device. Android has no Basis transcoder or Mesho
 | --- | --- | --- |
 | `ui: { renderer: "native" }` | `minimal` | In the 3D scene. No `src/ui/`. |
 | `ui: { renderer: "web" }` | `starter` | `src/ui/` in a WebUI overlay above the native renderer. |
+| `ui: { renderer: "native-css" }` | — | `src/ui/` in the game's own JS realm, painted by a native CSS engine. Desktop only, experimental. |
+
+`"native-css"` is opt-in and experimental. It runs the same React tree with the same Tailwind/CSS —
+no WebView and no second process — and takes its stylesheet from the same Vite build as `"web"`, so
+`src/ui/main.tsx` is still the web bootstrap and still imports your stylesheet; the game's native
+entry mounts the tree with `createCssUiRoot().render(<App />)` from `@threenative/core/react-css`.
+Android and iOS refuse the value by name (`TN_UI_RENDERER_UNSUPPORTED`) rather than falling back
+to a web view.
 
 The WebUI overlay talks to the game through state updates and action messages. Test keyboard
 focus, touch, pause and resume in the UI mode you ship.

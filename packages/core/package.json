@@ -55,6 +55,10 @@
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
     },
+    "./react-css": {
+      "types": "./dist/react-css.d.ts",
+      "import": "./dist/react-css.js"
+    },
     "./ui-layer": {
       "types": "./dist/ui-layer.d.ts",
       "import": "./dist/ui-layer.js"

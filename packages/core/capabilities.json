@@ -3396,6 +3396,26 @@
     {
       "aliases": [],
       "constraints": [
+        "import `react`, never `react-dom`, from a native entry",
+        "styling is CSS resolved by the native engine; JS only mirrors the element tree"
+      ],
+      "example": "const root = createCssUiRoot();\nroot.render(createElement(\"section\", { className: \"fixed inset-0 bg-zinc-900/90\" }, \"READY\"));",
+      "importPath": "@threenative/core/react-css",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function createCssUiRoot(options: ICssUiRootOptions = { … }",
+      "situations": [
+        "mount a React HUD on Android, iOS or desktop with no DOM in the runtime",
+        "write one React component and run it on the web and on a phone"
+      ],
+      "summary": "Mount React into a native CSS engine.",
+      "supersedes": [],
+      "symbol": "createCssUiRoot"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "styling is the `style` prop; Tailwind class names are CSS and cannot cross",
         "import `react`, never `react-dom`, from the portable native entry",
         "import `react`, never `react-dom`, from a native entry"

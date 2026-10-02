@@ -6,6 +6,7 @@ export default defineConfig({
     "src/playtest.ts",
     "src/hot.ts",
     "src/react.ts",
+    "src/react-css.ts",
     "src/ui-layer.ts",
     "src/world.ts",
     "src/net.ts",
