@@ -145,7 +145,7 @@ Measured 2026-10-02 on the real display (`:0`, HDMI-A-1 59.96 Hz, `nvidia/turing
 | example stress (6,000 particles) | 16.7 / 16.8 / 16.8 | 59.97 | 16.8 ms |
 | example dam break | 16.7 / 16.8 / 16.8 | 59.70 | 150 ms (1 frame, load 18) |
 
-An earlier pass with the previous defaults and shader gave the same p50/p95/p99 on Splash High, Dam, Ocean and the 6,000-particle stress scene (one 100 ms hitch in a first Splash High run, none on the rerun). Presented fps is display-locked at 60 Hz, so this proves the frame budget holds, not headroom beyond it; headroom is the frame cost above (about 1 ms GPU per frame). Single isolated hitches (33-150 ms) appeared three times in about 12,600 frames while other sessions loaded the host; not attributed to the solver.
+An earlier pass with the previous defaults and shader gave the same p50/p95/p99 on Splash High, Dam, Ocean and the 6,000-particle stress scene (one 100 ms hitch in a first Splash High run, none on the rerun). Read the 16.8 ms p95 as the display period (59.96 Hz is 16.68 ms) plus rAF timestamp resolution of about 0.1 ms, not as a missed frame: every counted frame landed on a vsync, and the only misses are the three single-frame hitches below. Presented fps is display-locked at 60 Hz, so this proves the frame budget holds, not headroom beyond it; headroom is the frame cost above (about 1 ms GPU per frame). Single isolated hitches (33-150 ms) appeared three times in about 12,600 frames while other sessions loaded the host; not attributed to the solver.
 
 ## Decisions
 
