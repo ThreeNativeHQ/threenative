@@ -110,7 +110,7 @@ skip it.
 
 - [ ] A promotion PR whose tree already passed reports `reused`, under 2 min. proof: CI run id plus the
   source run id it cites.
-- [ ] A tree that changed by one byte runs the full board. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts`,
+- [ ] A tree that changed by one byte runs the full board. proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`,
   with a case where the trees differ by one file and a case where the API errors.
 - [ ] `develop` merges go through the merge queue, and an unchanged-base merge group reuses. proof: merge
   group run id.
@@ -136,5 +136,5 @@ unreviewed).
 
 - [ ] `pipeline-cache.yml` fires only on paths its proof reads, with no dead branch. proof:
   `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`.
-- [ ] Integration workflows skip drafts and fire once per commit, not on both `push` and `pull_request`.
-  proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`.
+- [ ] Integration workflows skip drafts and fire once per commit. proof: `pnpm exec vitest run
+  scripts/__tests__/ci-structure.spec.ts`, rejecting a `push` plus `pull_request` pair.
