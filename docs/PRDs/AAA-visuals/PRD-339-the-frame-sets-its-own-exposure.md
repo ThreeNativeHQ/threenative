@@ -128,8 +128,8 @@ a convention missing from there does not exist.
 
 2026-10-02 fresh-environment implementation: settings/topology and GPU resource-lifecycle tests
 observed red for missing modules, then 28/28 passed after implementation. Scoped strict TypeScript
-and Biome pass. Generated `autoExposure.ts` and `exposure.ts` are feature-local source at this stage;
-no template or existing render chain has been changed. The real meter/reduction/adaptation TSL
+and Biome pass. At the first increment, generated `autoExposure.ts` and `exposure.ts` were feature-local source;
+no existing render chain was changed. The real meter/reduction/adaptation TSL
 graphs now generate WGSL through Three's builder (29 focused tests green); fixture Vite build,
 scoped strict types and 141 CI-structure/needs tests also pass. A portable scene using the existing
 engine loop and one explicit world pass now has static/cut playtests and a dedicated hosted
@@ -155,6 +155,21 @@ adaptation settled while the rendered image was nearly black. The output code mu
 whole vec4, including coverage alpha. `applyExposure` now multiplies RGB only and preserves alpha;
 its graph regression is green, with actual sunlight runtime rerun still required. The files and
 opt-in recipe are now shipped in all 13 templates, without changing an existing post chain.
+
+The RGB-only correction at `c7091c7edca15f6e0c415c3cdbfb2a0be696d9cc` has now rendered:
+[run 36995411940](https://github.com/ThreeNativeHQ/threenative/actions/runs/36995411940),
+artifact `11221785080`, SwiftShader WebGPU. The inspected
+[dark frame](../../verification/prd339-exposure-proof/dark-settled-c7091c7.png) and
+[sunlight frame](../../verification/prd339-exposure-proof/sunlight-settled-c7091c7.png)
+are both readable, settled, and pass with zero console/device-loss diagnostics. The applied values
+are 6.5429 stops (target 6.5515) and -4.4356 (target -4.4360), respectively. This proves the alpha
+repair on actual pixels. The overall run still fails: the
+[11-stop cut frame](../../verification/prd339-exposure-proof/cut-unsettled-c7091c7.png)
+is washed out at -0.1848 stops versus target -4.4360, with `settled=false` after the scripted wait.
+The one-stop and disabled cases were not reached. Full
+[provenance and original PNG digests](../../verification/prd339-exposure-proof/rgb-correction-c7091c7.json)
+are retained; no acceptance box is ticked from this partial run. A fresh published-source run of
+128 focused/scaffold/mirror tests passes; native and complete dynamics qualification remain open.
 
 ## Implementation decisions
 
