@@ -195,6 +195,13 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
 - [ ] Light jobs never wait behind heavy ones: `scope`, `ci-required` and `run-summary` route to
   `tn-local-light` and no heavy job can. proof: `ci-structure.spec.ts` case, plus a full-board run whose
   `ci-required` starts within 60 s of its last `needs` finishing.
+  Landed, unticked because the timing half is unmeasured: `up` starts one unpinned
+  `--cpus 1 --memory 2g --oom-score-adj 900` slot registering `tn-local-light` and sets
+  `TN_RUNNER_LIGHT`, and `scope`, `golden-path`, `build`, `ci-required`, `run-summary` route to it —
+  every job whose work is a script or a summary, none of which builds the workspace or runs a test.
+  `ci-structure.spec.ts` enforces the allow-list in both directions (red on `typecheck` put on the
+  light expression, red on `scope` put off it). Left: a full-board run whose `ci-required` starts
+  within 60 s of its last `needs` finishing.
 - [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
 

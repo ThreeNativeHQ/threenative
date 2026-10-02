@@ -921,11 +921,21 @@ describe("CI pipeline structure", () => {
   // the queue does not shrink, and nothing in a run says which half of the board ignored it.
   const routing =
     "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}";
+  const lightRouting =
+    "${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}";
   // `supply-chain` runs gitleaks through `docker run`; a self-hosted container would need the host
   // Docker socket mounted to do that, which would hand every job root on the owner's machine.
   const hosted = new Set(["supply-chain"]);
+  // PRD-480's light lane: the jobs whose whole work is a script or a summary — no workspace build
+  // and no test suite. `scope` classifies the diff, `build` and `golden-path` assert an upstream
+  // verdict, `ci-required` is the merge verdict and `run-summary` writes the report. They join on
+  // `tn-local-light` (1 CPU, 2 GB) so a ten-second verdict does not queue behind five twenty-minute
+  // builds. Both directions are load-bearing and both are asserted below: a heavy job here would
+  // build the workspace in one core, and a light job off the list would queue behind the heavy
+  // pool — which is the wait the lane exists to remove.
+  const light = new Set(["build", "ci-required", "golden-path", "run-summary", "scope"]);
 
-  it("routes every movable Linux job through the TN_RUNNER switch", async () => {
+  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
     const directory = path.join(repo, ".github/workflows");
     const routed = [
       ".github/workflows/ci.yml",
@@ -943,12 +953,21 @@ describe("CI pipeline structure", () => {
         // of native-platforms.yml — so the expression must never appear on one of them here.
         if (/macos|windows|arm/u.test(runsOn)) {
           expect(runsOn, `${relative} ${job} is not Linux`).not.toContain(routing);
+          expect(runsOn, `${relative} ${job} is not Linux`).not.toContain(lightRouting);
           continue;
         }
         expect(
-          runsOn === `runs-on: ${routing}` || hosted.has(job),
+          runsOn === `runs-on: ${routing}` ||
+            runsOn === `runs-on: ${lightRouting}` ||
+            hosted.has(job),
           `${relative} ${job} runs on \`${runsOn}\`: use the TN_RUNNER routing expression, or name it on the hosted allow-list`,
         ).toBe(true);
+        expect(
+          light.has(job),
+          `${relative} ${job} is ${
+            runsOn === `runs-on: ${lightRouting}` ? "on" : "off"
+          } the light lane: only ${[...light].join(", ")} may select tn-local-light`,
+        ).toBe(runsOn === `runs-on: ${lightRouting}`);
       }
     }
   });

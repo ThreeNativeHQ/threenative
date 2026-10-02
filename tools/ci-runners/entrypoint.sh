@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Registers this container as an ephemeral `tn-local` runner and takes one job.
+# Registers this container as an ephemeral `tn-local` runner — or `tn-local-light` for the light
+# lane — and takes one job.
 #
 # The container is the disposable half of `scripts/ci-runners.sh up`: it configures, runs exactly
 # one job, exits, and the host loop starts a fresh one. Nothing on the filesystem crosses jobs.
@@ -29,7 +30,7 @@ unset RUNNER_ADMIN_TOKEN
   --url "https://github.com/${TN_RUNNER_REPO}" \
   --token "$registration_token" \
   --name "tn-$(hostname)" \
-  --labels tn-local \
+  --labels "${TN_RUNNER_LABELS:-tn-local}" \
   --no-default-labels
 
 exec ./run.sh

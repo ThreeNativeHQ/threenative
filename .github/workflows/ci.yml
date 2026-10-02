@@ -29,7 +29,7 @@ jobs:
   scope:
     name: Change scope
     if: ${{ !github.event.pull_request.draft }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     outputs:
       scope: ${{ steps.classify.outputs.scope }}
@@ -846,7 +846,7 @@ jobs:
     # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
     # cancelled run has no passing checks to merge on.
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -916,7 +916,7 @@ jobs:
   build:
     needs: [scope, build-artifacts]
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 2
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
@@ -1170,7 +1170,7 @@ jobs:
   ci-required:
     needs: [scope, native-platforms, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
@@ -1224,7 +1224,7 @@ jobs:
     # `!cancelled()` and not `always()`, for the reason golden-path gives above: a cancelled run
     # has nothing to report and its summary would only describe the cancellation.
     if: ${{ !cancelled() && needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     permissions:
       contents: read
