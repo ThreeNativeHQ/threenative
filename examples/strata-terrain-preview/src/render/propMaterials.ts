@@ -911,6 +911,8 @@ export async function createPropSurfaces(
     stone: stoneMaterial,
   };
   if (biome && biome.world !== "forest" && biome.world !== "coastal") {
+    // colorNode already consumes blade colour; Three must not multiply it a second time.
+    grassMaterial.vertexColors = false;
     grassMaterial.colorNode = blade.mul(
       vec3(
         ...(biome.world === "desert"

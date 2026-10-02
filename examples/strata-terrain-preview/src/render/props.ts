@@ -371,11 +371,15 @@ function preparePose(
   ) {
     geometry.computeBoundingBox();
     const box = geometry.boundingBox;
-    if (box)
+    if (box) {
+      model.updateMatrix();
+      const crag = ["mountain", "volcanic", "reveal"].includes(placement.asset);
+      const height = crag
+        ? box.clone().applyMatrix4(model.matrix).getSize(new Vector3()).y
+        : (box.max.y - box.min.y) * model.scale.y;
       model.position.y -=
-        (placement.asset === "mountain" ? 0.48 : BOULDER_BURIAL) *
-        (box.max.y - box.min.y) *
-        model.scale.y;
+        (placement.asset === "mountain" ? 0.7 : crag ? 0.55 : BOULDER_BURIAL) * height;
+    }
   }
   model.updateMatrix();
   if (!new Float32Array(model.matrix.elements).every(Number.isFinite))

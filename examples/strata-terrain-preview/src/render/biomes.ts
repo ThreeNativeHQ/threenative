@@ -70,7 +70,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneTint: [0.69, 0.72, 0.77],
     snowTint: [1.02, 1.04, 1.07],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [64, 100, 0.39],
+    snow: [54, 88, 0.39],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -81,7 +81,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       },
       rock: ROCKFACE_MAPS,
     },
-    sun: { color: 0xfff3e5, intensity: 4.6, direction: [-180, 165, 80] },
+    sun: { color: 0xfff3e5, intensity: 4.6, direction: [180, 165, 140] },
     sky: { turbidity: 1.3, rayleigh: 2.1, mieCoefficient: 0.0018, mieDirectionalG: 0.8 },
     haze: { color: 0x9aafc3, density: 0.00035 },
     fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.65 },
@@ -178,8 +178,8 @@ export function biomeWeights(
     float(1)
       .sub(
         smoothstep(
-          biome.world === "alpine" ? 0.12 : 0.04,
-          biome.world === "alpine" ? 0.27 : biome.snow[2],
+          biome.world === "alpine" ? 0.16 : 0.04,
+          biome.world === "alpine" ? 0.33 : biome.snow[2],
           steep,
         ),
       )

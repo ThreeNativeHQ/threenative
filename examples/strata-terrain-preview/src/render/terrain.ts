@@ -458,7 +458,7 @@ export function createGroundMaterial(
           .add(0.5);
         stone = vec3(grey)
           .mul(vec3(1.65, 0.86, 0.43))
-          .mul(mix(vec3(0.84, 0.77, 0.66), vec3(1.09, 1.02, 0.9), smoothstep(0.25, 0.75, band)));
+          .mul(mix(vec3(0.42, 0.3, 0.22), vec3(1.2, 1.06, 0.78), smoothstep(0.18, 0.62, band)));
       }
       if (otherBiome && biome.world === "alpine") {
         const seams = positionWorld.y
@@ -559,8 +559,7 @@ export function createGroundMaterial(
         1,
       );
   if (biome?.world === "alpine") {
-    // The other-biome branch skipped the temperate far-field fade: directional grass mips
-    // and their normal relief survived as screen-space stripes across the distant plain.
+    // Keep unresolved grass texels out of the alpine horizon.
     const distantCover = vec3(0.075, 0.12, 0.028)
       .mul(cover)
       .mul(mix(0.85, 1.12, patch));
@@ -652,7 +651,7 @@ export function createGroundMaterial(
     rockNormal === undefined
       ? vec3(0)
       : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
-  const tilt = mix(normal, mountainTilt, continuation);
+  const tilt = mix(normal, biome?.world === "alpine" ? vec3(0) : mountainTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));

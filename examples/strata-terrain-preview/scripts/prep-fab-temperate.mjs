@@ -20,7 +20,11 @@ const REPO = join(EXAMPLE, "..", "..");
 const LIBRARY = process.env.FAB_TEMPERATE;
 if (!LIBRARY) throw new Error("Set FAB_TEMPERATE to the imported Fab library.");
 const OUT = join(EXAMPLE, "local-assets/temperate");
-const STAGE = join(EXAMPLE, "local-assets/.temperate-stage");
+const worldsOnly = process.argv.includes("--worlds");
+const STAGE = join(
+  EXAMPLE,
+  worldsOnly ? "local-assets/.worlds-stage" : "local-assets/.temperate-stage",
+);
 const requireAssets = createRequire(join(REPO, "packages/assets/package.json"));
 const sharp = requireAssets("sharp");
 const { MeshoptSimplifier } = requireAssets("meshoptimizer");
@@ -252,7 +256,10 @@ for (const [slot, suffix] of [
   const bytes = slot === "normal" ? image.linear([1, -1, 1], [0, 255, 0]) : image;
   await bytes.png().toFile(join(STAGE, `rockface/${slot}.png`));
 }
-for (const { pack, name, logical } of models) {
+const selected = worldsOnly
+  ? models.filter(({ logical }) => /^(mountain|volcanic|reveal)\//.test(logical))
+  : models;
+for (const { pack, name, logical } of selected) {
   const report = JSON.parse(readFileSync(join(LIBRARY, pack, "import-report.json"), "utf8"));
   const model = report.models.find((entry) => entry.name === name);
   if (!model) throw new Error(`Import report has no ${pack}/${name}`);
@@ -266,6 +273,9 @@ for (const { pack, name, logical } of models) {
     await io.write(join(STAGE, `${logical}-far.glb`), low);
   }
 }
+const previous = existsSync(join(OUT, "assets.manifest.json"))
+  ? JSON.parse(readFileSync(join(OUT, "assets.manifest.json"), "utf8"))
+  : null;
 await compileAssets({
   source: ".",
   output: OUT,
@@ -279,6 +289,10 @@ for (const [logical, entry] of Object.entries(manifest.entries))
     mkdirSync(join(OUT, "rockface"), { recursive: true });
     copyFileSync(join(OUT, entry.output), join(OUT, logical.replace(/\.png$/, ".ktx2")));
   }
+if (worldsOnly && previous) {
+  manifest.entries = { ...previous.entries, ...manifest.entries };
+  writeFileSync(join(OUT, "assets.manifest.json"), JSON.stringify(manifest, null, 2));
+}
 const transcoder = createRequire(join(EXAMPLE, "package.json")).resolve(
   "three/examples/jsm/libs/basis/basis_transcoder.js",
 );
@@ -286,5 +300,5 @@ mkdirSync(join(OUT, "basis"), { recursive: true });
 for (const name of ["basis_transcoder.js", "basis_transcoder.wasm"])
   copyFileSync(join(dirname(transcoder), name), join(OUT, "basis", name));
 const total = [...files(OUT)].reduce((sum, path) => sum + statSync(path).size, 0);
-console.log(`[prep] ${models.length} models, ${(total / 1048576).toFixed(1)} MiB (local-only)`);
+console.log(`[prep] ${selected.length} models, ${(total / 1048576).toFixed(1)} MiB (local-only)`);
 if (total > 130_000_000) throw new Error("Cook exceeds 130 MB");

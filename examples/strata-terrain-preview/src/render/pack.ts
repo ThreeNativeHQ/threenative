@@ -198,7 +198,9 @@ function surface(
         log2(max(length(dFdx(uv()).mul(size)), length(dFdy(uv()).mul(size))).max(1)),
         float(0),
       );
-      material.alphaTestNode = float(0.42).div(float(1).add(mip.mul(0.25)));
+      // Low tundra mats must reject blurred photographic background in alpha mips.
+      material.alphaTestNode =
+        world === "tundra" && !canopy ? float(0.5) : float(0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
       if (canopy) lightNeedles(material, material.aoNode as Node<"float">);
       else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
@@ -237,8 +239,7 @@ export async function loadPack(
         ["spruce", "sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(
           one.asset,
         )) ||
-      (world === "tundra" &&
-        ["sapling", "grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)) ||
+      (world === "tundra" && ["sapling", "boulder", "scree", "riverrock"].includes(one.asset)) ||
       (world === "desert" &&
         ["grass", "scrub", "boulder", "scree", "riverrock"].includes(one.asset)),
   );

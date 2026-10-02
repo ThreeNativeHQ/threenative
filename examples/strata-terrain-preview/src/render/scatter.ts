@@ -249,14 +249,18 @@ export function scatterProps(
         const sz = z + (random() - 0.5) * 7;
         const slope = slopeDegrees(data, sx, sz);
         const height = clampedHeight(data, sx, sz);
-        if (slope > 40 && (!alpine || height > 48) && random() < (alpine ? 0.72 : 0.4))
+        if (
+          slope > 42 &&
+          (alpine ? height > 48 : height < 25 || height > 65) &&
+          random() < (alpine ? 0.85 : 0.6)
+        )
           put(
             alpine ? "mountain" : "volcanic",
             sx,
             sz,
-            alpine ? (14 + random() * 26) / 24 : 0.65 + random() * 0.65,
+            alpine ? (18 + random() * 22) / 24 : 0.65 + random() * 0.65,
           );
-        else if (desert && height > 35 && slope < 12 && random() < 0.13)
+        else if (desert && height > 35 && slope > 8 && slope < 35 && random() < 0.55)
           put("reveal", sx, sz, 0.6 + random() * 0.7);
         else if (desert && slope > 18 && slope < 40 && random() < 0.22)
           put("volcanic", sx, sz, 0.4 + random() * 0.5);
@@ -327,7 +331,7 @@ export function scatterProps(
         "scrub",
         x + (random() - 0.5),
         z + (random() - 0.5),
-        (tundra ? 1.5 : 0.9) + random() * 0.6,
+        (tundra ? 0.7 : 0.9) + random() * 0.6,
       );
     if (tundra && random() < 0.055)
       put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.28 + random() * 0.25);

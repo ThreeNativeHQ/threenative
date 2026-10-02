@@ -1296,3 +1296,14 @@ The initial 2K rock cook measured 159.8 MiB and failed the 120 MB cap. New rock 
 only were reduced to 1K; fresh output measures 122.7 MiB (128.7 MB). The unavoidable
 output selection raises the decimal cap by 10 MB to 130 MB. Prior generated output is
 retained in ignored `.temperate-r3-first-cook/`; no licensed bytes are staged.
+
+Pass2 enhanced full scenario: 40/40 PASS, zero errors/diagnostics; six p50s
+alpine 2.1/1.9, desert 1.2/1.1, tundra 2.4/2.3 ms. Licensed crags
+actually draw (alpine 414 placements, 2 parts; desert 113 volcanic placements,
+6 parts). Full-resolution review rejects pasted-on rocks and pale foliage outlines.
+Pass3 short iteration: 16/16 PASS; deeper burial/front lighting improve scan readability.
+Preservation diagnosis: all-species recook added previously absent spruce/2,
+spruce/2-far and sapling/2; forest triangles changed with identical placement/light.
+Restore those missing aliases; bounded `--worlds` cook preserves existing species.
+Quantile verification is pending. RockFace003 binding succeeds; pale tundra cards
+are not a missing-map failure. Latest example tsc and source Biome pass.
