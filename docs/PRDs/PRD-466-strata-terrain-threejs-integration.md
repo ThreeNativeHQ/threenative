@@ -804,41 +804,41 @@ mountain silhouettes still need work. AC-5 stays open. No push; native unverifie
 
 ### AC-5 Alpine / Desert / Tundra execution (2026-10-02)
 
-Bounded scope: reuse the preview's scene, baked heightfield/collision, sky, ground and instanced
-scatter paths for the three remaining worlds. Lazy JSON imports; number-key selection and
-`?world=` entry; biome appearance in `src/render/biomes.ts`, additive terrain parameters.
-Capture alpine ridge, desert mesas and tundra plain with world/frame observations in the existing
-scenario. Preserve zero console/runtime errors and forest meadow/overview p50 below 8 ms.
-Inspect 1920×1080 captures against Gaia Alpine; report measured per-biome costs and remaining
-visual defects here. AC-5 remains open until the visual rubric and full starter budget qualify.
-Decisions: share licensed spruce/saplings and Kite rocks where suitable; no palms. Imported Fab
-packs inspected: conifer saplings, Kite, ground foliage, meadow flowers, ferns, grasses, spruce,
-palms; no desert-specific pack. Desert uses existing CC0 stone/sand and procedural sparse cover.
-Licensed files remain local-only. Browser proof is this task's required lane; native unverified.
+The shared preview now renders all five worlds. Keys 1–5 and `?world=` select the scene;
+Alpine/Desert/Tundra JSON is lazy-loaded. Ground palette, sun, sky, haze and horizon landform
+live in `src/render/biomes.ts`; terrain hooks remain optional and preserve forest/coast defaults.
 
-Working increment: `feat/prd-466-468-worlds`, 2026-10-02. The existing scenario on port 5191
-passes **33/33 assertions**, exit 0 (`/tmp/worlds-round5.log`), including three five-metre walks,
-world and textured-ground identity at each defining view, and fresh per-world render-frame counts.
-NVIDIA Turing WebGPU, 1920×1080; console/network/runtime errors **0/0/0**. Frame-window p50:
-forest meadow **2.3 ms**, overview **2.4 ms**, alpine ridge **2.4 ms**, desert mesa **1.0 ms**,
-tundra plain **1.2 ms**. Example typecheck and root `biome check . --diagnostic-level=error` pass.
+- Alpine: broader summit snowfield and side ridge, relaxed scree aprons, snow normal relief,
+  lower spruce treeline and Kite boulders/scree. Freestanding cliff blocks are excluded.
+- Desert: sand/sandstone palette, dry gravel, mesa continuation, smoother foreground and a
+  closer defining camera. All boulder slots use the two shipped CC0 scans where available.
+- Tundra: broad low plain (median slope 4.3°, previously 17.5°), cold sky, lichen/gravel,
+  broken snow and stunted saplings. Its frozen-lake surface remains pending.
+- Scene transitions previously carried the outgoing camera name. Entry now resets to player;
+  the scenario asserts the three entries, defining views and overviews, plus world/material
+  identity, fresh render-frame counts and five-metre walks. Original coastal captures precede
+  the new visits, preserving their wave/foam timing; the final return retains coastal gates.
+
+Final normal-asset browser run passes **35/35**, exit 0 (`/tmp/worlds-final3.log`).
+NVIDIA Turing WebGPU, 1920×1080; console/network/runtime errors **0/0/0**. Engine frame-window
+p50: meadow **2.2 ms**, overview **2.0 ms**, alpine ridge **2.2 ms**, desert mesa **1.0 ms**,
+tundra plain **1.2 ms**. These are engine frame measurements, not presented-FPS claims.
+`verify-ocean.mjs` passes wave change, sun change and sheltered-water checks (blue ratio 1.0).
+Example typecheck, root Biome error checks and diff whitespace checks pass.
 Captures: `examples/strata-terrain-preview/artifacts/playtest/web/{alpine-ridge,alpine-overview,
-desert-mesa,desert-overview,tundra-plain,tundra-overview}.png`; inspected at native resolution.
-Visual verdict: **below Unreal/Gaia**. Alpine now draws snow but its sharp conical profile lacks
-Gaia's broad snow shelves; desert foreground is too pocked and procedural stone too faceted;
-tundra needs stronger lichen/vegetation detail and a frozen-lake view. AC-5 stays open.
-The additional `node scripts/verify-ocean.mjs artifacts/playtest/web` passes wave/sun pixel-change
-checks but fails its lagoon foam ceiling (21,868/63,000 bright pixels); investigate timing after
-inserting world visits before coast. This is separate from the green scenario, not a claimed pass.
-Second increment: broader summit shelf and distant Alpine ridges, brighter snow with normal relief,
-smoothed Desert ground and a closer mesa framing; CC0 scans cover all Desert boulder slots.
-The reordered original coastal captures pass all three ocean image checks (`/tmp/worlds-round6.log`).
-A later stable-server run also passes 33/33, but inspection of its resource series exposes a
-qualification gap: `ctx.goto` preserves the outgoing camera view, so the first Desert/Tundra
-V presses returned to player instead of entering their defining view. The example now resets
-view on enter, and the scenario asserts player-on-entry, defining and overview view names.
-Typecheck/format gates qualify this working increment; the strengthened scenario, refreshed
-1920×1080 visual verdict and license-absent fallback are pending the next run. AC-5 stays open.
+desert-mesa,desert-overview,tundra-plain,tundra-overview}.png`, inspected at native resolution.
+
+Decisions: use existing cooked spruces/saplings and Kite stone, with procedural/CC0 fallbacks;
+no palms. Fab reports inspected: conifer saplings, Kite, ground foliage, meadow flowers,
+ferns, grasses, spruce and palms. No suitable desert pack was found. No licensed files are
+committed. A full license-absent scenario is running with all three local served roots hidden
+under a restoration trap; its verdict is pending.
+
+Honest visual verdict: **improved, below Unreal/Gaia**. Alpine has the ridge/snow/treeline
+composition but still lacks Gaia's irregular exposed bedrock and bright snow fans; desert
+mesa walls need stronger geological detail; tundra's vegetation remains coarse and its ice lake
+is absent. AC-5 stays open, including final art/atmosphere and the per-starter cooked budget.
+Native is unverified. The 1.4 GiB worktree is retained for unpushed commits and local licensed art.
 
 ### AC-5 round 9 — coastal, sky and distance (2026-10-02)
 
@@ -882,7 +882,7 @@ with procedural grey, so textured mountain layering needs the terrain lane. Thes
 files were not edited. Rejected straight and warped analytic short-wave trials both
 showed corduroy; retained the existing river's noise-gradient detail instead.
 
-- [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
+- [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured. All four non-temperate defining browser views now render, with world/material/frame/camera observations for Alpine, Desert and Tundra; see the 2026-10-02 execution above. Still pending: final art and atmosphere meeting the Unreal/Gaia rubric, the tundra ice lake, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [x] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: PASS 2026-10-02 — one script runs the shared `playtests/terrain.playtest.json` twice over the same generator, the same render modules and the same baked arrays, differing only in `src/world/terrainAssets.ts`: the committed bytes, then a consumer's table naming five 8×8 procedural PNGs and one hand-written 12-triangle GLB the script writes into a temporary directory. Every scenario assertion, `diagnostics` included, passes in both arms (0 console errors each). The replacement reached the renderer — the 12-triangle fixture is among the drawn props and no stock node has that triangle count; the custom arm resolved 5 files, all 5 from its own `/__custom-art/` root and 0 of the 27 starter files the stock arm resolved, so the two arms are distinguishable. The generator is untouched: `world`, `contactSamples`, `maxContactError` (3.12e-05 m), `bilinearDifference` (1.5 m) and `sampleSlopeRange` are identical across arms. `propInstances` is deliberately recorded rather than compared (2130 stock, 1990 custom): the placement set is the generator's and identical, but the consumer's own variants replace the starter's four prepared files, so a different instance count is the correct answer. A third arm whose needle atlas names a file nobody wrote makes the same checker both arms went through throw, and the throw names `absent-needle-atlas.png`. The committed table is restored and byte-compared in the run's `finally`, so no arm can leave the repository pointing at temporary fixtures. The first custom run failed `diagnostics` on 26 console errors, both fixture faults and both now fixed in the fixture: the marker GLB had no UVs, and the consumer table gave all six ground layers a normal map, which is 18 samplers against WebGPU's 16 per stage (the starter spends the 16 with normals on four layers) — a truthful constraint on custom ground art, recorded in the script.
 - [x] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: PASS 2026-10-02 — `pnpm build` exit 0 (53 s), `pnpm capabilities:check` fresh (400 entries, 393 of 393 package-backed entries resolvable), `pnpm exec vitest run packages/engine-mcp/__tests__/terrain-discovery.spec.ts` green, and `pnpm --filter strata-terrain-preview test:consumer` green (~12 s) from tarballs installed outside the workspace. Through the packed `threenative-engine-mcp` and the packed manifest, four queries resolve at rank 0 to the public import: a request-scope island prompt and "procedural heightmap landscape" to `Terrain` in `@threenative/terrain`, "export the terrain as a glb for another three.js project" to `exportWorldGLB` in `@threenative/terrain/export`, "open the terrain brush and layer GUI" to `mountTerrainEditor` in `@threenative/terrain/editor`. `Terrain`'s constraints now state metres with Y up and the 1 to 100000 size, the seven allowed resolutions (17 to 1025), the 0 to 4294967295 seed and that one document and seed give the same arrays (the consumer re-evaluates all five worlds and matches the game's baked heights hash-for-hash), the synchronous `evaluate()`, and that materials, models and texture paths belong to the game; a negative control that asserts a wrong unit fails by name. All eleven packed templates and a fresh `createProject` scaffold carry the terrain pointer in both AGENTS.md and CLAUDE.md, list no authoring dependency, and `terrain-authoring.md` names the install, the editor server entry, `exportWorldGLB` and the shipped `AGENT_GUIDE.md`; the packed editor entry exports `mountTerrainEditor` and `TerrainEditorController`. Not covered: the `capability-examples` spec fails on `@threenative/metahuman`, `raw-unreal`, `ueformat` and `ui` modules that are not built in this checkout (no terrain entry in its list). Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.
 

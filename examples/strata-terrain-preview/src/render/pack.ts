@@ -155,7 +155,7 @@ export async function loadPack(
       world === "forest" ||
       world === "coastal" ||
       (world === "alpine" &&
-        ["spruce", "sapling", "grass", "boulder", "cliff", "scree"].includes(one.asset)) ||
+        ["spruce", "sapling", "grass", "boulder", "scree"].includes(one.asset)) ||
       (world === "tundra" && ["sapling", "boulder", "scree"].includes(one.asset)),
   );
   const loaded = await Promise.all(

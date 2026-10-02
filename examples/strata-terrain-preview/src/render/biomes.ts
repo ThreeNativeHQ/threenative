@@ -54,7 +54,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "alpine",
     grassTint: [0.56, 0.65, 0.36],
     stoneTint: [0.79, 0.76, 0.72],
-    snowTint: [2.1, 2.15, 2.2],
+    snowTint: [3.2, 3.25, 3.3],
     distantStone: [0.23, 0.225, 0.215],
     snow: [44, 82, 0.9],
     maps: {
@@ -114,7 +114,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneTint: [0.7, 0.74, 0.77],
     snowTint: [1.2, 1.24, 1.28],
     distantStone: [0.18, 0.2, 0.21],
-    snow: [-12, 12, 0.3],
+    snow: [-6, 18, 0.3],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
