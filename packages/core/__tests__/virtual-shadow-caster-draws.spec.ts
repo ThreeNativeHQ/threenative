@@ -3,11 +3,12 @@ import {
   DirectionalLight,
   Mesh,
   MeshBasicMaterial,
+  type OrthographicCamera,
   PerspectiveCamera,
   Scene,
 } from "three";
 import type { NodeBuilder, NodeFrame } from "three/webgpu";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_SMALL_CASTER_LAYER,
@@ -62,11 +63,15 @@ function shadowWorld(): { camera: PerspectiveCamera; light: DirectionalLight; sc
   return { camera, light, scene };
 }
 
-function nodeFor(light: DirectionalLight): VirtualShadowNode {
+function nodeFor(
+  light: DirectionalLight,
+  options: { invalidationDelay?: number } = {},
+): VirtualShadowNode {
   const node = new VirtualShadowNode(light, {
     clipExtents: [24, 96],
     mapSize: 1024,
     marker: false,
+    ...options,
   });
   node.setup(builder);
   // The real draw belongs to three's renderer; this test is about what the level reports.
@@ -78,7 +83,24 @@ function nodeFor(light: DirectionalLight): VirtualShadowNode {
 
 afterEach(() => {
   clock = 0;
+  vi.restoreAllMocks();
 });
+
+/** What every level reports: the bill, the size gate and the depth derived off the caster set. */
+function report(node: VirtualShadowNode): unknown[] {
+  return node.stats.perLevel.map((level, index) => {
+    const camera = (
+      node.levelLights[index] as unknown as { shadow: { camera: OrthographicCamera } }
+    ).shadow.camera;
+    return {
+      draws: level.draws,
+      drawsBy: level.drawsBy,
+      far: camera.far,
+      gateHidden: level.gateHidden,
+      near: camera.near,
+    };
+  });
+}
 
 describe("a level's reported caster draws", () => {
   it("reports the chosen cluster half, its small casters, its chunk proxies and layer 0", () => {
@@ -139,6 +161,137 @@ describe("a level's reported caster draws", () => {
     expect(by.layer0).toBe(1);
     expect(by.wide).toBe(0);
     expect(coarse.draws).toBe(3);
+    node.dispose();
+  });
+});
+
+/**
+ * PRD-475 cut 2: the caster set a level reads is memoised, so a world that did not change is not
+ * walked again on the next render. Three things have to hold for that to be worth anything, and
+ * each is asserted here through the node's own reported bill and derived depth rather than through
+ * a counter of its own: the walk happens once and not per render, a change the tree reports rebuilds
+ * it, and every other change a game can make to a caster — its `castShadow`, where it stands — is
+ * still read on the render itself. The last is checked against a node that has never seen the
+ * world, because "the memoised node agrees with a fresh walk" is the only statement worth making
+ * about a memo.
+ */
+/**
+ * What a node that has never seen this world says about it, having walked it in full — the
+ * statement the memo has to keep making after every change a game can make to a caster.
+ */
+function reportFromAFreshNode(light: DirectionalLight, camera: PerspectiveCamera): unknown[] {
+  const fresh = nodeFor(light, { invalidationDelay: 0 });
+  fresh.updateBefore(frameFor(camera));
+  const reported = report(fresh);
+  fresh.dispose();
+  return reported;
+}
+
+describe("the memoised caster set", () => {
+  /** Four casters: one cluster square against two wide meshes, so the cluster half wins the choice,
+   *  and one on layer 0, which every level draws and no half decides. */
+  function threeCasters(): {
+    camera: PerspectiveCamera;
+    cluster: Mesh;
+    light: DirectionalLight;
+    scene: Scene;
+  } {
+    const { camera, light, scene } = shadowWorld();
+    const cluster = caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "cluster");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide");
+    caster(scene, VIRTUAL_SHADOW_WIDE_CASTER_LAYER, "wide-2");
+    caster(scene, 0, "terrain");
+    scene.updateMatrixWorld(true);
+    return { camera, cluster, light, scene };
+  }
+
+  it("walks the caster root once for two renders of a world that did not change", () => {
+    const { camera, light, scene } = threeCasters();
+    const node = nodeFor(light, { invalidationDelay: 0 });
+    const walk = vi.spyOn(scene, "traverse");
+
+    node.updateBefore(frameFor(camera));
+    expect(node.stats.perLevel[0]?.rendered).toBe(1);
+    expect(walk).toHaveBeenCalledTimes(1);
+
+    // The same level again, with nothing in the world touched: an ask, not a change.
+    light.shadow.needsUpdate = true;
+    node.updateBefore(frameFor(camera));
+    expect(node.stats.perLevel[0]?.rendered).toBe(1);
+    expect(walk).toHaveBeenCalledTimes(1);
+    node.dispose();
+  });
+
+  it("walks again when a caster joins the tree, and says the same thing as a fresh walk", () => {
+    const { camera, light, scene } = threeCasters();
+    const node = nodeFor(light, { invalidationDelay: 0 });
+    const walk = vi.spyOn(scene, "traverse");
+    node.updateBefore(frameFor(camera));
+    const before = report(node);
+    expect(walk).toHaveBeenCalledTimes(1);
+
+    caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "second-cluster");
+    scene.updateMatrixWorld(true);
+    light.shadow.needsUpdate = true;
+    node.updateBefore(frameFor(camera));
+
+    // The walk the change asked for, and not another one on the render after it.
+    expect(walk).toHaveBeenCalledTimes(2);
+    const after = report(node);
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(reportFromAFreshNode(light, camera));
+    node.dispose();
+  });
+
+  it("sees a caster that stops casting, without the tree changing", () => {
+    const { camera, cluster, light, scene } = threeCasters();
+    const node = nodeFor(light, { invalidationDelay: 0 });
+    node.updateBefore(frameFor(camera));
+    const before = report(node);
+
+    // No add, no remove, so the caster set is the same set of meshes — and the level no longer
+    // draws the cluster half, because a mesh that casts nothing is not in either bill.
+    cluster.castShadow = false;
+    light.shadow.needsUpdate = true;
+    node.updateBefore(frameFor(camera));
+    const after = report(node);
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(reportFromAFreshNode(light, camera));
+    node.dispose();
+  });
+
+  it("sees a caster that moved, without the tree changing", () => {
+    const { camera, cluster, light, scene } = threeCasters();
+    const node = nodeFor(light, { invalidationDelay: 0 });
+    node.updateBefore(frameFor(camera));
+    const before = report(node);
+
+    // Raised 36 m: same mesh, same layers, a longer throw and so a deeper window. The world matrix
+    // the world sphere was derived from is what the render compares, which is why a memo keyed on
+    // anything coarser than this would hand the level a stale depth.
+    cluster.position.set(0, 40, 0);
+    scene.updateMatrixWorld(true);
+    light.shadow.needsUpdate = true;
+    node.updateBefore(frameFor(camera));
+    const after = report(node);
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(reportFromAFreshNode(light, camera));
+    node.dispose();
+  });
+
+  it("drops a caster that leaves the tree", () => {
+    const { camera, light, scene } = threeCasters();
+    const node = nodeFor(light, { invalidationDelay: 0 });
+    node.updateBefore(frameFor(camera));
+    const before = report(node);
+
+    scene.remove(scene.getObjectByName("cluster") as Mesh);
+    scene.updateMatrixWorld(true);
+    light.shadow.needsUpdate = true;
+    node.updateBefore(frameFor(camera));
+    const after = report(node);
+    expect(after).not.toEqual(before);
+    expect(after).toEqual(reportFromAFreshNode(light, camera));
     node.dispose();
   });
 });

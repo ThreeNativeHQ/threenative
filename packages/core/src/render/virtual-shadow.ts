@@ -176,7 +176,7 @@ export interface IVirtualShadowOptions {
   /**
    * Draw every level past the finest one with less geometry than the main pass would, default true.
    *
-   * Two defaults, both Unreal's and both applied in one place — the traverse a level render already
+   * Two defaults, both Unreal's and both applied in one place — the pass a level render already
    * makes over the casters in its window, where each of the two is a change to the object three
    * draws from and is put back the moment that render is over:
    *
@@ -416,6 +416,37 @@ const POOL_STRIDE = 7;
  */
 const MAX_MASS_WINDOW_WIDTHS = 1;
 const POOL_CASTERS = 1 << 0;
+
+/**
+ * A mesh in the caster table, with the two channels the probe reads off the object rather than off
+ * the geometry: the bounds three's own cull would use, which `Mesh` does not declare, and the
+ * `casterPrewarmOwed` flag `WorldCells` writes (see `SharedBatch.awaitPrewarmDraw`).
+ */
+interface ICasterMesh extends Mesh {
+  boundingBox?: Box3 | null;
+  boundingSphere?: Sphere | null;
+  casterPrewarmOwed?: boolean;
+  computeBoundingBox(): void;
+  computeBoundingSphere(): void;
+}
+
+/**
+ * One caster's memoised world values, and the inputs they were derived from.
+ *
+ * The key is the world matrix plus the local sphere and the local box's two Y values — everything
+ * `Sphere.applyMatrix4` and `Box3.applyMatrix4` read, and nothing else. Twenty-two doubles compare
+ * against the pair of matrix applies they replace, and a key that matches cannot have a different
+ * answer, so this is a memo on the inputs rather than a guess about whether the mesh moved. A
+ * caster under a frozen subtree, a streamed cell nobody touched and a walking stag are therefore
+ * the same case: whichever of them changed its world matrix is recomputed, and the rest are not.
+ *
+ * A fresh slot is all zeros, which no world matrix can be — its last element is 1 — so the first
+ * render of a caster always misses and always computes.
+ */
+const CASTER_KEY_STRIDE = 22;
+/** World centre and radius, then the box's world height range: what the pool row is written from. */
+const CASTER_WORLD_STRIDE = 6;
+const CASTER_STRIDE = CASTER_KEY_STRIDE + CASTER_WORLD_STRIDE;
 
 /** A placeholder light per level: the stock shadow node reads position and target from it. */
 class LevelLight extends Object3D {
@@ -685,12 +716,34 @@ export class VirtualShadowNode extends ShadowBaseNode {
   /** 1 when each level derives its own light-space depth, 0 when `lightDistance`/`depthRange` pin it. */
   #autoDepth = true;
   /**
-   * Every shadow-relevant world sphere one level render collected, five numbers each. The depth
-   * derivation reads it in two passes after the one traverse that filled it, and it is reused
+   * Every shadow-relevant world sphere one level render collected, seven numbers each. The depth
+   * derivation reads it in two passes after the one pass that filled it, and it is reused
    * between renders, so a level render allocates nothing for it.
    */
   #pool = new Float64Array(POOL_STRIDE * 256);
   #poolCount = 0;
+  /**
+   * The meshes under the light's root, in the order the tree walks them. Rebuilt only when the tree
+   * itself changed (see `#ensureCasters`); `castShadow`, the layers and `visible` are re-read on
+   * every render, because a game flips those without touching the tree.
+   */
+  #casterTable: ICasterMesh[] = [];
+  /** Every object the table was built over, so its tree listeners can come off on the next build. */
+  #casterObjects: Object3D[] = [];
+  /** The root `#casterTable` was walked from; a re-parented light changes it. */
+  #casterRoot: Object3D | null = null;
+  /** Set by `childadded` / `childremoved`, which three dispatches on the object that changed. */
+  #casterStale = false;
+  /** The memo described by `CASTER_KEY_STRIDE`: per caster, the key it was computed from and the answer. */
+  #casterMemo = new Float64Array(CASTER_STRIDE * 128);
+  /**
+   * `childadded` and `childremoved` on every object the table was built over, which is how the table
+   * learns the tree changed without walking it to find out. Shared by every object so the build
+   * allocates one listener rather than one per mesh.
+   */
+  #onTreeChanged = (): void => {
+    this.#casterStale = true;
+  };
   /** Casters the current level's size gate hid, restored the moment that render is over. */
   #hidden: Object3D[] = [];
   /** Alpha casters `#probe` took out of the coarse levels' shadow pass, with `castShadow` to restore. */
@@ -964,8 +1017,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   /**
    * The topmost object above the light: the scene it is lit in, whatever the game nested it under.
-   * Walked once per level render, so a `Daylight` group between the sun and the world is not the
-   * boundary that hides every tree from the span below.
+   * Walked per level render, so a `Daylight` group between the sun and the world is not the boundary
+   * that hides every tree from the span below.
    */
   #root(): Object3D {
     let root = this.light as Object3D;
@@ -974,12 +1027,72 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   /**
-   * One traverse for four automatic fixes: the world bounding sphere of every shadow-relevant mesh
-   * goes into the pool, every caster too small for this level's texel grid is hidden until the
-   * level's render is over, every level past the finest one draws less of what it can (see
-   * `shadowLodBias`), and the level's caster granularity is chosen from the two bills it could pay.
-   * Mirrors the sphere three's own cull reads, so the gate drops exactly the volumes that cull would
-   * have kept and the depth below measures the same boxes it will draw.
+   * The caster set this render reads, rebuilt only when the tree it came from changed.
+   *
+   * `childadded` and `childremoved` are three's own events, dispatched on the parent that gained or
+   * lost the object, so this is told when the tree changed rather than guessing from a version or a
+   * child count — a streamed cell admitted and an evicted one in the same frame cancel out in any
+   * checksum, and the shadow a level then derives is a shadow cast by geometry it never saw. A
+   * re-parented light changes the root, which is compared outright. Everything a game can change
+   * about a caster *without* touching the tree — `visible`, `castShadow`, the layers, its material,
+   * and where it stands — is re-read on the render itself rather than held here.
+   *
+   * The listeners come off the previous walk before the new one starts, so an object that has left
+   * the tree cannot keep marking this stale for whatever it is parented to now.
+   */
+  #ensureCasters(): void {
+    const root = this.#root();
+    if (this.#casterRoot === root && this.#casterStale === false) return;
+    this.#casterRoot = root;
+    this.#casterStale = false;
+    for (const object of this.#casterObjects) {
+      object.removeEventListener("childadded", this.#onTreeChanged);
+      object.removeEventListener("childremoved", this.#onTreeChanged);
+    }
+    this.#casterObjects.length = 0;
+    this.#casterTable.length = 0;
+    root.traverse((object) => {
+      object.addEventListener("childadded", this.#onTreeChanged);
+      object.addEventListener("childremoved", this.#onTreeChanged);
+      this.#casterObjects.push(object);
+      if ((object as { isMesh?: boolean }).isMesh === true)
+        this.#casterTable.push(object as ICasterMesh);
+    });
+    const wanted = this.#casterTable.length * CASTER_STRIDE;
+    if (wanted > this.#casterMemo.length) {
+      let size = this.#casterMemo.length;
+      while (size < wanted) size *= 2;
+      const grown = new Float64Array(size);
+      grown.set(this.#casterMemo);
+      this.#casterMemo = grown;
+    }
+  }
+
+  /** Drops the table and its listeners, which is what a disposed node owes the scene it read. */
+  #dropCasters(): void {
+    for (const object of this.#casterObjects) {
+      object.removeEventListener("childadded", this.#onTreeChanged);
+      object.removeEventListener("childremoved", this.#onTreeChanged);
+    }
+    this.#casterObjects.length = 0;
+    this.#casterTable.length = 0;
+    this.#casterRoot = null;
+    this.#casterStale = false;
+  }
+
+  /**
+   * One pass over the caster set for four automatic fixes: the world bounding sphere of every
+   * shadow-relevant mesh goes into the pool, every caster too small for this level's texel grid is
+   * hidden until the level's render is over, every level past the finest one draws less of what it
+   * can (see `shadowLodBias`), and the level's caster granularity is chosen from the two bills it
+   * could pay. Mirrors the sphere three's own cull reads, so the gate drops exactly the volumes that
+   * cull would have kept and the depth below measures the same boxes it will draw.
+   *
+   * It is a pass over the memoised caster set rather than a walk of the world: the set is rebuilt
+   * only when the tree changed (see `#ensureCasters`) and each caster's world sphere is derived
+   * again only when the numbers it is derived from changed (see `CASTER_KEY_STRIDE`). On the
+   * reference game's map-walk that walk was 3.9% of the CPU render phase, spent re-deriving a caster
+   * set that a walking camera does not change.
    *
    * Both halves of every key are on the caster-only layers, so the bill is counted off the meshes
    * themselves rather than configured: the clusters whose square the level's window holds, against
@@ -1009,13 +1122,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#hidden.length = 0;
     this.#alphaHidden.length = 0;
     this.#coarsened.length = 0;
-    // Past the finest level, every level draws less of what it can. Set on the world here, in the
-    // traverse that is already walking this window's casters, and put back by `#restoreHidden` when
+    // Past the finest level, every level draws less of what it can. Set on the world here, on the
+    // pass that is already reading this window's casters, and put back by `#restoreHidden` when
     // the render is over — so the mover maps and the main pass see every mesh as it was authored.
     const biased = index >= 1 && this.options.shadowLodBias;
     let clusterDraws = 0;
     let wideDraws = 0;
-    // The level's bill by kind, tallied on the same walk and summed by the chosen halves once the
+    // The level's bill by kind, tallied on the same pass and summed by the chosen halves once the
     // choice is known. Numbers, not objects: a frame allocates nothing for this.
     let nCluster = 0;
     let nWide = 0;
@@ -1024,25 +1137,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let nLayer0 = 0;
     // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
     // node is built by the next shadow render that draws it, so the level that draws it here is
-    // what moves the build off the walk. Both layers are therefore rendered while one is owed, since
+    // what moves the build off the render. Both layers are therefore rendered while one is owed, since
     // the choice below would leave the other half's casters unbuilt until the level's own window
     // move. The flag is on the mesh rather than a module-level signal because the world chunk does
     // not import this one — the same channel as the `casterInstanceScale` read below.
     let prewarming = false;
-    this.#root().traverse((object) => {
-      if (object.visible !== true) return;
-      if ((object as { isMesh?: boolean }).isMesh !== true) return;
-      const mesh = object as Mesh & {
-        boundingBox?: Box3 | null;
-        boundingSphere?: Sphere | null;
-        casterPrewarmOwed?: boolean;
-        computeBoundingBox(): void;
-        computeBoundingSphere(): void;
-      };
+    this.#ensureCasters();
+    const table = this.#casterTable;
+    const memo = this.#casterMemo;
+    for (let entry = 0; entry < table.length; entry += 1) {
+      const mesh = table[entry];
+      if (mesh === undefined) continue;
+      if (mesh.visible !== true) continue;
       // Read before the gates below: the level is going to render both caster layers either way, and
       // a caster too small for this level's texels is still one the prewarm owes a draw.
       if (mesh.casterPrewarmOwed === true) prewarming = true;
-      // What a coarse level submits less of, in the same walk: an alpha caster casts nothing — its
+      // What a coarse level submits less of, in the same pass: an alpha caster casts nothing — its
       // cutout is its own texture and the level's texel is wider than the card — and a chained mesh
       // is submitted with the chain's coarsest geometry, which is metres per texel where LOD0 is
       // needles. Both are the renderer's own business to submit nothing for and the coarse geometry
@@ -1097,12 +1207,65 @@ export class VirtualShadowNode extends ShadowBaseNode {
       } else {
         box = ownBox;
       }
-      _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
-      if (box === null || box === undefined) {
-        _box.min.set(_sphere.center.x, _sphere.center.y - _sphere.radius, _sphere.center.z);
-        _box.max.set(_sphere.center.x, _sphere.center.y + _sphere.radius, _sphere.center.z);
+      // A mesh with no box of its own stands in its world sphere, which the world matrix and the
+      // sphere already determine, so its two placeholders are never compared against anything.
+      const boxYLow = box === null || box === undefined ? 0 : box.min.y;
+      const boxYHigh = box === null || box === undefined ? 0 : box.max.y;
+      // Two matrix applies per caster per render is what this memo replaces, and what it is keyed
+      // on is what those two read: the world matrix, the local sphere, and the local box's height
+      // range. A key that matches cannot have a different answer, so a mesh under a frozen subtree
+      // and a stag that walked all skip and compute respectively — with nothing in the memo deciding
+      // which is which. Only the box's Y is kept: `#probe` reads no other component of it, and the
+      // two world spheres it does read are put back whole.
+      const memoAt = entry * CASTER_STRIDE;
+      const elements = mesh.matrixWorld.elements;
+      let memoised = true;
+      for (let e = 0; e < 16; e += 1) {
+        if (memo[memoAt + e] !== elements[e]) {
+          memoised = false;
+          break;
+        }
+      }
+      if (
+        memoised &&
+        (memo[memoAt + 16] !== sphere.center.x ||
+          memo[memoAt + 17] !== sphere.center.y ||
+          memo[memoAt + 18] !== sphere.center.z ||
+          memo[memoAt + 19] !== sphere.radius ||
+          memo[memoAt + 20] !== boxYLow ||
+          memo[memoAt + 21] !== boxYHigh)
+      )
+        memoised = false;
+      if (memoised) {
+        _sphere.center.set(
+          memo[memoAt + 22] as number,
+          memo[memoAt + 23] as number,
+          memo[memoAt + 24] as number,
+        );
+        _sphere.radius = memo[memoAt + 25] as number;
+        _box.min.y = memo[memoAt + 26] as number;
+        _box.max.y = memo[memoAt + 27] as number;
       } else {
-        _box.copy(box).applyMatrix4(mesh.matrixWorld);
+        _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
+        if (box === null || box === undefined) {
+          _box.min.set(_sphere.center.x, _sphere.center.y - _sphere.radius, _sphere.center.z);
+          _box.max.set(_sphere.center.x, _sphere.center.y + _sphere.radius, _sphere.center.z);
+        } else {
+          _box.copy(box).applyMatrix4(mesh.matrixWorld);
+        }
+        for (let e = 0; e < 16; e += 1) memo[memoAt + e] = elements[e] as number;
+        memo[memoAt + 16] = sphere.center.x;
+        memo[memoAt + 17] = sphere.center.y;
+        memo[memoAt + 18] = sphere.center.z;
+        memo[memoAt + 19] = sphere.radius;
+        memo[memoAt + 20] = boxYLow;
+        memo[memoAt + 21] = boxYHigh;
+        memo[memoAt + 22] = _sphere.center.x;
+        memo[memoAt + 23] = _sphere.center.y;
+        memo[memoAt + 24] = _sphere.center.z;
+        memo[memoAt + 25] = _sphere.radius;
+        memo[memoAt + 26] = _box.min.y;
+        memo[memoAt + 27] = _box.max.y;
       }
       const at = this.#poolCount * POOL_STRIDE;
       if (at + POOL_STRIDE > this.#pool.length) {
@@ -1136,10 +1299,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
         mesh.userData.tnBundled !== true &&
         instanceDiameter(mesh, _sphere.radius) < gate
       ) {
-        object.visible = false;
-        this.#hidden.push(object);
+        mesh.visible = false;
+        this.#hidden.push(mesh);
         gateHidden += 1;
-        return;
+        continue;
       }
       // What this level would submit from each half, counted as it goes: a hidden caster submits
       // nothing, so it is not in either bill. A key-wide mesh spans the whole ring, so the level
@@ -1161,7 +1324,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         else if ((mesh.layers.mask & wideLayer) !== 0) nWide += 1;
         else if ((mesh.layers.mask & 1) !== 0) nLayer0 += 1;
       }
-    });
+    }
     // One of the two caster layers, never both, and the cheaper bill: clusters when the squares the
     // window covers are fewer than the keys waiting on the wide layer, one mesh per key when they are
     // not. A fraction of the ring's radius was the rule before, and a 192 m window over a 640 m ring
@@ -1169,7 +1332,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // because the terrain and everything else in the world casts from it, and a world with no caster
     // batch at all counts zero of both and takes the wide layer for nothing. A level rendering while
     // a caster is still owed its prewarm draw takes both, which is the only way the half it did not
-    // pick gets its node built before the walk.
+    // pick gets its node built before the pass.
     const clustered = clusterDraws < wideDraws;
     level.shadow.camera.layers.set(0);
     level.shadow.camera.layers.enable(
@@ -1350,7 +1513,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
    *
    * The u/v box is what bounds the window sideways, so the depth is the only free axis, and every
    * object that overlaps that box has already been found: the pool is the whole candidate set and
-   * this pass over it costs no second traverse. The height comes from each box rather than each
+   * this pass over it costs no second walk of the world. The height comes from each box rather than each
    * sphere, because a sphere has to cover a 128 m tile's diagonal and would report 180 m of cliff
    * where the tile has 15 m of it.
    */
@@ -1788,7 +1951,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         }
         const stat = {
           deferred: due && !grant ? 1 : 0,
-          // Filled by `#probe` on the frame's granted render, from the meshes it walked; a level
+          // Filled by `#probe` on the frame's granted render, from the meshes it read; a level
           // that keeps its map submits no caster draws of its own, so it reports none.
           draws: 0,
           drawsBy: { chunkProxy: 0, cluster: 0, layer0: 0, small: 0, wide: 0 },
@@ -1820,7 +1983,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         level.light.target.position.set(centre.x, centre.y, centre.z);
         level.light.target.updateMatrixWorld(true);
         if (grant) {
-          // The two automatic fixes, off one traverse of the world this window can see: the depth
+          // The two automatic fixes, off one pass over the world this window can see: the depth
           // the level needs to cover what can actually shadow it, and the casters too small for its
           // texels. Both are undone the moment the render is over — by `#restoreHidden`, which the
           // mover maps and the main pass both need back.
@@ -1900,6 +2063,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   override dispose(): void {
     this.#regions.length = 0;
+    this.#dropCasters();
     for (const level of this.#levels) {
       level.light.removeFromParent();
       level.light.target.removeFromParent();
