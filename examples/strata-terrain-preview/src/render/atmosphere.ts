@@ -24,7 +24,7 @@ import type { IBiome } from "./biomes.js";
 
 export function createAtmosphere(look: IBiome): Atmosphere {
   const air = new Atmosphere({
-    rayleigh: [0.005802, 0.013558, 0.0331],
+    rayleigh: look.atmosphere.rayleigh,
     mie: [look.atmosphere.mie, look.atmosphere.mie, look.atmosphere.mie],
     ozone: [0.00065, 0.001881, 0.000085],
     planetRadius: 6360,
@@ -46,6 +46,12 @@ export function skyRadiance(
   const transmission = air.sunTransmittance(
     vec3(0, elevation, float(1).sub(elevation.mul(elevation)).max(0).sqrt()),
   ) as Node<"vec3">;
+  // Absorption removes light; only the scattering share can become sky radiance.
+  const parameters = air.parameters;
+  const rayleighColumn = vec3(parameters.rayleigh).mul(8);
+  const scatteringShare = rayleighColumn.div(
+    rayleighColumn.add(vec3(parameters.mie).mul(1.2)).add(vec3(parameters.ozone).mul(15)),
+  );
   const rayleighPhase = mu.mul(mu).add(1).mul(0.75);
   const g = look.sky.mieDirectionalG;
   const miePhase = float(1 - g * g).div(
@@ -61,9 +67,10 @@ export function skyRadiance(
   const sunlight = (air.sunTransmittance(sun) as Node<"vec3">).mul(color(look.sun.color));
   return transmission
     .oneMinus()
+    .mul(scatteringShare)
     .mul(rayleighPhase)
     .mul(look.atmosphere.radiance)
-    .add(multiple.mul(look.atmosphere.radiance * 4))
+    .add(multiple.mul(look.atmosphere.radiance * 0.25))
     .add(sunlight.mul(miePhase).mul(look.atmosphere.mie * 4));
 }
 
@@ -97,7 +104,8 @@ export function aerialPerspective(
     .div(-height)
     .exp()
     .mul(mix(1, column, smoothstep(0.001, 0.01, span)));
-  const distanceKm = ray.length().div(1000);
+  // Clear foreground; aerosol weather builds on landscape distances, not prop distances.
+  const distanceKm = ray.length().sub(150).max(0).div(1000);
   const opticalDistance = distanceKm.mul(
     density.mul(0.65).add(0.35).mul(look.atmosphere.distanceScale),
   );

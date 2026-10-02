@@ -2212,3 +2212,25 @@ checkout `.worktrees/prd-466-468-atmos/` is retained (**1.2 GiB**) with requeste
 local assets and captures; removal is not authorized. No push, merge or PR
 comment was made. Documentation checks passed: 2386 links and six suites,
 180/180 tests. `prd:progress` remains `prd:75%`, Gaia acceptance 0/1.
+
+### 2026-10-02 — Round 18 atmosphere retuning (round 2 checkpoint)
+
+Reused `Atmosphere`/`AtmosphereLuts`; retained core LUT filtering fix `09897a984`.
+Removed the 4× grey sky contribution, excluded absorption from single-scattered
+radiance, gated air below 150 m, and reduced distanceScale from 8–20 to 1–2.5.
+Rayleigh coefficients and kilometre-distance haze ramps are game-owned biome values.
+No exposure, shadow, or GI-chain change. Measurement script is outside the repository:
+`/tmp/measure-atmosphere-round2.py`, with actual <150 m/>800 m depth masks in
+`artifacts/playtest/atmosphere-round2-depth/`. Sky uses matched blue pixels in the
+top 30%, retaining the most saturated 40% of baseline sky to exclude clouds;
+luminance is linear sRGB/Rec.709, shadow hue is a circular HSV mean on the darkest
+20% of near surfaces (excluding blue water), and contrast is a four-pixel local
+luminance difference. Coast has no ridge beyond 800 m: its far mask observes ocean.
+
+TypeScript and example Biome pass; terrain plus core atmosphere specs: **100/100 PASS**.
+Two colour iterations passed **3/3 runtime checks**, but sky-colour measurements
+remained below baseline in some worlds. Third tuning is being measured; full
+licensed/fallback scenarios and ocean checks remain pending. No Gaia acceptance
+box has been ticked. Source restoration overlapping a capture startup destroyed
+that browser context; stable-source retry passed. One subsequent
+`TN_PLAYTEST_BRIDGE_MISSING` startup flake was retried once.
