@@ -43,11 +43,12 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
       const nx = x + warp;
       const nz = z - warp * 0.7;
       const broad = noise.noise(nx * 0.0013, 4.7, nz * 0.0013);
-      const ridge = 1 - Math.abs(noise.noise(nx * 0.0022, 9.2, nz * 0.0022));
-      const fineRidge = 1 - Math.abs(noise.noise(nx * 0.005, 2.4, nz * 0.005));
+      // Round the ridge cusp: a razor crest aliases into regular teeth between mesh rings.
+      const ridge = 1 - Math.hypot(noise.noise(nx * 0.0022, 9.2, nz * 0.0022), 0.08);
+      const fineRidge = 1 - Math.hypot(noise.noise(nx * 0.005, 2.4, nz * 0.005), 0.1);
       const massif = Math.max(0, broad + 0.38);
       const hills =
-        18 + massif * (120 + ridge ** 2 * 420) + fineRidge ** 2 * Math.min(1, massif * 3) * 36;
+        18 + massif * (120 + ridge ** 2 * 480) + fineRidge ** 2 * Math.min(1, massif * 3) * 95;
       const height = data.waterLevel === null ? hills : data.waterLevel - 28;
       positions.push(x, (data.heights[edge] as number) * (1 - blend) + height * blend, z);
       colors.push(

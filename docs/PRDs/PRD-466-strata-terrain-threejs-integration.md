@@ -659,7 +659,7 @@ and was discarded. Both stage-presence and actual graph-contribution assertions 
 The per-view geometry floor now measures peak submitted triangles within each pass window:
 AO nests the world pass alongside single-triangle full-screen passes, whose median alone
 incorrectly reported two triangles. Full scenario passes all resources and AO assertions;
-only **391 known coastal shadow-texture diagnostics errors** fail. WebGPU only; no native
+only **391 shadow-texture diagnostics errors** fail (three occur at startup; the coastal switch dominates the rest). WebGPU only; no native
 claim. Engine frame p50 meadow/overview **1.8/2.2 ms**, excluding presentation gaps. Previous
 complete-window GPU medians with/without AO were **9.65/9.28 ms**, not an isolated AO benchmark.
 Inspected `artifacts/playtest/round2-ao/`: display Y p05/p50/p95 meadow
@@ -667,6 +667,49 @@ Inspected `artifacts/playtest/round2-ao/`: display Y p05/p50/p95 meadow
 river **0.204/0.413/0.821**. Example typecheck, root lint (warnings only), terrain tests
 **60/60** pass. Stream glints now fade with footprint, but its distant white reach remains
 unfinished; mountain faces remain more procedural than the reference. AC-5 stays open.
+
+
+Fourth/delivery increment: a refraction ablation leaves the white upstream strip unchanged,
+locating its source in low-angle sky reflection. The stream now blends the average wooded
+bank into sky over a broad angle, retaining green bank radiance instead of the earlier black
+facets. The sampled stream patch's display Y median falls **0.580 → 0.321**; the inspected
+reach is green-blue, with the existing shallow-depth edge and wet terrain margin. Refraction
+was restored; no debug colour or constant-bed substitution remains. Rounded ridge cusps
+remove regular silhouette teeth, secondary ridges vary the outline, and the existing rock
+normal map is reused at **30.4 m** scale on distant rock faces. High snow, rock faces and
+forest-dark lower slopes remain separate from the resident ground. A trial raising the hill
+stamp roughness to 0.25 added a spike without a clear drainage improvement; it was rejected.
+Final recipe remains **1 spike / 1.7 m**, with the same basin and curved stream route. Basin
+measurement after the retained pad edit: **4,540 m²**, no world-edge flood, bed **10.26 m**,
+level **12.4 m**, rendered stream end **10.55 m**. The pad edit is far from this basin.
+
+Delivery WebGPU scenario: **23/24 assertions pass**; only diagnostics fails (**390** counted
+console errors, all destroyed `ShadowDepthTexture`; console artifact contains 391 entries).
+Stage presence and graph contribution pass. AO introduces three startup errors of this
+same class before the larger known coastal failure; this renderer issue is unresolved.
+Contacts: **595**, maximum measured error **0.000004 m**, lake placement error **0 m**.
+Meadow/overview engine frame p50: **1.2/1.6 ms**, excluding presentation gaps; forest-only
+GPU median across **49 window p50s: 22.81 ms**. Presented-window median is **100 ms** in
+this stepped capture run: neither the CPU metric nor the GPU statistic claims player FPS.
+Example typecheck, root lint (1,054 warnings, no errors), terrain tests **60/60**, and diff
+whitespace check pass on this delivery source. No push and no native verification.
+
+Final captures and runner provenance: `examples/strata-terrain-preview/artifacts/playtest/round2-final/`
+(`meadow-close.png`, `overview.png`, `forest-walk.png`, `river.png`, `capture.json`, `console.json`).
+Full-frame linear-light luminance p05/p50/p95, decoded from captured sRGB:
+meadow **0.048/0.168/0.494**, overview **0.054/0.147/0.210**,
+walk **0.017/0.128/0.209**, river **0.030/0.135/0.617**.
+Display-space Y for comparison with earlier increments: meadow **0.239/0.444/0.729**,
+overview **0.254/0.416/0.494**, walk **0.138/0.389/0.492**, river **0.188/0.399/0.806**.
+
+Verdict per defect: rock/grass tiling materially improved; the walked-view pad trench is
+softened, but some radial drainage fans remain; distant layering and detail are improved,
+but mountain form still reads more procedural than Gaia; the white stream reach is repaired
+and the lake now occupies its actual basin; installed AO is visibly active within the observed
+median GPU budget, with the startup shadow issue disclosed above. **Below the Unreal-level
+target: AC-5 remains open.** Decisions: use installed maps/RenderChain, reuse the existing
+wet/curvature binding, repair the game lake coordinate bug in both consumers, reject the
+extra-spike recipe, and leave engine packages and other lanes untouched.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.

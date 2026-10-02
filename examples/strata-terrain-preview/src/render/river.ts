@@ -217,8 +217,8 @@ const TINT = {
    * degrees does not reach the sky at all — it hits a trunk — and without this floor the stream is a
    * strip of chrome wherever the eye is low enough for the fresnel to close.
    */
-  bank: 0x33452f,
-  bankGain: 0.62,
+  bank: 0x627660,
+  bankGain: 0.8,
 } as const;
 
 /**
@@ -587,9 +587,9 @@ export function createRivers(
   const sky = mix(
     linear(TINT.bank, TINT.bankGain),
     mix(color(TINT.skyHorizon), color(TINT.skyZenith), clamp(bounced.y, float(0), float(1))),
-    // Only rays that really leave downward see the bank; a ripple tilting a ray a few degrees below
-    // the horizon still sees mostly sky, and taking the bank there turned every facet into a black blob.
-    smoothstep(float(-0.12), float(0.06), bounced.y),
+    // A low reflected ray hits the wooded bank. Blend its average green radiance into sky
+    // over a broad angle; a hard dark cutoff makes moving facets flicker as black blobs.
+    smoothstep(float(0.08), float(0.5), bounced.y),
   );
   const shaded = compositeWater({ normal, depthM, bed, reflected: sky.mul(0.65) });
 

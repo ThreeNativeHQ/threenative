@@ -551,10 +551,15 @@ export function createGroundMaterial(
     continuation,
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
   material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
+  // Distant faces resolve broad rock strata, rather than subpixel meadow normals.
+  const rockNormal = layer("rock").normal;
+  const mountainTilt =
+    rockNormal === undefined
+      ? vec3(0)
+      : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
+  const tilt = mix(normal, mountainTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-  const tangent = normal
-    .sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)))
-    .mul(oneMinus(continuation));
+  const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();
