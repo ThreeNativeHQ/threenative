@@ -1,3 +1,4 @@
+import { velocity as velocityAccessor } from "three/tsl";
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
@@ -417,7 +418,9 @@ export class RenderChain {
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
     if (velocityNode !== undefined && hasActiveVelocityStage)
-      node = withVelocityContext(node, velocityNode);
+      // TRAANode uses context.velocity to set the unjittered projection, not to sample MRT.
+      // The sampled texture already travels to the factory via context.velocityNode.
+      node = withVelocityContext(node, velocityAccessor);
 
     if (stages.length > 0) {
       try {

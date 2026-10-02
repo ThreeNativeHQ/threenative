@@ -75,6 +75,13 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 
 - [ ] Full-resolution temporal AA is opt-in generated source, uses the existing velocity source and resets history on discontinuity. **proof:** focused TRAANode/RenderChain tests and the deterministic runtime temporal fixture with actual screenshots; native qualification remains separately reported.
 
+  Partial, 2026-10-02: the installed TRAANode setup/jitter regression reproduced
+  `setProjectionMatrix is not a function` because RenderChain supplied a sampled texture where
+  Three expects its velocity accessor. The caller now keeps accessor and texture separate;
+  `vitest run packages/core/__tests__/{temporal-chain,render-chain,render-velocity}.spec.ts
+  --maxWorkers=1` passes 56 tests after fresh-checkout red-to-green reproduction. No runtime,
+  image-quality, native, or performance qualification is claimed by these CPU tests.
+
 - [ ] The reconstruction stage produces a display-sized output from a smaller colour/depth input and records input size, output size, history-valid state and rejection fraction. **proof:** focused render-chain test runs 0.67→1.0 sizing, then a mutation returning the low-resolution target directly fails the output-size assertion.
 - [ ] Camera cuts, projection changes and resolution changes invalidate history for the affected frame; moving skinned and instanced fixtures use the existing velocity source rather than a camera-only approximation. **proof:** deterministic fixture covers cut/resize/skinned/instanced cases and a zero-velocity mutation fails the moving-object rejection/stability assertion.
 
