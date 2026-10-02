@@ -62,18 +62,18 @@ try {
     },
     { variant: "skinned", query: "?skinned", kind: "SkinnedMesh", failures: [] },
     {
-      // Diagnostic reproduction, not acceptance: attached root motion currently counts twice.
-      variant: "skinned-world-diagnostic",
+      // Original root-motion acceptance: each current pixel uses the scheduled previous bind inverse.
+      variant: "skinned-world",
       query: "?skinned&world-motion",
       kind: "SkinnedMesh",
-      failures: ["oracleMaxErrorPixels", "footprintMaxErrorPixels"],
+      failures: [],
     },
     {
-      // The wrong current-world history currently cancels the separate bind-inverse error.
-      variant: "skinned-world-current-history-diagnostic",
+      // Original world-history mutation: the current world matrix must erase root-motion velocity.
+      variant: "skinned-world-current-history",
       query: "?skinned&world-motion&current-world-history",
       kind: "SkinnedMesh",
-      failures: [],
+      failures: ["movingPixels", "oracleMaxErrorPixels", "footprintMaxErrorPixels"],
     },
     {
       variant: "skinned-current-history",
@@ -163,10 +163,10 @@ try {
   );
   await writeFile(
     path.join(output, "summary.json"),
-    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; includes a known attached-skinned root-motion diagnostic failure; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
+    `${JSON.stringify({ sourceSha, pass: true, qualification: "actual WebGPU velocity MRT readback and screenshots; software pixels only, no native, ghosting or hardware-performance claim", variants: results.map(({ variant, report }) => ({ variant, pass: report.pass, capture: report.capture, motion: report.observations?.resources.motion, diagnostics: report.diagnostics })) }, null, 2)}\n`,
   );
   console.log(
-    `Velocity history: expected motion/control outcomes observed, including the known attached-skinned root-motion diagnostic failure. Full skinned acceptance remains open. Artifacts: ${output}`,
+    `Velocity history: expected motion/control outcomes observed, including exact skinned coverage and the original world-history control. Artifacts: ${output}`,
   );
 } catch (error) {
   await writeFile(

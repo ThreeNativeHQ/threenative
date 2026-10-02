@@ -143,6 +143,13 @@ const PUBLISHED_BLOBS = {
   "src/renderers/webgpu/utils/WebGPUAttributeUtils.js": "83bbe189915c8450c4e14108e6a3f4ed98c4b016",
 };
 
+// Exact source/bundle blobs shipped at PR393 source 085c977b (patch daef254c).
+const RECOMPILE_BLOBS = {
+  "src/nodes/accessors/Skinning.js": "aaeea633a8ece291be5faf868e312867ddad01b6",
+  "build/three.webgpu.js": "148869ee7f18c62570ac1eafb7df5775e5a89581",
+  "build/three.webgpu.nodes.js": "81c24b2e05e5047e1a02410a2056949d39b1a05c",
+};
+
 function blobHash(contents: string): string {
   return createHash("sha1")
     .update(`blob ${Buffer.byteLength(contents)}\0`)
@@ -188,6 +195,7 @@ async function previousInstalledPackage(priorBlobs: Record<string, string>, crlf
 describe.each([
   ["develop dcbc5131", PRIOR_BLOBS],
   ["published PR393 455ed1dd", PUBLISHED_BLOBS],
+  ["published PR393 daef254c", RECOMPILE_BLOBS],
 ])("actual previously shipped Three files (%s)", (_name, priorBlobs) => {
   it.each([false, true])(
     "upgrades the exact prior patch and remains idempotent (CRLF=%s)",
@@ -205,7 +213,7 @@ describe.each([
 
   it("refuses a one-byte custom edit before writing any recognised file", async () => {
     const { packageRoot, threeRoot } = await previousInstalledPackage(priorBlobs);
-    const changed = join(threeRoot, "src/renderers/webgpu/utils/WebGPUAttributeUtils.js");
+    const changed = join(threeRoot, Object.keys(priorBlobs)[0] ?? "missing");
     await writeFile(changed, `${await readFile(changed, "utf8")} `);
     const before = await Promise.all(
       Object.keys(priorBlobs).map((file) => readFile(join(threeRoot, file), "utf8")),

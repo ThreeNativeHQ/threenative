@@ -25,7 +25,7 @@ index 0bb9262..868a634 100644
  	 * Constructs a new batched mesh.
  	 *
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index 2e49079..148869e 100644
+index 2e490796d4d4aa9479b04a5c46ddbf31cc05b1a1..efd0e16719cc7bbef1fbc18c241948e25eb85881 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -324,10 +324,10 @@ index 2e49079..148869e 100644
 +
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
++
++		} );
  
 -			const previousInstanceData = _previousInstanceMatrices.get( object );
-+		} );
-+
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
 +		OnObjectUpdate( ( { object } ) => {
  
@@ -364,7 +364,24 @@ index 2e49079..148869e 100644
  	const transformedNormal = normalLocal.div( vec3( bm[ 0 ].dot( bm[ 0 ] ), bm[ 1 ].dot( bm[ 1 ] ), bm[ 2 ].dot( bm[ 2 ] ) ) );
  
  	const batchingNormal = bm.mul( transformedNormal ).xyz;
-@@ -18777,7 +18892,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -18745,7 +18860,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -18777,7 +18900,8 @@ const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -374,7 +391,7 @@ index 2e49079..148869e 100644
  
  			}
  
-@@ -18844,7 +18960,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
+@@ -18844,7 +18968,8 @@ const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = null ],
  
  			if ( state !== undefined ) {
  
@@ -384,7 +401,7 @@ index 2e49079..148869e 100644
  
  			}
  
-@@ -29911,6 +30028,18 @@ class RenderObject {
+@@ -29911,6 +30036,18 @@ class RenderObject {
  		 */
  		this._sourceMaterial = renderer._currentSourceMaterial;
  
@@ -403,7 +420,7 @@ index 2e49079..148869e 100644
  		/**
  		 * An event listener which is defined by `RenderObjects`. It performs
  		 * clean up tasks when `dispose()` on this render object.
-@@ -30098,7 +30227,7 @@ class RenderObject {
+@@ -30098,7 +30235,7 @@ class RenderObject {
  	 */
  	getChainArray() {
  
@@ -412,7 +429,7 @@ index 2e49079..148869e 100644
  
  	}
  
-@@ -30548,6 +30677,7 @@ class RenderObject {
+@@ -30548,6 +30685,7 @@ class RenderObject {
  		}
  
  		cacheKey = hash$1( cacheKey, this.renderer.contextNode.id, this.renderer.contextNode.version );
@@ -420,7 +437,7 @@ index 2e49079..148869e 100644
  
  		return cacheKey;
  
-@@ -30680,6 +30810,8 @@ class RenderObjects {
+@@ -30680,6 +30818,8 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = material;
  		_chainKeys$3[ 2 ] = renderContext;
  		_chainKeys$3[ 3 ] = lightsNode;
@@ -429,7 +446,7 @@ index 2e49079..148869e 100644
  
  		//
  
-@@ -30707,9 +30839,18 @@ class RenderObjects {
+@@ -30707,9 +30847,18 @@ class RenderObjects {
  
  			}
  
@@ -450,7 +467,7 @@ index 2e49079..148869e 100644
  
  					renderObject.dispose();
  
-@@ -30719,6 +30860,8 @@ class RenderObjects {
+@@ -30719,6 +30868,8 @@ class RenderObjects {
  
  					renderObject.version = material.version;
  
@@ -459,7 +476,7 @@ index 2e49079..148869e 100644
  				}
  
  			}
-@@ -30731,6 +30874,7 @@ class RenderObjects {
+@@ -30731,6 +30882,7 @@ class RenderObjects {
  		_chainKeys$3[ 1 ] = null;
  		_chainKeys$3[ 2 ] = null;
  		_chainKeys$3[ 3 ] = null;
@@ -467,7 +484,7 @@ index 2e49079..148869e 100644
  
  		//
  
-@@ -31165,6 +31309,14 @@ class Geometries extends DataMap {
+@@ -31165,6 +31317,14 @@ class Geometries extends DataMap {
  		 */
  		this._geometryDisposeListeners = new Map();
  
@@ -482,7 +499,7 @@ index 2e49079..148869e 100644
  	}
  
  	/**
-@@ -31190,10 +31342,69 @@ class Geometries extends DataMap {
+@@ -31190,10 +31350,69 @@ class Geometries extends DataMap {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
  
@@ -552,7 +569,7 @@ index 2e49079..148869e 100644
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -32771,7 +32982,7 @@ class Bindings extends DataMap {
+@@ -32771,7 +32990,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -561,7 +578,7 @@ index 2e49079..148869e 100644
  
  	}
  
-@@ -32918,12 +33129,13 @@ class Bindings extends DataMap {
+@@ -32918,12 +33137,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -577,7 +594,7 @@ index 2e49079..148869e 100644
  
  		}
  
-@@ -32934,11 +33146,27 @@ class Bindings extends DataMap {
+@@ -32934,11 +33154,27 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -606,7 +623,7 @@ index 2e49079..148869e 100644
  		let needsBindingsUpdate = false;
  		let cacheBindings = true;
  		let cacheIndex = 0;
-@@ -32948,7 +33176,7 @@ class Bindings extends DataMap {
+@@ -32948,7 +33184,7 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -615,7 +632,7 @@ index 2e49079..148869e 100644
  
  			// every uniforms group is a uniform buffer. So if no update is required,
  			// we move one with the next binding. Otherwise the next if block will update the group.
-@@ -33952,7 +34180,8 @@ class RenderContexts {
+@@ -33952,7 +34188,8 @@ class RenderContexts {
  
  		}
  
@@ -625,7 +642,7 @@ index 2e49079..148869e 100644
  
  		renderState.clearDepthValue = this.renderer.getClearDepth();
  		renderState.clearStencilValue = this.renderer.getClearStencil();
-@@ -34181,6 +34410,21 @@ class Textures extends DataMap {
+@@ -34181,6 +34418,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -647,7 +664,7 @@ index 2e49079..148869e 100644
  		}
  
  		//
-@@ -39725,7 +39969,8 @@ class VelocityNode extends TempNode {
+@@ -39725,7 +39977,8 @@ class VelocityNode extends TempNode {
  
  		const previousModelMatrix = getPreviousMatrix( object );
  
@@ -657,7 +674,7 @@ index 2e49079..148869e 100644
  
  		//
  
-@@ -53841,7 +54086,7 @@ class NodeBuilder {
+@@ -53841,7 +54094,7 @@ class NodeBuilder {
  
  		const mrt = this.renderer.getMRT();
  
@@ -666,7 +683,7 @@ index 2e49079..148869e 100644
  
  	}
  
-@@ -55244,15 +55489,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55497,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -687,7 +704,7 @@ index 2e49079..148869e 100644
  
  		// check for update
  
-@@ -56056,6 +56303,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56311,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -709,7 +726,7 @@ index 2e49079..148869e 100644
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56327,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56335,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -724,7 +741,7 @@ index 2e49079..148869e 100644
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56352,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56360,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -737,7 +754,7 @@ index 2e49079..148869e 100644
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56393,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56401,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -752,7 +769,7 @@ index 2e49079..148869e 100644
  			nodeFrame.updateNode( node );
  
  		}
-@@ -62731,6 +63004,7 @@ class Renderer {
+@@ -62731,6 +63012,7 @@ class Renderer {
  		let materialDisplacementMap;
  		let materialDisplacementScale;
  		let materialDisplacementBias;
@@ -760,7 +777,7 @@ index 2e49079..148869e 100644
  
  		const previousSourceMaterial = this._currentSourceMaterial;
  
-@@ -62756,6 +63030,7 @@ class Renderer {
+@@ -62756,6 +63038,7 @@ class Renderer {
  			materialDisplacementMap = overrideMaterial.displacementMap;
  			materialDisplacementScale = overrideMaterial.displacementScale;
  			materialDisplacementBias = overrideMaterial.displacementBias;
@@ -768,7 +785,7 @@ index 2e49079..148869e 100644
  
  			if ( material.positionNode && material.positionNode.isNode ) {
  
-@@ -62763,7 +63038,15 @@ class Renderer {
+@@ -62763,7 +63046,15 @@ class Renderer {
  
  			}
  
@@ -785,7 +802,7 @@ index 2e49079..148869e 100644
  			overrideMaterial.alphaMap = material.alphaMap;
  			overrideMaterial.displacementMap = material.displacementMap;
  			overrideMaterial.displacementScale = material.displacementScale;
-@@ -62825,6 +63108,7 @@ class Renderer {
+@@ -62825,6 +63116,7 @@ class Renderer {
  			scene.overrideMaterial.displacementMap = materialDisplacementMap;
  			scene.overrideMaterial.displacementScale = materialDisplacementScale;
  			scene.overrideMaterial.displacementBias = materialDisplacementBias;
@@ -793,19 +810,19 @@ index 2e49079..148869e 100644
  
  		}
  
-@@ -62886,18 +63170,17 @@ class Renderer {
+@@ -62886,18 +63178,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
 -
 -		if ( needsRefresh ) {
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -			this._nodes.updateBefore( renderObject );
 -
 -			this._geometries.updateForRender( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
 -
@@ -822,7 +839,7 @@ index 2e49079..148869e 100644
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63190,7 @@ class Renderer {
+@@ -62907,7 +63198,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -831,7 +848,7 @@ index 2e49079..148869e 100644
  
  		}
  
-@@ -79004,7 +79287,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79295,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -847,7 +864,7 @@ index 2e49079..148869e 100644
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -79586,7 +79876,8 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79586,7 +79884,8 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  				uniformGPU = buffer;
  
@@ -857,7 +874,7 @@ index 2e49079..148869e 100644
  
  			} else {
  
-@@ -80329,9 +80620,12 @@ ${ flowData.code }
+@@ -80329,9 +80628,12 @@ ${ flowData.code }
  				const textureNode = uniform.node;
  				const texture = textureNode.value;
  
@@ -873,7 +890,7 @@ index 2e49079..148869e 100644
  
  				if ( needsSampler ) {
  
-@@ -81108,6 +81402,15 @@ class WebGPUAttributeUtils {
+@@ -81108,6 +81410,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -889,7 +906,7 @@ index 2e49079..148869e 100644
  
  		}
  
-@@ -81128,6 +81431,11 @@ class WebGPUAttributeUtils {
+@@ -81128,6 +81439,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -901,7 +918,7 @@ index 2e49079..148869e 100644
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81209,6 +81517,9 @@ class WebGPUAttributeUtils {
+@@ -81209,6 +81525,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -911,7 +928,7 @@ index 2e49079..148869e 100644
  	}
  
  	/**
-@@ -81295,9 +81606,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81614,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -929,7 +946,7 @@ index 2e49079..148869e 100644
  
  		backend.delete( attribute );
  
-@@ -81598,18 +81915,16 @@ class WebGPUBindingUtils {
+@@ -81598,18 +81923,16 @@ class WebGPUBindingUtils {
  
  		const bindingsData = backend.get( bindGroup );
  
@@ -953,7 +970,7 @@ index 2e49079..148869e 100644
  
  		// try to find an existing layout in the cache
  
-@@ -82131,6 +82446,9 @@ class WebGPUBindingUtils {
+@@ -82131,6 +82454,9 @@ class WebGPUBindingUtils {
  
  		}
  
@@ -963,7 +980,7 @@ index 2e49079..148869e 100644
  	}
  
  	/**
-@@ -83814,6 +84132,14 @@ class WebGPUBackend extends Backend {
+@@ -83814,6 +84140,14 @@ class WebGPUBackend extends Backend {
  		 */
  		this.compatibilityMode = null;
  
@@ -978,7 +995,7 @@ index 2e49079..148869e 100644
  		/**
  		 * A reference to the device.
  		 *
-@@ -83926,7 +84252,9 @@ class WebGPUBackend extends Backend {
+@@ -83926,7 +84260,9 @@ class WebGPUBackend extends Backend {
  				xrCompatible: renderer.xr.enabled
  			};
  
@@ -989,7 +1006,7 @@ index 2e49079..148869e 100644
  
  			if ( adapter === null ) {
  
-@@ -85461,13 +85789,12 @@ class WebGPUBackend extends Backend {
+@@ -85461,13 +85797,12 @@ class WebGPUBackend extends Backend {
  		for ( let i = 0, l = bindings.length; i < l; i ++ ) {
  
  			const bindGroup = bindings[ i ];
@@ -1006,7 +1023,7 @@ index 2e49079..148869e 100644
  
  			}
  
-@@ -85766,6 +86093,7 @@ class WebGPUBackend extends Backend {
+@@ -85766,6 +86101,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -1014,7 +1031,7 @@ index 2e49079..148869e 100644
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -85787,7 +86115,8 @@ class WebGPUBackend extends Backend {
+@@ -85787,7 +86123,8 @@ class WebGPUBackend extends Backend {
  			data.colorFormat !== colorFormat || data.depthStencilFormat !== depthStencilFormat ||
  			data.primitiveTopology !== primitiveTopology ||
  			data.frontFaceCW !== frontFaceCW ||
@@ -1024,7 +1041,7 @@ index 2e49079..148869e 100644
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -85807,6 +86136,7 @@ class WebGPUBackend extends Backend {
+@@ -85807,6 +86144,7 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology = primitiveTopology;
  			data.frontFaceCW = frontFaceCW;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -1032,7 +1049,7 @@ index 2e49079..148869e 100644
  
  			needsUpdate = true;
  
-@@ -85828,6 +86158,7 @@ class WebGPUBackend extends Backend {
+@@ -85828,6 +86166,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -1040,7 +1057,7 @@ index 2e49079..148869e 100644
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -85846,6 +86177,7 @@ class WebGPUBackend extends Backend {
+@@ -85846,6 +86185,7 @@ class WebGPUBackend extends Backend {
  			material.side,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -1049,7 +1066,7 @@ index 2e49079..148869e 100644
  			utils.getPrimitiveTopology( object, material ),
  			renderObject.getGeometryCacheKey(),
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index f707acc..81c24b2 100644
+index f707acc24f5711fdae065ce920b08435b0869c1b..1b3a6e96291af0077f7f247040e657cf4aa0cb33 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -141,6 +141,15 @@ class NodeMaterialObserver {
@@ -1334,23 +1351,23 @@ index f707acc..81c24b2 100644
  
 -		OnObjectUpdate( ( { object } ) => {
 +		const updatePrevious = ( object, array ) => {
-+
+ 
+-			const previousInstanceData = _previousInstanceMatrices.get( object );
 +			const { previousInstanceMatrix } = _previousInstanceMatrices.get( object );
 +			previousInstanceMatrix.array.set( array );
 +			previousInstanceMatrix.needsUpdate = true;
 +			const interleaved = _matrixBuffers.get( previousInstanceMatrix );
 +			if ( interleaved !== undefined ) interleaved.needsUpdate = true;
-+
+ 
+-			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
 +		};
 +
 +		// Scheduled history must reach the GPU in this draw, before the geometry uploads.
 +		OnBeforeObjectUpdate( ( { object } ) => {
- 
--			const previousInstanceData = _previousInstanceMatrices.get( object );
++
 +			const scheduledPrevious = object[ Symbol.for( 'threenative.velocity.previousInstanceMatrices' ) ];
 +			if ( scheduledPrevious !== undefined ) updatePrevious( object, scheduledPrevious );
- 
--			previousInstanceData.previousInstanceMatrix.array.set( matrices.array );
++
 +		} );
 +
 +		// Without a scheduler, retain Three's draw-time snapshot for the next draw.
@@ -1360,7 +1377,24 @@ index f707acc..81c24b2 100644
  
  		} );
  
-@@ -31165,6 +31266,14 @@ class Geometries extends DataMap {
+@@ -18745,7 +18846,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -31165,6 +31274,14 @@ class Geometries extends DataMap {
  		 */
  		this._geometryDisposeListeners = new Map();
  
@@ -1375,7 +1409,7 @@ index f707acc..81c24b2 100644
  	}
  
  	/**
-@@ -31190,10 +31299,69 @@ class Geometries extends DataMap {
+@@ -31190,10 +31307,69 @@ class Geometries extends DataMap {
  
  		if ( this.has( renderObject ) === false ) this.initGeometry( renderObject );
  
@@ -1445,7 +1479,7 @@ index f707acc..81c24b2 100644
  	/**
  	 * Initializes the geometry of the given render object.
  	 *
-@@ -32771,7 +32939,7 @@ class Bindings extends DataMap {
+@@ -32771,7 +32947,7 @@ class Bindings extends DataMap {
  	 */
  	updateForRender( renderObject ) {
  
@@ -1454,7 +1488,7 @@ index f707acc..81c24b2 100644
  
  	}
  
-@@ -32918,12 +33086,13 @@ class Bindings extends DataMap {
+@@ -32918,12 +33094,13 @@ class Bindings extends DataMap {
  	 * Updates the given array of bindings.
  	 *
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -1470,7 +1504,7 @@ index f707acc..81c24b2 100644
  
  		}
  
-@@ -32934,11 +33103,27 @@ class Bindings extends DataMap {
+@@ -32934,11 +33111,27 @@ class Bindings extends DataMap {
  	 *
  	 * @param {BindGroup} bindGroup - The bind group to update.
  	 * @param {Array<BindGroup>} bindings - The bind groups.
@@ -1499,7 +1533,7 @@ index f707acc..81c24b2 100644
  		let needsBindingsUpdate = false;
  		let cacheBindings = true;
  		let cacheIndex = 0;
-@@ -32948,7 +33133,7 @@ class Bindings extends DataMap {
+@@ -32948,7 +33141,7 @@ class Bindings extends DataMap {
  
  		for ( const binding of bindGroup.bindings ) {
  
@@ -1508,7 +1542,7 @@ index f707acc..81c24b2 100644
  
  			// every uniforms group is a uniform buffer. So if no update is required,
  			// we move one with the next binding. Otherwise the next if block will update the group.
-@@ -34181,6 +34366,21 @@ class Textures extends DataMap {
+@@ -34181,6 +34374,21 @@ class Textures extends DataMap {
  
  			backend.destroyTexture( texture );
  
@@ -1530,7 +1564,7 @@ index f707acc..81c24b2 100644
  		}
  
  		//
-@@ -55244,15 +55444,17 @@ class NodeManager extends DataMap {
+@@ -55244,15 +55452,17 @@ class NodeManager extends DataMap {
  	 * Returns `true` if the given node uniforms group must be updated or not.
  	 *
  	 * @param {NodeUniformsGroup} nodeUniformsGroup - The node uniforms group.
@@ -1551,7 +1585,7 @@ index f707acc..81c24b2 100644
  
  		// check for update
  
-@@ -56056,6 +56258,21 @@ class NodeManager extends DataMap {
+@@ -56056,6 +56266,21 @@ class NodeManager extends DataMap {
  
  	}
  
@@ -1573,7 +1607,7 @@ index f707acc..81c24b2 100644
  	/**
  	 * Triggers the call of `updateBefore()` methods
  	 * for all nodes of the given render object.
-@@ -56065,9 +56282,14 @@ class NodeManager extends DataMap {
+@@ -56065,9 +56290,14 @@ class NodeManager extends DataMap {
  	updateBefore( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1588,7 +1622,7 @@ index f707acc..81c24b2 100644
  			// update frame state for each node
  
  			this.getNodeFrameForRender( renderObject ).updateBeforeNode( node );
-@@ -56085,10 +56307,11 @@ class NodeManager extends DataMap {
+@@ -56085,10 +56315,11 @@ class NodeManager extends DataMap {
  	updateAfter( renderObject ) {
  
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1601,7 +1635,7 @@ index f707acc..81c24b2 100644
  
  			this.getNodeFrameForRender( renderObject ).updateAfterNode( node );
  
-@@ -56125,9 +56348,14 @@ class NodeManager extends DataMap {
+@@ -56125,9 +56356,14 @@ class NodeManager extends DataMap {
  
  		const nodeFrame = this.getNodeFrameForRender( renderObject );
  		const nodeBuilder = renderObject.getNodeBuilderState();
@@ -1616,12 +1650,13 @@ index f707acc..81c24b2 100644
  			nodeFrame.updateNode( node );
  
  		}
-@@ -62886,18 +63114,17 @@ class Renderer {
+@@ -62886,18 +63122,17 @@ class Renderer {
  
  		//
  
 -		const needsRefresh = this._nodes.needsRefresh( renderObject );
--
++		this._nodes.needsRefresh( renderObject );
+ 
 -		if ( needsRefresh ) {
 -
 -			this._nodes.updateBefore( renderObject );
@@ -1630,8 +1665,7 @@ index f707acc..81c24b2 100644
 -
 -			this._nodes.updateForRender( renderObject );
 -			this._bindings.updateForRender( renderObject );
-+		this._nodes.needsRefresh( renderObject );
- 
+-
 -		}
 +		// Every step of a draw runs, settled or not. What a settled static object skips is decided
 +		// inside each of them - its OBJECT node updates, its object uniform group write and its
@@ -1645,7 +1679,7 @@ index f707acc..81c24b2 100644
  
  		this._pipelines.updateForRender( renderObject );
  
-@@ -62907,7 +63134,7 @@ class Renderer {
+@@ -62907,7 +63142,7 @@ class Renderer {
  
  			this.backend.draw( renderObject, this.info );
  
@@ -1654,7 +1688,7 @@ index f707acc..81c24b2 100644
  
  		}
  
-@@ -79004,7 +79231,14 @@ class WGSLNodeBuilder extends NodeBuilder {
+@@ -79004,7 +79239,14 @@ class WGSLNodeBuilder extends NodeBuilder {
  
  		} else {
  
@@ -1670,7 +1704,7 @@ index f707acc..81c24b2 100644
  
  			if ( this.renderer.backend.compatibilityMode && texture.isDepthTexture ) {
  
-@@ -81108,6 +81342,15 @@ class WebGPUAttributeUtils {
+@@ -81108,6 +81350,15 @@ class WebGPUAttributeUtils {
  			buffer.unmap();
  
  			bufferData.buffer = buffer;
@@ -1686,7 +1720,7 @@ index f707acc..81c24b2 100644
  
  		}
  
-@@ -81128,6 +81371,11 @@ class WebGPUAttributeUtils {
+@@ -81128,6 +81379,11 @@ class WebGPUAttributeUtils {
  		const bufferData = backend.get( bufferAttribute );
  		const buffer = backend.get( bufferAttribute ).buffer;
  
@@ -1698,7 +1732,7 @@ index f707acc..81c24b2 100644
  		let array = bufferAttribute.array;
  
  		const itemSize = bufferData._itemSize;
-@@ -81209,6 +81457,9 @@ class WebGPUAttributeUtils {
+@@ -81209,6 +81465,9 @@ class WebGPUAttributeUtils {
  
  		}
  
@@ -1708,7 +1742,7 @@ index f707acc..81c24b2 100644
  	}
  
  	/**
-@@ -81295,9 +81546,15 @@ class WebGPUAttributeUtils {
+@@ -81295,9 +81554,15 @@ class WebGPUAttributeUtils {
  	destroyAttribute( attribute ) {
  
  		const backend = this.backend;
@@ -2097,10 +2131,27 @@ index b89834b..18e2b79 100644
  		} );
  
 diff --git a/src/nodes/accessors/Skinning.js b/src/nodes/accessors/Skinning.js
-index 2356aed..aaeea63 100644
+index 2356aed8656dceb1ea74b73ea2e739371a960484..76303e765bc29853cfd7f139dd3ec76545b70798 100644
 --- a/src/nodes/accessors/Skinning.js
 +++ b/src/nodes/accessors/Skinning.js
-@@ -149,7 +149,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
+@@ -117,7 +117,15 @@ function getPreviousSkinnedPosition( skinnedMesh, bindMatrixNode, bindMatrixInve
+ 
+ 	}
+ 
+-	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, bindMatrixInverseNode, skinIndexNode, skinWeightNode );
++	// The previous bones and world matrix must use the same frame's bind inverse.
++	const previousBindMatrixInverse = uniform( skinnedMesh.bindMatrixInverse, 'mat4' ).onObjectUpdate( ( { object } ) => {
++
++		const mesh = object?.isSkinnedMesh === true ? object : skinnedMesh;
++		return mesh[ Symbol.for( 'threenative.velocity.previousBindMatrixInverse' ) ] ?? mesh.bindMatrixInverse;
++
++	} );
++
++	return getSkinnedPosition( data.node, positionPrevious, bindMatrixNode, previousBindMatrixInverse, skinIndexNode, skinWeightNode );
+ 
+ }
+ 
+@@ -149,7 +157,8 @@ export const skinning = /*@__PURE__*/ Fn( ( [ skinnedMesh ], builder ) => {
  
  			if ( skeletonData !== undefined ) {
  
@@ -2110,7 +2161,7 @@ index 2356aed..aaeea63 100644
  
  			}
  
-@@ -216,7 +217,8 @@ export const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = n
+@@ -216,7 +225,8 @@ export const computeSkinning = /*@__PURE__*/ Fn( ( [ skinnedMesh, toPosition = n
  
  			if ( state !== undefined ) {
  
