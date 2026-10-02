@@ -6,6 +6,11 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: "../../artifacts/velocity-fixture",
-    rollupOptions: { input: fileURLToPath(new URL("velocity.html", import.meta.url)) },
+    rollupOptions: {
+      input: {
+        motion: fileURLToPath(new URL("velocity.html", import.meta.url)),
+        cost: fileURLToPath(new URL("velocity-cost.html", import.meta.url)),
+      },
+    },
   },
 });
