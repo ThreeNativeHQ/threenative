@@ -3,7 +3,10 @@ import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { IBakedWorld } from "./terrain.js";
 
 /** Decorative land beyond the collider; the inner ring uses the bake's exact edge vertices. */
-export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
+export function createHorizonGeometry(
+  data: IBakedWorld,
+  landform: "mountain" | "alpine" | "mesa" | "plain" = "mountain",
+): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
   const rings = 192;
@@ -55,7 +58,18 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
         massif * (110 + ridge ** 2.4 * 440) +
         fineRidge ** 3 * Math.min(1, massif * 3) * 140 +
         crags * Math.min(1, massif * 2);
-      const height = data.waterLevel === null ? hills : data.waterLevel - 28;
+      const inland =
+        landform === "mesa"
+          ? 12 + smoothMesa(broad) * 95 + noise.noise(nx * 0.015, 3, nz * 0.015) * 3
+          : landform === "plain"
+            ? 5 + broad * 24 + fineRidge * 9
+            : landform === "alpine"
+              ? 25 +
+                massif * (170 + ridge ** 1.8 * 330) +
+                fineRidge ** 3 * Math.min(1, massif * 3) * 60 +
+                crags * Math.min(1, massif * 2) * 0.5
+              : hills;
+      const height = data.waterLevel === null ? inland : data.waterLevel - 28;
       positions.push(x, (data.heights[edge] as number) * (1 - blend) + height * blend, z);
       colors.push(
         data.colors[edge * 3] as number,
@@ -76,4 +90,10 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+/** Broad flat-topped distant mesas, with an eroded shoulder rather than alpine peaks. */
+function smoothMesa(value: number): number {
+  const t = Math.max(0, Math.min(1, (value + 0.08) / 0.18));
+  return t * t * (3 - 2 * t);
 }

@@ -11,6 +11,7 @@ import { createRandom } from "@threenative/core";
 // can walk through it twice without the trees moving. Nothing here reads the frame clock.
 import type { Heightfield } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
+import type { WorldName } from "./biomes.js";
 
 /** A field the placement rule reads: the world's own baked colours plus its sampled geometry. */
 export interface IPlacementField {
@@ -19,6 +20,7 @@ export interface IPlacementField {
   readonly resolution: number;
   readonly size: number;
   readonly waterLevel: number | null;
+  readonly world?: WorldName;
   /** Still water: nothing grows below a lake's level inside its reach. */
   readonly rivers?: readonly {
     readonly points: readonly (readonly number[])[];
@@ -44,6 +46,10 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   const height = clampedHeight(data, x, z);
   if (data.waterLevel !== null && height < data.waterLevel + 7.5) return 0;
   const slope = slopeDegrees(data, x, z);
+  if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
+  if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
+  if (data.world === "tundra")
+    return clamp01((30 - slope) / 22) * (0.25 + 0.4 * forestWeight(x * 1.4, z * 1.2));
   return clamp01((42 - slope) / 20) * clamp01((66 - height) / 28);
 }
 
@@ -100,6 +106,10 @@ export function scatterProps(
   focus: { x: number; z: number },
   clearings: readonly (readonly [number, number, number])[] = [],
 ): IPropScatter {
+  const temperate = data.world === undefined || data.world === "forest" || data.world === "coastal";
+  const desert = data.world === "desert";
+  const tundra = data.world === "tundra";
+  const treeLimit = temperate ? SCATTER.spruceCount : desert ? 0 : tundra ? 55 : 600;
   const placements: IPlacement[] = [];
   const counts: Record<string, number> = Object.fromEntries(
     [
@@ -146,7 +156,7 @@ export function scatterProps(
   const cells = new Map<string, [number, number]>();
   for (
     let tries = 0;
-    (counts.spruce ?? 0) < SCATTER.spruceCount && tries < SCATTER.spruceAttempts;
+    (counts[tundra ? "sapling" : "spruce"] ?? 0) < treeLimit && tries < SCATTER.spruceAttempts;
     tries++
   ) {
     const x = (random() - 0.5) * data.size;
@@ -156,7 +166,8 @@ export function scatterProps(
       wet(x, z) ||
       nearEye(x, z) ||
       slopeDegrees(data, x, z) > 32 ||
-      grassWeight(data, x, z) < 0.3 ||
+      (data.world === "alpine" && clampedHeight(data, x, z) > 52) ||
+      grassWeight(data, x, z) < (temperate ? 0.3 : 0.18) ||
       forestWeight(x, z) < 0.42
     )
       continue;
@@ -171,10 +182,15 @@ export function scatterProps(
     const key = `${cx},${cz}`;
     if (crowded || cells.has(key)) continue;
     cells.set(key, [x, z]);
-    put("spruce", x, z, 0.8 + random() * 0.5);
+    put(
+      tundra ? "sapling" : "spruce",
+      x,
+      z,
+      (temperate ? 0.8 : tundra ? 0.45 : 0.55) + random() * (temperate ? 0.5 : 0.4),
+    );
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = forestWeight(x, z) < 0.57;
-    for (let i = 0; i < (edge ? 2 : 1); i++) {
+    for (let i = 0; i < (tundra ? 0 : edge ? 2 : 1); i++) {
       const angle = random() * Math.PI * 2;
       const reach = 2 + random() * 4;
       const sx = x + Math.cos(angle) * reach;
@@ -182,18 +198,18 @@ export function scatterProps(
       if (!nearEye(sx, sz) && grassWeight(data, sx, sz) > 0.25)
         put("sapling", sx, sz, 0.7 + random() * 0.65);
     }
-    for (let i = 0; i < 2; i++)
+    for (let i = 0; i < (temperate ? 2 : 0); i++)
       put("fern", x + (random() - 0.5) * 7, z + (random() - 0.5) * 7, 0.7 + random() * 0.6);
   }
   // Rock clusters follow exposed slopes rather than evenly spaced lawn ornaments.
-  for (let i = 0; i < 1500; i++) {
+  for (let i = 0; i < (temperate ? 1500 : 2400); i++) {
     const x = (random() - 0.5) * data.size;
     const z = (random() - 0.5) * data.size;
     if (!inside(x, z) || wet(x, z)) continue;
     const slope = slopeDegrees(data, x, z);
-    if (slope < 15 || random() > 0.38) continue;
+    if (slope < (tundra ? 3 : desert ? 8 : 15) || random() > 0.38 || nearEye(x, z)) continue;
     if (slope > 43) {
-      if (random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
+      if (temperate && random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
       continue;
     }
     if (slope > 28 && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
@@ -230,27 +246,43 @@ export function scatterProps(
       return;
     const drift = 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7);
     if (random() > density * drift) return;
-    put("grass", x, z, 0.8 + random() * 0.65);
-    if (random() < 0.3)
+    put(
+      desert ? "scrub" : "grass",
+      x,
+      z,
+      (temperate ? 0.8 : 0.38) + random() * (temperate ? 0.65 : 0.35),
+    );
+    if (!desert && random() < 0.3)
       put("scrub", x + (random() - 0.5), z + (random() - 0.5), 0.9 + random() * 0.6);
   };
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
-  for (let z = -half + 3; z < half - 3; z += SCATTER.grassCell)
-    for (let x = -half + 3; x < half - 3; x += SCATTER.grassCell)
+  for (
+    let z = -half + 3;
+    z < half - 3;
+    z += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
+  )
+    for (
+      let x = -half + 3;
+      x < half - 3;
+      x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
+    )
       cover(x + (random() - 0.5) * 1.5, z + (random() - 0.5) * 1.5, 0.7);
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
-    for (let dz = -SCATTER.grassThin; dz < SCATTER.grassThin; dz += 0.34)
-      for (let dx = -SCATTER.grassThin; dx < SCATTER.grassThin; dx += 0.34) {
+    // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
+    const eyeStep = temperate ? 0.34 : desert ? 3 : tundra ? 1.4 : 0.6;
+    const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
+    for (let dz = -eyeReach; dz < eyeReach; dz += eyeStep)
+      for (let dx = -eyeReach; dx < eyeReach; dx += eyeStep) {
         const distance = Math.hypot(dx, dz);
-        if (distance > SCATTER.grassThin) continue;
+        if (distance > eyeReach) continue;
         const density = Math.max(
           0.08,
-          1 - Math.max(0, distance - SCATTER.grassFull) / (SCATTER.grassThin - SCATTER.grassFull),
+          1 - Math.max(0, distance - SCATTER.grassFull) / (eyeReach - SCATTER.grassFull),
         );
         cover(eye.x + dx + (random() - 0.5) * 0.6, eye.z + dz + (random() - 0.5) * 0.6, density);
       }
-    for (let p = 0; p < 14; p++) {
+    for (let p = 0; p < (temperate ? 14 : 0); p++) {
       const angle = random() * Math.PI * 2;
       const reach = random() * 32;
       const px = eye.x + Math.cos(angle) * reach;

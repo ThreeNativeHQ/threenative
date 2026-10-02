@@ -71,6 +71,7 @@ import {
   PROP_MAPS,
   SOIL_MAP,
 } from "../world/terrainAssets.js";
+import type { IBiome } from "./biomes.js";
 import type { IPropMaterials } from "./props.js";
 
 /** How much a mip level shrinks a needle card's alpha; see {@link mipCompensatedCutoff}. */
@@ -675,6 +676,7 @@ export interface IPropSurfaces {
 export async function createPropSurfaces(
   assets?: IAssetLoader,
   ground?: IPropGround,
+  biome?: IBiome,
 ): Promise<IPropSurfaces> {
   const seconds = uniform(0) as unknown as Node<"float">;
   const under = ground === undefined ? undefined : groundHeight(ground);
@@ -682,10 +684,31 @@ export async function createPropSurfaces(
     map(assets, FERN_MAPS.diffuse, false),
     map(assets, FERN_MAPS.alpha, true),
   ]);
-  const soil = await map(assets, SOIL_MAP, false);
+  const soil = await map(
+    assets,
+    biome && biome.world !== "forest" && biome.world !== "coastal"
+      ? biome.maps.grass.diffuse
+      : SOIL_MAP,
+    false,
+  );
   const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, PROP_MAPS.bark),
-    surfaceMaps(assets, PROP_MAPS.stone),
+    surfaceMaps(
+      assets,
+      biome?.world === "desert" || biome?.world === "alpine"
+        ? {
+            diffuse: biome.maps.rock.diffuse,
+            normal: biome.maps.rock.normal ?? PROP_MAPS.stone.normal,
+            roughness: "cliff_side/cliff_side_rough_1k.jpg",
+          }
+        : biome?.world === "tundra"
+          ? {
+              diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
+              normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
+              roughness: PROP_MAPS.stone.roughness,
+            }
+          : PROP_MAPS.stone,
+    ),
     map(assets, NEEDLE_ATLAS, false),
     map(assets, NEEDLE_SURFACE, true),
   ]);
@@ -835,6 +858,7 @@ export async function createPropSurfaces(
   }
   sway(petalMaterial, seconds, WIND.amplitude.petal);
 
+  const stoneMaterial = stoneSurface(stone, under?.node, soil);
   const materials: IPropMaterials = {
     bark: barkMaterial,
     crown: crownMaterial,
@@ -845,8 +869,24 @@ export async function createPropSurfaces(
     petal: petalMaterial,
     pine: pineMaterial,
     stem: stemMaterial,
-    stone: stoneSurface(stone, under?.node, soil),
+    stone: stoneMaterial,
   };
+  if (biome && biome.world !== "forest" && biome.world !== "coastal") {
+    grassMaterial.colorNode = blade.mul(
+      vec3(
+        ...(biome.world === "desert"
+          ? ([1.65, 0.92, 0.42] as const)
+          : biome.world === "tundra"
+            ? ([1.1, 0.86, 0.55] as const)
+            : ([0.86, 0.92, 0.6] as const)),
+      ),
+    );
+    grassMaterial.emissiveNode = vec3(0);
+    if (stoneMaterial.colorNode)
+      stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(
+        vec3(...biome.stoneTint),
+      );
+  }
   let disposed = false;
   return {
     inputs: {

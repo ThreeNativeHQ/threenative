@@ -167,19 +167,21 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
   .stamp({
     id: "summit",
     at: [30, -40],
-    radius: [170, 140],
-    amplitude: 168,
+    radius: [215, 180],
+    amplitude: 158,
     shape: "mountain",
-    roughness: 0.32,
+    roughness: 0.18,
   })
   .stamp({
     id: "side-ridge",
     at: [-120, 70],
-    radius: [150, 60],
-    amplitude: 84,
+    radius: [175, 120],
+    amplitude: 70,
     shape: "ridge",
-    roughness: 0.28,
+    roughness: 0.18,
   })
+  // A broad summit snowfield, cut before weathering so its rim drains and erodes with the massif.
+  .flatten({ id: "summit-snowfield", at: [30, -40], radius: 62, height: 120, falloff: 0.5 })
   // Crags only where it is high: ridged noise over the whole massif roughened the foothills past
   // 30 degrees, which is a rockfall, not a mountain.
   .noise({
@@ -194,9 +196,9 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
   .erode({ id: "weathering", method: "hydraulic" })
   .smooth({ id: "settle", iterations: 1, strength: 0.5 })
   .noise({ id: "detail", base: 0, amplitude: 3, scale: 60, warp: 14, octaves: 4, mode: "ridged" })
-  // A 40-degree talus is scree: rock past that angle slides off the faces and piles in fans below,
+  // A 34-degree talus is loose scree: rock past that angle slides off the faces and piles in fans below,
   // which is what puts the grey aprons under the snowline.
-  .erode({ id: "scree", method: "thermal", talus: 40, iterations: 14 })
+  .erode({ id: "scree", method: "thermal", talus: 34, iterations: 80 })
   .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
     id: "surfaces",
@@ -249,10 +251,10 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   // Terracing the mesa walls: stratified rock erodes to flat benches separated by steep risers, which
   // is the silhouette a mesa actually has. A smooth cone at this scale is a lump, not a mesa.
   .terrace({ id: "benches", step: 6, softness: 0.12, strength: 0.55, offset: 6 })
-  .smooth({ id: "settle", iterations: 1, strength: 0.4 })
-  .noise({ id: "detail", base: 0, amplitude: 2, scale: 54, warp: 10, octaves: 4, mode: "ridged" })
+  .smooth({ id: "settle", iterations: 3, strength: 0.65 })
+  .noise({ id: "detail", base: 0, amplitude: 0.8, scale: 74, warp: 10, octaves: 4, mode: "ridged" })
   .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
-  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
+  .smooth({ id: "drift", iterations: 2, strength: 0.55 })
   .river({
     id: "wash",
     followTerrain: true,
@@ -281,14 +283,14 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
 // Snow / Tundra: rolling snowfields with ridged rocky outcrops and moss where the wind strips the
 // cover; its frozen lake is an ice surface, not a fluid.
 export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
-  .noise({ id: "snowfield", base: 12, amplitude: 40, scale: 170, warp: 34, octaves: 6 })
-  .noise({ id: "folds", base: 0, amplitude: 14, scale: 120, warp: 20, octaves: 3, mode: "billow" })
+  .noise({ id: "snowfield", base: 12, amplitude: 12, scale: 240, warp: 34, octaves: 4 })
+  .noise({ id: "folds", base: 0, amplitude: 4, scale: 170, warp: 20, octaves: 3, mode: "billow" })
   // Outcrops in patches, not everywhere: ridged noise over the whole field roughened a third of a
   // snowfield past 30 degrees, which is a rockfall, not tundra.
   .noise({
     id: "outcrops",
     base: 0,
-    amplitude: 5,
+    amplitude: 2.5,
     scale: 55,
     octaves: 3,
     mode: "ridged",
@@ -296,7 +298,7 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
   })
   .erode({ id: "weathering", method: "hydraulic" })
   .smooth({ id: "settle", iterations: 1, strength: 0.5 })
-  .noise({ id: "detail", base: 0, amplitude: 2.5, scale: 64, warp: 10, octaves: 4, mode: "ridged" })
+  .noise({ id: "detail", base: 0, amplitude: 0.8, scale: 74, warp: 10, octaves: 3, mode: "ridged" })
   .erode({ id: "talus", method: "thermal", talus: 33, iterations: 12 })
   .smooth({ id: "drift", iterations: 1, strength: 0.4 })
   .materials({
@@ -312,9 +314,9 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
 // bake is only needed when the recipe, the palette it colours with, or the terrain build it
 // evaluates against has changed since the output was written. `bake.mjs --force` overrides.
 const recipes = { forest, coastal, alpine, desert, tundra };
-// The bundle carries only the worlds the game draws: every baked world is a 257-square of heights
-// and colours, and importing all five made a 25 MB module the dev server took longer than a page
-// load to transform. The others are written beside it until their scenes exist.
+// Forest/coast keep their existing bundle. The other three are separate lazy imports: every
+// baked world is a 257-square of heights/colours, so bundling all five would add about 15 MB
+// to the initial page module.
 const drawn = new Set(["forest", "coastal"]);
 const outputDir = new URL("../src/world/", import.meta.url);
 const { readFile, stat } = await import("node:fs/promises");

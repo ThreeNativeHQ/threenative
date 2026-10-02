@@ -53,6 +53,7 @@ import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.
 // disagree with the geometry.
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
+import { type IBiome, biomeWeights } from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
 import { type IBakedLake, type IBakedRiver, surfaceHeights, waterlineRadius } from "./river.js";
 
@@ -301,8 +302,10 @@ export function createGroundMaterial(
   data: IBakedWorld,
   maps: Partial<Record<LayerKey, ILayerMaps>>,
   curvature: IGroundCurvature,
+  biome?: IBiome,
 ): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
+  material.userData.biome = biome?.world ?? "forest";
   const held = new Set<Texture>([curvature.texture]);
   const layer = (key: LayerKey): ILayerMaps => {
     const found = maps[key];
@@ -369,6 +372,8 @@ export function createGroundMaterial(
     ),
   };
 
+  if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
+
   // --- how each surface looks -------------------------------------------------------------
   // The layers that cover most of a meadow take a second, larger scale faded in with distance: one
   // tile under the player's feet, a coarser one near the horizon, and no single lattice for the eye
@@ -401,17 +406,20 @@ export function createGroundMaterial(
       texture(diffuse, tiledUV(key, 2.35)),
       tileBlend,
     );
-    if (flatLayer(key)) return flat;
+    if (flatLayer(key))
+      return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls = triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const stone = mix(blended.rgb, vec3(grey), 0.35).mul(vec3(0.48, 0.44, 0.39));
+      const stone = mix(blended.rgb, vec3(grey), 0.35).mul(
+        vec3(...(biome?.stoneTint ?? [0.48, 0.44, 0.39])),
+      );
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
-      const distant = vec3(0.115, 0.105, 0.088).mul(weathering);
+      const distant = vec3(...(biome?.distantStone ?? [0.115, 0.105, 0.088])).mul(weathering);
       return vec4(
         mix(stone, distant, smoothstep(35, 220, positionView.length()).mul(0.65)),
         blended.a,
@@ -462,20 +470,24 @@ export function createGroundMaterial(
   };
 
   const grassRelief = reliefOf("grass", 0.38);
+  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   // Metre-scale tufts survive the grass photograph's mips beyond individual blades.
   const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
     .mul(0.55)
     .add(1);
   const farGrass = vec3(0.055, 0.1, 0.019).mul(cover);
   // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
-  let albedo: Node<"vec4"> = vec4(
-    mix(
-      albedoOf("grass").rgb.mul(MEADOW),
-      farGrass,
-      smoothstep(32, 115, positionView.length()).mul(0.55),
-    ),
-    1,
-  );
+  // Other biomes keep their own ground tint; the green far-field belongs to the temperate meadow.
+  let albedo: Node<"vec4"> = otherBiome
+    ? albedoOf("grass").mul(vec3(...biome.grassTint))
+    : vec4(
+        mix(
+          albedoOf("grass").rgb.mul(MEADOW),
+          farGrass,
+          smoothstep(32, 115, positionView.length()).mul(0.55),
+        ),
+        1,
+      );
   // Three scales of relief on the meadow, not two: a metre of detail normal under the player's feet,
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
@@ -513,12 +525,22 @@ export function createGroundMaterial(
   // 50–200 metre vegetation tones survive texture mipmapping in the overview.
   const macro = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.014), 3);
   const mottling = mx_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.045));
-  const dryness = smoothstep(
-    -0.18,
-    0.22,
-    macro.add(mottling.mul(0.24)).sub(hollow.mul(0.035)).add(alpine.mul(0.06)),
-  );
-  const tone = mix(vec3(0.48, 0.76, 0.34), vec3(1.05, 1.13, 0.72), dryness);
+  const dryness = otherBiome
+    ? smoothstep(
+        -0.18,
+        0.22,
+        mx_fractal_noise_float(positionWorld.mul(0.006), 3)
+          .sub(hollow.mul(0.16))
+          .add(alpine.mul(0.06)),
+      )
+    : smoothstep(
+        -0.18,
+        0.22,
+        macro.add(mottling.mul(0.24)).sub(hollow.mul(0.035)).add(alpine.mul(0.06)),
+      );
+  const tone = otherBiome
+    ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
+    : mix(vec3(0.48, 0.76, 0.34), vec3(1.05, 1.13, 0.72), dryness);
   const vegetation = oneMinus(max(max(weights.rock, weights.snow), weights.sand));
   const continuation = smoothstep(data.size / 2 + 60, data.size / 2 + 280, outside);
   const strata = mx_fractal_noise_float(positionWorld.mul(vec3(0.018, 0.035, 0.018)), 3);
@@ -532,7 +554,7 @@ export function createGroundMaterial(
   const mountain = mix(mix(forest, crag, max(treeline, face)), vec3(0.72, 0.76, 0.78), cap);
   material.colorNode = mix(
     albedo.rgb.mul(mix(vec3(1), tone, vegetation)),
-    mountain,
+    otherBiome ? albedo.rgb : mountain,
     continuation,
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
   material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
@@ -563,6 +585,7 @@ export function createGroundMaterial(
 export function createTerrain(
   data: IBakedWorld,
   assets?: IAssetLoader,
+  biome?: IBiome,
 ): { field: Heightfield; mesh: Mesh } {
   const field = new Heightfield({
     rows: data.resolution,
@@ -580,7 +603,7 @@ export function createTerrain(
   const mesh: Mesh = new Mesh(geometry, material);
   mesh.name = "authored-terrain";
   mesh.receiveShadow = true;
-  const horizonGeometry = createHorizonGeometry(data);
+  const horizonGeometry = createHorizonGeometry(data, biome?.horizon);
   const edgePositions = horizonGeometry.getAttribute("position");
   const edgeNormals = horizonGeometry.getAttribute("normal");
   const groundNormals = geometry.getAttribute("normal");
@@ -605,8 +628,8 @@ export function createTerrain(
 
   const curvature = buildCurvature(data, field);
   if (assets !== undefined)
-    void loadGroundMaps(assets)
-      .then((maps) => createGroundMaterial(data, maps, curvature))
+    void loadGroundMaps(assets, biome?.maps)
+      .then((maps) => createGroundMaterial(data, maps, curvature, biome))
       .then((ground) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing
         // draws holds GPU memory until its textures are released.
@@ -709,9 +732,10 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
  */
 async function loadGroundMaps(
   assets: IAssetLoader,
+  pathsByLayer = GROUND_MAPS,
 ): Promise<Partial<Record<LayerKey, ILayerMaps>>> {
   const layers = await Promise.all(
-    Object.entries(GROUND_MAPS).map(async ([key, paths]) => {
+    Object.entries(pathsByLayer).map(async ([key, paths]) => {
       // A layer without its albedo has no place in the blend, so the set comes back without it.
       const diffuse = await get(assets, paths.diffuse, false);
       if (diffuse === undefined) return undefined;

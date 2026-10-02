@@ -48,6 +48,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
+import type { IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
 
 /**
@@ -138,7 +139,7 @@ const CLOUDS = {
  * coverage is thin and the sun is behind, and every core darkened — which is the same read a
  * volumetric integral gives at this size, for one noise field and one `dot`.
  */
-function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
+function cloudDome(sun: Node<"vec3">, opacity: number = CLOUDS.opacity): MeshBasicNodeMaterial {
   const material = new MeshBasicNodeMaterial({
     // Seen from the inside, and never written to depth: the deck is behind everything else in the
     // world and must not occlude a single blade of grass in front of it.
@@ -180,7 +181,7 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
   const density = coverage
     .mul(smoothstep(float(CLOUDS.bank[0]), float(CLOUDS.bank[1]), bank))
     .mul(deck);
-  material.opacityNode = float(1).sub(density.mul(-2.4).exp()).mul(CLOUDS.opacity);
+  material.opacityNode = float(1).sub(density.mul(-2.4).exp()).mul(opacity);
   return material;
 }
 
@@ -203,28 +204,43 @@ export interface IOutdoorSky {
  * of the substitution; the sky, the fill, the haze and the tone curve are the rig's, and they are
  * what a flat `Color` background and a hand-set `FogExp2` were standing in for.
  */
-export function createOutdoorSky(camera: Object3D): IOutdoorSky {
-  const sun = new DirectionalLight(SUN.colour, SUN.intensity);
+export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky {
+  const direction = biome ? new Vector3(...biome.sun.direction) : SUN.direction;
+  const sunColor = biome ? new Color(biome.sun.color) : SUN.colour;
+  const rig = biome
+    ? {
+        ...RIG,
+        sky: biome.sky,
+        fill: {
+          sky: new Color(biome.fill.sky),
+          ground: new Color(biome.fill.ground),
+          intensity: biome.fill.intensity,
+        },
+        haze: { color: new Color(biome.haze.color), density: biome.haze.density },
+        exposure: biome.exposure,
+      }
+    : RIG;
+  const sun = new DirectionalLight(sunColor, biome?.sun.intensity ?? SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
   sun.shadow.normalBias = 0.035;
   sun.shadow.shadowNode = new VirtualShadowNode(sun, {
-    clipExtents: [...RIG.shadowExtents],
+    clipExtents: [...rig.shadowExtents],
     mapSize: 2048,
   });
   // A fixed world-origin target keeps the L-key direction independent of the following sky.
-  sun.position.copy(SUN.direction);
+  sun.position.copy(direction);
 
   const daylight = new Daylight({
-    exposure: RIG.exposure,
-    fill: RIG.fill,
+    exposure: rig.exposure,
+    fill: rig.fill,
     follow: camera,
-    haze: RIG.haze,
-    shadowExtents: [...RIG.shadowExtents],
-    sky: RIG.sky,
+    haze: rig.haze,
+    shadowExtents: [...rig.shadowExtents],
+    sky: rig.sky,
     skySize: RIG.skySize,
-    sunColor: SUN.colour,
-    sunDirection: SUN.direction,
+    sunColor,
+    sunDirection: direction,
     sunIntensity: 0,
   });
   // The physical sky's radiance is calibrated separately from ground irradiance.
@@ -238,21 +254,21 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
   // The deck rides inside the rig's own sky box, so it needs no follow of its own: the box is put
   // back on the eye every frame and the dome is its child. 64 by 32 is enough, because the pattern
   // is per fragment and nothing here is shaded from the dome's own normals.
-  const deck = new Mesh(new SphereGeometry(1, 64, 32), cloudDome(sunDirection));
+  const deck = new Mesh(new SphereGeometry(1, 64, 32), cloudDome(sunDirection, biome?.clouds));
   deck.name = "cumulus-deck";
   deck.scale.setScalar(0.9);
   deck.frustumCulled = false;
   daylight.sky.add(deck);
 
   function setSunX(x: number): void {
-    sun.position.set(x, SUN.direction.y, SUN.direction.z);
+    sun.position.set(x, direction.y, direction.z);
     // The sky's sun disc, its brightest quadrant and the cloud deck's lighting all follow the light.
     daylight.sky.sunPosition.value.copy(sun.position).normalize();
     (sunDirection as unknown as { value: Vector3 }).value.copy(sun.position).normalize();
     // And so does the light coming through the needles, which reads the same vector.
     setCanopySun(sun.position);
   }
-  setSunX(SUN.direction.x);
+  setSunX(direction.x);
   return {
     daylight,
     get sunX() {
@@ -266,15 +282,16 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
 /** Contact-scale occlusion through the installed chain; daylight still owns exposure and tone. */
 export function installOutdoorOcclusion(
   ctx: Pick<ICtx, "renderer" | "scene" | "camera">,
+  biome?: IBiome,
 ): () => void {
   const { renderer, scene, camera } = ctx;
   if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
   // Three's existing fog nodes retain aerial perspective and add low valley mist without a pass.
   const previousFog = scene.fogNode;
-  const distanceHaze = densityFogFactor(float(RIG.haze.density));
+  const distanceHaze = densityFogFactor(float(biome?.haze.density ?? RIG.haze.density));
   const valleyHaze = exponentialHeightFogFactor(float(0.000005), float(115)) as Node<"float">;
   const heightFog = fog(
-    color(RIG.haze.color),
+    color(biome ? new Color(biome.haze.color) : RIG.haze.color),
     float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
   );
   scene.fogNode = heightFog;

@@ -36,6 +36,7 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial } from "three/webgpu";
+import type { WorldName } from "./biomes.js";
 import type { IPropPart, PropRole } from "./props.js";
 
 interface IPackSpecies {
@@ -169,11 +170,22 @@ export interface IPackProps {
   readonly parts: Map<string, IPropPart[]>;
   readonly dispose: () => void;
 }
-export async function loadPack(assets?: IAssetLoader): Promise<IPackProps> {
+export async function loadPack(
+  assets?: IAssetLoader,
+  world: WorldName = "forest",
+): Promise<IPackProps> {
   const parts = new Map<string, IPropPart[]>();
   const built: { geometry: BufferGeometry; material: Material }[] = [];
+  const selected = species.filter(
+    (one) =>
+      world === "forest" ||
+      world === "coastal" ||
+      (world === "alpine" &&
+        ["spruce", "sapling", "grass", "boulder", "scree"].includes(one.asset)) ||
+      (world === "tundra" && ["sapling", "boulder", "scree"].includes(one.asset)),
+  );
   const loaded = await Promise.all(
-    species.map(async (one) => {
+    selected.map(async (one) => {
       if (!assets) return undefined;
       try {
         return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
@@ -183,7 +195,7 @@ export async function loadPack(assets?: IAssetLoader): Promise<IPackProps> {
     }),
   );
   loaded.forEach((gltf, index) => {
-    const one = species[index];
+    const one = selected[index];
     const root = gltf?.scene;
     if (!root || !one) return;
     root.updateWorldMatrix(true, true);
