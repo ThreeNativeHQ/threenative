@@ -1619,6 +1619,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // runs on `!opaque || !ready`, which is exactly the window this dispatch has to stay out
         // of. Moving the call in there dispatched on every loader frame and never once after
         // readiness — the inverse of the rule — so it stays here and adds its own render time.
+        let renderComputeDispatched = false;
         if (
           this.#renderer !== undefined &&
           this.#sceneEntered &&
@@ -1632,6 +1633,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
             // view — a streamed world's main batches — has to be driven from here and not from a draw
             // three skips for a mesh that is hidden because it has nothing to draw.
             this.#computeDriven.processRender(this.#renderer, camera);
+            renderComputeDispatched = true;
           } finally {
             endSpan(SPANS.compute);
           }
@@ -1775,6 +1777,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           if (spans !== undefined) addSpan(SPANS.cull, spanNow() - cullRestoreStart);
           this.#projection?.commit();
           renderer.observeRenderChainFrame?.();
+          if (renderComputeDispatched) {
+            beginSpan(SPANS.compute);
+            try {
+              this.#computeDriven.processAfterRender(renderer, camera);
+            } finally {
+              endSpan(SPANS.compute);
+            }
+          }
           frameBudget?.addRender(budgetNow() - renderStart);
           // Read the split before the overlay renders: the overlay is its own draw, not part of the
           // world pass, and the budget window already accounts for it in its own phase.

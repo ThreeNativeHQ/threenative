@@ -1,4 +1,5 @@
 import type { Camera, Object3D } from "three";
+import { beginFrameWork } from "./frame-work-budget.js";
 import type { IRendererLike } from "./renderer.js";
 
 /**
@@ -26,6 +27,8 @@ export interface IComputeDriven {
    * implementation that does not need it simply declares one parameter.
    */
   process(renderer: IRendererLike, camera?: Camera): void;
+  /** Optional deferrable work, after the draw has measured this frame's shadow cost. */
+  afterRender?(renderer: IRendererLike, camera?: Camera): void;
   detach(): void;
   readonly released: boolean;
 }
@@ -76,7 +79,16 @@ export class ComputeDrivenRegistry {
    * released before dispatch.
    */
   processRender(renderer: IRendererLike, camera?: Camera): void {
+    beginFrameWork(renderer);
     this.#process(renderer, "render", camera);
+  }
+
+  /** Same render-cadence owners, after an actual world draw; never a held loader frame. */
+  processAfterRender(renderer: IRendererLike, camera?: Camera): void {
+    for (const entry of this.#entries.values()) {
+      if (entry.driven.released || entry.object.parent === null) continue;
+      if (entry.driven.processCadence === "render") entry.driven.afterRender?.(renderer, camera);
+    }
   }
 
   #process(renderer: IRendererLike, cadence: "fixed" | "render", camera?: Camera): void {

@@ -23,6 +23,7 @@ import {
 import { float, mix, vec4 } from "three/tsl";
 import { type Node, type NodeBuilder, type NodeFrame, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { beginFrameWork, frameWorkBudget } from "../src/frame-work-budget.js";
 import { VIRTUAL_SHADOW_MOVER_LAYER as PUBLIC_VIRTUAL_SHADOW_MOVER_LAYER } from "../src/index.js";
 import {
   DISCRETE_LOD_SCHEMA_VERSION,
@@ -450,7 +451,25 @@ describe("VirtualShadowNode", () => {
     expect(node.stats).toMatchObject({ movers: 1, moverRenders: 2, rendered: 0, deferred: 0 });
     // A step — and a breathing idle would do the same — is a mover-map render, never a level one.
     mover.position.set(2, 0, 2);
-    node.updateBefore(frameFor(camera));
+    let elapsed = 0;
+    const measuredClock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    for (const moverNode of node.moverNodes) {
+      (moverNode as unknown as { updateShadow(frame: NodeFrame): void }).updateShadow = () => {
+        elapsed += 3;
+      };
+    }
+    try {
+      const frame = frameFor(camera);
+      beginFrameWork(frame.renderer);
+      node.updateBefore(frame);
+      const budget = frameWorkBudget(frame.renderer);
+      expect(budget?.spentMs).toBe(6);
+      const streaming = vi.fn();
+      expect(budget?.admit(streaming)).toBe(false);
+      expect(streaming).not.toHaveBeenCalled();
+    } finally {
+      measuredClock.mockRestore();
+    }
     expect(node.stats).toMatchObject({ cached: 2, moverRenders: 2, rendered: 0 });
     // Three frames, two level renders — the second one the frame after the first, because the node
     // renders one level per frame — and six level serves.
