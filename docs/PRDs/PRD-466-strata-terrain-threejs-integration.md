@@ -2116,3 +2116,39 @@ Local checkpoints: **aaa0c4b62**, **a9c844015**, **83f612795**, followed by the
 final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
 (**6.4 GiB**): it is unmerged and holds requested local licensed assets/captures,
 so it cannot be removed under the cleanup rules.
+
+### Round 18 — lane `veg`: the vegetation ecosystem
+
+**2026-10-02.** The external read was "layered detail + distance treatment", and specifically that
+forests are one tree repeated, grass is one species on a lattice, and crowns wear rust. Three
+separable root causes, all fixed at the root rather than at the picture:
+
+1. **Striped stands.** `forestWeight` was three plane waves, so a threshold through it put the
+   canopy on diagonals; and one accepted tree per 4.6 m cell is a lattice whatever the mask says.
+   It is now two octaves of value noise, and placement is a Poisson disc whose radius follows the
+   stand mask, with no per-cell occupancy. Verified on the full-resolution `overview` and
+   `meadow-close` crops: the ranks and the row spacing are gone.
+2. **One age per stand.** Size read `forestWeight(x*0.4, z*0.4)` — the same field density came
+   from — so a dense core was one height. Age now reads an independent noise field, 0.42–1.6 with
+   a skew toward mid-size and a few veterans.
+3. **A missing understorey.** Needle litter, bracken, thickets and meadow flowers now key off the
+   same stand mask plus a *measured* hollow term (a hollow sits below its neighbours, so it holds
+   water), which is what puts ferns and litter where the ground is actually damp. Tundra and desert
+   grow around cluster centres rather than one plant per lattice cell.
+
+Kite's pine atlas is half live needles and half dead, so rust dots and pale bare-branch spikes came
+from the texture, not the geometry: a texel warmer than its own green is dead wood. The first mask
+was gated on the cutout and missed the bare lower branches, which are the one opaque part of that
+model — that is fixed in the second commit, and the fix is **not** verified on a capture (see
+below).
+
+Licensed art stays local-only and inside budget: every new layer comes from a pack the canopy
+already cooks, so each adds a mesh and no atlas — `prep-fab-temperate.mjs --understory` reports
+**29 models, 121.1 MiB** of a 130 MB budget. 8 grass species, 8 ground-foliage mounds, 6 ferns,
+8 flowers, 4 understorey conifers, 4 saplings, 3 needle-litter twigs.
+
+**Not finished.** Distant-forest virtual geometry (`ClusteredBatch`/`ClusteredMesh`) is not wired:
+it needs a cluster table baked by `assets.models.virtual`, and the cook here runs `virtual: "none"`.
+Deadwood (stumps, fallen logs) is absent — the only licensed stumps are Kite's, and each brings its
+own ~2 MB bark atlas against 9 MiB of headroom. The **fallback** proof (`local-assets` renamed
+away) was not run: the shared capture lock was queued behind five other lanes for the last hour.
