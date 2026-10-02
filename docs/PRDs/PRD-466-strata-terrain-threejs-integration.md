@@ -645,6 +645,29 @@ full-frame display Y p05/p50/p95: meadow **0.225/0.434/0.738**, overview
 All resource assertions pass; only known coastal shadow-texture `diagnostics` fails.
 Example typecheck, root lint (warnings only) and terrain tests **60/60** pass.
 
+
+Third increment: the walked-view dark trench was traced by the actual chase-camera ray to
+`[-141,153]`, on the building pad's cut, rather than the hydraulic drainage. Widening that
+pad's existing falloff from 0.35 to 0.75 reduces its sampled wall maximum from **53.44° to
+42.80°**; the inspected walk now shows a graded bank. Spike check remains **1 / 1.7 m**.
+The distant ground normal no longer carries subpixel grass grain; the horizon has denser
+radial sampling, stronger ridges, a lower high-snow band and slightly thicker aerial haze.
+Installed GTAO plus denoise runs at half resolution with eight samples through the existing
+`ambientOcclusion` RenderChain stage, automatically dropping below medium tier. It uses the
+template's normal MRT: the first depth-derived-normal attempt failed on multisampled depth
+and was discarded. Both stage-presence and actual graph-contribution assertions now pass.
+The per-view geometry floor now measures peak submitted triangles within each pass window:
+AO nests the world pass alongside single-triangle full-screen passes, whose median alone
+incorrectly reported two triangles. Full scenario passes all resources and AO assertions;
+only **391 known coastal shadow-texture diagnostics errors** fail. WebGPU only; no native
+claim. Engine frame p50 meadow/overview **1.8/2.2 ms**, excluding presentation gaps. Previous
+complete-window GPU medians with/without AO were **9.65/9.28 ms**, not an isolated AO benchmark.
+Inspected `artifacts/playtest/round2-ao/`: display Y p05/p50/p95 meadow
+**0.239/0.446/0.737**, overview **0.254/0.414/0.491**, walk **0.142/0.391/0.500**,
+river **0.204/0.413/0.821**. Example typecheck, root lint (warnings only), terrain tests
+**60/60** pass. Stream glints now fade with footprint, but its distant white reach remains
+unfinished; mountain faces remain more procedural than the reference. AC-5 stays open.
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
 - [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.

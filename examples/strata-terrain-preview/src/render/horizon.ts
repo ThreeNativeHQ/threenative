@@ -6,7 +6,7 @@ import type { IBakedWorld } from "./terrain.js";
 export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
-  const rings = 112;
+  const rings = 192;
   const noise = new ImprovedNoise();
   const starts = [
     [0, 0],
@@ -47,7 +47,7 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
       const fineRidge = 1 - Math.abs(noise.noise(nx * 0.005, 2.4, nz * 0.005));
       const massif = Math.max(0, broad + 0.38);
       const hills =
-        18 + massif * (220 + ridge ** 2 * 280) + fineRidge ** 2 * Math.min(1, massif * 3) * 24;
+        18 + massif * (120 + ridge ** 2 * 420) + fineRidge ** 2 * Math.min(1, massif * 3) * 36;
       const height = data.waterLevel === null ? hills : data.waterLevel - 28;
       positions.push(x, (data.heights[edge] as number) * (1 - blend) + height * blend, z);
       colors.push(

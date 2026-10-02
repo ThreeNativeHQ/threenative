@@ -289,6 +289,14 @@
         "gte": 1000,
         "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
       }
-    ]
+    ],
+    "renderChain": {
+      "stages": {
+        "includes": ["ambientOcclusion"]
+      },
+      "contributions": {
+        "graphOutputChanged": ["ambientOcclusion"]
+      }
+    }
   }
 }

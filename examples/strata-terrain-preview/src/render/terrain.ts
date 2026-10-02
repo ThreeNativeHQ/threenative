@@ -500,7 +500,9 @@ export function createGroundMaterial(
   // the tile's own scale at reading distance, and a decimetre of grain so the ground nearest the eye
   // is not smooth between the blades. The finest is a noise field rather than a texture, because a
   // third sampler on the grass layer is a third of the budget for detail nobody can name.
-  let normal = grassRelief.tilt.mul(weights.grass).add(microGrain().mul(weights.grass));
+  let normal = grassRelief.tilt
+    .mul(weights.grass)
+    .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   for (const key of LAYERS) {
@@ -539,7 +541,7 @@ export function createGroundMaterial(
   const crag = mix(vec3(0.085, 0.073, 0.06), vec3(0.19, 0.165, 0.135), strata.mul(0.6).add(0.5));
   const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
   const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
-  const cap = smoothstep(270, 350, positionWorld.y.add(breakUp.mul(28))).mul(
+  const cap = smoothstep(225, 310, positionWorld.y.add(breakUp.mul(28))).mul(
     oneMinus(smoothstep(0.18, 0.42, steep)),
   );
   const mountain = mix(mix(forest, crag, max(treeline, face)), vec3(0.72, 0.76, 0.78), cap);
@@ -550,7 +552,9 @@ export function createGroundMaterial(
   ).mul(mix(vec3(1), vec3(0.42, 0.46, 0.42), curvature.wetBank));
   material.roughnessNode = mix(0.94, 0.48, curvature.wetBank);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
-  const tangent = normal.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)));
+  const tangent = normal
+    .sub(normalWorldGeometry.mul(dot(normalWorldGeometry, normal)))
+    .mul(oneMinus(continuation));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
   material.addEventListener("dispose", () => {
     for (const source of held) source.dispose();

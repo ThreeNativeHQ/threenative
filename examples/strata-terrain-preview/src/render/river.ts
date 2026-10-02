@@ -524,6 +524,7 @@ export function createRivers(
   geometry.setAttribute("flow", new BufferAttribute(new Float32Array(flows), 2));
   geometry.setAttribute("metres", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
@@ -556,7 +557,7 @@ export function createRivers(
   const dAlong = height(along.add(delta), side).sub(h0).div(delta);
   const dSide = height(along, side.add(delta)).sub(h0).div(delta);
   const patch = windPatch(here, time, RIVER.patch.metres, RIVER.patch.drift, RIVER.patch.wind);
-  const gain = slopeGain(eyeDistance, patch, depthM);
+  const gain = slopeGain(eyeDistance, patch, depthM).mul(mix(0.12, 1, detail));
   const slant = (share: number): Node<"vec3"> => {
     const alongSlope = dAlong.mul(gain.mul(share)).negate();
     const sideSlope = dSide.mul(gain.mul(share)).negate();
@@ -764,6 +765,7 @@ export function createLakes(
   geometry.setAttribute("waveDepth", new BufferAttribute(waveDepths, 1));
   geometry.setAttribute("metres", new BufferAttribute(metreDepths, 1));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
 
   const surface = new WaterSurface3D({

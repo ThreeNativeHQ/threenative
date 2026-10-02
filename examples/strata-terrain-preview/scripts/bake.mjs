@@ -77,7 +77,7 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
     shoulder: 8,
   })
   // The pad takes the local terrain height; its blend reaches as far as the deepest cut or fill.
-  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, falloff: 0.35 })
+  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, falloff: 0.75 })
   .paint({ id: "pad-surface", at: [-120, 150], radius: 18, material: "dirt" })
   .river({
     id: "river",
