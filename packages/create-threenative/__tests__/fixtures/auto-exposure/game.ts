@@ -12,7 +12,7 @@ import { pass } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
 import { type ICtx, Scene, defineGame } from "../../../../core/dist/index.js";
 import { playtest } from "../../../../core/dist/playtest.js";
-import { AutoExposureNode } from "../../../template-assets/autoExposure.js";
+import { AutoExposureNode, applyExposure } from "../../../template-assets/autoExposure.js";
 import { exposureSettings } from "../../../template-assets/exposure.js";
 
 export interface IExposureFixtureOptions {
@@ -77,7 +77,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         },
         1,
       );
-      ctx.renderer.setOutputNode(colour.mul(exposure.exposureNode), worldPass);
+      ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {
         debug: () => ({ ...exposure.getObservation(), bright, stops: options.stops }),
       });

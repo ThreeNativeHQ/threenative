@@ -1,5 +1,5 @@
 import { Color, type RenderTarget, Texture } from "three";
-import { texture } from "three/tsl";
+import { float, texture, vec4 } from "three/tsl";
 import {
   NodeFrame,
   NodeMaterial,
@@ -9,7 +9,7 @@ import {
   WebGPURenderer,
 } from "three/webgpu";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AutoExposureNode } from "../template-assets/autoExposure.js";
+import { AutoExposureNode, applyExposure } from "../template-assets/autoExposure.js";
 import { exposureSettings } from "../template-assets/exposure.js";
 
 function harness(enabled = true) {
@@ -55,6 +55,15 @@ function harness(enabled = true) {
 }
 
 describe("GPU exposure lifecycle", () => {
+  it("changes RGB without multiplying alpha into the compositor a second time", () => {
+    const colour = vec4(0.8, 0.4, 0.2, 0.3);
+    const exposed = applyExposure(colour, float(0.125));
+    const parts = Reflect.get(Reflect.get(exposed, "node"), "nodes") as unknown[];
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toBe(colour.a);
+    const rgb = parts[0];
+    expect(Reflect.get(Reflect.get(rgb as object, "node"), "aNode")).toBe(colour.rgb);
+  });
   beforeEach(() => {
     vi.spyOn(QuadMesh.prototype, "render").mockImplementation(() => {});
     vi.spyOn(console, "info").mockImplementation(() => {});

@@ -117,7 +117,7 @@ a convention missing from there does not exist.
 ### Phase 2 — opt-in GPU graph and lifecycle
 
 - [ ] A generated GPU reduction and ping-pong exposure graph reuses the world pass before bloom and the sole output transform. proof: `pnpm exec vitest run packages/create-threenative/__tests__/auto-exposure-node.spec.ts packages/create-threenative/__tests__/world-environment-lifetime.spec.ts`
-- [ ] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure.spec.ts`
+- [x] Every template ships editable exposure controls and documents the opt-in, without a default picture change before qualification. proof: `pnpm exec vitest run --maxWorkers=1 packages/create-threenative/__tests__/scaffold.spec.ts packages/create-threenative/__tests__/auto-exposure-scaffold.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts` — 83 tests pass; all 13 instruction budgets and mirror checks pass.
 
 ### Phase 3 — repeatability and runtime qualification
 
@@ -147,6 +147,14 @@ report before assertions and rejects `TN_PLAYTEST_SOFTWARE_DEVICE_LOST` even if 
 its downgraded software-device warning a pass. 36 focused tests pass; root `tsc --noEmit -p tsconfig.json`
 passes after the fixture consistently imports built public core/playtest entries. Earlier lost-workspace results are
 not evidence for this implementation.
+
+The next runtime run, `36988237465` at `eaa583b1c`, passed the dark fixture cleanly but
+[failed sunlight pixels](../../verification/prd339-exposure-proof/sunlight-failed-eaa583b.png)
+([provenance](../../verification/prd339-exposure-proof/sunlight-failed-eaa583b.json)): numeric
+adaptation settled while the rendered image was nearly black. The output code multiplied the
+whole vec4, including coverage alpha. `applyExposure` now multiplies RGB only and preserves alpha;
+its graph regression is green, with actual sunlight runtime rerun still required. The files and
+opt-in recipe are now shipped in all 13 templates, without changing an existing post chain.
 
 ## Implementation decisions
 
