@@ -890,6 +890,48 @@ describe("createRenderer", () => {
     }
   });
 
+  it("does not let an obsolete output owner clear its replacement", async () => {
+    const canvas = testCanvas();
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const renderPipeline = vi
+      .spyOn(RenderPipeline.prototype, "render")
+      .mockImplementation(() => {});
+    const rawRender = vi.fn();
+    const renderer = await createRenderer({
+      canvas,
+      webgpuFactory: () => ({
+        domElement: canvas,
+        init: async () => undefined,
+        render: rawRender,
+        setSize: () => undefined,
+      }),
+    });
+    try {
+      const first = {};
+      const replacement = {};
+      renderer.setOutputNode(first);
+      renderer.setOutputNode(replacement);
+      renderer.clearOutputNode?.(first);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(renderPipeline).toHaveBeenCalledTimes(1);
+      expect(rawRender).not.toHaveBeenCalled();
+      renderer.clearOutputNode?.(replacement);
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(1);
+      // Legacy no-argument calls keep their unconditional behavior.
+      renderer.setOutputNode(first);
+      renderer.clearOutputNode?.();
+      renderer.render(new Scene(), new PerspectiveCamera());
+      expect(rawRender).toHaveBeenCalledTimes(2);
+    } finally {
+      renderer.dispose();
+      renderPipeline.mockRestore();
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("replaces and disposes only the framework-owned output pipeline", async () => {
     const canvas = testCanvas();
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");

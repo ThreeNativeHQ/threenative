@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-07 — Local volumetric fog composes with depth, lights and existing atmosphere
 
-**Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
+**Status:** PARTIAL — 2026-10-02. Output-lifetime prerequisite implemented; fog and runtime qualification remain open.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 2 / atmosphere.
 **Dependencies:** Independent of clouds. Reuse VQ-06 only for any local-light feature it has actually qualified.
 
@@ -62,3 +62,11 @@ Phone performance and a wider local-shadow set are separate qualification work.
 ## Completion record
 
 Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
+
+### Current checkpoint — 2026-10-02
+
+The fresh checkout implements ownership-aware `clearOutputNode(expectedNode?)` without changing legacy no-argument calls. Generated `WorldEnvironment` now returns an idempotent disposer for a base-colour-only graph, passes its explicit scene pass to installation, releases its own scene pass and materialized base texture, and refuses an unsupported direct path before invoking the allocation factory. This prerequisite does not enable fog or change the default picture.
+
+Red-green proof: three new behavioral failures reproduced first; `pnpm exec vitest run packages/core/__tests__/renderer.spec.ts packages/create-threenative/__tests__/world-environment-lifetime.spec.ts packages/create-threenative/__tests__/shared-render-sources.spec.ts --maxWorkers=1` then passed 39/39. `pnpm exec tsc --noEmit -p packages/core/tsconfig.json`, focused strict renderer/generated-source compilation, API-surface and capability-manifest checks passed. Focused Biome passed with four complexity warnings, no errors. No runtime screenshot, native qualification, aggregate CI or fog acceptance is claimed.
+
+Reuse review at pinned `three@0.185.1`: `VolumetricLightingModel.direct()` skips a directional light because it has no `distance`; extinction is derived from accumulated light rather than independent density. Its material cannot satisfy the bounded directional radiance/transmittance contract unchanged. Existing `GodraysNode` provides the depth reconstruction and ordinary directional shadow coordinates to reuse in game-owned source. Rain's screen-quad coast and its god-ray composition do not provide bounded participating volumes. No new shared visual algorithm or renderer is admitted.

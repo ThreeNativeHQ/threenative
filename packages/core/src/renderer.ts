@@ -175,8 +175,8 @@ export interface IRendererLike {
   render(scene: Object3D, camera: Camera): void;
   /** Draws after the world without clearing or passing through the world's output pipeline. */
   renderOverlay(scene: Object3D, camera: Camera): void;
-  /** Removes the output pipeline installed by a render-chain. */
-  clearOutputNode?(): void;
+  /** Removes the output pipeline; an expected input only clears that still-current graph. */
+  clearOutputNode?(expectedNode?: unknown): void;
   /** Creates the core-owned chain seam without making generated render source import the package. */
   createRenderChain?: (options: Omit<IRenderChainOptions, "renderer">) => RenderChain;
   /** Feeds automatic render-chain tiers the completed frame-budget window. */
@@ -409,6 +409,8 @@ function wrapRenderer(
   softwareAdapter?: string,
 ): IRendererLike {
   let outputPipeline: RenderPipeline | undefined;
+  // Keep caller identity separately: RenderPipeline may wrap its public output node.
+  let outputInput: unknown;
   let outputPass: PassNode | undefined;
   const renderChains = new Set<RenderChain>();
   let renderChainUsesPerObjectVelocity = false;
@@ -743,6 +745,7 @@ function wrapRenderer(
       renderChainUsesPerObjectVelocity = false;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
       pipelineCensus?.dispose();
       raw.dispose?.();
@@ -776,10 +779,13 @@ function wrapRenderer(
       outputPipeline?.dispose();
       outputPass = nextOutputPass;
       outputPipeline = nextPipeline;
+      outputInput = node;
     },
-    clearOutputNode: () => {
+    clearOutputNode: (expectedNode) => {
+      if (expectedNode !== undefined && expectedNode !== outputInput) return;
       outputPipeline?.dispose();
       outputPipeline = undefined;
+      outputInput = undefined;
       outputPass = undefined;
     },
     renderChainUsesPerObjectVelocity: () => renderChainUsesPerObjectVelocity,

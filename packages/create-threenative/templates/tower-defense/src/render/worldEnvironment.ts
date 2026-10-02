@@ -335,7 +335,9 @@ export type OutputRenderer = {
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
    * own composition on the floor would be the silent no-op this class exists to prevent.
    */
-  setOutputNode?: (node: unknown) => void;
+  setOutputNode?: (node: unknown, worldPass?: unknown) => void;
+  /** Clear only the named current graph, so an obsolete scene cannot clear its replacement. */
+  clearOutputNode?: (expectedNode?: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
     worldPass?: unknown;
@@ -466,6 +468,11 @@ export class WorldEnvironment {
       this.#reportApplied([], []);
       return { dropped: [], stages: [] };
     }
+    if (requested.length === 0 && renderer.kind !== "webgpu") {
+      const dropped = [{ name: "baseColour", reason: `renderer:${renderer.kind}` }];
+      this.#reportApplied([], dropped);
+      return { dropped, stages: [] };
+    }
     raw.toneMappingExposure = 1;
 
     const scenePass = pass(scene, camera);
@@ -500,7 +507,24 @@ export class WorldEnvironment {
     const view = camera as PerspectiveCamera;
 
     const base = target.baseColour?.(scenePass) ?? scenePass.getTextureNode("output");
-    const exposed = convertToTexture(base).mul(options.exposure);
+    const baseTexture = convertToTexture(base);
+    const exposed = baseTexture.mul(options.exposure);
+    let released = false;
+    const releaseGraph = (): void => {
+      if (released) return;
+      released = true;
+      // convertToTexture creates an RTT only for a non-texture expression. An already supplied
+      // texture belongs to its caller; its lifetime must not be stolen by this environment.
+      if (baseTexture !== base) {
+        const owned = baseTexture as unknown as {
+          renderTarget: { dispose(): void };
+          _quadMesh: { material: { dispose(): void } };
+        };
+        owned.renderTarget.dispose();
+        owned._quadMesh.material.dispose();
+      }
+      scenePass.dispose();
+    };
     const giDenoise = (node: ChainNode): ChainNode =>
       options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
 
@@ -727,15 +751,26 @@ export class WorldEnvironment {
     // A composed base colour with every stage off still has to reach the frame. The chain
     // installs nothing for an empty stage list, so this is the one path that goes direct.
     if (requested.length === 0) {
-      if (renderer.kind !== "webgpu") {
-        this.#reportApplied([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
-        return { dropped: [], stages: [] };
+      if (renderer.setOutputNode === undefined || renderer.clearOutputNode === undefined) {
+        releaseGraph();
+        throw new Error("Output node installation and ownership-aware disposal are required.");
       }
-      if (renderer.setOutputNode === undefined)
-        throw new Error("setOutputNode is unavailable, so the composed base colour cannot run.");
-      renderer.setOutputNode(exposed);
+      try {
+        renderer.setOutputNode(exposed, scenePass);
+      } catch (error) {
+        releaseGraph();
+        throw error;
+      }
       this.#reportApplied([], []);
-      return { dropped: [], stages: [] };
+      return {
+        dropped: [],
+        stages: [],
+        dispose: () => {
+          if (released) return;
+          renderer.clearOutputNode?.(exposed);
+          releaseGraph();
+        },
+      };
     }
 
     if (renderer.createRenderChain === undefined) throw new Error("RenderChain is unavailable.");
@@ -750,8 +785,9 @@ export class WorldEnvironment {
       dropped: chain.applied.dropped,
       stages: chain.applied.stages,
       dispose: () => {
+        if (released) return;
         chain.dispose();
-        scenePass.dispose();
+        releaseGraph();
       },
     };
   }
