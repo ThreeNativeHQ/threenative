@@ -78,6 +78,7 @@ Risks:
 - 2026-10-01 (João): a follow-up PRD targets 120 fps with no visual compromise ("FAST + look AAA"). Impostors stay opt-in until they cast the forest's shadow.
 - 2026-10-01 (João, via this PRD): PRD-473's AC-5 (map-walk at 120 fps) moves here. PRD-473 keeps its mechanisms: GPU cull, bundles, impostors, HLOD and fallback.
 - 2026-10-01: the visual reference is develop `a602467db`, the look restored in #375, and not the older `pr375-binding` build.
+- 2026-10-01: a merged super-tile was drawn a whole `blockOrigin` from the tiles it replaced — its geometry is written relative to the block origin and the mesh was left at (0, 0, 0), so every block away from the origin showed as floating slabs over a hole where the ground is; unit tests only ever merged an island at the origin, where the two agree.
 
 ## Execution Phases
 

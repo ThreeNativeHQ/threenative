@@ -3011,6 +3011,10 @@ export class TerrainTiles extends Object3D implements IComputeDriven {
       const mesh = new Mesh(geometry, this.#surface);
       mesh.frustumCulled = true;
       mesh.name = `tn-terrain-block:${blockKey}`;
+      // The merged geometry is written relative to the block origin, so the mesh carries it. Without
+      // this the block drew a whole `blockOrigin` away from the tiles it replaced: floating slabs and
+      // a hole where the ground is, at any block that is not at (0, 0). (PRD-475.)
+      mesh.position.set(blockOrigin.x, 0, blockOrigin.z);
       mesh.receiveShadow = this.#receiveShadow;
       this.#blocks.set(blockKey, { bytes, geometry, key: blockKey, lod, members, mesh });
       this.add(mesh);

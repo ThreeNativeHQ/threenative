@@ -1,4 +1,4 @@
-import { type BufferGeometry, Mesh, MeshBasicMaterial } from "three";
+import { type BufferGeometry, Mesh, MeshBasicMaterial, Object3D, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { TerrainTiles } from "../src/world-tiles.js";
 
@@ -130,6 +130,64 @@ function triangleKeys(
   return sortedCounts(keys);
 }
 
+function worldVertices(mesh: Mesh): Vector3[] {
+  const position = mesh.geometry.getAttribute("position");
+  const points: Vector3[] = [];
+  for (let vertex = 0; vertex < position.count; vertex += 1)
+    points.push(
+      new Vector3(position.getX(vertex), position.getY(vertex), position.getZ(vertex)).applyMatrix4(
+        mesh.matrixWorld,
+      ),
+    );
+  return points;
+}
+
+function nearestDistance(point: Vector3, points: readonly Vector3[]): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const candidate of points) nearest = Math.min(nearest, point.distanceTo(candidate));
+  return nearest;
+}
+
+function settled(tiles: TerrainTiles, follow: { x: number; z: number }): void {
+  for (let frame = 0; frame < 12; frame += 1) tiles.follow(follow);
+}
+
+/**
+ * A merged block must draw where its tiles draw: for every settled tile the block covers, each of its
+ * level vertices has a merged vertex at the same world position. Read through `matrixWorld`, so a
+ * translated terrain root or a block whose own mesh transform is wrong fails here too. The island
+ * is followed away from the world origin because a block at (0, 0) merges into geometry that already
+ * carries its own translation and hides a wrong block transform. (PRD-475.)
+ */
+function expectBlocksOnTheirTiles(tiles: TerrainTiles): void {
+  tiles.updateMatrixWorld(true);
+  const blocks = blockMeshes(tiles);
+  expect(blocks.length).toBeGreaterThan(0);
+  for (const block of blocks) {
+    const merged = worldVertices(block);
+    const { lod, blockX, blockZ } = blockKey(block);
+    let members = 0;
+    for (const key of tiles.residentKeys) {
+      const tile = tiles.getTile(key);
+      if (tile === undefined || tile.lodLevel !== lod) continue;
+      if (Math.floor(tile.tileX / 4) !== blockX || Math.floor(tile.tileZ / 4) !== blockZ) continue;
+      const level = tile.lod.levels[tile.lodLevel]?.object;
+      if (!(level instanceof Mesh)) continue;
+      members += 1;
+      for (const point of worldVertices(level)) {
+        const distance = nearestDistance(point, merged);
+        expect(
+          distance,
+          `block '${block.name}' vertex is ${distance.toFixed(3)}m from the tile vertex at (${point.x.toFixed(
+            3,
+          )}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)})`,
+        ).toBeLessThan(1e-4);
+      }
+    }
+    expect(members).toBeGreaterThan(0);
+  }
+}
+
 describe("TerrainTiles merge", () => {
   it("merges by default and reads an opt-out from the environment, the query string and the global", () => {
     const previousEnv = process.env.TN_TERRAIN_MERGE;
@@ -196,6 +254,31 @@ describe("TerrainTiles merge", () => {
       } finally {
         tiles.dispose();
       }
+    }
+  });
+
+  it("draws a block away from the world origin where its tiles are", () => {
+    const tiles = terrain(true);
+    try {
+      settled(tiles, { x: 48, z: 48 });
+      expectBlocksOnTheirTiles(tiles);
+    } finally {
+      tiles.dispose();
+    }
+  });
+
+  it("draws a block on its tiles under a translated terrain root", () => {
+    const tiles = terrain(true);
+    const root = new Object3D();
+    root.position.set(120, 0, -80);
+    root.add(tiles);
+    try {
+      settled(tiles, { x: 48, z: 48 });
+      root.updateMatrixWorld(true);
+      expectBlocksOnTheirTiles(tiles);
+    } finally {
+      root.remove(tiles);
+      tiles.dispose();
     }
   });
 
