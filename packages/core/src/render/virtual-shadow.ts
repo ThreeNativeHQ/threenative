@@ -1115,10 +1115,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (_box.isEmpty()) return undefined;
     } else {
       _sphere.copy(sphere).applyMatrix4(mesh.matrixWorld);
-      _box.setFromCenterAndSize(
-        _sphere.center,
-        _size.set(_sphere.radius, _sphere.radius, _sphere.radius),
-      );
+      // The sphere's *diameter* is the box, not its radius: a half-radius box stops at the sphere's
+      // own centre, so a caster straddling a level edge drew nothing of it into the level whose
+      // window the far half of the sphere reaches, and that level kept the shadow of geometry the
+      // world had just dropped.
+      _box.setFromCenterAndSize(_sphere.center, _size.setScalar(_sphere.radius * 2));
     }
     return {
       max: { x: _box.max.x, y: _box.max.y, z: _box.max.z },

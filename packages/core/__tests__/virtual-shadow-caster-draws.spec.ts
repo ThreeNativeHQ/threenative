@@ -6,6 +6,7 @@ import {
   type OrthographicCamera,
   PerspectiveCamera,
   Scene,
+  type Sphere,
 } from "three";
 import type { NodeBuilder, NodeFrame } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -331,7 +332,11 @@ describe("a level and the casters that changed", () => {
    * cache. The finest level's row is returned from the frame it rendered on, since a level that
    * keeps its map reports no draws of its own.
    */
-  function settled(node: VirtualShadowNode, camera: PerspectiveCamera): { draws: number } {
+  function settled(
+    node: VirtualShadowNode,
+    camera: PerspectiveCamera,
+    draws = 3,
+  ): { draws: number } {
     let row = { draws: 0 };
     for (let frame = 0; frame < 3; frame += 1) {
       node.updateBefore(frameFor(camera));
@@ -340,7 +345,7 @@ describe("a level and the casters that changed", () => {
     }
     node.updateBefore(frameFor(camera));
     expect(node.stats).toMatchObject({ rendered: 0, cached: 2 });
-    expect(row.draws).toBe(3);
+    expect(row.draws).toBe(draws);
     return row;
   }
 
@@ -370,6 +375,41 @@ describe("a level and the casters that changed", () => {
 
     expect(node.stats.perLevel[0]).toMatchObject({ rendered: 1, invalidated: 1 });
     expect(node.stats.perLevel[0]?.draws).toBe(4);
+    node.dispose();
+  });
+
+  it("re-renders a level a caster only its sphere reaches into", () => {
+    const { camera, light, scene } = twoCasters();
+    const node = nodeFor(light);
+
+    // A 16 m cube — a 13.86 m sphere — stood so its *centre* is outside the finest window and only
+    // its sphere reaches over the edge, which is what a forest straddling a page boundary is. The
+    // window is read off the node rather than guessed, so the placement survives a change to the
+    // clipmap's own grid: `1.05 × radius` past the edge is inside the sphere's reach and outside
+    // half of it, so a box sized by the radius names no level at all while the sphere names this one.
+    const edge = caster(scene, VIRTUAL_SHADOW_CASTER_LAYER, "edge");
+    edge.geometry = new BoxGeometry(16, 16, 16);
+    edge.geometry.computeBoundingSphere();
+    const radius = (edge.geometry.boundingSphere as Sphere).radius;
+    const window = node.clipmap.getWindow(0);
+    const half = node.clipmap.pagesPerAxis / 2;
+    const centreU = (window.minX + half) * window.pageWorldSize;
+    const centreV = (window.minY + half) * window.pageWorldSize;
+    const { x, y, z } = node.clipmap.unproject({
+      u: centreU + window.extent + radius * 1.05,
+      v: centreV,
+      w: 0,
+    });
+    edge.position.set(x, y, z);
+    scene.updateMatrixWorld(true);
+
+    settled(node, camera, 4);
+
+    scene.remove(edge);
+    node.updateBefore(frameFor(camera));
+
+    expect(node.stats.perLevel[0]).toMatchObject({ rendered: 1, invalidated: 1 });
+    expect(node.stats.perLevel[0]?.draws).toBe(3);
     node.dispose();
   });
 
