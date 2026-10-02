@@ -352,6 +352,69 @@ describe("VirtualShadowNode", () => {
     expect(node.stats).toMatchObject({ moved: 1, rendered: 1 });
   });
 
+  it("should keep stationary windows cached when their refresh steps change", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, {
+      clipExtents: [96, 320],
+      mapSize: 512,
+      refreshStep: [0.128, 0.128],
+      adaptiveRefresh: false,
+    });
+    camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+    settle(node, camera);
+    const origins = node.options.clipExtents.map((_, level) => node.clipmap.getWindow(level));
+    const renders = node.stats.rendersTotal;
+    try {
+      for (const step of [0.164, 0.128, 0]) {
+        node.clipmap.setRefreshStep(1, step);
+        node.updateBefore(frameFor(camera));
+        expect(node.stats, `stationary refreshStep=${String(step)}`).toMatchObject({
+          moved: 0,
+          rendered: 0,
+          deferred: 0,
+          rendersTotal: renders,
+        });
+        for (const [level, origin] of origins.entries()) {
+          expect(node.clipmap.getWindow(level)).toMatchObject({
+            minX: origin.minX,
+            minY: origin.minY,
+          });
+        }
+      }
+    } finally {
+      node.dispose();
+    }
+  });
+
+  it("should re-render after moving exactly a refresh step plus one texel", () => {
+    const { camera, light } = world();
+    const extent = 320;
+    const step = 0.164;
+    const node = setupNode(light, {
+      clipExtents: [extent],
+      mapSize: 512,
+      refreshStep: step,
+      adaptiveRefresh: false,
+    });
+    camera.position.copy(node.clipmap.unproject({ u: 100, v: -100 }));
+    settle(node, camera);
+    const origin = node.clipmap.getWindow(0);
+    const renders = node.stats.rendersTotal;
+    try {
+      camera.position.copy(
+        node.clipmap.unproject({ u: 100 + step * extent + origin.pageWorldSize, v: -100 }),
+      );
+      node.updateBefore(frameFor(camera));
+      expect(node.stats).toMatchObject({ moved: 1, rendered: 1, rendersTotal: renders + 1 });
+      expect(node.clipmap.getWindow(0).minX).not.toBe(origin.minX);
+      expect(node.clipmap.getWindow(0).minY).toBe(origin.minY);
+      node.updateBefore(frameFor(camera));
+      expect(node.stats).toMatchObject({ moved: 0, rendered: 0, cached: 1 });
+    } finally {
+      node.dispose();
+    }
+  });
+
   it("should refuse a refreshStep that would cost the selection guard its trailing edge", () => {
     const { light } = world();
     expect(() => setupNode(light, { clipExtents: [8, 32], refreshStep: 0.9 })).toThrow(RangeError);
