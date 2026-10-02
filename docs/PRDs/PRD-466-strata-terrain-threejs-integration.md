@@ -556,6 +556,35 @@ was **not** raised. With the folder absent the world grows the procedural spruce
 and poppy as before; that fallback run is recorded with this note. AC-5 stays open: one environment's
 vegetation is not five.
 
+#### Temperate forest replacement (2026-10-02), Evidence: partial visual increment
+
+The game now cooks the owner's Project Nature spruce/grass/ground/flower/fern art and
+Epic Kite photoscanned boulders, river rock, scree and cliff into gitignored
+`local-assets/temperate/` via `scripts/prep-fab-temperate.mjs`. Source atlas bindings,
+opacity channels and aligned GLB views are repaired before the installed meshopt/texture
+cook; duplicate sections are joined. Three full, two half and three small spruces,
+four grasses, four flowers, three ground clumps, two ferns and six stone meshes fit
+in **106.0 MiB**, including reduced full-tree distance levels. Licensed bytes remain local.
+
+The old 140-tree ceiling is replaced by 3,200 noise-masked stand placements. Ground
+cover follows the same slope/elevation meadow reaches the ground renders rather than
+the obsolete baked colour palette, which was rejecting the visibly green close meadow.
+The existing `InstancedBatch` path groups each species/level; small cover is culled by
+readable distance. Whole-model scaling keeps tree sections together. Canonical poses
+and compacted slot/placement mappings preserve edits across camera movement.
+
+Evidence: `node --import tsx examples/strata-terrain-preview/scripts/check-temperate.mts`
+passes (3,200 trees; dense cover at both meadow/river eyes; edited pose survives refill;
+placement IDs stay unique). Example typecheck and repository lint pass (warnings remain).
+The initial replacement WebGPU run, `artifacts/playtest/round-2/`, measured **5.5 ms
+meadow / 4.9 ms overview**, with **49 allocated prop batches** and no network errors.
+Its only failures were the previous 24-batch ceiling and the pre-existing
+`ShadowDepthTexture used in a submit` diagnostics. The ceiling is now **56** for the
+requested species and adult-tree distance levels. Initial captures exposed bare
+seedling silhouettes at distance; the current cook uses reduced full trees instead.
+Final captures, repeated performance and licensed-folder-absent proof are still pending.
+**AC-5 remains open**; this is a Temperate increment and no Unreal-level verdict is claimed.
+
 #### Terrain relief pass (2026-10-02), Evidence: measured, plus four engine bugs
 
 Owner feedback on the round-4 captures: *"everything too plane and thin. No erosion, cliffs, etc.

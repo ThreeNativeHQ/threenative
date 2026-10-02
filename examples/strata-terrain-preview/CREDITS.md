@@ -1,14 +1,44 @@
 # Credits and assets — strata-terrain-preview
 
+## Temperate forest: Project Nature and Epic Games
+
+The owner imported **Spruce Forest**, **Grass Library**, **Ground Foliage**,
+**Meadow Flowers** and **Fern Collection** from Project Nature, and **Open World
+Demo Collection / Kite Demo** from Epic Games, through the owner's entitled Fab
+library. The per-pack `import-report.json` records source, entitlement and model provenance.
+These are licensed source assets, not CC0 files.
+
+**All licensed originals and cooked outputs are LOCAL-ONLY, gitignored, and never committed.**
+Only the preparation script and game-owned rendering code are distributed.
+Run from this example:
+
+```sh
+FAB_TEMPERATE=/path/to/imported/fab node scripts/prep-fab-temperate.mjs
+```
+
+The script reads the import reports and selects three full, two half and three small
+spruces; four grasses; four flowers including a red poppy; three ground clumps;
+two ferns; three Kite boulders, river rock, scree and `SM_Cliff01`. It repairs
+Project Nature atlas bindings and composites each photographed opacity mask into
+its albedo, then reuses `@threenative/assets` for meshopt geometry and compressed
+textures. Duplicate sections are joined before cooking. Outputs live under
+`local-assets/temperate/` with a 120 MiB gate and Three.js's Apache-2.0 Basis transcoder.
+
+`src/render/pack.ts` retains photographed material maps. Every section of a tree
+uses the same whole-model scale and ground origin. `src/render/props.ts` draws
+reduced copies of the full spruce meshes at distance using the existing instancing bands.
+If the folder or a species is absent, procedural geometry and CC0 starter surfaces
+continue to draw through the same placements. The licensed pack is optional.
+
 ## Landscape Pro 2.0 Auto-Generated Material, by STF3d
 
-The forest's trees, shrubs, ground cover and boulders are **Landscape Pro 2.0 Auto-Generated
+The earlier optional forest pack is **Landscape Pro 2.0 Auto-Generated
 Material** on Fab, listing `1ac647da-b1bc-4e72-a56d-60aaeb6918e1` (paid, Personal/Professional
 licence, owned by this repository's owner).
 
 **Those files are not in this repository, and must not be.** The Fab Standard License does not permit
 redistributing a paid pack's assets as standalone files, so what is committed is the importer and the
-loader. `scripts/prep-landscape-pro.mjs` copies the nine species this world grows, plus the Basis
+loader. `scripts/prep-landscape-pro.mjs` copies the earlier nine-species selection, plus the Basis
 transcoder a cooked model decodes through, out of the owner's Fab import into this example's
 gitignored `local-assets/landscape-pro/`:
 

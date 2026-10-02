@@ -1,0 +1,75 @@
+/** Small falsifying check for stand/cover placement and edits surviving distance compaction. */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { Heightfield } from "@threenative/core/world";
+import { Vector3 } from "three";
+import {
+  buildPropVariants,
+  createProps,
+  flatPropMaterials,
+  preparePropTransform,
+  readPropTransform,
+  writePropTransform,
+} from "../src/render/props.js";
+import { scatterProps } from "../src/render/scatter.js";
+
+const data = JSON.parse(
+  readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+).forest;
+const field = new Heightfield({
+  rows: data.resolution,
+  columns: data.resolution,
+  width: data.size,
+  depth: data.size,
+  origin: { x: 0, z: 0 },
+  heights: Float32Array.from(data.heights),
+});
+const scatter = scatterProps({ ...data, field }, { x: 186, z: 76 }, [
+  [176, 84, 10],
+  [-20, -150, 10],
+]);
+assert.ok(scatter.counts.spruce >= 2000 && scatter.counts.spruce <= 5000);
+assert.equal(new Set(scatter.placements.map((one) => one.id)).size, scatter.placements.length);
+for (const [x, z] of [
+  [176, 84],
+  [-20, -150],
+]) {
+  const grass = scatter.placements.filter(
+    (one) => one.asset === "grass" && Math.hypot(one.position[0] - x, one.position[2] - z) < 25,
+  );
+  assert.ok(grass.length > 3000, `Missing dense ground cover at ${x},${z}`);
+}
+const materials = flatPropMaterials();
+const parts = buildPropVariants();
+const ground = () => ({ height: 0, offset: 0 });
+const placements = [0, 20, 200].map((x, index) => ({
+  asset: "riverrock",
+  id: `rock:${index}`,
+  layer: "test",
+  position: [x, 0, 0] as [number, number, number],
+  normal: [0, 1, 0] as [number, number, number],
+  alignToNormal: false,
+  rotation: 0,
+  scale: 1,
+}));
+const props = createProps(placements, ground, parts, materials);
+props.setLevels(new Vector3());
+const instance = props.byId.get("rock:0");
+assert.ok(instance);
+const transform = {
+  ...readPropTransform(instance),
+  position: [10, 0, 0] as [number, number, number],
+};
+writePropTransform(instance, preparePropTransform(instance, transform, ground));
+props.setLevels(new Vector3(0.3, 0, 0));
+assert.equal(readPropTransform(instance).position[0], 10);
+for (const draw of props.meshes) {
+  assert.equal(draw.userData.placementIds.length, draw.count);
+  for (const [index, id] of draw.userData.placementIds.entries()) {
+    assert.ok(props.byId.get(id)?.parts.some((part) => part.mesh === draw && part.index === index));
+  }
+}
+props.dispose();
+materials.dispose();
+for (const list of parts.values()) for (const part of list) part.geometry.dispose();
+console.log("Temperate checks passed", scatter.counts);

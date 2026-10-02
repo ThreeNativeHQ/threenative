@@ -320,6 +320,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         size: data.size,
         waterLevel: data.waterLevel,
         lakes: data.lakes,
+        rivers: data.rivers,
       };
       // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
       // framing, and the seed decides where trees land, so the eyes are kept open by rule.

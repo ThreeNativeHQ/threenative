@@ -27,6 +27,8 @@ import { type Plugin, defineConfig } from "vite";
  */
 function preparedAssets(): Plugin {
   const roots: { mount: string; dir: string; flat: boolean }[] = [
+    { dir: "./local-assets/temperate", flat: false, mount: "/temperate" },
+    { dir: "./local-assets/temperate/basis", flat: true, mount: "/basis" },
     { dir: "./local-assets/prepared", flat: true, mount: "/prepared" },
     { dir: "./local-assets/landscape-pro", flat: false, mount: "/landscape-pro" },
     // The Basis transcoder a cooked KTX2 model decodes through, which the engine's asset pipeline
