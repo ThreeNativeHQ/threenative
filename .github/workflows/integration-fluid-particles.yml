@@ -42,8 +42,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/playwright-chromium
-      - name: Build the current public playtest bridge
-        run: pnpm --filter @threenative/playtest build
+      - name: Build the public core and its workspace dependency closure
+        run: pnpm --filter '@threenative/core...' --workspace-concurrency=1 build
       - name: Validate solver and fail-closed proof contracts
         run: pnpm exec vitest run --maxWorkers=1 packages/core/__tests__/fluid-particles.spec.ts packages/core/__tests__/gpu-readback.spec.ts scripts/__tests__/fluid-collision-proof.spec.ts scripts/__tests__/fluid-collision-view.spec.ts
       - name: Render real GPU readbacks and the missing-gate control
