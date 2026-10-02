@@ -636,6 +636,48 @@ function needleMaterial(
   return material;
 }
 
+/** Where the fern's frond atlas lives: Poly Haven `fern_02`, diffuse and its separate alpha. */
+const FERN_MAPS = {
+  alpha: "fern_02/fern_02_alpha_512.png",
+  diffuse: "fern_02/fern_02_diff_512.jpg",
+} as const;
+
+/**
+ * Bracken: each card one photographed frond, cut by the atlas's own alpha.
+ *
+ * The same cut as the needles — Golus's mip compensation, so a frond at forty metres keeps its
+ * leaflets instead of eroding to a stalk — and the same thin backlight a leaf one cell thick has. The
+ * vertex colour is only the clump's own root shade; the green is the photograph's.
+ */
+function frondMaterial(
+  diffuse: Texture | undefined,
+  alpha: Texture | undefined,
+  seconds: Node<"float">,
+): MeshStandardNodeMaterial {
+  const material = new MeshStandardNodeMaterial({
+    metalness: 0,
+    roughness: 0.85,
+    side: DoubleSide,
+  });
+  if (diffuse === undefined || alpha === undefined) {
+    material.colorNode = vec3(0.08, 0.2, 0.06);
+  } else {
+    const shade = attribute<"vec3">("color", "vec3");
+    material.alphaTest = 0.4;
+    material.alphaTestNode = mipCompensatedCutoff(mipLevels(alpha).worst, 0.4);
+    // A touch cooler and darker than the scan: under a spruce a fern is in the canopy's shade.
+    material.colorNode = vec4(
+      texture(diffuse)
+        .rgb.mul(shade)
+        .mul(vec3(0.82, 0.92, 0.78)),
+      texture(alpha).r,
+    );
+    material.emissiveNode = canopyTranslucency(0.06);
+  }
+  sway(material, seconds, WIND.amplitude.grass);
+  return material;
+}
+
 /** The colour a poppy is at the far edge of a meadow, where its petal is a handful of texels. */
 const POPPY_RED = 0xd41f16;
 
@@ -662,6 +704,10 @@ export async function createPropSurfaces(
 ): Promise<IPropSurfaces> {
   const seconds = uniform(0) as unknown as Node<"float">;
   const under = ground === undefined ? undefined : groundHeight(ground);
+  const [fernDiffuse, fernAlpha] = await Promise.all([
+    map(assets, FERN_MAPS.diffuse, false),
+    map(assets, FERN_MAPS.alpha, true),
+  ]);
   const soil = await map(assets, "forest_ground_04/forest_ground_04_diff_1k.jpg", false);
   const [bark, stone, atlas, relief] = await Promise.all([
     surfaceMaps(assets, MAPS.bark),
@@ -672,6 +718,7 @@ export async function createPropSurfaces(
   const textures: Texture[] = [
     ...(under ? [under.texture] : []),
     ...(soil ? [soil] : []),
+    ...[fernDiffuse, fernAlpha].filter((found): found is Texture => found !== undefined),
     bark.diffuse,
     bark.normal,
     bark.roughness,
@@ -817,6 +864,7 @@ export async function createPropSurfaces(
   const materials: IPropMaterials = {
     bark: barkMaterial,
     crown: crownMaterial,
+    fern: frondMaterial(fernDiffuse, fernAlpha, seconds),
     grass: grassMaterial,
     impostor: impostorMaterial,
     needles: needlesMaterial,

@@ -318,8 +318,17 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         resolution: data.size === 0 ? 0 : field.rows,
         size: data.size,
         waterLevel: data.waterLevel,
+        lakes: data.lakes,
       };
-      const scatter = scatterProps(propField, BENCHMARK[world].focus);
+      // Every fixed camera stands in a clearing: a trunk a metre from the lens is a green wall, not a
+      // framing, and the seed decides where trees land, so the eyes are kept open by rule.
+      const scatter = scatterProps(
+        propField,
+        BENCHMARK[world].focus,
+        Object.values(BENCHMARK[world].poses)
+          .filter((pose) => pose.eye < 20)
+          .map((pose) => [pose.at[0], pose.at[1], 10] as const),
+      );
       let propParts = buildPropVariants();
       const flat = flatPropMaterials();
       let props: ReturnType<typeof createProps> | undefined;
@@ -378,6 +387,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           object: props.object,
           debug: () => ({
             boulders: scatter.counts.boulder,
+            ferns: scatter.counts.fern,
             draws: props?.meshes.length ?? 0,
             grass: scatter.counts.grass,
             poppies: scatter.counts.poppy,

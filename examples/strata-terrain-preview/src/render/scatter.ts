@@ -19,6 +19,12 @@ export interface IPlacementField {
   readonly resolution: number;
   readonly size: number;
   readonly waterLevel: number | null;
+  /** Still water: nothing grows below a lake's level inside its reach. */
+  readonly lakes?: readonly {
+    readonly at: readonly number[];
+    readonly radius: number;
+    readonly level: number;
+  }[];
 }
 
 /**
@@ -127,14 +133,24 @@ export const SCATTER = {
  * evenly covered with no clustering algorithm, and it makes the spacing rule a cell comparison
  * instead of an O(n²) neighbour search over a few thousand candidates.
  */
-export function scatterProps(data: IPlacementField, focus: { x: number; z: number }): IPropScatter {
+export function scatterProps(
+  data: IPlacementField,
+  focus: { x: number; z: number },
+  /** Ground a tree must leave open — a fixed camera's eye — as `[x, z, radius]` in metres. */
+  clearings: readonly (readonly [number, number, number])[] = [],
+): IPropScatter {
   const placements: IPlacement[] = [];
-  const counts = { boulder: 0, grass: 0, poppy: 0, spruce: 0 };
+  const counts = { boulder: 0, fern: 0, grass: 0, poppy: 0, spruce: 0 };
   const half = data.size / 2;
   const inside = (x: number, z: number, margin: number) =>
     Math.abs(x) <= half - margin && Math.abs(z) <= half - margin;
   const wet = (x: number, z: number) =>
-    data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35;
+    (data.waterLevel !== null && clampedHeight(data, x, z) < data.waterLevel + 0.35) ||
+    (data.lakes ?? []).some(
+      (lake) =>
+        Math.hypot(x - (lake.at[0] ?? 0), z - (lake.at[1] ?? 0)) < lake.radius &&
+        clampedHeight(data, x, z) < lake.level + 0.35,
+    );
 
   // --- spruces: on grass, off the steep ground, out of the water ---------------------------------
   const spruce = createRandom(SCATTER.seed);
@@ -148,6 +164,7 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
     if (!inside(x, z, 8) || wet(x, z)) continue;
     if (slopeDegrees(data, x, z) > 26) continue;
     if (grassWeight(data, x, z) < 0.55) continue;
+    if (clearings.some(([cx, cz, r]) => Math.hypot(x - cx, z - cz) < r)) continue;
     const cell = `${Math.round(x / spruceSpacing)},${Math.round(z / spruceSpacing)}`;
     if (spruceCells.has(cell)) continue;
     spruceCells.add(cell);
@@ -163,6 +180,33 @@ export function scatterProps(data: IPlacementField, focus: { x: number; z: numbe
       scale: SCATTER.spruceScale[0] + spruce() * (SCATTER.spruceScale[1] - SCATTER.spruceScale[0]),
     });
     counts.spruce += 1;
+  }
+
+  // --- ferns: in the spruces' own shade, a few around each trunk --------------------------------
+  // Bracken grows where the canopy keeps the grass down, so it is placed off the trees rather than
+  // over the meadow: two to five clumps in the ring two to five metres out from each trunk.
+  const fern = createRandom(SCATTER.seed ^ 0x3c6e);
+  for (const tree of placements.filter((placement) => placement.asset === "spruce")) {
+    const [tx, , tz] = tree.position;
+    const clumps = 2 + Math.floor(fern() * 4);
+    for (let k = 0; k < clumps; k += 1) {
+      const angle = fern() * Math.PI * 2;
+      const reach = 2 + fern() * 3;
+      const x = tx + Math.cos(angle) * reach;
+      const z = tz + Math.sin(angle) * reach;
+      if (!inside(x, z, 4) || wet(x, z) || slopeDegrees(data, x, z) > 30) continue;
+      placements.push({
+        alignToNormal: false,
+        asset: "fern",
+        id: `temperate-fern:${Math.round(x * 4)},${Math.round(z * 4)}`,
+        layer: "temperate-fern",
+        normal: [0, 1, 0],
+        position: [x, clampedHeight(data, x, z), z],
+        rotation: fern() * Math.PI * 2,
+        scale: 0.75 + fern() * 0.6,
+      });
+      counts.fern += 1;
+    }
   }
 
   // --- boulders: on rock and on grass, out of the water, never mid-cliff -------------------------

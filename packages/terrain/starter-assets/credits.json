@@ -71,6 +71,54 @@
       "groundLayer": null,
       "metresPerTile": 1.6,
       "note": "Spruce trunk bark. The shortlist names it for procedural tree bark; the Temperate starter uses it on the tapered spruce trunk, tiled 1.6 m up a 14 m trunk, and nowhere else."
+    },
+    "rock_boulder_dry": {
+      "asset": "Rock Boulder Dry",
+      "author": "Dimitrios Savva (Photography), Rico Cilliers (Processing)",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "The dry grey granite-ish boulder set. Its 1K diffuse is tileable stone, not an atlas: the seam column differs from the last by 5.7 grey levels against an interior neighbour difference of 7.5, so it wraps as well as the map averages."
+    },
+    "lichen_rock": {
+      "asset": "Lichen Rock",
+      "author": "Rico Cilliers (All)",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "The lichen-crusted weathered boulder set. Seam 11.5 against an interior 12.1: tileable. Distinct from the existing mossy_rock set, which is moss rather than lichen, so a boulder bed does not read as one surface twice."
+    },
+    "forest_leaves_02": {
+      "asset": "Forest Leaves 02",
+      "author": "Rob Tuytel (All)",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "Leaf litter and forest floor for the ground under trees. Seam 19.7 against an interior 17.2: tileable. metresPerTile is deliberately null: the tiling is the terrain render layer's choice, not this folder's."
+    },
+    "river_small_rocks": {
+      "asset": "River Small Rocks",
+      "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "The pebble set for river banks. Seam 12.6 against an interior 11.2: tileable. metresPerTile is deliberately null, as above."
+    },
+    "fern_02": {
+      "asset": "Fern 02",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "Alpha-cut card atlas only (diffuse, alpha, OpenGL normal at 512 px). The upstream plant meshes are not shipped: cut to the starter budget they kept one blade or frond of each plant, so the game builds its own cards on this atlas."
+    },
+    "grass_medium_02": {
+      "asset": "Grass Medium 02",
+      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
+      "license": "CC0",
+      "groundLayer": null,
+      "metresPerTile": null,
+      "note": "Alpha-cut card atlas only (diffuse, alpha, OpenGL normal at 512 px). The upstream plant meshes are not shipped: cut to the starter budget they kept one blade or frond of each plant, so the game builds its own cards on this atlas."
     }
   },
   "files": [
@@ -505,6 +553,288 @@
       "groundLayer": "snow",
       "sampledByTemperateGround": false,
       "sha256": "b6dea8039ac2a5beaed6fd41834fb55540cc76b492edd1d48ba2da2f30f1cb75"
+    },
+    {
+      "set": "rock_boulder_dry",
+      "asset": "Rock Boulder Dry",
+      "author": "Dimitrios Savva (Photography), Rico Cilliers (Processing)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "rock_boulder_dry/rock_boulder_dry_diff_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_boulder_dry/rock_boulder_dry_diff_1k.jpg",
+      "bytes": 87707,
+      "dimensions": "512x512",
+      "colourSpace": "srgb",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "dde5d4cf88dce2a3bcde0490c509f0a5f375c4aa002aa08f96afa6e0fb4f6c7b"
+    },
+    {
+      "set": "rock_boulder_dry",
+      "asset": "Rock Boulder Dry",
+      "author": "Dimitrios Savva (Photography), Rico Cilliers (Processing)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "rock_boulder_dry/rock_boulder_dry_nor_gl_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_boulder_dry/rock_boulder_dry_nor_gl_1k.jpg",
+      "bytes": 60524,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "5039f885b242fdb9f4b15b1cde8d09dca53ec50d37544ffb72154505ba2fc136"
+    },
+    {
+      "set": "rock_boulder_dry",
+      "asset": "Rock Boulder Dry",
+      "author": "Dimitrios Savva (Photography), Rico Cilliers (Processing)",
+      "license": "CC0",
+      "map": "arm",
+      "file": "rock_boulder_dry/rock_boulder_dry_arm_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_boulder_dry/rock_boulder_dry_arm_1k.jpg",
+      "bytes": 60580,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "6104415f2825ae7d0d072e8cd37b968324bb88b936665fbb73a71bda82a9a2a3"
+    },
+    {
+      "set": "lichen_rock",
+      "asset": "Lichen Rock",
+      "author": "Rico Cilliers (All)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "lichen_rock/lichen_rock_diff_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_diff_1k.jpg",
+      "bytes": 120954,
+      "dimensions": "512x512",
+      "colourSpace": "srgb",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "fa16d72ea9a04d71e0a4e4b2c65ba50b59fe0f4dfb31838055a9eaa7b98f0244"
+    },
+    {
+      "set": "lichen_rock",
+      "asset": "Lichen Rock",
+      "author": "Rico Cilliers (All)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "lichen_rock/lichen_rock_nor_gl_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_nor_gl_1k.jpg",
+      "bytes": 125051,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "f6f0bb9f6546251851395582b9703df4ce9e0116d56fdd0cacc3b05a3aef3ee6"
+    },
+    {
+      "set": "lichen_rock",
+      "asset": "Lichen Rock",
+      "author": "Rico Cilliers (All)",
+      "license": "CC0",
+      "map": "arm",
+      "file": "lichen_rock/lichen_rock_arm_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/lichen_rock/lichen_rock_arm_1k.jpg",
+      "bytes": 64088,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "cccadfc7b806a15bd396cc433175c80fdb386009674726a8a17e48ba50ce50cb"
+    },
+    {
+      "set": "forest_leaves_02",
+      "asset": "Forest Leaves 02",
+      "author": "Rob Tuytel (All)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "forest_leaves_02/forest_leaves_02_diff_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_diffuse_1k.jpg",
+      "bytes": 131897,
+      "dimensions": "512x512",
+      "colourSpace": "srgb",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "3041025c2bb5c57530d2e611618d8f8bcf75f54cd1a092f323fdc87520f6e2d0"
+    },
+    {
+      "set": "forest_leaves_02",
+      "asset": "Forest Leaves 02",
+      "author": "Rob Tuytel (All)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "forest_leaves_02/forest_leaves_02_nor_gl_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_nor_gl_1k.jpg",
+      "bytes": 155946,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "248afab4b44e078501a2363856e679909560a70587c1314a1c17f3f8063218ba"
+    },
+    {
+      "set": "forest_leaves_02",
+      "asset": "Forest Leaves 02",
+      "author": "Rob Tuytel (All)",
+      "license": "CC0",
+      "map": "arm",
+      "file": "forest_leaves_02/forest_leaves_02_arm_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forest_leaves_02/forest_leaves_02_arm_1k.jpg",
+      "bytes": 105808,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "415b28f50e5bca6ef188dee4c9a66a4e2e6668bb909c310e0cb596f746f297cd"
+    },
+    {
+      "set": "river_small_rocks",
+      "asset": "River Small Rocks",
+      "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "river_small_rocks/river_small_rocks_diff_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/river_small_rocks/river_small_rocks_diff_1k.jpg",
+      "bytes": 104165,
+      "dimensions": "512x512",
+      "colourSpace": "srgb",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "b4dc4bd921c9d22b2dcb33984527032e897ca98a09bf63c13caff6787485c3c0"
+    },
+    {
+      "set": "river_small_rocks",
+      "asset": "River Small Rocks",
+      "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/river_small_rocks/river_small_rocks_nor_gl_1k.jpg",
+      "bytes": 153457,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "5acd5993c4ce8cc32778ca57f210c538a676020971240306a2ab2438158e5d89"
+    },
+    {
+      "set": "river_small_rocks",
+      "asset": "River Small Rocks",
+      "author": "Rob Tuytel (Photography, Processing), Rico Cilliers (Minor adjustment)",
+      "license": "CC0",
+      "map": "arm",
+      "file": "river_small_rocks/river_small_rocks_arm_512.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/river_small_rocks/river_small_rocks_arm_1k.jpg",
+      "bytes": 89842,
+      "dimensions": "512x512",
+      "colourSpace": "linear",
+      "metresPerTile": null,
+      "groundLayer": null,
+      "sampledByTemperateGround": false,
+      "sha256": "5d413aee3dc1e416e451788d9e671d6aa8e2436569156eb3f9f55620d7f670f9"
+    },
+    {
+      "set": "fern_02",
+      "asset": "Fern 02",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "license": "CC0",
+      "map": "alpha",
+      "file": "fern_02/fern_02_alpha_512.png",
+      "url": "https://polyhaven.com/a/fern_02",
+      "bytes": 41735,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "d3422b26b0f41a0be9d5e7d7878765da674ff173f4c5a0c47795364c8b954bb0"
+    },
+    {
+      "set": "fern_02",
+      "asset": "Fern 02",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "license": "CC0",
+      "map": "diff",
+      "file": "fern_02/fern_02_diff_512.jpg",
+      "url": "https://polyhaven.com/a/fern_02",
+      "bytes": 33569,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "a6047726852171297213cb8063c1607856b0c414c579ff9d60a54262b925f78a"
+    },
+    {
+      "set": "fern_02",
+      "asset": "Fern 02",
+      "author": "Rob Tuytel, Rico Cilliers",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "fern_02/fern_02_nor_gl_512.jpg",
+      "url": "https://polyhaven.com/a/fern_02",
+      "bytes": 35095,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "72d64f5a9632cf5cc26969b8e60b1a5da5432bbde562b87a6fccef29949e28a8"
+    },
+    {
+      "set": "grass_medium_02",
+      "asset": "Grass Medium 02",
+      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
+      "license": "CC0",
+      "map": "alpha",
+      "file": "grass_medium_02/grass_medium_02_alpha_512.png",
+      "url": "https://polyhaven.com/a/grass_medium_02",
+      "bytes": 24268,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "4f94afff57290dae13e02ea16742ec2fa446f7c596f71eb44da6e92f5b2e17ad"
+    },
+    {
+      "set": "grass_medium_02",
+      "asset": "Grass Medium 02",
+      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
+      "license": "CC0",
+      "map": "diff",
+      "file": "grass_medium_02/grass_medium_02_diff_512.jpg",
+      "url": "https://polyhaven.com/a/grass_medium_02",
+      "bytes": 26341,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "0df2de1764006ceebe633be49dcfaadab6b27b78c7c21f869b1c93f029b92a74"
+    },
+    {
+      "set": "grass_medium_02",
+      "asset": "Grass Medium 02",
+      "author": "Rob Tuytel (photography), Rico Cilliers (modeling)",
+      "license": "CC0",
+      "map": "nor_gl",
+      "file": "grass_medium_02/grass_medium_02_nor_gl_512.jpg",
+      "url": "https://polyhaven.com/a/grass_medium_02",
+      "bytes": 16575,
+      "dimensions": [
+        512,
+        512
+      ],
+      "sha256": "bc6c9eaf576fd396347c5ea5b3931907cb9ace0943f0159c20d4824c4b2fe0d0"
     }
   ],
   "generated": {

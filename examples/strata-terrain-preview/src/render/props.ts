@@ -26,7 +26,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
-import { boulder, grassClump, poppyCluster } from "./cover.js";
+import { boulder, fernClump, grassClump, poppyCluster } from "./cover.js";
 import { ATLAS_CELLS, spruceVariants } from "./spruce.js";
 
 /** Which cell of the needle atlas the poppy petals sample. */
@@ -37,6 +37,7 @@ export const VARIANTS = {
   // One procedural boulder: the four prepared CC0 ones replace it as variants, and one is left so
   // the procedural path is a live variant rather than a fallback nothing reaches.
   boulder: 1,
+  fern: 3,
   grass: 2,
   poppy: 2,
   // One procedural spruce rather than three. The prepared pine takes over index 0 and brings three
@@ -62,6 +63,7 @@ const BOULDER_BURIAL = 0.2;
 export type PropRole =
   | "bark"
   | "crown"
+  | "fern"
   | "grass"
   | "impostor"
   | "needles"
@@ -141,6 +143,10 @@ export function buildPropVariants(
       },
     ]);
   }
+  for (let i = 0; i < VARIANTS.fern; i += 1)
+    variants.set(`fern:${i}`, [
+      { geometry: fernClump((VARIANTS.seed ^ (i * 0x165667b1)) >>> 0), role: "fern", variant: i },
+    ]);
   for (let i = 0; i < VARIANTS.grass; i += 1)
     variants.set(`grass:${i}`, [
       { geometry: grassClump((VARIANTS.seed ^ (i * 0xc2b2ae35)) >>> 0), role: "grass", variant: i },
@@ -163,6 +169,7 @@ export function buildPropVariants(
  */
 const PROP_COUNTS = {
   boulder: VARIANTS.boulder + PREPARED_VARIANTS.boulder,
+  fern: VARIANTS.fern,
   grass: VARIANTS.grass,
   poppy: VARIANTS.poppy,
   spruce: VARIANTS.spruce + PREPARED_VARIANTS.spruce,
@@ -291,6 +298,8 @@ export function variantFor(placement: IPlacement, asset: string): number {
 export interface IPropMaterials {
   readonly bark: Material;
   readonly crown: Material;
+  /** Bracken under the spruces, cut against Poly Haven's fern frond atlas. */
+  readonly fern: Material;
   readonly grass: Material;
   /** The far cross-card: the whole tree past the last band, one card and eight triangles. */
   readonly impostor: Material;
@@ -314,6 +323,7 @@ export function flatPropMaterials(): IPropMaterials & { dispose: () => void } {
   const materials: IPropMaterials = {
     bark: new MeshStandardMaterial({ color: 0x4a3428, roughness: 0.95 }),
     crown: new MeshStandardMaterial({ color: 0x2c4a2a, roughness: 0.9, side: DoubleSide }),
+    fern: new MeshStandardMaterial({ color: 0x2f4d22, roughness: 0.9, side: DoubleSide }),
     grass: new MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.93,

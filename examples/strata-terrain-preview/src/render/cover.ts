@@ -264,6 +264,98 @@ export function grassClump(seed: number): BufferGeometry {
   return buffer.build();
 }
 
+/**
+ * The fronds of Poly Haven's `fern_02` atlas, as `[u0, v0, u1, v1]` with the stalk at `v0`.
+ *
+ * Measured, not guessed: each rect is the bounding box of one connected frond in the 512 px alpha,
+ * so a card that samples one draws one whole frond and none of its neighbours.
+ */
+const FROND_RECTS = [
+  [0.082, 0.045, 0.293, 0.895],
+  [0.277, 0.23, 0.494, 0.982],
+  [0.502, 0.494, 0.691, 0.98],
+  [0.7, 0.05, 0.844, 0.898],
+] as const;
+
+/** How a fern clump reads, in metres. Bracken-sized: knee to thigh high, a metre and a half across. */
+export const FERN = {
+  fronds: [7, 10] as const,
+  length: [0.55, 1.0] as const,
+  /** Frond width as a share of its length — the atlas fronds are about a quarter as wide as long. */
+  width: 0.3,
+  /** Vertical rise of the arch at its peak, as a share of the frond's length. */
+  rise: 0.55,
+} as const;
+
+/**
+ * One seeded fern: fronds rising out of a crown and arching over, each one card cut to one real frond.
+ *
+ * A frond leaves the crown steeply and droops as it reaches out, so its spine climbs then falls; the
+ * card lies across that spine, flat to the sky, which is how a fern presents its leaflets to the
+ * light. Seven to ten fronds at uneven angles is what reads as a clump rather than a rosette.
+ */
+export function fernClump(seed: number): BufferGeometry {
+  const random = createRandom(seed);
+  const buffer = new CoverBuffer();
+  const segments = 4;
+  const fronds = FERN.fronds[0] + Math.floor(random() * (FERN.fronds[1] - FERN.fronds[0] + 1));
+  const phase = random() * Math.PI * 2;
+  const white = new Vector3(1, 1, 1);
+  for (let f = 0; f < fronds; f += 1) {
+    const azimuth = phase + (f / fronds) * Math.PI * 2 + (random() - 0.5) * 0.5;
+    const length = FERN.length[0] + random() * (FERN.length[1] - FERN.length[0]);
+    const width = length * FERN.width * (0.8 + random() * 0.4);
+    const rise = FERN.rise * (0.7 + random() * 0.6);
+    const outward = new Vector3(Math.cos(azimuth), 0, Math.sin(azimuth));
+    const side = new Vector3(-Math.sin(azimuth), 0, Math.cos(azimuth));
+    const rect = FROND_RECTS[Math.floor(random() * FROND_RECTS.length)] as readonly number[];
+    const [u0, v0, u1, v1] = rect as [number, number, number, number];
+    // Up, then over: the spine's height is a parabola that peaks two thirds of the way out.
+    const spine = (at: number) =>
+      outward
+        .clone()
+        .multiplyScalar(length * (0.25 + 0.75 * at) * at)
+        .setY(length * rise * (2.2 * at - 1.6 * at * at));
+    // A frond's own twist: the outer half rolls a little, so the clump is not a set of flat paddles.
+    const roll = (random() - 0.5) * 0.6;
+    for (let i = 0; i < segments; i += 1) {
+      const at0 = i / segments;
+      const at1 = (i + 1) / segments;
+      const across0 = side.clone().applyAxisAngle(outward, roll * at0);
+      const across1 = side.clone().applyAxisAngle(outward, roll * at1);
+      // Narrow at the stalk, full in the middle, pointed at the tip — the atlas frond's own outline
+      // does the rest, so the card only has to not crop it.
+      const half = (at: number) => (width / 2) * Math.min(1, 0.35 + at * 1.6);
+      const a = spine(at0).addScaledVector(across0, -half(at0));
+      const b = spine(at0).addScaledVector(across0, half(at0));
+      const c = spine(at1).addScaledVector(across1, half(at1));
+      const d = spine(at1).addScaledVector(across1, -half(at1));
+      const normal = new Vector3()
+        .subVectors(b, a)
+        .cross(new Vector3().subVectors(d, a))
+        .normalize();
+      if (normal.y < 0) normal.negate();
+      const shade = (at: number) =>
+        white.clone().multiplyScalar(0.55 + 0.45 * Math.min(1, at / 0.4));
+      const va = v0 + (v1 - v0) * at0;
+      const vb = v0 + (v1 - v0) * at1;
+      buffer.quad(
+        [a, b, c, d],
+        normal,
+        [shade(at0), shade(at0), shade(at1), shade(at1)],
+        at0 * at0,
+        [
+          [u0, va],
+          [u1, va],
+          [u1, vb],
+          [u0, vb],
+        ],
+      );
+    }
+  }
+  return buffer.build();
+}
+
 /** How a poppy cluster reads, in metres. */
 export const POPPY = {
   /** Stems per cluster. A patch is a colony, not a bouquet. */
