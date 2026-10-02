@@ -21,7 +21,7 @@ CI's critical path is the queue, not the work. On 2026-10-02 the runs were:
 | 37043413533 (PRD-475 PR) | 146 min | 239 min | 19.3 min |
 | 37047989282 (`develop` PR) | 266 min | 127 min | 17.6 min |
 
-`ThreeNativeHQ/threenative-engine` is public and has 0 self-hosted runners. Every job therefore shares
+`ThreeNativeHQ/threenative` is public and has 0 self-hosted runners. Every job therefore shares
 the org's hosted concurrency cap with every other open PR. A full board is about 45 jobs. The branch-local
 `integration-*.yml` workflows (decals, exposure, exposure cold boot, …) started 124 runs since
 2026-10-01, against 72 `CI` runs, and they draw on the same pool.
@@ -99,7 +99,7 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Blocked on
 
-- Fine-grained token with "Administration: read & write" on `ThreeNativeHQ/threenative-engine`,
+- Fine-grained token with "Administration: read & write" on `ThreeNativeHQ/threenative`,
   written to the runner env file — unblocked by João.
 - Repository setting "Require approval for all outside collaborators" for fork PR workflows
   confirmed on — unblocked by João.
