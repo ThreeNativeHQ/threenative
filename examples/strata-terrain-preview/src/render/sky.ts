@@ -68,6 +68,13 @@ export const SUN = {
  * at: a 300 metre ridge is a third hazed, which is the aerial perspective the alpine reference is
  * built on, and the sea's far edge is gone before it reaches its own boundary.
  */
+/**
+ * The sun's direction as a shader node, for anything in the scene that has to agree with the light:
+ * the water's glint and its caustics read this rather than normalising `SUN.direction` a second time,
+ * so `L` moves them with the rig.
+ */
+export const SUN_VECTOR = uniform(SUN.direction.clone().normalize()) as unknown as Node<"vec3">;
+
 const RIG = {
   sky: { turbidity: 2.4, rayleigh: 2.2, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
   /**
@@ -250,7 +257,7 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
   });
   daylight.sun.visible = false;
 
-  const sunDirection = uniform(SUN.direction.clone().normalize()) as unknown as Node<"vec3">;
+  const sunDirection = SUN_VECTOR;
   // The deck rides inside the rig's own sky box, so it needs no follow of its own: the box is put
   // back on the eye every frame and the dome is its child. 32 by 16 is enough, because the pattern
   // is per fragment and nothing here is shaded from the dome's own normals.

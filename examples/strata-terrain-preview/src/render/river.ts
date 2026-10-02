@@ -1,36 +1,65 @@
-// The Temperate river: the water that fills the channel the bake carved.
+// The Temperate water: the lake in the basin and the stream the bake carved down to it.
 //
-// The bake cuts the bed and records the river's path; nothing drew water in it, so the world had a
-// dry trench with a mud floor. This file is the water, and every decision about how it looks is
-// here: the surface sits a fixed fill above the bed it was carved into, the ripples move downstream
-// at the river's own heading, and the colour is the bed seen through the water, darkened by how
-// much water stands over it — which is what `WaterSurface3D` measures in metres.
+// Ported from Wildwood's `src/render/water.ts` (`createWater`), which is where the model below comes
+// from — the wind-gated wave field, the graded slope gain, the Beer-Lambert body, the shore dissolve
+// and the Snell's window. Wildwood's pond.ts dresses that same surface with rocks and reeds, so
+// nothing of it is ported: what makes still water read as water is the model, not the dressing.
 //
-// No mirror. A reflection pass mirrors about one level, and this surface falls fifteen metres over
-// its length, so a planar reflection would be right at one bend and wrong everywhere else. The sky
-// comes back by fresnel instead, which is what a moving river surface mostly shows anyway.
-import { WaterSurface3D } from "@threenative/core";
+// Three things here are this game's rather than Wildwood's:
+//
+// - **The depth is baked, and it is real.** Neither basin nor bed moves, so every vertex carries the
+//   metres of water standing on it, out of the same `heightAt` the terrain mesh and the collider
+//   read. That is what puts the shoreline on the ground's own contour instead of on a drawn circle,
+//   what makes the margin dissolve instead of ending on a triangle, and what keeps the shallows
+//   legible at a grazing angle, where a screen-space depth read has nothing to say.
+// - **The lake keeps a real planar mirror.** The basin is level, so unlike the stream it can have
+//   one, and the mirror is what carries the far bank upside down — the one thing that makes still
+//   water read as water. It draws layer 0 only, which is why the water sits on `WATER_LAYER`: a
+//   water surface inside the mirrored pass samples a single-sampled depth target and fails WebGPU
+//   validation, taking the frame down with it.
+// - **The stream has no mirror, on purpose.** It falls fifteen metres over its length, so a planar
+//   reflection would be right at one bend and wrong everywhere else; the sky comes back by fresnel
+//   over an analytic gradient, which is most of what a moving river surface shows anyway.
+//
+// Nothing here decides a colour for the engine: `WaterSurface3D` measures metres and hands back the
+// frame beneath the surface and the world mirrored in it, and every number under LOOK below is this
+// game's. One rule worth carrying: **`new Color(hex)` already converts sRGB to linear**, because
+// three enables `ColorManagement` by default — calling `convertSRGBToLinear()` on top of it darkens
+// every palette colour by a factor between three and thirteen, and the shader then reads as "wants
+// turning up" rather than as broken.
+import { WaterSurface3D, WaveField } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
-import { BufferAttribute, BufferGeometry, CircleGeometry, Mesh } from "three";
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
 import {
   attribute,
   cameraPosition,
+  cameraProjectionMatrix,
+  cameraViewMatrix,
   clamp,
   color,
   dot,
+  exp,
   float,
+  max,
+  min,
   mix,
   mx_noise_float,
   normalize,
+  positionLocal,
   positionWorld,
   pow,
   smoothstep,
+  step,
   transformNormalToView,
   uniform,
+  vec2,
   vec3,
+  vec4,
+  viewportSharedTexture,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, MeshStandardNodeMaterial } from "three/webgpu";
+import { SUN, SUN_VECTOR } from "./sky.js";
 
 /** One river as the bake records it: the smoothed spline and the width of its water. */
 export interface IBakedRiver {
@@ -48,30 +77,357 @@ export interface IBakedRiver {
  */
 export const WATER_LAYER = 1;
 
-/** The river's look. Every number is this game's. */
+/** The stream's shape. Its reach is also the lake's exclusion corridor; see `createLakes`. */
 const RIVER = {
   /** Metres of water over the deepest point of the bed. The bank rises out of it on its own. */
   fill: 1.1,
   /** How far either side of the centreline the surface reaches; the terrain hides what is dry. */
   reach: 13,
-  /** Vertices across the surface. Enough for the bank to cut a curved shoreline, not a ruler. */
-  across: 11,
-  /** Metres of water past which the bed no longer shows through. */
-  murk: 2.2,
-  /** Downstream drift of the broad and fine ripples, metres a second. */
-  flow: [0.55, 1.15],
-  /** How hard the ripples bend the surface. */
-  ripple: 0.32,
-  bedTint: 0x9fb08f,
-  deep: 0x1f3833,
-  skyHorizon: 0xb7c5cc,
-  skyZenith: 0x7d98ac,
-  foam: 0xe4ece6,
+  /**
+   * Stations over which the fill tapers to nothing at each end of the path, so the surface meets the
+   * ground it is over instead of stopping in a wall of water. See `surfaceHeights`.
+   */
+  taper: 9,
+  /**
+   * Vertices across the surface. The shore dissolve is a ramp in metres of depth, so the column
+   * spacing is what decides how wide the wet margin reads: at thirteen the ramp fitted inside one
+   * quad and the bank cut the surface like a blade.
+   */
+  across: 25,
+  /** The wind patches on moving water: how big one is, how fast it crosses, and which way. */
+  patch: { metres: 9, drift: 1.4, wind: [0.86, 0.51] as const },
+  /**
+   * The three ripple scales, as metres of feature size, how fast each drifts downstream in metres a
+   * second, and how hard each bends the surface. Small ones only: the stream is read from two metres
+   * away, where a broad ripple is a smear across the whole channel rather than a wave in it. The
+   * finest is `fine`, and fades with distance like any ripple smaller than a pixel.
+   */
+  ripples: [
+    { metres: 1.9, drift: 1.5, gain: 0.55, fine: false },
+    { metres: 0.78, drift: 2.1, gain: 0.3, fine: false },
+    { metres: 0.33, drift: 2.8, gain: 0.16, fine: true },
+  ],
 } as const;
 
-/** The water surface's height along the path: a fill over the bed, never running uphill. */
+/** The lake's shape, and how its mirror is taken. Every number here is this game's. */
+const LAKE = {
+  /** Mirror pixels as a share of the frame's, how often it redraws, and the layer mask it draws. */
+  mirror: { resolutionScale: 0.5, refreshInterval: 2, layers: 1 },
+  /** Rings and spokes in the disc the basin is meshed as. */
+  rings: 44,
+  spokes: 88,
+  /** How far past the measured waterline the mesh reaches, so the real shore is inside it. */
+  reach: 1.12,
+  /** How the ring spacing grows outwards. Above 1 packs vertices into the near water. */
+  packing: 1.7,
+} as const;
+
+/**
+ * Extinction per metre, per channel, in the renderer's linear space.
+ *
+ * Red dies first and blue survives, which is why fresh water over a green bed reads teal. Roughly
+ * two and a half times distilled water: this basin carries the meadow in it — leaf tannin, silt, grass
+ * — and a lake you can see four metres into reads as a swimming pool. The Temperate basin is 1.3 m at
+ * its deepest, so this is a grade across a hand's depth rather than a wall of colour.
+ */
+const EXTINCTION: readonly [number, number, number] = [0.86, 0.5, 0.36];
+
+/** Metres of water past which the bed stops contributing. The basin bottoms out near 1.3 m. */
+const OPAQUE_DEPTH = 1.2;
+
+/** Deepest reading the baked attribute carries. Past the basin's own depth, so nothing saturates. */
+const MAX_BAKED_DEPTH = 1.6;
+
+/**
+ * Peak ripple slope close to the camera, and far from it.
+ *
+ * The wave field's honest peak slope is about 5°, which is right for sheltered water and far too
+ * small to see once it is the only thing bending a reflection. The physical argument for grading it
+ * is that one distant pixel covers many ripples and shows their average: near water gets chop you can
+ * see, water past seventy metres is a mirror.
+ */
+const SLOPE_GAIN_NEAR = 1.5;
+const SLOPE_GAIN_FAR = 0.45;
+const SLOPE_FADE_NEAR = 10;
+const SLOPE_FADE_FAR = 72;
+
+/** Where the short ripples start and finish fading, in metres from the camera. */
+const DETAIL_NEAR = 12;
+const DETAIL_FAR = 44;
+
+/**
+ * How much of the surface slope the reflection sees, as a share of what the glint sees.
+ *
+ * Two readings of one surface wanting two amounts of it: a glint is a peak-finder and wants every
+ * steep facet, a reflection is an average over the pixel's footprint and shreds into oil-slick
+ * crumple when fed the unfiltered slope.
+ */
+const REFLECT_SLOPE_SHARE = 0.55;
+
+/** The wind patches: their size, their drift, and how calm the calm is (zero would read as ice). */
+const PATCH_METRES = 21;
+const PATCH_DRIFT = 0.7;
+const PATCH_CALM = 0.45;
+
+/**
+ * How far a screen-space read may slide, in fractions of the frame, looking straight down and at a
+ * grazing angle. Grazing fragments slide further, because that is what a longer path through a
+ * tilted surface does. Beyond this the reflection stops being a reflection and becomes a smear of
+ * whatever happened to be in those pixels.
+ */
+const REFRACTION_NEAR = 0.004;
+const REFRACTION_FAR = 0.026;
+
+/** How far the reflection smears, in fractions of the screen, at the near and far ends. */
+const REFLECT_BLUR_NEAR = 0.002;
+const REFLECT_BLUR_FAR = 0.006;
+/** How much narrower the smear is across the screen than down it. */
+const REFLECT_BLUR_ASPECT = 0.5;
+
+/** The floor under Schlick: still water seen straight down is not perfectly clear. */
+const SKY_FLOOR = 0.045;
+
+/** Where the ripple may start, in metres of depth. Water at the gravel is glass. */
+const RIPPLE_DEPTH = 0.35;
+
+/** The wet band at the margin, in metres of depth: the surface fades out across it. */
+const SHORE_FADE = 0.42;
+
+/** How far the mirrored bed smears under the surface, in fractions of the screen. */
+const UNDER_BLUR = 0.004;
+
+/** The cosine band the Snell's-window edge is blended over. Water's critical angle is 48.6°. */
+const SNELL_INNER = 0.6;
+const SNELL_OUTER = 0.79;
+
+/** This game's water body: silt at the margin, cold green in the middle, moss in the sun path. */
+const TINT = {
+  silt: 0xc0ad84,
+  shallow: 0.16,
+  deep: 0x1f3833,
+  deepGain: 0.26,
+  /** Sunlight scattered back out of the shallows. */
+  glow: 0x8fae62,
+  /** Foam and white water. */
+  foam: 0xe8efe8,
+  /** The sky the stream reflects: the horizon haze, and the zenith above it. */
+  skyHorizon: 0xb7c5cc,
+  skyZenith: 0x7d98ac,
+  /**
+   * What stands on both banks of a stream in spruce wood. A reflected ray leaving the surface at two
+   * degrees does not reach the sky at all — it hits a trunk — and without this floor the stream is a
+   * strip of chrome wherever the eye is low enough for the fresnel to close.
+   */
+  bank: 0x33452f,
+  bankGain: 0.3,
+} as const;
+
+/**
+ * A linear-space vec3 node from a colour, so the shader math is in the renderer's space.
+ *
+ * The palette is authored in sRGB, which is what a person picks colours in; every number below is
+ * multiplied and exponentiated, so it has to be linear or the absorption curve is applied to a
+ * gamma-encoded quantity and the shallows come out chalky. `new Color(hex)` has already made that
+ * conversion — see the file header.
+ */
+function linear(value: number | Color, gain = 1): Node<"vec3"> {
+  const tint = typeof value === "number" ? new Color(value) : value;
+  return vec3(tint.r * gain, tint.g * gain, tint.b * gain);
+}
+
+/**
+ * The lake's ripple: eight waves, no two of them commensurate, under one slow domain warp.
+ *
+ * 11.3, 7.1, 4.7, 3.1, 1.9, 1.3, 0.79 and 0.53 metres. Ratios near, but never at, small whole numbers
+ * is the whole point: wavelengths at 8/4/2/1 reline up every eight metres and draw visible corduroy.
+ * The warp bends the domain the waves are measured in, so crests curve and wander instead of running
+ * as a sum of straight lines. Amplitudes are tiny because this is sheltered water — they set the
+ * *normal*, which is what the light reads.
+ */
+const RIPPLE = new WaveField({
+  waves: [
+    { amplitude: 0.021, direction: [0.94, 0.35], wavelength: 11.3, speed: 0.78 },
+    { amplitude: 0.014, direction: [-0.42, 0.91], wavelength: 7.1, speed: 0.61, phase: 1.7 },
+    { amplitude: 0.009, direction: [0.71, -0.7], wavelength: 4.7, speed: 0.52, phase: 2.4 },
+    { amplitude: 0.006, direction: [-0.87, -0.49], wavelength: 3.1, speed: 0.44, phase: 0.8 },
+    {
+      amplitude: 0.0035,
+      detail: true,
+      direction: [0.29, 0.96],
+      wavelength: 1.9,
+      speed: 0.37,
+      phase: 3.9,
+    },
+    {
+      amplitude: 0.0022,
+      detail: true,
+      direction: [-0.66, 0.75],
+      wavelength: 1.3,
+      speed: 0.31,
+      phase: 5.2,
+    },
+    {
+      amplitude: 0.0013,
+      detail: true,
+      direction: [0.98, -0.19],
+      wavelength: 0.79,
+      speed: 0.26,
+      phase: 1.1,
+    },
+    {
+      amplitude: 0.0008,
+      detail: true,
+      direction: [-0.12, -0.99],
+      wavelength: 0.53,
+      speed: 0.21,
+      phase: 4.4,
+    },
+  ],
+  domainWarp: [
+    { direction: [0.8, 0.6], displacement: [0.55, -0.38], wavelength: 23, speed: 0.13, phase: 0.6 },
+  ],
+});
+
+export interface IRiverWater {
+  readonly mesh: Mesh;
+  /** The water's clock, in seconds; the scene advances it so the playtest's time is the water's. */
+  advance(elapsed: number): void;
+  dispose(): void;
+}
+
+/**
+ * Everything a fragment of water is made of, whatever it is water in.
+ *
+ * One composite for both surfaces, so the stream and the lake cannot drift apart: they are the same
+ * body of water with a different surface normal over them, and the difference a player can see
+ * between a river and a lake is the ripple and the mirror, not the colour of what comes up through it.
+ */
+interface IWaterShading {
+  /** World normal, already graded by distance, wind patch and depth. */
+  readonly normal: Node<"vec3">;
+  /** Baked metres of water standing on this vertex. */
+  readonly depthM: Node<"float">;
+  /** The frame beneath the surface, offset by the normal. */
+  readonly bed: Node<"vec3">;
+  /** The world mirrored in this surface: the mirror target for the lake, the sky for the stream. */
+  readonly reflected: Node<"vec3">;
+}
+
+/** The composite: what comes up through the surface, what sits on it, and the sun's glint. */
+function compositeWater(surface: IWaterShading): Node<"vec3"> {
+  const { normal, depthM, bed, reflected } = surface;
+  const view = normalize(cameraPosition.sub(positionWorld));
+  const facing = clamp(dot(normal, view), float(0), float(1));
+  // Schlick at water's 1.333 index: F0 is 0.02, which is why still water at your feet is nearly
+  // clear and the same water at the far bank is a mirror.
+  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
+
+  // How far light travels through this water to reach the eye: straight down it is the baked depth,
+  // at a grazing angle it is far further, which is the whole reason water is clear at your feet and
+  // opaque at the far bank. The floor on `facing` keeps a horizon fragment asking for a kilometre.
+  const path = min(depthM.div(max(facing, float(0.12))), float(MAX_BAKED_DEPTH * 1.6));
+  const tint = exp(vec3(-EXTINCTION[0], -EXTINCTION[1], -EXTINCTION[2]).mul(path));
+
+  // Caustics: the same analytic normal that bends the reflection focuses the sun onto the bed, so the
+  // bright cells are where the surface happens to point at it, drifting with the ripple causing them.
+  // Killed with depth, because a caustic is a shallow-water phenomenon and the bed at two metres is
+  // in shade.
+  const focus = pow(clamp(dot(normal, SUN_VECTOR), float(0), float(1)), 34);
+  const caustic = focus.mul(1.7).mul(float(1).sub(smoothstep(float(0.15), float(1.9), depthM)));
+
+  // What the water body itself scatters back: silt at the margin, the lake's own green in the middle.
+  // The gains are small because these are radiances, not albedos: a fraction of what the bank returns.
+  const shallowBody = linear(TINT.silt, TINT.shallow).mul(vec3(1.06, 1, 0.74));
+  const deepBody = linear(TINT.deep, TINT.deepGain);
+  const body = mix(shallowBody, deepBody, smoothstep(float(0.1), float(2.4), depthM));
+
+  const submerged = bed
+    .mul(tint)
+    .mul(float(1).add(caustic))
+    .add(body.mul(float(1).sub(tint)));
+
+  // Subsurface scatter: the green-gold glow of shallow water with the sun behind it — light that went
+  // in, bounced around in the silt and came back out rather than reflecting off the top.
+  const towardSun = clamp(dot(view.negate(), SUN_VECTOR), float(0), float(1));
+  const glow = pow(towardSun, 2.5)
+    .mul(float(1).sub(smoothstep(float(0.2), float(1.8), depthM)))
+    .mul(0.26);
+  const underwater = submerged.add(
+    linear(TINT.glow, 0.35)
+      .mul(vec3(1.3, 1.15, 0.6))
+      .mul(glow),
+  );
+
+  const skyWeight = min(float(SKY_FLOOR).add(fresnel.mul(float(1 - SKY_FLOOR))), float(1));
+  const composited = mix(underwater, reflected, skyWeight);
+
+  // Sun glint off the same analytic normal. A specular lobe on a non-repeating normal breaks into
+  // separate sparks by itself, which is what a glitter path looks like from the bank.
+  const halfway = normalize(view.add(SUN_VECTOR));
+  const glint = pow(clamp(dot(normal, halfway), float(0), float(1)), 170);
+  return composited.add(linear(SUN.colour, 0.75).mul(glint));
+}
+
+/**
+ * How much ripple the wind is touching here, 0..1.
+ *
+ * Two octaves of gradient noise in world metres, drifting downwind and evolving slowly in place.
+ * Noise rather than another wave sum, because a sum of sines used as a mask carries the corduroy the
+ * waves themselves exist to avoid.
+ */
+function windPatch(
+  here: Node<"vec2">,
+  time: Node<"float">,
+  metres: number,
+  drift: number,
+  wind: readonly [number, number],
+): Node<"float"> {
+  const uv = here.mul(1 / metres).sub(vec2(wind[0], wind[1]).mul(time.mul(drift / metres)));
+  const coarse = mx_noise_float(vec3(uv.x, uv.y, time.mul(0.021)));
+  const fine = mx_noise_float(
+    vec3(uv.x.mul(2.7).add(11.3), uv.y.mul(2.7).sub(4.1), time.mul(0.048)),
+  );
+  return smoothstep(float(-0.12), float(0.34), coarse.add(fine.mul(0.34)));
+}
+
+/** The slope gain: near and far, damped in the calm patches and in the last hand's depth of water. */
+function slopeGain(
+  eyeDistance: Node<"float">,
+  patch: Node<"float">,
+  depthM: Node<"float">,
+): Node<"float"> {
+  return mix(
+    float(SLOPE_GAIN_NEAR),
+    float(SLOPE_GAIN_FAR),
+    smoothstep(float(SLOPE_FADE_NEAR), float(SLOPE_FADE_FAR), eyeDistance),
+  )
+    .mul(mix(float(PATCH_CALM), float(1), patch))
+    .mul(smoothstep(float(0), float(RIPPLE_DEPTH), depthM));
+}
+
+/** The shore: the surface dissolves into the wet margin instead of ending on a triangle. */
+function shoreFade(depthM: Node<"float">, fresnel: Node<"float">): Node<"float"> {
+  return max(
+    smoothstep(float(0), float(SHORE_FADE), depthM),
+    fresnel.mul(smoothstep(float(0), float(0.06), depthM)),
+  );
+}
+
+/**
+ * The stream's surface height along the path: a fill over the bed, never running uphill.
+ *
+ * The fill tapers to nothing at both ends of the recorded path. A stream's ends are where it comes
+ * out of the hillside and where it goes into standing water, and a ribbon that stops at full depth
+ * ends in a wall of water a metre high: the bake's last station sits two metres above the lake it
+ * drains into, and the flat cap across the channel that leaves is the hard straight edge the bank
+ * appears to be cut by. Tapered, the surface meets the ground it is over and the end dissolves.
+ */
 function surfaceHeights(field: Heightfield, points: readonly (readonly number[])[]): number[] {
-  const raw = points.map(([x = 0, , z = 0]) => field.heightAt(x, z) + RIVER.fill);
+  const last = points.length - 1;
+  const raw = points.map(([x = 0, , z = 0], k) => {
+    const fromEnd = Math.min(k, last - k) / RIVER.taper;
+    return field.heightAt(x, z) + RIVER.fill * Math.max(0, Math.min(1, fromEnd));
+  });
   // Downhill only, then a short moving average, then downhill again: the bed has erosion noise in
   // it and a surface that copies that noise steps up and down like a staircase.
   for (let k = 1; k < raw.length; k += 1) raw[k] = Math.min(raw[k] as number, raw[k - 1] as number);
@@ -89,18 +445,29 @@ function surfaceHeights(field: Heightfield, points: readonly (readonly number[])
   return smooth;
 }
 
-/** A ribbon along one river: positions, and the downstream heading at every vertex. */
+/**
+ * A ribbon along one river: positions, the downstream heading at every vertex, and the metres of
+ * water standing on it.
+ *
+ * The baked depth is the point. Taken off the ground under each vertex rather than read off the
+ * screen, it puts the shoreline where the ground crosses the surface, the foam where the water is
+ * thin, and the margin's dissolve over its last thirty centimetres — which is what a screen-space
+ * thickness cannot do on a hillside crossing a flat plane, and reads as the bank cutting the ribbon
+ * like a blade.
+ */
 function ribbon(
   field: Heightfield,
   river: IBakedRiver,
   positions: number[],
   flows: number[],
+  depths: number[],
   indices: number[],
 ): void {
   const { points } = river;
   const heights = surfaceHeights(field, points);
   const base = positions.length / 3;
   const columns = RIVER.across;
+  const wet: number[] = [];
   for (let k = 0; k < points.length; k += 1) {
     const before = points[Math.max(0, k - 1)] as readonly number[];
     const after = points[Math.min(points.length - 1, k + 1)] as readonly number[];
@@ -113,8 +480,13 @@ function ribbon(
     const y = heights[k] as number;
     for (let c = 0; c < columns; c += 1) {
       const across = (c / (columns - 1) - 0.5) * 2 * RIVER.reach;
-      positions.push(x - dz * across, y, z + dx * across);
+      const vx = x - dz * across;
+      const vz = z + dx * across;
+      positions.push(vx, y, vz);
       flows.push(dx, dz);
+      const depth = Math.min(MAX_BAKED_DEPTH, Math.max(0, y - field.heightAt(vx, vz)));
+      depths.push(depth);
+      wet.push(depth > 0 ? 1 : 0);
     }
   }
   for (let k = 1; k < points.length; k += 1) {
@@ -123,17 +495,18 @@ function ribbon(
       const b = a + 1;
       const d = base + k * columns + c - 1;
       const e = d + 1;
+      // Keeping the quads with a dry corner is what gives the alpha ramp below a strip of dry ground
+      // to dissolve across; only a quad that is dry on both of its rows is dropped outright, which
+      // takes the surface off the hillside rather than folding it back along the centreline.
+      if (
+        (wet[a - 1] ?? 0) + (wet[b] ?? 0) + (wet[d - 1] ?? 0) + (wet[e] ?? 0) === 0 &&
+        (wet[a] ?? 0) + (wet[b] ?? 0) + (wet[d] ?? 0) + (wet[e] ?? 0) === 0
+      )
+        continue;
       // Wound so the face points up: along × across points down, so the pair is taken the other way.
       indices.push(a, b, d, b, e, d);
     }
   }
-}
-
-export interface IRiverWater {
-  readonly mesh: Mesh;
-  /** The river's clock, in seconds; the scene advances it so the playtest's time is the water's. */
-  advance(elapsed: number): void;
-  dispose(): void;
 }
 
 /** Draw every baked river as one surface, or nothing when the world has none. */
@@ -144,69 +517,93 @@ export function createRivers(
   if (rivers.length === 0) return undefined;
   const positions: number[] = [];
   const flows: number[] = [];
+  const depths: number[] = [];
   const indices: number[] = [];
-  for (const river of rivers) ribbon(field, river, positions, flows, indices);
+  for (const river of rivers) ribbon(field, river, positions, flows, depths, indices);
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("flow", new BufferAttribute(new Float32Array(flows), 2));
+  geometry.setAttribute("metres", new BufferAttribute(new Float32Array(depths), 1));
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
 
-  const surface = new WaterSurface3D({ level: 0, maxThickness: RIVER.murk * 2 });
+  const surface = new WaterSurface3D({ level: 0, maxThickness: MAX_BAKED_DEPTH * 2 });
   const time = uniform(0);
+  const depthM = attribute<"float">("metres", "float");
   const heading = normalize(attribute<"vec2">("flow", "vec2"));
-  const along = dot(positionWorld.xz, heading);
-  const side = dot(positionWorld.xz, vec3(heading.y.negate(), heading.x, 0).xy);
+  const here = vec2(positionWorld.x, positionWorld.z);
+  const along = dot(here, heading);
+  const side = dot(here, vec2(heading.y.negate(), heading.x));
+  const eyeDistance = here.sub(vec2(cameraPosition.x, cameraPosition.z)).length();
+  const detail = float(1).sub(smoothstep(float(DETAIL_NEAR), float(DETAIL_FAR), eyeDistance));
 
-  // Ripples are noise stretched along the current and slid downstream: long streaks that move,
-  // which is what tells a river from a pond at a glance.
-  const height = (a: Node<"float">, b: Node<"float">): Node<"float"> =>
-    mx_noise_float(
-      vec3(a.mul(0.16).sub(time.mul(RIVER.flow[0] * 0.16)), b.mul(0.42), time.mul(0.04)),
-    )
-      .mul(0.7)
-      .add(
-        mx_noise_float(
-          vec3(a.mul(0.85).sub(time.mul(RIVER.flow[1] * 0.85)), b.mul(1.3), time.mul(0.15)),
-        ).mul(0.3),
-      ) as Node<"float">;
-  const step = 0.35;
+  // Ripples are noise stretched along the current and slid downstream: streaks that move, which is
+  // what tells a river from a pond at a glance. The height comes from the sum, and the normal from its
+  // gradient by finite difference in the current's own frame, then rotated back into the world's.
+  const height = (a: Node<"float">, b: Node<"float">): Node<"float"> => {
+    let sum: Node<"float"> = float(0);
+    for (const wave of RIVER.ripples) {
+      const scale = 1 / wave.metres;
+      const octave = mx_noise_float(
+        vec3(a.mul(scale).sub(time.mul(wave.drift * scale)), b.mul(scale * 0.7), time.mul(0.09)),
+      ).mul(wave.gain);
+      sum = sum.add(wave.fine ? octave.mul(detail) : octave);
+    }
+    return sum;
+  };
   const h0 = height(along, side);
-  const dA = height(along.add(step), side).sub(h0).div(step);
-  const dB = height(along, side.add(step)).sub(h0).div(step);
-  // Back from the current's frame into the world's.
-  const gx = heading.x.mul(dA).sub(heading.y.mul(dB));
-  const gz = heading.y.mul(dA).add(heading.x.mul(dB));
-  const normal = normalize(vec3(gx.mul(-RIVER.ripple), float(1), gz.mul(-RIVER.ripple)));
+  const delta = 0.18;
+  const dAlong = height(along.add(delta), side).sub(h0).div(delta);
+  const dSide = height(along, side.add(delta)).sub(h0).div(delta);
+  const patch = windPatch(here, time, RIVER.patch.metres, RIVER.patch.drift, RIVER.patch.wind);
+  const gain = slopeGain(eyeDistance, patch, depthM);
+  const slant = (share: number): Node<"vec3"> => {
+    const alongSlope = dAlong.mul(gain.mul(share)).negate();
+    const sideSlope = dSide.mul(gain.mul(share)).negate();
+    return vec3(
+      heading.x.mul(alongSlope).sub(heading.y.mul(sideSlope)),
+      float(1),
+      heading.y.mul(alongSlope).add(heading.x.mul(sideSlope)),
+    );
+  };
+  const normal = normalize(slant(1));
+  const reflectNormal = normalize(slant(REFLECT_SLOPE_SHARE));
 
-  const thickness = surface.thicknessAt();
-  const offset = normal.xz.mul(0.035);
-  const bed = surface.refractionAt(offset).mul(color(RIVER.bedTint));
-  const murk = smoothstep(float(0), float(RIVER.murk), thickness);
-  const water = mix(bed, color(RIVER.deep), murk);
-
+  // The normal's horizontal part is the screen offset, in fractions of the frame. Grazing fragments
+  // slide further, because that is what a longer path through a tilted surface does — and the offset
+  // is taken to zero at the margin, or the dry bank smears out across the water in front of it.
   const view = normalize(cameraPosition.sub(positionWorld));
-  const facing = clamp(dot(normal, view), 0, 1);
-  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
-  const reflected = view.negate().reflect(normal);
-  const sky = mix(color(RIVER.skyHorizon), color(RIVER.skyZenith), clamp(reflected.y, 0, 1));
-  const surfaceColour = mix(water, sky, fresnel.mul(0.9));
+  const facing = clamp(dot(normal, view), float(0), float(1));
+  const slide = mix(float(REFRACTION_NEAR), float(REFRACTION_FAR), float(1).sub(facing));
+  const offset = vec2(normal.x, normal.z)
+    .mul(slide)
+    .mul(smoothstep(float(0), float(0.4), depthM));
+  const bed = surface.refractionAt(offset);
 
-  // White water where the current runs over a shallow bed, and a few streaks in the channel.
+  // No mirror: this surface falls fifteen metres over its length. The sky comes back by fresnel over
+  // an analytic gradient, on a floor of the wood that stands on both banks — see `TINT.bank`.
+  const bounced = view.negate().reflect(reflectNormal);
+  const sky = mix(
+    linear(TINT.bank, TINT.bankGain),
+    mix(color(TINT.skyHorizon), color(TINT.skyZenith), clamp(bounced.y, float(0), float(1))),
+    smoothstep(float(0.0), float(0.3), bounced.y),
+  );
+  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
+  const shaded = compositeWater({ normal, depthM, bed, reflected: sky });
+
+  // White water where the current runs over a shallow bed, and a few streaks in the channel. Broken
+  // rather than ruled: the shallows only whiten where the churn is high, so the edge reads as water
+  // catching on the gravel in patches rather than a white line painted along the bank.
   const churn = mx_noise_float(
-    vec3(along.mul(0.6).sub(time.mul(1.1)), side.mul(0.9), time.mul(0.3)),
+    vec3(along.mul(1.3).sub(time.mul(2.2)), side.mul(1.9), time.mul(0.5)),
   )
     .mul(0.5)
     .add(0.5);
-  // Broken, not ruled: the shallows only whiten where the churn is high, so the edge reads as water
-  // catching on the bed in patches rather than as a white line painted along the bank.
-  const shallows = float(1).sub(
-    smoothstep(float(0.02), float(0.16).add(churn.mul(0.22)), thickness),
-  );
-  const bank = shallows.mul(smoothstep(float(0.45), float(0.8), churn)).mul(0.65);
-  const streak = smoothstep(float(0.74), float(0.88), h0.mul(0.5).add(0.5)).mul(0.16);
-  const foam = bank.max(streak.mul(murk));
+  const shallows = float(1).sub(smoothstep(float(0.03), float(0.18).add(churn.mul(0.24)), depthM));
+  const bank = shallows.mul(smoothstep(float(0.4), float(0.85), churn)).mul(0.7);
+  const streak = smoothstep(float(0.78), float(0.92), h0.mul(0.5).add(0.5)).mul(0.18);
+  const foam = max(bank, streak.mul(smoothstep(float(0), float(OPAQUE_DEPTH), depthM)));
 
   const material = new MeshStandardNodeMaterial({
     metalness: 0,
@@ -214,14 +611,15 @@ export function createRivers(
     transparent: true,
     depthWrite: false,
   });
-  // The water's own colour is light coming *through* it, already lit by the frame beneath, so it
-  // goes in as emission; the lit channel carries only the foam and the sun's glint on the surface.
-  material.colorNode = color(RIVER.foam).mul(foam);
-  material.emissiveNode = surfaceColour.mul(float(1).sub(foam));
+  // The water's own colour is light coming *through* it, already lit by the frame beneath, so it goes
+  // in as emission; the lit channel carries only the foam and the sun's glint on the surface.
+  material.colorNode = color(TINT.foam).mul(foam);
+  material.emissiveNode = shaded.mul(float(1).sub(foam));
   material.roughnessNode = mix(float(0.07), float(0.8), foam);
   material.normalNode = transformNormalToView(normal);
-  // A metre-wide fade at the shoreline instead of the bank cutting the surface like a blade.
-  material.opacityNode = smoothstep(float(0), float(0.12), thickness);
+  // The last hand's depth of water dissolves into the gravel instead of the bank cutting the surface
+  // like a blade.
+  material.opacityNode = shoreFade(depthM, fresnel);
 
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);
@@ -248,77 +646,276 @@ export interface IBakedLake {
   readonly level: number;
 }
 
-/** The lake's look. Still water: the reflection is most of it. */
-const LAKE = {
-  /** Mirror pixels as a share of the frame's, and how often it is redrawn. */
-  mirror: { resolutionScale: 0.5, refreshInterval: 2 },
-  murk: 3.5,
-  ripple: 0.09,
-  bedTint: 0x8fa080,
-  deep: 0x1c3533,
-} as const;
+/** The furthest the basin reaches on a bearing: where the drawn ground crosses the level. */
+function waterlineRadius(field: Heightfield, centre: readonly number[], level: number): number {
+  const [cx = 0, , cz = 0] = centre;
+  if (field.heightAt(cx, cz) >= level) return 0;
+  const bearings = 24;
+  let furthest = 0;
+  for (let index = 0; index < bearings; index += 1) {
+    const angle = (index / bearings) * Math.PI * 2;
+    let wet = 0;
+    let dry = 260;
+    // Eighteen halvings is under two centimetres at this scale, well inside the ground's own two-metre
+    // sample spacing, so more of them would be measuring nothing.
+    for (let halving = 0; halving < 18; halving += 1) {
+      const mid = (wet + dry) / 2;
+      if (field.heightAt(cx + Math.cos(angle) * mid, cz + Math.sin(angle) * mid) < level) wet = mid;
+      else dry = mid;
+    }
+    furthest = Math.max(furthest, (wet + dry) / 2);
+  }
+  return furthest;
+}
 
 /**
- * Draw every baked lake as a flat disc at its level, mirrored and seen through.
+ * Draw the baked lake as one surface: Wildwood's water, over this basin's own depth.
  *
- * Unlike the river a lake *is* level, so it gets a real planar reflection: the shore, the spruces and
- * the sky upside down in it is what makes still water read as water at all. The disc is the bake's
- * flood radius and the terrain hides the parts of it that are dry land, so the shoreline is the
- * ground's own contour.
+ * The mesh is a disc whose rings pack towards the middle, because this basin is not round: it is a
+ * compact bowl with one flooded arm running east a hundred metres, and a square grid big enough to
+ * hold the arm would spend four hundred thousand vertices on dry hillside. Only cells with water in
+ * at least one corner get triangles — that is what keeps the surface from showing as a sheet hovering
+ * over the meadow, and what leaves the shoreline on the ground's own contour.
  */
-export function createLakes(lakes: readonly IBakedLake[]): IRiverWater | undefined {
+export function createLakes(
+  lakes: readonly IBakedLake[],
+  field: Heightfield,
+): IRiverWater | undefined {
   const lake = lakes[0];
   if (lake === undefined) return undefined;
   if (lakes.length > 1) throw new Error("The Temperate lake surface draws one lake; got more.");
-  const geometry = new CircleGeometry(lake.radius, 128);
-  geometry.rotateX(-Math.PI / 2);
+  const [cx = 0, , cz = 0] = lake.at;
+  const reach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
+  if (reach <= 0) return undefined;
+
+  const { rings, spokes } = LAKE;
+  const vertexCount = rings * spokes + 1;
+  const positions = new Float32Array(vertexCount * 3);
+  const metreDepths = new Float32Array(vertexCount);
+  const waveDepths = new Float32Array(vertexCount);
+
+  const place = (index: number, radius: number, spoke: number): void => {
+    const angle = (spoke / spokes) * Math.PI * 2;
+    const x = cx + Math.cos(angle) * radius;
+    const z = cz + Math.sin(angle) * radius;
+    const depth = Math.min(MAX_BAKED_DEPTH, Math.max(0, lake.level - field.heightAt(x, z)));
+    positions[index * 3] = x;
+    positions[index * 3 + 1] = lake.level;
+    positions[index * 3 + 2] = z;
+    metreDepths[index] = depth;
+    waveDepths[index] = Math.min(1, depth / OPAQUE_DEPTH);
+  };
+  place(0, 0, 0);
+  for (let ring = 1; ring < rings; ring += 1) {
+    const radius = reach * (ring / (rings - 1)) ** LAKE.packing;
+    for (let spoke = 0; spoke < spokes; spoke += 1)
+      place(1 + (ring - 1) * spokes + spoke, radius, spoke);
+  }
+
+  const indices: number[] = [];
+  for (let spoke = 0; spoke < spokes; spoke += 1) {
+    const first = 1 + spoke;
+    const next = 1 + ((spoke + 1) % spokes);
+    // Keeping the cells with a single wet corner is what gives the alpha ramp below a strip of dry
+    // ground to fade out over, instead of ending abruptly on the waterline itself.
+    if (
+      (waveDepths[0] as number) + (waveDepths[first] as number) + (waveDepths[next] as number) >
+      0
+    )
+      indices.push(0, first, next);
+  }
+  for (let ring = 2; ring < rings; ring += 1) {
+    for (let spoke = 0; spoke < spokes; spoke += 1) {
+      const next = (spoke + 1) % spokes;
+      const inner = 1 + (ring - 2) * spokes + spoke;
+      const innerNext = 1 + (ring - 2) * spokes + next;
+      const outer = 1 + (ring - 1) * spokes + spoke;
+      const outerNext = 1 + (ring - 1) * spokes + next;
+      const wet =
+        (waveDepths[inner] as number) +
+        (waveDepths[innerNext] as number) +
+        (waveDepths[outer] as number) +
+        (waveDepths[outerNext] as number);
+      if (wet <= 0) continue;
+      indices.push(inner, outer, innerNext, innerNext, outer, outerNext);
+    }
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(positions, 3));
+  geometry.setAttribute("waveDepth", new BufferAttribute(waveDepths, 1));
+  geometry.setAttribute("metres", new BufferAttribute(metreDepths, 1));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+
   const surface = new WaterSurface3D({
     level: lake.level,
-    maxThickness: LAKE.murk * 2,
+    maxThickness: MAX_BAKED_DEPTH * 2,
     // Everything but water: the camera sees layer 0 and WATER_LAYER, the mirror only layer 0.
-    reflection: { ...LAKE.mirror, layers: 1 },
+    reflection: { ...LAKE.mirror },
   });
   const time = uniform(0);
-  // Cat's-paws: two slow drifting noises, barely tilting the surface, so the mirror wavers instead of
-  // being a sheet of glass.
-  const ripple = (x: Node<"float">, z: Node<"float">): Node<"float"> =>
-    mx_noise_float(vec3(x.mul(0.22).add(time.mul(0.05)), z.mul(0.22), time.mul(0.08)))
-      .mul(0.6)
-      .add(
-        mx_noise_float(vec3(x.mul(1.1), z.mul(1.1).sub(time.mul(0.12)), time.mul(0.2))).mul(0.4),
-      ) as Node<"float">;
-  const step = 0.3;
-  const px = positionWorld.x;
-  const pz = positionWorld.z;
-  const h0 = ripple(px, pz);
-  const gx = ripple(px.add(step), pz).sub(h0).div(step);
-  const gz = ripple(px, pz.add(step)).sub(h0).div(step);
-  const normal = normalize(vec3(gx.mul(-LAKE.ripple), float(1), gz.mul(-LAKE.ripple)));
-  const offset = normal.xz.mul(0.04);
-  const thickness = surface.thicknessAt();
-  const bed = surface.refractionAt(offset).mul(color(LAKE.bedTint));
-  const water = mix(bed, color(LAKE.deep), smoothstep(float(0), float(LAKE.murk), thickness));
-  const view = normalize(cameraPosition.sub(positionWorld));
-  const facing = clamp(dot(normal, view), 0, 1);
-  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
-  const mirrored = surface.reflectionAt(offset);
-  const material = new MeshStandardNodeMaterial({
-    metalness: 0,
-    roughness: 0.05,
+  const waveDepth = attribute<"float">("waveDepth", "float");
+  const depthM = attribute<"float">("metres", "float");
+  const here = vec2(positionWorld.x, positionWorld.z);
+  const eyeDistance = here.sub(vec2(cameraPosition.x, cameraPosition.z)).length();
+
+  const patch = windPatch(here, time, PATCH_METRES, PATCH_DRIFT, [0.62, -0.78]);
+  // One evaluation of the field per fragment: no texture, no stripe term, no screen-space anything.
+  // The short waves are gated by both distance and the wind patch, and the whole horizontal part is
+  // graded by distance, because a far pixel covers many ripples and shows their average.
+  const detailFade = float(1)
+    .sub(smoothstep(float(DETAIL_NEAR), float(DETAIL_FAR), eyeDistance))
+    .mul(patch);
+  const raw = RIPPLE.normalNode({ fade: detailFade, point: here, time });
+  const gain = slopeGain(eyeDistance, patch, depthM);
+  const normal = normalize(vec3(raw.x.mul(gain), raw.y, raw.z.mul(gain)));
+  // The same surface read with less of its slope, for the mirror alone; the glint and the caustics
+  // keep the sharp one.
+  const reflectGain = gain.mul(REFLECT_SLOPE_SHARE);
+  const reflectNormal = normalize(vec3(raw.x.mul(reflectGain), raw.y, raw.z.mul(reflectGain)));
+
+  // Vertices ride the four long waves only. The short ones are shorter than this grid's rings, so
+  // displacing by them would alias into a stair pattern the normal above already draws for free.
+  const material = new MeshBasicNodeMaterial({
+    // Writing depth, which for a transparent surface wants a reason: the passes that read depth and
+    // normals under every water pixel would otherwise find the lake bed at a grazing angle, where its
+    // triangle rows are a few pixels apart and its depth derivative is enormous.
+    depthWrite: true,
+    // Both sides: the basin is shallow but the walker wades in, so the camera goes under this
+    // surface and has to find something drawn there. See the Snell's window branch below.
+    side: DoubleSide,
     transparent: true,
-    depthWrite: false,
   });
-  material.colorNode = color(0x000000);
-  // A little of the mirror shows even looking straight down: still water reflects a few per cent at
-  // normal incidence, and a lake with none reads as tinted glass.
-  material.emissiveNode = mix(water, mirrored, fresnel.mul(0.85).add(0.06));
-  material.normalNode = transformNormalToView(normal);
-  material.opacityNode = smoothstep(float(0), float(0.15), thickness);
+  material.positionNode = vec3(
+    positionLocal.x,
+    positionLocal.y.add(RIPPLE.heightNode({ fade: float(0), time }).mul(waveDepth)),
+    positionLocal.z,
+  );
+
+  const view = normalize(cameraPosition.sub(positionWorld));
+  const facing = clamp(dot(normal, view), float(0), float(1));
+  const slide = mix(float(REFRACTION_NEAR), float(REFRACTION_FAR), float(1).sub(facing));
+  const offset = vec2(normal.x, normal.z)
+    .mul(slide)
+    .mul(smoothstep(float(0), float(0.4), depthM));
+  const bed = surface.refractionAt(offset);
+  // A vertical smear, because that is the shape a rippled reflection has: the surface tilts about a
+  // horizontal axis far more often than it tilts toward you, so the smear is taller than it is wide
+  // and it grows with distance. Five taps on that ellipse; the radius shrinks where the lake is
+  // glass, so a calm patch takes the bank sharp and a ruffled one dissolves it.
+  const blur = mix(
+    float(REFLECT_BLUR_NEAR),
+    float(REFLECT_BLUR_FAR),
+    smoothstep(float(8), float(60), eyeDistance),
+  ).mul(mix(float(0.25), float(1), patch));
+  const tap = (dx: number, dy: number): Node<"vec3"> =>
+    surface.reflectionAt(
+      vec2(
+        offset.x.add(blur.mul(float(dx * REFLECT_BLUR_ASPECT))),
+        offset.y.add(blur.mul(float(dy))),
+      ),
+    ) as unknown as Node<"vec3">;
+  const mirror = tap(0, 0)
+    .mul(0.36)
+    .add(tap(0, 1).mul(0.16))
+    .add(tap(0, -1).mul(0.16))
+    .add(tap(1.3, 0.5).mul(0.16))
+    .add(tap(-1.3, -0.5).mul(0.16)) as Node<"vec3">;
+  const shaded = compositeWater({ normal, depthM, bed, reflected: mirror });
+
+  // ---- and what the surface is from underneath ----------------------------------------------
+  //
+  // Nothing about the composite above survives being looked at from below: the fresnel is measured
+  // against a ray leaving the water, the refraction reads a bed that is behind the camera, and the
+  // mirror aims at a bank the ray cannot reach. Seen from under, the surface is two things either
+  // side of the critical angle: look up steeply and the whole sky refracts into a 97° cone, which is
+  // the only thing down here that is not dark; look up shallowly and it is a *total* mirror of the
+  // bed below. The ripple moves the boundary, which is why a real window has a ragged edge.
+  //
+  // This is the wading case, and the wading case is the one that matters: across the whole wadeable
+  // margin the eye sits under the surface with the bed a metre or two beneath it, so the view the
+  // player actually gets is a surface an arm's length overhead mirroring a bed they can almost touch —
+  // and a constant colour cannot be that however well the constant is chosen. It photographs as a
+  // flat slab with a razor edge against the bed.
+  const upward = normalize(positionWorld.sub(cameraPosition));
+  const throughSurface = clamp(dot(upward, normal), float(0), float(1));
+  const window = smoothstep(float(SNELL_INNER), float(SNELL_OUTER), throughSurface);
+  // The mirrored bed, aimed down at a plane rather than out at a ring. The plane is not estimated:
+  // `depthM` is baked off the same `heightAt` the collider walks on, so the intersection is one divide.
+  const mirrored = upward.reflect(normal);
+  const dive = max(mirrored.y.negate(), float(0.06));
+  const toBed = min(depthM.div(dive), float(90));
+  const bedHit = positionWorld.add(mirrored.mul(toBed));
+  const bedClip = cameraProjectionMatrix.mul(
+    cameraViewMatrix.mul(vec4(bedHit.x, bedHit.y, bedHit.z, 1)),
+  );
+  const bedNdc = bedClip.xy.div(max(bedClip.w, float(0.0001)));
+  // Clip space puts +1 at the top of the frame and `viewportSharedTexture` samples with 0 there, so
+  // the y is negated: written the obvious way every mirrored read comes back about the middle of the
+  // screen, which for a ceiling means it reads the sky instead of the bed.
+  const bedUv = vec2(bedNdc.x.mul(0.5).add(0.5), bedNdc.y.mul(-0.5).add(0.5));
+  const bedInFrame = smoothstep(float(0), float(0.02), bedUv.x)
+    .mul(smoothstep(float(1), float(0.98), bedUv.x))
+    .mul(smoothstep(float(0), float(0.02), bedUv.y))
+    .mul(smoothstep(float(1), float(0.98), bedUv.y))
+    .mul(step(float(0.001), bedClip.w));
+  const underTap = (dx: number, dy: number): Node<"vec3"> =>
+    viewportSharedTexture(
+      vec2(
+        clamp(bedUv.x.add(float(dx * UNDER_BLUR)), float(0.002), float(0.998)),
+        clamp(bedUv.y.add(float(dy * UNDER_BLUR)), float(0.002), float(0.998)),
+      ),
+    ).rgb as unknown as Node<"vec3">;
+  const mirroredBed = underTap(0, 0)
+    .mul(0.5)
+    .add(underTap(0.9, 0.5).mul(0.25))
+    .add(underTap(-0.9, -0.5).mul(0.25)) as Node<"vec3">;
+  // Both legs of that path are under water, so Beer-Lambert applies to the whole of it: down to the
+  // bed and back to the eye. This is what turns the ceiling from a slab into something with depth in
+  // it — bright where the water is thin, the water's own colour by the far side of the frame.
+  const underPath = min(toBed.add(positionWorld.sub(cameraPosition).length()), float(40));
+  const underTint = exp(vec3(-EXTINCTION[0], -EXTINCTION[1], -EXTINCTION[2]).mul(underPath));
+  const ceiling = linear(TINT.deep, 0.35)
+    .add(linear(TINT.silt, 0.22))
+    .mul(mix(float(0.5), float(1.4), throughSurface));
+  const mirrorBelow = mirroredBed
+    .mul(bedInFrame)
+    .mul(underTint)
+    .add(ceiling.mul(float(1).sub(underTint.mul(bedInFrame))));
+  // The sky as it arrives after a metre or two of water: the horizon band, drained of red the way
+  // everything under water is.
+  const skyThrough = mix(
+    color(TINT.skyHorizon),
+    color(TINT.skyZenith),
+    clamp(upward.y, float(0), float(1)),
+  )
+    .mul(vec3(0.55, 0.92, 1))
+    .mul(1.35);
+  const sunDisc = pow(clamp(dot(upward, SUN_VECTOR), float(0), float(1)), 90)
+    .mul(window)
+    .mul(2.2);
+  const below = mix(mirrorBelow, skyThrough, window).add(linear(SUN.colour, 0.65).mul(sunDisc));
+
+  // Which of the two the camera is looking at, on its own height. Uniform across the draw, so both
+  // sides costing a multiply is the whole price of not writing two materials. A ten-centimetre blend
+  // rather than a step, because the walker crosses this line on foot and a hard flip is a one-frame
+  // pop in the middle of walking into a lake.
+  const eyeIsAbove = smoothstep(
+    float(lake.level - 0.05),
+    float(lake.level + 0.05),
+    cameraPosition.y,
+  );
+  material.colorNode = mix(below, shaded, eyeIsAbove);
+  // From underneath there is no shore to dissolve into and the ceiling is opaque.
+  const fresnel = float(0.02).add(pow(float(1).sub(facing), 5).mul(0.98));
+  material.opacityNode = mix(float(1), shoreFade(depthM, fresnel), eyeIsAbove);
+
   const mesh = new Mesh(geometry, material);
   mesh.layers.set(WATER_LAYER);
-  mesh.position.set(lake.at[0] ?? 0, lake.level, lake.at[1] ?? 0);
   mesh.name = "lake-surface";
-  mesh.receiveShadow = true;
+  // Drawn after the opaque valley, and after the scatter, so the shore blends over both.
+  mesh.renderOrder = 2;
   return {
     mesh,
     advance(elapsed) {

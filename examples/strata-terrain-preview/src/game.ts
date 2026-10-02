@@ -300,7 +300,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
-      const lake = createLakes(data.lakes);
+      const lake = createLakes(data.lakes, field);
       this.#lake = lake;
       if (lake) {
         ctx.add(lake.mesh);
