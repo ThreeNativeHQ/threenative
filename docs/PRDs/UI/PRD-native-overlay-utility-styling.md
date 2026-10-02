@@ -40,12 +40,12 @@ proposal's future API.
 
 | Source | Observed behavior | Design consequence |
 | --- | --- | --- |
-| [Workspace catalog](../../pnpm-workspace.yaml) | Tailwind and its Vite plugin are both pinned to `4.3.3`. | Use these actual packages and lockfile versions, not a hand-maintained utility table. |
-| [React entry](../../packages/core/src/react.ts) | Optional React subpath; `View`/`Text` accept native `style` objects. | Keep existing callers working; standard JSX needs a separate host adapter. |
-| [React host](../../packages/core/src/react-host.ts) | Custom reconciler, CanvasLayer quads and bitmap glyphs; other element types fail. | Reuse lifecycle patterns, not the limited drawing model as a CSS target. |
-| [Layout](../../packages/core/src/react-layout.ts) | Fixed/shrink-wrapped boxes, simple row/column placement, no CSS parser; mobile WASM is explicitly refused. | A utility parser cannot supply Flexbox, CSS paint or font semantics. Native dependencies must not require mobile WASM. |
-| [UI contract](../../packages/ui/AGENTS.md) | Shared UI reads published game state and emits intents; the game owns gameplay. | Keep the state/intent boundary and portable-entry isolation. |
-| [Charter](../architecture/CHARTER.md) | Web-standard UI defaults to a platform WebView; native quads are a limited opt-in; public IRs and a second scene renderer are excluded. | Add a bounded UI-only architectural exception explicitly; do not claim this is already permitted/shipped. |
+| [Workspace catalog](../../../pnpm-workspace.yaml) | Tailwind and its Vite plugin are both pinned to `4.3.3`. | Use these actual packages and lockfile versions, not a hand-maintained utility table. |
+| [React entry](../../../packages/core/src/react.ts) | Optional React subpath; `View`/`Text` accept native `style` objects. | Keep existing callers working; standard JSX needs a separate host adapter. |
+| [React host](../../../packages/core/src/react-host.ts) | Custom reconciler, CanvasLayer quads and bitmap glyphs; other element types fail. | Reuse lifecycle patterns, not the limited drawing model as a CSS target. |
+| [Layout](../../../packages/core/src/react-layout.ts) | Fixed/shrink-wrapped boxes, simple row/column placement, no CSS parser; mobile WASM is explicitly refused. | A utility parser cannot supply Flexbox, CSS paint or font semantics. Native dependencies must not require mobile WASM. |
+| [UI contract](../../../packages/ui/AGENTS.md) | Shared UI reads published game state and emits intents; the game owns gameplay. | Keep the state/intent boundary and portable-entry isolation. |
+| [Charter](../../architecture/CHARTER.md) | Web-standard UI defaults to a platform WebView; native quads are a limited opt-in; public IRs and a second scene renderer are excluded. | Add a bounded UI-only architectural exception explicitly; do not claim this is already permitted/shipped. |
 
 The framework owns the portable mechanism; the game owns every appearance choice. Three.js keeps
 ownership of the 3D scene, camera and game rendering. Neither React nor the CSS backend takes over
