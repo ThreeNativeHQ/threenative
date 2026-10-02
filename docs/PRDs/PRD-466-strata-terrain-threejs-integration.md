@@ -1447,3 +1447,40 @@ AC-5 remains open. Fallback proves function, not licensed visual parity.
 Delivery: final captures remain local in the requested directory; four implementation/
 diagnosis commits plus this final notes commit are local, with no push or merge.
 The worktree remains in use by the unfinished PRD/PR and retains licensed local data.
+
+### AC-5 forest/coast round 12 — 2026-10-02 (in progress; AC-5 open)
+
+Forest/coast source appearance only, from merged forest-round-11/worlds-round-3 tip.
+Reuse WORLD_ROCKS, resident ground layers, deterministic scatter and GroundSnap.
+Water, biomes.ts, otherBiome branches and other-world recipes are fixed.
+Licensed originals are read-only; cooked bytes remain local and ignored.
+
+- [ ] Replace flat temperate rock patches with sunk 5–20 m cooked outcrops and matched ground; proof: full-resolution licensed overview/coast captures and temperate placement check.
+- [ ] Vary meadow/grass and repair bark/crown illumination and downhill boulder contact; proof: full-resolution reference comparison, bounded ablation and shared playtest.
+- [ ] Complete licensed/fallback full scenarios on 5293, ocean check and protected quantiles ≤0.5; proof: final captures, forest CPU p50 ≤4 ms, example tsc, root Biome and terrain Vitest.
+
+Merged-tip baselines: licensed and absent-licensed **42/42 PASS**, forest
+meadow/overview/river/player CPU p50 **2.3/2.5/3.0/3.3 ms** licensed and
+**1.9/2.5/2.6/2.7 ms** fallback. Baselines are `artifacts/playtest/forest-r12-baseline/`
+and its `fallback/` child. Original-resolution crown-only zero-bounce control is
+`artifacts/playtest/forest-r12-crown-control/`: it reduces matched green-crown
+pixel luminance modestly (median paired delta **-0.7306**, 71,070 left-crown pixels),
+but does not explain all of the flat appearance. Retain reduced bounce plus
+shape-derived interior occlusion; preserve shadow-qualified needle transmission.
+The trunk section is named `trunk`, so the old branch-only brown tint missed it;
+solid temperate canopy sections now share a warm bark tint and authored normal.
+
+Pass 1 `artifacts/playtest/forest-r12-pass1/`: **42/42 PASS**, zero diagnostics,
+forest CPU p50 **2.2/2.3/2.8/2.9 ms**, coastal allocated prop draws **59**.
+All six protected capture display-luminance p05/p50/p95 absolute deltas **≤0.0382**
+against the merged-tip licensed baseline. Ocean verifier PASS (waves 64.35%,
+sun 53.82%, sheltered blue 100%). Example tsc, root-invoked example Biome,
+terrain Vitest **69/69** and temperate placement checks PASS.
+
+Pass 1 full-resolution inspection exposed raised steep-slope crags and blotchy
+wrack. The mountain scan retains an off-centre X/Z pivot; temperate stone geometry
+now centres the whole scan footprint before scale, and crags join the existing
+raycast footprint support query. Other worlds retain their model transforms.
+Wrack now follows a narrow, broken high-water contour; dune grass is taller and
+straw uses photographed luminance rather than retaining the green atlas hue.
+Pass 2 licensed/fallback final proof and visual grading remain pending.

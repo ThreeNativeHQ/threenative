@@ -781,6 +781,14 @@
         "path": "drawn",
         "atSteps": [
           {
+            "label": "overview",
+            "equals": true
+          },
+          {
+            "label": "ocean",
+            "equals": true
+          },
+          {
             "label": "alpine-ridge",
             "equals": true
           },

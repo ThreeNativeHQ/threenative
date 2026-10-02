@@ -10,6 +10,7 @@ import {
   flatPropMaterials,
   preparePropTransform,
   readPropTransform,
+  variantFor,
   writePropTransform,
 } from "../src/render/props.js";
 import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
@@ -100,6 +101,45 @@ assert.ok(
 );
 // Even steep coastal grass ledges cannot acquire the pack's rectangular cliff slab.
 assert.equal(scatterProps({ ...data, field, waterLevel: 0 }, { x: 186, z: 76 }).counts.cliff, 0);
+// Round 12: outcrops occupy exposed terrain, and beach grass stops above wet sand.
+const outcrops = scatter.placements.filter((one) => one.id.endsWith(":outcrop"));
+assert.ok(outcrops.length > 30, "Missing real rock outcrops on the forest scarps");
+assert.ok(outcrops.every((one) => Number(one.scale) * 24 >= 5 && Number(one.scale) * 24 <= 20));
+assert.ok(
+  outcrops.every((one) => variantFor(one, one.asset) === 0),
+  "Outcrops must share one draw",
+);
+assert.ok(
+  scatter.placements.filter((one) => one.asset === "boulder").every((one) => one.alignToNormal),
+);
+const coast = JSON.parse(
+  readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
+).coastal;
+const coastField = new Heightfield({
+  rows: coast.resolution,
+  columns: coast.resolution,
+  width: coast.size,
+  depth: coast.size,
+  origin: { x: 0, z: 0 },
+  heights: Float32Array.from(coast.heights),
+});
+const shore = scatterProps({ ...coast, world: "coastal", field: coastField }, { x: 180, z: 100 });
+assert.ok(
+  shore.placements.filter(
+    (one) => one.asset === "grass" && one.position[1] < coast.waterLevel + 7.5,
+  ).length > 100,
+  "Missing dune grass",
+);
+assert.ok(
+  shore.placements
+    .filter((one) => one.asset === "grass")
+    .every((one) => one.position[1] > coast.waterLevel + 1.8),
+);
+assert.ok(
+  shore.placements
+    .filter((one) => one.asset === "spruce")
+    .every((one) => one.position[1] >= coast.waterLevel + 7.5),
+);
 const materials = flatPropMaterials();
 const parts = buildPropVariants();
 const ground = () => ({ height: 0, offset: 0 });

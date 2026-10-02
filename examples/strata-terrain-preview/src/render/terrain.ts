@@ -40,7 +40,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.js";
+import { GROUND_MAPS, GROUND_TILE, type LayerKey, ROCKFACE_MAPS } from "../world/terrainAssets.js";
 // The ground's look, and every number in it, lives in this game: which surface covers which
 // height and slope, how many metres one texture tile spans, and how the blend edges break. The
 // evaluator in `packages/terrain` produces heights and eight material channels; none of that is a
@@ -382,7 +382,7 @@ export function createGroundMaterial(
   if (!otherBiome) {
     // Real surface patches survive the cover cull; colour noise alone left an uninterrupted lawn.
     const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
-    weights.dirt = max(weights.dirt, dry.mul(0.44)).mul(sand.oneMinus());
+    weights.dirt = max(weights.dirt, dry.mul(0.7)).mul(sand.oneMinus());
     weights.moss = max(
       weights.moss,
       smoothstep(-0.14, -0.38, macro.add(mottling.mul(0.4))).mul(0.42),
@@ -462,7 +462,7 @@ export function createGroundMaterial(
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
       let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.25 : 0.35).mul(
-        vec3(...(otherBiome ? biome.stoneTint : [0.66, 0.67, 0.64])),
+        vec3(...(otherBiome ? biome.stoneTint : [0.44, 0.46, 0.42])),
       );
       if (otherBiome && biome.world === "desert") {
         const band = positionWorld.y
@@ -501,9 +501,26 @@ export function createGroundMaterial(
     }
     if (key !== "sand" || data.waterLevel === null) return blended;
     const wet = wetness();
+    const wrack = otherBiome
+      ? float(0)
+      : oneMinus(
+          smoothstep(
+            0.07,
+            0.21,
+            positionWorld.y
+              .sub(2.1)
+              .sub(mx_noise_float(positionWorld.mul(0.05)).mul(0.5))
+              .abs(),
+          ),
+        ).mul(smoothstep(-0.1, 0.15, mx_noise_float(positionWorld.mul(0.65))));
+    const sandColor = otherBiome
+      ? blended.rgb
+      : mix(blended.rgb, vec3(dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722))), 0.55).mul(
+          vec3(1.95, 1.82, 1.55),
+        );
     return vec4(
-      blended.rgb
-        .mul(otherBiome ? vec3(1) : vec3(1.28, 1.22, 1.05))
+      sandColor
+        .mul(mix(vec3(1), vec3(0.45, 0.37, 0.24), wrack))
         .mul(mix(float(1), otherBiome ? vec3(0.52, 0.5, 0.55) : WET_SAND.darken, wet)),
       blended.a,
     );
@@ -568,7 +585,15 @@ export function createGroundMaterial(
   const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
     .mul(0.55)
     .add(1);
-  const farGrass = vec3(0.055, 0.09, 0.035).mul(cover);
+  const meadowDry = smoothstep(-0.2, 0.24, macro.add(mottling.mul(0.6)).sub(hollow.mul(0.18)));
+  const meadowValue = mix(0.62, 1.18, smoothstep(0.6, -0.6, hollow));
+  const flowers = smoothstep(0.3, 0.47, mx_noise_float(positionWorld.mul(0.95))).mul(
+    smoothstep(0.05, 0.3, mottling),
+  );
+  const farGrass = mix(vec3(0.025, 0.055, 0.013), vec3(0.12, 0.105, 0.035), meadowDry)
+    .mul(cover)
+    .mul(meadowValue)
+    .add(vec3(0.11, 0.09, 0.04).mul(flowers));
   // Beyond readable blades, keep their green in the ground instead of exposing olive thatch.
   // Other biomes keep their own ground tint; the green far-field belongs to the temperate meadow.
   let albedo: Node<"vec4"> = otherBiome
@@ -577,7 +602,7 @@ export function createGroundMaterial(
         mix(
           albedoOf("grass").rgb.mul(MEADOW),
           farGrass,
-          smoothstep(32, 115, positionView.length()).mul(0.55),
+          smoothstep(32, 115, positionView.length()).mul(0.86),
         ),
         1,
       );
@@ -751,7 +776,12 @@ export function createTerrain(
 
   const curvature = buildCurvature(data, field);
   if (assets !== undefined)
-    void loadGroundMaps(assets, biome?.maps)
+    void loadGroundMaps(
+      assets,
+      biome?.world === "forest" || biome?.world === "coastal" || biome === undefined
+        ? { ...(biome?.maps ?? GROUND_MAPS), rock: ROCKFACE_MAPS }
+        : biome.maps,
+    )
       .then((maps) => createGroundMaterial(data, maps, curvature, biome))
       .then((ground) => {
         // Anything but the flat placeholder means the scene already moved on; a material nothing

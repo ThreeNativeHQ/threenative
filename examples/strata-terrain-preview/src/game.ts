@@ -482,7 +482,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         if (
           height !== null &&
           (world === "forest" || world === "coastal") &&
-          ["boulder", "riverrock", "scree"].includes(placement.asset)
+          ["boulder", "riverrock", "scree", "mountain", "volcanic", "reveal"].includes(
+            placement.asset,
+          )
         ) {
           const stone = propParts
             .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
@@ -492,7 +494,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           if (box) {
             // GroundSnap's single lowest point left the downhill footprint hanging on thin stones.
             const reach =
-              Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.28;
+              Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.5;
             for (const [dx, dz] of [
               [-reach, 0],
               [reach, 0],
