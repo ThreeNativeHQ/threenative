@@ -56,6 +56,8 @@ Change where the frame's work runs, not how much of it a frame skips:
 - [ ] Settled draws with constant-only node graphs skip refresh. The stock shadow material goes from 1 refresh per frame to 0. A material whose `uniform().value` changes every frame still uploads it, and skinned, moved, version-bumped, OBJECT-update and `reference()` draws still refresh. proof: red-green observer spec plus the WorldCells + VirtualShadowNode fixture's refresh count per settled frame.
 - [ ] Measured on map-walk: walking render p95 and idle p50 against develop, plus AC-3's A/B. proof: `TN_FRAME_BUDGET` walk/idle split plus `scripts/visual-ab.ts`.
 
+First candidate (2026-10-02, unit lane only, commit `3ca39f9c3` on `feat/prd-475-sol-observer`): the observer certifies a built graph as settled only for constants, attributes, the stock world matrix, numeric material properties covered by `refreshUniforms` and stock shared camera groups; everything else stays dynamic. The stock shadow material settles (1 → 0 refreshes per settled frame), but in the WorldCells + VirtualShadowNode fixture only 3 of 39 draws settle: instanced casters carry an unclassified FRAME update. Uploaded values match a forced-refresh arm on every pass. Next: classify the instanced FRAME update before measuring in the browser.
+
 #### Phase 2: Streaming work in a worker
 **Status:** NOT STARTED
 **Files:** `packages/core/src/world-cells.ts`, `world-tiles.ts`, a worker entry next to them
