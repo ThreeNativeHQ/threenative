@@ -26,7 +26,7 @@ try {
     // The project's own Vite config serves the CC0 starter sets from the terrain package; this
     // standalone server has to be told, or the export would be proven with no art loaded at all.
     publicDir: resolve("../../packages/terrain/starter-assets"),
-    server: { host: "127.0.0.1", port: 5197 },
+    server: { host: "127.0.0.1", port: 5185 },
     plugins: [plugin],
     optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
     resolve: { dedupe: ["three"] },

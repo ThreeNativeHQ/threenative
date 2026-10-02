@@ -317,12 +317,12 @@ const fingerprint = createHash("sha256")
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");
 
-// Only the process that asked for a bake may skip it. Other scripts import this module for the
-// recipes and must still get them, so `process.exit` is not an option here: it would take the
-// importer down with it before its first line of output.
+// An importer that only wants the recipes must not rewrite the baked files either: a fresh stamp
+// skips the bake for every caller, so a dev server or a proof running beside it is never reloaded
+// under its feet. `process.exit` is not how this skips — it would take the importer down with it.
 const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 let baked = false;
-if (isEntry && !process.argv.includes("--force")) {
+if (!(isEntry && process.argv.includes("--force"))) {
   try {
     const stamp = new URL(".bake-stamp", outputDir);
     const [old, out] = await Promise.all([readFile(stamp, "utf8"), stat(stamp)]);
