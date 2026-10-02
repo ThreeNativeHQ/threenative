@@ -57,6 +57,11 @@ export interface IBiome {
     readonly height: number;
     readonly sunScatter: number;
   };
+  readonly atmosphere: {
+    readonly mie: number;
+    readonly radiance: number;
+    readonly distanceScale: number;
+  };
   readonly skyRadiance: number;
   readonly saturation: number;
   readonly skySaturation: number;
@@ -83,6 +88,7 @@ const temperate: IBiome = {
     height: 120,
     sunScatter: 0.32,
   },
+  atmosphere: { mie: 0.008, radiance: 1.1, distanceScale: 12 },
   skyRadiance: 0.27,
   saturation: 0.8,
   skySaturation: 1,
@@ -98,6 +104,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     sun: { ...temperate.sun, intensity: 5.2, direction: [-180, 150, -120] },
     fill: { ...temperate.fill, intensity: 0.66 },
     haze: { ...temperate.haze, density: 0.0008 },
+    atmosphere: { mie: 0.014, radiance: 1.1, distanceScale: 18 },
     exposure: 2 ** -0.38,
     saturation: 0.93,
   },
@@ -129,6 +136,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 105,
       sunScatter: 0.28,
     },
+    atmosphere: { mie: 0.003, radiance: 1, distanceScale: 8 },
     skyRadiance: 0.24,
     saturation: 0.86,
     skySaturation: 0.9,
@@ -169,6 +177,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 90,
       sunScatter: 0.22,
     },
+    atmosphere: { mie: 0.024, radiance: 1.2, distanceScale: 20 },
     skyRadiance: 0.27,
     saturation: 0.94,
     exposure: 2 ** -0.52,
@@ -199,7 +208,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       },
     },
     sun: { color: 0xe9efff, intensity: 2.2, direction: [-180, 65, -120], shadowRadius: 2.1 },
-    sky: { turbidity: 4.2, rayleigh: 1.6, mieCoefficient: 0.002, mieDirectionalG: 0.68 },
+    sky: { turbidity: 4.2, rayleigh: 1.6, mieCoefficient: 0.002, mieDirectionalG: 0.78 },
     fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.05 },
     haze: {
       color: 0xb1c0c9,
@@ -208,6 +217,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
       height: 35,
       sunScatter: 0.18,
     },
+    atmosphere: { mie: 0.011, radiance: 0.8, distanceScale: 18 },
     skyRadiance: 0.13,
     saturation: 0.96,
     exposure: 2 ** -0.28,

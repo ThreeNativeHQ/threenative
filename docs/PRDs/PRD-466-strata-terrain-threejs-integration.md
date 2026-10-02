@@ -2129,10 +2129,24 @@ Keep the GI chain/shadows/exposure unchanged. Biome additions own weather tuning
 
 - [ ] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures and 1:1 reference crops.
 - [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms.
-- [ ] Required local checks pass; proof: example `tsc --noEmit`, example Biome, terrain vitest (and any modified package spec).
+- [x] Required local checks pass; proof: example `tsc --noEmit` exit 0; Biome 73 files exit 0; terrain vitest 69/69; core atmosphere spec 31/31, core build exit 0.
 
 Engine defect: `sampleLut` used integer `textureLoad`, bypassing `LinearFilter`;
 filtered reads now use an explicit mip level on fragment and compute paths.
 Regression: new sampler assertion red (false), then 31/31 atmosphere specs green;
 `pnpm --filter @threenative/core build` passed. The missing physics dist was rebuilt
 without source changes. Baseline/final captures remain pending.
+
+The material budget is 15/16 sampled textures before atmosphere, so the air
+composite reconstructs world position from the existing scene depth instead of
+adding two LUT bindings to every ground/prop shader. The GI chain gets the
+result as its input; AO/grade, exposure, shadows and MSAA stay unchanged.
+Minimal shared wiring: one `ctx.add(sky.atmosphere)` in `game.ts`. GI integration
+must preserve `airOutput` around its scene colour.
+
+Baseline 1:1 crops: `artifacts/playtest/atmosphere-before/*-crop.png` and
+`atmosphere-before-extra/*-crop.png` under the example. The first high-density
+candidate was discarded after foreground washout; its scratch run also observed
+4.2 ms CPU windows (one resource assertion failed, no console/runtime errors).
+Lower-density tuning is being captured in `atmosphere-candidate-2`; full licensed
+and fallback proof remain pending. The main Gaia acceptance stays open.
