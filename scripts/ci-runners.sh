@@ -60,17 +60,17 @@ repo_name() {
 # container filesystem and a fresh hostname, which `restart: always` on a long-lived container
 # cannot. The loop is what makes the pool survive the exit.
 start_slot() {
-  local slot="$1" state="$2" env_file="$3" repo="$4"
+  local slot="$1" state="$2" env_file="$3" repo="$4" cpus="$5"
   setsid nohup bash -c '
     while [ ! -e "$1/stop" ]; do
       docker run --rm \
         --label tn-ci-runner=1 \
-        --cpus 4 --memory 16g \
+        --cpuset-cpus "$4" --memory 16g \
         --env-file "$2" \
         -e TN_RUNNER_REPO="$3" \
         tn-ci-runner || sleep 10
     done
-  ' _ "$state" "$env_file" "$repo" >"$state/slot-$slot.log" 2>&1 &
+  ' _ "$state" "$env_file" "$repo" "$cpus" >"$state/slot-$slot.log" 2>&1 &
   echo "$!" >"$state/slot-$slot.pid"
 }
 
@@ -106,9 +106,19 @@ up() {
   # A leftover stop file from a previous teardown would make every loop exit before it starts.
   rm -f "$STATE_DIR/stop"
 
-  local slot
+  # Pinned CPUs, not a `--cpus 4` quota: under a quota `nproc` and os.availableParallelism() still
+  # report every host CPU, so vitest sized its pool for 24 cores inside a 4-core budget and three
+  # unit tests timed out (PR #404). Each slot takes two whole cores, both hyperthreads, as a hosted
+  # 4-vCPU runner does.
+  # ponytail: assumes Linux's usual sibling numbering (CPU k and k + nproc/2 share a core); read
+  # /sys/devices/system/cpu/cpu*/topology/thread_siblings_list if a host numbers them otherwise.
+  local half=$(( $(nproc) / 2 ))
+  [ $(( slots * 2 )) -le "$half" ] || fail 2 "$slots slots need $(( slots * 2 )) cores; this host has $half"
+  local slot base
   for slot in $(seq 1 "$slots"); do
-    start_slot "$slot" "$STATE_DIR" "$ENV_FILE" "$repo"
+    base=$(( (slot - 1) * 2 ))
+    start_slot "$slot" "$STATE_DIR" "$ENV_FILE" "$repo" \
+      "$base,$(( base + 1 )),$(( base + half )),$(( base + half + 1 ))"
   done
   printf '%s runner container(s) starting; logs in %s\n' "$slots" "$STATE_DIR"
 

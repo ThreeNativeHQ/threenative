@@ -12,13 +12,13 @@ USER root
 # Build and test toolchain the moving Linux jobs take from the hosted image. `git`, `curl`, `jq`
 # and `unzip` are the runner's own prerequisites; the rest is what ci.yml's jobs actually invoke.
 # Playwright's Chromium dependencies are the exact `tools` and `chromium` lists Playwright 1.62.1
-# resolves for ubuntu24.04-x64 (playwright-core's bundled nativeDeps), transcribed rather than
-# installed with `npx playwright install-deps` — that needs a Node runtime the runner image does
-# not ship and every job gets its own through `actions/setup-node`.
+# resolves for ubuntu24.04-x64 (playwright-core's bundled nativeDeps), transcribed so the apt layer
+# does not depend on the Node layer below.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build ccache clang lld pkg-config \
       git curl jq unzip zip xz-utils xvfb xauth python3 python3-pip \
+      7zip ffmpeg imagemagick zstd file lsof procps mesa-vulkan-drivers \
       fonts-noto-color-emoji fonts-unifont fonts-liberation fonts-freefont-ttf \
       libfontconfig1 libfreetype6 \
       libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
@@ -40,6 +40,13 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
  && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /home/runner/entrypoint.sh
+
+# Rust as hosted ubuntu-24.04 has it (stable, on PATH): the native physics ABI is built with cargo.
+# Installed as `runner` so cargo can write its own registry and target caches.
+USER runner
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+ENV PATH=/home/runner/.cargo/bin:$PATH
+USER root
 RUN chmod 0755 /home/runner/entrypoint.sh
 
 USER runner
