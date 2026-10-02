@@ -2202,3 +2202,43 @@ Retained checkout:
 `/home/joao/projects/threenative/threenative-engine/.worktrees/prd-466-468-ground`,
 **6.3 GiB** (`du`), because commits are unmerged and requested captures/local assets must
 be preserved. Capture/dev processes on 5297 stopped. No forced cleanup.
+
+### 2026-10-02 — Round 18 material lane
+
+Code commits: `1b7953609`, `ba994ebee`, `6643f52ec`, `d43287ee2`.
+Distance bands, consistent steep projections, near litter/snow detail and shared
+rock-contact shading address repeated texture scale, wrong normal rotation,
+camouflage splats and model-relative contacts. Sand's changing-normal phase
+caused radial stripes; coherent wind phase with weaker relief fixes the 1:1 crop.
+Reused **Heightfield**, resident CC0/licensed ground maps and **Three.js TSL**.
+Optional normalized flow/sediment arrays validate and default to zero; no new
+bake fields landed, so supplied-mask visuals remain unverified. The sole additive
+cross-lane edit passes existing baked data from `src/game.ts` into `loadPack`.
+
+Full scenario: **licensed 52/52 PASS; fallback 52/52 PASS**, **zero console errors**,
+ocean verification PASS in both. NVIDIA Turing WebGPU, 1920×1080, automatic tier
+`high` (AO retained; earlier `low` candidates dropped it). All **34 measured views
+≤3.3 ms CPU p50**; throughout-step CPU checks pass. Assets restored; port 5305 released.
+
+| World | Self-grade /10 (licensed / fallback) | Max view CPU p50 ms (licensed / fallback) |
+| --- | --- | --- |
+| Forest | 4.0 / 4.0 | 3.0 / 3.3 |
+| Coastal | 4.0 / 4.0 | 2.4 / 3.2 |
+| Alpine | 3.0 / 2.5 | 2.0 / 2.1 |
+| Desert | 3.5 / 2.5 | 1.4 / 1.6 |
+| Tundra | 3.0 / 2.5 | 1.9 / 3.1 |
+
+Gaia parity is **not achieved**: smooth massifs and repeated vegetation remain;
+fallback crags are faceted. PRD acceptance stays open (`prd:75%`).
+Crops under `examples/strata-terrain-preview/artifacts/playtest/`: `material-before/`
+→ `material-final/licensed/`, filenames `overview-crop.png`, `alpine-ridge-crop.png`,
+`desert-mesa-crop.png`, `tundra-plain-crop.png`. Coastal sand uses
+`material-candidate-full/licensed/coastal-sand-crop.png` (stack already applied)
+→ `material-final/licensed/coastal-horizon-sea-crop.png`. Crops are unscaled source
+pixels; fallback counterparts and both final full runs are in `material-final/`.
+
+Example **tsc PASS**, **Biome PASS (72 files)**, terrain vitest **69/69 PASS**, optional-mask
+absent/present/malformed/seam scratch checks PASS, `git diff --check` PASS.
+No engine source or licensed bytes changed; no push, merge or PR comment.
+Checkout retained: `.worktrees/prd-466-468-material/` (**1.3 GiB**) holds unmerged
+commits and requested local assets/captures; merge evidence is absent. Tracked tree clean.
