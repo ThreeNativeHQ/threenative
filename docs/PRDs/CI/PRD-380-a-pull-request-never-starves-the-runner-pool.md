@@ -58,11 +58,21 @@ Baseline: `develop`. [PRD-373](../done/PRD-373-selective-ci-and-develop-promotio
 
 ### Phase 3 — A merged or closed PR stops spending runners
 
+**Status:** IN PROGRESS — janitor landed, live proof pending.
+
 **Files:** NEW `.github/workflows/ci-janitor.yml` (`pull_request: types: [closed]`, cancels the head
 ref's queued and in-progress runs with `gh run cancel`), `scripts/__tests__/ci-structure.spec.ts`.
 
 - [ ] Closing or merging a PR cancels its head ref's in-flight runs within a minute. proof: the janitor run id
   and the cancelled run ids on one merged PR.
+  The workflow and its guards are in: `ci-structure.spec.ts` 2026-10-02, 124 passed (the case was red
+  with no `ci-janitor.yml`). Box stays open — the proof is a live merged PR, and until one merges the
+  only executed evidence is a local `gh` stub, which is not the claim.
+
+`ci-janitor.yml` is the one workflow here holding `actions: write`, so the existing "no job cancels
+its own run" guard now names it as its single exception rather than dropping the ban: the janitor
+fires on `closed`, never from a failure step, scopes every cancel to the event's own repository, and
+skips its own run id.
 
 ## Acceptance criteria
 

@@ -413,6 +413,7 @@ it("approved baseline binds provenance while allowing a fresh candidate", () => 
 });
 const workflows = [
   ".github/workflows/ci.yml",
+  ".github/workflows/ci-janitor.yml",
   ".github/workflows/native-platforms.yml",
   ".github/workflows/native-release.yml",
   ".github/workflows/npm-release.yml",
@@ -835,8 +836,12 @@ describe("CI pipeline structure", () => {
       expect(source, `${relative} cancels its own run`).not.toContain(
         "actions/runs/$GITHUB_RUN_ID/cancel",
       );
-      // Nothing left here calls the Actions API, so nothing may ask to write to it.
-      expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      // Nothing calls the Actions API to cancel its own run, so nothing may ask to write to it.
+      // `ci-janitor.yml` is the single named exception: it cancels *other* runs, on a closed PR,
+      // never from a failure step, and never its own run id — all four pinned in its own case.
+      if (relative !== ".github/workflows/ci-janitor.yml") {
+        expect(source, `${relative} needs no actions: write`).not.toContain("actions: write");
+      }
     }
 
     // Fail-fast that keeps its evidence: a matrix reports every leg, and an expensive job is
@@ -967,6 +972,56 @@ describe("CI pipeline structure", () => {
     expect(groups).toEqual(["native-release-proof"]);
     // `false`, not a conditional: a superseded run still lets its queued consumer finish.
     expect(concurrency).toContain("cancel-in-progress: false");
+  });
+
+  it("cancels a closed pull request's runs without injecting its head ref into a shell", async () => {
+    const janitor = await readFile(path.join(repo, ".github/workflows/ci-janitor.yml"), "utf8");
+    // Merged or closed, nothing the head ref is still doing can change the outcome, and those
+    // runs went on holding runners for another 5.0k runner-minutes over 2026-09-18 to 10-02.
+    expect(triggerSection(janitor)).toMatch(/pull_request:\n\x20{4}types: \[closed\]/u);
+    // Cancelling a run is an Actions write; a token that cannot do it reports success while
+    // cancelling nothing.
+    expect(janitor).toMatch(/permissions:\n\x20{2}actions: write/u);
+    const cancel = jobSections(janitor).find(([name]) => name === "cancel")?.[1] ?? "";
+    expect(cancel, "ci-janitor declares no cancel job").not.toBe("");
+    // The head ref is attacker-controlled branch text: interpolated straight into `run:` it is a
+    // command injection on a job holding `actions: write`.
+    expect(cancel).toMatch(
+      /env:\n(?:\x20{10}[A-Z_]+: .*\n)*\x20{10}HEAD_REF: \$\{\{ github\.event\.pull_request\.head\.ref \}\}/u,
+    );
+    for (const line of cancel.split("\n")) {
+      if (/^\x20*#/u.test(line) || !line.includes("head_ref")) continue;
+      expect(
+        line,
+        "the head ref is interpolated into a shell instead of passed as env",
+      ).not.toMatch(/run:/u);
+    }
+    // A fork's runs belong to another repository; its token cannot cancel them, and trying would
+    // fail a red check on every fork PR close.
+    expect(cancel).toMatch(
+      /if: github\.event\.pull_request\.head\.repo\.full_name == github\.repository/u,
+    );
+    expect(cancel).toContain('gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF"');
+    expect(cancel).toContain("--json databaseId,status");
+    // The run-sweeping predecessor this replaced reached across every branch in the repository;
+    // every cancel here is scoped to the event's own repository and the closed PR's own ref.
+    expect(cancel).toContain('gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"');
+    // Never a failure handler: cancelling from the gate that went red is what erased which
+    // gate went red, on 2026-09-02.
+    expect(cancel, "the janitor must not be a failure handler").not.toContain("failure()");
+    // Only the runs still holding a runner, and never the janitor's own.
+    for (const status of ["queued", "in_progress"]) {
+      expect(cancel).toContain(`.status == "${status}"`);
+    }
+    expect(cancel).toMatch(/SELF_RUN_ID/gu);
+    expect(cancel).toMatch(/gh run cancel "\$run_id"/u);
+    // A run that finished between the list and the cancel is the expected race, not a failure:
+    // the cancel is a guarded command, so its non-zero exit is reported rather than propagated.
+    expect(cancel).toContain('if gh run cancel "$run_id"');
+    // And the lookup itself fails closed, so a broken call cannot report success having
+    // cancelled nothing.
+    expect(cancel).toContain("set -euo pipefail");
+    expect(cancel).toMatch(/runs="\$\(gh run list/u);
   });
 
   // A `gh` call infers its repository from a git checkout. A job that never checks out has

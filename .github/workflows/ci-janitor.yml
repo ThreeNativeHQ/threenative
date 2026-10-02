@@ -1,0 +1,56 @@
+name: CI janitor
+
+# A merged or closed pull request's runs prove nothing: no verdict can change, no artifact gets
+# read, and the head ref keeps holding runners until each one finishes on its own clock. That
+# cost another 5.0k runner-minutes over 2026-09-18 to 10-02 (PRD-380). Cancelling the head ref's
+# in-flight runs is the only cleanup a repository can do for itself, and `pull_request: closed`
+# reaches it within a minute of the merge.
+on:
+  pull_request:
+    types: [closed]
+
+# Cancelling a run is an Actions write, and this is the one workflow here that asks for one. A
+# token that cannot do it reports a green job while cancelling nothing, which is the exact
+# failure this workflow exists to prevent — so the grant is explicit rather than inherited.
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    # A fork's runs live in another repository, and its runs cannot be cancelled from here. Trying
+    # would put a red check on every fork PR close, so the guard is the whole job.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The head ref is branch text chosen by whoever opened the PR. Interpolated into `run:` it
+      # is a command injection into a job holding `actions: write`, so it arrives through `env:`
+      # and every other value below is quoted.
+      - name: Cancel the head ref's queued and in-progress runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          SELF_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Collected before the loop, so a failed lookup fails this step instead of quietly
+          # cancelling nothing under `set -e`.
+          runs="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "$HEAD_REF" \
+            --json databaseId,status \
+            --jq '.[] | select(.status == "queued" or .status == "in_progress") | .databaseId')"
+          cancelled=0
+          while read -r run_id; do
+            # A fork's branch may legitimately share this repository's ref name; never reach
+            # past the event's own repository for something to cancel.
+            [ -n "$run_id" ] || continue
+            [ "$run_id" != "$SELF_RUN_ID" ] || continue
+            # A run that completed between the list and the cancel is the normal race, not a
+            # failure: the point of the cancel is already satisfied.
+            if gh run cancel "$run_id" --repo "$GITHUB_REPOSITORY"; then
+              cancelled=$((cancelled + 1))
+              printf 'Cancelled run %s on %s.\n' "$run_id" "$HEAD_REF"
+            else
+              printf 'Run %s finished before the cancel; nothing to stop.\n' "$run_id"
+            fi
+          done <<< "$runs"
+          printf 'Janitor finished for %s: %s run(s) cancelled.\n' "$HEAD_REF" "$cancelled"
