@@ -17,6 +17,8 @@ export function mountRecoveredEditor({
   commit,
   getSnapshot,
   cameraOperation,
+  environmentOperation,
+  assetOperation,
   subscribe,
   onEvaluated,
   materialColours,
@@ -103,13 +105,17 @@ export function mountRecoveredEditor({
   }
   function newWorker() {
     const w = new Worker(workerURL(), { type: "module" });
-    w.onmessage = ({ data }) => {
+    w.onmessage = async ({ data }) => {
       if (data.type === "progress") {
         if (data.id === sequence)
           $("busy-text").textContent =
             `Evaluating ${data.progress.index + 1}/${data.progress.total}`;
         return;
       }
+      // Imported models load asynchronously; the preview waits for them rather than failing a
+      // placement that names an asset still on its way. The worker stays busy meanwhile.
+      if (data.id === sequence && data.type === "evaluated")
+        await view.assetsReady?.().catch(() => {});
       workerBusy = false;
       if (data.id === sequence) {
         if (data.type === "error") {
@@ -278,6 +284,31 @@ export function mountRecoveredEditor({
       : "";
     $("layer-error").textContent = "";
   }
+  // Imported models load asynchronously. When one the recipe places arrives, changes or goes, the
+  // preview rebuilds once it is ready; a document that names no placed asset costs no rebuild.
+  let assetSignature = JSON.stringify(initial.document.assets ?? []);
+  function syncAssets(document_) {
+    const next = JSON.stringify(document_.assets ?? []);
+    if (next === assetSignature) return;
+    const before = new Map(
+      JSON.parse(assetSignature).map((entry) => [entry.id, JSON.stringify(entry)]),
+    );
+    const after = new Map(
+      (document_.assets ?? []).map((entry) => [entry.id, JSON.stringify(entry)]),
+    );
+    const changed = new Set(
+      [...before.keys(), ...after.keys()].filter((id) => before.get(id) !== after.get(id)),
+    );
+    assetSignature = next;
+    const used = () => terrain.toJSON().layers.some((layer) => changed.has(layer.params?.asset));
+    Promise.resolve(view.assetsReady?.())
+      .catch(() => {})
+      .then(() => {
+        if (disposed) return;
+        renderOptions();
+        if (used()) build();
+      });
+  }
   let revision = initial.revision;
   let renderedRevision = null;
   let saving = false;
@@ -301,6 +332,9 @@ export function mountRecoveredEditor({
     }
     revision = snapshot.revision;
     renderCameras(snapshot.document);
+    renderEnvironment();
+    renderAssets();
+    syncAssets(snapshot.document);
     if (!recipeChanged) {
       const matchesPreview = renderedRecipe === JSON.stringify(snapshot.document.recipe);
       if (state && matchesPreview)
@@ -1124,6 +1158,180 @@ export function mountRecoveredEditor({
     if (!target) return toast("Name a prop, landmark, region or x y z point");
     return attemptCamera({ op: "focus" }, { target, margin: Number($("camera-margin").value) });
   };
+  // Preview environment: the same get / patch / reset an agent calls, over the same document.
+  const envFields = [
+    ["sun", "azimuth", "Sun azimuth °", "number", "1"],
+    ["sun", "elevation", "Sun elevation °", "number", "1"],
+    ["sun", "intensity", "Sun intensity", "number", "0.1"],
+    ["sun", "colour", "Sun colour", "color"],
+    ["fill", "intensity", "Sky fill", "number", "0.05"],
+    ["sky", "colour", "Sky colour", "color"],
+    ["fog", "density", "Haze density", "number", "0.0001"],
+    ["fog", "colour", "Haze colour", "color"],
+    [null, "exposure", "Exposure", "number", "0.05"],
+    ["ocean", "shallow", "Sea shallow", "color"],
+    ["ocean", "deep", "Sea deep", "color"],
+  ];
+  const envId = (section, key) => `env-${section ?? "root"}-${key}`;
+  const environmentPanel = document.createElement("details");
+  environmentPanel.id = "environment-inspector";
+  environmentPanel.className = "inspector";
+  const envInputs = envFields
+    .map(
+      ([section, key, label, type, step]) =>
+        `<label class="field-label">${label}<input id="${envId(section, key)}" type="${type}"${step ? ` step="${step}"` : ""}></label>`,
+    )
+    .join("");
+  environmentPanel.innerHTML = `<summary class="inspector-header"><span>ENVIRONMENT</span><span id="environment-count" class="count-tag">0</span></summary>${envInputs}<button id="environment-reset" class="ghost full">Reset to project look</button><div id="environment-error" class="inline-error"></div>`;
+  environmentPanel.style.cssText = "overflow-y:auto;min-height:0;max-height:46vh";
+  sidebar.insertBefore(environmentPanel, sidebar.querySelector(".inspector"));
+  const hex = (value) =>
+    typeof value === "string" && /^#[0-9a-f]{6}$/u.test(value) ? value : "#000000";
+  function renderEnvironment() {
+    if (!$("environment-count")) return;
+    const live = view.environment?.().read() ?? {};
+    for (const [section, key, , type] of envFields) {
+      const value = (section ? live[section] : live)?.[key];
+      const input = $(envId(section, key));
+      if (document.activeElement !== input && value !== undefined)
+        input.value = type === "color" ? hex(value) : String(Number(value.toFixed(6)));
+    }
+    $("environment-count").textContent = String(
+      Object.keys(saved.document.environment ?? {}).length,
+    );
+  }
+  async function attemptEnvironment(operation) {
+    try {
+      const result = await environmentOperation(operation, revision);
+      revision = result.revision;
+      saved = {
+        ...saved,
+        revision: result.revision,
+        document: { ...saved.document, environment: result.environment },
+      };
+      view.environment?.().apply(result.environment);
+      renderEnvironment();
+      $("environment-error").textContent = "";
+      return result;
+    } catch (error) {
+      $("environment-error").textContent = error.message;
+      toast(error.message);
+      renderEnvironment();
+      return undefined;
+    }
+  }
+  for (const [section, key, , type] of envFields) {
+    $(envId(section, key)).onchange = (event) => {
+      const raw = event.target.value;
+      const value = type === "color" ? raw : Number(raw);
+      return attemptEnvironment({
+        op: "patch",
+        values: section ? { [section]: { [key]: value } } : { [key]: value },
+      });
+    };
+  }
+  $("environment-reset").onclick = () => attemptEnvironment({ op: "reset" });
+  // Project assets: GLB models enter the palette from a picked or dropped file, and from a local
+  // path an agent registers; both reach the same operations and the same document.
+  const assetPanel = document.createElement("details");
+  assetPanel.id = "asset-inspector";
+  assetPanel.className = "inspector";
+  assetPanel.innerHTML = `<summary class="inspector-header"><span>PROJECT ASSETS</span><span id="asset-count" class="count-tag">0</span></summary><div id="asset-drop" class="field-label" style="border:1px dashed var(--border);padding:10px;margin-bottom:9px">Drop a .glb here<input id="asset-file" type="file" accept=".glb,model/gltf-binary"></div><label class="field-label"><span><input id="asset-replace" type="checkbox"> Replace an asset with the same name</span></label><div id="asset-list"></div><div id="asset-error" class="inline-error"></div>`;
+  assetPanel.style.cssText = "overflow-y:auto;min-height:0;max-height:40vh";
+  sidebar.insertBefore(assetPanel, sidebar.querySelector(".inspector"));
+  const assetId = (name) =>
+    name
+      .replace(/\.[^.]+$/u, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .slice(0, 48) || "asset";
+  function renderAssets() {
+    if (!$("asset-count")) return;
+    const assets = saved.document.assets ?? [];
+    $("asset-count").textContent = String(assets.length);
+    const list = $("asset-list");
+    list.replaceChildren();
+    for (const entry of assets) {
+      const row = document.createElement("div");
+      row.className = "asset-row";
+      row.id = `asset-row-${entry.id}`;
+      row.style.cssText =
+        "display:flex;gap:6px;align-items:center;margin-bottom:5px;font-size:10px";
+      const label = document.createElement("span");
+      const size = entry.bounds
+        ? entry.bounds.max.map((v, i) => (v - entry.bounds.min[i]).toFixed(2)).join("×")
+        : `${entry.width ?? "?"}×${entry.height ?? "?"}`;
+      label.textContent = `${entry.id} · ${entry.kind} · ${size}`;
+      label.style.flex = "1";
+      row.append(label);
+      if (entry.kind === "model") {
+        const scale = document.createElement("input");
+        scale.type = "number";
+        scale.step = "0.01";
+        scale.value = String(entry.adjust?.scale ?? 1);
+        scale.title = "Scale from the file's units to metres";
+        scale.style.width = "64px";
+        scale.onchange = () =>
+          attemptAsset({
+            op: "adjust",
+            id: entry.id,
+            adjust: { scale: Number(scale.value), pivot: entry.adjust?.pivot ?? "base" },
+          });
+        row.append(scale);
+      }
+      const remove = document.createElement("button");
+      remove.className = "ghost";
+      remove.textContent = "Remove";
+      remove.onclick = () => attemptAsset({ op: "remove", id: entry.id });
+      row.append(remove);
+      list.append(row);
+    }
+  }
+  async function attemptAsset(operation) {
+    try {
+      const result = await assetOperation(operation, revision);
+      revision = result.revision;
+      const next = { ...saved.document };
+      if (result.assets.length) next.assets = result.assets;
+      else next.assets = undefined;
+      saved = { ...saved, revision: result.revision, document: next };
+      view.setDocument(next, result.revision);
+      syncAssets(next);
+      renderAssets();
+      renderOptions();
+      $("asset-error").textContent = "";
+      return result;
+    } catch (error) {
+      $("asset-error").textContent = error.message;
+      toast(error.message);
+      return undefined;
+    }
+  }
+  async function importFile(file) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return attemptAsset({
+      op: "upload",
+      id: assetId(file.name),
+      name: file.name,
+      data: btoa(binary),
+      replace: $("asset-replace").checked,
+    });
+  }
+  $("asset-file").onchange = async (event) => {
+    const [file] = event.target.files;
+    event.target.value = "";
+    if (file) await importFile(file);
+  };
+  $("asset-drop").ondragover = (event) => event.preventDefault();
+  $("asset-drop").ondrop = async (event) => {
+    event.preventDefault();
+    const [file] = event.dataTransfer.files;
+    if (file) await importFile(file);
+  };
   window.addEventListener("keydown", keydown, { signal: abort.signal });
   window.strata = {
     Terrain,
@@ -1163,6 +1371,16 @@ export function mountRecoveredEditor({
       focus: (target, options) => view.cameras?.().focus({ ...options, target }),
       resolve: (target) => view.cameras?.().resolve(target),
       measure: (bounds) => view.cameras?.().measure(bounds),
+    },
+    assets: {
+      list: () => saved.document.assets ?? [],
+      operate: (operation) => attemptAsset(operation),
+    },
+    // The same environment operations the GUI fields and the controller endpoint use.
+    environment: {
+      saved: () => saved.document.environment ?? {},
+      read: () => view.environment?.().read(),
+      operate: (operation) => attemptEnvironment(operation),
     },
     // Same read-only dispatch the headless API serves, bound to the revision actually rendered.
     inspect: (query) => {
@@ -1204,6 +1422,8 @@ export function mountRecoveredEditor({
   renderLayers();
   renderCameras(initial.document);
   view.setDocument(initial.document, initial.revision);
+  renderEnvironment();
+  renderAssets();
   build();
   $("renderer-badge").textContent = view.backend;
   return window.strata;

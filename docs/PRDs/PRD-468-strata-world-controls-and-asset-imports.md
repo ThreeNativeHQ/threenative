@@ -1,10 +1,10 @@
 # PRD-468 — Live world atmosphere, controller cameras, and asset injection
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Complexity:** 7 (HIGH); risk override: none
 **Owner:** ThreeNative maintainers
 **Depends on:** PRD-466's public rendering/asset/export contract and PRD-467 phase 1's shared document/live session
-**Progress:** 0/8 required boxes verified
+**Progress:** 3/8 required boxes verified
 
 ## Context
 
@@ -295,8 +295,7 @@ public middleware. Reuse projection/bounds/orbit controls and stable target IDs.
 
 ### Phase 2: Editable live atmosphere and model injection
 
-**Status:** NOT STARTED — AC-3 and AC-4 are untouched. Nothing in this phase
-has been implemented, and no box below may be read as partially proven.
+**Status:** IN PROGRESS — AC-3 is done (2026-10-02); AC-4 is not.
 **Files:** proposed `editor/environment.ts`, `editor/assetImport.ts`, existing
 document validators/inspector, preview game-owned `src/render/` and
 `src/world/terrainAssets.ts`; extend existing compiler/loader wiring and scenario.
@@ -306,7 +305,7 @@ inputs into project asset mappings. Asset import and camera implementation can
 proceed independently once PRD-467's shared document contract is stable; integrate
 shared validators sequentially.
 
-- [ ] AC-3 [local, actor: implementing agent]: AI and GUI atmosphere/environment edits visibly update the same live world. proof: planned `pnpm --filter strata-terrain-preview test:terrain:editor` — Evidence: pending; change sun direction/intensity, scattering/haze, supported fog, exposure and ocean appearance; inspect fixed-camera captures and rendered revision/chain status, preserve terrain/collision arrays, persist settings after reload, and retain valid appearance after rejected values or failed LUT work.
+- [x] AC-3 [local, actor: implementing agent]: AI and GUI atmosphere/environment edits visibly update the same live world. proof: `pnpm --filter strata-terrain-preview test:terrain:editor` (exit 0) and `pnpm exec vitest run packages/terrain/__tests__/editor-environment.spec.ts` (2 passed) — Evidence: `POST api/environment` takes `get` / `patch` / `reset` against the saved document revision (`packages/terrain/src/editor/environment.ts`), and a patch never reaches the evaluator (spec spies `TerrainEvaluator.prototype.evaluate`: zero calls; the recipe is unchanged after a reload from disk). Invalid values (negative intensity, elevation 120, bad colour, `fog.mode: "height"` by name, unknown fields) and a stale base return 400/409 and leave the revision unchanged. `scripts/verify-environment.mjs` (real Chromium/WebGPU) reads the effective look off the scene's own lights, fog, background, renderer exposure and sea uniforms (`view.inspectEnvironment()`), not off the saved settings: a controller patch swings the sun to azimuth -60 / elevation 18 / intensity 6; a real GUI field (`#env-fog-density`) sets haze 0.006; sky/haze/sea colours change together; exposure 0.35 drops mean luminance 90.6 -> 62.2. Each change is judged by a fixed-camera capture against the capture just before it, with a no-change control beside it (control 0.002, sun 1.33, haze 8.63, tint 28.78, reset 32.91 mean abs per channel); `reset` returns the scene objects to the starter values exactly. The terrain `heightSum`, `vertexCount`, the full height array, every prop matrix and `evaluationRequests` are unchanged across all of it. A second page opened on the saved document draws the saved look (persistence), and the rejected GUI and controller values leave the live look and revision untouched. Captures: `docs/verification/visuals/strata/468-environment-sun.png`, `468-environment-tint.png`. Not exercised: the editor view has no atmosphere LUT, so "failed LUT work" does not exist here; `TN_RENDER_CHAIN` is not reported by this view (rendered revision is, via `inspectEnvironment().revision`). Exposure turns on three's linear tone curve only while an override is saved; absent, the starter's untoned output is restored.
 - [ ] AC-4 [local, actor: implementing agent]: A custom GLB enters the palette and is placed/selected in the live editor through either import path. proof: planned `test:terrain:editor` plus public import middleware checks — Evidence: pending; exercise actual GUI file import and local agent registration from an MCP-shaped file result, measure/override scale, scatter and gizmo one instance, survive reload, and report invalid/unsupported assets without replacing valid art or escaping project paths.
 
 ### Phase 3: Image injection and explicit game handoff

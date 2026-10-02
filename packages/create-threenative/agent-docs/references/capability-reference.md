@@ -5657,6 +5657,40 @@ export function runCameraOperation(set: ICameraSet, operation: unknown): ICamera
 const next = runCameraOperation(set, { op: "activate", id: "survey" });
 ```
 
+### `runEnvironmentOperation`
+
+`function` — Apply one get / patch / reset against the saved environment overrides; the caller commits it. @summary Run one preview-environment operation
+
+```ts
+export function runEnvironmentOperation( current: IEnvironment, operation: unknown, ): IEnvironmentResult { … }
+```
+
+- **Use when:** patch sun, haze, exposure or sea overrides from a controller or the editor GUI
+- **Constraints:** authoring metadata only; a null field returns to the project's own value
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source decides what each value does
+
+```ts
+const result = runEnvironmentOperation({}, { op: "patch", values: { sun: { elevation: 25 } } });
+```
+
+### `sniff`
+
+`function` — The kind and format a file's own bytes declare, whatever its name says. @summary Identify a GLB, PNG, JPEG, WebP, HDR or EXR file by its header
+
+```ts
+export function sniff( bytes: Uint8Array, ): { … }
+```
+
+- **Use when:** decide whether a dropped or downloaded file is a model, surface image or environment image
+- **Constraints:** reads only the first bytes; a file it cannot name returns undefined and must be refused
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the caller decides what to do with an unknown file
+
+```ts
+const kind = sniff(new Uint8Array(await file.arrayBuffer()))?.kind;
+```
+
 ### `TerrainEditorController`
 
 `class` — HTTP controller for the project-local terrain editor.
@@ -5672,6 +5706,40 @@ export class TerrainEditorController { … }
 
 ```ts
 const controller = new TerrainEditorController(editorUrl); const snapshot = await controller.snapshot();
+```
+
+### `validateAsset`
+
+`function` — Validate one saved asset registration exactly as a document commit stores it. @summary Validate a registered terrain-editor asset entry
+
+```ts
+export function validateAsset(input: unknown): IProjectAsset { … }
+```
+
+- **Use when:** check a model, image or environment asset entry before saving it in the authoring document
+- **Constraints:** authoring metadata only; ids, content-hashed paths, bounds and unit adjustments are checked, files are not read
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns its asset directory and which entries it keeps
+
+```ts
+const asset = validateAsset({ id: "oak", kind: "model", name: "oak.glb", path: "models/0123456789ab-oak.glb", sha256: "0123456789ab".padEnd(64, "0"), bytes: 2180, status: "ready" });
+```
+
+### `validateAssets`
+
+`function` — Validate the whole asset list of an authoring document. @summary Validate the registered terrain-editor assets
+
+```ts
+export function validateAssets(input: unknown): IProjectAsset[] { … }
+```
+
+- **Use when:** check every registered model, image and environment entry together, with unique ids
+- **Constraints:** at most 64 entries; unique ids; each entry as validateAsset
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns its asset directory and which entries it keeps
+
+```ts
+const assets = validateAssets(document.assets ?? []);
 ```
 
 ### `validateCamera`
@@ -5706,6 +5774,23 @@ export function validateCameras(input: unknown): ISavedCamera[] { … }
 
 ```ts
 const cameras = validateCameras(JSON.parse(saved).cameras ?? []);
+```
+
+### `validateEnvironment`
+
+`function` — Validate a complete overrides object exactly as a document commit stores it. @summary Validate preview environment overrides
+
+```ts
+export function validateEnvironment(input: unknown): IEnvironment { … }
+```
+
+- **Use when:** save sun, sky, haze, exposure or ocean overrides in the shared authoring document
+- **Constraints:** authoring metadata only; unknown fields and unsupported fog modes are refused by name
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project's render source defines what each value does; absent fields keep its own
+
+```ts
+const environment = validateEnvironment({ sun: { elevation: 25, intensity: 3 } });
 ```
 
 ### `validateSpatialReference`

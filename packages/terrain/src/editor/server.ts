@@ -1,18 +1,33 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstatSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { validatePlacementOverrides } from "../core/placements.js";
 import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
 import {
+  AssetStore,
+  type IAssetLimits,
+  type IAssetOperation,
+  type IAssetResult,
+  type IProjectAsset,
+  validateAsset,
+  validateAssets,
+} from "./assets.js";
+import {
   type ICameraResult,
   type ISavedCamera,
   runCameraOperation,
   validateCameras,
 } from "./cameras.js";
+import {
+  type IEnvironment,
+  type IEnvironmentResult,
+  runEnvironmentOperation,
+  validateEnvironment,
+} from "./environment.js";
 import {
   type ISpatialObservation,
   type ISpatialQuery,
@@ -34,6 +49,10 @@ export interface IAuthoringDocument {
   cameras?: ISavedCamera[];
   /** Which saved camera is live; absent or `null` is the ordinary editor camera. */
   activeCamera?: string | null;
+  /** Preview environment overrides; absent fields keep the project's own render-source values. */
+  environment?: IEnvironment;
+  /** Registered models, images and environment files: metadata only, the files live on disk. */
+  assets?: IProjectAsset[];
 }
 export interface IEditorSnapshot {
   revision: string;
@@ -62,6 +81,8 @@ function validate(value: unknown): IAuthoringDocument {
           "references",
           "cameras",
           "activeCamera",
+          "environment",
+          "assets",
         ].includes(key),
     )
   )
@@ -88,6 +109,9 @@ function validate(value: unknown): IAuthoringDocument {
     }
     document.activeCamera = active;
   }
+  if (input.assets !== undefined) document.assets = validateAssets(input.assets);
+  if (input.environment !== undefined)
+    document.environment = validateEnvironment(input.environment);
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
     throw new Error("Authoring document exceeds 64 MiB");
   return document;
@@ -232,7 +256,14 @@ function json(response: ServerResponse, status: number, value: unknown): void {
  * @example const editor = terrainEditor({ documentPath: resolve("terrain/world.json") });
  * @override documentPath and optional configured viewerUrl belong to the project
  */
-export function terrainEditor(options: { documentPath: string; viewerUrl?: string }): Plugin & {
+export function terrainEditor(options: {
+  documentPath: string;
+  viewerUrl?: string;
+  /** Where registered files are stored; defaults to `assets/` beside the document. */
+  assetsDir?: string;
+  /** Explicit byte, decoded-dimension and triangle limits for imports. */
+  assetLimits?: Partial<IAssetLimits>;
+}): Plugin & {
   activate(): Promise<IEditorActivation>;
 } {
   const viewer = options.viewerUrl ? new URL(options.viewerUrl) : undefined;
@@ -248,6 +279,10 @@ export function terrainEditor(options: { documentPath: string; viewerUrl?: strin
     throw new Error("Viewer URL must be an explicit HTTP(S) forwarded terrain-editor URL");
   const document = new TerrainEditorDocument(options.documentPath);
   const evaluator = new TerrainEvaluator();
+  const store = new AssetStore(
+    options.assetsDir ?? resolve(dirname(document.path), "assets"),
+    options.assetLimits,
+  );
   const projectId = createHash("sha256").update(document.path).digest("hex");
   const sessionId = randomUUID();
   let origin: string | undefined;
@@ -387,6 +422,129 @@ export function terrainEditor(options: { documentPath: string; viewerUrl?: strin
                 result.activeCamera !== (current.document.activeCamera ?? null);
               const revision = changed
                 ? document.commit({ baseRevision: current.revision, document: next }).revision
+                : current.revision;
+              json(response, 200, { ...result, revision });
+              return;
+            }
+            if (request.method === "GET" && path.startsWith(`${PREFIX}api/assets/`)) {
+              // Only a file some registered entry names, never a caller-built path.
+              const name = decodeURIComponent(path.slice(`${PREFIX}api/assets/`.length));
+              const entry = (document.snapshot().document.assets ?? []).find(
+                (asset) => asset.path === name,
+              );
+              if (!entry) throw new EditorError(404, `No registered asset file '${name}'`);
+              const bytes = store.read(entry.path);
+              response.writeHead(200, {
+                "content-type": "application/octet-stream",
+                // The file name carries its hash, so a replacement is a different URL.
+                "cache-control": "public, max-age=31536000, immutable",
+                "x-content-type-options": "nosniff",
+              });
+              response.end(bytes);
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/assets`) {
+              const transaction = await body(request);
+              if (
+                !transaction ||
+                typeof transaction !== "object" ||
+                Array.isArray(transaction) ||
+                Object.keys(transaction).some((key) => !["baseRevision", "operation"].includes(key))
+              )
+                throw new Error("Expected { baseRevision, operation }");
+              const asset = transaction as { baseRevision?: unknown; operation?: IAssetOperation };
+              const current = document.snapshot();
+              if (asset.baseRevision !== current.revision)
+                throw new EditorError(409, "Stale base revision");
+              const operation = asset.operation;
+              if (!operation || typeof operation !== "object" || typeof operation.op !== "string")
+                throw new Error("Expected an asset operation");
+              const assets = current.document.assets ?? [];
+              let next = assets;
+              let touched: IProjectAsset | null = null;
+              if (operation.op === "register" || operation.op === "upload") {
+                // A browser page may only upload bytes; reading a path is the trusted local agent's.
+                if (operation.op === "register" && request.headers.origin)
+                  throw new EditorError(
+                    403,
+                    "Registering a local path is for the local agent, not a page",
+                  );
+                const bytes =
+                  operation.op === "register"
+                    ? store.readSource(operation.path)
+                    : Buffer.from(String(operation.data), "base64");
+                const name =
+                  operation.op === "register"
+                    ? basename(operation.path)
+                    : String(operation.name ?? operation.id);
+                const stored = store.store(operation.id, name, bytes, operation);
+                const existing = assets.find((entry) => entry.id === stored.id);
+                if (existing && existing.sha256 !== stored.sha256 && operation.replace !== true)
+                  throw new EditorError(
+                    409,
+                    `Asset '${stored.id}' already exists; pass replace: true or choose a new id`,
+                  );
+                if (existing?.sha256 === stored.sha256) touched = existing;
+                else {
+                  touched = existing
+                    ? { ...stored, adjust: existing.adjust ?? stored.adjust }
+                    : stored;
+                  next = [...assets.filter((entry) => entry.id !== stored.id), touched];
+                }
+              } else if (operation.op === "adjust") {
+                const existing = assets.find((entry) => entry.id === operation.id);
+                if (!existing || existing.kind !== "model")
+                  throw new EditorError(404, `No registered model '${operation.id}'`);
+                touched = validateAsset({ ...existing, adjust: operation.adjust });
+                next = assets.map((entry) =>
+                  entry.id === touched?.id ? (touched as IProjectAsset) : entry,
+                );
+              } else if (operation.op === "remove") {
+                touched = assets.find((entry) => entry.id === operation.id) ?? null;
+                if (!touched) throw new EditorError(404, `No registered asset '${operation.id}'`);
+                // The palette entry goes; the stored file and anything that referenced it stay.
+                next = assets.filter((entry) => entry.id !== operation.id);
+              } else if (operation.op !== "list") throw new Error("Unknown asset operation");
+              const changed = JSON.stringify(next) !== JSON.stringify(assets);
+              const revision = changed
+                ? document.commit({
+                    baseRevision: current.revision,
+                    document: JSON.parse(JSON.stringify({ ...current.document, assets: next })),
+                  }).revision
+                : current.revision;
+              const result: IAssetResult = { op: operation.op, assets: next, asset: touched };
+              json(response, 200, { ...result, revision });
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/environment`) {
+              const transaction = await body(request);
+              if (
+                !transaction ||
+                typeof transaction !== "object" ||
+                Array.isArray(transaction) ||
+                Object.keys(transaction).some((key) => !["baseRevision", "operation"].includes(key))
+              )
+                throw new Error("Expected { baseRevision, operation }");
+              const environment = transaction as { baseRevision?: unknown; operation?: unknown };
+              const current = document.snapshot();
+              if (environment.baseRevision !== current.revision)
+                throw new EditorError(409, "Stale base revision");
+              // Appearance only: no evaluator, no erosion and no collider rebuild.
+              const result: IEnvironmentResult = runEnvironmentOperation(
+                current.document.environment ?? {},
+                environment.operation,
+              );
+              const changed =
+                JSON.stringify(result.environment) !==
+                JSON.stringify(current.document.environment ?? {});
+              const next = { ...current.document };
+              if (Object.keys(result.environment).length) next.environment = result.environment;
+              else next.environment = undefined;
+              const revision = changed
+                ? document.commit({
+                    baseRevision: current.revision,
+                    document: JSON.parse(JSON.stringify(next)),
+                  }).revision
                 : current.revision;
               json(response, 200, { ...result, revision });
               return;

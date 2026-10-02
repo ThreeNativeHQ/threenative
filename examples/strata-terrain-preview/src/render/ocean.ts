@@ -14,6 +14,7 @@
 // what real water is, and a standard node material puts it back under the scene's own lights.
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
 import {
+  Color,
   DataTexture,
   DataUtils,
   HalfFloatType,
@@ -32,6 +33,7 @@ import {
   smoothstep,
   texture,
   transformNormalToView,
+  uniform,
   vec2,
   vec3,
 } from "three/tsl";
@@ -75,6 +77,15 @@ export const SEA = {
 
 /** The drawn surface's edge length in metres, and how finely it is tessellated. */
 export const SURFACE = { segments: 512, size: 1024 } as const;
+
+/**
+ * The sea's two body colours as live uniforms, so an editor can retint the water without rebuilding
+ * its material. The defaults are this game's look: nothing here changes it until a caller writes.
+ */
+export const OCEAN_LOOK = {
+  deep: uniform(new Color(0x153e54)),
+  shallow: uniform(new Color(0x5ea7a9)),
+};
 
 /** Crest foam. Near-white, and not a seventh palette role: the sea's look is owned here. */
 const FOAM = 0xe9f4f6;
@@ -197,7 +208,7 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const depth = positionWorld.y.sub(landHeight);
   const relativeHeight = positionWorld.y.sub(float(level));
   const shallow = smoothstep(float(0.5), float(12), depth);
-  const water = mix(color(0x5ea7a9), color(0x153e54), shallow);
+  const water = mix(OCEAN_LOOK.shallow, OCEAN_LOOK.deep, shallow);
   const crest = smoothstep(float(1.6), float(3), relativeHeight);
   // Surf, not a contour. The foam band's width is the swell's: a depth threshold on its own draws a
   // straight-edged white shape round every tidal flat in the world, which reads as spilled paint

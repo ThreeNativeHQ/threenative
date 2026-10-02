@@ -1,6 +1,7 @@
 import type { PatchCommand } from "../core/terrain.js";
 import type { ITerrainState } from "../core/types.js";
 import { mountRecoveredEditor } from "./app.js";
+import type { IAssetOperation, IAssetResult } from "./assets.js";
 import type {
   ICameraOperation,
   ICameraResult,
@@ -9,6 +10,7 @@ import type {
   IFocusRequest,
   ISavedCamera,
 } from "./cameras.js";
+import type { IEnvironment, IEnvironmentOperation, IEnvironmentResult } from "./environment.js";
 import type { IAuthoringDocument, IEditorActivation, IEditorSnapshot } from "./server.js";
 import { editorShell } from "./shell.js";
 import type { ISpatialObservation, ISpatialQuery } from "./spatialInspector.js";
@@ -32,6 +34,23 @@ export type {
   IFocusTarget,
   ISavedCamera,
 } from "./cameras.js";
+export { sniff, validateAsset, validateAssets } from "./assets.js";
+export type {
+  IAssetAdjust,
+  IAssetBounds,
+  IAssetKind,
+  IAssetLimits,
+  IAssetOperation,
+  IAssetResult,
+  IProjectAsset,
+} from "./assets.js";
+export { runEnvironmentOperation, validateEnvironment } from "./environment.js";
+export type {
+  IEnvironment,
+  IEnvironmentOperation,
+  IEnvironmentResult,
+  IHexColour,
+} from "./environment.js";
 export {
   inspectSpatial,
   probeTerrain,
@@ -65,6 +84,18 @@ export interface IViewCamera {
   resolve(target: { kind: "prop" | "landmark" | "region"; id: string }): IFocusBounds | undefined;
   /** Clip-square extent of bounds under the live camera, so a framing can be measured, not assumed. */
   measure(bounds: IFocusBounds): { x: number; y: number; z: boolean };
+}
+
+/** The live view's environment surface: bind saved overrides to the project's own render source. */
+export interface IViewEnvironment {
+  /**
+   * Apply saved overrides to the real lights, haze, sky, exposure and sea. Absent fields restore
+   * the project's own value; a field this source cannot honour throws by name and the scene keeps
+   * its last valid look.
+   */
+  apply(environment: IEnvironment | undefined): void;
+  /** The effective values now in use: the project's own, with the saved overrides on top. */
+  read(): IEnvironment;
 }
 
 export interface IViewerPose {
@@ -103,7 +134,14 @@ export interface IEditorView {
    * scatter and clear controls offer.
    */
   propAssets?(): readonly string[];
+  /**
+   * Settles once every registered model the view started loading is placeable or has failed. The
+   * preview waits on it before drawing a revision, so a placement of a model still arriving is
+   * not reported as a missing asset.
+   */
+  assetsReady?(): Promise<void>;
   cameras?(): IViewCamera;
+  environment?(): IViewEnvironment;
   /**
    * The whole rendered revision as a portable GLB: terrain, resolved models with their final
    * transforms, this game's baked water and its portable PBR surfaces. Optional because a headless
@@ -169,6 +207,29 @@ export class TerrainEditorController {
   ): Promise<ICameraResult & { revision: string }> {
     return this.#request("cameras", { baseRevision, operation });
   }
+  /**
+   * Run one get / patch / reset against the saved preview environment at one exact revision.
+   * Appearance only: terrain, collision and placements are never re-evaluated.
+   * @param operation an environment operation from {@link IEnvironmentOperation}
+   */
+  environment(
+    operation: IEnvironmentOperation,
+    baseRevision: string,
+  ): Promise<IEnvironmentResult & { revision: string }> {
+    return this.#request("environment", { baseRevision, operation });
+  }
+  /**
+   * Register, upload, adjust, remove or list project assets at one exact revision. `register`
+   * takes a local file path, the shape an asset-MCP download returns; `upload` takes bytes a
+   * browser read. Both store the file under a content-hashed name and measure it.
+   * @param operation an asset operation from {@link IAssetOperation}
+   */
+  asset(
+    operation: IAssetOperation,
+    baseRevision: string,
+  ): Promise<IAssetResult & { revision: string }> {
+    return this.#request("assets", { baseRevision, operation });
+  }
   commit(
     transaction:
       | { baseRevision: string; document: IAuthoringDocument }
@@ -223,6 +284,10 @@ export async function mountTerrainEditor(options: {
     getSnapshot: () => controller.snapshot(),
     cameraOperation: (operation: unknown, baseRevision: string) =>
       controller.camera(operation as ICameraOperation, baseRevision),
+    assetOperation: (operation: unknown, baseRevision: string) =>
+      controller.asset(operation as IAssetOperation, baseRevision),
+    environmentOperation: (operation: unknown, baseRevision: string) =>
+      controller.environment(operation as IEnvironmentOperation, baseRevision),
     subscribe: (listener: (snapshot: IEditorSnapshot) => void) => {
       unsubscribe = controller.subscribe(listener, () => {
         const status = document.getElementById("save-status");

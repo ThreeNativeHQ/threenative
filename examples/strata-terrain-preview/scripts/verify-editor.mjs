@@ -13,6 +13,7 @@ import {
 } from "../../../packages/playtest/dist/runner/index.js";
 
 import { verifyEditorCameras } from "./verify-cameras.mjs";
+import { verifyEnvironment } from "./verify-environment.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
 import { verifyToolGroups } from "./verify-tool-groups.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
@@ -25,7 +26,7 @@ const plugin = terrainEditor({ documentPath: path });
 const server = await createServer({
   root,
   configFile: false,
-  server: { host: "127.0.0.1", port: 5197 },
+  server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5197) },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
   resolve: { dedupe: ["three"] },
@@ -338,10 +339,19 @@ try {
     );
     // Last: the camera block owns its document edits and needs nothing from the sections above.
     await verifyEditorCameras(session, controller, captures);
+    // Back on the ordinary editor camera, so the fixed view the captures compare is the same one.
+    await controller.camera({ op: "activate", id: null }, (await controller.snapshot()).revision);
+    await session.page.waitForFunction(() => window.strata.cameras.read().activeCamera === null);
+    const environment = await verifyEnvironment(session, controller, captures);
+    console.log(JSON.stringify({ environment }));
     assert.deepEqual(
       errors,
-      ["Failed to load resource: the server responded with a status of 409 (Conflict)"],
-      "Only the deliberately injected stale GUI transaction may produce a console error",
+      [
+        "Failed to load resource: the server responded with a status of 409 (Conflict)",
+        // The environment proof's deliberately rejected GUI value (a negative sun intensity).
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+      ],
+      "Only the deliberately injected stale and invalid GUI transactions may produce a console error",
     );
     console.log(
       JSON.stringify({
