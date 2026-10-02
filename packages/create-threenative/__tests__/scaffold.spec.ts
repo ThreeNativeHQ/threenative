@@ -193,7 +193,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   rts: "45a4cd67b5c4e6dbba60ea6813636effc6ecaa294acc9f5ae49262fc64141b1c",
   runner: "3348101ae79785e5e286df38628f13e747b91f1ea6527fa71acd9d62f767d3a3",
   sailing: "69b54c3c07cf4fe65f4cd06f1ce315750d198332129425b031853f1022d2e99b",
-  shooter: "386f6bca602b4939bf9d860d5cadba0ede803adef95222faedbdc8e33d205590",
+  // VQ11 after merge of develop 416ffd7: measured through createProject, only shooter changed.
+  shooter: "c035066c49f50a3c8ff894604a17ca6db3729179d6112e8470cb83f43d6eccc0",
   snow: "f6555492e02901960b8d733568f4f9c07ae1e11baa03e95b9b498d24c3eee1c6",
   starter: "064de9e02c8b09cd378fdf42186b499580e474d323717eecbe4edb59964b94f6",
   "tower-defense": "2967805234d96f52d79a398463ddb980658a53efafecf4b7a8ecf33ad1a5679f",

@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { loadPlaytestScenario } from "../../packages/playtest/src/scenario.js";
+import { makeTempDir } from "../../test-support/temp-dir.js";
 
 const project = "examples/prd476-fluid-particles";
 test("measures predictor displacement independently of final velocity without consuming the baseline", async () => {
@@ -196,7 +196,7 @@ test("preserves numerical predicates and passes native preflight while diagnosti
   expect(native.assert?.visual).toBeUndefined();
   expect(requiredPlaytestCapabilities(native, "desktop")).not.toContain("browser.network");
   expect(validatePlaytestScenario(native, "native-fluid").target).toBe("desktop");
-  const directory = await mkdtemp(path.join(tmpdir(), "fluid-native-scenario-"));
+  const directory = await makeTempDir("fluid-native-scenario-");
   try {
     const filename = path.join(directory, "native.playtest.json");
     await writeFile(filename, JSON.stringify(native));
