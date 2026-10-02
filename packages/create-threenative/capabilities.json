@@ -6706,6 +6706,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "throws by name; HDR/EXR environment files and ordinary images are accepted, models are not"
+      ],
+      "example": "checkEnvironmentAssets({ sky: { image: \"dusk\" } }, document.assets ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns which images it registers"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }",
+      "situations": [
+        "refuse a saved environment whose sky or lighting image is not a registered file"
+      ],
+      "summary": "Check that the images an environment names are registered environment or image assets. @summary Validate the assets a preview environment refers to",
+      "supersedes": [],
+      "symbol": "checkEnvironmentAssets"
+    },
+    {
+      "aliases": [],
       "constraints": ["framing only; an unknown target returns a named diagnostic and no camera"],
       "example": "const outcome = focusCamera(camera, { target: { kind: \"prop\", id: \"pine-3\" }, aspect: 16 / 9 }, resolve);",
       "importPath": "@threenative/terrain/editor",

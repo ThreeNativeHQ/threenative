@@ -383,6 +383,7 @@
       "symbols": {
         "@threenative/terrain/editor/server#terrainEditor": "export function terrainEditor(options: { … }",
         "@threenative/terrain/editor/server#TerrainEditorDocument": "export class TerrainEditorDocument { … }",
+        "@threenative/terrain/editor#checkEnvironmentAssets": "export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }",
         "@threenative/terrain/editor#focusCamera": "export function focusCamera( camera: ISavedCamera, request: IFocusRequest, resolve: IFocusResolver, ): IFocusOutcome { … }",
         "@threenative/terrain/editor#inspectImage": "export function inspectImage( bytes: Uint8Array, format: string, limits: { … }",
         "@threenative/terrain/editor#inspectSpatial": "export function inspectSpatial( state: ITerrainState, revision: string, query: ISpatialQuery, ): ISpatialObservation { … }",

@@ -16,6 +16,8 @@ import { verifyModelImport } from "./verify-assets.mjs";
 import { verifyEditorCameras } from "./verify-cameras.mjs";
 import { verifyEnvironment } from "./verify-environment.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
+import { verifySky } from "./verify-sky.mjs";
+import { verifySurfaces } from "./verify-surfaces.mjs";
 import { verifyToolGroups } from "./verify-tool-groups.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
 
@@ -27,6 +29,9 @@ const plugin = terrainEditor({ documentPath: path });
 const server = await createServer({
   root,
   configFile: false,
+  // The game's own starter maps, served as the real dev server serves them: the surface proof binds
+  // imported images into these textures, so they have to be the ones that loaded.
+  publicDir: resolve("../../packages/terrain/starter-assets"),
   server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5197) },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
@@ -388,23 +393,26 @@ try {
       { timeout: 30000 },
     );
     await advanceFixedStep(session.page, session.bridge, 2);
-    const worldCaptures = async (captureSession, name) => {
-      const taken = await captureSession.screenshot(name);
-      const directory = resolve("../../docs/verification/visuals/strata");
-      mkdirSync(directory, { recursive: true });
-      copyFileSync(taken, `${directory}/${name}.png`);
-    };
+    // These captures stay in the run's artifacts: the tracked evidence tree is at its size cap, so
+    // the proof is the numbers the stages assert, not more committed pictures.
+    const worldCaptures = (captureSession, name) => captureSession.screenshot(name);
     console.log(
       JSON.stringify({ environment: await verifyEnvironment(session, controller, worldCaptures) }),
     );
     console.log(
       JSON.stringify({ models: await verifyModelImport(session, controller, worldCaptures) }),
     );
+    console.log(
+      JSON.stringify({ surfaces: await verifySurfaces(session, controller, worldCaptures) }),
+    );
+    console.log(JSON.stringify({ sky: await verifySky(session, controller, worldCaptures) }));
     assert.deepEqual(
       errors,
       [
-        // The environment proof's rejected GUI value (a negative sun intensity), then the model
-        // proof's garbage GUI file: each is a deliberate 400.
+        // The environment proof's rejected GUI value (a negative sun intensity), the model proof's
+        // garbage GUI file, and the sky proof's garbage GUI file: each is a deliberate 400. The
+        // sky proof's deliberately undecodable image is a failed load the view reports itself.
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
         "Failed to load resource: the server responded with a status of 400 (Bad Request)",
         "Failed to load resource: the server responded with a status of 400 (Bad Request)",
       ],

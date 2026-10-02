@@ -1166,6 +1166,12 @@ export function mountRecoveredEditor({
     ["sun", "colour", "Sun colour", "color"],
     ["fill", "intensity", "Sky fill", "number", "0.05"],
     ["sky", "colour", "Sky colour", "color"],
+    ["sky", "image", "Sky image", "asset"],
+    ["sky", "rotation", "Sky rotation °", "number", "1"],
+    ["sky", "intensity", "Sky intensity", "number", "0.05"],
+    ["lighting", "image", "Lighting image", "asset"],
+    ["lighting", "rotation", "Lighting rotation °", "number", "1"],
+    ["lighting", "intensity", "Lighting intensity", "number", "0.05"],
     ["fog", "density", "Haze density", "number", "0.0001"],
     ["fog", "colour", "Haze colour", "color"],
     [null, "exposure", "Exposure", "number", "0.05"],
@@ -1177,9 +1183,10 @@ export function mountRecoveredEditor({
   environmentPanel.id = "environment-inspector";
   environmentPanel.className = "inspector";
   const envInputs = envFields
-    .map(
-      ([section, key, label, type, step]) =>
-        `<label class="field-label">${label}<input id="${envId(section, key)}" type="${type}"${step ? ` step="${step}"` : ""}></label>`,
+    .map(([section, key, label, type, step]) =>
+      type === "asset"
+        ? `<label class="field-label">${label}<select id="${envId(section, key)}"><option value="">(procedural)</option></select></label>`
+        : `<label class="field-label">${label}<input id="${envId(section, key)}" type="${type}"${step ? ` step="${step}"` : ""}></label>`,
     )
     .join("");
   environmentPanel.innerHTML = `<summary class="inspector-header"><span>ENVIRONMENT</span><span id="environment-count" class="count-tag">0</span></summary>${envInputs}<button id="environment-reset" class="ghost full">Reset to project look</button><div id="environment-error" class="inline-error"></div>`;
@@ -1193,6 +1200,18 @@ export function mountRecoveredEditor({
     for (const [section, key, , type] of envFields) {
       const value = (section ? live[section] : live)?.[key];
       const input = $(envId(section, key));
+      if (type === "asset") {
+        // Every registered environment or ordinary image, plus the procedural default.
+        const choices = (saved.document.assets ?? []).filter(
+          (entry) => entry.kind === "environment" || entry.kind === "image",
+        );
+        input.replaceChildren(
+          new Option("(procedural)", ""),
+          ...choices.map((entry) => new Option(entry.id, entry.id)),
+        );
+        input.value = value ?? "";
+        continue;
+      }
       if (document.activeElement !== input && value !== undefined)
         input.value = type === "color" ? hex(value) : String(Number(value.toFixed(6)));
     }
@@ -1200,7 +1219,17 @@ export function mountRecoveredEditor({
       Object.keys(saved.document.environment ?? {}).length,
     );
   }
-  async function attemptEnvironment(operation) {
+  // Environment and asset edits share one revision, so they go one at a time: a second edit made
+  // before the first answers would otherwise be sent against a revision that has already moved.
+  let lane = Promise.resolve();
+  const inLane = (task) => {
+    lane = lane.then(task, task);
+    return lane;
+  };
+  function attemptEnvironment(operation) {
+    return inLane(() => runEnvironment(operation));
+  }
+  async function runEnvironment(operation) {
     try {
       const result = await environmentOperation(operation, revision);
       revision = result.revision;
@@ -1223,7 +1252,8 @@ export function mountRecoveredEditor({
   for (const [section, key, , type] of envFields) {
     $(envId(section, key)).onchange = (event) => {
       const raw = event.target.value;
-      const value = type === "color" ? raw : Number(raw);
+      // An image field's empty choice returns the sky or lighting to its procedural default.
+      const value = type === "color" ? raw : type === "asset" ? raw || null : Number(raw);
       return attemptEnvironment({
         op: "patch",
         values: section ? { [section]: { [key]: value } } : { [key]: value },
@@ -1236,7 +1266,7 @@ export function mountRecoveredEditor({
   const assetPanel = document.createElement("details");
   assetPanel.id = "asset-inspector";
   assetPanel.className = "inspector";
-  assetPanel.innerHTML = `<summary class="inspector-header"><span>PROJECT ASSETS</span><span id="asset-count" class="count-tag">0</span></summary><div id="asset-drop" class="field-label" style="border:1px dashed var(--border);padding:10px;margin-bottom:9px">Drop a .glb here<input id="asset-file" type="file" accept=".glb,model/gltf-binary"></div><label class="field-label"><span><input id="asset-replace" type="checkbox"> Replace an asset with the same name</span></label><div id="asset-list"></div><div id="asset-error" class="inline-error"></div>`;
+  assetPanel.innerHTML = `<summary class="inspector-header"><span>PROJECT ASSETS</span><span id="asset-count" class="count-tag">0</span></summary><div id="asset-drop" class="field-label" style="border:1px dashed var(--border);padding:10px;margin-bottom:9px">Drop a .glb or image here<input id="asset-file" type="file" accept=".glb,.png,.jpg,.jpeg,.webp,.hdr,.exr,model/gltf-binary,image/*"></div><label class="field-label"><span><input id="asset-replace" type="checkbox"> Replace an asset with the same name</span></label><div id="asset-list"></div><div id="asset-error" class="inline-error"></div>`;
   assetPanel.style.cssText = "overflow-y:auto;min-height:0;max-height:40vh";
   sidebar.insertBefore(assetPanel, sidebar.querySelector(".inspector"));
   const assetId = (name) =>
@@ -1280,6 +1310,23 @@ export function mountRecoveredEditor({
           });
         row.append(scale);
       }
+      if (entry.kind === "image") {
+        const mapped = Object.entries(saved.document.surfaces ?? {})
+          .filter(([, mapping]) => mapping.asset === entry.id)
+          .map(([input]) => input);
+        if (mapped.length) label.textContent += ` → ${mapped.join(", ")}`;
+        const inputs = view.surfaceInputs?.() ?? [];
+        if (inputs.length) {
+          const choose = document.createElement("select");
+          choose.title = "Which of this project's surface inputs this image replaces";
+          for (const { input } of inputs) choose.add(new Option(input, input));
+          const use = document.createElement("button");
+          use.className = "secondary";
+          use.textContent = "Use";
+          use.onclick = () => attemptAsset({ op: "map", input: choose.value, asset: entry.id });
+          row.append(choose, use);
+        }
+      }
       const remove = document.createElement("button");
       remove.className = "ghost";
       remove.textContent = "Remove";
@@ -1288,17 +1335,21 @@ export function mountRecoveredEditor({
       list.append(row);
     }
   }
-  async function attemptAsset(operation) {
+  function attemptAsset(operation) {
+    return inLane(() => runAsset(operation));
+  }
+  async function runAsset(operation) {
     try {
       const result = await assetOperation(operation, revision);
       revision = result.revision;
       const next = { ...saved.document };
-      if (result.assets.length) next.assets = result.assets;
-      else next.assets = undefined;
+      next.assets = result.assets.length ? result.assets : undefined;
+      next.surfaces = Object.keys(result.surfaces ?? {}).length ? result.surfaces : undefined;
       saved = { ...saved, revision: result.revision, document: next };
       view.setDocument(next, result.revision);
       syncAssets(next);
       renderAssets();
+      renderEnvironment();
       renderOptions();
       $("asset-error").textContent = "";
       return result;

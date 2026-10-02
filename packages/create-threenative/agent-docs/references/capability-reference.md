@@ -5572,6 +5572,23 @@ const transforms = validatePlacementOverrides(document.placementOverrides);
 
 ## `@threenative/terrain/editor`
 
+### `checkEnvironmentAssets`
+
+`function` — Check that the images an environment names are registered environment or image assets. @summary Validate the assets a preview environment refers to
+
+```ts
+export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }
+```
+
+- **Use when:** refuse a saved environment whose sky or lighting image is not a registered file
+- **Constraints:** throws by name; HDR/EXR environment files and ordinary images are accepted, models are not
+- **Requires:** npm i -D @threenative/terrain
+- **Overrides:** the project owns which images it registers
+
+```ts
+checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
+```
+
 ### `focusCamera`
 
 `function` — Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera

@@ -23,6 +23,7 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
 - Use one `Heightfield` buffer for geometry and existing heightfield collision; do not resample.
 - Ground contacts use actual mesh and physics queries. Bilinear heights are not triangle contacts.
 - WASD/arrows move, Space jumps, C switches forest/coast, L changes sunlight. The player owns its camera.
+- The live editor also takes environment, model, surface-image and sky-image edits (`src/render/imports.ts`, `surfaces.ts`, `environmentImages.ts`; inputs `bark.*`, `stone.*`); a mapping swaps the image inside a texture a material already samples, so it adds no sampler.
 - The live editor and resolved static-world export proof are implemented; final starter art, complete GUI tooling and baked-water export remain subsequent PRD work.
 
 Run `pnpm --filter strata-terrain-preview test:terrain:web` and

@@ -21,8 +21,29 @@ export interface IEnvironment {
   };
   /** Sky fill: the hemisphere light's intensity. */
   readonly fill?: { readonly intensity?: number };
-  /** The procedural sky colour behind the world. */
-  readonly sky?: { readonly colour?: IHexColour };
+  /**
+   * What is drawn behind the world: a procedural colour, or a registered environment/image asset.
+   * An image replaces the colour; remove it (null) and the colour is back.
+   */
+  readonly sky?: {
+    readonly colour?: IHexColour;
+    /** A registered HDR/EXR or ordinary equirectangular image id. */
+    readonly image?: string;
+    /** Degrees about the vertical axis. */
+    readonly rotation?: number;
+    /** Multiplies the image's radiance. */
+    readonly intensity?: number;
+  };
+  /**
+   * Illumination from an image, chosen independently of the background. When it is set and the
+   * sky fill is not, the hemisphere fill is 0 so the image is the one fill and light is not
+   * counted twice; the sun is its own, explicit contribution.
+   */
+  readonly lighting?: {
+    readonly image?: string;
+    readonly rotation?: number;
+    readonly intensity?: number;
+  };
   /** Distance haze. `mode` names a fog this source supports; anything else is refused by name. */
   readonly fog?: {
     readonly mode?: "exp2";
@@ -51,7 +72,8 @@ export interface IEnvironmentResult {
 const SECTIONS = {
   sun: ["azimuth", "elevation", "intensity", "colour"],
   fill: ["intensity"],
-  sky: ["colour"],
+  sky: ["colour", "image", "rotation", "intensity"],
+  lighting: ["image", "rotation", "intensity"],
   fog: ["mode", "colour", "density"],
   ocean: ["shallow", "deep"],
 } as const;
@@ -86,8 +108,18 @@ function field(section: string, key: string, value: unknown): unknown {
       return number(value, name, -360, 360);
     case "sun.elevation":
       return number(value, name, 0, 90);
+    case "sky.image":
+    case "lighting.image":
+      if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_-]{0,47}$/u.test(value))
+        throw new Error(`${name} must be a registered asset id`);
+      return value;
+    case "sky.rotation":
+    case "lighting.rotation":
+      return number(value, name, -360, 360);
     case "sun.intensity":
     case "fill.intensity":
+    case "sky.intensity":
+    case "lighting.intensity":
       return number(value, name, 0, MAX_INTENSITY);
     case "fog.density":
       return number(value, name, 0, MAX_DENSITY);
@@ -168,4 +200,30 @@ export function runEnvironmentOperation(
     } else throw new Error(`environment has unknown fields: ${key}`);
   }
   return { op: "patch", environment: validateEnvironment(merged) };
+}
+
+/**
+ * Check that the images an environment names are registered environment or image assets.
+ * @summary Validate the assets a preview environment refers to
+ * @requires npm i -D @threenative/terrain
+ * @situation refuse a saved environment whose sky or lighting image is not a registered file
+ * @constraint throws by name; HDR/EXR environment files and ordinary images are accepted, models are not
+ * @example checkEnvironmentAssets({ sky: { image: "dusk" } }, document.assets ?? []);
+ * @override the project owns which images it registers
+ */
+export function checkEnvironmentAssets(
+  environment: IEnvironment,
+  assets: readonly { id: string; kind: string }[],
+): void {
+  for (const [group, image] of [
+    ["sky", environment.sky?.image],
+    ["lighting", environment.lighting?.image],
+  ] as const) {
+    if (image === undefined) continue;
+    const found = assets.find((entry) => entry.id === image);
+    if (!found || (found.kind !== "environment" && found.kind !== "image"))
+      throw new Error(
+        `environment.${group}.image names '${image}', which is not a registered environment or image asset`,
+      );
+  }
 }

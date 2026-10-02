@@ -7,6 +7,8 @@ import { type ViteDevServer, createServer } from "vite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { buildGlb } from "./fixtures/glb.mjs";
+import { buildHdr } from "./fixtures/png.mjs";
 
 const servers: ViteDevServer[] = [];
 afterEach(async () => {
@@ -53,7 +55,7 @@ async function api() {
     });
     return { status: response.status, body: await response.json() };
   };
-  return { path, controller, operate };
+  return { path, controller, operate, root };
 }
 
 describe("editor environment operations", () => {
@@ -121,5 +123,66 @@ describe("editor environment operations", () => {
       (await operate({ op: "patch", values: { sun: { intensity: 2 } } }, "stale")).status,
     ).toBe(409);
     expect((await controller.snapshot()).revision).toBe(start);
+  });
+});
+
+describe("editor environment images", () => {
+  it("only names registered environment or image assets, and cannot lose one it draws", async () => {
+    const { controller, operate, root } = await api();
+    const assets = async (operation: unknown) => {
+      const response = await fetch(new URL("assets", controller.baseUrl), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ baseRevision: (await controller.snapshot()).revision, operation }),
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const hdr = join(root, "sky.hdr");
+    writeFileSync(
+      hdr,
+      buildHdr(16, 8, () => [4, 5, 6]),
+    );
+    const model = join(root, "m.glb");
+    writeFileSync(model, buildGlb());
+    expect((await assets({ op: "register", id: "dusk", path: hdr })).body.asset.kind).toBe(
+      "environment",
+    );
+    await assets({ op: "register", id: "a-model", path: model });
+
+    // Unknown ids, models and malformed ids are refused by name; the document keeps its revision.
+    const start = (await controller.snapshot()).revision;
+    for (const values of [
+      { sky: { image: "nope" } },
+      { lighting: { image: "a-model" } },
+      { sky: { image: "Bad Id" } },
+      { sky: { rotation: 400 } },
+      { lighting: { intensity: -1 } },
+    ])
+      expect((await operate({ op: "patch", values })).status, JSON.stringify(values)).toBe(400);
+    expect((await operate({ op: "patch", values: { sky: { image: "nope" } } })).body.error).toMatch(
+      /names 'nope', which is not a registered environment or image asset/u,
+    );
+    expect((await controller.snapshot()).revision).toBe(start);
+
+    const set = await operate({
+      op: "patch",
+      values: {
+        sky: { image: "dusk", rotation: 45, intensity: 0.5 },
+        lighting: { image: "dusk", intensity: 2 },
+      },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body.environment).toEqual({
+      sky: { image: "dusk", rotation: 45, intensity: 0.5 },
+      lighting: { image: "dusk", intensity: 2 },
+    });
+    // The file an environment draws cannot be removed from under it; clear it, then it can.
+    const refused = await assets({ op: "remove", id: "dusk" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(
+      /environment\.sky\.image, environment\.lighting\.image; clear it first/u,
+    );
+    await operate({ op: "patch", values: { sky: { image: null }, lighting: null } });
+    expect((await assets({ op: "remove", id: "dusk" })).status).toBe(200);
   });
 });

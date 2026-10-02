@@ -28,6 +28,7 @@ import {
 import {
   type IEnvironment,
   type IEnvironmentResult,
+  checkEnvironmentAssets,
   runEnvironmentOperation,
   validateEnvironment,
 } from "./environment.js";
@@ -118,8 +119,10 @@ function validate(value: unknown): IAuthoringDocument {
   if (input.assets !== undefined) document.assets = validateAssets(input.assets);
   if (input.surfaces !== undefined)
     document.surfaces = validateSurfaces(input.surfaces, document.assets ?? []);
-  if (input.environment !== undefined)
+  if (input.environment !== undefined) {
     document.environment = validateEnvironment(input.environment);
+    checkEnvironmentAssets(document.environment, document.assets ?? []);
+  }
   if (Buffer.byteLength(JSON.stringify(document)) > MAX_BYTES)
     throw new Error("Authoring document exceeds 64 MiB");
   return document;
@@ -519,6 +522,16 @@ export function terrainEditor(options: {
                   throw new EditorError(
                     409,
                     `Asset '${operation.id}' is mapped to ${used.map(([input]) => input).join(", ")}; unmap it first`,
+                  );
+                const env = current.document.environment;
+                const drawn = [
+                  env?.sky?.image === operation.id ? "environment.sky.image" : "",
+                  env?.lighting?.image === operation.id ? "environment.lighting.image" : "",
+                ].filter(Boolean);
+                if (drawn.length)
+                  throw new EditorError(
+                    409,
+                    `Asset '${operation.id}' is used by ${drawn.join(", ")}; clear it first`,
                   );
                 // The palette entry goes; the stored file and anything that referenced it stay.
                 next = assets.filter((entry) => entry.id !== operation.id);

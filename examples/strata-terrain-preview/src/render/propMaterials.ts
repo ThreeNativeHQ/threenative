@@ -656,6 +656,11 @@ const PETAL_RED_TINT = 0xd8523a;
 /** Every prop surface, plus the one uniform the wind reads. */
 export interface IPropSurfaces {
   readonly advance: (elapsed: number) => void;
+  /**
+   * The live textures an imported image can replace, by `<surface>.<channel>`. The same texture
+   * objects the materials sample, so a swap changes what they draw and adds no sampler.
+   */
+  readonly inputs: Record<string, Texture | undefined>;
   readonly dispose: () => void;
   readonly materials: IPropMaterials;
 }
@@ -844,6 +849,13 @@ export async function createPropSurfaces(
   };
   let disposed = false;
   return {
+    inputs: {
+      "bark.albedo": bark.diffuse,
+      "bark.normal": bark.normal,
+      "bark.roughness": bark.roughness,
+      "stone.albedo": stone.diffuse,
+      "stone.normal": stone.normal,
+    },
     advance: (elapsed: number) => {
       (seconds as unknown as { value: number }).value = elapsed;
     },

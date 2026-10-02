@@ -143,6 +143,25 @@ Never execute untrusted JavaScript from a recipe. The editor parses data only. S
 
 Splatmaps are linear data, not color images: use a non-sRGB/NoColorSpace texture setting and renormalize sampled weights in the consuming shader. Do not use an 8-bit canvas conversion to read a PNG16 heightfield; the supplied decoder preserves its 16-bit samples.
 
+## Live editor: environment, assets and surfaces
+
+The running editor exposes three revision-checked operations beside the document, each also behind a GUI
+panel that calls the same code. A write names `baseRevision`; a stale one is a 409 and nothing changes.
+
+- `controller.environment({ op: "get" | "patch" | "reset" }, revision)`: sun azimuth/elevation/intensity/colour,
+  sky fill, sky colour or image, `exp2` haze, exposure, sea colours, and an independent `lighting` image.
+  `null` returns a field to the project's own value; an unsupported fog mode is refused by name. The
+  project's `src/render/` decides what each value does. Nothing here evaluates the terrain.
+- `controller.asset({ op: "register" | "upload" | "adjust" | "remove" | "list" | "map" | "unmap" }, revision)`:
+  `register` takes an absolute local path (an asset-MCP download result), `upload` takes base64 bytes. Files
+  are stored as `<kind>/<sha12>-<id>.<ext>` so a replacement is a new URL; GLB, PNG, JPEG, WebP, HDR and EXR are
+  recognised by their bytes, measured, and refused by name when damaged, over the project's limits, or when a
+  GLB points outside itself. Same id with other bytes needs `replace: true`. `remove` drops the entry, never
+  the file, and is refused while a surface or an environment still uses it.
+- `map` binds an image to a `<surface>.<channel>` input the project exposes (`bark.albedo`, `stone.normal`);
+  albedo is read as sRGB, every other channel as linear data. Placing a model is a `scatter` layer whose
+  `asset` is its id; `adjust` sets the file's unit scale and pivot without editing it.
+
 ## Three.js ownership
 
 `@threenative/terrain/three` exports `toGeometry(bakeMesh(state))`. It creates only ordinary indexed geometry using your installed Three.js. Create the mesh/material in your own `src/render/`, register collision through the existing engine API, and dispose the geometry yourself. Baked vertex colours are absent by default; pass an explicit eight-channel sRGB `palette` to `bakeMesh` or `bakeTerrain` when wanted. The addon supplies no palette or material. The legacy `makeExport(..., "glb")` contains terrain only; use the separate static-world encoder below for resolved models and baked surfaces. The default GUI full-world action, chosen-resolution material/deformation baking and five final starter exports remain pending.

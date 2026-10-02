@@ -100,7 +100,9 @@ export async function verifyModelImport(session, controller, captures) {
     );
 
     // The GUI path: a real file input, the same operations underneath.
-    await page.locator("#asset-inspector > summary").click();
+    await page.locator("#asset-inspector").evaluate((el) => {
+      el.open = true;
+    });
     const guiFile = buildGlb({ unit: 1, extras: false });
     await page.locator("#asset-file").setInputFiles({
       name: "Gui Rock.glb",

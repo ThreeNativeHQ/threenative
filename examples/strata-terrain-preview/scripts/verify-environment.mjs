@@ -5,9 +5,9 @@ import { advanceFixedStep } from "../../../packages/playtest/dist/runner/index.j
  * Mean absolute per-channel difference (0-255) between two captures, and each one's mean
  * luminance, decoded in the page so the proof needs no image library.
  */
-export async function compareCaptures(page, first, second) {
+export async function compareCaptures(page, first, second, region = [0, 0, 1, 1]) {
   return page.evaluate(
-    async ([a, b]) => {
+    async ([a, b, [fx, fy, fw, fh]]) => {
       const read = async (data) => {
         const bitmap = await createImageBitmap(
           await (await fetch(`data:image/png;base64,${data}`)).blob(),
@@ -15,7 +15,12 @@ export async function compareCaptures(page, first, second) {
         const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
         const context = canvas.getContext("2d");
         context.drawImage(bitmap, 0, 0);
-        return context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+        return context.getImageData(
+          Math.floor(bitmap.width * fx),
+          Math.floor(bitmap.height * fy),
+          Math.floor(bitmap.width * fw),
+          Math.floor(bitmap.height * fh),
+        ).data;
       };
       const [left, right] = [await read(a), await read(b)];
       let diff = 0;
@@ -45,7 +50,7 @@ export async function compareCaptures(page, first, second) {
         lumaRight: lumaRight / pixels,
       };
     },
-    [first.toString("base64"), second.toString("base64")],
+    [first.toString("base64"), second.toString("base64"), region],
   );
 }
 

@@ -48,7 +48,11 @@ export type {
   ISurfaceMapping,
   ISurfaceMappings,
 } from "./assets.js";
-export { runEnvironmentOperation, validateEnvironment } from "./environment.js";
+export {
+  checkEnvironmentAssets,
+  runEnvironmentOperation,
+  validateEnvironment,
+} from "./environment.js";
 export type {
   IEnvironment,
   IEnvironmentOperation,
@@ -144,6 +148,11 @@ export interface IEditorView {
    * not reported as a missing asset.
    */
   assetsReady?(): Promise<void>;
+  /**
+   * The texture inputs of this project's render source that an imported image can replace, named
+   * `<surface>.<channel>`. The project decides what exists; the GUI offers exactly this list.
+   */
+  surfaceInputs?(): readonly { input: string; channel: string }[];
   cameras?(): IViewCamera;
   environment?(): IViewEnvironment;
   /**

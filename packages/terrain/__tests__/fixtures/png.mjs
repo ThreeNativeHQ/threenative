@@ -123,3 +123,60 @@ export function openExr(width, height, compression = 3) {
     0,
   ]);
 }
+
+/**
+ * A decodable Radiance HDR: `pixel(x, y)` returns linear RGB radiance, which may exceed 1. Scanlines
+ * use the format's run-length framing with literal runs only, which three's HDR loader reads.
+ */
+export function buildHdr(width, height, pixel) {
+  const head = `#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y ${height} +X ${width}\n`;
+  const bytes = [...new TextEncoder().encode(head)];
+  for (let y = 0; y < height; y += 1) {
+    const line = [[], [], [], []];
+    for (let x = 0; x < width; x += 1) {
+      const [r, g, b] = pixel(x, y);
+      const peak = Math.max(r, g, b);
+      if (peak < 1e-32) {
+        for (const channel of line) channel.push(0);
+        continue;
+      }
+      const exponent = Math.floor(Math.log2(peak)) + 1;
+      const scale = 256 / 2 ** exponent;
+      line[0].push(Math.floor(r * scale));
+      line[1].push(Math.floor(g * scale));
+      line[2].push(Math.floor(b * scale));
+      line[3].push(exponent + 128);
+    }
+    bytes.push(2, 2, width >> 8, width & 255);
+    for (const channel of line)
+      for (let at = 0; at < width; at += 128) {
+        const run = channel.slice(at, at + 128);
+        bytes.push(run.length, ...run);
+      }
+  }
+  return new Uint8Array(bytes);
+}
+
+/**
+ * A PNG whose container is whole (every chunk checksum is right) but whose image data is not a zlib
+ * stream: registered, because registration reads headers, then refused by the decoder that draws it.
+ */
+export function undecodablePng(width, height) {
+  const header = new Uint8Array(13);
+  new DataView(header.buffer).setUint32(0, width);
+  new DataView(header.buffer).setUint32(4, height);
+  header.set([8, 6, 0, 0, 0], 8);
+  const parts = [
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])),
+    chunk("IEND", new Uint8Array()),
+  ];
+  const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
