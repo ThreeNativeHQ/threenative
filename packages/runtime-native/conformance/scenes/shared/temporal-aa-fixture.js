@@ -32,7 +32,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   const instances = new THREE.InstancedMesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshStandardMaterial({ color: 0x60ead6 }), 3);
   scene.add(instances);
   const geometry = new THREE.BoxGeometry(0.28, 1.4, 0.25, 1, 8, 1);
-  const skinIndices = [], skinWeights = [];
+  const skinIndices = [];
+  const skinWeights = [];
   for (let index = 0; index < geometry.attributes.position.count; index++) {
     const weight = THREE.MathUtils.clamp(geometry.attributes.position.getY(index) + 0.5, 0, 1);
     skinIndices.push(0, 1, 0, 0);
@@ -41,7 +42,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
   geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(skinIndices, 4));
   geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(skinWeights, 4));
   const character = new THREE.SkinnedMesh(geometry, new THREE.MeshStandardMaterial({ color: 0xdd72df }));
-  const root = new THREE.Bone(), limb = new THREE.Bone();
+  const root = new THREE.Bone();
+  const limb = new THREE.Bone();
   root.add(limb); character.add(root);
   character.bind(new THREE.Skeleton([root, limb]));
   character.position.set(1.4, 0.25, 0.5);
@@ -64,7 +66,9 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     }],
   });
   if (variant === "reference") pipeline.outputNode = scenePass;
-  let frame = 0, resets = 0, lastReset = null;
+  let frame = 0;
+  let resets = 0;
+  let lastReset = null;
   const observation = () => ({
     frame, resets, lastReset, aa: temporal?.report() ?? null,
     stages: chain.applied.stages, velocity: chain.applied.velocity,
@@ -94,7 +98,8 @@ export function createTemporalAAFixture(renderer, scene, camera, variant = "temp
     render, observation,
     dispose: () => {
       chain.dispose(); tracker.clear(); scenePass.dispose(); pipeline.dispose();
-      const geometries = new Set(), materials = new Set();
+      const geometries = new Set();
+      const materials = new Set();
       scene.traverse((object) => { if (object.geometry) geometries.add(object.geometry); if (object.material) materials.add(object.material); });
       for (const item of geometries) item.dispose();
       for (const item of materials) item.dispose();

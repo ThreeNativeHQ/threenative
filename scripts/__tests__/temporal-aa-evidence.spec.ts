@@ -29,6 +29,16 @@ describe("temporal render evidence", () => {
     });
     expect(() => requireTemporalRenderEvidence(result, "temporal")).toThrow(/device loss/);
   });
+  it("reports startup errors before the consequent missing screenshot provenance", () => {
+    const result = report();
+    Reflect.deleteProperty(result, "capture");
+    result.diagnostics.push({
+      code: "TN_PLAYTEST_BRIDGE_MISSING",
+      message: "Startup failed",
+      severity: "error",
+    });
+    expect(() => requireTemporalRenderEvidence(result, "temporal")).toThrow(/error diagnostics/);
+  });
   it("rejects unrelated error diagnostics, absent adapter identity and failed reports", () => {
     const error = report();
     error.diagnostics.push({

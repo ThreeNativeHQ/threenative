@@ -129,6 +129,13 @@ the verifier requires the AA resolve count to equal the fixture count. The verif
 regressions retain that fail-closed requirement. No visual acceptance box is inferred from a green
 CPU gate or the diagnostic reference frame.
 
+Hosted run `36988336664` proves the reference arm completes 24 RAF-separated frames with no
+console or device-loss diagnostics, then the temporal arm fails before bridge installation. The
+fixture now preserves startup exceptions through its diagnostic bridge instead of losing the cause
+as a generic missing-bridge error. Error diagnostics take precedence over absent capture provenance
+without weakening either requirement. Full root lint was run: five new fixture format/declaration
+errors were corrected; a fresh whole-root error-level check then passed (existing warnings remain).
+
 ## Runtime screenshot progress
 
 - [Diagnostic no-AA reference](../../verification/prd455/diagnostic-reference.png), hosted run
