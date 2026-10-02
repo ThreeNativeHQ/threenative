@@ -14,6 +14,7 @@
 //! | `-2` | internal failure (a panic was caught) |
 //! | `-5` | bad argument: null pointer, non-UTF-8 text, unusable event name |
 //! | `-6` | the mutation batch was rejected; [`tn_css_ui_last_error`] says which op |
+//! | `-7` | `ui_root` exists but holds no `.css` stylesheet |
 
 use std::cell::RefCell;
 use std::ffi::{c_char, c_int, CStr, CString};
@@ -35,7 +36,9 @@ thread_local! {
          + anyrender_vello_cpu {ANYRENDER_VELLO_CPU_VERSION} + parley {PARLEY_VERSION} \
          (CPU rasteriser, no WebView, no Chromium)"
     ))
-    .expect("backend string has no interior nul");
+    // Built from version constants, so no interior nul is reachable; `unwrap_or_default` anyway,
+    // because this is a thread-local initialiser and a panic in one aborts the process.
+    .unwrap_or_default();
 }
 
 /// A rendered frame. `pixels` is premultiplied RGBA8 with `stride` bytes per row, and stays valid
@@ -55,6 +58,7 @@ enum Fail {
     Arg(String),
     State(String),
     Rejected(String),
+    NoStylesheets(String),
 }
 
 impl Fail {
@@ -63,12 +67,16 @@ impl Fail {
             Fail::Arg(_) => -5,
             Fail::State(_) => -1,
             Fail::Rejected(_) => -6,
+            Fail::NoStylesheets(_) => -7,
         }
     }
 
     fn message(&self) -> &str {
         match self {
-            Fail::Arg(m) | Fail::State(m) | Fail::Rejected(m) => m,
+            Fail::Arg(m)
+            | Fail::State(m)
+            | Fail::Rejected(m)
+            | Fail::NoStylesheets(m) => m,
         }
     }
 }
@@ -126,7 +134,8 @@ fn with_ui<T>(
 }
 
 /// Create the document and load `*.css` from `ui_root`, if it exists. A missing directory is
-/// allowed and loads nothing.
+/// allowed and loads nothing; a directory that is there with no stylesheet in it is `-7`,
+/// because an unstyled HUD and a HUD whose CSS never shipped look identical on screen.
 #[no_mangle]
 pub extern "C" fn tn_css_ui_attach(ui_root: *const c_char, width: u32, height: u32) -> c_int {
     guard(|| {
@@ -136,8 +145,15 @@ pub extern "C" fn tn_css_ui_attach(ui_root: *const c_char, width: u32, height: u
         }
         let mut ui = CssUi::new(width, height, 1.0)
             .map_err(|e| Fail::Arg(format!("tn_css_ui_attach: {e}")))?;
-        ui.load_sheet_dir(Path::new(root))
+        let dir = Path::new(root);
+        let sheets = ui
+            .load_sheet_dir(dir)
             .map_err(|e| Fail::Arg(format!("tn_css_ui_attach: {e}")))?;
+        if sheets == 0 && dir.is_dir() {
+            return Err(Fail::NoStylesheets(format!(
+                "tn_css_ui_attach: {root} holds no .css stylesheet"
+            )));
+        }
         UI.with(|slot| *slot.borrow_mut() = Some(ui));
         Ok(0)
     })
@@ -174,7 +190,10 @@ pub extern "C" fn tn_css_ui_take() -> *mut c_char {
     if text.is_empty() {
         std::ptr::null_mut()
     } else {
-        CString::new(text).expect("no interior nul in an event id").into_raw()
+        // An interior nul cannot come out of a JSON event, but `expect` inside an `extern "C"`
+        // call aborts the host rather than unwinding. Null is what the host already reads as
+        // "nothing to report".
+        CString::new(text).map_or(std::ptr::null_mut(), |owned| owned.into_raw())
     }
 }
 

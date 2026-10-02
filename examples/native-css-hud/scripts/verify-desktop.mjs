@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 
 const example = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(example, "..", "..");
@@ -37,9 +38,23 @@ for (const [label, file] of [
   }
 }
 
-// The consumer build bundles game.js and the stylesheet-only ui dir. It also installs the published
-// prebuilt host, which has no CSS backend, so that artifact is discarded and repackaged below.
-run("pnpm", ["exec", "threenative", "build", "--target", "desktop"], "threenative build");
+// The consumer build bundles game.js and the stylesheet-only ui dir, then installs the published
+// prebuilt host to package against. That host has no CSS backend, so packaging must refuse it by
+// name: this is the negative control. A build that passes here has packaged a host that cannot
+// start its own UI, and the proof below would not be about the shipped path.
+const consumer = spawnSync("pnpm", ["exec", "threenative", "build", "--target", "desktop"], {
+  cwd: example,
+  encoding: "utf8",
+});
+if (!`${consumer.stdout}${consumer.stderr}`.includes("TN_CSS_UI_HOST_MISSING")) {
+  console.error(
+    `TN_NATIVE_CSS_VERIFY_FAILED: the consumer build against the prebuilt host must refuse with TN_CSS_UI_HOST_MISSING (exit ${consumer.status}).`,
+  );
+  process.exit(1);
+}
+console.log(
+  "consumer build refused the prebuilt host by name (TN_CSS_UI_HOST_MISSING), as designed",
+);
 rmSync(join(example, "dist-native"), { force: true, recursive: true });
 rmSync(join(example, "artifacts"), { force: true, recursive: true });
 run(
@@ -86,3 +101,62 @@ if (backend === undefined || !attached || webView.length > 0) {
   process.exit(1);
 }
 console.log(`native-css verified: ${backend}`);
+
+/**
+ * The log proves the host linked the backend; only pixels prove it painted. A host that logged the
+ * backend and dropped every frame passes the log check, so both captures are decoded and the two
+ * regions the HUD is made of are counted: the Close button's blue fill, and the panel behind it,
+ * which must not be the clear colour.
+ */
+const NEAR = 8;
+const BLUE = [37, 99, 235];
+const CLEAR = [24, 24, 27];
+
+function countNear(image, box, colour, tolerance) {
+  let count = 0;
+  for (let y = box.top; y <= box.bottom; y++) {
+    for (let x = box.left; x <= box.right; x++) {
+      const index = (image.width * y + x) << 2;
+      if (
+        Math.abs(image.data[index] - colour[0]) <= tolerance &&
+        Math.abs(image.data[index + 1] - colour[1]) <= tolerance &&
+        Math.abs(image.data[index + 2] - colour[2]) <= tolerance
+      ) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+function countDifferent(image, box, colour, tolerance) {
+  return (
+    (box.right - box.left + 1) * (box.bottom - box.top + 1) -
+    countNear(image, box, colour, tolerance)
+  );
+}
+
+const BUTTON = { left: 45, right: 130, top: 626, bottom: 676 };
+const PANEL = { left: 24, right: 344, top: 470, bottom: 695 };
+const painted = {};
+for (const capture of ["hud-before", "hud-after-click"]) {
+  const file = join(example, "artifacts", "playtest", `${capture}.png`);
+  if (!existsSync(file)) {
+    console.error(`TN_NATIVE_CSS_VERIFY_FAILED: ${capture}.png is missing: ${file}`);
+    process.exit(1);
+  }
+  const image = PNG.sync.read(readFileSync(file));
+  const button = countNear(image, BUTTON, BLUE, NEAR);
+  const panel = countDifferent(image, PANEL, CLEAR, NEAR);
+  painted[capture] = { button, panel };
+  const failed = [];
+  if (button < 1500) failed.push(`Close button pixels ${button} < 1500`);
+  if (panel <= 6000) failed.push(`panel pixels off the clear colour ${panel} <= 6000`);
+  if (failed.length > 0) {
+    console.error(
+      `TN_NATIVE_CSS_VERIFY_FAILED: ${capture}.png is not painted: ${failed.join("; ")}`,
+    );
+    process.exit(1);
+  }
+}
+console.log(`native-css pixels verified: ${JSON.stringify(painted)}`);

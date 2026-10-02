@@ -383,6 +383,9 @@ importers:
       create-threenative:
         specifier: workspace:*
         version: link:../../packages/create-threenative
+      pngjs:
+        specifier: 'catalog:'
+        version: 7.0.0
       tailwindcss:
         specifier: 'catalog:'
         version: 4.3.3

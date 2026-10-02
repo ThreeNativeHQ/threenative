@@ -147,6 +147,26 @@ function desktopUiRenderer(config) {
   return renderer === 'web' || renderer === 'native-css' ? renderer : 'native';
 }
 
+/**
+ * Refuse a `native-css` game packaged against a host with no CSS backend.
+ *
+ * The CSS UI is an opt-in CMake flag, so the published prebuilt carries no `css-ui` staticlib and
+ * would stage the stylesheets and then paint nothing over a working game — clean logs, blank HUD.
+ * The backend string in the host names the rasteriser it was linked with, and that literal only
+ * exists in a host built with `TN_ENABLE_CSS_UI=1`, so one byte scan is the whole check. Read in
+ * chunks: the runtime is ~120 MB and the literal can sit anywhere in it.
+ */
+export function assertRuntimeHasCssUi(runtimePath) {
+  const marker = 'CPU rasteriser, no WebView';
+  const chunk = readFileSync(runtimePath);
+  if (chunk.includes(marker)) return;
+  throw new Error(
+    `TN_CSS_UI_HOST_MISSING: ui.renderer is "native-css" but ${runtimePath} was not built with ` +
+      'TN_ENABLE_CSS_UI=1 (the published prebuilt host has no CSS backend); build the host from ' +
+      'source or choose another renderer.',
+  );
+}
+
 function readConfig(configPath) {
   if (configPath === undefined) return DEFAULT_DESKTOP_CONFIG;
   try {
@@ -291,11 +311,11 @@ function compileDesktopArtifact(options, runtime, { sidecar = false } = {}) {
     // real origin, the way `WebViewAssetLoader` does on Android, and it is the difference between
     // `fetch` behaving as it does on web and not. A game with the native UI renderer ships neither
     // the directory nor an overlay.
-    stageDesktopUi(
-      options.ui,
-      options.config === undefined ? 'native' : desktopUiRenderer(readConfig(options.config)),
-      join(dirname(output), 'ui'),
-    );
+    const uiRenderer = options.config === undefined ? 'native' : desktopUiRenderer(readConfig(options.config));
+    // Both paths reach here, so the CSS host check is one call: a `native-css` game needs a host
+    // that actually has the backend, whether it is the maintainer's build or the published one.
+    if (uiRenderer === 'native-css') assertRuntimeHasCssUi(runtime);
+    stageDesktopUi(options.ui, uiRenderer, join(dirname(output), 'ui'));
     const args = [
       'compile',
       stagedEntry,

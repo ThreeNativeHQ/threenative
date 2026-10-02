@@ -26,6 +26,7 @@
     "@types/three": "0.185.3",
     "@vitejs/plugin-react": "catalog:",
     "create-threenative": "workspace:*",
+    "pngjs": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"

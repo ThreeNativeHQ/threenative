@@ -65,7 +65,7 @@ const TAGS: &[&str] = &[
 /// The attribute names an `attr` op may set, besides any `data-*` or `aria-*`. Everything else
 /// is rejected: an arbitrary attribute name is a selector surface this slice does not model.
 const ATTRS: &[&str] = &[
-    "class", "id", "style", "role", "disabled", "type", "src", "alt", "tabindex",
+    "class", "id", "style", "role", "disabled", "type", "src", "alt", "tabindex", "title",
 ];
 
 /// The events a `listen` op may name.
@@ -138,15 +138,26 @@ impl Op {
     }
 }
 
-fn parse_batch(json: &str) -> Result<Batch, String> {
+/// The frame type this engine owns. The UI bridge is one channel shared with the game's own state
+/// frames, so a frame that names another type is not a malformed batch — it is not for this engine.
+const CSS_FRAME_TYPE: &str = "tn:css";
+
+fn parse_batch(json: &str) -> Result<Option<Batch>, String> {
     let value: Value = serde_json::from_str(json).map_err(|e| format!("batch: {e}"))?;
+    if value
+        .get("type")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| kind != CSS_FRAME_TYPE)
+    {
+        return Ok(None);
+    }
     let ops = value
         .get("ops")
         .and_then(Value::as_array)
         .ok_or_else(|| "batch: missing \"ops\" array".to_string())?;
-    Ok(Batch {
+    Ok(Some(Batch {
         ops: ops.iter().map(parse_op).collect::<Result<_, _>>()?,
-    })
+    }))
 }
 
 fn parse_op(value: &Value) -> Result<Op, String> {
@@ -310,7 +321,9 @@ impl CssUi {
     }
 
     /// Load every `*.css` in `root`, sorted by file name, as one stylesheet each. A missing
-    /// directory is not an error: a game may ship its styles inside its bundle instead.
+    /// directory is not an error: a game may ship its styles inside its bundle instead. The
+    /// count is how many loaded, so a caller can tell an empty directory from a missing one —
+    /// a game whose stylesheets never shipped paints an unstyled HUD either way.
     pub fn load_sheet_dir(&mut self, root: &Path) -> Result<usize, String> {
         let entries = match std::fs::read_dir(root) {
             Ok(entries) => entries,
@@ -321,7 +334,14 @@ impl CssUi {
         for entry in entries {
             let entry = entry.map_err(|e| format!("sheet dir {}: {e}", root.display()))?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.ends_with(".css") {
+            // Case-insensitive: a bundle written on a case-insensitive filesystem can carry
+            // `Theme.CSS`, and a file visible on the author's machine must not vanish here. The
+            // sort below is on the name as written, so the cascade does not depend on the
+            // directory's own order.
+            if name
+                .rsplit_once('.')
+                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("css"))
+            {
                 files.push(name);
             }
         }
@@ -361,7 +381,9 @@ impl CssUi {
 
     /// Apply one mutation batch. Either every op in it applies or none does.
     pub fn post(&mut self, batch: &str) -> Result<(), String> {
-        let batch = parse_batch(batch)?;
+        let Some(batch) = parse_batch(batch)? else {
+            return Ok(());
+        };
         self.validate(&batch.ops)?;
 
         // Sheets and the viewport are independent of the tree, so they go first and keep `post`
@@ -936,6 +958,21 @@ mod tests {
     }
 
     #[test]
+    fn frames_of_another_type_are_not_for_this_engine() {
+        let mut ui = ui();
+        assert!(ui.render(), "first paint");
+        let painted = ui.counter();
+        // The game publishes `tn:state` over the same bridge; it is ignored, never an error.
+        ui.post(r#"{"type":"tn:state","state":{"frames":3}}"#)
+            .expect("foreign frame is ignored");
+        assert!(!ui.render(), "an ignored frame repaints nothing");
+        assert_eq!(ui.counter(), painted);
+        // A frame that claims to be ours but has no ops is still a malformed batch.
+        let err = ui.post(r#"{"type":"tn:css"}"#).expect_err("css frame without ops");
+        assert!(err.contains("ops"), "{err}");
+    }
+
+    #[test]
     fn rejects_unknown_op_naming_it() {
         let err = ui()
             .post(r#"{"ops":[{"op":"teleport","id":1}]}"#)
@@ -999,6 +1036,19 @@ mod tests {
             make(1, "div")
         ))
         .expect("data-* and known events are allowed");
+    }
+
+    #[test]
+    fn accepts_the_attributes_the_js_host_passes() {
+        // Every one of these crosses from `@threenative/core`'s React bridge, so rejecting one
+        // blanks the whole HUD rather than dropping an attribute.
+        let mut ui = ui();
+        ui.post(&format!(
+            r#"{{"ops":[{},{}]}}"#,
+            make(1, "button"),
+            r#"{"op":"attr","id":1,"name":"title","value":"Inventory"}"#
+        ))
+        .expect("title is an attribute the host passes");
     }
 
     #[test]

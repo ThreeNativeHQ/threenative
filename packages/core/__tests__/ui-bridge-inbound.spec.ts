@@ -24,7 +24,7 @@ describe("ui bridge inbound global", () => {
     expect(second).toEqual(["click"]);
   });
 
-  it("keeps the survivor connected when one closes, and clears the global when none are left", () => {
+  it("keeps the survivor connected when one closes", () => {
     const scope = hostScope();
     const survivor: string[] = [];
     const closing = connectUiBridge({ end: "game", scope });
@@ -37,6 +37,20 @@ describe("ui bridge inbound global", () => {
     const last = connectUiBridge({ end: "game", scope });
     last.close();
     expect(scope[UI_BRIDGE_GLOBALS.gameReceive]).toBeTypeOf("function");
+  });
+
+  it("keeps delivering to the other receivers when one throws, then rethrows", () => {
+    const scope = hostScope();
+    const received: string[] = [];
+    connectUiBridge({ end: "game", scope }).onMessage(() => {
+      throw new Error("TN_TEST_RECEIVER_THREW");
+    });
+    connectUiBridge({ end: "game", scope }).onMessage((m) => received.push(m.type));
+
+    expect(() => deliverFromHost(scope, { type: "click", id: 3 })).toThrow(
+      "TN_TEST_RECEIVER_THREW",
+    );
+    expect(received).toEqual(["click"]);
   });
 
   it("removes the host global once the last connection closes", () => {

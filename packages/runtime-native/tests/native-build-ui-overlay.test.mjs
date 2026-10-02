@@ -116,6 +116,37 @@ test.runIf(process.platform === 'linux' || process.platform === 'darwin')(
       optedCommands,
       /-DTHREENATIVE_CSS_UI_LIBRARY=.*libthreenative_css_ui\.a/u,
     );
+
+    // `TN_ENABLE_UI_OVERLAY=0` is the opt-out that makes the CSS UI the only UI: a host with no
+    // web view in it at all. It must not build the overlay crate on the way to saying so, because
+    // on Linux that build is the step that needs webkit2gtk.
+    const withoutOverlayLog = join(root, 'without-overlay.log');
+    const withoutOverlay = spawnSync(process.execPath, [join(scripts, 'native-build.mjs')], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        TN_TEST_LOG: withoutOverlayLog,
+        TN_ENABLE_UI_OVERLAY: '0',
+        TN_ENABLE_CSS_UI: '1',
+      },
+    });
+    assert.equal(withoutOverlay.status, 0, withoutOverlay.stderr);
+    const withoutOverlayCommands = readFileSync(withoutOverlayLog, 'utf8');
+    assert.doesNotMatch(
+      withoutOverlayCommands,
+      /native\/ui-overlay\/Cargo\.toml/u,
+      'the web overlay crate must not be built',
+    );
+    assert.doesNotMatch(withoutOverlayCommands, /THREENATIVE_UI_OVERLAY_LIBRARY/u);
+    assert.match(withoutOverlayCommands, /-DTN_ENABLE_UI_OVERLAY=OFF/u);
+    // The CSS UI is still there — that is the point of the opt-out.
+    assert.match(
+      withoutOverlayCommands,
+      /cargo build --release --manifest-path .*native\/css-ui\/Cargo\.toml --lib/u,
+    );
+    assert.match(withoutOverlayCommands, /-DTN_ENABLE_CSS_UI=ON/u);
   },
 );
 

@@ -129,6 +129,15 @@ std::atomic<size_t> g_hitRegionCount{0};
  */
 constexpr size_t kMaxQueuedUiMessages = 256;
 
+/**
+ * How many rejected CSS batches are named on stderr before the rest are counted only.
+ *
+ * A rejected batch applies none of its ops, so a game whose markup names one unsupported tag
+ * posts the same failure every frame. One line says why; twenty thousand lines bury the run's
+ * real output.
+ */
+constexpr unsigned kMaxCssPostRejections = 20;
+
 #if defined(__ANDROID__)
 /**
  * The latest page frame, published by the in-frame producer in `TnUiOverlay`.
@@ -185,6 +194,10 @@ bool g_cssBackend = false;
 uint64_t g_cssCounter = 0;
 uint64_t g_cssFramesPublished = 0;
 
+/** The frame counter at the first accepted post, and whether there has been one yet. */
+bool g_cssReadyArmed = false;
+uint64_t g_cssPostCounter = 0;
+
 /** Why an entry point failed, in the words a reader can act on. The crate's own code table. */
 const char* cssFailure(int code) {
     switch (code) {
@@ -192,6 +205,7 @@ const char* cssFailure(int code) {
         case -2: return "internal failure inside the CSS UI";
         case -5: return "invalid argument";
         case -6: return "the mutation batch was rejected";
+        case -7: return "the ui root exists but holds no .css stylesheet";
         default: return "invalid argument";
     }
 }
@@ -244,10 +258,15 @@ bool cssTakeFrame(UiOverlayFrame& frame) {
     if (layout.counter != g_cssCounter) {
         g_cssCounter = layout.counter;
         g_cssFramesPublished += 1;
-        // The CSS UI has no page and so no `tn:ready` intent to wait for. Its first painted frame
-        // is the same fact from the other side: the HUD is on the screen. Without this the CLI's
-        // 15-second ready deadline would kill a run whose UI is working perfectly.
-        if (g_cssFramesPublished == 1) g_uiReadyIntentReceived.store(true, std::memory_order_release);
+        // The CSS UI has no page and so no `tn:ready` intent to wait for, but the CLI still has a
+        // 15-second deadline on readiness, so something has to open it. The first painted frame
+        // cannot: that is the empty document, painted before the game has posted anything, and
+        // calling it readiness is what made a HUD whose every batch was rejected look alive. The
+        // first repaint *after* an accepted post is the same fact the web view's `tn:ready` intent
+        // states, learned from this side: the game's own markup is on the screen.
+        if (g_cssReadyArmed && layout.counter > g_cssPostCounter) {
+            g_uiReadyIntentReceived.store(true, std::memory_order_release);
+        }
     }
     return frame.pixels != nullptr && frame.length > 0;
 }
@@ -850,7 +869,34 @@ bool postUiMessage(const std::string& frame) {
         traceUiLatency("post", ++posted, "");
         // Unmodified: the UI layer's transport for this backend is the frame itself, so a
         // `{"type":"tn:css","ops":[...]}` batch reaches the document exactly as it was written.
-        return tn_css_ui_post(frame.c_str()) == 0;
+        const int code = tn_css_ui_post(frame.c_str());
+        if (code != 0) {
+            // A rejected batch applies none of its ops, so the HUD keeps whatever it last had —
+            // which, if it is the first one, is an empty screen. Silent, that is a game with
+            // nothing to show and nothing to read. Named, once per run at most
+            // `kMaxCssPostRejections` times, because a cause in the markup repeats every frame.
+            static unsigned rejected = 0;
+            if (rejected < kMaxCssPostRejections) {
+                ++rejected;
+                std::fprintf(stderr, "TN_CSS_UI_POST_REJECTED: %d %s\n", code,
+                             cssLastError().c_str());
+                std::fflush(stderr);
+            }
+            return false;
+        }
+        // Readiness is armed here rather than at the first paint: the frames before this one show
+        // an empty document, whatever the host does with them.
+        //
+        // Only for a frame the engine acts on. The bridge also carries the game's own state frames
+        // (`{"type":"tn:state",...}`), which the engine accepts and ignores: counting one as the
+        // HUD's first post would open the gate on the empty document it is meant to wait past.
+        const bool foreign = frame.rfind("{\"type\":\"", 0) == 0 &&
+                             frame.rfind("{\"type\":\"tn:css\"", 0) != 0;
+        if (!foreign && !g_cssReadyArmed) {
+            g_cssReadyArmed = true;
+            g_cssPostCounter = g_cssCounter;
+        }
+        return true;
     }
 #endif
 #if TN_ENABLE_UI_OVERLAY

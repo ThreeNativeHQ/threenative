@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { afterEach, test } from 'vitest';
 
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
-import { renderAndroidManifest, stageAndroidUi } from '../scripts/package-android.mjs';
-import { stageDesktopFiles, stageDesktopUi } from '../scripts/package-desktop.mjs';
+import { mobileUiRenderer, renderAndroidManifest, stageAndroidUi } from '../scripts/package-android.mjs';
+import { assertRuntimeHasCssUi, stageDesktopFiles, stageDesktopUi } from '../scripts/package-desktop.mjs';
 import { stageIosUi } from '../scripts/package-ios.mjs';
 
 const androidManifest = readFileSync(
@@ -118,6 +118,32 @@ test('the desktop packager flattens the native-css renderer into the staged conf
     readFileSync(join(root, 'staging', '.threenative', 'config.json'), 'utf8'),
   );
   assert.equal(staged.uiRenderer, 'native-css');
+});
+
+// The CSS backend is an opt-in CMake flag, so the published prebuilt has no `css-ui` staticlib: a
+// `native-css` game packaged against it would stage stylesheets and then paint nothing, with clean
+// logs. The host names the rasteriser it was linked with, and that literal is the whole check.
+test('a native-css game refuses a runtime built without the CSS backend', () => {
+  const root = temp('threenative-css-ui-host-');
+  const withBackend = join(root, 'mystral');
+  const without = join(root, 'mystral-prebuilt');
+  writeFileSync(withBackend, Buffer.concat([Buffer.alloc(4096), Buffer.from('blitz-dom 0.3 (CPU rasteriser, no WebView, no Chromium)')]));
+  writeFileSync(without, Buffer.alloc(4096));
+
+  assertRuntimeHasCssUi(withBackend);
+  assert.throws(() => assertRuntimeHasCssUi(without), /TN_CSS_UI_HOST_MISSING[\s\S]*TN_ENABLE_CSS_UI=1/u);
+});
+
+// Mobile flattens `ui.renderer` to a string the host reads. `native-css` has no mobile build, so it
+// is refused by name rather than silently becoming `native` — a game that asked for a CSS HUD would
+// launch with none and nothing in the logs would say why.
+test('the mobile packagers refuse native-css by name instead of flattening it to native', () => {
+  assert.equal(mobileUiRenderer('web'), 'web');
+  assert.equal(mobileUiRenderer('native'), 'native');
+  assert.throws(
+    () => mobileUiRenderer('native-css'),
+    /TN_UI_RENDERER_UNSUPPORTED: ui\.renderer "native-css" is desktop-only/u,
+  );
 });
 
 // Desktop stages the UI beside the executable rather than inside it: the overlay's web view reads

@@ -384,8 +384,8 @@ Blitz), and the result is painted into a CPU surface that the compositor draws o
 is the one exception to "no second renderer": the engine owns a UI-only element tree and a UI-only
 surface. It never renders the 3D game, exposes no scene or style IR to game code, does not replace
 Three.js, and imposes no look — the stylesheet is the game's own, from the same Vite and Tailwind
-build the web renderer uses. It claims only what its fixtures prove; anything outside them is
-reported, never approximated.
+build the web renderer uses. It claims only what its fixtures prove; unsupported CSS is not
+diagnosed yet, so anything outside the fixtures is unverified.
 
 ```ts
 ui: { renderer: 'web' }        // default — the platform picks the surface

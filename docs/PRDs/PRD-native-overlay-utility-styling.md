@@ -65,7 +65,8 @@ No default switch, completed-PRD rewrite, or mandatory dependency cost for other
 
 ## User-facing contract
 
-The example below is a **required future acceptance fixture**, not a currently available API.
+The example below is the acceptance fixture. It runs on Linux desktop as `examples/native-css-hud` (system
+font instead of `@font-face`, `type="button"` added); the rest is the same source.
 The component and stylesheet are identical in browser and native-CSS builds; only the renderer
 selection/bootstrap differs. Do not make users replace `div` with `View` or rewrite styles per target.
 
@@ -360,16 +361,16 @@ backend decision or upstream fix, not an unrequested return to the utility-only 
 
 ## Execution phases
 
-All test paths and fixture names below are **planned**; none are claimed to exist or pass today.
+A box with a result beside it is verified; every other path and fixture name below is planned and unverified.
 These three phases implement only the Core HUD profile. Larger follow-on profiles require separate
 PRDs/PRs rather than extending this checklist indefinitely.
 
 ### Phase 1 — Standard CSS pipeline and native admission slice
 
 - [x] The acceptance fixture's Tailwind/CSS styling artifact is byte-identical for the browser and native builds. proof: `pnpm exec vitest run packages/create-threenative/__tests__/build.spec.ts packages/create-threenative/__tests__/config.spec.ts` (129 tests, all passing) plus `examples/native-css-hud`: the web build emits `assets/index-DeVq0E9q.css` and the native package stages `ui/index-DeVq0E9q.css` — same content hash, from the workspace's pinned Tailwind 4.3.3 via the project's own Vite config (`extractUiStylesheets` copies only `*.css`; no page, no JS).
-- [ ] Plain-CSS-only arm, assets (fonts/images), source maps and opted-out dependency isolation are proven for the native-css build. proof: planned `packages/create-threenative/__tests__/native-css-build.spec.ts`.
+- [ ] Plain-CSS-only arm, assets (fonts/images), source maps, opt-out dependency isolation, a native Android build and an upstream/transitive license inventory are proven for the native-css backend. proof: planned `packages/create-threenative/__tests__/native-css-build.spec.ts`, an Android emulator run, and a license inventory.
   Not done: only the Tailwind + custom CSS arm is covered; `@font-face`/image assets, source maps and a plain-CSS fixture are not built. Opt-out cost is covered so far only by the default-OFF host lane (`threenative-css-ui-overlay-test` refusal contract passes) and by `react-css` being a subpath no main entry imports.
-- [x] The unchanged acceptance component mounts on an actual native CSS backend. proof: `TN_ENABLE_CSS_UI=1 pnpm native:build` then `pnpm --filter threenative-native-css-hud verify:desktop` — exit 0 on Linux desktop (NVIDIA RTX 2080, Vulkan, private Xvfb): `examples/native-css-hud/playtests/native-css-hud.playtest.json` passes (`GameState.closeClicks` 0 -> 1 after a real pointer click on the native-painted Close button, `frames` >= 100, diagnostics clean), and the host log carries `ui overlay: native-css backend=blitz-dom 0.3.0-beta.2 ... (CPU rasteriser, no WebView, no Chromium)` and `TN_UI_OVERLAY:{"attached":true,"renderer":"native-css"}`. `Inventory.tsx` is the one file both the react-dom and native entries mount. Charter amended (bounded UI-only exception); `packages/ui/AGENTS.md` and `docs/guides/native-runtime.md` describe the opt-in. Screenshots: `examples/native-css-hud/reference/native-css-hud-{before,after-click}.png` beside the Chrome reference.
+- [x] The acceptance component (the PRD fixture minus `@font-face`, which needs the bundled-font work) mounts on an actual native CSS backend. proof: `TN_ENABLE_CSS_UI=1 TN_ENABLE_UI_OVERLAY=0 pnpm native:build` then `pnpm --filter threenative-native-css-hud verify:desktop` — exit 0 on Linux desktop (NVIDIA RTX 2080, Vulkan, private Xvfb): `examples/native-css-hud/playtests/native-css-hud.playtest.json` passes (`GameState.closeClicks` 0 -> 1 after a real pointer click on the native-painted Close button, `frames` >= 100, diagnostics clean), and the host log carries `ui overlay: native-css backend=blitz-dom 0.3.0-beta.2 ... (CPU rasteriser, no WebView, no Chromium)` and `TN_UI_OVERLAY:{"attached":true,"renderer":"native-css"}`. `Inventory.tsx` is the one file both the react-dom and native entries mount. Charter amended (bounded UI-only exception); `packages/ui/AGENTS.md` and `docs/guides/native-runtime.md` describe the opt-in. Screenshots: `examples/native-css-hud/reference/native-css-hud-{before,after-click}.png` beside the Chrome reference.
 
 ### Phase 2 — Core HUD semantics
 
@@ -393,9 +394,9 @@ the normative source-parity, no-WebView, dependency-isolation or supported-profi
 
 ## Blocked on
 
-No external dependency blocks reviewing or editing this PRD. No implementation has been attempted.
-Backend selection/interop, the bounded Charter amendment and the Core engine gaps are work inside
-this proposal, not facts already established by a dependency README.
+No external dependency blocks this PRD. Phase 1 is implemented and verified on Linux desktop only
+(Blitz, CPU raster, existing compositor). GPU-side interop, Android admission, a license inventory and the
+Core engine gaps are still work inside this proposal, not facts established by a dependency README.
 
 Physical-device performance and platform accessibility readiness require the corresponding
 hardware/OS test lane; the implementing agent must try the available lane and name the actual
@@ -410,9 +411,10 @@ items are replaced by this Core HUD plan because they proved the wrong contract;
 work or evidence is removed. The existing filename is retained to preserve PR #388 links.
 
 This proposal recommends a reused standards-oriented native UI engine, with CSS allowed at
-runtime and no public proprietary style IR. The candidate library and UI-only Charter exception
-remain design proposals pending their stated implementation evidence; the owner did not select
-a specific Rust library or authorize a silent default-renderer change.
+runtime and no public proprietary style IR. Blitz 0.3.0-beta.2 was admitted for Phase 1 on Linux desktop by
+the evidence in the boxes above, and the bounded UI-only Charter exception is recorded; Android admission and
+the license inventory remain open. The owner did not select a specific Rust library or authorize a silent
+default-renderer change, and none was made.
 
 Ship as experimental opt-in after the native proofs. Preserve the web and lightweight-native
 backends and their existing tests. Rollback changes renderer selection/bootstrap, not authored

@@ -17,7 +17,9 @@ import { type IUiMessage, connectUiBridge } from "./ui-bridge.js";
  * same on a phone as in a browser. Nothing here imports `react-dom` or touches `document`.
  *
  * Fail closed: a tag the CSS engine cannot build throws naming it and the allowed list rather than
- * mounting a subtree with a hole in it, and an unresolvable prop throws instead of being ignored.
+ * mounting a subtree with a hole in it. Props outside the supported list — the tag list above, the
+ * pass-through and renamed attribute sets, the `on*` map and the supported style properties — are
+ * ignored rather than throwing, so a component shared with `react-dom` still mounts here.
  */
 
 /** The one frame type this host sends. The native CSS engine keys on it. */
@@ -119,6 +121,12 @@ const UNITLESS_PROPERTIES: ReadonlySet<string> = new Set([
   "aspectRatio",
   "gridColumn",
   "gridRow",
+  "gridRowStart",
+  "gridRowEnd",
+  "gridColumnStart",
+  "gridColumnEnd",
+  "lineClamp",
+  "WebkitLineClamp",
   "columns",
   "tabSize",
 ]);
@@ -471,8 +479,9 @@ const HOST_CONTEXT = {};
 /**
  * Mount React into a native CSS engine.
  *
- * @situation mount a React HUD on Android, iOS or desktop with no DOM in the runtime
- * @situation write one React component and run it on the web and on a phone
+ * @situation mount a React HUD on the desktop host with no DOM in the runtime
+ * @situation write one React component and run it on the web and on the desktop host
+ * @constraint desktop only, and the game host must be built with the CSS backend (`TN_ENABLE_CSS_UI=1`); Android, iOS and web phones render a React HUD in a web overlay instead
  * @constraint import `react`, never `react-dom`, from a native entry
  * @constraint styling is CSS resolved by the native engine; JS only mirrors the element tree
  * @example const root = createCssUiRoot();

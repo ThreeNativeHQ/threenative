@@ -639,6 +639,36 @@ cpSync("public", out, { recursive: true });
     );
   });
 
+  it("refuses a stylesheet that reaches for a font or an image", async () => {
+    const root = await makeTempDir("threenative-ui-css-url-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    await writeFile(
+      path.join(built, "index-abc123.css"),
+      '@font-face{src:url("./assets/inter.woff2") format("woff2")}',
+    );
+
+    await expect(extractUiStylesheets(built, path.join(root, "ui-css"))).rejects.toThrow(
+      /TN_CSS_UI_ASSET_UNSUPPORTED: [\s\S]*index-abc123\.css references \.\/assets\/inter\.woff2; fonts and images are not shipped by native-css yet/u,
+    );
+  });
+
+  it("allows a stylesheet whose only url() targets are data URIs, fragments and comments", async () => {
+    const root = await makeTempDir("threenative-ui-css-inline-");
+    roots.push(root);
+    const built = path.join(root, "built-ui");
+    await mkdir(built, { recursive: true });
+    await writeFile(
+      path.join(built, "index-abc123.css"),
+      '/* url("./dropped.woff2") */.hud{background:url("data:image/png;base64,AAA")}svg{fill:url(#grad)}i{cursor:url()}',
+    );
+
+    expect(await extractUiStylesheets(built, path.join(root, "ui-css"))).toEqual([
+      "index-abc123.css",
+    ]);
+  });
+
   it("refuses a UI build that emitted no stylesheet", async () => {
     const root = await makeTempDir("threenative-ui-css-empty-");
     roots.push(root);
@@ -781,22 +811,18 @@ cpSync("public", out, { recursive: true });
   // `native-css` runs the React tree in the game's own JS realm and paints it with a native CSS
   // engine, so it needs no web view — but the engine exists for the desktop host only, and the
   // refusal is named rather than a silent downgrade to the WebView renderer.
-  it("admits native-css on the desktop host and refuses it on mobile", () => {
-    for (const platform of ["linux", "darwin", "win32"] as const) {
-      expect(() =>
-        assertNativeUiRendererCompatible("desktop", "native-css", platform),
-      ).not.toThrow();
+  it("admits native-css on Linux desktop and refuses it everywhere else", () => {
+    expect(() => assertNativeUiRendererCompatible("desktop", "native-css", "linux")).not.toThrow();
+    for (const platform of ["darwin", "win32", "freebsd"] as const) {
+      expect(() => assertNativeUiRendererCompatible("desktop", "native-css", platform)).toThrow(
+        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for desktop on ${platform}.`,
+      );
     }
     for (const target of ["android", "ios"] as const) {
       expect(() => assertNativeUiRendererCompatible(target, "native-css")).toThrow(
-        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is desktop-only in this release; set ui.renderer to "native" or "web" for ${target}.`,
+        `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${target} (the CSS backend is Linux desktop only).`,
       );
     }
-    // A desktop host with no admitted window system refuses like `web` does rather than packaging
-    // stylesheets nothing can paint.
-    expect(() => assertNativeUiRendererCompatible("desktop", "native-css", "freebsd")).toThrow(
-      /TN_UI_RENDERER_UNSUPPORTED[\s\S]*native-css[\s\S]*for desktop\./u,
-    );
   });
 
   it("accepts web UI bundles for every native host that stages them", () => {

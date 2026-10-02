@@ -217,3 +217,75 @@ fn a_sheet_directory_loads_sorted_by_file_name() {
 
 /// Keeps the unused-import warning away for the raw pointer types the ABI signatures mention.
 const _SIGNATURES: (Option<*const c_char>, c_int) = (None, 0);
+
+/// A directory under the system temp dir, wiped first, named after the test that owns it.
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    dir
+}
+
+#[test]
+fn a_stylesheet_with_an_uppercase_extension_loads() {
+    // A bundle written on a case-insensitive filesystem keeps whatever case the author typed, and
+    // a stylesheet that was visible to them must not vanish here.
+    let dir = temp_dir("threenative-css-ui-uppercase-sheets");
+    std::fs::write(dir.join("Hud.CSS"), "section{width:30px;height:30px;background:#0f0}")
+        .expect("write");
+
+    assert_eq!(
+        tn_css_ui_attach(c(dir.to_str().unwrap()).as_ptr(), 480, 320),
+        0,
+        "a `.CSS` file is a stylesheet: {}",
+        last_error()
+    );
+    assert_eq!(
+        tn_css_ui_post(
+            c(r#"{"ops":[{"op":"create","id":1,"tag":"section"},{"op":"append","parent":0,"child":1}]}"#)
+                .as_ptr()
+        ),
+        0
+    );
+    let mut frame = TnCssFrame {
+        pixels: std::ptr::null(),
+        length: 0,
+        width: 0,
+        height: 0,
+        stride: 0,
+        counter: 0,
+    };
+    assert_eq!(tn_css_ui_frame(&mut frame), 1);
+    // Safety: the buffer is valid until the next render, resize or detach.
+    let at = |x: u32, y: u32| unsafe {
+        let offset = ((y * frame.width + x) * 4) as usize;
+        std::slice::from_raw_parts(frame.pixels.add(offset), 4)
+    };
+    assert_eq!(at(5, 5), &[0, 255, 0, 255], "Hud.CSS was applied");
+
+    assert_eq!(tn_css_ui_detach(), 0);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_existing_ui_root_with_no_stylesheet_is_its_own_code() {
+    // An unstyled HUD and a HUD whose CSS never shipped are the same pixels, so the second has to
+    // be told apart at attach time instead of leaving a blank screen to be guessed at.
+    let empty = temp_dir("threenative-css-ui-empty-sheets");
+    assert_eq!(
+        tn_css_ui_attach(c(empty.to_str().unwrap()).as_ptr(), 480, 320),
+        -7,
+        "{}",
+        last_error()
+    );
+    assert!(last_error().contains(".css"), "{}", last_error());
+    // The failed attach left nothing attached, so the next one is not "already attached".
+    assert_eq!(
+        tn_css_ui_attach(c("/nonexistent/css-ui-sheets").as_ptr(), 480, 320),
+        0,
+        "a missing directory still loads nothing and attaches"
+    );
+
+    assert_eq!(tn_css_ui_detach(), 0);
+    let _ = std::fs::remove_dir_all(&empty);
+}

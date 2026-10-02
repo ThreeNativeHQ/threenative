@@ -61,13 +61,21 @@ configureArgs.push(
 // The UI overlay is the desktop host's own, and every desktop host now has a backend: X11 on
 // Linux, WebView2 on Windows, WebKit on macOS. Build it wherever a desktop host is being built
 // and hand CMake the path the host toolchain actually wrote.
+//
+// `TN_ENABLE_UI_OVERLAY=0` is the opt-out, and it is the one that makes the CSS UI backend the
+// *only* UI: the web overlay crate is never built, so the host ends up with no browser in it at
+// all. Anything else (unset included) is the default above, unchanged.
 if (process.platform === 'linux' || process.platform === 'darwin' || process.platform === 'win32') {
-  run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
-  const uiOverlayLibrary = uiOverlayLibraryPath(root);
-  configureArgs.push(
-    '-DTN_ENABLE_UI_OVERLAY=ON',
-    `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
-  );
+  if (process.env.TN_ENABLE_UI_OVERLAY === '0') {
+    configureArgs.push('-DTN_ENABLE_UI_OVERLAY=OFF');
+  } else {
+    run(process.execPath, [join(root, 'scripts', 'build-native-ui-overlay.mjs')]);
+    const uiOverlayLibrary = uiOverlayLibraryPath(root);
+    configureArgs.push(
+      '-DTN_ENABLE_UI_OVERLAY=ON',
+      `-DTHREENATIVE_UI_OVERLAY_LIBRARY=${uiOverlayLibrary}`,
+    );
+  }
 }
 // The CSS UI backend, opted into with TN_ENABLE_CSS_UI=1: the same `src/ui/` rasterised on the CPU
 // with no WebView anywhere on the path. Off by default, like the option itself, so the default

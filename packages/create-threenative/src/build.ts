@@ -115,17 +115,17 @@ export function assertNativeUiRendererCompatible(
   renderer: IResolvedThreeNativeConfig["ui"]["renderer"],
   platform: NodeJS.Platform = process.platform,
 ): void {
-  // `native-css` is desktop-only in this release. It is refused by name rather than silently
-  // downgraded to the WebView renderer: a game that asked for no web view would get one.
+  // `native-css` is Linux desktop only in this release: the CSS backend and the only fixtures
+  // that prove it run there. It is refused by name rather than silently downgraded to the WebView
+  // renderer: a game that asked for no web view would get one.
   if (renderer === "native-css") {
-    if (
-      target === "desktop" &&
-      (platform === "linux" || platform === "darwin" || platform === "win32")
-    ) {
-      return;
-    }
+    if (target === "desktop" && platform === "linux") return;
+    const targetName =
+      target === "desktop"
+        ? `desktop on ${platform}`
+        : `${target} (the CSS backend is Linux desktop only)`;
     throw new Error(
-      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is desktop-only in this release; set ui.renderer to "native" or "web" for ${target}.`,
+      `TN_UI_RENDERER_UNSUPPORTED: ui.renderer is "native-css", which is supported on Linux desktop only in this release; set ui.renderer to "native" or "web" for ${targetName}.`,
     );
   }
   if (renderer === "native" || target === "android" || target === "ios") return;
@@ -333,9 +333,32 @@ export async function extractUiStylesheets(uiDir: string, outDir: string): Promi
   }
   // Sorted so two builds of one game stage the same names in the same order.
   for (const file of stylesheets.sort()) {
+    assertStylesheetAssetsAreInline(file, await readFile(file, "utf8"));
     await copyFile(file, path.join(outDir, path.basename(file)));
   }
   return readdir(outDir);
+}
+
+/**
+ * Refuse a stylesheet that reaches for a file the native CSS engine has no way to load.
+ *
+ * `url()` is the only such reach in CSS, and only `data:` URIs, `#fragment` references and the
+ * empty string resolve without a filesystem or an asset pipeline — everything else is a font or
+ * an image, and shipping a native HUD that silently drops them is worse than refusing the build.
+ * Comments are stripped first so a documented example cannot fail the build.
+ */
+function assertStylesheetAssetsAreInline(file: string, css: string): void {
+  const source = css.replaceAll(/\/\*[\s\S]*?\*\//gu, "");
+  for (const match of source.matchAll(/url\(([^)]*)\)/giu)) {
+    const target = (match[1] ?? "")
+      .trim()
+      .replace(/^["']|["']$/gu, "")
+      .trim();
+    if (target === "" || target.startsWith("data:") || target.startsWith("#")) continue;
+    throw new Error(
+      `TN_CSS_UI_ASSET_UNSUPPORTED: ${file} references ${target}; fonts and images are not shipped by native-css yet`,
+    );
+  }
 }
 
 /**

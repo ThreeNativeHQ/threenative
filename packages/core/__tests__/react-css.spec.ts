@@ -156,6 +156,11 @@ describe("createCssUiRoot", () => {
           display: null,
           flexGrow: undefined,
           fontSize: 12,
+          gridColumnEnd: 3,
+          gridColumnStart: 2,
+          gridRowEnd: "span 2",
+          gridRowStart: 1,
+          lineClamp: 2,
           lineHeight: 1.5,
           marginTop: 8,
           opacity: 0.5,
@@ -169,7 +174,7 @@ describe("createCssUiRoot", () => {
     // vendor prefix kept. `display`, `flexGrow` and `pointerEvents` are not declarations.
     const style = lastFrame(fake.frames).find((op) => op.op === "attr" && op.name === "style");
     expect(style?.value).toBe(
-      "-webkit-line-clamp: 2; --ring: 4; background-color: #101010; font-size: 12px; line-height: 1.5; margin-top: 8px; opacity: 0.5; z-index: 3",
+      "-webkit-line-clamp: 2; --ring: 4; background-color: #101010; font-size: 12px; grid-column-end: 3; grid-column-start: 2; grid-row-end: span 2; grid-row-start: 1; line-clamp: 2; line-height: 1.5; margin-top: 8px; opacity: 0.5; z-index: 3",
     );
     root.dispose();
   });

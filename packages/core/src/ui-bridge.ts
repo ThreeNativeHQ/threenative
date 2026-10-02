@@ -223,7 +223,21 @@ function installInbound(scope: IScope, key: string, deliver: (frame: unknown) =>
     slot = {
       receivers,
       dispatch: (frame) => {
-        for (const receiver of [...receivers]) receiver(frame);
+        // One throwing receiver must not starve the others; the first error is rethrown after
+        // the loop so the host still logs it.
+        let firstError: unknown;
+        let failed = false;
+        for (const receiver of [...receivers]) {
+          try {
+            receiver(frame);
+          } catch (error) {
+            if (!failed) {
+              failed = true;
+              firstError = error;
+            }
+          }
+        }
+        if (failed) throw firstError;
       },
     };
     bus.inbound.set(key, slot);

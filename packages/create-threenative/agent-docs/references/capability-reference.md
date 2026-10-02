@@ -2751,8 +2751,8 @@ export function View(props: IViewProps): ReactNode { … }
 export function createCssUiRoot(options: ICssUiRootOptions = { … }
 ```
 
-- **Use when:** mount a React HUD on Android, iOS or desktop with no DOM in the runtime · write one React component and run it on the web and on a phone
-- **Constraints:** import `react`, never `react-dom`, from a native entry · styling is CSS resolved by the native engine; JS only mirrors the element tree
+- **Use when:** mount a React HUD on the desktop host with no DOM in the runtime · write one React component and run it on the web and on the desktop host
+- **Constraints:** desktop only, and the game host must be built with the CSS backend (`TN_ENABLE_CSS_UI=1`); Android, iOS and web phones render a React HUD in a web overlay instead · import `react`, never `react-dom`, from a native entry · styling is CSS resolved by the native engine; JS only mirrors the element tree
 
 ```ts
 const root = createCssUiRoot();

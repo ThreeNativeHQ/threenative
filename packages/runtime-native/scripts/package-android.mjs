@@ -574,7 +574,7 @@ export function renderAndroidManifest(source, orientation = 'landscape') {
   rendered = upsertApplicationMetadata(
     rendered,
     'TN_UI_RENDERER',
-    config.ui.renderer === 'web' ? 'web' : 'native',
+    mobileUiRenderer(config.ui.renderer),
   );
   rendered = upsertApplicationMetadata(rendered, 'TN_WINDOW_TITLE', '@string/window_title');
   rendered = upsertApplicationMetadata(rendered, 'TN_FULLSCREEN', String(config.display.fullscreen));
@@ -787,6 +787,20 @@ export function stageAndroidAssets(
     cpSync(join(assets, file), output);
   }
   return files;
+}
+
+/**
+ * Flatten `ui.renderer` for the Android host, which reads a flat string.
+ *
+ * `native-css` is the desktop CSS backend and has no Android build, so it is refused by name
+ * rather than flattened to `native`: a game that asked for a CSS HUD would launch with none and
+ * nothing in the logs would say why.
+ */
+export function mobileUiRenderer(renderer) {
+  if (renderer === 'native-css') {
+    throw new Error('TN_UI_RENDERER_UNSUPPORTED: ui.renderer "native-css" is desktop-only');
+  }
+  return renderer === 'web' ? 'web' : 'native';
 }
 
 /**
@@ -1072,7 +1086,7 @@ export async function packageAndroid(
   mkdirSync(dirname(assetBundle), { recursive: true });
   copyFileSync(bundle, assetBundle);
   stageAndroidAssets(assets, join(generatedAssets, 'game'), packageRoot);
-  stageAndroidUi(options.ui, declared.ui.renderer === 'web' ? 'web' : 'native', join(generatedAssets, 'ui'));
+  stageAndroidUi(options.ui, mobileUiRenderer(declared.ui.renderer), join(generatedAssets, 'ui'));
   const restoreFiles = installAndroidFiles(declared, packageRoot);
   try {
     // The subject of the build, after branding rewrote it: the submission floor is a property of

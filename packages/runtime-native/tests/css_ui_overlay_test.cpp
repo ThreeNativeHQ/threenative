@@ -2,10 +2,12 @@
 //
 // `ui.renderer: "native-css"` is the backend with no browser in it: the game's `src/ui/` is laid
 // out by blitz-dom, rasterised on the CPU and handed to the compositor as premultiplied RGBA8.
-// This proves the two facts that a screenshot cannot: that the frames arriving through
+// This proves the facts that a screenshot cannot: that the frames arriving through
 // `uiOverlayFrame()` really came from the CPU rasteriser (premultiplied RGBA, a counter that moves
-// only on a repaint), and that a click inside a published element becomes exactly one message in
-// the game's own queue — the same queue `__tnUiGameReceive` drains.
+// only on a repaint), that a click inside a published element becomes exactly one message in the
+// game's own queue — the same queue `__tnUiGameReceive` drains — and that a batch the document
+// rejects is refused rather than half-applied, without opening the CLI's ready gate on the empty
+// document that was painted before the game posted anything.
 //
 // It drives the public functions only, needs no window and no display, and asserts nothing about
 // how the document looks: this is a bridge contract, not a pixel baseline.
@@ -59,10 +61,36 @@ int runCssBackend() {
           "attachDesktopCssUi returns false only when the document could not be created");
     check(mystral::platform::uiOverlayAttached(), "the CSS backend reports itself attached");
 
-    check(mystral::platform::postUiMessage(kHudBatch), "a mutation batch reaches the document");
-    // Fail closed: a batch naming an op that does not exist must be refused rather than half-applied.
+    // Readiness is not "a frame exists". The empty document paints one too, before the game has
+    // posted anything, and a HUD whose every batch was rejected is exactly that — so counting the
+    // first paint as ready is what kept such a game looking alive while showing nothing.
+    mystral::platform::UiOverlayFrame empty = {};
+    check(mystral::platform::uiOverlayFrame(empty),
+          "the document paints before the game has posted anything");
+    check(empty.counter > 0, "the first paint counts as a published frame");
+    check(mystral::platform::uiOverlayFramesPublished() >= 1,
+          "the published-frame count moves on the first paint");
+    check(!mystral::platform::uiReadyIntentReceived(), "an empty first paint is not readiness");
+
+    // Fail closed, and say so: a batch naming an op that does not exist, and one naming a tag this
+    // HUD does not model, are both refused whole — no op applied, `false` returned, no crash, and
+    // the document left as it was.
     check(!mystral::platform::postUiMessage(R"({"ops":[{"op":"teleport","id":1}]})"),
           "a malformed batch is refused");
+    check(!mystral::platform::postUiMessage(R"({"ops":[{"op":"create","id":1,"tag":"marquee"}]})"),
+          "a batch naming an unsupported tag is refused");
+    check(mystral::platform::uiOverlayFrame(empty),
+          "a refused batch leaves a document the host can still read");
+    check(empty.counter == 1, "a refused batch applies none of its ops");
+    check(!mystral::platform::uiReadyIntentReceived(), "a refused batch is not a HUD");
+
+    // The game publishes its own state over the same bridge. The engine accepts and ignores it, and
+    // it is not the HUD: readiness must not arm on it.
+    check(mystral::platform::postUiMessage(R"({"type":"tn:state","state":{"frames":1}})"),
+          "a frame of another type is accepted and ignored");
+    check(!mystral::platform::uiReadyIntentReceived(), "a state frame is not a HUD");
+
+    check(mystral::platform::postUiMessage(kHudBatch), "a mutation batch reaches the document");
 
     mystral::platform::UiOverlayFrame frame = {};
     check(mystral::platform::uiOverlayFrame(frame), "the document paints without a web view");
@@ -73,9 +101,9 @@ int runCssBackend() {
           "the frame holds every row it claims");
     check(frame.isRgba, "vello_cpu hands back premultiplied RGBA, so the upload format must say so");
     const uint64_t firstCounter = frame.counter;
-    check(firstCounter > 0, "the first paint counts as a published frame");
-    check(mystral::platform::uiOverlayFramesPublished() >= 1,
-          "the published-frame count moves on the first paint");
+    check(firstCounter > empty.counter, "the accepted batch repainted the document");
+    check(mystral::platform::uiReadyIntentReceived(),
+          "the first repaint after an accepted post is the HUD being on screen");
 
     // An unchanged document repaints nothing, which is what lets the composite skip the upload.
     mystral::platform::UiOverlayFrame unchanged = {};
