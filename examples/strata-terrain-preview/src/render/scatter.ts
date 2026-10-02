@@ -11,7 +11,16 @@ import { createRandom } from "@threenative/core";
 // can walk through it twice without the trees moving. Nothing here reads the frame clock.
 import type { Heightfield } from "@threenative/core/world";
 import type { IPlacement } from "@threenative/terrain";
+import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
 import type { WorldName } from "./biomes.js";
+
+const tundraNoise = new ImprovedNoise();
+const tundraCover = (x: number, z: number): number =>
+  clamp01(
+    0.52 +
+      tundraNoise.noise(x * 0.043, 11, z * 0.043) * 0.85 +
+      tundraNoise.noise(x * 0.11, 19, z * 0.11) * 0.15,
+  );
 
 /** A field the placement rule reads: the world's own baked colours plus its sampled geometry. */
 export interface IPlacementField {
@@ -371,14 +380,13 @@ export function scatterProps(
       !inside(x, z) ||
       wet(x, z) ||
       slopeDegrees(data, x, z) > 34 ||
-      grassWeight(data, x, z) < 0.22
+      (tundra ? clamp01((tundraCover(x, z) - 0.47) / 0.3) : grassWeight(data, x, z)) < 0.22
     )
       return;
     const drift = temperate
       ? 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7)
       : tundra
-        ? clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3) *
-          clamp01((forestWeight(x * 10.1, z * 8.7) - 0.2) / 0.5)
+        ? clamp01((tundraCover(x, z) - 0.45) / 0.3)
         : desert
           ? 0.08 + 0.6 * clamp01((forestWeight(x * 6.3, z * 5.7) - 0.5) / 0.3)
           : clamp01((forestWeight(x * 2.1, z * 2.4) - 0.3) / 0.45);
@@ -407,7 +415,7 @@ export function scatterProps(
           0.65 + random() * 0.55,
         );
     }
-    if (random() < (desert ? 0.65 : tundra ? 0.95 : 0.3))
+    if (random() < (desert ? 0.65 : tundra ? 0.22 : 0.3))
       put(
         "scrub",
         x + (random() - 0.5),
@@ -438,6 +446,19 @@ export function scatterProps(
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
     const eyeStep = temperate ? 0.34 : desert ? 1.8 : tundra ? 0.5 : 0.6;
     const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
+    // Uniform rejection sampling in the eye disc avoids a carpet of parallel jittered rows.
+    if (tundra) {
+      for (let i = 0; i < Math.ceil((Math.PI * eyeReach ** 2) / eyeStep ** 2); i++) {
+        const angle = random() * Math.PI * 2;
+        const distance = Math.sqrt(random()) * eyeReach;
+        const density = Math.max(
+          0.08,
+          1 - Math.max(0, distance - SCATTER.grassFull) / (eyeReach - SCATTER.grassFull),
+        );
+        cover(eye.x + Math.cos(angle) * distance, eye.z + Math.sin(angle) * distance, density);
+      }
+      continue;
+    }
     for (let dz = -eyeReach; dz < eyeReach; dz += eyeStep)
       for (let dx = -eyeReach; dx < eyeReach; dx += eyeStep) {
         const distance = Math.hypot(dx, dz);

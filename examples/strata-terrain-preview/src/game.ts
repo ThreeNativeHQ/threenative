@@ -171,6 +171,7 @@ function median(values: readonly number[]): number {
 }
 
 const initialState = {
+  showcase: false,
   world: "forest",
   groundBiome: "baked",
   frames: 0,
@@ -197,6 +198,9 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
+  viewFrameP50s: [] as { view: string; p50: number; windows: number }[],
+  maxViewFrameP50: 0,
+  measuredViewCount: 0,
   riverFrameP50: 0,
   playerFrameP50: 0,
   meadowFrameP50: 0,
@@ -305,7 +309,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       this.#player = player;
       ctx.entities.add("player", {
         mesh: actor,
-        debug: () => ({ grounded: player.grounded, position: actor.position.toArray() }),
+        debug: () => ({
+          grounded: player.grounded,
+          position: actor.position.toArray(),
+          visible: actor.visible && actor.material.visible,
+          horizon: {
+            seamGap: mesh.userData.horizonSeamGap,
+            samples: mesh.userData.horizonSeamSamples,
+          },
+        }),
         dispose: () => {
           player.dispose();
           actor.geometry.dispose();
@@ -733,7 +745,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           void buildProps();
         }
         frames++;
+        const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
+          view: group.view,
+          p50: median(group.p50s),
+          windows: group.p50s.length,
+        }));
         ctx.state.set({
+          viewFrameP50s,
+          maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
+          measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
           sunX: sky.sunX,
@@ -793,7 +813,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.beforeRender(() => {
         renderedFrames[world]++;
         const view = ctx.state.getState().view;
-        actor.material.visible = view === "player";
+        actor.material.visible = view === "player" && !ctx.state.getState().showcase;
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);

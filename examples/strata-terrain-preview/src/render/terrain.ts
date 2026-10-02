@@ -138,8 +138,8 @@ const WET_SAND = {
 const MEADOW = vec3(0.47, 0.72, 0.4);
 
 /** Continuous stochastic warp: no hard cell boundaries in colour or normals. */
-function tiledUV(key: LayerKey, scale = 1): Node<"vec2"> {
-  const base = positionWorld.xz.div(GROUND_TILE[key] * scale);
+function tiledUV(key: LayerKey, scale = 1, plane: Node<"vec2"> = positionWorld.xz): Node<"vec2"> {
+  const base = plane.div(GROUND_TILE[key] * scale);
   const warp = vec2(
     mx_noise_float(positionWorld.mul(0.025)),
     mx_noise_float(positionWorld.mul(0.025).add(vec3(17, 0, 29))),
@@ -430,7 +430,11 @@ export function createGroundMaterial(
     return biome?.world === "alpine"
       ? alpineRockTap(source, plane, relief)
       : biome?.world === "desert"
-        ? mix(tap(11, 0, vec2(0)), tap(24, 0, vec2(0.37, 0.61)), patch.mul(0.35))
+        ? mix(
+            tap(11, 0.035, vec2(mx_noise_float(positionWorld.xz.mul(0.009)).mul(0.9), 0)),
+            tap(27, -0.045, vec2(0.37, 0.61)),
+            patch.mul(0.5).add(0.25),
+          )
         : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
   };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
@@ -441,10 +445,26 @@ export function createGroundMaterial(
       texture(diffuse, tiledUV(key, 2.35)),
       tileBlend,
     );
-    if (otherBiome && biome.world === "tundra" && key === "dirt")
-      return vec4(flat.rgb.mul(vec3(0.7, 0.58, 0.42)), flat.a);
-    if (otherBiome && biome.world === "tundra" && key === "moss")
-      return vec4(flat.rgb.mul(vec3(1.08, 1.07, 0.65)), flat.a);
+    if (biome?.world === "tundra" && (key === "grass" || key === "dirt" || key === "moss")) {
+      // The same rotated two-scale floor and walls continue across the resident edge.
+      const axis = abs(normalWorldGeometry).pow(4);
+      const share = axis.div(axis.x.add(axis.y).add(axis.z));
+      const tap = (plane: Node<"vec2">) =>
+        mix(
+          texture(diffuse, tiledUV(key, 1, plane)),
+          texture(diffuse, tiledUV(key, 2.35, plane)),
+          tileBlend,
+        );
+      const sampled = share.x
+        .mul(tap(positionWorld.zy))
+        .add(share.y.mul(flat))
+        .add(share.z.mul(tap(positionWorld.xy))) as Node<"vec4">;
+      return key === "dirt"
+        ? vec4(sampled.rgb.mul(vec3(0.7, 0.58, 0.42)), sampled.a)
+        : key === "moss"
+          ? vec4(sampled.rgb.mul(vec3(1.08, 1.07, 0.65)), sampled.a)
+          : sampled;
+    }
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
@@ -672,8 +692,16 @@ export function createGroundMaterial(
   const forest = triplanarAlbedo(layer("grass").diffuse, "grass", 12)
     .rgb.mul(MEADOW)
     .mul(mix(0.5, 0.85, breakUp.add(0.5)));
-  const crag = triplanarAlbedo(layer("rock").diffuse, "rock", 6)
-    .rgb.mul(vec3(0.62, 0.66, 0.67))
+  const crag = (
+    biome?.world === "coastal"
+      ? triplanarAlbedo(layer("rock").diffuse, "rock", 6)
+      : mix(
+          triplanarAlbedo(layer("rock").diffuse, "rock", 2.6),
+          triplanarAlbedo(layer("rock").diffuse, "rock", 14),
+          patch.mul(0.25).add(0.15),
+        )
+  ).rgb
+    .mul(vec3(0.62, 0.66, 0.67))
     .mul(strata.mul(0.35).add(1));
   const treeline = smoothstep(110, 240, positionWorld.y.add(breakUp.mul(24)));
   const face = smoothstep(0.14, 0.3, steep.add(strata.mul(0.055)));
@@ -709,7 +737,9 @@ export function createGroundMaterial(
     rockNormal === undefined
       ? vec3(0)
       : triplanarRelief(rockNormal, "rock", 8).tilt.mul(face).mul(oneMinus(cap)).mul(0.32);
-  const tilt = mix(normal, biome?.world === "alpine" ? vec3(0) : mountainTilt, continuation);
+  // Distant alpine rock previously discarded all normal relief; snow weights stay unchanged.
+  const distantTilt = biome?.world === "alpine" ? mountainTilt.mul(weights.rock) : mountainTilt;
+  const tilt = biome?.world === "tundra" ? normal : mix(normal, distantTilt, continuation);
   // Detail is tangential; it must not rotate the whole hillside towards a fixed diagonal.
   const tangent = tilt.sub(normalWorldGeometry.mul(dot(normalWorldGeometry, tilt)));
   material.normalNode = transformNormalToView(normalize(normalWorldGeometry.add(tangent)));
@@ -750,16 +780,21 @@ export function createTerrain(
   mesh.receiveShadow = true;
   mesh.castShadow =
     biome?.world === "alpine" || biome?.world === "desert" || biome?.world === "tundra";
-  const horizonGeometry = createHorizonGeometry(data, biome?.horizon);
+  const horizonGeometry = createHorizonGeometry(data, biome?.horizon, field);
   const edgePositions = horizonGeometry.getAttribute("position");
   const edgeNormals = horizonGeometry.getAttribute("normal");
   const groundNormals = geometry.getAttribute("normal");
+  let horizonSeamGap = 0;
   for (let vertex = 0; vertex < (data.resolution - 1) * 4; vertex++) {
     const column = Math.round(
       (edgePositions.getX(vertex) / data.size + 0.5) * (data.resolution - 1),
     );
     const row = Math.round((edgePositions.getZ(vertex) / data.size + 0.5) * (data.resolution - 1));
     const edge = row * data.resolution + column;
+    horizonSeamGap = Math.max(
+      horizonSeamGap,
+      Math.abs(edgePositions.getY(vertex) - (data.heights[edge] as number)),
+    );
     edgeNormals.setXYZ(
       vertex,
       groundNormals.getX(edge),
@@ -767,6 +802,8 @@ export function createTerrain(
       groundNormals.getZ(edge),
     );
   }
+  mesh.userData.horizonSeamGap = horizonSeamGap;
+  mesh.userData.horizonSeamSamples = (data.resolution - 1) * 4;
   const horizon: Mesh = new Mesh(horizonGeometry, material);
   horizon.name = "temperate-distant-ridges";
   horizon.receiveShadow = true;

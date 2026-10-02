@@ -312,8 +312,21 @@ function mesaProfile(height) {
     values: Array.from({ length: width * width }, (_, i) => {
       const x = ((i % width) / (width - 1) - 0.5) * 2;
       const z = (Math.floor(i / width) / (width - 1) - 0.5) * 2;
-      const angle = Math.atan2(z, x);
-      const d = Math.hypot(x, z) + 0.016 * Math.sin(angle * 7) + 0.012 * Math.sin(angle * 13 + 1);
+      const angle = Math.atan2(z, x) + height * 0.17;
+      // Connected lobes and deep re-entrants, rather than a perturbed circular rim.
+      const boundary =
+        0.83 +
+        0.12 * Math.sin(angle * 3 + 0.7) +
+        0.08 * Math.sin(angle * 5 - 1.2) +
+        0.045 * Math.sin(angle * 9 + 2);
+      const notch =
+        0.19 * Math.exp(-(((angle - 0.45) / 0.19) ** 2)) +
+        0.16 * Math.exp(-(((angle + 1.6) / 0.22) ** 2));
+      const channel = Math.max(0, Math.sin(angle * 19 + Math.sin(angle * 7) * 1.8)) ** 8;
+      const radius = Math.hypot(x, z);
+      const d =
+        radius / (boundary - notch) +
+        channel * 0.07 * Math.max(0, Math.min(1, (radius - 0.4) / 0.3));
       const cap =
         d <= 0.72
           ? 1
@@ -345,6 +358,29 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     at: [-30, 60],
     radius: [36, 31],
     data: mesaProfile(48),
+    falloff: 0,
+  })
+  .stamp({
+    id: "detached-west-butte",
+    at: [-57, -92],
+    radius: [12, 18],
+    data: mesaProfile(41),
+    falloff: 0,
+  })
+  .stamp({
+    id: "west-fin",
+    at: [-113, 18],
+    radius: [7, 24],
+    rotation: -0.28,
+    data: mesaProfile(29),
+    falloff: 0,
+  })
+  .stamp({
+    id: "north-fin",
+    at: [111, -143],
+    radius: [8, 26],
+    rotation: 0.4,
+    data: mesaProfile(46),
     falloff: 0,
   })
   .stamp({
@@ -563,6 +599,57 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
 // bake is only needed when the recipe, the palette it colours with, or the terrain build it
 // evaluates against has changed since the output was written. `bake.mjs --force` overrides.
 const recipes = { forest, coastal, alpine, desert, tundra };
+// One eroded 5 km field supplies both mountain rings; the runtime only reads its heights.
+const continuation = new Terrain({ size: 5000, resolution: 513, seed: 150466 })
+  .noise({
+    id: "massifs",
+    base: 95,
+    amplitude: 360,
+    scale: 1400,
+    warp: 260,
+    mode: "fbm",
+    octaves: 3,
+    persistence: 0.42,
+    lacunarity: 2.13,
+  })
+  .noise({
+    id: "spurs",
+    amplitude: 145,
+    scale: 380,
+    warp: 95,
+    mode: "ridged",
+    octaves: 4,
+    persistence: 0.42,
+    lacunarity: 2.07,
+  })
+  .noise({
+    id: "couloir-spurs",
+    amplitude: 32,
+    scale: 110,
+    warp: 35,
+    mode: "ridged",
+    octaves: 3,
+    persistence: 0.4,
+  })
+  .erode({
+    id: "drainage",
+    method: "hydraulic",
+    droplets: 200000,
+    maxSteps: 100,
+    inertia: 0.05,
+    capacity: 7,
+    erosion: 0.04,
+    deposition: 0.22,
+    evaporation: 0.015,
+  })
+  .erode({
+    id: "talus",
+    method: "thermal",
+    iterations: 18,
+    talus: 34,
+    rate: 0.2,
+    mask: Mask.height(-1e9, 140, 45),
+  });
 // Forest/coast keep their existing bundle. The other three are separate lazy imports: every
 // baked world is a 257-square of heights/colours, so bundling all five would add about 15 MB
 // to the initial page module.
@@ -573,6 +660,7 @@ const fingerprint = createHash("sha256")
   .update(
     JSON.stringify(Object.fromEntries(Object.entries(recipes).map(([n, t]) => [n, t.toJSON()]))),
   )
+  .update(JSON.stringify(continuation.toJSON()))
   .update(JSON.stringify(terrainPalette))
   .update(await readFile(new URL("../../../packages/terrain/dist/index.js", import.meta.url)))
   .digest("hex");
@@ -591,7 +679,7 @@ if (!(isEntry && process.argv.includes("--force"))) {
     const undrawn = Object.keys(recipes).filter((name) => !drawn.has(name));
     const stale = (
       await Promise.all(
-        ["baked.json", ...undrawn.map((name) => `${name}.json`)].map((file) =>
+        ["baked.json", "horizon.json", ...undrawn.map((name) => `${name}.json`)].map((file) =>
           stat(new URL(file, outputDir)).then(
             (s) => s.mtimeMs > out.mtimeMs,
             () => true,
@@ -626,6 +714,17 @@ if (!baked) {
     };
   }
   await mkdir(outputDir, { recursive: true });
+  const started = performance.now();
+  const distant = continuation.evaluate();
+  const horizon = JSON.stringify({
+    size: distant.size,
+    resolution: distant.resolution,
+    heights: Array.from(distant.height, (height) => Math.round(height * 100) / 100),
+  });
+  await writeFile(new URL("horizon.json", outputDir), horizon);
+  console.log(
+    `Continuation erosion: ${((performance.now() - started) / 1000).toFixed(2)} s; ${Buffer.byteLength(horizon)} JSON bytes`,
+  );
   await writeFile(
     new URL("../src/world/baked.json", import.meta.url),
     JSON.stringify(Object.fromEntries(Object.entries(worlds).filter(([name]) => drawn.has(name)))),

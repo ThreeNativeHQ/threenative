@@ -1,16 +1,36 @@
+import { Heightfield } from "@threenative/core/world";
 import { BufferGeometry, Float32BufferAttribute } from "three";
 import { ImprovedNoise } from "three/addons/math/ImprovedNoise.js";
+import distant from "../world/horizon.json";
 import type { IBakedWorld } from "./terrain.js";
+
+// Installed authoring erosion runs in bake.mjs; scenery queries only this retained buffer.
+const continuation = new Heightfield({
+  rows: distant.resolution,
+  columns: distant.resolution,
+  width: distant.size,
+  depth: distant.size,
+  origin: { x: 0, z: 0 },
+  heights: new Float32Array(distant.heights),
+});
 
 /** Decorative land beyond the collider; the inner ring uses the bake's exact edge vertices. */
 export function createHorizonGeometry(
   data: IBakedWorld,
   landform: "mountain" | "alpine" | "mesa" | "plain" = "mountain",
+  field?: Heightfield,
 ): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
-  // Alpine fine crags alias across long radial cells; retain broad massif relief.
-  const rings = landform === "alpine" ? 384 : 192;
+  // Subdivide eroded land; retain the coastal world's original submerged collar.
+  const rings =
+    data.waterLevel !== null
+      ? 192
+      : landform === "alpine"
+        ? 384
+        : landform === "mountain"
+          ? 256
+          : 192;
   const noise = new ImprovedNoise();
   const starts = [
     [0, 0],
@@ -33,12 +53,27 @@ export function createHorizonGeometry(
     const [dx, dz] = directions[side] as readonly [number, number];
     return data.heights[(sz + along * dz) * data.resolution + sx + along * dx] as number;
   };
-  const coarseEdge = Array.from({ length: perimeter }, (_, vertex) => {
-    let total = 0;
-    for (let offset = -16; offset <= 16; offset++)
-      total += edgeHeight(vertex + offset) * (17 - Math.abs(offset));
-    return total / 289;
+  const smoothEdge = (sample: (vertex: number) => number) =>
+    Array.from({ length: perimeter }, (_, vertex) => {
+      let total = 0;
+      for (let offset = -16; offset <= 16; offset++)
+        total += sample(vertex + offset) * (17 - Math.abs(offset));
+      return total / 289;
+    });
+  const coarseEdge = smoothEdge(edgeHeight);
+  const rawEdgeSlope = coarseEdge.map((_, vertex) => {
+    const side = Math.floor(vertex / segments);
+    const along = vertex % segments;
+    const [sx, sz] = starts[side] as readonly [number, number];
+    const [dx, dz] = directions[side] as readonly [number, number];
+    const x = ((sx + along * dx) / segments - 0.5) * data.size;
+    const z = ((sz + along * dz) / segments - 0.5) * data.size;
+    const normal = field?.normalAt(x, z);
+    return normal ? -(normal.x * x + normal.z * z) / ((normal.y * data.size) / 2) : 0;
   });
+  const edgeSlope = smoothEdge(
+    (vertex) => rawEdgeSlope[(vertex + perimeter) % perimeter] as number,
+  );
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
@@ -62,39 +97,32 @@ export function createHorizonGeometry(
       const nx = x + warp;
       const nz = z - warp * 0.7;
       const broad = noise.noise(nx * 0.0013, 4.7, nz * 0.0013);
-      // Round the ridge cusp: a razor crest aliases into regular teeth between mesh rings.
-      const ridge = 1 - Math.hypot(noise.noise(nx * 0.0022, 9.2, nz * 0.0022), 0.045);
       const fineRidge = 1 - Math.hypot(noise.noise(nx * 0.005, 2.4, nz * 0.005), 0.065);
-      const massif = Math.max(0, broad + 0.38);
-      const crags =
-        noise.noise(nx * 0.012, 6.1, nz * 0.012) * 18 +
-        noise.noise(nx * 0.027, 3.8, nz * 0.027) * 5;
-      const hills =
-        18 +
-        massif * (110 + ridge ** 2.4 * 440) +
-        fineRidge ** 3 * Math.min(1, massif * 3) * 140 +
-        crags * Math.min(1, massif * 2);
       const inland =
         landform === "mesa"
           ? 12 + smoothMesa(broad) * 95 + noise.noise(nx * 0.015, 3, nz * 0.015) * 3
           : landform === "plain"
             ? 5 + broad * 24 + fineRidge * 9
-            : landform === "alpine"
-              ? 25 +
-                massif * (170 + ridge ** 1.8 * 330) +
-                fineRidge ** 3 * Math.min(1, massif * 3) * 25
-              : hills +
-                massif * 260 * (ridge ** 8 - ridge ** 2.4) +
-                crags * Math.min(1, massif * 2) * 2.2 -
-                Math.min(1, massif * 2) *
-                  (Math.abs(noise.noise(nx * 0.008, 8.5, nz * 0.008)) * 135 +
-                    Math.abs(noise.noise(nx * 0.019, 1.6, nz * 0.019)) * 45) +
-                noise.noise(nx * 0.04, 5.3, nz * 0.04) * Math.min(1, massif * 2) * 12;
+            : Math.max(8, continuation.heightAt(x, z));
       const height = data.waterLevel === null ? inland : data.waterLevel - 28;
       // The collider seam is exact. Short baked rills fade into broad shoulders before the massif.
-      const detail = data.waterLevel === null ? Math.exp(-distance / 45) : 1;
+      // A plain continues the measured edge tangent. Exponential edge smoothing alone started
+      // a new slope at the seam, stretching its relief into a visible radial shading stripe.
+      const detail =
+        data.waterLevel !== null
+          ? 1
+          : landform === "plain"
+            ? Math.exp(-((distance / 80) ** 2))
+            : Math.exp(-distance / 45);
+      // Continue the local tangent at the seam, then its broad profile, not long radial rills.
+      const slope =
+        (edgeSlope[vertex] as number) +
+        ((rawEdgeSlope[vertex] as number) - (edgeSlope[vertex] as number)) *
+          Math.exp(-distance / 12);
       const inherited =
-        (data.heights[edge] as number) * detail + (coarseEdge[vertex] as number) * (1 - detail);
+        (data.heights[edge] as number) * detail +
+        (coarseEdge[vertex] as number) * (1 - detail) +
+        (landform === "plain" ? slope * distance * detail : 0);
       positions.push(x, inherited * (1 - blend) + height * blend, z);
       colors.push(
         data.colors[edge * 3] as number,
