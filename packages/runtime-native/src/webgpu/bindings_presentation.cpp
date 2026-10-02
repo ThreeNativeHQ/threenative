@@ -379,6 +379,62 @@ bool syncSurfaceSizeToCanvas(BindingsState* state, js::JSValueHandle canvas) {
     return true;
 }
 
+/**
+ * Rebuilds the presentation swapchain after the platform declares it stale.
+ *
+ * `renderer.setSize()` reconfigures the surface to the canvas size while the OS window keeps its
+ * own, and X11's WSI treats that disagreement as permanent for the swapchain: the present that
+ * follows sets `VK_ERROR_OUT_OF_DATE_KHR`, and every later acquire on that chain returns Outdated
+ * with no image (`wsi_common_x11.c`, `_x11_swapchain_result` pins an error on the chain for good).
+ * A fresh `wgpuSurfaceConfigure` is the only way back, so the acquire path spends it here rather
+ * than letting the game throw "Failed to get current texture" on every frame after a resize.
+ *
+ * ponytail: the frame's image is 320x240 while the window stays 640x400, so that present is lost.
+ * A presented low-resolution canvas needs the scaled offscreen bridge, not a swapchain resize.
+ */
+static bool reconfigureSurfaceForAcquire(BindingsState* state) {
+    if (!state || !state->surface) return false;
+    // setSize can run between two submits of one JavaScript turn, so replay the safe prefix before
+    // dropping the texture views the deferred stream still names.
+    if (!flushRecordedFrameOps(state)) return false;
+    releaseCurrentSurfaceTextureViews(state);
+    if (state->presentation.currentSurfaceTextureId != 0) {
+        state->registries.textureRegistry.erase(state->presentation.currentSurfaceTextureId);
+        state->presentation.currentSurfaceTextureId = 0;
+    }
+    if (state->presentation.currentTexture != nullptr) {
+        wgpuTextureRelease(state->presentation.currentTexture);
+        state->presentation.currentTexture = nullptr;
+    }
+    state->presentation.surfaceRenderEncoder = nullptr;
+    state->presentation.surfaceRenderPassEnded = false;
+    state->presentation.framePresentPending = false;
+
+    WGPUSurfaceConfiguration config = {};
+    config.device = state->device;
+    config.format = state->presentation.nativeSurfaceFormat;
+    config.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    config.width = state->presentation.canvasWidth;
+    config.height = state->presentation.canvasHeight;
+    config.presentMode = state->presentation.presentMode;
+    wgpuSurfaceConfigure(state->surface, &config);
+    return true;
+}
+
+/**
+ * Acquires the current surface image, rebuilding the swapchain once when it reports itself stale.
+ * Ownership of the returned texture is the caller's, exactly as the raw call's is.
+ */
+static void acquireSurfaceImage(BindingsState* state, WGPUSurfaceTexture* surfaceTexture) {
+    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
+    if (!wgpuSurfaceTextureStatusNeedsReconfigure(surfaceTexture->status)) return;
+    if (surfaceTexture->texture) wgpuTextureRelease(surfaceTexture->texture);
+    *surfaceTexture = {};
+    if (!reconfigureSurfaceForAcquire(state)) return;
+    wgpuSurfaceGetCurrentTexture(state->surface, surfaceTexture);
+}
+
 void trackCurrentSurfaceTextureView(BindingsState* state, uint64_t viewId, WGPUTextureView view) {
     if (!state || !view) return;
     state->presentation.currentSurfaceTextureViews[viewId] = view;
@@ -531,8 +587,13 @@ static bool presentLinearTextureToSrgbSurface(BindingsState* state, WGPUTextureV
     if (!sourceView || !ensureSrgbPresentationPipeline(state)) return false;
 
     WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
-    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) return false;
+    acquireSurfaceImage(state, &surfaceTexture);
+    if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
+        // Same ownership rule as the direct path: a rejected acquisition still hands back a
+        // texture, and leaving it acquired strands the image for every later frame.
+        if (surfaceTexture.texture) wgpuTextureRelease(surfaceTexture.texture);
+        return false;
+    }
 
     WGPUTextureViewDescriptor surfaceViewDescriptor = {};
     surfaceViewDescriptor.format = state->presentation.nativeSurfaceFormat;
@@ -718,7 +779,7 @@ WGPUTexture getCurrentSwapchainTexture(BindingsState* state) {
     }
 
     WGPUSurfaceTexture surfaceTexture = {};
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
+    acquireSurfaceImage(state, &surfaceTexture);
 
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status) || !surfaceTexture.texture) {
         // The API returns texture ownership even when the caller cannot use the result.

@@ -31,6 +31,21 @@ int main() {
             return 2;
         }
     }
+    // Exactly one failure is recoverable: Outdated names a stale swapchain, and the acquire path
+    // rebuilds it. Treating it like the dead ends would restore the perpetual post-resize failure.
+    if (!wgpuSurfaceTextureStatusNeedsReconfigure(WGPUSurfaceGetCurrentTextureStatus_Outdated)) {
+        std::cerr << "outdated surface acquisition was not recognised as recoverable\n";
+        return 3;
+    }
+    for (const auto status : {WGPUSurfaceGetCurrentTextureStatus_Success_Compat,
+                              WGPUSurfaceGetCurrentTextureStatus_Timeout,
+                              WGPUSurfaceGetCurrentTextureStatus_Lost,
+                              WGPUSurfaceGetCurrentTextureStatus_Force32}) {
+        if (wgpuSurfaceTextureStatusNeedsReconfigure(status)) {
+            std::cerr << "only an outdated surface acquisition is recoverable\n";
+            return 3;
+        }
+    }
     std::cout << "native surface acquisition status contract passed\n";
     return 0;
 }
