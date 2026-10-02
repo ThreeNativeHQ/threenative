@@ -5,16 +5,26 @@ import { terrainPalette } from "../src/render/palette.js";
 // Authoring runs before either runtime is bundled. The game imports only the baked JSON.
 
 export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
-  .noise({ id: "hills", base: 18, amplitude: 16, scale: 180, warp: 35, octaves: 5 })
+  .noise({ id: "hills", base: 22, amplitude: 34, scale: 175, warp: 45, octaves: 6 })
+  // Billow folds give the rounded shoulders and troughs of a worn landscape; the hydraulic pass then
+  // finds the troughs and turns them into drainage, which is what makes the land read as eroded
+  // rather than as smooth noise with a peak on it.
+  .noise({ id: "valleys", base: 0, amplitude: 14, scale: 110, warp: 25, octaves: 3, mode: "billow" })
   .stamp({
     id: "eroded-hill",
     at: [-40, -60],
     radius: [130, 105],
-    amplitude: 65,
+    amplitude: 72,
     shape: "mountain",
     roughness: 0.17,
   })
-  .erode({ id: "weathering", method: "hydraulic", droplets: 2400, maxSteps: 40 })
+  .erode({ id: "weathering", method: "hydraulic" })
+  // One settling pass over the carved surface. Every droplet leaves the edge of its own dimple, and
+  // without this the hillside reads as pocked instead of weathered.
+  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  // Material past 36 degrees slides to its lowest neighbour and piles as a fan at the foot of the
+  // slope; without this the talus is either absent or a single-cell spike.
+  .erode({ id: "talus", method: "thermal", talus: 36, iterations: 12 })
   .materials({
     id: "surfaces",
     rules: [
@@ -42,25 +52,33 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .paint({ id: "pad-surface", at: [-120, 150], radius: 18, material: "dirt" })
   .river({
     id: "river",
-    // A stream down the drainage line the terrain actually has: a steepest-descent trace from the east
-    // ridge (with this layer off) runs west into the closed basin under the mountain's south flank, so
-    // the stream follows it and the basin holds the lake it feeds.
+    // A stream down the drainage line the eroded terrain actually has: re-traced by steepest descent
+    // from the north-west shoulder (with this layer off) after the erosion recipe changed, so it
+    // still runs downhill the whole way and ends in the basin the lake sits in.
     followTerrain: true,
     points: [
-      [118, null, -158],
-      [80, null, -161],
-      [40, null, -160],
-      [6, null, -158],
-      [-36, null, -161],
+      [-160, null, -180],
+      [-156, null, -188],
+      [-148, null, -196],
+      [-140, null, -202],
+      [-132, null, -208],
+      [-124, null, -206],
+      [-116, null, -204],
+      [-112, null, -198],
+      [-112, null, -192],
+      [-108, null, -188],
+      [-106, null, -184],
+      [-100, null, -182],
+      [-96, null, -178],
     ],
     width: 9,
     depth: 1.8,
     shoulder: 16,
     enforceDownhill: true,
   })
-  // The basin every drainage trace ends in, at 13.6 m with its lip near 15.2 m: filled to just under
-  // the lip it is a lake, not a hollow with nothing in it.
-  .water({ id: "lake", kind: "lake", at: [-76, -164], radius: 95, level: 15 });
+  // The basin the stream above ends in, at 11 m with its lip near 12.6 m: filled to just under the
+  // lip it is a lake, not a hollow with nothing in it.
+  .water({ id: "lake", kind: "lake", at: [-96, -178], radius: 62, level: 12.4 });
 export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
   .noise({
     id: "island",
@@ -72,15 +90,20 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
     island: true,
     coastDepth: 23,
   })
+  .noise({ id: "valleys", base: 0, amplitude: 13, scale: 105, warp: 22, octaves: 3, mode: "billow" })
   .stamp({
     id: "massif",
     at: [-23, -12],
     radius: [159, 154],
-    amplitude: 70,
+    amplitude: 78,
     shape: "mountain",
     roughness: 0.24,
   })
-  .erode({ id: "weathering", method: "hydraulic", droplets: 2400, maxSteps: 40 })
+  .erode({ id: "weathering", method: "hydraulic" })
+  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  // The sea cliff survives because the talus is steep: 38 degrees lets the windward face stand as a
+  // face while the gullies feeding it still cut back.
+  .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
   .materials({
     id: "surfaces",
     rules: [
@@ -92,12 +115,13 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
 // Mountain / Alpine: a massif and a side ridge over foothills, crags only where it is high, and
 // snow that holds on the flatter high ground while the steep faces stay bare rock.
 export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
-  .noise({ id: "foothills", base: 10, amplitude: 22, scale: 160, warp: 40, octaves: 6 })
+  .noise({ id: "foothills", base: 12, amplitude: 26, scale: 160, warp: 40, octaves: 6 })
+  .noise({ id: "valleys", base: 0, amplitude: 18, scale: 100, warp: 30, octaves: 3, mode: "billow" })
   .stamp({
     id: "summit",
     at: [30, -40],
     radius: [170, 140],
-    amplitude: 130,
+    amplitude: 168,
     shape: "mountain",
     roughness: 0.32,
   })
@@ -105,10 +129,12 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     id: "side-ridge",
     at: [-120, 70],
     radius: [150, 60],
-    amplitude: 70,
+    amplitude: 84,
     shape: "ridge",
     roughness: 0.28,
   })
+  // Crags only where it is high: ridged noise over the whole massif roughened the foothills past
+  // 30 degrees, which is a rockfall, not a mountain.
   .noise({
     id: "crags",
     base: 0,
@@ -118,7 +144,11 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     mode: "ridged",
     mask: Mask.height(60, 1e9, 20),
   })
-  .erode({ id: "weathering", method: "hydraulic", droplets: 5000, maxSteps: 50 })
+  .erode({ id: "weathering", method: "hydraulic" })
+  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  // A 40-degree talus is scree: rock past that angle slides off the faces and piles in fans below,
+  // which is what puts the grey aprons under the snowline.
+  .erode({ id: "scree", method: "thermal", talus: 40, iterations: 14 })
   .materials({
     id: "surfaces",
     rules: [
@@ -131,14 +161,16 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
 // Desert / Canyon: a low plain with three mesas, a dune field and a dry wash cut through it — sand
 // and sandstone rather than a recoloured forest.
 export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
-  .noise({ id: "plain", base: 8, amplitude: 6, scale: 220, warp: 30, octaves: 4 })
+  .noise({ id: "plain", base: 8, amplitude: 7, scale: 220, warp: 30, octaves: 4 })
   .stamp({
     id: "mesa-west",
     at: [-140, -60],
     radius: [80, 64],
     amplitude: 46,
     shape: "mesa",
-    roughness: 0.25,
+    // Low roughness on purpose: a mesa is a flat-topped block, and the stamp's own fbm skin at 0.25
+    // stood a metre proud of its neighbours over a tenth of the map as single-cell spikes.
+    roughness: 0.06,
   })
   .stamp({
     id: "mesa-north",
@@ -146,7 +178,7 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     radius: [62, 90],
     amplitude: 58,
     shape: "mesa",
-    roughness: 0.22,
+    roughness: 0.06,
   })
   .stamp({
     id: "butte",
@@ -154,7 +186,7 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     radius: [34, 30],
     amplitude: 40,
     shape: "mesa",
-    roughness: 0.3,
+    roughness: 0.08,
   })
   .stamp({
     id: "dunes",
@@ -164,7 +196,12 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
     shape: "dune",
     roughness: 0.4,
   })
-  .erode({ id: "weathering", method: "hydraulic", droplets: 1600, maxSteps: 36 })
+  .erode({ id: "weathering", method: "hydraulic" })
+  // Terracing the mesa walls: stratified rock erodes to flat benches separated by steep risers, which
+  // is the silhouette a mesa actually has. A smooth cone at this scale is a lump, not a mesa.
+  .terrace({ id: "benches", step: 6, softness: 0.12, strength: 0.55, offset: 6 })
+  .smooth({ id: "settle", iterations: 1, strength: 0.4 })
+  .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
   .river({
     id: "wash",
     followTerrain: true,
@@ -193,7 +230,8 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
 // Snow / Tundra: rolling snowfields with ridged rocky outcrops and moss where the wind strips the
 // cover; its frozen lake is an ice surface, not a fluid.
 export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
-  .noise({ id: "snowfield", base: 12, amplitude: 14, scale: 200, warp: 30, octaves: 5 })
+  .noise({ id: "snowfield", base: 12, amplitude: 40, scale: 170, warp: 34, octaves: 6 })
+  .noise({ id: "folds", base: 0, amplitude: 14, scale: 120, warp: 20, octaves: 3, mode: "billow" })
   // Outcrops in patches, not everywhere: ridged noise over the whole field roughened a third of a
   // snowfield past 30 degrees, which is a rockfall, not tundra.
   .noise({
@@ -205,7 +243,9 @@ export const tundra = new Terrain({ size: 512, resolution: 257, seed: 131 })
     mode: "ridged",
     mask: Mask.noise(90, 0.68, 131, 0.2),
   })
-  .erode({ id: "weathering", method: "hydraulic", droplets: 1200, maxSteps: 30 })
+  .erode({ id: "weathering", method: "hydraulic" })
+  .smooth({ id: "settle", iterations: 2, strength: 0.5 })
+  .erode({ id: "talus", method: "thermal", talus: 33, iterations: 12 })
   .materials({
     id: "surfaces",
     rules: [
