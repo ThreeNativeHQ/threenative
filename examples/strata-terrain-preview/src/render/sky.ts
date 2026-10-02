@@ -45,6 +45,7 @@ import {
   smoothstep,
   uniform,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
@@ -295,8 +296,8 @@ export function installOutdoorOcclusion(
     float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
   );
   scene.fogNode = heightFog;
-  // Screen-space AO/denoise paints pale panels over temperate cutouts (isolated at full resolution).
-  // Keep crown occlusion and real shadows; the other worlds retain their existing AO stage.
+  // AO must darken RGB, not canvas alpha: lowered alpha leaked the backdrop through dark crowns.
+  // Preserve the other worlds' existing output for this forest/coast round.
   const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
@@ -312,13 +313,16 @@ export function installOutdoorOcclusion(
   const chain = renderer.createRenderChain({
     input: world.getTextureNode("output"),
     worldPass: world,
-    request: { stages: otherBiome ? ["ambientOcclusion"] : [], tier: "auto" },
+    request: { stages: ["ambientOcclusion"], tier: "auto" },
     targetFps: 30,
     stages: [
       {
         name: "ambientOcclusion",
         minimumTier: "medium",
-        build: (input) => (input as Node<"vec4">).mul(mix(1, occlusion.r, 0.65)),
+        build: (input) =>
+          (input as Node<"vec4">).mul(
+            otherBiome ? mix(1, occlusion.r, 0.65) : vec4(vec3(mix(1, occlusion.r, 0.65)), 1),
+          ),
       },
     ],
   });

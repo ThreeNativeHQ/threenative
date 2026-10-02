@@ -1,10 +1,4 @@
-import {
-  type ICtx,
-  Scene,
-  defineGame,
-  markStatic,
-  readRenderChainObservation,
-} from "@threenative/core";
+import { type ICtx, Scene, defineGame, markStatic } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import { Heightfield } from "@threenative/core/world";
 import {
@@ -156,7 +150,6 @@ interface IViewWindow {
 }
 const viewBudgets = new Map<string, IViewWindow>();
 let currentView = "";
-const aoWorlds = new Set<WorldName>();
 const renderedFrames: Record<WorldName, number> = {
   forest: 0,
   coastal: 0,
@@ -204,8 +197,6 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
-  temperateAOStages: -1,
-  otherBiomeAO: 0,
   riverFrameP50: 0,
   playerFrameP50: 0,
   meadowFrameP50: 0,
@@ -693,16 +684,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           void buildProps();
         }
         frames++;
-        const chain = readRenderChainObservation(ctx.renderer);
-        if (
-          world !== "forest" &&
-          world !== "coastal" &&
-          chain?.stages.includes("ambientOcclusion") &&
-          chain.contributions.some(
-            (stage) => stage.name === "ambientOcclusion" && stage.graphOutputChanged,
-          )
-        )
-          aoWorlds.add(world);
         ctx.state.set({
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
@@ -730,9 +711,6 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           windowFrameMs: budget.frameMs,
           // Forest camera costs, published as plain state so the run report
           // carries the numbers rather than a console ring buffer that outlives neither run.
-          temperateAOStages:
-            chain?.stages.filter((stage) => stage === "ambientOcclusion").length ?? -1,
-          otherBiomeAO: aoWorlds.size,
           riverFrameP50: median(viewBudgets.get("forest:river")?.p50s ?? []),
           playerFrameP50: median(viewBudgets.get("forest:player")?.p50s ?? []),
           meadowFrameP50: median(viewBudgets.get("forest:meadow-close")?.p50s ?? []),

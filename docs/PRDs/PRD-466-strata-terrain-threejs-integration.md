@@ -1257,64 +1257,50 @@ Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra wate
 desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
 Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
 
-### AC-5 forest/coast round 11 — 2026-10-02 (in progress)
+### AC-5 forest/coast round 11 — 2026-10-02 (verification in progress)
 
-Complexity 2 → LOW (six existing appearance/preparation files, no new system);
-consumer wiring unchanged. Scope: forest/coastal only; no `biomes.ts` or other
-biome bake recipes. Reuse existing atlas cook, material layers, seeded scatter,
-GroundSnap, InstancedBatch, horizon noise and SpectralOcean. Licensed source
-library stays read-only and all cooked bytes remain ignored.
+Bounded existing-source appearance work: forest/coastal only; no `biomes.ts`,
+other-biome bake recipes or new rendering system. Reused material layers, seeded
+scatter, GroundSnap, InstancedBatch, horizon noise and SpectralOcean. Licensed
+source library stayed read-only; cooked bytes remain ignored. AC-5 stays open.
 
-1. Diagnose pale crowns and hillside blobs with full-resolution baseline and
-   isolated atlas/lighting/shadow ablations; preserve other-biome materials.
-2. Repair confirmed causes; add forest macro surfaces, clustered age/lean, eroded
-   horizon relief, shoreline detail and footprint-aware stone contact.
-3. Run example typecheck, root Biome errors, terrain Vitest, existing temperate
-   checks, licensed and absent-licensed shared scenarios, ocean visual checks.
-   Forest view p50 must be ≤4 ms; other-biome capture luminance quantiles must
-   stay within 0.5 of this checkout's baseline. Final full-resolution captures:
-   `examples/strata-terrain-preview/artifacts/playtest/forest-r11-final/`.
+- [x] Inspect the six supplied captures and Gaia reference at original resolution;
+  isolate crown contamination with atlas, lighting, shadow and composition controls.
+- [x] Repair confirmed causes and grade terrain, stands, horizon and shore contact.
+- [ ] Finish absent-licensed full scenario, original-resolution grading, ocean checks
+  and protected-biome quantile comparison before final delivery.
 
-Baseline supplied six captures and Gaia reference inspected at original resolution.
-Opaque spruce needle RGB mean 93/84/24; transparent RGB 110/102/53 (not white).
-Normal/specular already disabled on crowns; atlas bleed remains a hypothesis,
-large interior patches need isolated ablation. No visual acceptance claimed.
+**Confirmed crown root cause:** the game-authored AO composition multiplied RGBA
+by occlusion, lowering canvas alpha and leaking the pale backdrop through dark
+crowns. Same-camera fresh MRT controls: direct colour clears the panels; raw AO
+retains them; multiplying by `vec4(vec3(occlusion), 1)` clears them with AO/denoise
+still installed. Left-crown cyan pixel share falls 31.99% → 5.83% (remaining sky
+gaps); luminance median falls 54.60 → 18.13. Atlas white bleed is ruled out:
+cooked 2048² spruce RGBA has 12 mips; visible white fraction at mips 0–5 is
+3.1e-6/0/0/0/0/0. No atlas cook, normal-map or transmission changes retained.
+Other worlds retain their original composition; original AO stage assertions pass.
 
-Diagnostic increment: cooked spruce atlas RGBA decoded with the shipped Basis
-transcoder: 2048², 12 mips, real alpha. At mips 0–5 visible white RGB fraction
-3.1e-6/0/0/0/0/0; blue mean rises only 26→38. White/cyan interiors are not
-explained by undilated white atlas RGB. Live flat-colour ablation retains pale
-patches; removing emissive alone in a fresh scene retains grey patches.
-Sequential hook edits are not accepted as isolated proof; fresh-browser direct
-and fill controls pending. Initial full baseline was interrupted by signal after
-forest/coast; no full-baseline PASS claimed. Doctor passes Node/Chromium/Xvfb.
-Terrain unit tests 69/69 PASS; doc links (2,386) and six document test files
-(180 tests) PASS.
+Ground lawn appearance came from saturated uniform material blends and sparse
+mid-distance cover. Temperate materials now use existing macro noise for dirt/moss,
+roughness and muted colour; grass cell spacing is 1.2 m. Tree scale spans 0.6–1.4
+in clustered age classes, with seeded lean and denser stand-edge saplings. Thin
+bare trunks and mid/far cover still need visual judgment, not a completion claim.
 
-Round-11 measured increment (still in progress): licensed full scenario
-`forest-r11-pass2` PASS; meadow/overview frame p50 2.2/2.4 ms. Example typecheck
-and Biome error gate PASS; temperate placement assertions PASS (3,200 trees,
-0.6–1.4 age scale and varied lean). Crown streaks remain: no visual PASS claimed.
-Atlas white bleed, received shadows and fog ablations do not explain them.
-Earlier clear-crown cold ablations were already clear before the edit and cannot
-prove specular/transmission causality. Terrain patches were too brown in this
-iteration and are being reduced. Alpine/desert baseline luminance p05/p50/p95
-deltas ≤0.061; tundra deltas reach 2.715, under investigation before acceptance.
+Hillside smudges persist without AO, received shadows and normal relief: dark
+shaded rock faces, not cloud shadows. Weathered rock colour and appearance bounce
+soften them. Horizon mountain crests get existing noise-driven notches and erosion,
+with grey rock instead of brown. Coastal foam coverage and wet-sand bands broaden;
+coastal stones use existing scatter/props. Stone grounding now samples the scaled
+footprint and sinks the base, avoiding the centre-only support that left overhangs.
+Protected other-biome branches remain unchanged.
 
-Round-11 diagnosis resolved: a same-camera fresh pale-crown baseline stays pale
-with zero direct/hemisphere light, no received shadows, or specular removed.
-Bypassing the chain clears it; disabling only the AO stage (same fog and MRT)
-clears it too. The game-authored AO/denoise path contaminates overlapping cutouts.
-Forest/coast omit that stage; atlas cooking and transmission are unchanged.
-Material radial occlusion still provides dark crown interiors. Terrain dark
-blobs persist without AO/shadows/normal relief: shaded rock faces with dark
-albedo, now lighter weathered rock and measured appearance bounce.
+Final licensed shared scenario `artifacts/playtest/forest-r11-final/`: **PASS**,
+zero failed assertions. Forest CPU frame p50 meadow/overview/river/player aggregate
+is **2.5/2.5/3.4/3.7 ms**, all ≤4 ms. This measures CPU frame windows, not GPU
+frame time. Six protected alpine/desert/tundra captures have luminance p05/p50/p95
+absolute deltas **≤0.0678**, within 0.5 of supplied round-11 controls.
 
-`forest-r11-pass4`: all behaviour/contact/ocean and four forest budget assertions
-PASS (meadow/overview/river/player aggregate p50 2.2/2.3/3.2/3.2 ms); shared
-scenario FAIL solely on the absent empty-chain console marker. Replaced that
-assertion with the public chain report (missing=-1 fails) and actual AO graph
-contribution observed in each protected biome (3/3). Tundra control now matches
-as well: pass3 all six p05/p50/p95 deltas ≤0.065. Final runs pending after denser
-worldwide temperate cover and final horizon/stone grading. Typecheck, Biome,
-69 terrain tests and temperate placement checks PASS. No Unreal-level claim.
+Example `pnpm exec tsc --noEmit`, root example Biome error gate, terrain tests
+**69/69**, and temperate age/lean placement checks **PASS** on final source.
+Earlier document checks: 2,386 links and six document test files (180 tests) PASS.
+Absent-licensed scenario, final ocean checks and harsh view grades remain pending.
