@@ -59,6 +59,35 @@ describe("actual camera cuts between fixed-lit exposure rooms", () => {
     expect(() => assertExposureCameraCut(report(), 11)).not.toThrow();
   });
 
+  it.each(["room-matrix", "room-background", "light-matrix", "light-color"])(
+    "rejects missing, malformed or nonfinite %s in otherwise consistent snapshots",
+    (field) => {
+      for (const invalid of [undefined, null, [], [1, 2], "missing", Array(16).fill(Number.NaN)]) {
+        const value = report();
+        for (const entry of value.observations.console) {
+          const separator = entry.text.indexOf(":");
+          const data = JSON.parse(entry.text.slice(separator + 1));
+          const poses =
+            data.cameraCut === undefined
+              ? [data.cameraPose]
+              : [data.cameraCut.before, data.cameraCut.after];
+          for (const pose of poses) {
+            for (const room of pose.rooms) {
+              if (field === "room-matrix") room.matrixWorld = invalid;
+              if (field === "room-background") room.background = invalid;
+              for (const light of room.lights) {
+                if (field === "light-matrix") light.matrixWorld = invalid;
+                if (field === "light-color") light.color = invalid;
+              }
+            }
+          }
+          entry.text = `${entry.text.slice(0, separator + 1)}${JSON.stringify(data)}`;
+        }
+        expect(() => assertExposureCameraCut(value, 11)).toThrow(/CAMERA_CUT/);
+      }
+    },
+  );
+
   it.each(["missing", "stationary", "light-change", "stale-sample", "wrong-layer", "fake-matrix"])(
     "rejects %s camera evidence",
     (fault) => {

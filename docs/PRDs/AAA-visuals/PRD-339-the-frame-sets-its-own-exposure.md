@@ -329,6 +329,22 @@ scaffold/mirror verification passes 69/70; the unchanged mobile-assets case cann
 Basis transcoder from its independent temporary project (`TN_ASSETS_TRANSCODER_MISSING`). Actual
 camera pixels, native qualification and full required CI remain open.
 
+Camera source `2bc1d57f9b8321e1a85b2a457778dacc7dda1372`,
+[run 37049246423](https://github.com/ThreeNativeHQ/threenative/actions/runs/37049246423), passes
+all 18 runtime cases with clean diagnostics. Actual fixed-light camera cuts settle after 114/42
+updates for 11/1 stops, using the same 180-update/3.0-second controlled budget. Raw-luminance
+one-stop settles after 57 updates; raw eleven-stop remains 2.528 stops from its target and fails
+only `TN_EXPOSURE_NOT_SETTLED` after 180 updates (11.9467 consumed NodeFrame seconds, 36.2926
+elapsed seconds). All 26 original PNGs were inspected; the eight camera images and all report/image
+hashes are retained in [the camera evidence](../../verification/prd339-exposure-proof/camera-cuts-2bc1d57f.json).
+Independent review accepted this exact-source AC1 proof on 2026-10-02. It also found four omitted
+room/light matrix/color fields could be missing consistently in the verifier. Four regression
+cases failed before adding shape/finite validation; 48 camera/proof tests then passed, and the
+reviewer rejected 28 malformed-field variants against the actual report while all four genuine
+camera reports remained valid. This correction changes validation only, not the captured scene.
+AC1 and AC5 are qualified at this source; AC2's ineffective mutation, native, actual lifecycle
+rebuild/reset and full required CI remain open. Software pixels make no hardware timing claim.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
@@ -349,7 +365,7 @@ camera pixels, native qualification and full required CI remain open.
 
 ## Acceptance criteria
 
-- [ ] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
+- [x] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
    between a bright pose and a dark pose eleven stops apart, and between two poses one stop apart,
    and asserts both reach within 0.25 stops of their steady value inside the same frame budget.
    *Red-green:* replace the `log2` interpolation in `auto-exposure.ts` with `mix(prev, cur, rate)` on

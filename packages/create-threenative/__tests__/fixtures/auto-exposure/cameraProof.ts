@@ -7,8 +7,42 @@ function fail(): never {
   throw new Error("TN_EXPOSURE_CAMERA_CUT: Camera poses or fixed lighting evidence is invalid.");
 }
 
+function finiteVector(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && value.every(Number.isFinite);
+}
+
+function validateRooms(rooms: CameraPose["rooms"], stops: number): void {
+  if (!Array.isArray(rooms) || rooms.length !== 2) fail();
+  for (const [index, room] of rooms.entries()) {
+    if (
+      room === null ||
+      typeof room !== "object" ||
+      !same(room.position, [index * 100, 0, 0]) ||
+      room.layers !== 1 ||
+      !finiteVector(room.matrixWorld, 16) ||
+      !finiteVector(room.background, 3) ||
+      !Array.isArray(room.lights) ||
+      room.lights.length !== 2
+    )
+      fail();
+    for (const [lightIndex, light] of room.lights.entries()) {
+      if (
+        light === null ||
+        typeof light !== "object" ||
+        light.intensity !== (lightIndex === 0 ? 2.1 : 0.36) * 2 ** (index * stops) ||
+        light.distance !== 25 ||
+        light.decay !== 2 ||
+        light.layers !== 1 ||
+        !finiteVector(light.matrixWorld, 16) ||
+        !finiteVector(light.color, 3)
+      )
+        fail();
+    }
+  }
+}
+
 function validatePose(value: CameraPose, bright: boolean, stops: number): void {
-  if (value === undefined || ![1, 11].includes(stops)) fail();
+  if (value === undefined || value === null || ![1, 11].includes(stops)) fail();
   const offset = bright ? 100 : 0;
   const arrays = [value.position, value.quaternion, value.matrixWorld, value.projectionMatrix];
   if (
@@ -31,20 +65,7 @@ function validatePose(value: CameraPose, bright: boolean, stops: number): void {
     matrix.elements.some((n, i) => Math.abs(n - (value.matrixWorld[i] ?? Number.NaN)) > 1e-9)
   )
     fail();
-  if (!Array.isArray(value.rooms) || value.rooms.length !== 2) fail();
-  for (const [index, room] of value.rooms.entries()) {
-    if (!same(room.position, [index * 100, 0, 0]) || room.layers !== 1 || room.lights.length !== 2)
-      fail();
-    for (const [lightIndex, light] of room.lights.entries()) {
-      if (
-        light.intensity !== (lightIndex === 0 ? 2.1 : 0.36) * 2 ** (index * stops) ||
-        light.distance !== 25 ||
-        light.decay !== 2 ||
-        light.layers !== 1
-      )
-        fail();
-    }
-  }
+  validateRooms(value.rooms, stops);
 }
 
 /** Camera proof is mandatory even when the same-budget raw-luminance mutation is expected red. */
