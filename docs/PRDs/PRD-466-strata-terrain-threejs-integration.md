@@ -942,6 +942,25 @@ Crown visuals are still being qualified before their commit. Example typecheck,
 root Biome error gate and document checks pass. The first root Biome invocation
 had an import-order error in an uncommitted probe; it was corrected and rerun
 successfully before this increment. No native or Unreal-level visual claim.
+Third working increment: needle-only fill ablations retain substantial grey; fill
+colour alone is not the whole cause. `lightNeedles` supplies green scattered
+ambient multiplied by the crown's AO, and albedo-coloured backlight using
+`pow(saturate(dot(-viewDir,sunDir)),3)` with an exterior/AO gate. It wraps Three's
+existing direct-light model, whose incoming sun colour is already shadowed; no
+extra light list, shadow sampler or global sky appearance change remains. Both
+licensed cutouts and procedural/CC0/fallback needles use the shared helper.
+An early raw-shadow read in emissive whitened the forest→coast handoff despite
+passing behavioural assertions. A cold coastal control was green; replacing
+that read with visibility 1 restored the handoff. The retained direct-light
+implementation preserves the stock shadow path and green coastal crowns.
+Final callback run `round10-crown`: PASS 24/24 assertions, 0 console errors;
+meadow/overview frame p50 2.7/2.9 ms, hardware WebGPU, original 1920×1080 captures.
+Paths: `examples/strata-terrain-preview/artifacts/playtest/round10-crown/`.
+Typecheck and root Biome pass after correcting the installed direct callback's
+two-argument signature and narrowing its generic Node values to vec3; the final
+narrowing changes types only. Read-only review passes the shadow/lighting strategy.
+Verdict: the dominant forest cyan is reduced; pale inner branch patches and
+repetitive distant ribs still prevent an Unreal-level acceptance claim.
 AC-5 remains open pending visual acceptance of all five environments.
 
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.

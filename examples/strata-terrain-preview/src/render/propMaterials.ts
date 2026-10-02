@@ -154,6 +154,40 @@ function canopyTranslucency(amount: number, tint: number = CANOPY.tint): Node<"v
   );
 }
 
+/** Thin-needle transmission follows the sun and cannot light a buried or shadowed card. */
+export function lightNeedles(
+  material: MeshStandardNodeMaterial,
+  occlusion: Node<"float">,
+  translucency = 0.55,
+): void {
+  if (!material.colorNode) return;
+  const backlit = cameraPosition
+    .sub(positionWorld)
+    .normalize()
+    .negate()
+    .dot(sunDirection)
+    .clamp(0, 1)
+    .pow(3);
+  const albedo = (material.colorNode as Node<"vec4">).rgb;
+  const through = albedo.mul(backlit.mul(translucency)).mul(smoothstep(0.16, 0.5, occlusion));
+  // Add transmission where Three has already applied the sun's shadow to its light colour.
+  // Reading the raw virtual-shadow node again in emissive broke forest→coast material bindings.
+  const setup = material.setupLightingModel.bind(material);
+  material.setupLightingModel = () => {
+    const model = setup();
+    const direct = model.direct.bind(model);
+    model.direct = (input, builder) => {
+      direct(input, builder);
+      (input.reflectedLight.directDiffuse as unknown as Node<"vec3">).addAssign(
+        through.mul(input.lightColor as unknown as Node<"vec3">),
+      );
+    };
+    return model;
+  };
+  // Green light scattered by neighbouring needles; the crown's occlusion retains dark interiors.
+  material.emissiveNode = albedo.mul(vec3(0.12, 0.8, 0.06)).mul(occlusion);
+}
+
 /** Alpha cutoff for every cutout surface. Half coverage: a needle card is mostly empty. */
 const CUTOUT = 0.42;
 
@@ -535,6 +569,7 @@ function needleMaterial(
     // A needle is waxy, not varnished, and rougher than the bark below it on purpose.
     material.roughness = 0.96;
     sway(material, seconds, WIND.amplitude.crown);
+    lightNeedles(material, bent ? attribute<"float">("inner", "float") : float(1));
     return material;
   }
   const mip = mipLevels(atlas);
@@ -606,7 +641,11 @@ function needleMaterial(
   if (arms !== undefined) material.roughnessNode = texture(arms).g.mul(0.35).add(0.6);
   else material.roughness = 0.96;
   // And the light coming *through* the card, which the standard shading cannot produce.
-  material.emissiveNode = canopyTranslucency(light);
+  lightNeedles(
+    material,
+    occlusion.mul(bent ? attribute<"float">("inner", "float") : float(1)),
+    light * 5.5,
+  );
   sway(material, seconds, WIND.amplitude.crown);
   return material;
 }
