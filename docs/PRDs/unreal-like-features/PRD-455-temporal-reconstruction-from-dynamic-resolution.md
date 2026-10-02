@@ -327,3 +327,27 @@ Hosted draw diagnostic `37005814851` stopped at the bridge's JSON-safety guard: 
 InstancedBufferAttribute exposes numeric `id`, not `uuid`. Direct construction reproduces the
 undefined field. The diagnostic now records `matrixId`; no renderer, history or quality logic
 changes. The earlier combined 176-frame evidence remains valid; this diagnostic run is incomplete.
+
+
+Source `12704356112ed1bba9c29af57faa9021fb5cf978`, run `37006364268`, completes all
+208 captures with empty diagnostics; every PNG hash verifies and the original 176 PNGs are
+byte-identical to combined source `e48c31b8`. Nearest history worsens edge error to 0.07036
+(from 0.06001), residual instability to 0.03246 (from 0.03119), and moving-edge error to
+0.03528 (from 0.03024). It is rejected as a quality fix. Its causal red-tint fraction remains
+6.21% one frame after reveal. [Inspected actual control frame](../../verification/prd455/nearest-history.png)
+and [exact measurements, draw states and provenance](../../verification/prd455/history-sampling.json)
+retain the failed experiment.
+
+The actual frame-22/23/24 vertex shaders are identical and explicitly multiply distinct previous
+instance attributes. The mesh, matrix and interleaved-buffer identities persist. At the frame-23
+draw, current and previous CPU Y are -0.6999545693 and -0.6924691796, both buffers have version 23,
+and both before-frame and before-object events are present. The observed GPU object-Y velocity
+remains zero. Thus missing previous assignment and stale scheduled CPU arrays do not explain the
+recompile corner; actual upload/binding state remains under investigation in canonical PR393.
+
+The next quality experiment will retain TRAANode's allocation, jitter and history lifecycle while
+comparing a game-owned Catmull–Rom history sampler. An authored-linear control must reproduce the
+installed resolve before interpreting the higher-order filter. This follows the reconstruction
+problem discussed by [Emilio López](https://www.elopezr.com/temporal-aa-and-the-quest-for-the-holy-trail/)
+and [Alex Tardif](https://alextardif.com/TAA.html); it does not establish that the proposed filter
+passes this fixture or the broader acceptance corpus.
