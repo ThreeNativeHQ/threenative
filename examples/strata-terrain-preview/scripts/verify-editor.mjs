@@ -12,8 +12,12 @@ import {
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
 
+import { verifyModelImport } from "./verify-assets.mjs";
 import { verifyEditorCameras } from "./verify-cameras.mjs";
+import { verifyEnvironment } from "./verify-environment.mjs";
 import { verifyLandforms } from "./verify-landforms.mjs";
+import { verifySky } from "./verify-sky.mjs";
+import { verifySurfaces } from "./verify-surfaces.mjs";
 import { verifyToolGroups } from "./verify-tool-groups.mjs";
 import { verifyPropTransforms } from "./verify-transforms.mjs";
 
@@ -25,7 +29,10 @@ const plugin = terrainEditor({ documentPath: path });
 const server = await createServer({
   root,
   configFile: false,
-  server: { host: "127.0.0.1", port: 5197 },
+  // The game's own starter maps, served as the real dev server serves them: the surface proof binds
+  // imported images into these textures, so they have to be the ones that loaded.
+  publicDir: resolve("../../packages/terrain/starter-assets"),
+  server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5197) },
   plugins: [plugin],
   optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
   resolve: { dedupe: ["three"] },
@@ -371,6 +378,46 @@ try {
     );
     await advanceFixedStep(session.page, session.bridge, 2);
     await verifyToolGroups(session, controller);
+  });
+  // The world controls (environment, imported models) compare captures of one fixed view, so they get
+  // their own fresh page on the ordinary editor camera, not the state the camera block leaves behind.
+  await controller.camera({ op: "activate", id: null }, (await controller.snapshot()).revision);
+  await withBrowserCapture(config, async (session) => {
+    const errors = [];
+    session.page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await session.page.waitForFunction(
+      () => window.strata?.state && !window.strata.busy,
+      {},
+      { timeout: 30000 },
+    );
+    await advanceFixedStep(session.page, session.bridge, 2);
+    // These captures stay in the run's artifacts: the tracked evidence tree is at its size cap, so
+    // the proof is the numbers the stages assert, not more committed pictures.
+    const worldCaptures = (captureSession, name) => captureSession.screenshot(name);
+    console.log(
+      JSON.stringify({ environment: await verifyEnvironment(session, controller, worldCaptures) }),
+    );
+    console.log(
+      JSON.stringify({ models: await verifyModelImport(session, controller, worldCaptures) }),
+    );
+    console.log(
+      JSON.stringify({ surfaces: await verifySurfaces(session, controller, worldCaptures) }),
+    );
+    console.log(JSON.stringify({ sky: await verifySky(session, controller, worldCaptures) }));
+    assert.deepEqual(
+      errors,
+      [
+        // The environment proof's rejected GUI value (a negative sun intensity), the model proof's
+        // garbage GUI file, and the sky proof's garbage GUI file: each is a deliberate 400. The
+        // sky proof's deliberately undecodable image is a failed load the view reports itself.
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+        "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+      ],
+      "Only the deliberately rejected GUI imports may produce a console error",
+    );
   });
   const report = await runStandalonePlaytest(config);
   assert(report.assertionResults?.length > 0, "Scenario assertions were not observed");

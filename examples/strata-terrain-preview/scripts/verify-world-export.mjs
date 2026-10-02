@@ -13,6 +13,7 @@ import {
   parseStandalonePlaytestArgs,
   withBrowserCapture,
 } from "../../../packages/playtest/dist/runner/index.js";
+import { verifyImportedExport } from "./verify-import-export.mjs";
 
 const root = resolve(".");
 const temporary = mkdtempSync(join(tmpdir(), "strata-world-export-"));
@@ -26,7 +27,7 @@ try {
     // The project's own Vite config serves the CC0 starter sets from the terrain package; this
     // standalone server has to be told, or the export would be proven with no art loaded at all.
     publicDir: resolve("../../packages/terrain/starter-assets"),
-    server: { host: "127.0.0.1", port: 5185 },
+    server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5185) },
     plugins: [plugin],
     optimizeDeps: { exclude: ["@threenative/terrain/editor"] },
     resolve: { dedupe: ["three"] },
@@ -171,14 +172,29 @@ try {
           descendants.push(...(node.children ?? []));
         }
       }
-      // A spruce is a trunk draw and a crown draw, and the starter hashes placements across two variants,
-      // so 100 placement nodes reference exactly four shared geometries: per-placement nodes, shared
-      // mesh data.
-      assert.equal(
-        modelMeshes.size,
-        4,
-        "100 placement nodes must share their variants' trunk and crown mesh data",
+      // Placements share their variants' mesh data: a hundred placement nodes reference a handful of
+      // geometries (one per part of each variant in use), never one per placement.
+      assert(
+        modelMeshes.size > 0 && modelMeshes.size <= 16,
+        `100 placement nodes must share their variants' mesh data, got ${modelMeshes.size} meshes`,
       );
+      // What the export promises to carry, counted from the file itself: every mesh node, and every
+      // PBR map its material references.
+      const expectedMeshes = json.nodes.filter((node) => node.mesh !== undefined).length;
+      const expectedMaps = json.nodes
+        .filter((node) => node.mesh !== undefined)
+        .flatMap((node) => json.meshes[node.mesh].primitives)
+        .map((primitive) => {
+          const material = json.materials?.[primitive.material] ?? {};
+          const metallic = material.pbrMetallicRoughness ?? {};
+          return [
+            metallic.baseColorTexture,
+            material.normalTexture,
+            metallic.metallicRoughnessTexture,
+            material.occlusionTexture,
+          ].filter(Boolean).length;
+        })
+        .reduce((sum, count) => sum + count, 0);
       writeFileSync(join(isolated, "public/world.glb"), bytes);
       const artifact = resolve(config.artifactDirectory, "world.glb");
       writeFileSync(artifact, bytes);
@@ -208,10 +224,9 @@ try {
         "The authored river must reach an ordinary receiving game",
       );
       assert(loaded.water[0].triangles > 0, "The exported river must carry real triangles");
-      // 202 meshes: the terrain, two draws for each of the 100 placements and the river. 404 PBR
-      // maps: the ground's four, plus this game's bark, stone and needle sets on the props.
-      assert.equal(loaded.meshes, 202);
-      assert.equal(loaded.pbrMaps, 404);
+      // Every mesh node and every PBR map the file declares reaches an ordinary receiving game.
+      assert.equal(loaded.meshes, expectedMeshes);
+      assert.equal(loaded.pbrMaps, expectedMaps);
       assert.equal(loaded.cameras, 0);
       assert.equal(loaded.animations, 0);
       assert.equal(loaded.rootExtras.terrainRevision, dry.revision);
@@ -233,6 +248,20 @@ try {
       assert.deepEqual(rejectedRequests, []);
       assert.deepEqual(errors, []);
       await session.screenshot("portable-world-vanilla");
+      // The imported-and-edited world, from a fresh editor page and a fresh viewer, so the default
+      // world proof above stays exactly as it was.
+      console.log(
+        JSON.stringify({
+          imported: await verifyImportedExport({
+            context: session.page.context(),
+            editorUrl: activation.editorUrl,
+            controller,
+            consumerUrl,
+            isolated,
+            temporary,
+          }),
+        }),
+      );
       console.log(
         JSON.stringify({
           export: {

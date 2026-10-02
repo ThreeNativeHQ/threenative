@@ -1,5 +1,6 @@
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
 import {
+  Color,
   DataTexture,
   DataUtils,
   HalfFloatType,
@@ -23,6 +24,7 @@ import {
   texture,
   time,
   transformNormalToView,
+  uniform,
   vec2,
   vec3,
 } from "three/tsl";
@@ -49,6 +51,15 @@ export const SEA = {
 
 /** Dense inner grid; its outer vertices stretch to the distant horizon below. */
 export const SURFACE = { segments: 512, size: 1024 } as const;
+
+/**
+ * The sea's two body colours as live uniforms, so an editor can retint the water without rebuilding
+ * its material. The defaults are this game's look: nothing here changes it until a caller writes.
+ */
+export const OCEAN_LOOK = {
+  deep: uniform(new Color(0x082e45)),
+  shallow: uniform(new Color(0x24646a)),
+};
 
 /** Thin breaking surf on exposed shores. */
 const FOAM = 0xe9f4f6;
@@ -246,7 +257,7 @@ export function createWaterMesh(ocean: SpectralOcean, data: IBakedWorld): Mesh {
   const bounced = view.negate().reflect(normal);
   // The standard material supplies Fresnel and the actual sun's specular lobe; the sky supplies radiance.
   material.envNode = mix(color(0xb6cbd5), color(0x568fbd), clamp(bounced.y, 0, 1)).mul(1.15);
-  const water = mix(color(0x24646a), color(0x082e45), smoothstep(0.4, 9, depth));
+  const water = mix(OCEAN_LOOK.shallow, OCEAN_LOOK.deep, smoothstep(0.4, 9, depth));
   const surf = mx_noise_float(
     vec3(positionWorld.x.mul(0.9), positionWorld.z.mul(0.9), time.mul(0.45)),
   )

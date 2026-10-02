@@ -6706,6 +6706,25 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "throws by name; HDR/EXR environment files and ordinary images are accepted, models are not"
+      ],
+      "example": "checkEnvironmentAssets({ sky: { image: \"dusk\" } }, document.assets ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns which images it registers"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function checkEnvironmentAssets( environment: IEnvironment, assets: readonly { … }",
+      "situations": [
+        "refuse a saved environment whose sky or lighting image is not a registered file"
+      ],
+      "summary": "Check that the images an environment names are registered environment or image assets. @summary Validate the assets a preview environment refers to",
+      "supersedes": [],
+      "symbol": "checkEnvironmentAssets"
+    },
+    {
+      "aliases": [],
       "constraints": ["framing only; an unknown target returns a named diagnostic and no camera"],
       "example": "const outcome = focusCamera(camera, { target: { kind: \"prop\", id: \"pine-3\" }, aspect: 16 / 9 }, resolve);",
       "importPath": "@threenative/terrain/editor",
@@ -6720,6 +6739,25 @@
       "summary": "Frame a point, prop, landmark or region for the live viewport and projection. @summary Frame a focus target with an editor observation camera",
       "supersedes": [],
       "symbol": "focusCamera"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "headers and checksums only; throws by name for a damaged, truncated or oversize file"
+      ],
+      "example": "const report = inspectImage(bytes, \"png\", { maxDimension: 8192 });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project sets the dimension limit"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function inspectImage( bytes: Uint8Array, format: string, limits: { … }",
+      "situations": [
+        "check an imported surface or environment image for damage and for the project's size limit"
+      ],
+      "summary": "Validate a PNG, JPEG, WebP, Radiance HDR or OpenEXR container and read its pixel size. @summary Inspect an image file's container and pixel size without decoding it",
+      "supersedes": [],
+      "symbol": "inspectImage"
     },
     {
       "aliases": [],
@@ -6797,6 +6835,59 @@
     },
     {
       "aliases": [],
+      "constraints": ["authoring metadata only; a null field returns to the project's own value"],
+      "example": "const result = runEnvironmentOperation({}, { op: \"patch\", values: { sun: { elevation: 25 } } });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project's render source decides what each value does"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function runEnvironmentOperation( current: IEnvironment, operation: unknown, ): IEnvironmentResult { … }",
+      "situations": [
+        "patch sun, haze, exposure or sea overrides from a controller or the editor GUI"
+      ],
+      "summary": "Apply one get / patch / reset against the saved environment overrides; the caller commits it. @summary Run one preview-environment operation",
+      "supersedes": [],
+      "symbol": "runEnvironmentOperation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "reads only the first bytes; a file it cannot name returns undefined and must be refused"
+      ],
+      "example": "const kind = sniff(new Uint8Array(await file.arrayBuffer()))?.kind;",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the caller decides what to do with an unknown file"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function sniff( bytes: Uint8Array, ): { … }",
+      "situations": [
+        "decide whether a dropped or downloaded file is a model, surface image or environment image"
+      ],
+      "summary": "The kind and format a file's own bytes declare, whatever its name says. @summary Identify a GLB, PNG, JPEG, WebP, HDR or EXR file by its header",
+      "supersedes": [],
+      "symbol": "sniff"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "throws by name for an input that is not <surface>.<channel> with a known channel"
+      ],
+      "example": "const space = surfaceSpace(\"bark.normal\");",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns which surface inputs exist"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function surfaceSpace(input: string): \"srgb\" | \"linear\" { … }",
+      "situations": ["decide how an imported image bound to a named surface input must be sampled"],
+      "summary": "The colour space an input's pixels are read in, from the channel its name ends with. @summary Resolve a surface input name to sRGB or linear",
+      "supersedes": [],
+      "symbol": "surfaceSpace"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "optional tooling; only subscribe/mount touches DOM; stale revisions fail explicitly"
       ],
@@ -6811,6 +6902,42 @@
       "summary": "HTTP controller for the project-local terrain editor.",
       "supersedes": [],
       "symbol": "TerrainEditorController"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "authoring metadata only; ids, content-hashed paths, bounds and unit adjustments are checked, files are not read"
+      ],
+      "example": "const asset = validateAsset({ id: \"oak\", kind: \"model\", name: \"oak.glb\", path: \"models/0123456789ab-oak.glb\", sha256: \"0123456789ab\".padEnd(64, \"0\"), bytes: 2180, status: \"ready\" });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns its asset directory and which entries it keeps"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateAsset(input: unknown): IProjectAsset { … }",
+      "situations": [
+        "check a model, image or environment asset entry before saving it in the authoring document"
+      ],
+      "summary": "Validate one saved asset registration exactly as a document commit stores it. @summary Validate a registered terrain-editor asset entry",
+      "supersedes": [],
+      "symbol": "validateAsset"
+    },
+    {
+      "aliases": [],
+      "constraints": ["at most 64 entries; unique ids; each entry as validateAsset"],
+      "example": "const assets = validateAssets(document.assets ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": ["the project owns its asset directory and which entries it keeps"],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateAssets(input: unknown): IProjectAsset[] { … }",
+      "situations": [
+        "check every registered model, image and environment entry together, with unique ids"
+      ],
+      "summary": "Validate the whole asset list of an authoring document. @summary Validate the registered terrain-editor assets",
+      "supersedes": [],
+      "symbol": "validateAssets"
     },
     {
       "aliases": [],
@@ -6851,6 +6978,27 @@
     {
       "aliases": [],
       "constraints": [
+        "authoring metadata only; unknown fields and unsupported fog modes are refused by name"
+      ],
+      "example": "const environment = validateEnvironment({ sun: { elevation: 25, intensity: 3 } });",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the project's render source defines what each value does; absent fields keep its own"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateEnvironment(input: unknown): IEnvironment { … }",
+      "situations": [
+        "save sun, sky, haze, exposure or ocean overrides in the shared authoring document"
+      ],
+      "summary": "Validate a complete overrides object exactly as a document commit stores it. @summary Validate preview environment overrides",
+      "supersedes": [],
+      "symbol": "validateEnvironment"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "authoring metadata only; rejects unknown fields, malformed points and unknown scale"
       ],
       "example": "const reference = validateSpatialReference(JSON.parse(saved));",
@@ -6868,6 +7016,27 @@
       "summary": "Normalise and validate one saved reference, exactly as a document commit would store it.",
       "supersedes": [],
       "symbol": "validateSpatialReference"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "authoring metadata only; each input is <surface>.<channel>; every asset must be a registered image"
+      ],
+      "example": "const surfaces = validateSurfaces({ \"bark.normal\": { asset: \"my-normal\" } }, document.assets ?? []);",
+      "importPath": "@threenative/terrain/editor",
+      "kind": "function",
+      "overrides": [
+        "the project's render source defines which surface inputs exist and what they draw"
+      ],
+      "package": "@threenative/terrain",
+      "requires": ["npm i -D @threenative/terrain"],
+      "signature": "export function validateSurfaces( input: unknown, assets: readonly IProjectAsset[], ): ISurfaceMappings { … }",
+      "situations": [
+        "save which imported PBR image replaces which named surface input of the project's render source"
+      ],
+      "summary": "Validate surface mappings against the registered images they name. @summary Validate terrain-editor surface image mappings",
+      "supersedes": [],
+      "symbol": "validateSurfaces"
     },
     {
       "aliases": [],

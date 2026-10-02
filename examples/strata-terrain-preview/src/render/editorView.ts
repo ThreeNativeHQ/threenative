@@ -8,11 +8,14 @@ import {
 } from "@threenative/terrain";
 import {
   type IEditorView,
+  type IEnvironment,
   type IFocusBounds,
   type IFocusOutcome,
   type IFocusRequest,
+  type IProjectAsset,
   type ISavedCamera,
   type IViewCamera,
+  type IViewEnvironment,
   type IViewerPose,
   type TerrainEditorController,
   focusCamera,
@@ -30,17 +33,21 @@ import {
   HemisphereLight,
   Line,
   LineBasicMaterial,
+  LinearToneMapping,
   Matrix4,
   Mesh,
   type MeshStandardMaterial,
+  NoToneMapping,
   type Object3D,
   type PerspectiveCamera,
   Vector2,
   Vector3,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createEnvironmentImages } from "./environmentImages.js";
+import { createImportedModels } from "./imports.js";
 import { landformPose } from "./landforms.js";
-import { createOcean, createWaterMesh } from "./ocean.js";
+import { OCEAN_LOOK, createOcean, createWaterMesh } from "./ocean.js";
 import { terrainPalette } from "./palette.js";
 import { createPortableGround, createPortableProps } from "./portable.js";
 import { createPropSurfaces } from "./propMaterials.js";
@@ -54,8 +61,32 @@ import {
   writePropTransform,
 } from "./props.js";
 import { createPropSelection } from "./selection.js";
+import { createSurfaceBindings } from "./surfaces.js";
 import { createTerrain } from "./terrain.js";
 import { type IWaterSurface, bakeWater } from "./water.js";
+
+/** This editor's own starter look: what an absent environment override means. */
+const STARTER_LOOK = {
+  fillIntensity: 1.2,
+  fogColour: 0x9dc2d2,
+  fogDensity: 0.0008,
+  oceanDeep: 0x082e45,
+  oceanShallow: 0x24646a,
+  skyColour: 0x9dc2d2,
+  sunColour: 0xffedd4,
+  sunIntensity: 2.8,
+  sunPosition: new Vector3(-180, 240, 120),
+};
+export interface IImageSlot {
+  readonly state: "procedural" | "loading" | "ready" | "failed";
+  readonly id?: string;
+  readonly sha256?: string | null;
+  readonly peak?: number | null;
+  readonly error?: string;
+}
+const hexOf = (value: Color): string => `#${value.getHexString()}`;
+const radians = (degrees: number): number => (degrees * Math.PI) / 180;
+const degrees = (value: number): number => (value * 180) / Math.PI;
 
 /** A landmark frames the ground it sits on, not the height of a building. */
 const LANDMARK_RADIUS = 0.5;
@@ -85,6 +116,20 @@ export async function createEditorView(
       clearance: number | null;
     }[];
     inspectSelection(): ReturnType<ReturnType<typeof createPropSelection>["inspect"]>;
+    /** The effective environment read off the scene's own objects, with the revision it answers to. */
+    inspectEnvironment(): Required<IEnvironment> & {
+      revision: string;
+      /** What the scene's own background and environment hold right now. */
+      kinds: { background: string; environment: string };
+      /** Each image slot: procedural, loading, ready or failed, with source hash and peak radiance. */
+      images: Record<"background" | "lighting", IImageSlot>;
+    };
+    /** Every registered model: loading, ready or failed, with the geometry actually placed. */
+    inspectAssets(): ReturnType<ReturnType<typeof createImportedModels>["status"]>;
+    /** Each live surface input: its bound image's identity, pixels and colour space. */
+    inspectSurfaces(): ReturnType<ReturnType<typeof createSurfaceBindings>["read"]>;
+    /** Mappings the saved document holds that this render source cannot honour, by name. */
+    inspectSurfaceDiagnostics(): string[];
     projectPlacement(id: string): [number, number] | undefined;
     inspectHandles(): ReturnType<ReturnType<typeof createPropSelection>["handles"]>;
     /** Every water body the rendered revision contains, and how much geometry it drew. */
@@ -111,6 +156,17 @@ export async function createEditorView(
   let groundAt: PropGroundQuery | undefined;
   let elapsed = 0;
   let first = true;
+  let hemisphere!: HemisphereLight;
+  let sunLight!: DirectionalLight;
+  let environmentOverrides: IEnvironment | undefined;
+  // The procedural sky is one Color object. An image background replaces `scene.background`, and
+  // clearing the image puts this same colour back, so nothing is rebuilt.
+  const skyColour = new Color(STARTER_LOOK.skyColour);
+  let latestAssets: readonly IProjectAsset[] = [];
+  let imageSignature = "";
+  // biome-ignore lint/style/useConst: assigned once the asset loader exists, after the first update.
+  let envImages: ReturnType<typeof createEnvironmentImages> | undefined;
+  let environmentRevision = "";
   let mode = "lit";
   let requestedRevision = "";
   let evaluationMs = 0;
@@ -342,6 +398,150 @@ export async function createEditorView(
       return outcome;
     },
   };
+  const SUN_DISTANCE = STARTER_LOOK.sunPosition.length();
+  function sunAngles(position: Vector3): { azimuth: number; elevation: number } {
+    const direction = position.clone().normalize();
+    return {
+      azimuth: (Math.atan2(direction.z, direction.x) * 180) / Math.PI,
+      elevation: (Math.asin(direction.y) * 180) / Math.PI,
+    };
+  }
+  /** The effective look: the lights, haze, sky and sea as they are right now. */
+  /** Which image, if any, each slot is drawing, and how its load stands. */
+  function slot(id: string | undefined): IImageSlot {
+    if (!id) return { state: "procedural" };
+    const entry = envImages?.get(id);
+    return {
+      id,
+      state: entry?.status ?? "loading",
+      sha256: entry?.sha256 ?? null,
+      peak: entry?.peak ?? null,
+      ...(entry?.error ? { error: entry.error } : {}),
+    };
+  }
+  function readEnvironment(): Required<IEnvironment> {
+    const fog = ctx.scene.fog as FogExp2;
+    const { azimuth, elevation } = sunAngles(sunLight.position);
+    const raw = ctx.renderer.raw as { toneMappingExposure?: number };
+    return {
+      sun: {
+        azimuth,
+        elevation,
+        intensity: sunLight.intensity,
+        colour: hexOf(sunLight.color),
+      },
+      fill: { intensity: hemisphere.intensity },
+      sky: {
+        colour: hexOf(skyColour),
+        rotation: degrees(ctx.scene.backgroundRotation.y),
+        intensity: ctx.scene.backgroundIntensity,
+        ...(environmentOverrides?.sky?.image ? { image: environmentOverrides.sky.image } : {}),
+      },
+      lighting: {
+        rotation: degrees(ctx.scene.environmentRotation.y),
+        intensity: ctx.scene.environmentIntensity,
+        ...(environmentOverrides?.lighting?.image
+          ? { image: environmentOverrides.lighting.image }
+          : {}),
+      },
+      fog: { mode: "exp2", colour: hexOf(fog.color), density: fog.density },
+      exposure: raw.toneMappingExposure ?? 1,
+      ocean: {
+        shallow: hexOf(OCEAN_LOOK.shallow.value),
+        deep: hexOf(OCEAN_LOOK.deep.value),
+      },
+    };
+  }
+  /** Bind saved overrides; an absent field returns to this project's starter value. */
+  function applyEnvironment(next: IEnvironment | undefined): void {
+    const sun = next?.sun;
+    const starter = sunAngles(STARTER_LOOK.sunPosition);
+    const azimuth = ((sun?.azimuth ?? starter.azimuth) * Math.PI) / 180;
+    const elevation = ((sun?.elevation ?? starter.elevation) * Math.PI) / 180;
+    if (sun?.azimuth === undefined && sun?.elevation === undefined)
+      sunLight.position.copy(STARTER_LOOK.sunPosition);
+    else
+      sunLight.position
+        .set(
+          Math.cos(elevation) * Math.cos(azimuth),
+          Math.sin(elevation),
+          Math.cos(elevation) * Math.sin(azimuth),
+        )
+        .multiplyScalar(SUN_DISTANCE);
+    sunLight.intensity = sun?.intensity ?? STARTER_LOOK.sunIntensity;
+    sunLight.color.set(sun?.colour ?? STARTER_LOOK.sunColour);
+    hemisphere.intensity = next?.fill?.intensity ?? STARTER_LOOK.fillIntensity;
+    skyColour.set(next?.sky?.colour ?? STARTER_LOOK.skyColour);
+    const fog = ctx.scene.fog as FogExp2;
+    fog.color.set(next?.fog?.colour ?? STARTER_LOOK.fogColour);
+    fog.density = next?.fog?.density ?? STARTER_LOOK.fogDensity;
+    OCEAN_LOOK.shallow.value.set(next?.ocean?.shallow ?? STARTER_LOOK.oceanShallow);
+    OCEAN_LOOK.deep.value.set(next?.ocean?.deep ?? STARTER_LOOK.oceanDeep);
+    // Exposure is a tone curve's input, so an override turns on the plain linear curve at that
+    // exposure and an absent one restores the starter's untoned output.
+    const raw = ctx.renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
+    raw.toneMapping = next?.exposure === undefined ? NoToneMapping : LinearToneMapping;
+    raw.toneMappingExposure = next?.exposure ?? 1;
+    environmentOverrides = next;
+    syncImages(next);
+  }
+  /**
+   * Bind the sky and lighting images. A ready image is drawn; one still loading, or one that failed,
+   * leaves the last valid scene untouched, and the failure is reported by name.
+   */
+  function syncImages(next: IEnvironment | undefined): void {
+    envImages?.retain(latestAssets);
+    const wanted = (id: string | undefined) => {
+      const asset = latestAssets.find(
+        (entry) => entry.id === id && (entry.kind === "environment" || entry.kind === "image"),
+      );
+      if (asset) envImages?.request(asset);
+      return id ? envImages?.get(id) : undefined;
+    };
+    const scene = ctx.scene;
+    if (!next?.sky?.image) {
+      scene.background = skyColour;
+      scene.backgroundRotation.set(0, 0, 0);
+      scene.backgroundIntensity = 1;
+    } else {
+      const sky = wanted(next.sky.image);
+      if (sky?.status === "ready" && sky.texture) {
+        scene.background = sky.texture;
+        scene.backgroundRotation.set(0, radians(next.sky.rotation ?? 0), 0);
+        scene.backgroundIntensity = next.sky.intensity ?? 1;
+      }
+    }
+    if (!next?.lighting?.image) {
+      scene.environment = null;
+      scene.environmentRotation.set(0, 0, 0);
+      scene.environmentIntensity = 1;
+    } else {
+      const light = wanted(next.lighting.image);
+      if (light?.status === "ready" && light.texture) {
+        scene.environment = light.texture;
+        scene.environmentRotation.set(0, radians(next.lighting.rotation ?? 0), 0);
+        scene.environmentIntensity = next.lighting.intensity ?? 1;
+        // The image is the fill: unless the fill is set on purpose, the hemisphere is not added to it.
+        hemisphere.intensity = next.fill?.intensity ?? 0;
+      }
+    }
+  }
+  /** What the scene's own background and environment hold, read off the scene. */
+  function sceneKinds() {
+    return {
+      background:
+        ctx.scene.background === null
+          ? "none"
+          : ctx.scene.background instanceof Color
+            ? "colour"
+            : "texture",
+      environment: ctx.scene.environment === null ? "none" : "texture",
+    };
+  }
+  const environment: IViewEnvironment = {
+    apply: applyEnvironment,
+    read: readEnvironment,
+  };
   function frame(): void {
     if (!mesh) return;
     mesh.geometry.computeBoundingSphere();
@@ -361,11 +561,11 @@ export async function createEditorView(
     override enter(context: ICtx<EditorState>): void {
       ctx = context;
       ctx.add(ctx.camera);
-      ctx.scene.background = new Color(0x9dc2d2);
+      ctx.scene.background = skyColour;
       ctx.scene.fog = new FogExp2(0x9dc2d2, 0.0008);
-      ctx.add(new HemisphereLight(0xd6e9ef, 0x403c2e, 1.2));
-      const sun = ctx.add(new DirectionalLight(0xffedd4, 2.8));
-      sun.position.set(-180, 240, 120);
+      hemisphere = ctx.add(new HemisphereLight(0xd6e9ef, 0x403c2e, STARTER_LOOK.fillIntensity));
+      sunLight = ctx.add(new DirectionalLight(STARTER_LOOK.sunColour, STARTER_LOOK.sunIntensity));
+      sunLight.position.copy(STARTER_LOOK.sunPosition);
       ctx.add(brush);
       ctx.add(spline);
       ctx.renderer.domElement.classList.add("render-canvas");
@@ -414,6 +614,9 @@ export async function createEditorView(
     camera: { projection: "perspective", fov: 60, far: 5000 },
     initialState,
     plugins: [playtest()],
+    // The page lives at /terrain-editor/, so a bare map path would resolve beneath it. The starter's
+    // maps are served from the root (`publicDir`), the same place the game finds them.
+    assets: { basePath: "/" },
     render: { preferWebGPU: true },
     scenes: { editor: EditorScene },
     start: "editor",
@@ -424,6 +627,20 @@ export async function createEditorView(
   // material on every brush stroke.
   const propParts = buildPropVariants();
   propSurfaces = await createPropSurfaces(ctx.assets);
+  // Registered GLBs join the same variant map the scatter palette reads, loaded from the editor's own
+  // hash-named URLs so a replaced file can never be served from a stale cache.
+  const assetUrl = (asset: { path: string }): string =>
+    new URL(`api/assets/${asset.path}`, document.baseURI).href;
+  const surfaces = createSurfaceBindings(ctx.assets, propSurfaces.inputs, assetUrl, (texture) => {
+    const backend = (
+      ctx.renderer.raw as {
+        backend?: { get(object: unknown): { texture?: { format?: string } } | undefined };
+      }
+    ).backend;
+    return backend?.get(texture)?.texture?.format;
+  });
+  const imported = createImportedModels(ctx.assets, propParts, assetUrl);
+  envImages = createEnvironmentImages(ctx.assets, assetUrl, () => syncImages(environmentOverrides));
   const selection = createPropSelection(
     ctx,
     controls,
@@ -459,6 +676,24 @@ export async function createEditorView(
       return `ThreeNative · ${ctx.renderer.kind}`;
     },
     setDocument(next, revision): void {
+      imported.sync(next.assets ?? []);
+      latestAssets = next.assets ?? [];
+      surfaces.sync(next.surfaces ?? {}, next.assets ?? []);
+      // Appearance only: the lights and haze change, the terrain and its collider never do.
+      // The saved images count too: an environment that names an image applies once it is registered.
+      const images = JSON.stringify(
+        latestAssets
+          .filter((entry) => entry.kind === "environment" || entry.kind === "image")
+          .map((entry) => [entry.id, entry.sha256]),
+      );
+      if (
+        JSON.stringify(next.environment ?? null) !== JSON.stringify(environmentOverrides ?? null) ||
+        images !== imageSignature
+      ) {
+        imageSignature = images;
+        applyEnvironment(next.environment);
+      }
+      environmentRevision = revision;
       // Only a changed camera definition moves the view: a terrain rebake must not reset an orbit.
       const signature = JSON.stringify([next.cameras ?? [], next.activeCamera ?? null]);
       if (signature !== cameraSignature) {
@@ -646,6 +881,14 @@ export async function createEditorView(
     },
     frame,
     cameras: () => cameras,
+    assetsReady: async () => {
+      await Promise.all([imported.ready(), surfaces.ready(), envImages?.ready()]);
+    },
+    surfaceInputs: () => surfaces.inputs(),
+    inspectSurfaces: () => surfaces.read(),
+    inspectSurfaceDiagnostics: () => surfaces.diagnostics(),
+    inspectAssets: () => imported.status(),
+    environment: () => environment,
     inspect(): EditorState {
       return { ...ctx.state.getState() };
     },
@@ -655,6 +898,18 @@ export async function createEditorView(
         transform: readPropTransform(instance),
         clearance: instance.clearance,
       }));
+    },
+    /** What the scene's own objects hold now, read off them rather than off the saved settings. */
+    inspectEnvironment() {
+      return {
+        revision: environmentRevision,
+        ...readEnvironment(),
+        kinds: sceneKinds(),
+        images: {
+          background: slot(environmentOverrides?.sky?.image),
+          lighting: slot(environmentOverrides?.lighting?.image),
+        },
+      };
     },
     inspectSelection() {
       return selection.inspect();
@@ -681,7 +936,7 @@ export async function createEditorView(
       // This game's own PBR maps, not a fixture's checkers: an export that carried test textures
       // would prove the container and not the art, which is the half of the handoff that matters.
       const material = await createPortableGround(ctx.assets, terrain.size);
-      const portableProps = await createPortableProps(ctx.assets);
+      const portableProps = await createPortableProps(ctx.assets, surfaces.urls());
       // Every draw a placement owns, on one portable surface. A spruce is a trunk and a crown, and
       // an export that carried only the trunk would ship a hundred poles.
       const models = new Map<string, Object3D>();
@@ -693,7 +948,10 @@ export async function createEditorView(
           // The draw's own name ends in its role (`props:spruce:0:crown`), which is exactly the key
           // the portable surfaces are chosen by.
           const role = part.mesh.name.split(":").at(-1) ?? "crown";
-          const surface = portableProps.materials[role];
+          // An imported model keeps the materials its file was authored with; only the starter's own
+          // shapes are re-dressed in the portable starter surfaces.
+          const own = part.mesh.userData.ownMaterial === true ? part.mesh.material : undefined;
+          const surface = own ?? portableProps.materials[role];
           if (!surface) throw new Error(`No portable surface for prop role '${role}'`);
           const draw = new Mesh(part.mesh.geometry, surface);
           draw.name = role;
@@ -741,6 +999,9 @@ export async function createEditorView(
     },
     dispose(): void {
       selection.dispose();
+      envImages?.dispose();
+      surfaces.dispose();
+      imported.dispose();
       propSurfaces?.dispose();
       for (const parts of propParts.values()) for (const part of parts) part.geometry.dispose();
       clearWater();
