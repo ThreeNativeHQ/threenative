@@ -203,7 +203,8 @@
       "kind": "wait",
       "label": "alpine-settle",
       "waitTicks": 150,
-      "release": true
+      "release": true,
+      "screenshot": "alpine-player"
     },
     {
       "kind": "input",
@@ -281,7 +282,8 @@
       "kind": "wait",
       "label": "desert-settle",
       "waitTicks": 150,
-      "release": true
+      "release": true,
+      "screenshot": "desert-player"
     },
     {
       "kind": "input",
@@ -359,7 +361,8 @@
       "kind": "wait",
       "label": "tundra-settle",
       "waitTicks": 150,
-      "release": true
+      "release": true,
+      "screenshot": "tundra-player"
     },
     {
       "kind": "input",
@@ -475,6 +478,55 @@
       "press": "KeyL",
       "holdTicks": 2,
       "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal-meadow-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-meadow-final",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-meadow-close"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-overview-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-overview-final",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-overview"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-horizon-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coastal-player-final-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-player-final",
+      "waitTicks": 60,
+      "release": true,
+      "screenshot": "coastal-player"
     }
   ],
   "assert": {
@@ -764,6 +816,19 @@
         "path": "playerFrameP50",
         "gte": 0.01,
         "lte": 4
+      },
+      {
+        "id": "GameState",
+        "path": "maxViewFrameP50",
+        "gte": 0.01,
+        "lte": 4,
+        "allowTrivial": "Maximum measured CPU p50 across every visited camera; measuredViewCount separately requires all 17 poses to close budget windows."
+      },
+      {
+        "id": "GameState",
+        "path": "measuredViewCount",
+        "gte": 17,
+        "changed": true
       }
     ],
     "renderChain": {

@@ -312,7 +312,7 @@ function mesaProfile(height) {
     values: Array.from({ length: width * width }, (_, i) => {
       const x = ((i % width) / (width - 1) - 0.5) * 2;
       const z = (Math.floor(i / width) / (width - 1) - 0.5) * 2;
-      const angle = Math.atan2(z, x);
+      const angle = Math.atan2(z, x) + height * 0.17;
       // Connected lobes and deep re-entrants, rather than a perturbed circular rim.
       const boundary =
         0.83 +

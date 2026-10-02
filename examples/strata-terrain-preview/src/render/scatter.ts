@@ -63,7 +63,7 @@ export function grassWeight(data: IPlacementField, x: number, z: number): number
   if (data.world === "alpine") return clamp01((38 - slope) / 22) * clamp01((88 - height) / 40);
   if (data.world === "desert") return clamp01((24 - slope) / 20) * 0.32;
   if (data.world === "tundra")
-    return clamp01((30 - slope) / 22) * clamp01((tundraCover(x, z) - 0.47) / 0.3);
+    return clamp01((30 - slope) / 22) * clamp01((forestWeight(x * 9.8, z * 8.7) - 0.47) / 0.3);
   return clamp01((42 - slope) / 20) * clamp01((66 - height) / 28);
 }
 
@@ -380,7 +380,7 @@ export function scatterProps(
       !inside(x, z) ||
       wet(x, z) ||
       slopeDegrees(data, x, z) > 34 ||
-      grassWeight(data, x, z) < 0.22
+      (tundra ? clamp01((tundraCover(x, z) - 0.47) / 0.3) : grassWeight(data, x, z)) < 0.22
     )
       return;
     const drift = temperate

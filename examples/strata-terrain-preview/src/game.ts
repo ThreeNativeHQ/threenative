@@ -198,6 +198,9 @@ const initialState = {
   view: "player",
   windowDrawCalls: 0,
   windowFrameMs: 0,
+  viewFrameP50s: [] as { view: string; p50: number; windows: number }[],
+  maxViewFrameP50: 0,
+  measuredViewCount: 0,
   riverFrameP50: 0,
   playerFrameP50: 0,
   meadowFrameP50: 0,
@@ -742,7 +745,15 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           void buildProps();
         }
         frames++;
+        const viewFrameP50s = [...viewBudgets.values()].map((group) => ({
+          view: group.view,
+          p50: median(group.p50s),
+          windows: group.p50s.length,
+        }));
         ctx.state.set({
+          viewFrameP50s,
+          maxViewFrameP50: Math.max(0, ...viewFrameP50s.map((group) => group.p50)),
+          measuredViewCount: viewFrameP50s.filter((group) => group.windows > 0).length,
           world,
           groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
           sunX: sky.sunX,

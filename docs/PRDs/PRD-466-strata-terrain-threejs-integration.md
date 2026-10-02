@@ -1684,3 +1684,25 @@ topology gates; 9 observations were missing. Seam measurements moved into the
 existing player debug snapshot; the corrected full run is pending. No gate
 was waived. Full-res review improved mesas and cover; mountain upper faces
 were still soft, so a bounded form refinement is in progress. AC-5 stays open.
+
+Round 15 refinement: upper rock faces retain fine ridged spurs; thermal talus
+is masked to low shoulders. Tundra's resident-edge tangent is continued before
+fading to the outer plain. Refined pre-final full scenario: **48/48 PASS**,
+zero failed observations, CPU p50 maximum 3.1 ms. First-pass quantile comparison
+found coastal p05/p50 changes up to 0.95 from the shared shadow refinement;
+final cascade settings therefore change **only alpine/desert** (4096,
+refreshStep [0.2, 0.125]). Forest/coast/tundra retain 2048 and default refresh.
+Tundra's tree/rock acceptance stays on the prior rule; only cover uses the
+new noise/disc placement, preserving established rock composition. Desert
+stamp lobes also rotate by each stamp's height, avoiding copied outlines.
+
+All-camera qualification extends the existing scenario: three other-biome
+player captures, the two previously skipped coastal poses, and final coastal
+player. GameState publishes every pose's p50/windows and rejects fewer than
+17 measured poses or any maximum above 4 ms. No extra harness/report file.
+Final fresh bake: **14.00 s total**, including **5.75 s** continuation erosion;
+height JSON **1,755,747 bytes**. Example tsc and root Biome PASS on this
+candidate. Terrain Vitest initially 60/69 with parallel Vite connection resets;
+`pnpm exec vitest run packages/terrain/__tests__ --no-file-parallelism` then
+**69/69 PASS**. Capture lock timeout exit75 was retried unchanged. Final
+50-assertion licensed/fallback runs and full-resolution acceptance are pending.
