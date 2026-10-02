@@ -119,6 +119,20 @@ after one frame, and detectable negative controls. Five numerical tests and the 
 pass; hosted sequence results remain pending. These checks do not qualify reconstruction or the
 broader foliage/content corpus below.
 
+First actual sequence, source `1124d7036787488b9fa9adf4aecbd535a099654c`, hosted run
+`36994374046`: **quality gate failed**. All five arms rendered, all diagnostics were empty,
+and 80 PNG hashes were verified. Temporal error instability improves 10.1%, but edge error worsens
+13.5% versus no-AA. Stale-colour residue remains on 19.2% of 3,721 newly revealed interior pixels
+one frame later and drops below 1% only after seven frames. The zero-velocity arm has lower moving
+edge error than the temporal arm; this requires projection/velocity-grid/history-timing diagnosis
+before any blend tuning. Unchecked history is detected on 100% of revealed pixels. The original
+thresholds remain unchanged. [Complete measurements/provenance](../../verification/prd455/motion-runtime.json),
+[before reveal](../../verification/prd455/motion-before.png),
+[matched no-AA reference](../../verification/prd455/motion-reference.png),
+[failed temporal reveal](../../verification/prd455/motion-reveal.png), and
+[later recovery](../../verification/prd455/motion-recovery.png) retain genuine unchanged frame bytes.
+All 80 frames remain in the workflow artifact; these four selected frames were inspected.
+
 - [ ] A fixed camera route containing thin fences, foliage, sub-pixel edges, a moving character and an instanced moving object stays within pinned temporal-stability/ghosting thresholds against a full-resolution reference. **proof:** automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; the temporal arm must beat the spatial arm on the named stability metric.
 - [ ] Newly revealed surfaces do not inherit stale colour after occlusion/disocclusion events. **proof:** foreground-occluder fixture reveals a contrasting background and asserts stale-history pixels decay within the declared frame bound; disabling disocclusion rejection makes it fail.
 
