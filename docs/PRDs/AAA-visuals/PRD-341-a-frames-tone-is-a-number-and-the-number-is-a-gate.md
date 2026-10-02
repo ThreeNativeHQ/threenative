@@ -32,7 +32,7 @@ report two numbers where five are needed.
 ### Phase 3 — scenario proof and qualification
 
 - [x] Ship a discoverable GPU-lane scenario and document the exact statistic/capture contract. proof: `node --import tsx scripts/check-doc-links.ts` and scenario schema test in `tone.spec.ts` — 52 focused fixture/capture/doc tests passed; isolated production Vite bundle and playtest ESM/declarations built.
-- [ ] Run the scenario with normal and two-stops-under exposure on a capture-capable GPU lane. proof: `pnpm test:tone` (also reached by `pnpm test:templates`); retain both measured verdicts and runtime PNGs here. Fresh local attempt built the fixture, then refused before browser launch: no usable X display and Xvfb absent. Maintained hosted integration is pending; unit PNG fixtures are not runtime screenshot proof.
+- [x] Run the scenario with normal and two-stops-under exposure on a capture-capable GPU lane. proof: `pnpm test:tone`, hosted [run 36988379892](https://github.com/ThreeNativeHQ/threenative/actions/runs/36988379892) at `0ea7e29a0ff18717d33b8bce3300ec0568fea842` — passed on browser SwiftShader WebGPU. Actual underexposed/restored PNGs inspected; underexposed mean 89.56 / p99 136 fails exactly four intended bounds, restored mean 170.50 / p99 254 passes with clean diagnostics. This is rendered-pixel correctness, not native or hardware-performance proof.
 
 ## Implementation decisions
 
@@ -112,22 +112,22 @@ nothing still leaves the numbers behind for the next round.
 
 ## Acceptance criteria
 
-1. **A misexposed frame is red.** The example fixture renders a scene with `toneMappingExposure`
+- [ ] **A misexposed frame is red.** proof: `pnpm test:tone`. The example fixture renders a scene with `toneMappingExposure`
    pinned two stops under; a `tone` assertion bounding `mean` and `p99` fails, and the failure text
    names both the measured and the required value.
    *Red-green:* the mutation **is** the pinned exposure — restore it and the same assertion passes.
    Paste both.
-2. **An empty bound set throws.** A `tone` assertion with no bounds fails schema validation with a
+- [ ] **An empty bound set throws.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. A `tone` assertion with no bounds fails schema validation with a
    named error before the run starts.
    *Red-green:* soften the schema to allow it; `assertion-schema.spec.ts` goes red.
-3. **A missing capture fails, it does not skip.** A `tone` assertion at a step that produced no
+- [ ] **A missing capture fails, it does not skip.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`. A `tone` assertion at a step that produced no
    frame reports a failure naming the step.
    *Red-green:* return `undefined` from the evaluator when the capture is absent; the fail-closed
    spec goes red.
-4. **The CLI table matches the assertion.** `cli.js tone` on a frame and `assert.tone` on the same
+- [ ] **The CLI table matches the assertion.** proof: `pnpm exec vitest run packages/playtest/__tests__/tone.spec.ts`. `cli.js tone` on a frame and `assert.tone` on the same
    frame report the same six numbers, to the printed precision.
    *Red-green:* change the histogram bin count in one path only; the cross-check spec goes red.
-5. **It works where captures work.** The delete-test lane rule applies — this needs a GPU lane, so
+- [ ] **It works where captures work.** proof: `pnpm test:tone` plus the frameless-lane exclusion test in `tone.spec.ts`. The delete-test lane rule applies — this needs a GPU lane, so
    the scenario lives on `pnpm test:templates`, not on CI's frame-less template runner.
 
 ## Out of scope
@@ -175,3 +175,16 @@ incorrectly satisfying a final-frame assertion; newest matching final observatio
 The pixel-proof verifier separately rejects software-device-loss warnings and unrelated errors
 even in its expected-underexposed arm. Runtime screenshot qualification remains open until the
 corrected hosted run produces inspected evidence; none of these CPU checks substitutes for it.
+
+
+## Runtime screenshot evidence — 2026-10-02
+
+The dedicated [hosted run](https://github.com/ThreeNativeHQ/threenative/actions/runs/36988379892) passed at `0ea7e29a0ff18717d33b8bce3300ec0568fea842`. Both exact artifact images were visually inspected: identical sphere/cube/calibration-ramp geometry, visibly darker underexposed output, brighter restored output, and no blank or visibly corrupt frame. [Provenance and measured values](../../verification/prd341/provenance.json) retain source SHA, artifact digest, adapter and image hashes. Browser SwiftShader proves these pixel/statistic cases; native parity and hardware performance are not claimed. Required full CI is still pending.
+
+Underexposed (expected tone assertion failure):
+
+![Underexposed runtime calibration](../../verification/prd341/underexposed.png)
+
+Restored (tone assertions pass):
+
+![Restored runtime calibration](../../verification/prd341/restored.png)
