@@ -586,6 +586,7 @@ test("preflight requirements derive from the registries", () => {
  * already honours (report.follow set).
  */
 const FAMILY_SCENARIO_ASSERTS = {
+  tone: [{ mean: { min: 60 } }],
   aerodynamics: [{ controls: [{ sign: "positive", surface: "elevator" }], entity: "aircraft", minForceSamples: 1 }],
   animation: [{ advancedFrames: 2, clip: "run", entity: "player" }],
   audio: [{ cue: "speech:p01", maxPlays: 1, minGapMs: 500, minPlays: 1 }],
@@ -626,6 +627,7 @@ const FAMILY_SCENARIO_ASSERTS = {
 
 /** Result ids of the all-families scenario when every family's evidence arrived. */
 const FAMILY_PASS_IDS = [
+  "tone.0.mean",
   "deviceMetrics.observed",
   "deviceMetrics.notThermallyConfounded",
   "deviceMetrics.maxTemperatureRiseC",
@@ -703,6 +705,7 @@ function familyReportObservations(fulfilled: boolean) {
   }
   const physicsSample = (primitives: unknown[]) => ({ artifact: { primitives }, label: undefined });
   return {
+    tone: [{ code: "TN_TONE", label: "after.png", mean: 100, p1: 0, p50: 100, p99: 200, clipFraction: 0, blackFraction: 0 }],
     components: { player: { health: { after: 2, before: 3 } } },
     console: [],
     deviceMetrics: {
@@ -873,6 +876,7 @@ test("should preserve every assertion family's result contract", async () => {
   // (visual collapses to its not-evaluated placeholder) and names a diagnostic code.
   const empty = await evaluate(familyReportObservations(false));
   expect(empty.assertions.map(({ id }) => id), "RED observed: assertion family result ordering changed").toEqual([
+    "tone.0.observed",
     "deviceMetrics.observed",
     "framebufferCoverage",
     "reachability.0.platform.a.platform.b",
@@ -916,6 +920,7 @@ test("should preserve every assertion family's result contract", async () => {
     "movement.distance",
   ]);
   expect(empty.diagnostics.map(({ code }) => code), "RED observed: fail-closed diagnostic codes changed").toEqual([
+    "TN_PLAYTEST_TONE_UNOBSERVED",
     "TN_PLAYTEST_DEVICE_METRICS_UNAVAILABLE",
     "TN_PLAYTEST_FRAMEBUFFER_WINDOW_NOT_REACHED",
     "TN_PLAYTEST_REACHABILITY_ASSERTION_FAILED",

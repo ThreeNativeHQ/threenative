@@ -486,6 +486,9 @@ jobs:
       - name: Verify the desktop runtime with MSVC
         if: runner.os == 'Windows'
         shell: cmd
+        env:
+          # Hosted runners have no GPU (WARP / llvmpipe); the loading proof fails closed unless declared.
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: |
           for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
           if not defined VSINSTALL exit /b 1
@@ -495,6 +498,8 @@ jobs:
           set "VCPKG_ROOT=%VCPKG_INSTALLATION_ROOT%"
           pnpm --filter @threenative/runtime-native native:verify:desktop
       - if: runner.os != 'Windows'
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         run: pnpm --filter @threenative/runtime-native native:verify:desktop
       - name: Stage the verified runtime
         shell: bash
@@ -1054,6 +1059,9 @@ jobs:
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Run packed Android physics and negative controls on an emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # The hosted emulator renders on SwiftShader; the proof fails closed unless that is declared.
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         with:
           api-level: 35
           target: google_apis
@@ -1620,7 +1628,9 @@ jobs:
             ${{ runner.temp }}/packages/*.tgz
 
   finalize:
-    needs: [validate-tag, clean-consumer, clean-consumer-ios, clean-consumer-windows]
+    # iOS is not a supported target (owner, 2026-09-23): its consumer proof stays as evidence but
+    # does not gate promotion, and it has never completed green in a tag run.
+    needs: [validate-tag, clean-consumer, clean-consumer-windows]
     if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -1640,9 +1650,9 @@ jobs:
     if: >-
       ${{ always() && github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha &&
       needs.publish.result == 'success' &&
-      (needs.clean-consumer.result != 'success' || needs.clean-consumer-ios.result != 'success' ||
+      (needs.clean-consumer.result != 'success' ||
       needs.clean-consumer-windows.result != 'success') }}
-    needs: [validate-tag, publish, clean-consumer, clean-consumer-ios, clean-consumer-windows]
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

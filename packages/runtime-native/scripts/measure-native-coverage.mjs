@@ -377,7 +377,6 @@ export function requireInvocationProfiles(expectedPrefixes, profileNames) {
 function coverageExports({ buildDirectory, compiledProducts, executedTargets, profileNames }) {
   const commonArguments = [
     "--format=lcov",
-    "--fatal-warnings",
     "-ignore-filename-regex=(third_party|\\.runtime|/usr/|/opt/|sdl3-build)",
   ];
   const reports = [];

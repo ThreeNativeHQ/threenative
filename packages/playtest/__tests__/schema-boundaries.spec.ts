@@ -83,6 +83,47 @@ describe("scenario schema boundaries", () => {
     expect(parsed.target).toBe("web");
   });
 
+  it("accepts reduced-motion emulation on the web target and refuses it elsewhere", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    }, "reduced-motion.playtest.json");
+    expect(parsed.reducedMotion).toBe("reduce");
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "reduce",
+      target: "desktop",
+      viewport: { height: 720, width: 1280 },
+    }, "desktop-reduced-motion.playtest.json")).toThrow(/reducedMotion is browser-only/u);
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      reducedMotion: "no-preference",
+    }, "invalid-reduced-motion.playtest.json")).toThrow(/reducedMotion must be 'reduce'/u);
+  });
+
+  it("accepts a click on a DOM element by id or selector, never both or neither", () => {
+    const click = (at: unknown) => ({
+      ...scenario(undefined),
+      steps: [{ at, kind: "click", release: true, waitTicks: 1 }],
+      target: "web",
+      viewport: { height: 720, width: 1280 },
+    });
+    expect(validatePlaytestScenario(click({ element: { id: "cloud" } }), "id.playtest.json").steps[0]?.at).toEqual({
+      element: { id: "cloud" },
+    });
+    expect(
+      validatePlaytestScenario(click({ element: { selector: "[role=switch]" } }), "sel.playtest.json").steps[0]?.at,
+    ).toEqual({ element: { selector: "[role=switch]" } });
+    expect(() => validatePlaytestScenario(click({ element: { id: "a", selector: "b" } }), "both.playtest.json")).toThrow(
+      /exactly one of id or selector/u,
+    );
+    expect(() => validatePlaytestScenario(click({ element: {} }), "none.playtest.json")).toThrow(
+      /exactly one of id or selector/u,
+    );
+  });
+
   it("rejects an unknown boot-failure seam", () => {
     expect(() => validatePlaytestScenario({
       ...scenario(undefined),

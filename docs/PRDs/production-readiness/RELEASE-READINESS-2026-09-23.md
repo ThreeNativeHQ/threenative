@@ -1,41 +1,72 @@
 # Release readiness — 2026-09-23
 
-## Status 2026-09-27
+## Status 2026-10-02
 
-**R1 shipped.** 0.3.3 is published (`@threenative/core` `latest`=`next`=`0.3.3`; `create-threenative`
-`0.2.6`) with [runtime-native-v0.3.3](https://github.com/ThreeNativeHQ/threenative/releases/tag/runtime-native-v0.3.3)
-(tag `279adb2ca`, 20 assets). The next-targeted clean room passed all ten steps. Tickable and ticked:
-PRD-196 cut/publish/install/doctor/engine-search/test/desktop-build; PRD-445 `pnpm audit` 0 high,
-`alpha:bar` A7, `check:docs`; PRD-373 real-PR boxes (merged promotions #291/#312, #301/#303).
+**The 0.3.4 cohort is published; `alpha:bar` A1 passes (6 of 7, A6 deferred).** `runtime-native-v0.3.4`
+is a finalized release (promotions #385, #386, #387 merged). On npm: `core`, `physics`, `playtest`,
+`runtime-native`, `ui` 0.3.4; `assets` 0.3.5; `raw-unreal`, `ueformat`, `threenative-blender-mcp` 0.1.4;
+`threenative-engine-mcp` 0.2.4; `@threenative/metahuman` 0.1.0 (new); `create-threenative` 0.2.8.
+`scripts/verify-registry-install.ts` against the registry passes 22/22 (npm and pnpm, including
+`doctor`, `native`, `android`, `mcp`).
 
-**Remaining for R2 (owner):** PRD-366 registry consumer game — now
-[`BLOCKED/requires-physical-device/`](../BLOCKED/requires-physical-device/) under R6, all 19 phase
-boxes and 3 acceptance boxes ticked, so its whole remainder is a physical Android device, a Windows
-and a macOS host with registry access, and a republished cohort · PRD-399 final
-cross-platform UI cohort (the child-window fixture passed the physical Pixel 8 at 60 Hz on 2026-09-27) · PRD-064 desktop-judge negative
-controls and web/native parity. PRD-365 and PRD-375 are closed; PRD-375's owner visual check and
-PR #271 merge completed on 2026-09-28. PRD-445 is filed in
-[`BLOCKED/requires-release-credentials/`](../BLOCKED/requires-release-credentials/) under R6 (all
-20 boxes ticked; the `site` deploy is green on `main`, run 36063649413, so only an upstream
-`threenative-sculpt-mcp` release and three owner calls remain).
+What it took, so the next cut does not repeat it:
 
-**R2 progress:** [PRD-112 repair](../done/PRD-112-repair-golden-path-contract.md) is done. The
-packed journey passed all ten discovered templates and its mutated-package negative control;
-`pnpm typecheck && pnpm lint && pnpm test && pnpm budgets` passed on 2026-09-27.
+- **The hosted `npm-release` run cannot publish.** Its N-1 upgrade proof asserts frame time and
+  visuals, which fail on the runner's SwiftShader adapter (run 36969644927). The cohort was published
+  locally with `pnpm release --skip-gates --yes` on a GPU host, behind a load gate (frame p95 read 34 to
+  112 ms against the 33 ms budget while other lanes ran; it passed once load stayed under 8). The gate
+  was not changed. PRD-196's last box (hosted `clean-room` run) stays open for the same reason.
+- **`doctor` demanded one version across all `@threenative` packages**, but the cohort ships `assets`
+  at 0.3.5 on purpose, so the registry clean-room failed on `npm:doctor`. It now compares the
+  major.minor series (`d43e0016e`); that needed `create-threenative` 0.2.8, published by hand with
+  `pnpm --filter create-threenative publish` because `pnpm release` refuses a partial cohort.
+- **`publish:check` refused the scaffolder tarball**: `templates/rain/tools/verify-noise-volume.mjs`
+  imported a `.js` name for a shipped `.ts` file (`6c8858d74`).
+- Native consumer proof fixes landed on `develop`: software-adapter declaration on the hosted emulator,
+  iOS no longer gates `finalize`, and a retry for dropped adb logcat transports.
+
+The local publish carries no npm provenance (not CI). The Android registry proof needs JDK 17 and
+`ANDROID_HOME`; the default JDK 27 on the operator machine fails Gradle.
+
+**Still open:** a `develop` to `main` promotion carrying the doctor and rain fixes, PRD-064's web
+60 fps arm, PRD-366 physical devices, PRD-399, the `fast-uri` highs (no fixed upstream release), and
+a way to run the upgrade proof on hosted CI (a GPU lane, or a deliberate software-adapter design).
+
+## Status 2026-10-01
+
+Inspected on `develop` at `ffe9986f5` (`origin/develop` fetched 2026-10-01). Only the rows in
+[What was measured 2026-10-01](#what-was-measured-2026-10-01) were run; nothing below ticks a box.
+
+**R1 shipped, then drifted.** `0.3.3` is still `latest`=`next` on npm (`create-threenative`
+`0.2.6`, published 2026-09-25, with `runtime-native-v0.3.3`). Source has since moved to an
+unpublished `0.3.4` cohort (`assets` 0.3.5, `create-threenative` 0.2.7) plus a new, never-published
+`@threenative/metahuman`, so `alpha:bar` A1 and `publish:check` are red again. The `sharp` high is
+gone; two new highs (`fast-uri` via `threenative-sculpt-mcp` → MCP SDK → `ajv`) replaced it.
+
+**The three PRDs still in `critical/`:**
+
+| PRD | Progress (`pnpm prd:progress`) | What is left |
+| --- | --- | --- |
+| [PRD-196](critical/PRD-196-published-install-is-functional.md) published install | 32/33 phase boxes, 12/12 acceptance, `prd:75%` | One hosted proof: a `v*` tag push whose `clean-room` job reports `pass npm:android`. Also: published `create-threenative@0.2.6` lacks the `sharp` override, so its `npm` install fails at `sharp@0.34.5`; fixed in source, needs a republish |
+| [PRD-064](critical/PRD-064-tier-1-native-reliability.md) desktop judge | 1/2 boxes, `prd:50%` | Phase 4 web/native parity box. PR #361 (2026-09-30) fixed the profiler (headed WebGPU, no marker server, unresolvable intervals) and measured on the RTX 2080 host: native 174.06 fps, p99 17.3 ms, no slower than web on all four legs, cold start p95 1,803 ms, distinct identities. **The web arm misses its budget** (35.6 fps mean, p99 110.4 ms vs ≥ 60 fps / ≤ 33 ms): Tier 1 not reached. The PRD file does not record this run yet |
+| [PRD-399](critical/PRD-399-playable-dev-distributables.md) playable distributables | 8/20 boxes, 1/6 phases, `prd:25%` | Bundle carry and generated commands (Phase 1, partial); per-platform UI cadence (Phase 2); Windows/macOS/Linux distributions (Phase 3); Linux, macOS and Android final artifacts (Phase 4); release flow, immutable candidate and docs (Phase 5). Pixel 8 child-window fixture passed 2026-09-27 at p95 55.78 ms (bound 66.7 ms) |
+
+**Filed elsewhere since the last status:** [PRD-446](../done/PRD-446-stable-api-and-upgrade-contract.md)
+stable API and N-1 upgrade is **done** (14/14, PR #367). [PRD-366](../BLOCKED/requires-physical-device/PRD-366-one-consumer-game-proves-supported-platforms.md)
+(all boxes ticked; physical Android, Windows and macOS registry hosts, a republished cohort) and
+[PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) (20/20; an
+upstream `threenative-sculpt-mcp` release and three owner calls) remain BLOCKED. PRD-112, PRD-365,
+PRD-373 and PRD-375 are done.
 
 **Decisions applied:** iOS unsupported; no PRD-080 stranger test; per-developer signing; 60 Hz UI bound
-`max(50 ms, 4 panel frames)` with in-frame behind the off flag.
-
-**Completion scope:** the owner asked to include R3 production 1.0, not stop at the R2 beta.
-PRD-446's stable-API draft is at 11/14 phase boxes, while its real N-1 upgrade and 1.0 release
-acceptance remain open. The R3 physical, parity and distribution PRDs below remain release
-blockers until their own evidence passes. PRD-375 is merged after owner visual confirmation.
+`max(50 ms, 4 panel frames)` with in-frame behind the off flag. **Completion scope:** R3 production
+1.0 is in scope, not only the R2 beta.
 
 **Verdict: not ready for a production (1.0) release.** ThreeNative is *already public* as an
-alpha: the repository is public under MIT and `@threenative/*@0.3.2` is the npm `latest`. By the
-project's own bar it does not currently qualify even as that alpha: `pnpm alpha:bar` prints
-**"0 of 7 rows unmeasured, 2 failed, 1 deferred. Not alpha."** The shortest honest path is three
-rungs, and only the first can land this week.
+alpha: the repository is public under MIT and `@threenative/*@0.3.3` is the npm `latest`. By the
+project's own bar it does not currently qualify even as that alpha: on 2026-10-01 `pnpm alpha:bar`
+still prints **"0 of 7 rows unmeasured, 2 failed, 1 deferred. Not alpha."** (A1: the source cohort
+moved past what is published; A7: `alpha-bar.md` is stale). The shortest honest path is three rungs.
 
 **Supported targets (owner, 2026-09-23): web, Windows, macOS, Linux and Android. iOS is not
 supported** — not in R1, R2 or 1.0, and not as a "preview". Every rung below means every supported
@@ -43,9 +74,9 @@ target, and no public text may claim iOS until a later decision adds it.
 
 | Rung | What you may tell the public | Ready? | Gap |
 | --- | --- | --- | --- |
-| **R1 — coherent 0.3.3 preview** | "Alpha. Install it, build web games, try native." | **No, days away** | Unpublished cohort, stale security/challenge docs, one high CVE, red site deploy, promotion PR stuck |
-| **R2 — public beta (public announcement)** | "Ship one game to web, Windows, macOS, Linux and Android from installed packages." | **No, weeks away** | Consumer-game qualification, packed golden path, Android UI latency, desktop perf judge |
-| **R3 — production 1.0** | "Build your game on this; the API is stable." | **No** | Physical-phone playtest and 60 Hz frame budget, a stable-API contract, parity, physical-device and store qualification |
+| **R1 — coherent 0.3.3 preview** | "Alpha. Install it, build web games, try native." | **Shipped 2026-09-25, drifted since** | Source at an unpublished 0.3.4 cohort plus `@threenative/metahuman`; two `fast-uri` highs; published `create-threenative@0.2.6` npm install fails on `sharp`; stale `alpha-bar.md` |
+| **R2 — public beta (public announcement)** | "Ship one game to web, Windows, macOS, Linux and Android from installed packages." | **No, weeks away** | PRD-196's hosted Android clean room, PRD-366 hardware, PRD-399 distributables (8/20), PRD-064 web budget miss |
+| **R3 — production 1.0** | "Build your game on this; the API is stable." | **No** | Physical-phone playtest and 60 Hz frame budget, parity, physical-device and store qualification (stable API done, PRD-446) |
 
 This document is a dated inspection and a plan. It ticks no PRD box and claims no gate it did not
 run. It follows the [2026-09-08 assessment](../../verification/production-readiness-2026-09-08.md).
@@ -55,7 +86,25 @@ explicit `BLOCKED/` folders when only external work remains.** PRD-365 and PRD-3
 The 1.0 PRDs under R3 stay in their own folders; independent work can proceed now, and the
 final 1.0 qualification depends on the immutable R2 consumer cohort.
 
-## What was measured today
+## What was measured 2026-10-01
+
+Checkout `develop` at `ffe9986f5`, clean tree. Every row was run today unless marked *read*.
+
+| Check | Result |
+| --- | --- |
+| `npm view @threenative/core dist-tags` / `create-threenative` | `latest`=`next`=`0.3.3` / `0.2.6`; 0.3.3 published 2026-09-25 |
+| `pnpm alpha:bar` | A1 **fail** (`@threenative/metahuman` absent from the registry; unpublished `assets` 0.3.5, `core`/`physics`/`playtest`/`runtime-native` 0.3.4, `raw-unreal` 0.1.4, …), A2–A5 pass, A6 deferred, A7 **fail** (`alpha-bar.md` stale) |
+| `pnpm publish:check` | **70 findings**: templates pin the unpublished 0.3.4 cohort and `create-threenative@0.2.7`; no `runtime-native-v0.3.4` prebuilt release |
+| `gh release list` | `runtime-native-v0.3.3` (pre-release, 2026-09-25) is the newest runtime release; `ci-v8-android` cache added 2026-09-28 |
+| `pnpm audit --prod --audit-level high` | **2 high**: `fast-uri` GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g via `@threenative/core` → `threenative-sculpt-mcp` → `@modelcontextprotocol/sdk` → `ajv`; `sharp` no longer listed |
+| `git rev-list --left-right --count origin/main...origin/develop` | 12 / 64: `main` holds 12 commits not on `develop`, `develop` is 64 ahead |
+| `pnpm prd:progress` (critical PRDs) | PRD-196 32/33 + 12/12, PRD-064 1/2, PRD-399 8/20 |
+
+Not run: `gh run list` and `gh pr list` (`api.github.com` unreachable from this host during the
+inspection), so `main` CI, the `site` deploy and the promotion PR are unverified today. No
+typecheck, lint, test, playtest or device lane.
+
+## What was measured 2026-09-23
 
 Checkout `develop` at `436ee3053`, clean tree. Every row below was run in this inspection unless
 marked *read*.
@@ -107,16 +156,18 @@ to 0.3.3 and not released.
 
 ### R1 — a coherent public preview
 
-1. **The 0.3.3 cohort is not published.** Owner: [PRD-196](critical/PRD-196-published-install-is-functional.md)
-   (0/30 phase boxes). Publishing a candidate under a non-default dist-tag is already authorized
-   (owner decision, 2026-09-11); promoting it to `latest` is not.
-2. **The promotion PR is stuck.** #291 waits on checks, and its body describes a squash-versus-merge
-   conflict that the root `AGENTS.md` already settles: main accepts merge commits only. Owner:
-   [PRD-373](../done/PRD-373-selective-ci-and-develop-promotion.md) (28/28 phase boxes, 5/5 acceptance).
-3. **Security and honesty debt a stranger sees first**: the high `sharp` advisory, `SECURITY.md`
-   naming the wrong supported line, no 0.3.x changelog, stale `CURRENT-CHALLENGES.md` and
-   `alpha-bar.md`, and a red site deploy on `main`. No PRD owned these. **New:
-   [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md).**
+1. **~~The 0.3.3 cohort is not published.~~ Published 2026-09-25** (`latest`=`next`=`0.3.3`).
+   **New drift (2026-10-01):** source is at an unpublished 0.3.4 cohort plus `@threenative/metahuman`,
+   and the published `create-threenative@0.2.6` npm install fails on `sharp@0.34.5` (fixed in
+   source). Both close with the next cohort cut. Owner: [PRD-196](critical/PRD-196-published-install-is-functional.md)
+   (32/33 phase boxes, 12/12 acceptance).
+2. **~~The promotion PR is stuck.~~** Promotions #291/#312 and #301/#303 merged; owner
+   [PRD-373](../done/PRD-373-selective-ci-and-develop-promotion.md) is done. `develop` is now 64
+   commits ahead of `origin/main`; a new promotion is due with the next cohort.
+3. **Security and honesty debt a stranger sees first.** [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md)
+   closed its boxes (20/20; `sharp`, `SECURITY.md`, changelog, site deploy). **New (2026-10-01):**
+   two `fast-uri` highs through `threenative-sculpt-mcp`, the same upstream release PRD-445 is
+   blocked on, and `alpha-bar.md` is stale again (A7).
 
 ### R2 — a public beta that ships a game
 
@@ -132,9 +183,11 @@ to 0.3.3 and not released.
    four panel frames (~66.7 ms); an unplugged Pixel 8 fixture passed at p95 55.78 ms on 2026-09-27.
    This does not qualify the immutable consumer cohort or the other supported platforms. Owner:
    [PRD-399](critical/PRD-399-playable-dev-distributables.md) (8/20 boxes).
-4. **The desktop production-performance judge is BLOCKED today** (six `TN_PROD_*` codes, above).
-   Owner: [PRD-064](critical/PRD-064-tier-1-native-reliability.md) (no phase boxes — cannot report
-   progress). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
+4. **The desktop production judge now runs; the web arm misses its budget.** PR #304 (2026-09-25)
+   stopped the judge failing healthy runs; PR #361 (2026-09-30) made the web arm measure real
+   WebGPU. Measured: native 174 fps / p99 17.3 ms, no slower than web, cold start p95 1,803 ms;
+   web 35.6 fps / p99 110.4 ms against ≥ 60 fps / ≤ 33 ms. Tier 1 not reached. Owner:
+   [PRD-064](critical/PRD-064-tier-1-native-reliability.md) (1/2 boxes). Related, not release-blocking: [PRD-400](../performance/PRD-400-the-frame-gets-cheaper-one-measured-cost-at-a-time.md) (1/17), [PRD-358](../performance/PRD-358-cross-platform-performance-regression-ci.md) (6/18).
 
 Also in R2, nearly done and worth finishing rather than re-planning:
 [PRD-365](../done/PRD-365-consumer-desktop-distribution.md) desktop containers is **done** (closed
@@ -167,33 +220,28 @@ box), and [PRD-375](../done/PRD-375-release-artifacts-carry-the-game-brand.md) b
 
 ```mermaid
 flowchart TD
-    H[PRD-445 hygiene: CVE, SECURITY, changelog, site, docs] --> R1
-    C[PRD-196 publish 0.3.3 cohort + runtime-native-v0.3.3] --> R1
-    P[PRD-373 merge promotion #291] --> R1
-    R1([R1: coherent 0.3.3 preview on latest])
-    R1 --> Q[PRD-366 consumer game: physical Android + republished cohort (BLOCKED)]
-    G[PRD-112 packed golden path green] --> R2
+    C["PRD-196: cut 0.3.4 cohort + v* tag, hosted npm:android clean room"] --> R1
+    H["fast-uri highs: upstream threenative-sculpt-mcp release, PRD-445 BLOCKED"] --> R1
+    R1(["R1: coherent cohort on latest (0.3.3 shipped, drifted)"])
+    R1 --> Q["PRD-366 consumer game: physical Android, Windows, macOS hosts (BLOCKED)"]
     Q --> R2
-    L[PRD-399 Android UI latency at 60 Hz] --> R2
-    J[PRD-064 desktop production judge passes] --> R2
-    D[PRD-375 finish (PRD-365 closed 2026-09-27)] --> R2
-    R2([R2: public beta])
-    R2 --> A[PRD-446 stable API + N-1 upgrade proof]
-    R2 --> W[PRD-054 parity + PRD-057 audio]
-    R2 --> M[PRD-056 physical qualification + PRD-066 60 Hz budget]
-    R2 --> X[PRD-059 SBOM + PRD-060 stores and promotion]
-    A --> V([R3: 1.0])
-    W --> V
+    L["PRD-399 distributables + per-platform UI cadence, 8/20"] --> R2
+    J["PRD-064 web arm misses 60 fps budget, 1/2"] --> R2
+    R2(["R2: public beta"])
+    R2 --> W["PRD-054 parity + PRD-057 audio"]
+    R2 --> M["PRD-056 physical qualification + PRD-066 60 Hz budget"]
+    R2 --> X["PRD-059 SBOM + PRD-060 stores and promotion"]
+    W --> V(["R3: 1.0 (PRD-446 stable API done)"])
     M --> V
     X --> V
 ```
 
-**Order of work.** R1 is roughly three days of local work plus a publish: PRD-445 and PRD-373 run in
-parallel with the PRD-196 cohort cut; publish under a candidate dist-tag, run PRD-196's
-installed-consumer gates against it, then move `latest`. R2's lanes are independent and can run
-in parallel once R1 lands — PRD-112 and PRD-064 are local, PRD-399 needs the Pixel. The stranger test (PRD-080) was removed by the owner and gates nothing.
-R3 lanes that do not need the final cohort can proceed now. The physical, store, upgrade and
-promotion claims still need the published cohort that R1 and R2 establish.
+**Order of work (2026-10-01).** Done since 2026-09-23: PRD-112, PRD-365, PRD-373, PRD-375,
+PRD-446, the 0.3.3 publish, and PRD-445's boxes. Next: cut the 0.3.4 cohort (it re-greens A1 and
+`publish:check`, ships the `sharp` override, and its `v*` tag push is PRD-196's last box), then
+promote `develop` to `main`. In parallel: PRD-399's Phase 1 and Linux lanes are local; PRD-064
+needs the web arm to reach 60 fps on the judge host (a performance problem, not a judge bug). PRD-366
+and the R3 hardware lanes wait on devices and hosts. The stranger test (PRD-080) gates nothing.
 
 ## Decisions only you can make
 
@@ -216,9 +264,12 @@ These fold into [PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public
 - PRD-060 exists twice, with different titles and progress
   ([here](PRD-060-promoted-consumer-distribution.md) and its former
   BLOCKED duplicate). **Resolved 2026-09-23** by PRD-445 Phase 3: the BLOCKED duplicate was deleted, its landed Phase 1 folded into the survivor.
-- `PRD-375-release-artifacts-carry-the-game-brand.md` carries the heading "PRD-153".
+- `PRD-375-release-artifacts-carry-the-game-brand.md` carries the heading "PRD-153". **Resolved**
+  (checked 2026-10-01: the heading reads PRD-375).
 - Release-blocking PRDs without phase boxes cannot report progress: PRD-054, PRD-058, PRD-064,
-  PRD-066 and PRD-112-repair.
+  PRD-066 and PRD-112-repair. **Resolved** (checked 2026-10-01: all carry boxes; PRD-112-repair is done).
+- **New (2026-10-01):** PRD-064's status line still reads 2026-09-25 and does not record PR #361's
+  2026-09-30 desktop-pair measurement.
 
-**Next action (under two minutes):** open
-[PRD-445](../BLOCKED/requires-release-credentials/PRD-445-public-release-hygiene.md) phase 1 — the `sharp` bump is the first box.
+**Next action (under two minutes):** promote `develop` to `main` (merge commit) so `main` carries the
+doctor and rain fixes; the cohort itself is published (see Status 2026-10-02).

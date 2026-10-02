@@ -1,3 +1,5 @@
+import { TONE_METRICS } from "../tone.js";
+import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber } from "./schema-accessors.js";
@@ -13,6 +15,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "inputDelivery",
   "name",
   "parity",
+  "reducedMotion",
   "schemaVersion",
   "setup",
   "steps",
@@ -50,6 +53,12 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.bootFailure !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
+  if (value.reducedMotion !== undefined && value.reducedMotion !== "reduce") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion must be 'reduce' when present.");
+  }
+  if (value.reducedMotion !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");
@@ -76,6 +85,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
+    ...(value.reducedMotion === "reduce" ? { reducedMotion: value.reducedMotion } : {}),
     schemaVersion: 1,
     ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath, subject) } : {}),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
@@ -738,6 +748,18 @@ function validateClickTarget(value: unknown, scenarioPath: string, index: number
     return value.entity.length === 0 ? undefined : { entity: value.entity };
   }
   if (value.entity !== undefined) return undefined;
+  if (value.element !== undefined) {
+    const objectPath = `steps[${index}].at`;
+    rejectUnknownKeys(value, ["element"], scenarioPath, objectPath);
+    const element = requireRecord(value.element, scenarioPath, `${objectPath}.element`);
+    rejectUnknownKeys(element, ["id", "selector"], scenarioPath, `${objectPath}.element`);
+    const id = optionalString(element, "id", scenarioPath, `${objectPath}.element`);
+    const selector = optionalString(element, "selector", scenarioPath, `${objectPath}.element`);
+    if ((id === undefined) === (selector === undefined)) {
+      throw invalidStep(scenarioPath, `Scenario ${objectPath}.element must name exactly one of id or selector.`);
+    }
+    return { element: id === undefined ? { selector: selector as string } : { id } };
+  }
   rejectUnknownKeys(value, ["x", "y"], scenarioPath, `steps[${index}].at`);
   return typeof value.x === "number"
     && Number.isFinite(value.x)
@@ -830,6 +852,9 @@ export function validateStepLabels(
       requireLabel(step.label, `assert.components[${index}].atSteps[${stepIndex}].label`);
     }
   }
+  for (const [index, assertion] of (assertions.tone ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.tone[${index}].atStep`);
+  }
   for (const [index, assertion] of (assertions.signals ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.signals[${index}].atStep`);
   }
@@ -877,6 +902,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   validateAssertionKeys(value, scenarioPath);
   if (Array.isArray(value.signals) && value.signals.length === 0) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  }
+  if (Array.isArray(value.tone) && value.tone.length === 0) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.tone' must contain at least one tone assertion.");
   }
   const movement = isRecord(value.movement) ? value.movement : undefined;
   const camera = isRecord(value.camera) ? value.camera : undefined;
@@ -1073,6 +1101,7 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
     ...(Array.isArray(value.states) ? { states: value.states.map((entry, index) => validateStateAssertion(entry, scenarioPath, `assert.states[${index}]`)) } : {}),
     ...(Array.isArray(value.tags) ? { tags: value.tags.map((entry, index) => validateTagCountAssertion(entry, scenarioPath, `assert.tags[${index}]`)) } : {}),
     ...(Array.isArray(value.visibility) ? { visibility: value.visibility.map((entry, index) => validateVisibilityAssertion(entry, scenarioPath, `assert.visibility[${index}]`)) } : {}),
+    ...(Array.isArray(value.tone) ? { tone: value.tone.map((entry, index) => validateToneAssertion(entry, scenarioPath, `assert.tone[${index}]`)) } : {}),
     ...(Array.isArray(value.visual) ? { visual: value.visual.map((entry, index) => validateVisualAssertion(entry, scenarioPath, `assert.visual[${index}]`)) } : {}),
     ...(world === undefined ? {} : { world: validateWorldAssertion(world, scenarioPath) }),
   };
@@ -1320,4 +1349,30 @@ export function validateGeometryCaptureRequest(
     ...(record.sort === undefined ? {} : { sort: record.sort as NonNullable<IPlaytestGeometryCaptureRequest["sort"]> }),
     ...(record.timeoutMs === undefined ? {} : { timeoutMs: record.timeoutMs as number }),
   };
+}
+
+function validateToneAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestToneAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", ...TONE_METRICS], scenarioPath, objectPath);
+  const result: IPlaytestToneAssertion = {};
+  if (record.atStep !== undefined) result.atStep = requireString(record, "atStep", scenarioPath, objectPath);
+  for (const metric of TONE_METRICS) {
+    if (record[metric] === undefined) continue;
+    const path = `${objectPath}.${metric}`;
+    const bound = requireRecord(record[metric], scenarioPath, path);
+    rejectUnknownKeys(bound, ["min", "max"], scenarioPath, path);
+    if (bound.min === undefined && bound.max === undefined) throw invalidScenario(scenarioPath, `${path} requires min or max.`);
+    const maximum = metric.endsWith("Fraction") ? 1 : 255;
+    for (const key of ["min", "max"] as const) {
+      if (bound[key] !== undefined && (typeof bound[key] !== "number" || !Number.isFinite(bound[key]) || bound[key] < 0 || bound[key] > maximum)) {
+        throw invalidScenario(scenarioPath, `${path}.${key} must be a finite number in [0, ${maximum}].`);
+      }
+    }
+    if (typeof bound.min === "number" && typeof bound.max === "number" && bound.min > bound.max) {
+      throw invalidScenario(scenarioPath, `${path}: min must not exceed max.`);
+    }
+    result[metric] = { ...present("min", bound.min as number | undefined), ...present("max", bound.max as number | undefined) };
+  }
+  if (!TONE_METRICS.some((key) => result[key] !== undefined)) throw invalidScenario(scenarioPath, `${objectPath} requires at least one metric bound.`);
+  return result;
 }
