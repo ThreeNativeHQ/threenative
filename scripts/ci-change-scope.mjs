@@ -26,7 +26,15 @@ export const NATIVE_PATHS = [
 function isNativePath(file) {
   return NATIVE_PATHS.some((pattern) => pattern.test(file));
 }
-const SELECTIONS = new Set(["full", "prose", "instructions"]);
+const SELECTIONS = new Set(["full", "prose", "instructions", "reused"]);
+// PRD-481. Reuse replaces a full board only, and only for a tree a successful CI run already
+// tested. `workflow_dispatch` is the explicit audit a person asked for, so it stays full; the
+// Sunday nightly is always full too, because its subject is the runner image and the network
+// rather than the tree.
+const REUSE_EVENTS = new Set(["pull_request", "push", "merge_group", "schedule"]);
+// Enough recent runs to cover the promotion, the merge queue and a re-push. The cap bounds the
+// git work per run; a miss past it is a miss, which runs the board.
+const REUSE_CANDIDATES = 30;
 // No package/template exemption yet: core, playtest, scaffolding, physics, fixtures, toolchains
 // and dependencies have native consumers. Narrow those only with an explicit dependency proof.
 const FULL_JOBS = [
@@ -47,15 +55,29 @@ const FULL_JOBS = [
   "native-platforms",
 ];
 
-export function selectionPlan(selection, reason, files = [], candidateSha = "", native = false) {
+export function selectionPlan(
+  selection,
+  reason,
+  files = [],
+  candidateSha = "",
+  native = false,
+  reusedRunId = 0,
+) {
   const full = selection === "full";
+  const reused = selection === "reused";
   const checks = {
-    docs: true,
+    docs: !reused,
     instructions: full || selection === "instructions",
     workspace: full,
     native: full,
     templates: full,
   };
+  // A reused plan skips everything, so its exemption is the run that did the work, not a rule
+  // about what the change touched.
+  const exemption = (proseReason) =>
+    reused
+      ? `Reused: CI run ${String(reusedRunId)} already passed this identical whole-repo tree`
+      : proseReason;
   const jobs = Object.fromEntries(
     FULL_JOBS.map((name) => [
       name,
@@ -63,21 +85,28 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "", 
         required: full,
         reason: full
           ? `Full dependency closure: ${reason}`
-          : `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
+          : exemption(
+              `Exempt: ${selection} changes do not modify runtime, package, template or shared build inputs`,
+            ),
       },
     ]),
   );
   const proseOnly = selection === "prose";
+  const exemptLane = proseOnly || reused;
   jobs.lint = {
-    required: !proseOnly,
-    reason: proseOnly
-      ? "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion"
+    required: !exemptLane,
+    reason: exemptLane
+      ? exemption(
+          "Exempt: a Markdown-only change runs no gate; docs are re-validated on the develop nightly and at promotion",
+        )
       : "Documentation, formatting and selected instruction contracts",
   };
   jobs["supply-chain"] = {
-    required: !proseOnly,
-    reason: proseOnly
-      ? "Exempt: a Markdown-only change runs no gate; secrets and dependency review are re-validated on the develop nightly and at promotion"
+    required: !exemptLane,
+    reason: exemptLane
+      ? exemption(
+          "Exempt: a Markdown-only change runs no gate; secrets and dependency review are re-validated on the develop nightly and at promotion",
+        )
       : "Changed prose can still contain credentials; dependency review remains applicable",
   };
   // The native matrix blocks the merge in exactly three cases: a full selection that touches a
@@ -89,7 +118,9 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "", 
     required: nativeRequired,
     reason: nativeRequired
       ? "Native evidence blocks the merge: a full selection that touches native code, targets main, or cannot prove from a clean pull request that it avoids native code"
-      : "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
+      : exemption(
+          "Exempt: a clean develop pull request whose diff provably touches no native path; the matrix is skipped rather than awaited or run",
+        ),
   };
   return {
     version: 1,
@@ -98,6 +129,7 @@ export function selectionPlan(selection, reason, files = [], candidateSha = "", 
     scope: selection,
     selection,
     candidateSha,
+    reusedRunId,
     native,
     checks,
     jobs,
@@ -116,11 +148,16 @@ export function validatePlan(value) {
     !Array.isArray(value.files) ||
     value.files.some((file) => typeof file !== "string" || !file || file.includes("\0")) ||
     typeof value.native !== "boolean" ||
+    !Number.isInteger(value.reusedRunId) ||
+    value.reusedRunId < 0 ||
+    // A reused plan without a source run, or a source run without a reused selection, is the one
+    // thing that turns this into a skip with nothing behind it.
+    (value.selection === "reused") !== value.reusedRunId > 0 ||
     typeof value.candidateSha !== "string" ||
     !/^[0-9a-f]{40}$/u.test(value.candidateSha)
   ) {
     throw new Error(
-      "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, native requirement, reason or candidate SHA",
+      "CI_SCOPE_INVALID_PLAN: missing or malformed selection, paths, native requirement, reason, reused run or candidate SHA",
     );
   }
   const expected = selectionPlan(
@@ -129,6 +166,7 @@ export function validatePlan(value) {
     value.files,
     value.candidateSha,
     value.native,
+    value.reusedRunId,
   );
   for (const field of ["scope", "checks", "jobs"]) {
     if (JSON.stringify(value[field]) !== JSON.stringify(expected[field])) {
@@ -157,6 +195,7 @@ function parseArgs(argv) {
     ["--format", "format"],
     ["--validate-plan", "plan"],
     ["--candidate-sha", "candidateSha"],
+    ["--day-of-week", "dayOfWeek"],
   ]);
   const options = { root: process.cwd(), format: "text" };
   for (let index = 0; index < argv.length; index += 1) {
@@ -178,6 +217,106 @@ function parseArgs(argv) {
 
 function git(root, args) {
   return spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 16 });
+}
+
+/** The tree a commit resolves to, or null when this repository cannot see that commit at all. */
+function treeOf(root, sha) {
+  const result = git(root, ["rev-parse", "--verify", "--quiet", `${sha}^{tree}`]);
+  const tree = result.stdout.trim();
+  return result.status === 0 && /^[0-9a-f]{40}$/u.test(tree) ? tree : null;
+}
+
+function ghApi(pathname) {
+  const repository = process.env.GITHUB_REPOSITORY;
+  if (repository === undefined || !/^[^/\s]+\/[^/\s]+$/u.test(repository)) {
+    return { error: "GITHUB_REPOSITORY is missing or malformed" };
+  }
+  // `gh` rather than fetch: it is already on every runner, it reads GH_TOKEN from the job's own
+  // `github.token`, and one stubbed binary is one thing to assert against.
+  const result = spawnSync("gh", ["api", `repos/${repository}/${pathname}`], {
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 16,
+  });
+  if (result.error !== undefined || result.status !== 0) {
+    const detail = (result.stderr ?? "").trim().split("\n")[0] ?? "";
+    return { error: `the Actions API was unreadable${detail === "" ? "" : `: ${detail}`}` };
+  }
+  try {
+    return { value: JSON.parse(result.stdout) };
+  } catch {
+    return { error: "the Actions API answered with malformed JSON" };
+  }
+}
+
+/**
+ * The successful CI run that tested this exact tree, newest first.
+ *
+ * The key is a whole repository tree read out of git, never a name, label or artifact a job could
+ * have written: the tree of every recent successful CI run is compared with the candidate's, and a
+ * run whose commit this clone cannot see is fetched rather than assumed. Anything unreadable —
+ * no token, no repository, a failed or malformed listing, a commit that will not resolve — is a
+ * miss, and a miss runs the board.
+ */
+export function findReusableRun(root, candidateSha) {
+  const candidateTree = treeOf(root, candidateSha);
+  if (candidateTree === null) return { error: "the candidate's tree could not be resolved" };
+  const listed = ghApi("actions/workflows/ci.yml/runs?status=success&per_page=100");
+  if ("error" in listed) return listed;
+  const runs = listed.value?.workflow_runs;
+  if (!Array.isArray(runs)) return { error: "the successful-run listing could not be interpreted" };
+  let examined = 0;
+  for (const run of runs) {
+    const id = run?.id;
+    const sha = run?.head_sha;
+    if (
+      !Number.isInteger(id) ||
+      id <= 0 ||
+      run?.conclusion !== "success" ||
+      !/^[0-9a-f]{40}$/u.test(sha ?? "")
+    ) {
+      return { error: "a listed CI run could not be interpreted" };
+    }
+    if (String(id) === process.env.GITHUB_RUN_ID) continue;
+    examined += 1;
+    if (examined > REUSE_CANDIDATES) break;
+    if (treeOf(root, sha) === candidateTree) return { runId: id, tree: candidateTree };
+    // A promotion, a re-push or a queue entry names a commit this full-history clone already has,
+    // so the fetch below is the exception rather than the rule.
+    git(root, ["fetch", "--quiet", "--no-tags", "origin", sha]);
+    if (treeOf(root, sha) === candidateTree) return { runId: id, tree: candidateTree };
+  }
+  return {
+    error: `none of the ${String(examined)} recent successful CI runs tested this exact tree`,
+  };
+}
+
+/** The only part of a reuse that git cannot settle: whether the source run passed its own verdict. */
+export function sourceVerdict(runId) {
+  const listed = ghApi(`actions/runs/${String(runId)}/jobs?per_page=100`);
+  if ("error" in listed) return listed;
+  const jobs = listed.value?.jobs;
+  if (!Array.isArray(jobs))
+    return { error: "the source run's job listing could not be interpreted" };
+  const verdict = jobs.find((job) => job?.name === "ci-required");
+  if (verdict === undefined) return { error: `CI run ${String(runId)} reports no ci-required job` };
+  return { succeeded: verdict.conclusion === "success", conclusion: verdict.conclusion };
+}
+
+function reuseEligible(options) {
+  // Never on a developer machine: `pnpm ci:local` runs the work it selected, and a reuse verdict
+  // there would be a claim about a run that is not happening.
+  if (process.env.GITHUB_ACTIONS !== "true" || options.full) return false;
+  if (options.eventName === undefined || !REUSE_EVENTS.has(options.eventName)) return false;
+  // Sunday's nightly exists to catch drift in the runner image and in network dependencies, which
+  // an unchanged tree cannot hide.
+  if (options.eventName === "schedule") return dayOfWeek(options) !== 7;
+  return true;
+}
+
+/** ISO weekday, 1 = Monday. `--day-of-week` states it so the split above is testable at any hour. */
+function dayOfWeek(options) {
+  if (options.dayOfWeek !== undefined) return Number(options.dayOfWeek);
+  return new Date().getUTCDay() || 7;
 }
 
 function parseNameStatus(output) {
@@ -256,7 +395,7 @@ export function classify(options) {
   // A full selection reached without a resolved pull-request diff cannot prove the change avoids
   // native code, so it is native-blocking by default. Only the clean-diff path below may clear it.
   const full = (reason, files = [], native = true) =>
-    selectionPlan("full", reason, files, candidateSha, native);
+    reuseOrKeep(selectionPlan("full", reason, files, candidateSha, native), options, candidateSha);
   if (options.full) return full("explicit full verification requested");
   if (options.eventName !== undefined && options.eventName !== "pull_request")
     return full(`event ${JSON.stringify(options.eventName)} requires complete verification`);
@@ -288,16 +427,45 @@ export function classify(options) {
   return selectionPlan(selection, reason, parsed.paths, candidateSha, false);
 }
 
+/**
+ * PRD-481: the one place a full board may be replaced. A narrowed plan is already cheaper than a
+ * reused one and does not consult the API at all.
+ */
+function reuseOrKeep(plan, options, candidateSha) {
+  if (plan.selection !== "full" || !reuseEligible(options)) return plan;
+  const found = findReusableRun(options.root, candidateSha);
+  if (!("runId" in found)) {
+    // Fail closed means run the work. The reason carries why, so a run that ran the board for no
+    // stated reason cannot be confused with one that never looked.
+    return selectionPlan(
+      "full",
+      `${plan.reason}; tree reuse unavailable: ${found.error}`,
+      plan.files,
+      candidateSha,
+      plan.native,
+    );
+  }
+  return selectionPlan(
+    "reused",
+    `whole-repo tree ${found.tree} already passed in CI run ${String(found.runId)}`,
+    plan.files,
+    candidateSha,
+    false,
+    found.runId,
+  );
+}
+
 function output(result, format) {
   if (format === "json") return console.log(JSON.stringify(result));
   if (format === "github") {
     for (const key of ["scope", "selection", "reason"]) console.log(`${key}=${result[key]}`);
     console.log(`candidate_sha=${result.candidateSha}`);
+    console.log(`reused_run_id=${result.reusedRunId}`);
     console.log(`plan=${JSON.stringify(result)}`);
     return;
   }
   console.log(
-    `CI change scope: ${result.scope}\nCandidate: ${result.candidateSha}\nReason: ${result.reason}`,
+    `CI change scope: ${result.scope}\nCandidate: ${result.candidateSha}\nSource run: ${result.reusedRunId || "none"}\nReason: ${result.reason}`,
   );
   for (const [name, job] of Object.entries(result.jobs))
     console.log(`${job.required ? "Required" : "Exempt"}: ${name} — ${job.reason}`);

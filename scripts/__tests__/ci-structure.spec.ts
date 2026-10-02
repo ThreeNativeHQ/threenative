@@ -1012,6 +1012,34 @@ describe("CI pipeline structure", () => {
     expect(ci).toContain("if: ${{ always() && !github.event.pull_request.draft }}");
   });
 
+  // PRD-481 adds a fourth selection and a fourth trigger. Every gate's condition has to name what it
+  // admits rather than what it excludes: `!= 'prose'` reads a reused tree as "not prose" and runs a
+  // second full lint on a tree CI already passed.
+  it("runs the merge group and admits no gate on a reused tree", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    expect(triggerSection(ci)).toContain("merge_group:\n    types: [checks_requested]");
+    for (const [name, section] of jobSections(ci)) {
+      // ci-required is the verdict, not a gate: it runs on `always()` and reads the plan instead.
+      // scope is the decision that produces the selection.
+      if (name === "ci-required" || name === "scope") continue;
+      expect(section, `${name} does not name the selection it admits`).toContain(
+        "selection == 'full'",
+      );
+      expect(section, `${name} would run on a reused tree`).not.toContain("selection != 'prose'");
+    }
+    // A merge group carries no pull_request object, so `!github.event.pull_request.draft` is true
+    // for it. That has to stay true, or the queue waits forever on a check nobody will report.
+    expect(requiredJob(ci, "scope")).toContain("if: ${{ !github.event.pull_request.draft }}");
+    expect(requiredJob(ci, "ci-required")).toContain(
+      "if: ${{ always() && !github.event.pull_request.draft }}",
+    );
+    // Both jobs that consult the Actions API, and only with a read-only token.
+    for (const name of ["scope", "ci-required"]) {
+      expect(requiredJob(ci, name)).toContain("actions: read");
+      expect(requiredJob(ci, name)).toContain("GH_TOKEN: ${{ github.token }}");
+    }
+  });
+
   // The audit behind PRD-481 cost 2.4k runner-minutes on one workflow that was still listed against
   // a branch whose lane landed three weeks earlier, and ran a second time for every commit that
   // also opened a pull request. Neither shape is visible from the workflow file alone, which is why
@@ -1577,9 +1605,12 @@ describe("CI pipeline structure", () => {
     const supplyChain = requiredJob(ci, "supply-chain");
     // Markdown-only PRs skip the scan entirely (owner call 2026-09-12): the nightly develop run
     // and promotions still scan the full git history, so an inert prose PR spends no runner here.
+    // PRD-481 added the reused tree to the exempt set, so the condition names both selections it
+    // admits instead of the one it refuses.
     expect(supplyChain).toContain("needs: scope");
-    expect(supplyChain).toContain("if: needs.scope.outputs.selection != 'prose'");
-    expect(supplyChain).not.toContain("needs.scope.outputs.selection == 'full'");
+    expect(supplyChain).toContain(
+      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'",
+    );
     expect(supplyChain).toContain("if: github.event_name != 'pull_request'");
     expect(supplyChain).toContain("uses: actions/dependency-review-action@v4");
     // ...but the dependency diff itself stays pull_request-only: it needs a base ref and a head

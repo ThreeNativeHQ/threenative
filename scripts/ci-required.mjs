@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { validatePlan } from "./ci-change-scope.mjs";
+import { sourceVerdict, validatePlan } from "./ci-change-scope.mjs";
 
 try {
   const needs = JSON.parse(process.env.TN_CI_NEEDS ?? "null");
@@ -40,6 +40,15 @@ try {
       );
     }
   }
+  // PRD-481. The scope job proved the source run tested this exact tree; what only the API can
+  // settle is whether that run's own verdict went green, and a reuse this job cannot confirm is
+  // not a pass.
+  const source = plan.reusedRunId === 0 ? { succeeded: true } : sourceVerdict(plan.reusedRunId);
+  if ("error" in source) throw new Error(`CI_REQUIRED_SOURCE_UNKNOWN: ${source.error}`);
+  if (!source.succeeded)
+    throw new Error(
+      `CI_REQUIRED_SOURCE_NOT_SUCCESS: CI run ${String(plan.reusedRunId)} reported ci-required as ${String(source.conclusion)}`,
+    );
   const failures = [];
   const lines = [
     "## Required CI verdict",
@@ -48,6 +57,13 @@ try {
     `Selection: \`${plan.selection}\` — ${plan.reason}`,
     "",
   ];
+  if (plan.reusedRunId > 0) {
+    lines.splice(
+      3,
+      0,
+      `Reused verdict from CI run \`${String(plan.reusedRunId)}\` (ci-required: ${String(source.conclusion)})`,
+    );
+  }
   for (const [name, job] of Object.entries(plan.jobs)) {
     const result = needs[name]?.result;
     lines.push(

@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { formatJobTimings, formatRunSummary, summaryRows } from "../ci-run-summary.js";
 import { ciJobGraph, ciNeedsFindings, declaredNeeds, jobSections } from "../ci-workflow.js";
 
@@ -325,5 +327,231 @@ describe("PRD-373 measured queue and execution time", () => {
     expect(summary).toContain("native &#124; skipped");
     expect(summary).toContain("| unavailable | unavailable |");
     expect(summary).not.toContain("0s");
+  });
+});
+
+/**
+ * PRD-481 tree reuse. The key is the whole repository tree, so a tree that changed by one file
+ * cannot reuse, and the only thing that can make reuse safe is the source run's own verdict.
+ */
+const REUSED_RUN_ID = 4242;
+
+interface IReuseFixture {
+  root: string;
+  /** The commit a previous successful CI run tested. */
+  source: string;
+  /** A later commit carrying the identical tree: the candidate under test. */
+  candidate: string;
+  /** One more source file, so the tree differs by exactly one file. */
+  moved: string;
+  base: string;
+}
+
+/**
+ * `A` seeds the history, `B` adds a runtime file, `C` is an empty commit on top of it (the same tree
+ * at a new commit, which is what a re-push or a promotion produces) and `D` adds one more file.
+ * HEAD is parked back on `C`, so the verdict job's own candidate assertion has something to check.
+ */
+function reuseFixture(): IReuseFixture {
+  const root = makeTempDirSync("threenative-tree-reuse-");
+  const git = (...args: string[]) =>
+    spawnSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        GIT_AUTHOR_NAME: "tree reuse fixture",
+        GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+        GIT_COMMITTER_NAME: "tree reuse fixture",
+        GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+      },
+    });
+  const commit = (contents: Record<string, string>, message: string) => {
+    for (const [relative, body] of Object.entries(contents)) {
+      mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+      writeFileSync(path.join(root, relative), body);
+    }
+    expect(git("add", "-A").status).toBe(0);
+    expect(git("commit", "--quiet", "-m", message).status).toBe(0);
+    return git("rev-parse", "HEAD").stdout.trim();
+  };
+  expect(git("init", "--quiet", "--initial-branch", "develop").status).toBe(0);
+  const base = commit({ "seed.txt": "seed\n" }, "base");
+  const source = commit({ "src/runtime.ts": "export {};\n" }, "runtime");
+  expect(git("commit", "--quiet", "--allow-empty", "-m", "same tree").status).toBe(0);
+  const candidate = git("rev-parse", "HEAD").stdout.trim();
+  const moved = commit({ "src/other.ts": "export {};\n" }, "one more file");
+  expect(git("checkout", "--quiet", "--detach", candidate).status).toBe(0);
+  return { root, source, candidate, moved, base };
+}
+
+/** The one API the lookup and the verdict job share, stubbed on PATH exactly as gh would answer. */
+function fakeActionsApi(root: string, jobs: { name: string; conclusion: string }[]): string {
+  const bin = path.join(root, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(root, "jobs.json"), JSON.stringify({ jobs }));
+  const script = `#!/bin/sh
+if [ "$TN_FIXTURE_API_FAIL" = true ]; then echo "gh: HTTP 403: Resource not accessible" >&2; exit 1; fi
+case "$*" in
+  *jobs*) cat "$TN_FIXTURE/jobs.json" ;;
+  *) cat "$TN_FIXTURE/runs.json" ;;
+esac
+`;
+  writeFileSync(path.join(bin, "gh"), script);
+  chmodSync(path.join(bin, "gh"), 0o755);
+  return bin;
+}
+
+function listRuns(root: string, runs: { id: number; head_sha: string; conclusion: string }[]) {
+  writeFileSync(path.join(root, "runs.json"), JSON.stringify({ workflow_runs: runs }));
+}
+
+function classifyCandidate(
+  fixture: IReuseFixture,
+  head: string,
+  options: { event?: string; apiFail?: boolean; dayOfWeek?: number } = {},
+) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(repo, "scripts/ci-change-scope.mjs"),
+      "--root",
+      fixture.root,
+      "--base",
+      fixture.base,
+      "--head",
+      head,
+      "--candidate-sha",
+      head,
+      "--target",
+      "develop",
+      "--event-name",
+      options.event ?? "pull_request",
+      // The nightly split is decided from the clock, so the fixture states the day rather than
+      // waiting for one.
+      ...(options.dayOfWeek === undefined ? [] : ["--day-of-week", String(options.dayOfWeek)]),
+      "--format",
+      "json",
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${path.join(fixture.root, "bin")}:${process.env.PATH}`,
+        TN_FIXTURE: fixture.root,
+        TN_FIXTURE_API_FAIL: options.apiFail === true ? "true" : "false",
+        GITHUB_ACTIONS: "true",
+        GITHUB_REPOSITORY: "three-native/fixture",
+      },
+    },
+  );
+  expect(result.status, result.stderr).toBe(0);
+  return JSON.parse(result.stdout) as Record<string, unknown>;
+}
+
+function verifyReusedPlan(fixture: IReuseFixture, plan: Record<string, unknown>) {
+  const jobs = plan.jobs as Record<string, { required: boolean }>;
+  const needs = {
+    scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+    ...Object.fromEntries(Object.entries(jobs).map(([name]) => [name, { result: "skipped" }])),
+  };
+  return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
+    cwd: fixture.root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${path.join(fixture.root, "bin")}:${process.env.PATH}`,
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_FIXTURE: fixture.root,
+      GITHUB_ACTIONS: "true",
+      GITHUB_REPOSITORY: "three-native/fixture",
+    },
+  });
+}
+
+describe("PRD-481 a tree is tested once", () => {
+  it("reuses a successful run that tested this exact tree, citing its run id", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, []);
+    listRuns(fixture.root, [
+      { id: 9999, head_sha: "f".repeat(40), conclusion: "success" },
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    expect(plan).toMatchObject({
+      selection: "reused",
+      reusedRunId: REUSED_RUN_ID,
+      candidateSha: fixture.candidate,
+    });
+    const jobs = plan.jobs as Record<string, { required: boolean }>;
+    expect(Object.values(jobs).some((job) => job.required)).toBe(false);
+  });
+
+  it("runs the full board for a tree that changed by one file", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, []);
+    listRuns(fixture.root, [
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    const plan = classifyCandidate(fixture, fixture.moved);
+    expect(plan).toMatchObject({ selection: "full" });
+    // The reason has to say the tree was looked up and missed. A full run that silently never
+    // consulted the API and a full run that consulted it and found nothing read the same.
+    expect(plan.reason).toContain("tree reuse unavailable");
+  });
+
+  it("runs the full board when the Actions API cannot be read", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, []);
+    listRuns(fixture.root, [
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    const plan = classifyCandidate(fixture, fixture.candidate, { apiFail: true });
+    expect(plan).toMatchObject({ selection: "full" });
+    expect(plan.reason).toContain("HTTP 403");
+  });
+
+  it("keeps workflow_dispatch an explicit full audit even on a tree hit", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, []);
+    listRuns(fixture.root, [
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    const plan = classifyCandidate(fixture, fixture.candidate, { event: "workflow_dispatch" });
+    expect(plan).toMatchObject({ selection: "full" });
+    // Never even asked: the API answers here, and asking would have found this exact tree.
+    expect(plan.reason).toContain("workflow_dispatch");
+    expect(plan.reason).not.toContain("tree reuse");
+  });
+
+  it("keeps Sunday's nightly full and lets Monday's reuse", () => {
+    // The nightly's subject is the runner image and the network, neither of which an unchanged
+    // tree can vouch for. Six days of the week may reuse; Sunday may not.
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, []);
+    listRuns(fixture.root, [
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "schedule", dayOfWeek: 7 }),
+    ).toMatchObject({ selection: "full" });
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "schedule", dayOfWeek: 1 }),
+    ).toMatchObject({ selection: "reused", reusedRunId: REUSED_RUN_ID });
+  });
+
+  it("passes a reused verdict only when the source run passed its own", () => {
+    const fixture = reuseFixture();
+    fakeActionsApi(fixture.root, [{ name: "ci-required", conclusion: "success" }]);
+    listRuns(fixture.root, [
+      { id: REUSED_RUN_ID, head_sha: fixture.source, conclusion: "success" },
+    ]);
+    const plan = classifyCandidate(fixture, fixture.candidate);
+    const passed = verifyReusedPlan(fixture, plan);
+    expect(passed.status, passed.stdout + passed.stderr).toBe(0);
+    fakeActionsApi(fixture.root, [{ name: "ci-required", conclusion: "failure" }]);
+    const failed = verifyReusedPlan(fixture, plan);
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toContain("CI_REQUIRED_SOURCE_NOT_SUCCESS");
   });
 });

@@ -11,6 +11,11 @@ on:
     # Drafts run nothing; marking one ready for review starts the board.
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
+  # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
+  # merged back to back can no longer put a tree on develop that nothing tested. An unchanged base
+  # means the queue's tree is the pull request's tree, and tree reuse makes that instant.
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "17 3 * * *"
 
@@ -37,6 +42,11 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
+    # PRD-481 tree reuse: the classification asks the Actions API which successful run tested this
+    # exact tree. Read-only, and nothing else in the workflow gains from it.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -51,6 +61,7 @@ jobs:
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           extra=()
@@ -107,8 +118,10 @@ jobs:
   lint:
     needs: scope
     # A Markdown-only change runs no CI job: the docs lane is re-validated on the nightly run and
-    # at promotion, so this job is skipped rather than spending a runner on inert prose.
-    if: needs.scope.outputs.selection != 'prose'
+    # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
+    # tree skips it too — every gate it would run here already passed in the run that tested this
+    # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -1164,8 +1177,9 @@ jobs:
   supply-chain:
     needs: scope
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
-    # git history, so an inert prose PR does not spend a runner here.
-    if: needs.scope.outputs.selection != 'prose'
+    # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
+    # the same reason every other gate is: the run that tested this exact tree already scanned it.
+    if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'instructions'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1235,6 +1249,11 @@ jobs:
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # A reused verdict is only a pass if the run it cites passed its own ci-required job, and that
+    # is an Actions API read rather than anything this repository can compute.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1248,6 +1267,7 @@ jobs:
           TN_CI_HEAD_REF: ${{ github.head_ref }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every

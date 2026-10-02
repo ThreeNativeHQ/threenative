@@ -101,7 +101,7 @@ sized to land at about 4–6 min each.
 
 #### Phase 1: The same tree is tested once
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS — code landed, live proofs pending
 **Files:** EDIT `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `.github/workflows/ci.yml`
 (`merge_group`, schedule weekday/Sunday split), `AGENTS.md` (+ mirror), `scripts/__tests__/ci-structure.spec.ts`.
 **Implementation:** lookup by tree via `gh api` with the job's `GITHUB_TOKEN` (`actions: read`). A miss,
@@ -110,8 +110,11 @@ skip it.
 
 - [ ] A promotion PR whose tree already passed reports `reused`, under 2 min. proof: CI run id plus the
   source run id it cites.
-- [ ] A tree that changed by one byte runs the full board. proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`,
-  with a case where the trees differ by one file and a case where the API errors.
+- [x] A tree that changed by one byte runs the full board. proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`,
+  with a case where the trees differ by one file and a case where the API errors. Evidence: 2026-10-02,
+  25 passed (5 before the implementation were red: identical tree, one-file change, API error, the
+  reused verdict). The suite stubs `gh` on `PATH`; the miss reasons are asserted too, so a full run that
+  never looked cannot read like one that looked and found nothing.
 - [ ] `develop` merges go through the merge queue, and an unchanged-base merge group reuses. proof: merge
   group run id.
 
