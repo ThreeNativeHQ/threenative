@@ -1,3 +1,4 @@
+import { TONE_METRICS } from "./tone.js";
 import type { IPlaytestScenario, PlaytestTarget } from "./scenario.js";
 import type { PlaytestCapability } from "./capabilities.js";
 import { resolveDiagnosticsPolicy } from "./assertion-report.js";
@@ -24,6 +25,22 @@ export interface IPlaytestAssertionSchemaEntry {
 }
 
 export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry[] = [
+  {
+    description: "Bounds display-referred luminance from a captured PNG frame, using a shared 256-bin histogram.",
+    example: { tone: [{ atStep: "landed", mean: { min: 60, max: 140 }, p99: { min: 150 } }] },
+    fields: [
+      { description: "Capture after this named step; omit for the final frame.", name: "atStep", type: "non-empty string" },
+      ...TONE_METRICS.map((name) => ({ description: "Inclusive finite bounds; luminance is 0..255 and fractions are 0..1. At least one bound is required.", name, type: "{ min?: number, max?: number }" })),
+    ],
+    cardinality: "array",
+    kind: "tone",
+    observationPath: "tone",
+    requiredCapabilities: ["browser.screenshot"],
+    resultIdPrefix: "tone.",
+    supportedOn: ["web", "desktop", "bevy"],
+    triviality: "not-applicable",
+    trivialityRationale: "The host decodes actual captured pixels; a missing capture fails closed.",
+  },
   {
     description: "Reports the device's thermal, power and battery state around the run and judges whether the run is comparable with a cool one.",
     example: { deviceMetrics: { maxTemperatureRiseC: 5, notThermallyConfounded: true } },

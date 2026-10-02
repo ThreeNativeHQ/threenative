@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-341 — a frame's tone is a number, and the number is a gate
 
-**Status:** IN PROGRESS — implementation started 2026-10-02 from `d7277838`; original proposal
+**Status:** PARTIAL — implementation started 2026-10-02 from `d7277838`; original proposal
 filed 2026-09-03, measured at `43d03e6a`. Batch:
 [docs/PRDs/AAA-visuals](./README.md). **Land this first** — it is what makes every other PRD in the
 batch judgeable, and it is the cheapest thing here. Source studied:
@@ -22,11 +22,11 @@ report two numbers where five are needed.
 ### Phase 1 — one measurement and a strict contract
 
 - [x] Compute the six display-luminance metrics in the existing PNG decode. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/capture.spec.ts` — 9 passed after two missing-metric failures in the fresh reconstruction.
-- [ ] Reject empty, malformed and contradictory tone bounds at scenario load. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts`
+- [x] Reject empty, malformed and contradictory tone bounds at scenario load. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/tone.spec.ts` — 28 passed after 25 missing-feature failures in the fresh reconstruction.
 
 ### Phase 2 — shared capture evidence and CLI
 
-- [ ] Evaluate tone bounds against named captures and fail on missing evidence. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts`
+- [x] Evaluate tone bounds against named captures and fail on missing evidence. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers=1 packages/playtest/__tests__/tone.spec.ts` — 28 passed after 25 missing-feature failures in the fresh reconstruction.
 - [ ] Record `TN_TONE` on browser/device captures and print identical six-number CLI rows plus an average. proof: `node node_modules/vitest/vitest.mjs run packages/playtest/__tests__/tone.spec.ts packages/playtest/__tests__/tone-runner.spec.ts`
 
 ### Phase 3 — scenario proof and qualification
@@ -75,13 +75,14 @@ A new assertion kind over a captured frame:
 
 ```jsonc
 {
-  "assert": "tone",
+  "assert": { "tone": [{
   "atStep": "landed",
   "mean": { "min": 60, "max": 140 },     // 0-255, display-referred, after tonemap
   "p99": { "min": 150 },                 // the frame has highlights
   "p1":  { "max": 40 },                  // and it has shadows
   "clipFraction":  { "max": 0.005 },     // 0.5% of pixels at display white
   "blackFraction": { "max": 0.25 }
+  }] }
 }
 ```
 
@@ -146,3 +147,9 @@ stay open until their implementation and proofs are rerun.
 The user explicitly requires screenshot proofs for every PR. Actual underexposed/restored WebGPU
 runtime captures, adapter provenance and source SHA must be inspected and linked before this PR
 leaves draft. Synthetic PNG unit-test inputs and pictures of test output do not satisfy this gate.
+
+
+Fresh schema/CLI checkpoint: 118 tests passed across six focused files; scoped playtest TypeScript
+passed. The shared evaluator now rejects missing/invalid captures and reports measured/bounded
+values. Offline CLI parity includes different-sized frames to prove equal per-frame averaging.
+Browser/device production of the observation remains the next open slice.

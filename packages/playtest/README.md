@@ -68,3 +68,25 @@ entity, an absent resource, an empty effect log, or a scenario with no
 assertions at all is a failure, never a silent pass. Wrong-typed assertion
 values are rejected when the scenario loads rather than dropped, so a scenario
 cannot quietly run with fewer checks than its author wrote.
+
+
+## Tone gates and offline inspection
+
+`npx @threenative/playtest tone shot.png other.png` prints tab-separated rows for mean, p1, p50,
+p99, clip%, black%, plus an unweighted frame-average row. No browser is started. Empty input,
+unreadable PNGs and images without visible pixels exit 2 without a partial table.
+
+```json
+{ "assert": { "tone": [{ "atStep": "landed", "mean": { "min": 60, "max": 140 }, "p99": { "min": 150 }, "clipFraction": { "max": 0.005 } }] } }
+```
+
+`atStep` selects a named step; omission selects the final capture. Every metric takes inclusive
+min/max bounds. Empty arrays, empty bounds, non-finite/out-of-range numbers, unknown keys and
+reversed ranges fail at load. Missing capture evidence fails TN_PLAYTEST_TONE_UNOBSERVED.
+Failed bounds name the measured and required values.
+
+All six metrics use the capture guard's existing PNG decode without downsampling: rounded
+Rec.709 display luminance fills 256 bins; mean averages bin values and percentiles use nearest
+rank. Clip/black fractions count bins 255/0 and use 0..1 in assertions (percentages in the CLI).
+Fully transparent pixels are excluded; other pixels retain stored RGB without compositing.
+These numbers measure exposure, not aesthetic quality.

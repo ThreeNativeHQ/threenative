@@ -9,3 +9,12 @@ export interface IToneMetrics {
   /** Fraction in bin 0 (display black). */
   readonly blackFraction: number;
 }
+
+export const TONE_METRICS = ["mean", "p1", "p50", "p99", "clipFraction", "blackFraction"] as const;
+
+export interface IPlaytestToneObservation extends IToneMetrics {
+  readonly code: "TN_TONE";
+  readonly label: string;
+  /** Absent for the convenience before/after captures. */
+  readonly atStep?: string;
+}
