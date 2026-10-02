@@ -50,7 +50,17 @@ interface IPreparedFile {
  * was six draws for stone the eye cannot tell apart at meadow distance, against the starter's
  * twenty-four-draw ceiling for the whole meadow — which is the trade this list now records.
  */
-const PREPARED: readonly IPreparedFile[] = [];
+const PREPARED: readonly IPreparedFile[] = [
+  // The committed fallback's stone: two photoscanned CC0 rocks at both levels. Where the licensed
+  // pack loaded, its boulders take these same indices 1 and 2 (the pack's parts are merged after these), so
+  // this only draws on CI, on a fresh clone and in a review — which is the starter that ships, and
+  // a procedural lump there is the wrong first impression. Two, not three: three at two levels put
+  // the pack-less meadow one draw over its ceiling.
+  { asset: "boulder", level: 0, path: "rocks/rock01-near.glb", variant: 1 },
+  { asset: "boulder", level: 1, path: "rocks/rock01-mid.glb", variant: 1 },
+  { asset: "boulder", level: 0, path: "rocks/boulder-near.glb", variant: 2 },
+  { asset: "boulder", level: 1, path: "rocks/boulder-mid.glb", variant: 2 },
+];
 
 /**
  * Which role a prepared material name draws with.
