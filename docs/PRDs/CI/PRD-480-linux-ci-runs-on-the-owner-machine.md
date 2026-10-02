@@ -98,12 +98,16 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [shared]: proof: CI run id plus `runner_name` per job from `gh api …/runs/<id>/jobs`. A non-draft
+- [x] AC-1 [shared]: proof: CI run id plus `runner_name` per job from `gh api …/runs/<id>/jobs`. A non-draft
   PR's `CI` run executes every Linux job except `supply-chain` on a `tn-local` runner, and `ci-required`
   passes. Evidence: pending.
+  Evidence: CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): conclusion success, `ci-required` success. 39 jobs succeeded: 33 on `tn-local`, 5 on `tn-local-light`, 1 hosted (`supply-chain`); `native-platforms` skipped by scope.
 - [ ] AC-2 [shared]: proof: per-job `started_at − created_at` summed with the baseline's script. Total time
   jobs spent waiting for a runner on a full-board PR drops below 60 min (baseline 239 min, run
-  37043413533). Evidence: pending.
+  37043413533). Measured, not met: run 37070815769 waited 317 min in total across 40 jobs on 5 heavy +
+  1 light slots, with 42 min wall against the baseline's 39 min wall and zero hosted minutes. A 40-job board on
+  six slots queues by construction, so this criterion needs either more slots or overflow to hosted
+  runners. Owner decision pending.
 
 ## Blocked on
 
@@ -162,10 +166,11 @@ the stack. The script fails closed when the env file or token is missing.
   tn-6071a30e949e, all online. The first `up` timed out with 0 online (wrong WORKDIR), cleared the
   variable and stopped the pool, which is the fail-closed path working. Not started: `status` reports
   `TN_RUNNER=unset`, 0 containers, 0 online runners on 2026-10-02.
-- [ ] A runner container recreates itself after its job and keeps no state from it. proof: two
+- [x] A runner container recreates itself after its job and keeps no state from it. proof: two
   consecutive dispatched jobs report different container hostnames and an empty `/tmp`.
   Not started: the image's `/tmp` is empty in a fresh container (`ls -A /tmp | wc -l` → 0), which
   is one container's worth of the claim.
+  Evidence: CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): 38 `tn-local*` jobs ran on 38 distinct runner names (`tn-<container id>`) from 6 slots, so every job got a fresh container; each starts from the image, whose `/tmp` is empty (`ls -A /tmp | wc -l` = 0 in the smoke).
 
 #### Phase 2: `ci.yml` and the integration workflows route through the switch
 
@@ -188,20 +193,16 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
    One pre-existing assertion had to be narrowed: `template-nonvisual` forbade the substring
    `pull_request` anywhere in the job, which the routing expression mentions without gating on it.
 
-- [ ] With `TN_RUNNER` set, a PR run lands its Linux jobs on `tn-local`. proof: AC-1 run.
-- [ ] `AGENTS.md` says focused checks then push, not the full board, while `TN_RUNNER` is set. proof:
+- [x] With `TN_RUNNER` set, a PR run lands its Linux jobs on `tn-local`. proof: AC-1 run.
+  Evidence: CI run 37070815769 (PR #404, head 94732de65, 2026-10-02), as AC-1.
+- [x] `AGENTS.md` says focused checks then push, not the full board, while `TN_RUNNER` is set. proof:
   `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts` pass.
   Land it only after the AC-1 run is green.
-- [ ] Light jobs never wait behind heavy ones: `scope`, `ci-required` and `run-summary` route to
-  `tn-local-light` and no heavy job can. proof: `ci-structure.spec.ts` case, plus a full-board run whose
-  `ci-required` starts within 60 s of its last `needs` finishing.
-  Landed, unticked because the timing half is unmeasured: `up` starts one unpinned
-  `--cpus 1 --memory 2g --oom-score-adj 900` slot registering `tn-local-light` and sets
-  `TN_RUNNER_LIGHT`, and `scope`, `golden-path`, `build`, `ci-required`, `run-summary` route to it —
-  every job whose work is a script or a summary, none of which builds the workspace or runs a test.
-  `ci-structure.spec.ts` enforces the allow-list in both directions (red on `typecheck` put on the
-  light expression, red on `scope` put off it). Left: a full-board run whose `ci-required` starts
-  within 60 s of its last `needs` finishing.
+  Evidence: landed after AC-1; `pnpm sync:agents` + sync-agent-docs, primary-docs and instruction-budget specs, 24 passed (2026-10-02).
+- [x] Light jobs never wait behind heavy ones (proof: `ci-structure.spec.ts` case, plus a full-board run
+  whose `ci-required` starts within 60 s of its last `needs` finishing): `scope`, `golden-path`, `build`,
+  `ci-required` and `run-summary` route to `tn-local-light`, and no heavy job can.
+  Evidence: ci-structure.spec.ts routing case (red with `typecheck` on the light lane), and CI run 37070815769 (PR #404, head 94732de65, 2026-10-02): `ci-required` started 22:48:50Z, 3 s after the last job it needs finished at 22:48:47Z.
 - [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
 
