@@ -80,6 +80,7 @@ export function createExposureFixture(options: IExposureFixtureOptions) {
         1,
       );
       exposure.deterministic = options.deterministic === true;
+      if (exposure.deterministic) exposure.holdStartup(ctx.startup);
       exposure.onProgress = () => ctx.state.set(exposure.getProgress());
       ctx.renderer.setOutputNode(applyExposure(colour, exposure.exposureNode), worldPass);
       ctx.entities.add("exposure", {

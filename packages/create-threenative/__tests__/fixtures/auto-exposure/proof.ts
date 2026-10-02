@@ -2,7 +2,7 @@ interface IExposureProofReport {
   pass: boolean;
   capture?: { rendererKind: string; adapter: Record<string, string> };
   diagnostics: readonly { code: string }[];
-  observations?: { console: readonly { text: string }[] };
+  observations?: { console: readonly { text: string }[]; startup?: { phase: string } };
 }
 
 interface IExposureMeasurement {
@@ -25,6 +25,7 @@ export interface IExposureCaseProof {
 /** A negative control may fail its one named gate; runtime errors never qualify the mutation. */
 export function qualifyExposureCase(report: IExposureProofReport, expectation: IExposureCaseProof) {
   assertExposureRuntime(report);
+  if (expectation.deterministic === true) assertExposureWarmup(report);
   const frameBudget =
     expectation.deterministic === true ? assertDeterministicExposureBudget(report) : undefined;
   // Terminal integrity is mandatory for both deterministic arms. An expected settlement
@@ -167,6 +168,107 @@ function pairedExposureSamples(entries: readonly { text: string }[]): IExposureS
   return samples;
 }
 
+type ExposureTiming = Omit<IExposureSample, "measurement">;
+const exposureTimingFields = [
+  "updates",
+  "consumedSeconds",
+  "realConsumedSeconds",
+  "nodeTime",
+  "nodeFrameId",
+  "clock",
+] as const;
+
+function assertExposureSampleSequence(
+  samples: IExposureSample[],
+  start: ExposureTiming,
+  phase: "warmup" | "post-cut",
+): ExposureTiming {
+  if (samples.length !== 180)
+    throw new Error(
+      `TN_EXPOSURE_FRAME_BUDGET: Expected 180 completed GPU samples during ${phase}; observed ${samples.length}.`,
+    );
+  let previous = start;
+  for (const [index, value] of samples.entries()) {
+    if (
+      value.clock !== start.clock ||
+      value.updates !== start.updates + index + 1 ||
+      !Number.isInteger(value.nodeFrameId) ||
+      value.nodeFrameId <= previous.nodeFrameId ||
+      !Number.isFinite(value.nodeTime) ||
+      value.nodeTime <= previous.nodeTime ||
+      !Number.isFinite(value.realConsumedSeconds) ||
+      value.realConsumedSeconds < previous.realConsumedSeconds ||
+      !Number.isFinite(value.consumedSeconds) ||
+      Math.abs(value.consumedSeconds - start.consumedSeconds - (index + 1) / 60) > 1e-9
+    )
+      throw new Error(
+        `TN_EXPOSURE_FRAME_BUDGET: Mismatched GPU updates, readback or clock provenance during ${phase}.`,
+      );
+    previous = value;
+  }
+  return previous;
+}
+
+/** The controlled comparison starts only after the same accepted GPU warmup in both arms. */
+function assertExposureWarmup(report: IExposureProofReport): void {
+  const entries = report.observations?.console ?? [];
+  const indexOf = (prefix: string) => {
+    const matches = entries.flatMap(({ text }, index) => (text.startsWith(prefix) ? [index] : []));
+    if (matches.length !== 1)
+      throw new Error("Exposure warmup/readiness evidence is missing or duplicated.");
+    return matches[0] as number;
+  };
+  const warmupIndex = indexOf("TN_EXPOSURE_WARMUP:");
+  const readyIndex = indexOf("TN_EXPOSURE_READY:");
+  const cutIndex = indexOf("TN_EXPOSURE_CUT:");
+  if (
+    warmupIndex >= readyIndex ||
+    readyIndex >= cutIndex ||
+    report.observations?.startup?.phase !== "ready"
+  )
+    throw new Error("Exposure readiness arrived without the exact warmup evidence.");
+  const warmup = JSON.parse(entries[warmupIndex]?.text.slice("TN_EXPOSURE_WARMUP:".length) ?? "{}");
+  const ready = JSON.parse(entries[readyIndex]?.text.slice("TN_EXPOSURE_READY:".length) ?? "{}");
+  const samples = pairedExposureSamples(entries.slice(0, warmupIndex));
+  const last = samples.at(-1);
+  const terminal = assertExposureSampleSequence(
+    samples,
+    {
+      updates: 0,
+      consumedSeconds: 0,
+      realConsumedSeconds: 0,
+      nodeTime: 0,
+      nodeFrameId: 0,
+      clock: "deterministic-per-render",
+    },
+    "warmup",
+  );
+  if (
+    last === undefined ||
+    exposureTimingFields.some((key) => warmup[key] !== terminal[key]) ||
+    JSON.stringify(warmup.measurement) !== JSON.stringify(last.measurement) ||
+    ready.warmupComplete !== true ||
+    !Number.isFinite(warmup.elapsedMs) ||
+    warmup.elapsedMs < 0 ||
+    warmup.elapsedMs > 60_000 ||
+    !Number.isFinite(ready.elapsedMs) ||
+    ready.elapsedMs < warmup.elapsedMs
+  )
+    throw new Error("Exposure warmup is incomplete, unpaired or expired.");
+  const measurement = assertExposureProof(
+    { ...report, observations: { console: entries.slice(0, warmupIndex) } },
+    true,
+  );
+  const { cut } = cutEntries(report);
+  if (
+    exposureTimingFields.some((key) => cut[key] !== terminal[key]) ||
+    Object.keys(measurement).some(
+      (key) => measurement[key as keyof IExposureMeasurement] !== cut[key],
+    )
+  )
+    throw new Error("Exposure cut changed the accepted warmup timing or measurement.");
+}
+
 /** Pin the terminal readback, not just submissions, to the same 180-update controlled clock. */
 export function assertDeterministicExposureBudget(report: IExposureProofReport) {
   const { cut, after } = cutEntries(report);
@@ -181,29 +283,7 @@ export function assertDeterministicExposureBudget(report: IExposureProofReport) 
       "TN_EXPOSURE_FRAME_BUDGET: Expected the 180-update warmup before terminal update 360.",
     );
   const samples = pairedExposureSamples(after);
-  if (samples.length !== 180)
-    throw new Error(
-      `TN_EXPOSURE_FRAME_BUDGET: Expected 180 completed GPU samples; observed ${samples.length}.`,
-    );
-  let previous = cut;
-  for (const [index, value] of samples.entries()) {
-    if (
-      value.clock !== cut.clock ||
-      value.updates !== cut.updates + index + 1 ||
-      !Number.isInteger(value.nodeFrameId) ||
-      value.nodeFrameId <= previous.nodeFrameId ||
-      !Number.isFinite(value.nodeTime) ||
-      value.nodeTime <= previous.nodeTime ||
-      !Number.isFinite(value.realConsumedSeconds) ||
-      value.realConsumedSeconds < previous.realConsumedSeconds ||
-      !Number.isFinite(value.consumedSeconds) ||
-      Math.abs(value.consumedSeconds - cut.consumedSeconds - (index + 1) / 60) > 1e-9
-    )
-      throw new Error(
-        "TN_EXPOSURE_FRAME_BUDGET: Mismatched GPU updates, readback or clock provenance.",
-      );
-    previous = value;
-  }
+  const previous = assertExposureSampleSequence(samples, cut, "post-cut");
   return {
     renderedUpdates: 180,
     adaptationSeconds: previous.consumedSeconds - cut.consumedSeconds,

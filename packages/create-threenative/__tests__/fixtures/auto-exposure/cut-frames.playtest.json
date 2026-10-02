@@ -8,7 +8,7 @@
   },
   "warmupFrames": 20,
   "artifacts": {
-    "screenshots": true,
+    "screenshots": "before-after",
     "console": true
   },
   "steps": [

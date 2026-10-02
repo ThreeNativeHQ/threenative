@@ -50,6 +50,55 @@ describe("exposure deterministic render clock", () => {
     return { node, frame, read };
   }
 
+  it("holds startup until the 180th accepted readback, then reports real readiness", async () => {
+    const { node, frame, read } = harness();
+    let held: Promise<unknown> = Promise.resolve();
+    let releaseReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      releaseReady = resolve;
+    });
+    const hold = (label: string, work: Promise<unknown>, budgetMs?: number) => {
+      expect(label).toBe("exposure-warmup");
+      expect(budgetMs).toBe(60_000);
+      held = work;
+    };
+    node.holdStartup({ hold, whenReady: () => ready });
+    const settled = vi.fn();
+    void held.then(settled);
+    for (let i = 0; i < 179; i++) {
+      node.updateBefore(frame);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      frame.time += 0.07;
+      frame.frameId++;
+    }
+    expect(settled).not.toHaveBeenCalled();
+    let resolveLast!: (value: Float32Array) => void;
+    read.mockReturnValueOnce(
+      new Promise<Float32Array>((resolve) => {
+        resolveLast = resolve;
+      }),
+    );
+    node.updateBefore(frame);
+    expect(settled).not.toHaveBeenCalled();
+    resolveLast(new Float32Array([0, 0.18, 0, 1]));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).toHaveBeenCalledOnce();
+    releaseReady();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const messages = vi.mocked(console.info).mock.calls.map(([text]) => String(text));
+    const warmup = JSON.parse(
+      messages.find((text) => text.startsWith("TN_EXPOSURE_WARMUP:"))?.slice(19) ?? "{}",
+    );
+    expect(warmup).toMatchObject({ updates: 180, measurement: node.getObservation() });
+    expect(
+      messages.some(
+        (text) =>
+          text.startsWith("TN_EXPOSURE_READY:") &&
+          JSON.parse(text.slice(18)).warmupComplete === true,
+      ),
+    ).toBe(true);
+    node.dispose();
+  });
   it.each(["resolve", "reject"])(
     "invalidates a delayed readback after disposal: %s",
     async (outcome) => {
@@ -62,6 +111,7 @@ describe("exposure deterministic render clock", () => {
           rejectRead = reject;
         }),
       );
+      node.holdStartup({ hold: () => {}, whenReady: () => Promise.resolve() });
       const progress = vi.fn();
       node.onProgress = progress;
       node.updateBefore(frame);

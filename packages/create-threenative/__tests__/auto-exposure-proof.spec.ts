@@ -14,6 +14,7 @@ function report() {
     capture: { rendererKind: "webgpu", adapter: { architecture: "swiftshader" } },
     diagnostics: [] as { code: string }[],
     observations: {
+      startup: { phase: "ready" },
       console: [
         {
           text: `TN_AUTO_EXPOSURE:${JSON.stringify({ measured: true, applied: true, luminance: 0.002, exposureStops: 6.5, targetStops: 6.6, settled: true })}`,
@@ -25,6 +26,14 @@ function report() {
 
 function deterministicReport(settled = false) {
   const value = report();
+  const warmupMeasurement = {
+    measured: true,
+    applied: true,
+    luminance: 4,
+    exposureStops: -4.5,
+    targetStops: -4.5,
+    settled: true,
+  };
   const cut = {
     updates: 180,
     consumedSeconds: 3,
@@ -32,11 +41,29 @@ function deterministicReport(settled = false) {
     nodeTime: 8,
     nodeFrameId: 200,
     clock: "deterministic-per-render",
-    targetStops: -4.5,
-    settled: true,
+    ...warmupMeasurement,
   };
   value.observations.console = [
     { text: 'TN_EXPOSURE_CLOCK:{"mode":"fixed-step"}' },
+    ...Array.from({ length: 180 }, (_, i) => {
+      const sample = {
+        ...cut,
+        updates: i + 1,
+        nodeFrameId: 21 + i,
+        nodeTime: ((i + 1) * 8) / 180,
+        consumedSeconds: (i + 1) / 60,
+        realConsumedSeconds: ((i + 1) * 5) / 180,
+        measurement: warmupMeasurement,
+      };
+      return [
+        { text: `TN_AUTO_EXPOSURE:${JSON.stringify(warmupMeasurement)}` },
+        { text: `TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}` },
+      ];
+    }).flat(),
+    {
+      text: `TN_EXPOSURE_WARMUP:${JSON.stringify({ ...cut, measurement: warmupMeasurement, elapsedMs: 1000 })}`,
+    },
+    { text: 'TN_EXPOSURE_READY:{"warmupComplete":true,"elapsedMs":1100}' },
     { text: `TN_EXPOSURE_CUT:${JSON.stringify(cut)}` },
     ...Array.from({ length: 180 }, (_, i) => {
       const measurement = {
@@ -74,6 +101,109 @@ const deterministicExpectation = {
 };
 
 describe("runtime exposure proof", () => {
+  it.each(["repeated-frame", "live-clock", "jumped-time"] as const)(
+    "rejects %s in the warmup sequence",
+    (fault) => {
+      const value = deterministicReport(true);
+      const boundary = value.observations.console.findIndex(({ text }) =>
+        text.startsWith("TN_EXPOSURE_WARMUP:"),
+      );
+      value.observations.console = value.observations.console.map(({ text }, index) => {
+        if (index >= boundary || !text.startsWith("TN_EXPOSURE_SAMPLE:")) return { text };
+        const sample = JSON.parse(text.slice(19));
+        const overrides = {
+          "repeated-frame": { nodeFrameId: 200 },
+          "live-clock": { clock: "live" },
+          "jumped-time": { consumedSeconds: sample.updates === 180 ? 3 : 0 },
+        };
+        return { text: `TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...sample, ...overrides[fault] })}` };
+      });
+      expect(() =>
+        qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+      ).toThrow(/warmup|FRAME_BUDGET/i);
+    },
+  );
+  it.each(["nodeFrameId", "nodeTime", "realConsumedSeconds"] as const)(
+    "binds the cut %s to the accepted warmup terminal",
+    (field) => {
+      const value = deterministicReport(true);
+      const cut = value.observations.console.find(({ text }) =>
+        text.startsWith("TN_EXPOSURE_CUT:"),
+      );
+      if (cut === undefined) throw new Error("cut missing");
+      const parsed = JSON.parse(cut.text.slice(16));
+      parsed[field] -= 1;
+      cut.text = `TN_EXPOSURE_CUT:${JSON.stringify(parsed)}`;
+      expect(() =>
+        qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+      ).toThrow(/warmup/);
+    },
+  );
+  it.each(["nodeTime", "realConsumedSeconds"] as const)(
+    "binds the warmup marker %s to its accepted sample",
+    (field) => {
+      const value = deterministicReport(true);
+      const marker = value.observations.console.find(({ text }) =>
+        text.startsWith("TN_EXPOSURE_WARMUP:"),
+      );
+      if (marker === undefined) throw new Error("warmup missing");
+      const parsed = JSON.parse(marker.text.slice(19));
+      parsed[field] -= 1;
+      marker.text = `TN_EXPOSURE_WARMUP:${JSON.stringify(parsed)}`;
+      expect(() =>
+        qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+      ).toThrow(/warmup/);
+    },
+  );
+  it("requires actual warmup evidence before readiness, including an unexpired hold", () => {
+    for (const mode of ["missing", "expired", "early-ready"] as const) {
+      const value = deterministicReport(true);
+      if (mode === "missing")
+        value.observations.console = value.observations.console.filter(
+          ({ text }) => !text.startsWith("TN_EXPOSURE_WARMUP:"),
+        );
+      if (mode === "expired")
+        value.observations.console = value.observations.console.map(({ text }) =>
+          text.startsWith("TN_EXPOSURE_WARMUP:")
+            ? {
+                text: `TN_EXPOSURE_WARMUP:${JSON.stringify({ ...JSON.parse(text.slice(19)), elapsedMs: 60_001 })}`,
+              }
+            : { text },
+        );
+      if (mode === "early-ready")
+        value.observations.console = value.observations.console.map(({ text }) =>
+          text.startsWith("TN_EXPOSURE_READY:")
+            ? { text: 'TN_EXPOSURE_READY:{"warmupComplete":false}' }
+            : { text },
+        );
+      expect(() =>
+        qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+      ).toThrow(/warmup|readiness/i);
+    }
+  });
+  it.each(["missing-sample", "stale", "order"] as const)("rejects %s warmup evidence", (fault) => {
+    const value = deterministicReport(true);
+    if (fault === "missing-sample") value.observations.console.splice(1, 2);
+    if (fault === "stale") {
+      const warmup = value.observations.console.find(({ text }) =>
+        text.startsWith("TN_EXPOSURE_WARMUP:"),
+      );
+      if (warmup === undefined) throw new Error("warmup missing");
+      const parsed = JSON.parse(warmup.text.slice(19));
+      warmup.text = `TN_EXPOSURE_WARMUP:${JSON.stringify({ ...parsed, measurement: { ...parsed.measurement, exposureStops: 99 } })}`;
+    }
+    if (fault === "order") {
+      const index = value.observations.console.findIndex(({ text }) =>
+        text.startsWith("TN_EXPOSURE_READY:"),
+      );
+      const [ready] = value.observations.console.splice(index, 1);
+      if (ready === undefined) throw new Error("ready missing");
+      value.observations.console.unshift(ready);
+    }
+    expect(() =>
+      qualifyExposureCase(value, { ...deterministicExpectation, reject: undefined }),
+    ).toThrow(/warmup|readiness/i);
+  });
   it("keeps the deterministic bridge clock distinct from the live-clock arm", () => {
     const value = deterministicReport(true);
     const expectation = { ...deterministicExpectation, reject: undefined };
@@ -176,7 +306,7 @@ describe("runtime exposure proof", () => {
     terminal.text = `TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`;
     value.observations.console.splice(-3);
     expect(() => assertDeterministicExposureBudget(value)).toThrow(/TN_EXPOSURE_FRAME_BUDGET/);
-    const cut = value.observations.console[1];
+    const cut = value.observations.console.find(({ text }) => text.startsWith("TN_EXPOSURE_CUT:"));
     if (cut === undefined) throw new Error("cut missing");
     cut.text = cut.text.replace("deterministic-per-render", "live");
     expect(() => assertDeterministicExposureBudget(value)).toThrow(/clock provenance/);

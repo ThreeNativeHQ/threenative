@@ -1,4 +1,5 @@
 import { NodeFrame } from "three/webgpu";
+import type { ICtx } from "../../../../core/dist/index.js";
 import { AutoExposureNode } from "../../../template-assets/autoExposure.js";
 
 /** Only the fixture's adaptation input is controlled; the renderer's shared frame stays real. */
@@ -23,6 +24,33 @@ export class ObservedExposureNode extends AutoExposureNode {
   #sampleUpdates = 0;
   #pending = false;
   #disposed = false;
+  #releaseWarmup: ((sample: Record<string, unknown>) => void) | undefined;
+
+  holdStartup(startup: Pick<ICtx["startup"], "hold" | "whenReady">): void {
+    if (!this.deterministic || this.#disposed)
+      throw new Error("Only an active controlled arm may hold exposure startup.");
+    const started = performance.now();
+    let warmupComplete = false;
+    startup.hold(
+      "exposure-warmup",
+      new Promise<void>((resolve) => {
+        this.#releaseWarmup = (sample) => {
+          warmupComplete = true;
+          console.info(
+            `TN_EXPOSURE_WARMUP:${JSON.stringify({ ...sample, elapsedMs: performance.now() - started })}`,
+          );
+          resolve();
+        };
+      }),
+      60_000,
+    );
+    void startup.whenReady().then(() => {
+      if (!this.#disposed)
+        console.info(
+          `TN_EXPOSURE_READY:${JSON.stringify({ warmupComplete, elapsedMs: performance.now() - started })}`,
+        );
+    });
+  }
 
   beginCut(): void {
     this.#cutStart = this.timing.updates;
@@ -87,7 +115,12 @@ export class ObservedExposureNode extends AutoExposureNode {
               )
                 return;
               this.#sampleUpdates = next.updates;
-              console.info(`TN_EXPOSURE_SAMPLE:${JSON.stringify({ ...next, measurement })}`);
+              const sample = { ...next, measurement };
+              console.info(`TN_EXPOSURE_SAMPLE:${JSON.stringify(sample)}`);
+              if (next.updates === 180) {
+                this.#releaseWarmup?.(sample);
+                this.#releaseWarmup = undefined;
+              }
             },
             () => {},
           )

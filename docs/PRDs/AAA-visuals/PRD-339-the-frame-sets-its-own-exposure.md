@@ -237,6 +237,29 @@ updates/readbacks and recording real NodeFrame time separately. Live arms retain
 Three clock regressions failed before the change; all 77 focused exposure tests now pass. The
 changed arms still need hosted runtime proof; acceptance 1 remains open.
 
+Hosted source `9a84ee0eacebe9b119583b6fc16a0163276f1b78`,
+[run 37009093358](https://github.com/ThreeNativeHQ/threenative/actions/runs/37009093358), executed
+both controlled log-interpolation cuts with exactly 180 paired accepted GPU samples and 3.0
+adaptation seconds. Eleven stops settled by update 114 / 1.9 controlled seconds, one stop by 42 /
+0.7; real NodeFrame sums were 6.1925 and 6.3239 seconds, with elapsed spans 18.0085 and 18.2374.
+[Both PNGs and the failed raw-one terminal frame](../../verification/prd339-exposure-proof/controlled-cuts-9a84ee0e.json)
+retain exact hashes and SwiftShader provenance. The raw-one run failed the original blank guard
+on its unretained automatic startup `before.png`, captured before the scenario's explicit warmup;
+its readable terminal frame does not make that run pass. Later mutations were not run.
+
+Controlled arms now use the existing `ctx.startup.hold` seam to wait for the 180th accepted GPU
+warmup sample before readiness and automatic capture. This is identical for corrected/raw arms,
+preserves every image guard, and retains both before/after PNGs. Missing, stale, early-ready or
+expired warmup evidence fails the fixture verifier. The separate cold-boot criterion gets no such
+warmup hold. These changes are awaiting independent review and hosted proof; acceptance remains
+open. Shared PRD-341 tone metrics are now available through the ordinary develop merge.
+Review also exposed warmup stamps whose frame IDs, clocks or accumulated time did not describe
+180 distinct controlled updates. Warmup and post-cut evidence now share the same strict sequence
+validator, and the terminal warmup identity/timing must match both its marker and the cut. Eight
+regressions failed before correction. The focused suite now passes 90 exposure tests; root
+TypeScript and scoped Biome pass. The prior hold increment also passed 12 doc-link tests and five
+fixture builds. These local checks do not qualify the pending runtime arms.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated
