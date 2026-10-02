@@ -1234,6 +1234,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     let nWide = 0;
     let nSmall = 0;
     let nChunk = 0;
+    let nChunkBoth = 0;
     let nLayer0 = 0;
     // A caster still owed its prewarm draw (see `SharedBatch.awaitPrewarmDraw`): its shadow-context
     // node is built by the next shadow render that draws it, so the level that draws it here is
@@ -1410,7 +1411,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       // What this level would submit from each half, counted as it goes: a hidden caster submits
       // nothing, so it is not in either bill. A key-wide mesh spans the whole ring, so the level
       // keeps it whether or not the window reaches it — the cull, not the choice, decides that one.
-      // A chunk proxy belongs to both halves and costs the same whichever one is chosen.
+      // A retained chunk proxy belongs to both halves and costs the same whichever one is chosen.
       const bothHalves =
         (mesh.layers.mask & (clusterLayer | wideLayer)) === (clusterLayer | wideLayer);
       if (!bothHalves && (mesh.layers.mask & clusterLayer) !== 0) {
@@ -1420,12 +1421,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
         wideDraws += 1;
       }
       // The same bill by kind, for what the level's chosen layers end up submitting. Only a caster
-      // counts, and the merged per-chunk proxies — named `<name>-shadow`, on both halves —
+      // counts, and the per-chunk proxies — named `<name>-shadow`, merged ones on the cluster half,
+      // retained ones on both —
       // are bucketed apart from the batches they stand in for so they are not counted twice. The
       // small layer and layer 0's own casters take no part in the cluster/wide choice above.
       if (mesh.castShadow === true) {
-        if (mesh.name.endsWith("-shadow")) nChunk += 1;
-        else if ((mesh.layers.mask & smallLayer) !== 0) nSmall += 1;
+        if (mesh.name.endsWith("-shadow")) {
+          if (bothHalves) nChunkBoth += 1;
+          else nChunk += 1;
+        } else if ((mesh.layers.mask & smallLayer) !== 0) nSmall += 1;
         else if ((mesh.layers.mask & clusterLayer) !== 0) nCluster += 1;
         else if ((mesh.layers.mask & wideLayer) !== 0) nWide += 1;
         else if ((mesh.layers.mask & 1) !== 0) nLayer0 += 1;
@@ -1453,13 +1457,13 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (index === 0 || prewarming)
       level.shadow.camera.layers.enable(VIRTUAL_SHADOW_SMALL_CASTER_LAYER);
     // The bill the chosen layers will actually submit: a half that was not picked submits none of
-    // its meshes. Chunk proxies belong to both halves, so either choice submits them once.
+    // its meshes. Merged chunk proxies go with the cluster half; retained ones submit either way.
     const chosenCluster = clustered || prewarming;
     const chosenWide = !clustered || prewarming;
     const chosenSmall = index === 0 || prewarming;
     const by = stat.drawsBy;
     by.cluster = chosenCluster ? nCluster : 0;
-    by.chunkProxy = nChunk;
+    by.chunkProxy = nChunkBoth + (chosenCluster ? nChunk : 0);
     by.wide = chosenWide ? nWide : 0;
     by.small = chosenSmall ? nSmall : 0;
     by.layer0 = nLayer0;
