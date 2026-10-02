@@ -2152,3 +2152,32 @@ it needs a cluster table baked by `assets.models.virtual`, and the cook here run
 Deadwood (stumps, fallen logs) is absent — the only licensed stumps are Kite's, and each brings its
 own ~2 MB bark atlas against 9 MiB of headroom. The **fallback** proof (`local-assets` renamed
 away) was not run: the shared capture lock was queued behind five other lanes for the last hour.
+
+### Round 18 round 2 — lane `veg`: the CPU p50 was a refill, not a plant (2026-10-02)
+
+Round 1 was written from numbers nobody had measured on a capture. This round measures them, and
+the first measurement moved the target: with the world switches restored to the scenario, on an
+NVIDIA adapter, the temperate player view sat at a **4.7 ms CPU p50** against a 4 ms gate while
+every held framing sat at 3.0–3.1 ms.
+
+The difference between those two numbers is that the player view is the only camera that moves.
+`setLevels` skipped a refill while the eye stayed inside **0.25 m**, so walking rebuilt every
+variant's detail levels and recomputed every instanced bounding sphere every third frame, and that
+price scales with the number of plants inside their reach. Raising the slack to **0.75 m** amortises
+the same work nine ways; a level band lagging three quarters of a metre of walking is invisible, and
+`forest:player` fell to **3.7 ms**. **14 measured views, max 3.8 ms, all under the gate.**
+
+That headroom then answered the open question from round 1: `VARIANT_REACH` is now **empty**. The
+three low grass mats used to draw only 34–46 m so that eight grass species stayed affordable;
+they no longer need to, and the far meadow keeps its grass.
+
+**One pine.** The forest alternated `kite-spruce/0` (tall) with `kite-spruce/1` (the broad
+ScotsPine), which read as a gnarled broadleaf orchard beside a conifer. All five spruce variants now
+draw `kite-spruce/0` and take their height from their own `metres` (10–14 m) plus the placement's
+scale, rotation and lean — five heights out of one model.
+
+**Not finished, and visible at 1:1:** the pines are still bare poles under a lollipop crown — the
+Kite model's own silhouette, and the one remaining thing the Gaia reference has that this does not.
+`ClusteredBatch`/`ClusteredMesh` for distant stands is still unwired (`virtual: "none"` in the cook).
+The round-1 "fallback" proof was queued out; this round re-queued both final proofs behind the other
+lanes' captures.
