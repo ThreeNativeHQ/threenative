@@ -401,7 +401,8 @@ export function createGroundMaterial(
       texture(diffuse, tiledUV(key, 2.35)),
       tileBlend,
     );
-    if (flatLayer(key)) return flat;
+    if (flatLayer(key))
+      return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls = triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below

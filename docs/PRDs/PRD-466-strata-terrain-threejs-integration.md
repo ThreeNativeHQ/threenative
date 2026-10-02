@@ -830,7 +830,15 @@ tundra needs stronger lichen/vegetation detail and a frozen-lake view. AC-5 stay
 The additional `node scripts/verify-ocean.mjs artifacts/playtest/web` passes wave/sun pixel-change
 checks but fails its lagoon foam ceiling (21,868/63,000 bright pixels); investigate timing after
 inserting world visits before coast. This is separate from the green scenario, not a claimed pass.
-Fallback qualification and further appearance improvements are still in progress.
+Second increment: broader summit shelf and distant Alpine ridges, brighter snow with normal relief,
+smoothed Desert ground and a closer mesa framing; CC0 scans cover all Desert boulder slots.
+The reordered original coastal captures pass all three ocean image checks (`/tmp/worlds-round6.log`).
+A later stable-server run also passes 33/33, but inspection of its resource series exposes a
+qualification gap: `ctx.goto` preserves the outgoing camera view, so the first Desert/Tundra
+V presses returned to player instead of entering their defining view. The example now resets
+view on enter, and the scenario asserts player-on-entry, defining and overview view names.
+Typecheck/format gates qualify this working increment; the strengthened scenario, refreshed
+1920×1080 visual verdict and license-absent fallback are pending the next run. AC-5 stays open.
 
 ### AC-5 round 9 — coastal, sky and distance (2026-10-02)
 

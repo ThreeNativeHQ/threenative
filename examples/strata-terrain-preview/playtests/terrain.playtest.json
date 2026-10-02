@@ -94,6 +94,86 @@
     },
     {
       "kind": "input",
+      "label": "coastal",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "coastal-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ocean-early",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean-early"
+    },
+    {
+      "kind": "wait",
+      "label": "ocean",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "coastal-ocean"
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-1",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-2",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "horizon-sea-view-3",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "horizon-sea",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "coastal-horizon-sea"
+    },
+    {
+      "kind": "input",
+      "label": "coastal-player-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coastal-player",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sun-change",
+      "press": "KeyL",
+      "holdTicks": 2,
+      "release": true,
+      "screenshot": "coastal-sun-alt"
+    },
+    {
+      "kind": "input",
       "label": "alpine-select",
       "press": "Digit3",
       "holdTicks": 2,
@@ -328,13 +408,13 @@
     },
     {
       "kind": "input",
-      "label": "coastal",
+      "label": "coastal-return",
       "press": "Digit2",
       "holdTicks": 2,
       "release": true
     },
     {
-      "label": "coastal-loaded",
+      "label": "coastal-return-loaded",
       "waitForResource": {
         "id": "GameState",
         "path": "world",
@@ -345,66 +425,26 @@
     },
     {
       "kind": "wait",
-      "label": "ocean-early",
-      "waitTicks": 180,
-      "release": true,
-      "screenshot": "coastal-ocean-early"
+      "label": "coastal-return-settle",
+      "waitTicks": 360,
+      "release": true
     },
     {
-      "kind": "wait",
-      "label": "ocean",
-      "waitTicks": 180,
-      "release": true,
-      "screenshot": "coastal-ocean"
-    },
-    {
-      "kind": "input",
-      "label": "horizon-sea-view-1",
-      "press": "KeyV",
-      "holdTicks": 2,
+      "label": "coastal-return-waves",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "oceanSteps",
+        "gte": 300
+      },
+      "timeoutMs": 10000,
       "release": true
     },
     {
       "kind": "input",
-      "label": "horizon-sea-view-2",
-      "press": "KeyV",
-      "holdTicks": 2,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "horizon-sea-view-3",
-      "press": "KeyV",
-      "holdTicks": 2,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "horizon-sea",
-      "waitTicks": 150,
-      "release": true,
-      "screenshot": "coastal-horizon-sea"
-    },
-    {
-      "kind": "input",
-      "label": "coastal-player-view",
-      "press": "KeyV",
-      "holdTicks": 2,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "coastal-player",
-      "waitTicks": 60,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "sun-change",
+      "label": "coastal-return-sun",
       "press": "KeyL",
       "holdTicks": 2,
-      "release": true,
-      "screenshot": "coastal-sun-alt"
+      "release": true
     }
   ],
   "assert": {
@@ -601,6 +641,50 @@
           {
             "label": "tundra-plain",
             "equals": "tundra"
+          }
+        ]
+      },
+      {
+        "id": "GameState",
+        "path": "view",
+        "equals": "player",
+        "allowTrivial": "The final coastal return resets to player, the initial view. The defining and overview camera transitions are separately observed atSteps.",
+        "atSteps": [
+          {
+            "label": "alpine-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "desert-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "tundra-loaded",
+            "equals": "player"
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": "ridge"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "mesa"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "plain"
+          },
+          {
+            "label": "alpine-overview",
+            "equals": "overview"
+          },
+          {
+            "label": "desert-overview",
+            "equals": "overview"
+          },
+          {
+            "label": "tundra-overview",
+            "equals": "overview"
           }
         ]
       }

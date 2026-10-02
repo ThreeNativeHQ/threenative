@@ -208,7 +208,8 @@ export function scatterProps(
     const slope = slopeDegrees(data, x, z);
     if (slope < (tundra ? 3 : desert ? 8 : 15) || random() > 0.38 || nearEye(x, z)) continue;
     if (slope > 43) {
-      if (random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
+      if (random() < 0.22 && (temperate || clampedHeight(data, x, z) < 62))
+        put("cliff", x, z, 0.65 + random() * 0.5);
       continue;
     }
     if (slope > 28 && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);

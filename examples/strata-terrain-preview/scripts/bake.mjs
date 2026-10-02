@@ -167,19 +167,21 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
   .stamp({
     id: "summit",
     at: [30, -40],
-    radius: [170, 140],
-    amplitude: 168,
+    radius: [215, 180],
+    amplitude: 158,
     shape: "mountain",
-    roughness: 0.32,
+    roughness: 0.18,
   })
   .stamp({
     id: "side-ridge",
     at: [-120, 70],
-    radius: [150, 60],
-    amplitude: 84,
+    radius: [175, 90],
+    amplitude: 92,
     shape: "ridge",
-    roughness: 0.28,
+    roughness: 0.18,
   })
+  // A broad summit snowfield, cut before weathering so its rim drains and erodes with the massif.
+  .flatten({ id: "summit-snowfield", at: [30, -40], radius: 46, height: 132, falloff: 0.85 })
   // Crags only where it is high: ridged noise over the whole massif roughened the foothills past
   // 30 degrees, which is a rockfall, not a mountain.
   .noise({
@@ -249,10 +251,10 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   // Terracing the mesa walls: stratified rock erodes to flat benches separated by steep risers, which
   // is the silhouette a mesa actually has. A smooth cone at this scale is a lump, not a mesa.
   .terrace({ id: "benches", step: 6, softness: 0.12, strength: 0.55, offset: 6 })
-  .smooth({ id: "settle", iterations: 1, strength: 0.4 })
-  .noise({ id: "detail", base: 0, amplitude: 2, scale: 54, warp: 10, octaves: 4, mode: "ridged" })
+  .smooth({ id: "settle", iterations: 3, strength: 0.65 })
+  .noise({ id: "detail", base: 0, amplitude: 0.8, scale: 74, warp: 10, octaves: 4, mode: "ridged" })
   .erode({ id: "talus", method: "thermal", talus: 38, iterations: 12 })
-  .smooth({ id: "drift", iterations: 1, strength: 0.4 })
+  .smooth({ id: "drift", iterations: 2, strength: 0.55 })
   .river({
     id: "wash",
     followTerrain: true,

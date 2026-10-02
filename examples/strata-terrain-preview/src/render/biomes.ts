@@ -10,10 +10,11 @@ export interface IBiome {
   readonly world: WorldName;
   readonly grassTint: RGB;
   readonly stoneTint: RGB;
+  readonly snowTint: RGB;
   readonly distantStone: RGB;
   readonly snow: readonly [number, number, number];
   readonly maps: Record<LayerKey, IGroundMaps>;
-  readonly horizon: "mountain" | "mesa" | "plain";
+  readonly horizon: "mountain" | "alpine" | "mesa" | "plain";
   readonly sun: { readonly color: number; readonly intensity: number; readonly direction: RGB };
   readonly sky: {
     turbidity: number;
@@ -31,6 +32,7 @@ const temperate: IBiome = {
   world: "forest",
   grassTint: [0.43, 0.76, 0.38],
   stoneTint: [0.48, 0.44, 0.39],
+  snowTint: [1, 1, 1],
   distantStone: [0.115, 0.105, 0.088],
   snow: [145, 195, 0.22],
   maps: GROUND_MAPS,
@@ -49,12 +51,16 @@ export const BIOMES: Record<WorldName, IBiome> = {
   alpine: {
     ...temperate,
     world: "alpine",
+    horizon: "alpine",
     grassTint: [0.56, 0.65, 0.36],
     stoneTint: [0.79, 0.76, 0.72],
+    snowTint: [2.1, 2.15, 2.2],
     distantStone: [0.23, 0.225, 0.215],
     snow: [44, 82, 0.9],
     maps: {
       ...GROUND_MAPS,
+      snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
+      moss: { diffuse: GROUND_MAPS.moss.diffuse },
       dirt: {
         diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
         normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
@@ -106,17 +112,18 @@ export const BIOMES: Record<WorldName, IBiome> = {
     horizon: "plain",
     grassTint: [0.86, 0.79, 0.62],
     stoneTint: [0.7, 0.74, 0.77],
+    snowTint: [1.2, 1.24, 1.28],
     distantStone: [0.18, 0.2, 0.21],
     snow: [-12, 12, 0.3],
     maps: {
       ...GROUND_MAPS,
+      snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
       grass: {
         diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
         normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
       },
       dirt: {
         diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
-        normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
       },
       moss: {
         diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
@@ -154,7 +161,7 @@ export function biomeWeights(
     float(1).sub(smoothstep(biome.world === "alpine" ? 0.55 : 0.08, biome.snow[2], steep)),
   );
   return {
-    dirt: smoothstep(0.04, 0.4, hollow).mul(biome.world === "alpine" ? 0.8 : 0.45),
+    dirt: smoothstep(0.08, 0.5, hollow).mul(biome.world === "alpine" ? 0.55 : 0.45),
     moss:
       biome.world === "tundra"
         ? smoothstep(-0.18, 0.25, drift).mul(snow.oneMinus()).mul(0.7)

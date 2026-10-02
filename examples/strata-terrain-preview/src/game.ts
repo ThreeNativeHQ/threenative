@@ -76,7 +76,7 @@ const BENCHMARK: Record<WorldName, IBenchmark> = {
   alpine: {
     focus: { x: 100, z: 120 },
     poses: {
-      ridge: { at: [140, 156], eye: 18, look: [30, -40], lookUp: 12 },
+      ridge: { at: [140, 156], eye: 24, look: [30, -40], lookUp: -8 },
       overview: { at: [160, 190], eye: 120, look: [-20, -20], lookUp: 12 },
     },
     views: ["player", "ridge", "overview"],
@@ -84,7 +84,7 @@ const BENCHMARK: Record<WorldName, IBenchmark> = {
   desert: {
     focus: { x: 95, z: 110 },
     poses: {
-      mesa: { at: [105, 125], eye: 5, look: [-100, -65], lookUp: 8 },
+      mesa: { at: [65, 55], eye: 3.2, look: [-140, -60], lookUp: 0, lookY: 38 },
       overview: { at: [170, 180], eye: 105, look: [-65, -80], lookUp: 10 },
     },
     views: ["player", "mesa", "overview"],
@@ -230,6 +230,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.add(ctx.camera);
       const data = this.#data;
       if (!data) throw new Error(`World ${world} was not loaded`);
+      // ctx.goto carries state; camera names from the outgoing biome must not carry with it.
+      ctx.state.set({ view: "player" });
       const biome = BIOMES[world];
       const { field, mesh } = createTerrain(data, ctx.assets, biome);
       ctx.add(mesh);
@@ -459,7 +461,11 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         };
         preparedLodBaseSpread = prepared.lodBaseSpread;
         preparedLevelsWithoutSolid = prepared.levelsWithoutSolid;
-        propParts = buildPropVariants(new Map([...prepared.parts, ...pack.parts]));
+        const parts = new Map([...prepared.parts, ...pack.parts]);
+        // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
+        const dryStone = prepared.parts.get("boulder:1");
+        if (world === "desert" && dryStone) parts.set("boulder:0", dryStone);
+        propParts = buildPropVariants(parts);
         if (released) {
           preparedDispose();
           return;
@@ -664,6 +670,7 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
       ctx.beforeRender(() => {
         renderedFrames[world]++;
         const view = ctx.state.getState().view;
+        actor.material.visible = view === "player";
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
           ctx.camera.position.copy(actor.position).add(offset);
