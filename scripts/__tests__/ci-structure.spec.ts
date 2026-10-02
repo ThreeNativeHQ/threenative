@@ -752,6 +752,15 @@ describe("CI pipeline structure", () => {
     expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
   });
 
+  it("never lets a draft pull request run cancel a ready one", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const group = /^concurrency:\n {2}group: (.*)$/mu.exec(ci)?.[1] ?? "";
+    // A push then `gh pr ready` fires a synchronize run whose payload still says draft. In the
+    // shared `latest` group with cancel-in-progress, that skipped run cancelled the real one
+    // (#403, run 37075825121). Only a non-draft pull request run joins the shared group.
+    expect(group).toContain("!github.event.pull_request.draft && 'latest'");
+  });
+
   it("does not require skipped performance lanes on a prose-only run", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const summary = requiredJob(ci, "run-summary");

@@ -153,8 +153,11 @@ skip it.
 **Files:** EDIT `.github/workflows/ci.yml`, `.github/actions/workspace-dist/action.yml`,
 `.github/workflows/native-platforms.yml` (the Linux host built once), `scripts/__tests__/ci-structure.spec.ts`.
 
-- [ ] Only `build-artifacts` compiles the workspace dist; every other job downloads it. proof: a full CI run
+- [x] Only `build-artifacts` compiles the workspace dist; every other job downloads it. proof: a full CI run
   where no consumer's log contains the dist build step.
+  Evidence: hosted CI run 37071464562 (PR #405, 2026-10-02): of every non-native job, only `build-artifacts`
+  logs `scripts/workspace-packages.ts build`; typecheck, test-unit, test-browser and test-playtest log
+  "Take the compiled workspace from this run's producer" (download-artifact).
 - [ ] The native host cache restores on a PR from a `develop`-warmed key. proof: a `test-native` log with a
   cache hit and a build time under 60 s.
 - [ ] No template or unit shard runs longer than 6 min. proof: per-job durations of one full CI run.
