@@ -223,6 +223,20 @@ exposure test files pass 76 tests on 2026-10-02; root TypeScript passes. These a
 lifecycle results only; the expanded hosted scenarios and their pixels remain unverified.
 
 
+Hosted source `ad0498e6d6d3b7a5c314a67e6ed4982cff2cd45d`,
+[run 37006844943](https://github.com/ThreeNativeHQ/threenative/actions/runs/37006844943), passed all
+seven live-clock cases with empty diagnostics. The new eleven-stop reverse cut settled by
+37 actual GPU updates / 2.0517 consumed seconds; the one-stop reverse by 17 / 0.9521. The inspected
+[eleven-stop](../../verification/prd339-exposure-proof/eleven-stop-reverse-ad0498e6.png) and
+[one-stop](../../verification/prd339-exposure-proof/one-stop-reverse-ad0498e6.png) PNGs show readable
+blocks/floor; [provenance](../../verification/prd339-exposure-proof/reverse-cuts-ad0498e6.json)
+preserves their exact bytes and SwiftShader identity. The run stopped before the deterministic/raw
+arms: their wall-clock bridge resource poll observed no simulated tick. The fixture now uses the
+supported fixed-step bridge only for controlled arms, while requiring the same 180 actual GPU
+updates/readbacks and recording real NodeFrame time separately. Live arms retain wall-clock mode.
+Three clock regressions failed before the change; all 77 focused exposure tests now pass. The
+changed arms still need hosted runtime proof; acceptance 1 remains open.
+
 ## Implementation decisions
 
 - 2026-10-02: the current core contract says all exposure, TSL and post-processing are generated

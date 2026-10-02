@@ -36,7 +36,7 @@ function deterministicReport(settled = false) {
     settled: true,
   };
   value.observations.console = [
-    { text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' },
+    { text: 'TN_EXPOSURE_CLOCK:{"mode":"fixed-step"}' },
     { text: `TN_EXPOSURE_CUT:${JSON.stringify(cut)}` },
     ...Array.from({ length: 180 }, (_, i) => {
       const measurement = {
@@ -74,6 +74,15 @@ const deterministicExpectation = {
 };
 
 describe("runtime exposure proof", () => {
+  it("keeps the deterministic bridge clock distinct from the live-clock arm", () => {
+    const value = deterministicReport(true);
+    const expectation = { ...deterministicExpectation, reject: undefined };
+    expect(qualifyExposureCase(value, expectation)).toMatchObject({
+      measurement: { settled: true },
+    });
+    value.observations.console[0] = { text: 'TN_EXPOSURE_CLOCK:{"mode":"wall-clock"}' };
+    expect(() => qualifyExposureCase(value, expectation)).toThrow(/TN_EXPOSURE_WRONG_CLOCK/);
+  });
   it("requires a valid terminal observation before accepting the settlement mutation", () => {
     expect(qualifyExposureCase(deterministicReport(), deterministicExpectation)).toMatchObject({
       expectedFailure: expect.stringContaining("TN_EXPOSURE_NOT_SETTLED:"),

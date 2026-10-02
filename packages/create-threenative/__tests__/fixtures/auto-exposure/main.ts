@@ -1,9 +1,11 @@
 import { PLAYTEST_CLOCK_GLOBAL } from "../../../../core/dist/playtest.js";
 import { type IPlaytestBridgeV1, PLAYTEST_BRIDGE_GLOBAL } from "../../../../playtest/dist/index.js";
 import { createExposureFixture } from "./game.js";
-// The graph consumes NodeFrame time. Let the engine's existing frame pump run during playtest waits.
-Reflect.set(globalThis, PLAYTEST_CLOCK_GLOBAL, "wall-clock");
 const query = new URLSearchParams(location.search);
+// Live adaptation consumes the renderer's real NodeFrame clock. Controlled arms use the
+// supported fixed-step bridge while independently waiting on actual GPU sample completion.
+if (query.get("deterministic") === "1") Reflect.deleteProperty(globalThis, PLAYTEST_CLOCK_GLOBAL);
+else Reflect.set(globalThis, PLAYTEST_CLOCK_GLOBAL, "wall-clock");
 const stops = Number(query.get("stops") ?? 11);
 const snapGain = Number(query.get("snapGain") ?? 1);
 if (![1, 11].includes(stops) || ![0, 1].includes(snapGain))

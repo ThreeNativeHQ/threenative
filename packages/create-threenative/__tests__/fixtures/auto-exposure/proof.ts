@@ -44,7 +44,9 @@ export function qualifyExposureCase(report: IExposureProofReport, expectation: I
       return undefined;
     }
   };
-  check(() => assertExposureClock(report));
+  check(() =>
+    assertExposureClock(report, expectation.deterministic === true ? "fixed-step" : "wall-clock"),
+  );
   const measurement =
     terminal ??
     check(() => assertExposureProof(report, expectation.applied, expectation.expectedLuminance));
@@ -54,7 +56,7 @@ export function qualifyExposureCase(report: IExposureProofReport, expectation: I
       : check(() => {
           if (terminal !== undefined && terminal.settled !== true)
             throw new Error(
-              "TN_EXPOSURE_NOT_SETTLED: Terminal GPU measurement remains unsettled after 180 rendered updates.",
+              `TN_EXPOSURE_NOT_SETTLED: Terminal GPU measurement remains unsettled after 180 rendered updates; observed time ${JSON.stringify(frameBudget)}.`,
             );
           return exposureCutTiming(report, expectation.cutStops as number, 180);
         });
@@ -258,15 +260,18 @@ export function assertExposureRuntime(report: IExposureProofReport): void {
     throw new Error("Exposure proof requires observed WebGPU adapter provenance.");
 }
 
-export function assertExposureClock(report: IExposureProofReport): void {
+export function assertExposureClock(
+  report: IExposureProofReport,
+  expected: "wall-clock" | "fixed-step" = "wall-clock",
+): void {
   const marker = report.observations?.console
     .filter(({ text }) => text.startsWith("TN_EXPOSURE_CLOCK:"))
     .at(-1);
   if (marker === undefined)
     throw new Error("TN_EXPOSURE_CLOCK_MISSING: Bridge clock was not observed.");
   const { mode } = JSON.parse(marker.text.slice("TN_EXPOSURE_CLOCK:".length));
-  if (mode !== "wall-clock")
-    throw new Error(`TN_EXPOSURE_WRONG_CLOCK: Expected wall-clock; observed ${String(mode)}.`);
+  if (mode !== expected)
+    throw new Error(`TN_EXPOSURE_WRONG_CLOCK: Expected ${expected}; observed ${String(mode)}.`);
 }
 
 export function assertExposureProof(
