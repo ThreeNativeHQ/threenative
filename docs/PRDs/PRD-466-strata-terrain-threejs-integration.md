@@ -802,6 +802,36 @@ walk **0.146/0.392/0.503**, river **0.173/0.376/0.806**.
 Final verdict remains **improved, below the Unreal/Gaia target**: broad fan forms and soft
 mountain silhouettes still need work. AC-5 stays open. No push; native unverified.
 
+### AC-5 Alpine / Desert / Tundra execution (2026-10-02)
+
+Bounded scope: reuse the preview's scene, baked heightfield/collision, sky, ground and instanced
+scatter paths for the three remaining worlds. Lazy JSON imports; number-key selection and
+`?world=` entry; biome appearance in `src/render/biomes.ts`, additive terrain parameters.
+Capture alpine ridge, desert mesas and tundra plain with world/frame observations in the existing
+scenario. Preserve zero console/runtime errors and forest meadow/overview p50 below 8 ms.
+Inspect 1920×1080 captures against Gaia Alpine; report measured per-biome costs and remaining
+visual defects here. AC-5 remains open until the visual rubric and full starter budget qualify.
+Decisions: share licensed spruce/saplings and Kite rocks where suitable; no palms. Imported Fab
+packs inspected: conifer saplings, Kite, ground foliage, meadow flowers, ferns, grasses, spruce,
+palms; no desert-specific pack. Desert uses existing CC0 stone/sand and procedural sparse cover.
+Licensed files remain local-only. Browser proof is this task's required lane; native unverified.
+
+Working increment: `feat/prd-466-468-worlds`, 2026-10-02. The existing scenario on port 5191
+passes **33/33 assertions**, exit 0 (`/tmp/worlds-round5.log`), including three five-metre walks,
+world and textured-ground identity at each defining view, and fresh per-world render-frame counts.
+NVIDIA Turing WebGPU, 1920×1080; console/network/runtime errors **0/0/0**. Frame-window p50:
+forest meadow **2.3 ms**, overview **2.4 ms**, alpine ridge **2.4 ms**, desert mesa **1.0 ms**,
+tundra plain **1.2 ms**. Example typecheck and root `biome check . --diagnostic-level=error` pass.
+Captures: `examples/strata-terrain-preview/artifacts/playtest/web/{alpine-ridge,alpine-overview,
+desert-mesa,desert-overview,tundra-plain,tundra-overview}.png`; inspected at native resolution.
+Visual verdict: **below Unreal/Gaia**. Alpine now draws snow but its sharp conical profile lacks
+Gaia's broad snow shelves; desert foreground is too pocked and procedural stone too faceted;
+tundra needs stronger lichen/vegetation detail and a frozen-lake view. AC-5 stays open.
+The additional `node scripts/verify-ocean.mjs artifacts/playtest/web` passes wave/sun pixel-change
+checks but fails its lagoon foam ceiling (21,868/63,000 bright pixels); investigate timing after
+inserting world visits before coast. This is separate from the green scenario, not a claimed pass.
+Fallback qualification and further appearance improvements are still in progress.
+
 ### AC-5 round 9 — coastal, sky and distance (2026-10-02)
 
 Complexity 1 → LOW; existing factory wiring is unchanged. Capability search/detail

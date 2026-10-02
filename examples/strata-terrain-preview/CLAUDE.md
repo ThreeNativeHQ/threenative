@@ -22,7 +22,10 @@ Read `/AGENTS.md` first. This example consumes build-baked arrays, not runtime r
   entire grass field, with denser cover at the walking/benchmark eyes.
 - Use one `Heightfield` buffer for geometry and existing heightfield collision; do not resample.
 - Ground contacts use actual mesh and physics queries. Bilinear heights are not triangle contacts.
-- WASD/arrows move, Space jumps, C switches forest/coast, L changes sunlight. The player owns its camera.
+- WASD/arrows move, Space jumps, C switches forest/coast, L changes sunlight, V cycles views.
+  Keys 1–5 select forest, coast, alpine, desert and tundra; `?world=alpine|desert|tundra` starts there.
+  All five use the shared scene; `src/render/biomes.ts` owns biome surfaces/weather and terrain JSON
+  for the three additional worlds loads lazily. The player owns its camera.
 - The live editor and resolved static-world export proof are implemented; final starter art, complete GUI tooling and baked-water export remain subsequent PRD work.
 
 Run `pnpm --filter strata-terrain-preview test:terrain:web` and

@@ -94,9 +94,253 @@
     },
     {
       "kind": "input",
-      "label": "coastal",
-      "press": "KeyC",
+      "label": "alpine-select",
+      "press": "Digit3",
       "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "alpine-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "alpine"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "alpine-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "alpine"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-settle",
+      "waitTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "alpine-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "alpine-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "alpine-ridge-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-ridge",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "alpine-ridge"
+    },
+    {
+      "kind": "input",
+      "label": "alpine-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "alpine-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "alpine-overview"
+    },
+    {
+      "kind": "input",
+      "label": "desert-select",
+      "press": "Digit4",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "desert-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "desert"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "desert-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "desert"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-settle",
+      "waitTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "desert-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "desert-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "desert-mesa-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-mesa",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "desert-mesa"
+    },
+    {
+      "kind": "input",
+      "label": "desert-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "desert-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "desert-overview"
+    },
+    {
+      "kind": "input",
+      "label": "tundra-select",
+      "press": "Digit5",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "tundra-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "tundra"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "label": "tundra-ground-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "tundra"
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-settle",
+      "waitTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tundra-walk",
+      "press": "KeyD",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "label": "tundra-walk-distance",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "travel",
+        "gte": 5
+      },
+      "timeoutMs": 5000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tundra-plain-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-plain",
+      "waitTicks": 180,
+      "release": true,
+      "screenshot": "tundra-plain"
+    },
+    {
+      "kind": "input",
+      "label": "tundra-overview-view",
+      "press": "KeyV",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tundra-overview",
+      "waitTicks": 150,
+      "release": true,
+      "screenshot": "tundra-overview"
+    },
+    {
+      "kind": "input",
+      "label": "coastal",
+      "press": "Digit2",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "coastal-loaded",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "world",
+        "equals": "coastal"
+      },
+      "timeoutMs": 15000,
       "release": true
     },
     {
@@ -202,7 +446,21 @@
       {
         "id": "GameState",
         "path": "world",
-        "equals": "coastal"
+        "equals": "coastal",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": "alpine"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "desert"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "tundra"
+          }
+        ]
       },
       {
         "id": "GameState",
@@ -269,13 +527,15 @@
         "id": "GameState",
         "path": "meadowFrameP50",
         "gte": 0.01,
-        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen."
+        "allowTrivial": "Frame cost at the meadow framing, the nearest look at the trees. A real measurement needs at least one closed budget window at that view; zero means the window never closed while it was on screen.",
+        "lte": 8
       },
       {
         "id": "GameState",
         "path": "overviewFrameP50",
         "gte": 0.01,
-        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view."
+        "allowTrivial": "Frame cost at the overview framing, where the far impostor band carries most of the forest. Zero means no window closed at that view.",
+        "lte": 8
       },
       {
         "id": "GameState",
@@ -288,6 +548,61 @@
         "path": "overviewTriangles",
         "gte": 1000,
         "allowTrivial": "Triangles submitted at the overview framing, where the LOD bands are supposed to have replaced most of the near geometry."
+      },
+      {
+        "id": "GameState",
+        "path": "alpineRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "alpineFrameP50",
+        "gte": 0.01,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "desertRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "desertFrameP50",
+        "gte": 0.01,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "tundraRenderedFrames",
+        "gte": 120,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "tundraFrameP50",
+        "gte": 0.01,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "groundBiome",
+        "equals": "coastal",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": "alpine"
+          },
+          {
+            "label": "desert-mesa",
+            "equals": "desert"
+          },
+          {
+            "label": "tundra-plain",
+            "equals": "tundra"
+          }
+        ]
       }
     ],
     "renderChain": {

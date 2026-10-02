@@ -9,6 +9,7 @@ import {
   rapier,
 } from "@threenative/physics";
 import { CapsuleGeometry, Mesh, MeshStandardMaterial, Vector3 } from "three";
+import { BIOMES, type WorldName } from "./render/biomes.js";
 import { createOcean, createWaterMesh } from "./render/ocean.js";
 import { loadPack } from "./render/pack.js";
 import { loadPreparedProps } from "./render/prepared.js";
@@ -22,7 +23,7 @@ import {
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky.js";
-import { createTerrain } from "./render/terrain.js";
+import { type IBakedWorld, createTerrain } from "./render/terrain.js";
 import baked from "./world/baked.json";
 
 /**
@@ -38,7 +39,15 @@ import baked from "./world/baked.json";
  * origin, because a meadow is a place rather than a texture.
  */
 /** Every framing the `V` key can hold, whether or not the current world has one for it. */
-type ViewName = "horizon-sea" | "meadow-close" | "overview" | "player" | "river";
+type ViewName =
+  | "ridge"
+  | "mesa"
+  | "plain"
+  | "horizon-sea"
+  | "meadow-close"
+  | "overview"
+  | "player"
+  | "river";
 
 interface IBenchmarkPose {
   /** World x and z of the eye, and the height above the terrain under it. */
@@ -63,7 +72,31 @@ interface IBenchmark {
   readonly views: readonly ViewName[];
 }
 
-const BENCHMARK: Record<"coastal" | "forest", IBenchmark> = {
+const BENCHMARK: Record<WorldName, IBenchmark> = {
+  alpine: {
+    focus: { x: 100, z: 120 },
+    poses: {
+      ridge: { at: [140, 156], eye: 18, look: [30, -40], lookUp: 12 },
+      overview: { at: [160, 190], eye: 120, look: [-20, -20], lookUp: 12 },
+    },
+    views: ["player", "ridge", "overview"],
+  },
+  desert: {
+    focus: { x: 95, z: 110 },
+    poses: {
+      mesa: { at: [105, 125], eye: 5, look: [-100, -65], lookUp: 8 },
+      overview: { at: [170, 180], eye: 105, look: [-65, -80], lookUp: 10 },
+    },
+    views: ["player", "mesa", "overview"],
+  },
+  tundra: {
+    focus: { x: 150, z: 160 },
+    poses: {
+      plain: { at: [166, 180], eye: 2.2, look: [-60, -40], lookUp: 2 },
+      overview: { at: [180, 180], eye: 62, look: [-20, -50], lookUp: 2 },
+    },
+    views: ["player", "plain", "overview"],
+  },
   forest: {
     // Eleven metres along the meadow-close camera's own line of sight, which is what makes the
     // meadow a place the camera is *in* rather than a disc it looks across: the blades that fill the
@@ -116,6 +149,18 @@ interface IViewWindow {
 }
 const viewBudgets = new Map<string, IViewWindow>();
 let currentView = "";
+const renderedFrames: Record<WorldName, number> = {
+  forest: 0,
+  coastal: 0,
+  alpine: 0,
+  desert: 0,
+  tundra: 0,
+};
+const worldLoads = {
+  alpine: () => import("./world/alpine.json"),
+  desert: () => import("./world/desert.json"),
+  tundra: () => import("./world/tundra.json"),
+};
 
 /** The middle of a sample set, for a summary that one outlier cannot move. */
 function median(values: readonly number[]): number {
@@ -126,6 +171,7 @@ function median(values: readonly number[]): number {
 
 const initialState = {
   world: "forest",
+  groundBiome: "baked",
   frames: 0,
   travel: 0,
   grounded: false,
@@ -152,13 +198,26 @@ const initialState = {
   overviewFrameP50: 0,
   overviewFrameP99: 0,
   overviewTriangles: 0,
+  alpineRenderedFrames: 0,
+  desertRenderedFrames: 0,
+  tundraRenderedFrames: 0,
+  alpineFrameP50: 0,
+  desertFrameP50: 0,
+  tundraFrameP50: 0,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
 
-function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState, IPhysicsContext> {
+function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsContext> {
   return class TerrainScene extends Scene<TerrainState, IPhysicsContext> {
     static override readonly initialState = initialState;
+    #data: IBakedWorld | undefined;
+    override async load(): Promise<void> {
+      this.#data =
+        world === "forest" || world === "coastal"
+          ? baked[world]
+          : (await worldLoads[world]()).default;
+    }
     #player: CharacterBody3D | undefined;
     #surfaces: { advance: (elapsed: number) => void } | undefined;
     #elapsed = 0;
@@ -169,8 +228,10 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
 
     override enter(ctx: TerrainCtx): void {
       ctx.add(ctx.camera);
-      const data = baked[world];
-      const { field, mesh } = createTerrain(data, ctx.assets);
+      const data = this.#data;
+      if (!data) throw new Error(`World ${world} was not loaded`);
+      const biome = BIOMES[world];
+      const { field, mesh } = createTerrain(data, ctx.assets, biome);
       ctx.add(mesh);
       // Scenery: nothing moves the ground, so its transform is composed once instead of every frame.
       markStatic(mesh);
@@ -198,21 +259,22 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       // far ridges fade into and the tone curve. It used to be a flat `Color` background, a
       // hand-set `FogExp2`, a sun with a five metre shadow box that missed everything, and no tone
       // mapping at all; the numbers behind all of that now live in `src/render/sky.ts`.
-      const sky = createOutdoorSky(ctx.camera);
+      const sky = createOutdoorSky(ctx.camera, biome);
       ctx.add(sky.daylight);
       ctx.add(sky.sun);
       this.#sky = sky;
       ctx.entities.add("sun", {
         object: sky.sun,
         debug: () => ({ x: sky.sunX }),
-        dispose: installOutdoorOcclusion(ctx),
+        dispose: installOutdoorOcclusion(ctx, biome),
       });
 
       const actor = new Mesh(
         new CapsuleGeometry(0.35, 1.0, 6, 12),
         new MeshStandardMaterial({ color: 0xffc76d }),
       );
-      const start = world === "forest" ? [-190, 160] : [180, 100];
+      const start =
+        world === "forest" ? [-190, 160] : world === "coastal" ? [180, 100] : [180, 160];
       actor.position.set(
         start[0] as number,
         field.heightAt(start[0] as number, start[1] as number) + 2,
@@ -300,17 +362,17 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       // The water in the channels the bake carved. A world with no river gets nothing. Water draws on
       // its own layer so the lake's mirror can leave it out; the eye sees both.
       ctx.camera.layers.enable(WATER_LAYER);
-      const river = createRivers(data.rivers, field);
+      const river = createRivers(data.rivers ?? [], field);
       this.#river = river;
       if (river) {
         ctx.add(river.mesh);
         ctx.entities.add("river", { mesh: river.mesh, dispose: () => river.dispose() });
       }
-      const lake = createLakes(data.lakes, field);
+      const lake = createLakes(data.lakes ?? [], field);
       this.#lake = lake;
       if (lake) {
         const centre = lake.mesh.geometry.getAttribute("position");
-        const at = data.lakes[0]?.at;
+        const at = data.lakes?.[0]?.at;
         ctx.state.set({
           lakePlacementError: Math.hypot(
             centre.getX(0) - (at?.[0] ?? 0),
@@ -327,6 +389,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       // heightfield's own triangles and the collider is not in the space until the solver runs.
       // Asking in `enter` returns "no ground here" for every prop on a perfectly solid hillside.
       const propField: IPlacementField = {
+        world,
         colors: data.colors,
         field,
         resolution: data.size === 0 ? 0 : field.rows,
@@ -388,7 +451,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const buildProps = async (): Promise<void> => {
         const [prepared, pack] = await Promise.all([
           loadPreparedProps(ctx.assets),
-          loadPack(ctx.assets),
+          loadPack(ctx.assets, world),
         ]);
         preparedDispose = () => {
           prepared.dispose();
@@ -438,7 +501,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         // The lit surfaces and the maps arrive asynchronously; when they do every mesh swaps its
         // material by role. Until then the props draw on flat stand-ins, so a slow or absent asset
         // server costs this world its bark and its needles rather than its trees.
-        void createPropSurfaces(ctx.assets, data).then((surfaces) => {
+        void createPropSurfaces(ctx.assets, data, biome).then((surfaces) => {
           this.#surfaces = surfaces;
           if (released) {
             surfaces.dispose();
@@ -548,6 +611,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
         frames++;
         ctx.state.set({
           world,
+          groundBiome: (mesh.material as MeshStandardMaterial).userData.biome ?? "baked",
           sunX: sky.sunX,
           frames,
           travel,
@@ -578,6 +642,12 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
           overviewFrameP50: median(viewBudgets.get("forest:overview")?.p50s ?? []),
           overviewFrameP99: Math.max(0, ...(viewBudgets.get("forest:overview")?.p99s ?? [])),
           overviewTriangles: median(viewBudgets.get("forest:overview")?.triangles ?? []),
+          alpineRenderedFrames: renderedFrames.alpine,
+          desertRenderedFrames: renderedFrames.desert,
+          tundraRenderedFrames: renderedFrames.tundra,
+          alpineFrameP50: median(viewBudgets.get("alpine:ridge")?.p50s ?? []),
+          desertFrameP50: median(viewBudgets.get("desert:mesa")?.p50s ?? []),
+          tundraFrameP50: median(viewBudgets.get("tundra:plain")?.p50s ?? []),
         });
       });
       // --- the fixed benchmark cameras ---------------------------------------------------------
@@ -592,6 +662,7 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       const at = (x: number, z: number, up: number): Vector3 =>
         new Vector3(x, field.heightAt(x, z) + up, z);
       ctx.beforeRender(() => {
+        renderedFrames[world]++;
         const view = ctx.state.getState().view;
         if (view === "player") {
           const offset = world === "coastal" ? new Vector3(28, 18, 34) : new Vector3(28, 24, 42);
@@ -645,6 +716,11 @@ function terrainScene(world: "forest" | "coastal"): new () => Scene<TerrainState
       player.velocity.z = move.y * 9;
       if (ctx.input.justPressed("jump") && player.grounded) player.velocity.y = 5;
       player.moveAndSlide(dt);
+      for (const name of Object.keys(BIOMES) as WorldName[])
+        if (name !== world && ctx.input.justPressed(name)) {
+          void ctx.goto(name);
+          return;
+        }
       if (ctx.input.justPressed("coast")) void ctx.goto(world === "forest" ? "coastal" : "forest");
     }
   };
@@ -664,6 +740,11 @@ const game = defineGame<TerrainState, IPhysicsContext>({
     view: { keys: ["KeyV"] },
     coast: { keys: ["KeyC"] },
     light: { keys: ["KeyL"] },
+    forest: { keys: ["Digit1"] },
+    coastal: { keys: ["Digit2"] },
+    alpine: { keys: ["Digit3"] },
+    desert: { keys: ["Digit4"] },
+    tundra: { keys: ["Digit5"] },
   },
   // A short window so a playtest run actually closes one: the default 300 frames is longer than
   // this scenario runs. The window is read into state, which is what puts the measured draw count
@@ -697,7 +778,13 @@ const game = defineGame<TerrainState, IPhysicsContext>({
   },
   plugins: [rapier({ deterministicRestart: true }), playtest()],
   render: { preferWebGPU: true },
-  scenes: { forest: terrainScene("forest"), coastal: terrainScene("coastal") },
+  scenes: {
+    forest: terrainScene("forest"),
+    coastal: terrainScene("coastal"),
+    alpine: terrainScene("alpine"),
+    desert: terrainScene("desert"),
+    tundra: terrainScene("tundra"),
+  },
   start: "forest",
 });
 
