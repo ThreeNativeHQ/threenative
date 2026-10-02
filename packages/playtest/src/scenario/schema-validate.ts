@@ -13,6 +13,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "inputDelivery",
   "name",
   "parity",
+  "reducedMotion",
   "schemaVersion",
   "setup",
   "steps",
@@ -50,6 +51,12 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.bootFailure !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
+  if (value.reducedMotion !== undefined && value.reducedMotion !== "reduce") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion must be 'reduce' when present.");
+  }
+  if (value.reducedMotion !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");
@@ -76,6 +83,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     inputDelivery,
     name,
     ...(isRecord(value.parity) ? { parity: validateParityConfig(value.parity, scenarioPath) } : {}),
+    ...(value.reducedMotion === "reduce" ? { reducedMotion: value.reducedMotion } : {}),
     schemaVersion: 1,
     ...(isRecord(value.setup) ? { setup: validateSetup(value.setup, scenarioPath, subject) } : {}),
     ...(absolutePath === undefined ? {} : { sourcePath: absolutePath }),
@@ -738,6 +746,18 @@ function validateClickTarget(value: unknown, scenarioPath: string, index: number
     return value.entity.length === 0 ? undefined : { entity: value.entity };
   }
   if (value.entity !== undefined) return undefined;
+  if (value.element !== undefined) {
+    const objectPath = `steps[${index}].at`;
+    rejectUnknownKeys(value, ["element"], scenarioPath, objectPath);
+    const element = requireRecord(value.element, scenarioPath, `${objectPath}.element`);
+    rejectUnknownKeys(element, ["id", "selector"], scenarioPath, `${objectPath}.element`);
+    const id = optionalString(element, "id", scenarioPath, `${objectPath}.element`);
+    const selector = optionalString(element, "selector", scenarioPath, `${objectPath}.element`);
+    if ((id === undefined) === (selector === undefined)) {
+      throw invalidStep(scenarioPath, `Scenario ${objectPath}.element must name exactly one of id or selector.`);
+    }
+    return { element: id === undefined ? { selector: selector as string } : { id } };
+  }
   rejectUnknownKeys(value, ["x", "y"], scenarioPath, `steps[${index}].at`);
   return typeof value.x === "number"
     && Number.isFinite(value.x)

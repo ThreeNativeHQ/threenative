@@ -93,7 +93,15 @@ export type IPlaytestLifecycleStep =
   | { operation: "foreground"; rotation?: never }
   | { operation: "rotate"; rotation: number };
 
-export type IPlaytestClickTarget = { entity: string } | { x: number; y: number };
+/**
+ * Where a click lands: viewport pixels, a registered entity's screen bounds, or (browser only) the
+ * centre of a DOM element by `id` or CSS `selector`. Pixels depend on the page's layout, which
+ * depends on the fonts a machine has; an element target does not.
+ */
+export type IPlaytestClickTarget =
+  | { entity: string }
+  | { element: IPlaytestVisualRegionTarget }
+  | { x: number; y: number };
 
 export interface IPlaytestMovementAssertion {
   axis?: string;
@@ -721,6 +729,11 @@ export interface IPlaytestScenario {
   inputDelivery?: PlaytestInputDelivery;
   name: string;
   parity?: IPlaytestParityConfig;
+  /**
+   * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that
+   * honours the preference can prove it. Applied before navigation, so the first read sees it.
+   */
+  reducedMotion?: "reduce";
   schemaVersion: 1;
   setup?: IPlaytestScenarioSetup;
   sourcePath?: string;

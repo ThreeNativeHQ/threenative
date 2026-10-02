@@ -409,6 +409,10 @@ from the registry at apply time, or a target coincident with the subject is a NA
 (`TN_PLAYTEST_SETUP_UNAPPLIED`), never a silent skip. One entity may be placed by only one
 of `setup.entities` / `setup.place`.
 
+A `click` step's `at` is viewport pixels `{ x, y }`, a registered entity `{ entity }`, or (browser
+only) a DOM element `{ element: { id } | { selector } }` clicked at the centre of its live box. Prefer
+the element form for interface controls: pixel positions move with the fonts a machine has
+installed, which is how a rain scenario passed locally and missed its switch on CI.
 Steps can also carry `{ kind: "aimAt", target: { x, z } | { entity }, pitch?, waitTicks?, screenshot?, label? }`.
 The runner samples the subject's current position, computes yaw/pitch toward the target,
 and applies them through the setup channel as quaternion data — no CDP mouse events and no
@@ -429,6 +433,9 @@ deprecated `holdFrames` and `waitFrames` aliases remain accepted for compatibili
 treated as ticks when the bridge exposes `runtime.fixedStep`; `warmupFrames` remains a genuine
 requestAnimationFrame warmup. Never introduce a wall-clock sleep or a millisecond-based step
 into scenario semantics.
+
+`"reducedMotion": "reduce"` (web target only) opens the page with `prefers-reduced-motion: reduce`
+emulated before navigation, so a game that suppresses flashes or motion for it can prove so.
 
 **Ticks are not the clock a launch runs on.** A run advances ticks as fast as the machine allows,
 so a whole scenario can complete during a launch that has not finished — and everything the

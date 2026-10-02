@@ -735,6 +735,13 @@ async function deviceClickPoint(
       "Declare at as viewport pixels ({ x, y }) or a registered entity ({ entity }).",
     ));
   }
+  if ("element" in target) {
+    throw new PlaytestBridgeError(playtestDiagnostic(
+      "TN_PLAYTEST_UNSUPPORTED_ON_TARGET",
+      "Click step targets a DOM element, which only the browser target can resolve.",
+      "Run this click on --target browser, or target viewport pixels or a registered entity.",
+    ));
+  }
   if (!("entity" in target)) return { x: target.x, y: target.y };
   if (bridge === undefined) {
     throw new PlaytestBridgeError(playtestDiagnostic(
