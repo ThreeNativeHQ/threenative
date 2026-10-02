@@ -26,6 +26,7 @@ import {
   max,
   mix,
   mx_noise_float,
+  normalMap,
   normalWorldGeometry,
   positionGeometry,
   positionLocal,
@@ -46,6 +47,7 @@ import {
   alpineRockAlbedo,
   alpineRockColor,
   alpineSnowCover,
+  biomeWeights,
   desertRockColor,
 } from "./biomes.js";
 import { lightNeedles } from "./propMaterials.js";
@@ -195,16 +197,26 @@ function surface(
         moss,
       );
       material.aoNode = mix(1, 0.65, base);
-      if (world === "alpine") {
-        // The same upward-face mask and snow tint as the heightfield, across every mesh seam.
-        const snow = smoothstep(0.12, 0.82, alpineSnowCover());
+      if (world === "alpine" || world === "tundra") {
+        // Alpine keeps the heightfield's upward-face mask across mesh seams; tundra uses its ground rule.
+        const snow =
+          world === "alpine"
+            ? smoothstep(0.12, 0.82, alpineSnowCover())
+            : (biomeWeights(BIOMES[world], float(1).sub(normalWorldGeometry.y), float(0), growth)
+                .snow as Node<"float">);
         material.colorNode = mix(
           material.colorNode,
-          (snowMap ? texture(snowMap, positionWorld.xz.div(12)).rgb : vec3(0.82, 0.86, 0.9)).mul(
-            vec3(...BIOMES.alpine.snowTint),
-          ),
+          world === "alpine"
+            ? (snowMap
+                ? texture(snowMap, positionWorld.xz.div(12)).rgb
+                : vec3(0.82, 0.86, 0.9)
+              ).mul(vec3(...BIOMES.alpine.snowTint))
+            : vec3(0.84, 0.87, 0.91),
           snow,
         );
+        material.roughnessNode = mix(0.96, 0.82, snow);
+        if (source.normalMap)
+          material.normalNode = normalMap(texture(source.normalMap), vec2(mix(1, 0.2, snow)));
       }
     }
     if (cutout) {

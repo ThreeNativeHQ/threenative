@@ -768,10 +768,10 @@
     ],
     "renderChain": {
       "stages": {
-        "includes": ["ambientOcclusion"]
+        "includes": ["ambientOcclusion", "grade"]
       },
       "contributions": {
-        "graphOutputChanged": ["ambientOcclusion"]
+        "graphOutputChanged": ["ambientOcclusion", "grade"]
       }
     },
     "components": [

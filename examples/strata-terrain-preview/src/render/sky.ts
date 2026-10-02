@@ -25,6 +25,7 @@ import {
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import {
+  cameraPosition,
   color,
   densityFogFactor,
   dot,
@@ -41,7 +42,9 @@ import {
   output,
   pass,
   positionLocal,
+  positionWorld,
   pow,
+  saturation,
   smoothstep,
   uniform,
   vec3,
@@ -49,8 +52,12 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshBasicNodeMaterial } from "three/webgpu";
-import type { IBiome } from "./biomes.js";
+import { BIOMES, type IBiome } from "./biomes.js";
 import { setCanopySun } from "./propMaterials.js";
+
+const omitted = new Set(
+  new URLSearchParams(globalThis.location?.search ?? "").get("off")?.split(",") ?? [],
+);
 
 /**
  * The sun, in the same units the `L` key swings it: a position, not a direction, so the toggle and
@@ -186,6 +193,16 @@ function cloudDome(sun: Node<"vec3">, opacity: number = CLOUDS.opacity): MeshBas
   return material;
 }
 
+/** One air colour at both sides of the horizon avoids a sky/ocean seam. */
+function atmosphericTint(direction: Node<"vec3">, look: IBiome): Node<"vec3"> {
+  const towardSun = dot(direction, SUN_VECTOR).max(0).pow(6);
+  return mix(
+    color(new Color(look.haze.color)),
+    color(new Color(look.sun.color)).mul(1.4),
+    omitted.has("scatter") ? float(0) : towardSun.mul(look.haze.sunScatter),
+  );
+}
+
 /** The rig, the sun that can be swung, and the one call that moves both. */
 export interface IOutdoorSky {
   /** The installed rig: physical sky, fill, haze and the AgX curve. Add it to the scene. */
@@ -225,6 +242,8 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   sun.name = "temperate-sun";
   sun.castShadow = true;
   sun.shadow.normalBias = 0.035;
+  sun.shadow.radius = biome?.sun.shadowRadius ?? BIOMES.forest.sun.shadowRadius;
+  if (omitted.has("sun")) sun.intensity = 0;
   sun.shadow.shadowNode = new VirtualShadowNode(sun, {
     clipExtents: [...rig.shadowExtents],
     mapSize: 2048,
@@ -247,8 +266,15 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   // The physical sky's radiance is calibrated separately from ground irradiance.
   daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
   const skyMaterial = daylight.sky.material;
-  if (skyMaterial.colorNode)
-    skyMaterial.colorNode = skyMaterial.colorNode.mul(biome?.world === "tundra" ? 0.15 : 0.32);
+  if (skyMaterial.colorNode) {
+    const skyDirection = normalize(positionLocal);
+    const horizon = skyDirection.y.add(mx_noise_float(skyDirection.mul(14)).mul(0.012));
+    skyMaterial.colorNode = mix(
+      (skyMaterial.colorNode as Node<"vec3">).mul(biome?.skyRadiance ?? BIOMES.forest.skyRadiance),
+      atmosphericTint(skyDirection, biome ?? BIOMES.forest),
+      omitted.has("haze") ? float(0) : smoothstep(0.065, 0, horizon),
+    );
+  }
   daylight.sun.visible = false;
   daylight.add(sun.target);
 
@@ -288,28 +314,29 @@ export function installOutdoorOcclusion(
 ): () => void {
   const { renderer, scene, camera } = ctx;
   if (renderer.kind !== "webgpu" || renderer.createRenderChain === undefined) return () => {};
-  // Three's existing fog nodes retain aerial perspective and add low valley mist without a pass.
+  const look = biome ?? BIOMES.forest;
   const previousFog = scene.fogNode;
-  const distanceHaze = densityFogFactor(float(biome?.haze.density ?? RIG.haze.density));
-  // A 115 m fog sheet washes low tundra cover and distant alpine valleys in sky colour.
-  const valleyHaze =
-    biome?.world === "alpine" || biome?.world === "tundra"
-      ? float(0)
-      : (exponentialHeightFogFactor(float(0.000005), float(115)) as Node<"float">);
+  const distanceHaze = densityFogFactor(float(look.haze.density));
+  const valleyHaze = exponentialHeightFogFactor(
+    float(look.haze.valleyDensity),
+    float(look.haze.height),
+  ) as Node<"float">;
+  // The installed height fog keeps peaks clear. Its sunward tint follows the L key.
+  const hazeColor = atmosphericTint(normalize(positionWorld.sub(cameraPosition)), look);
   const heightFog = fog(
-    color(biome ? new Color(biome.haze.color) : RIG.haze.color),
-    float(1).sub(float(1).sub(distanceHaze).mul(float(1).sub(valleyHaze))),
+    hazeColor,
+    omitted.has("haze")
+      ? float(0)
+      : float(1).sub(distanceHaze.oneMinus().mul(valleyHaze.oneMinus())),
   );
   scene.fogNode = heightFog;
-  // AO must darken RGB, not canvas alpha: lowered alpha leaked the backdrop through dark crowns.
-  // Keep every world opaque; the distance fade changes only AO strength.
-  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
+  // AO darkens RGB only; multiplying alpha leaked the backdrop through dark alpine crags.
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));
   const depth = world.getTextureNode("depth");
   const normals = world.getTextureNode("normal");
   const contact = ao(depth, normals, camera);
-  contact.radius.value = 1.2;
+  contact.radius.value = 0.85;
   contact.scale.value = 0.8;
   contact.samples.value = 8;
   contact.resolutionScale = 0.5;
@@ -318,7 +345,10 @@ export function installOutdoorOcclusion(
   const chain = renderer.createRenderChain({
     input: world.getTextureNode("output"),
     worldPass: world,
-    request: { stages: ["ambientOcclusion"], tier: "auto" },
+    request: {
+      stages: ["ambientOcclusion", "grade"].filter((name) => !omitted.has(name)),
+      tier: "auto",
+    },
     targetFps: 30,
     stages: [
       {
@@ -326,22 +356,33 @@ export function installOutdoorOcclusion(
         minimumTier: "medium",
         build: (input) =>
           (input as Node<"vec4">).mul(
-            otherBiome
-              ? vec4(
-                  vec3(
-                    mix(
-                      1,
-                      occlusion.r,
-                      biome?.world === "alpine" || biome?.world === "tundra"
-                        ? float(0.65).mul(
-                            float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())),
-                          )
-                        : 0.65,
-                    ),
-                  ),
+            vec4(
+              vec3(
+                mix(
                   1,
-                )
-              : vec4(vec3(mix(1, occlusion.r, 0.65)), 1),
+                  occlusion.r,
+                  float(0.72).mul(float(1).sub(smoothstep(40, 180, world.getViewZNode().negate()))),
+                ),
+              ),
+              1,
+            ),
+          ),
+      },
+      {
+        name: "grade",
+        after: "ambientOcclusion",
+        minimumTier: "low",
+        build: (input) =>
+          vec4(
+            saturation(
+              (input as Node<"vec4">).rgb,
+              mix(
+                look.saturation,
+                look.skySaturation,
+                smoothstep(400, 1500, world.getViewZNode().negate()),
+              ),
+            ),
+            (input as Node<"vec4">).a,
           ),
       },
     ],
