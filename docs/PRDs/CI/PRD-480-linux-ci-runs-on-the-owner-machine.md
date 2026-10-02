@@ -56,10 +56,18 @@ runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER) && 'u
   `tn-local`. Today the agent runs `pnpm test` or `pnpm ci:local --full` here, then CI repeats the same
   board, so this removes the duplicate. With `TN_RUNNER` unset, CI is hosted and slow again, and the
   local full run before pushing comes back.
-- **Comparable timing:** each container is capped at 4 CPUs and 16 GB, the shape of a hosted
-  `ubuntu-24.04` runner, so operation budgets and timeouts keep meaning what they meant.
-- **Ephemeral:** each container takes one job, exits and is recreated (`--ephemeral`, compose
-  `restart: always`). No `/tmp`, port, Xvfb display or workspace state crosses jobs.
+- **Comparable timing:** each container is pinned (`--cpuset-cpus`) to two whole cores, four threads,
+  the CPU shape of a hosted `ubuntu-24.04` runner, so `nproc` reads 4 and every worker pool sizes itself
+  to that. A `--cpus 4` quota is not enough: `nproc` still reads every host CPU and vitest ran 8 workers
+  in a 4-core budget. This is a controlled starting point, not a promise of identical timing.
+- **Host stays stable:** five slots by default, and two cores are never given to a slot. Each slot gets
+  `--memory 12g --memory-swap 12g --oom-score-adj 800`, so under memory pressure the kernel kills a CI
+  job before the owner's processes.
+- **Light lane:** `scope`, `ci-required`, `run-summary` and other small joins run on one more,
+  unpinned `tn-local-light` runner (`--cpus 1`, 2 GB) that heavy jobs never select. Otherwise a 20-minute
+  build on every heavy slot holds a 10-second join in the queue.
+- **Ephemeral:** each container takes one job, exits and is recreated by a host-side `docker run --rm`
+  loop. No `/tmp`, port, Xvfb display or workspace state crosses jobs.
 
 **Stays hosted:** `native-platforms` macOS, Windows, iOS and `linux-arm64` legs; the `supply-chain`
 job (its gitleaks step needs `docker run`, and mounting the Docker socket would give jobs root on the
@@ -110,6 +118,10 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 | Runner lifecycle and kill switch | `scripts/ci-runners.sh up/down` → compose stack + `TN_RUNNER` variable | New | Phase 1 |
 
 ## Decisions
+
+- 2026-10-02 (João, during the first live runs): use more of the machine, but never at the cost of
+  desktop stability. Five pinned slots of two cores each, two cores reserved for the host, 12 GB caps
+  with CI as the OOM victim, and a reserved light lane (review by Astra the same day).
 
 - 2026-10-02 (João): the runner registration token exists. It is a fine-grained token on
   `ThreeNativeHQ/threenative` only, with Administration read & write, stored in the operator's untracked
@@ -180,6 +192,9 @@ and `integration-decals.yml`'s `ubuntu-24.04-arm` job are the only Linux `runs-o
 - [ ] `AGENTS.md` says focused checks then push, not the full board, while `TN_RUNNER` is set. proof:
   `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts` pass.
   Land it only after the AC-1 run is green.
+- [ ] Light jobs never wait behind heavy ones: `scope`, `ci-required` and `run-summary` route to
+  `tn-local-light` and no heavy job can. proof: `ci-structure.spec.ts` case, plus a full-board run whose
+  `ci-required` starts within 60 s of its last `needs` finishing.
 - [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
 
