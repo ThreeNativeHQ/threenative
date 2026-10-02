@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,4 +56,9 @@ describe("volumetric fog runtime evidence", () => {
     );
     expect(scenario.steps).toHaveLength(8);
   });
+});
+
+it("uses an inline favicon instead of the confirmed missing /favicon.ico", async () => {
+  const html = await readFile("examples/abyss-framework/vq-fog/index.html", "utf8");
+  expect(html).toMatch(/<link\s+rel="icon"\s+href="data:,"\s*\/?\s*>/);
 });
