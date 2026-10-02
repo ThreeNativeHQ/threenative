@@ -1,6 +1,6 @@
 # PRD-477 — WorldCells auto-on + measured budgets
 
-**Status:** PROPOSED — filed 2026-10-01; nothing landed yet.
+**Status:** PARTIAL — Phase 1 capture/judgment plumbing is implemented on the draft PR; real visual red/green and all acceptance claims remain open. No engine default has changed.
 **Complexity:** 6 (MEDIUM) — a standing visual gate (one script plus a judge), a native conformance case, and budget derivation inside `packages/core/src/world-cells.ts`. Risk override: none.
 **Owner:** João
 **Depends on:** PRD-475 (Machinefall's open world at 120 fps, no visual loss, #384), PRD-473 (GPU-driven world, #375).
@@ -49,6 +49,8 @@ In this order, because each step is what makes the next one safe.
 
 ## Blocked on
 
+- Phase 1's real hardware-WebGPU reference and known-bad captures. The current executor has no exposed hardware GPU; its Xvfb fails to establish Unix listening sockets, and the supported cloud browser rejects the local preview with `ERR_BLOCKED_BY_CLIENT`. No screenshot or blind judgment is claimed from this lane.
+- Native execution setup in the current executor: the published 0.3.4 Linux host downloads with the release checksum but cannot load `libwebkit2gtk-4.1.so.0`; `adb` and an Android emulator are absent. Existing desktop/Android CI lanes remain potential execution routes, not verified results.
 - Android and iOS hardware runs of the native streaming case. The emulator lane covers the mechanism; real thermals and real memory need a device, which only João can attach.
 - A 120 Hz+ display for reading presented 120 fps. Xvfb's swap floor cannot show it (inherited from PRD-475).
 
@@ -61,6 +63,8 @@ In this order, because each step is what makes the next one safe.
 ### Phase 1 — The standing visual gate
 
 - [ ] The gate runs on a reference world and judges blind: same-pose captures scored by `pnpm visuals:ab --raters 3`, plus a popping capture series along a fixed walk leg. proof: `pnpm visuals:ab --before <ref> --after <candidate> --raters 3` and the series' judge output naming every element that appears or swaps LOD inside the near band.
+  - Implementation checkpoint: `pnpm visuals:world` reuses the same-pose instrument, seals chronological walk captures and three independent critic verdicts, enforces the 4/5 candidate floor, and rejects incomplete or stale evidence. The [judge protocol](../../product/WORLD-VISUAL-GATE.md) describes capture inputs and scoring. `WorldProbe` supplies observed poses, landmarks, streaming/admission statistics, and a fixed-leg capture scenario. Unit verification is not real visual acceptance; this box stays open until captured reference/candidate worlds are judged.
+  - 2026-10-02 verification: the gate, report importer, fixture and four adjacent suites pass 100/100; `pnpm typecheck` passes across the workspace, `pnpm lint` exits 0 with warnings, and documentation checks cover 2396 links. The workspace build passed with the local `tsx` launcher using `node --import tsx` to avoid unsupported Unix IPC. The full test gate is **not green**: package tests stop at unavailable Playwright Chromium; the separately run unit phase reports 6931 passed, 66 failed, 35 skipped and two worker exits. The related GPU-scene suite passes 57/57 in an isolated rerun. Full validation, actual captures and blind red/green remain open; detailed failure classification is kept on the PR.
 - [ ] The gate **reds on a known-bad build** — impostors default-on as in #375, which removed the forest's shadow — and greens on develop. A gate that has never gone red is not a gate. proof: the same command on both builds, with the impostor-on run below the reference floor.
 
 ### Phase 2 — Native and mobile proof

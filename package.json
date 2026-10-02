@@ -83,6 +83,7 @@
     "visuals:ab": "sh scripts/xvfb.sh tsx scripts/visual-ab.ts",
     "visuals:baseline": "sh scripts/xvfb.sh tsx scripts/template-baseline.ts",
     "visuals:realism-effects": "sh scripts/xvfb.sh tsx scripts/realism-effects-visual.ts",
+    "visuals:world": "sh scripts/xvfb.sh tsx scripts/world-visual-gate.ts",
     "worktree:cleanup": "tsx scripts/worktree-lifecycle.ts cleanup",
     "worktree:status": "tsx scripts/worktree-lifecycle.ts status",
     "census:content": "tsx scripts/content-census.ts",
