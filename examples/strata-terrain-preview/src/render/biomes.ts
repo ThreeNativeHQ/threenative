@@ -237,15 +237,17 @@ export function biomeWeights(
     };
   // Wind-scoured convex/exposed faces shed snow; sheltered shelves keep it.
   const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
-  const snow = smoothstep(
+  const retention = smoothstep(
     biome.snow[0],
     biome.snow[1],
-    positionWorld.y.add(drift.mul(22)).add(hollow.max(0).mul(biome.world === "alpine" ? 18 : 0)),
+    positionWorld.y.add(hollow.max(0).mul(biome.world === "alpine" ? 14 : 5)),
   ).mul(
     float(1)
       .sub(smoothstep(biome.world === "alpine" ? 0.16 : 0.04, biome.snow[2], steep))
       .mul(float(1).sub(exposure.mul(0.28))),
   );
+  // A narrow retention threshold leaves wind-shaped shelves and sharp scour edges.
+  const snow = smoothstep(0.36, 0.42, retention.add(hollow.max(0).mul(0.08)));
   const cells = mx_worley_noise_vec2(
     vec3(positionWorld.x, 0, positionWorld.z).mul(0.13).add(drift.mul(0.35)),
   );

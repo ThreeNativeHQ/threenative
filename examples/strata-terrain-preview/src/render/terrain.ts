@@ -10,7 +10,7 @@ import {
   LinearFilter,
   Mesh,
   MeshStandardMaterial,
-  RGFormat,
+  RGBAFormat,
   RepeatWrapping,
   type Texture,
 } from "three";
@@ -54,7 +54,7 @@ import { alpineRockAlbedo, alpineRockColor, alpineRockTap, desertRockColor } fro
 // disagree with the geometry.
 //
 // Texture budget: six albedos + four normals + curvature + two shadow levels × two = 15/16.
-import { type IBiome, biomeWeights } from "./biomes.js";
+import { BIOMES, type IBiome, biomeWeights } from "./biomes.js";
 import { createHorizonGeometry } from "./horizon.js";
 import { type IBakedLake, type IBakedRiver, surfaceHeights, waterlineRadius } from "./river.js";
 
@@ -63,9 +63,17 @@ export interface IBakedWorld {
   resolution: number;
   heights: number[];
   colors: number[];
+  erosion?: { flow: number[]; sediment: number[]; deposition: number[]; talus: number[] };
   waterLevel: number | null;
   lakes?: readonly IBakedLake[];
   rivers?: readonly IBakedRiver[];
+}
+
+/** One transport mask shared by the terrain splat and rock placement. */
+export function depositAtIndex(data: Pick<IBakedWorld, "erosion">, vertex: number): number {
+  const sediment = data.erosion?.sediment[vertex] ?? 0;
+  const hydraulic = (data.erosion?.deposition[vertex] ?? 0) / (1 + Math.sqrt(sediment));
+  return Math.min(1, hydraulic * 0.25 + (data.erosion?.talus[vertex] ?? 0) * 0.3);
 }
 
 /**
@@ -86,6 +94,8 @@ export interface IGroundCurvature {
   readonly node: Node<"float">;
   readonly texture: DataTexture;
   readonly wetBank: Node<"float">;
+  readonly flow: Node<"float">;
+  readonly deposits: Node<"float">;
 }
 
 /** The layers that cover ground, ordered so the heavier surface blends over the base one. */
@@ -307,6 +317,7 @@ export function createGroundMaterial(
 ): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.94 });
   material.userData.biome = biome?.world ?? "forest";
+  material.userData.erosion = data.erosion !== undefined;
   const held = new Set<Texture>([curvature.texture]);
   const layer = (key: LayerKey): ILayerMaps => {
     const found = maps[key];
@@ -329,7 +340,9 @@ export function createGroundMaterial(
     oneMinus(smoothstep(data.size / 2, data.size / 2 + 28, outside)),
   );
   // Material placement follows the actual landform, never the bake's brown blob palette.
-  const drainage = smoothstep(0.04, 0.3, hollow).mul(smoothstep(0.003, 0.05, steep));
+  const drainage = smoothstep(0.12, 0.65, curvature.flow);
+  const deposits = smoothstep(0.08, 0.6, curvature.deposits);
+  const scour = drainage.mul(smoothstep(0.035, 0.18, slope));
   const rib = smoothstep(-0.02, -0.45, hollow);
   const alpine = smoothstep(38, 66, positionWorld.y.add(breakUp.mul(5)));
   // No recorded sea level means an inland world, and an inland world has no beach.
@@ -380,16 +393,25 @@ export function createGroundMaterial(
   };
 
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
+  // Transport, slope and shelter choose the splat; noise only frays the material's edge.
+  weights.rock = max(weights.rock, scour.mul(0.9)).mul(oneMinus(deposits.mul(0.22)));
+  weights.dirt = max(weights.dirt.mul(0.45), deposits.mul(0.85))
+    .mul(oneMinus(smoothstep(0.22, 0.4, slope)))
+    .mul(sand.oneMinus());
+  if (biome?.world === "tundra") {
+    weights.moss = hollow
+      .max(0)
+      .mul(oneMinus(drainage))
+      .mul(smoothstep(0.12, 0.025, slope))
+      .mul(oneMinus(weights.snow))
+      .mul(0.7);
+  }
   if (!otherBiome) {
-    // Real surface patches survive the cover cull; colour noise alone left an uninterrupted lawn.
-    const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
-    weights.dirt = max(weights.dirt, dry.mul(0.7)).mul(sand.oneMinus());
-    weights.moss = max(
-      weights.moss,
-      smoothstep(-0.14, -0.38, macro.add(mottling.mul(0.4))).mul(0.42),
-    )
-      .mul(sand.oneMinus())
-      .mul(oneMinus(weights.rock));
+    weights.moss = hollow
+      .max(0)
+      .mul(oneMinus(drainage))
+      .mul(smoothstep(0.15, 0.025, slope))
+      .mul(0.5);
   }
 
   // --- how each surface looks -------------------------------------------------------------
@@ -592,8 +614,8 @@ export function createGroundMaterial(
   const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
     .mul(0.55)
     .add(1);
-  const meadowDry = smoothstep(-0.2, 0.24, macro.add(mottling.mul(0.6)).sub(hollow.mul(0.18)));
-  const meadowValue = mix(0.62, 1.18, smoothstep(0.6, -0.6, hollow));
+  const meadowDry = max(deposits.mul(0.8), drainage.mul(smoothstep(0.015, 0.1, slope)).mul(0.45));
+  const meadowValue = mix(0.92, 1.08, smoothstep(0.6, -0.6, hollow));
   const flowers = smoothstep(0.3, 0.47, mx_noise_float(positionWorld.mul(0.95))).mul(
     smoothstep(0.05, 0.3, mottling),
   );
@@ -677,11 +699,7 @@ export function createGroundMaterial(
           .sub(hollow.mul(0.16))
           .add(alpine.mul(0.06)),
       )
-    : smoothstep(
-        -0.18,
-        0.22,
-        macro.add(mottling.mul(0.24)).sub(hollow.mul(0.035)).add(alpine.mul(0.06)),
-      );
+    : max(deposits.mul(0.7), drainage.mul(smoothstep(0.015, 0.12, slope)).mul(0.4));
   const tone = otherBiome
     ? mix(vec3(0.92, 0.94, 0.91), vec3(1.08, 1.03, 0.95), dryness)
     : mix(vec3(0.72, 0.82, 0.63), vec3(1.08, 1.08, 0.88), dryness);
@@ -815,7 +833,7 @@ export function createTerrain(
     void loadGroundMaps(
       assets,
       biome?.world === "forest" || biome?.world === "coastal" || biome === undefined
-        ? { ...(biome?.maps ?? GROUND_MAPS), rock: ROCKFACE_MAPS }
+        ? { ...(biome?.maps ?? GROUND_MAPS), rock: ROCKFACE_MAPS, dirt: BIOMES.alpine.maps.dirt }
         : biome.maps,
     )
       .then((maps) => createGroundMaterial(data, maps, curvature, biome))
@@ -868,7 +886,22 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
     }));
   });
   // Both channels share one sampler: measured concavity and the water's actual wet margin.
-  const pixels = new Uint16Array(resolution * resolution * 2);
+  const transport = data.erosion;
+  if (transport) {
+    for (const key of ["flow", "sediment", "deposition", "talus"] as const) {
+      const values = transport[key];
+      if (
+        !Array.isArray(values) ||
+        values.length !== heights.length ||
+        !values.every((value) => Number.isFinite(value) && value >= 0)
+      )
+        throw new RangeError(`Baked erosion '${key}' does not match the canonical heightfield`);
+    }
+  }
+  const sortedFlow = [...(transport?.flow ?? [])].sort((a, b) => a - b);
+  const medianFlow = sortedFlow[Math.floor(sortedFlow.length * 0.5)] ?? 0;
+  const channelFlow = sortedFlow[Math.floor(sortedFlow.length * 0.98)] ?? 1;
+  const pixels = new Uint16Array(resolution * resolution * 4);
   for (let row = 0; row < resolution; row += 1) {
     for (let column = 0; column < resolution; column += 1) {
       const laplacian =
@@ -878,7 +911,8 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
         at(row + 4, column) -
         4 * at(row, column);
       // An eight-metre neighbourhood picks out channels and hollows, suppressing tiny baked bumps.
-      const index = (row * resolution + column) * 2;
+      const vertex = row * resolution + column;
+      const index = vertex * 4;
       pixels[index] = DataUtils.toHalfFloat(
         Math.max(-1, Math.min(1, (laplacian / (spacing * spacing * 16)) * 36)),
       );
@@ -897,9 +931,21 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
           wet = Math.max(wet, margin(station.level));
       }
       pixels[index + 1] = DataUtils.toHalfFloat(wet);
+      pixels[index + 2] = DataUtils.toHalfFloat(
+        Math.max(
+          0,
+          Math.min(
+            1,
+            ((transport?.flow[vertex] ?? 0) - medianFlow) / Math.max(1, channelFlow - medianFlow),
+          ),
+        ),
+      );
+      // Thermal deposits are actual cliff-foot transport. Hydraulic fines collect where water
+      // carries a load and slows; normalise by carried load to avoid painting every rain visit.
+      pixels[index + 3] = DataUtils.toHalfFloat(depositAtIndex(data, vertex));
     }
   }
-  const cooked = new DataTexture(pixels, resolution, resolution, RGFormat, HalfFloatType);
+  const cooked = new DataTexture(pixels, resolution, resolution, RGBAFormat, HalfFloatType);
   cooked.minFilter = LinearFilter;
   cooked.magFilter = LinearFilter;
   cooked.wrapS = ClampToEdgeWrapping;
@@ -913,7 +959,13 @@ function buildCurvature(data: IBakedWorld, field: Heightfield): IGroundCurvature
   // A clamped wet boundary texel must not become a stripe across the continuation mesh.
   const outside = max(abs(positionWorld.x), abs(positionWorld.z));
   const resident = oneMinus(smoothstep(data.size / 2 - spacing * 2, data.size / 2, outside));
-  return { node: sampled.r, texture: cooked, wetBank: sampled.g.mul(resident) };
+  return {
+    node: sampled.r,
+    texture: cooked,
+    wetBank: sampled.g.mul(resident),
+    flow: sampled.b.mul(resident),
+    deposits: sampled.a.mul(resident),
+  };
 }
 
 /**

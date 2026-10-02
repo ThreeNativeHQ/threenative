@@ -1973,8 +1973,9 @@ Canopy assets/materials, tree/cover scatter and lighting/sky/haze/grade are excl
    and fallback full scenarios on 5297, ocean verification and packed world export.
    proof: erosion-final captures, all view CPU p50 ≤4 ms, test:consumer.
 
-Status: IN PROGRESS. The first transport consumer test fails because evaluated
-state has no erosion observations. Baseline capture queued on the shared GPU lock.
+Status: IN PROGRESS. The missing transport observation has been reproduced and
+repaired. Strong playable recipes and their transport-driven surfaces are implemented;
+final snow, visual, fallback and packed-consumer qualification are pending.
 
 First verified increment: headless erosion retains canonical-grid flow, carried
 sediment, hydraulic deposition and thermal deposits. Mask/opacity scaling,
@@ -1992,10 +1993,21 @@ candidate: alpine max 124.7 m, desert max 90 m, tundra zero >1 m spikes.
 The final cutoff retains suspended material as outflow from this finite droplet
 integration; it does not pretend that water dried at a fixed step count.
 
-Baseline licensed scenario PASS (69 assertions), NVIDIA Turing, 1920×1080;
+Baseline licensed scenario PASS (50 top-level assertions), NVIDIA Turing, 1920×1080;
 `verify-ocean` PASS. Root `pnpm lint` passes with existing warnings. Root
 `pnpm typecheck` fails on missing declarations for existing glb.mjs/png.mjs test
 fixtures; root `pnpm test` fails on absent native test binaries (21 native checks)
 and the suite temporary-directory accounting check. Those are not passing gates.
 Example tsc/Biome and the placement check pass; final visual/scenario/export
 qualification is pending.
+
+Playable increment: all five worlds bake measured flow, sediment, hydraulic deposits
+and thermal deposits, rounded to 0.001 per vertex. The existing cache now hashes
+its own bake script as well as recipes, palette and terrain build. Splats consume
+flow plus slope for scour, measured deposits for gravel, and shelter for moss;
+rock/scree placement reads the same deposit helper. The canonical render/collision
+height buffer and continuation geometry are unchanged. Canopy and lighting files
+are untouched. A licensed candidate passed all 54 top-level assertions, all 17 view
+p50 budgets (maximum 3.6 ms), ocean verification and the 0.5 luminance-quantile
+guard. The next candidate failed the river/max-view CPU budgets at 4.1 ms; added
+rock density is reduced before final qualification. Example tsc passes.

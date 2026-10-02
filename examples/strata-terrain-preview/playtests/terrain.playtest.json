@@ -829,6 +829,46 @@
         "path": "measuredViewCount",
         "gte": 17,
         "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "terrainTransportBound",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "meadow-close",
+            "equals": true
+          },
+          {
+            "label": "ocean",
+            "equals": true
+          },
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          },
+          {
+            "label": "desert-mesa",
+            "equals": true
+          },
+          {
+            "label": "tundra-plain",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The drawn PBR material must bind measured erosion transport in every world."
+      },
+      {
+        "id": "GameState",
+        "path": "erosionFlowSamples",
+        "gte": 1000,
+        "allowTrivial": "Counts the actual baked nonzero transport observations; absent or empty maps fail."
+      },
+      {
+        "id": "GameState",
+        "path": "erosionDepositSamples",
+        "gte": 100,
+        "allowTrivial": "Counts actual hydraulic deposition samples from each played heightfield."
       }
     ],
     "renderChain": {
