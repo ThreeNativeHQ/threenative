@@ -246,7 +246,8 @@ export function createOutdoorSky(camera: Object3D, biome?: IBiome): IOutdoorSky 
   // The physical sky's radiance is calibrated separately from ground irradiance.
   daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
   const skyMaterial = daylight.sky.material;
-  if (skyMaterial.colorNode) skyMaterial.colorNode = skyMaterial.colorNode.mul(0.32);
+  if (skyMaterial.colorNode)
+    skyMaterial.colorNode = skyMaterial.colorNode.mul(biome?.world === "tundra" ? 0.15 : 0.32);
   daylight.sun.visible = false;
   daylight.add(sun.target);
 

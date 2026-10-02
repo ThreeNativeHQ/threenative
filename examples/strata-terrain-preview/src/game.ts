@@ -208,6 +208,9 @@ const initialState = {
   alpineFrameP50: 0,
   desertFrameP50: 0,
   tundraFrameP50: 0,
+  alpineOverviewFrameP50: 0,
+  desertOverviewFrameP50: 0,
+  tundraOverviewFrameP50: 0,
 };
 type TerrainState = typeof initialState;
 type TerrainCtx = ICtx<TerrainState, IPhysicsContext>;
@@ -522,6 +525,22 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
             saplings: scatter.counts.sapling,
             scrub: scatter.counts.scrub,
             spruces: scatter.counts.spruce,
+            mountains: scatter.counts.mountain,
+            volcanic: scatter.counts.volcanic,
+            reveals: scatter.counts.reveal,
+            licensedCragParts: [...pack.parts]
+              .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
+              .reduce((sum, [, parts]) => sum + parts.length, 0),
+            crags: {
+              drawn:
+                props?.meshes.some(
+                  (draw) =>
+                    draw.count > 0 &&
+                    draw.userData.placementIds.some((id: string) =>
+                      /temperate-(mountain|volcanic):/.test(id),
+                    ),
+                ) ?? false,
+            },
             totalInstances: props?.meshes.reduce((sum, draw) => sum + draw.count, 0) ?? 0,
             triangles:
               props?.meshes.reduce(
@@ -689,6 +708,9 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           alpineFrameP50: median(viewBudgets.get("alpine:ridge")?.p50s ?? []),
           desertFrameP50: median(viewBudgets.get("desert:mesa")?.p50s ?? []),
           tundraFrameP50: median(viewBudgets.get("tundra:plain")?.p50s ?? []),
+          alpineOverviewFrameP50: median(viewBudgets.get("alpine:overview")?.p50s ?? []),
+          desertOverviewFrameP50: median(viewBudgets.get("desert:overview")?.p50s ?? []),
+          tundraOverviewFrameP50: median(viewBudgets.get("tundra:overview")?.p50s ?? []),
         });
       });
       // --- the fixed benchmark cameras ---------------------------------------------------------

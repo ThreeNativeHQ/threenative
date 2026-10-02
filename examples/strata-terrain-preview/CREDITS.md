@@ -18,11 +18,16 @@ FAB_TEMPERATE=/path/to/imported/fab node scripts/prep-fab-temperate.mjs
 
 The script reads the import reports and selects three full, two half and three small
 spruces; four grasses; four flowers including a red poppy; three ground clumps;
-two ferns; three Kite boulders, river rock, scree and `SM_Cliff01`. It repairs
+two ferns; three Kite boulders, river rock, scree and `SM_Cliff01`; both
+`SM_MountainRock` faces, four `LargeVolcanicRock` variants, both `SM_GroundRevealRock`
+meshes and the `RockFace003` diffuse/normal/height ground maps. New rock textures are
+bounded to 1K; Unreal's ground normal green channel is flipped for OpenGL. It repairs
 Project Nature atlas bindings and composites each photographed opacity mask into
 its albedo, then reuses `@threenative/assets` for meshopt geometry and compressed
 textures. Duplicate sections are joined before cooking. Outputs live under
-`local-assets/temperate/` with a 120 MiB gate and Three.js's Apache-2.0 Basis transcoder.
+`local-assets/temperate/` with a 130 MB gate and Three.js's Apache-2.0 Basis transcoder.
+Round 3 measures 122.7 MiB (128.7 MB); the prior 120 MB cap rises by 10 MB for this
+bounded rock selection. Licensed provenance remains in the owner's import reports.
 
 `src/render/pack.ts` retains photographed material maps. Every section of a tree
 uses the same whole-model scale and ground origin. `src/render/props.ts` draws

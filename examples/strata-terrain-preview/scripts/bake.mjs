@@ -270,11 +270,11 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     id: "weathering",
     method: "hydraulic",
     inertia: 0.05,
-    capacity: 1.2,
-    erosion: 0.008,
+    capacity: 2.4,
+    erosion: 0.025,
     deposition: 0.2,
     evaporation: 0.035,
-    droplets: 18000,
+    droplets: 38000,
   })
   .erode({ id: "scree", method: "thermal", talus: 45, iterations: 8, rate: 0.12 })
   .smooth({ id: "settle", iterations: 1, strength: 0.45 })
@@ -303,31 +303,49 @@ export const alpine = new Terrain({ size: 512, resolution: 257, seed: 41 })
     ],
   });
 // Desert: resistant caprock plateaux, stepped walls, loose aprons and wind-shaped dunes.
+// Data stamps reuse the installed operation; the built-in mesa's half-radius shoulder is too round.
+function mesaProfile(height) {
+  const width = 129;
+  return {
+    width,
+    height: width,
+    values: Array.from({ length: width * width }, (_, i) => {
+      const x = ((i % width) / (width - 1) - 0.5) * 2;
+      const z = (Math.floor(i / width) / (width - 1) - 0.5) * 2;
+      const angle = Math.atan2(z, x);
+      const d = Math.hypot(x, z) + 0.016 * Math.sin(angle * 7) + 0.012 * Math.sin(angle * 13 + 1);
+      const cap =
+        d <= 0.72
+          ? 1
+          : d < 0.79
+            ? 1 - ((d - 0.72) / 0.07) * 0.82
+            : Math.max(0, (1 - d) / 0.21) * 0.18;
+      return height * cap;
+    }),
+  };
+}
 export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .noise({ id: "plain", base: 8, amplitude: 4, scale: 220, warp: 30, octaves: 3 })
   .stamp({
     id: "mesa-west",
     at: [-140, -60],
     radius: [82, 65],
-    amplitude: 66,
-    shape: "mesa",
-    roughness: 0.025,
+    data: mesaProfile(66),
+    falloff: 0,
   })
   .stamp({
     id: "mesa-north",
     at: [40, -170],
     radius: [68, 88],
-    amplitude: 82,
-    shape: "mesa",
-    roughness: 0.025,
+    data: mesaProfile(82),
+    falloff: 0,
   })
   .stamp({
     id: "butte",
     at: [-30, 60],
     radius: [36, 31],
-    amplitude: 48,
-    shape: "mesa",
-    roughness: 0.02,
+    data: mesaProfile(48),
+    falloff: 0,
   })
   .stamp({
     id: "west-cleft",
@@ -365,7 +383,7 @@ export const desert = new Terrain({ size: 512, resolution: 257, seed: 97 })
   .flatten({ id: "north-caprock", at: [40, -170], radius: 40, height: 94, falloff: 0.15 })
   .flatten({ id: "butte-caprock", at: [-30, 60], radius: 17, height: 60, falloff: 0.12 })
   .erode({ id: "aprons", method: "thermal", talus: 57, iterations: 5, rate: 0.12 })
-  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.35 })
+  .smooth({ id: "cliff-settle", iterations: 1, strength: 0.12 })
   .smooth({ id: "sand-settle", iterations: 1, strength: 0.25, mask: Mask.height(-1e9, 22, 5) })
   .stamp({
     id: "dune-west",

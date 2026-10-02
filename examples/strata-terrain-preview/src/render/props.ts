@@ -72,6 +72,9 @@ const DRAW_REACH: Record<string, number> = {
   riverrock: 100,
   scree: 190,
   cliff: 300,
+  mountain: 650,
+  volcanic: 400,
+  reveal: 260,
 };
 const NO_SHADOW_ASSETS = new Set(["sapling", "scrub", "grass", "fern", "poppy"]);
 
@@ -260,13 +263,28 @@ export function buildPropVariants(
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);
   }
-  for (const asset of ["riverrock", "scree", "cliff"])
-    variants.set(
-      `${asset}:0`,
-      prepared?.get(`${asset}:0`) ?? [
-        { geometry: boulder(VARIANTS.seed), role: "stone", variant: 0 },
-      ],
-    );
+  for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
+    for (
+      let variant = 0;
+      variant < (asset === "mountain" || asset === "reveal" ? 2 : asset === "volcanic" ? 4 : 1);
+      variant++
+    ) {
+      const ready = prepared?.get(`${asset}:${variant}`);
+      if (ready) {
+        variants.set(`${asset}:${variant}`, ready);
+        continue;
+      }
+      const fallback = boulder(VARIANTS.seed ^ variant);
+      if (["mountain", "volcanic", "reveal"].includes(asset)) {
+        fallback.computeBoundingBox();
+        const size = fallback.boundingBox?.getSize(new Vector3());
+        const scale =
+          (asset === "mountain" ? 24 : asset === "volcanic" ? 10 : 5) /
+          Math.max(size?.x ?? 1, size?.y ?? 1, size?.z ?? 1);
+        fallback.scale(scale, scale, scale);
+      }
+      variants.set(`${asset}:${variant}`, [{ geometry: fallback, role: "stone", variant }]);
+    }
   return variants;
 }
 
@@ -276,7 +294,15 @@ export function buildPropVariants(
  * A prepared variant is counted whether or not its model loaded: the count is the starter's
  * layout, and a game with no prepared art still hashes into the same five boulders.
  */
-const PROP_COUNTS = { ...VARIANTS, riverrock: 1, scree: 1, cliff: 1 };
+const PROP_COUNTS = {
+  ...VARIANTS,
+  riverrock: 1,
+  scree: 1,
+  cliff: 1,
+  mountain: 2,
+  volcanic: 4,
+  reveal: 2,
+};
 
 export const PROP_ASSETS: Record<string, number> = Object.fromEntries(
   Object.entries(PROP_COUNTS).filter(([name]) => name !== "seed"),
@@ -338,12 +364,18 @@ function preparePose(
   if (
     grounding &&
     !transform &&
-    ["boulder", "riverrock", "scree", "cliff"].includes(placement.asset) &&
+    ["boulder", "riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"].includes(
+      placement.asset,
+    ) &&
     ground.height !== null
   ) {
     geometry.computeBoundingBox();
     const box = geometry.boundingBox;
-    if (box) model.position.y -= BOULDER_BURIAL * (box.max.y - box.min.y) * model.scale.y;
+    if (box)
+      model.position.y -=
+        (placement.asset === "mountain" ? 0.48 : BOULDER_BURIAL) *
+        (box.max.y - box.min.y) *
+        model.scale.y;
   }
   model.updateMatrix();
   if (!new Float32Array(model.matrix.elements).every(Number.isFinite))

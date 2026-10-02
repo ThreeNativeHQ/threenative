@@ -125,6 +125,9 @@ export function scatterProps(
       "riverrock",
       "scree",
       "cliff",
+      "mountain",
+      "volcanic",
+      "reveal",
     ].map((name) => [name, 0]),
   );
   const random = createRandom(SCATTER.seed);
@@ -169,12 +172,18 @@ export function scatterProps(
         return;
     }
     const index = counts[asset] ?? 0;
+    const crag = asset === "mountain" || asset === "volcanic" || asset === "reveal";
+    const normal = crag ? data.field.normalAt(x, z) : undefined;
+    if (normal) {
+      normal.y += 0.65;
+      normal.normalize();
+    }
     placements.push({
       asset,
       id: `temperate-${asset}:${index}${suffix}`,
       layer: `temperate-${asset}`,
-      alignToNormal: false,
-      normal: [0, 1, 0],
+      alignToNormal: crag,
+      normal: normal ? normal.toArray() : [0, 1, 0],
       position: [x, clampedHeight(data, x, z), z],
       rotation: random() * Math.PI * 2,
       scale,
@@ -184,10 +193,10 @@ export function scatterProps(
   const nearEye = (x: number, z: number) =>
     clearings.some(([cx, cz, radius]) => Math.hypot(x - cx, z - cz) < radius * 1.6);
   const cells = new Map<string, [number, number]>();
+  const treeAsset = temperate || alpine ? "spruce" : "sapling";
   for (
     let tries = 0;
-    (counts[tundra || alpine ? "sapling" : "spruce"] ?? 0) < treeLimit &&
-    tries < SCATTER.spruceAttempts;
+    (counts[treeAsset] ?? 0) < treeLimit && tries < SCATTER.spruceAttempts;
     tries++
   ) {
     const x = (random() - 0.5) * data.size;
@@ -214,10 +223,10 @@ export function scatterProps(
     if (crowded || cells.has(key)) continue;
     cells.set(key, [x, z]);
     put(
-      tundra || alpine ? "sapling" : "spruce",
+      treeAsset,
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.45 : 1.05) + random() * (temperate ? 0.5 : 0.4),
+      (temperate ? 0.8 : tundra ? 0.25 : 0.55) + random() * (temperate ? 0.5 : 0.35),
     );
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = forestWeight(x, z) < 0.57;
@@ -231,6 +240,27 @@ export function scatterProps(
     }
     for (let i = 0; i < (temperate ? 2 : 0); i++)
       put("fern", x + (random() - 0.5) * 7, z + (random() - 0.5) * 7, 0.7 + random() * 0.6);
+  }
+  // Overlapping scans dress the heightfield rather than leaving isolated lawn boulders.
+  if (alpine || desert) {
+    for (let z = -half + 12; z < half - 12; z += 9)
+      for (let x = -half + 12; x < half - 12; x += 9) {
+        const sx = x + (random() - 0.5) * 7;
+        const sz = z + (random() - 0.5) * 7;
+        const slope = slopeDegrees(data, sx, sz);
+        const height = clampedHeight(data, sx, sz);
+        if (slope > 40 && (!alpine || height > 48) && random() < (alpine ? 0.72 : 0.4))
+          put(
+            alpine ? "mountain" : "volcanic",
+            sx,
+            sz,
+            alpine ? (14 + random() * 26) / 24 : 0.65 + random() * 0.65,
+          );
+        else if (desert && height > 35 && slope < 12 && random() < 0.13)
+          put("reveal", sx, sz, 0.6 + random() * 0.7);
+        else if (desert && slope > 18 && slope < 40 && random() < 0.22)
+          put("volcanic", sx, sz, 0.4 + random() * 0.5);
+      }
   }
   // Rock clusters follow exposed slopes rather than evenly spaced lawn ornaments.
   for (let i = 0; i < (temperate ? 1500 : 2400); i++) {
@@ -290,31 +320,38 @@ export function scatterProps(
       "grass",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.85 : 0.55) + random() * (temperate ? 0.65 : 0.5),
+      (temperate ? 0.8 : tundra ? 0.6 : 0.55) + random() * (temperate ? 0.65 : 0.5),
     );
-    if (!desert && random() < 0.3)
-      put("scrub", x + (random() - 0.5), z + (random() - 0.5), 0.9 + random() * 0.6);
+    if (!desert && random() < (tundra ? 0.85 : 0.3))
+      put(
+        "scrub",
+        x + (random() - 0.5),
+        z + (random() - 0.5),
+        (tundra ? 1.5 : 0.9) + random() * 0.6,
+      );
+    if (tundra && random() < 0.055)
+      put("bush", x + (random() - 0.5) * 2, z + (random() - 0.5) * 2, 0.28 + random() * 0.25);
   };
   // A cheap carpet on every grass cell; dense detail at all walking/benchmark eyes, not one disc.
   for (
     let z = -half + 3;
     z < half - 3;
-    z += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
+    z += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 2.4 : 3.5
   )
     for (
       let x = -half + 3;
       x < half - 3;
-      x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 6 : 3.5
+      x += temperate ? SCATTER.grassCell : desert ? 12 : tundra ? 2.4 : 3.5
     )
       cover(
-        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
-        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 5 : 3),
+        x + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 2.2 : 3),
+        z + (random() - 0.5) * (temperate ? 1.5 : desert ? 10 : tundra ? 2.2 : 3),
         0.7,
       );
   const eyes = [focus, ...clearings.map(([x, z]) => ({ x, z }))];
   for (const eye of eyes) {
     // The forest's thinned walking-eye carpet stays as tuned; other biomes take their own spacing.
-    const eyeStep = temperate ? 0.34 : desert ? 3 : tundra ? 1.4 : 0.6;
+    const eyeStep = temperate ? 0.34 : desert ? 3 : tundra ? 0.55 : 0.6;
     const eyeReach = temperate ? SCATTER.grassThin : SCATTER.grassFull + 22;
     for (let dz = -eyeReach; dz < eyeReach; dz += eyeStep)
       for (let dx = -eyeReach; dx < eyeReach; dx += eyeStep) {

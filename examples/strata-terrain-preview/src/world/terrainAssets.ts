@@ -61,6 +61,28 @@ export const GROUND_TILE: Record<LayerKey, number> = {
   snow: 12,
 };
 
+/** Optional owner-local Kite crags and rock-face maps; CI retains the CC0/procedural art. */
+export const WORLD_ROCKS = [
+  { asset: "mountain", variant: 0, path: "temperate/mountain/0.glb", metres: 24 },
+  { asset: "mountain", variant: 1, path: "temperate/mountain/1.glb", metres: 24 },
+  ...[0, 1, 2, 3].map((variant) => ({
+    asset: "volcanic",
+    variant,
+    path: `temperate/volcanic/${variant}.glb`,
+    metres: 10,
+  })),
+  ...[0, 1].map((variant) => ({
+    asset: "reveal",
+    variant,
+    path: `temperate/reveal/${variant}.glb`,
+    metres: 5,
+  })),
+] as const;
+export const ROCKFACE_MAPS: IGroundMaps = {
+  diffuse: "temperate/rockface/diffuse.ktx2",
+  normal: "temperate/rockface/normal.ktx2",
+};
+
 /** One mapped prop surface's albedo, tangent-space normal and roughness. */
 export interface ISurfaceMaps {
   readonly diffuse: string;

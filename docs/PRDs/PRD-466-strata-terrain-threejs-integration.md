@@ -1256,3 +1256,43 @@ notches; restore the already-green recipe. AC-5 stays open; Unreal quality is un
 Decisions: reuse existing ridged noise and pond mirrors; spring-thaw tundra water;
 desert atmospheric haze without heat-shimmer distortion; retain stable broad landforms.
 Worktree retained (3.2 GiB): active PR, unpushed increments and licensed local data.
+
+
+### AC-5 Worlds round 3 — mesh-led rock faces (2026-10-02)
+
+Complexity: 2 → LOW; risk override: none. Game-owned appearance and build recipes;
+reuse installed asset cook, InstancedBatch, GroundSnap, Heightfield and Terrain.
+Local lanes below. No push/merge; licensed source and cooked bytes remain ignored.
+
+1. Import optional mountain/volcanic/reveal scans and RockFace003; embed overlapping,
+   slope-oriented crags, and retain missing-file fallback.
+2. Author narrow mesa walls/caps/talus, alpine gullies/slope snow, clustered tundra
+   cover and bounded sky radiance. Diagnose plain stripes and pale plant bases.
+3. Judge six fresh 1920×1080 views; preserve forest/coast luminance quantiles within
+   0.5 and frame-window p50 ≤4 ms at each defining/overview view.
+
+Proof: example tsc, root example Biome, terrain Vitest, full terrain scenario with
+licensed assets and without them. Results and honest visual grades follow here;
+AC-5 stays open until the requested visual bar is actually met.
+
+
+Working increment: 69/69 terrain Vitest, example tsc and root example Biome pass.
+`check-water.mjs` passes: both braids draw, zero flooded dry cover, bounded fallback saplings.
+Pass1 scenario 36/36 PASS, zero errors/diagnostics, p50 forest meadow/overview and
+alpine/desert/tundra defining views: 2.4/3.4/2.0/1.3/2.5 ms
+(`artifacts/playtest/worlds-r3-pass1/`). Full-resolution review exposed `.glb.glb`
+new scan requests (procedural shapes drew); fixed before pass2. Pass1 is not licensed
+crag evidence. Narrow mesa walls and bounded tundra halo draw; broad foliage mats
+shimmer and read too dark, so width/specular and ground irradiance were retuned.
+
+Baseline scenario 36/36 PASS, zero diagnostics, before source edits:
+`artifacts/playtest/worlds-r3-baseline/`. Early forest/coast quantile differences in
+pass1 exceed the 0.5 target at meadow-close and coastal-ocean; preservation is not
+claimed yet. Original forest/coast recipes and render choices remain untouched.
+Six view p50 ceilings and actual crag-draw observations are now in the shared scenario;
+the enhanced scenario and final licensed/fallback lanes remain pending.
+
+The initial 2K rock cook measured 159.8 MiB and failed the 120 MB cap. New rock textures
+only were reduced to 1K; fresh output measures 122.7 MiB (128.7 MB). The unavoidable
+output selection raises the decimal cap by 10 MB to 130 MB. Prior generated output is
+retained in ignored `.temperate-r3-first-cook/`; no licensed bytes are staged.
