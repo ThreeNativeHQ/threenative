@@ -54,6 +54,27 @@ export const INTERACTIONS = [
       { t: "key", key: "Tab" },
       { t: "key", key: "Enter" },
       { obs: "clicks" },
+      // A click focuses the control it lands on, but a pointer focus is not a `:focus-visible`
+      // one, so the button keeps its own colour rather than the amber ring.
+      { t: "pointer", type: "down", x: 50, y: 20 },
+      { t: "pointer", type: "up", x: 50, y: 20 },
+      { obs: "clicks" },
+      { obs: "focus" },
+      { obs: "pixel", x: 50, y: 20 },
+      // Tab off either end of the document takes focus out of it (activeElement becomes the
+      // body, which is observed as 0), and the next Tab re-enters at the far end.
+      { t: "key", key: "Tab" },
+      { obs: "focus" },
+      { t: "key", key: "Tab" },
+      { t: "key", key: "Tab" },
+      { t: "key", key: "Tab" },
+      { obs: "focus" },
+      { t: "key", key: "Tab" },
+      { obs: "focus" },
+      { t: "key", key: "Tab", shift: true },
+      { obs: "focus" },
+      { t: "key", key: "Tab", shift: true },
+      { obs: "focus" },
     ],
   },
   {

@@ -429,6 +429,53 @@ impl BaseDocument {
         )
     }
 
+    /// Scroll like a wheel event: the nearest scroller which can move by `(x, y)` takes the
+    /// whole delta and the scroll stops there.
+    ///
+    /// This differs from [`Self::scroll_chain_by`], which hands whatever the first scroller
+    /// could not take to its parent within the same event. A wheel tick is latched to one
+    /// scroller: a list which took part of the delta keeps the rest, and only a scroller which
+    /// cannot move at all passes the event on. (The viewport is never in the chain: this
+    /// document has no page to scroll.)
+    pub fn scroll_wheel(
+        &mut self,
+        anchor_node_id: Option<NodeId>,
+        x: f64,
+        y: f64,
+        dispatch_event: &mut dyn FnMut(DomEvent),
+    ) -> bool {
+        let mut current = anchor_node_id;
+        while let Some(node_id) = current {
+            if self.canonical_scroll_target(ScrollTarget::Node(node_id)) != ScrollTarget::Viewport {
+                let (offset, max) = self.scroll_state(ScrollTarget::Node(node_id), false);
+                // Whether this scroller can move at all in the direction asked for: one which
+                // has room left takes the whole delta and keeps whatever it cannot use, and one
+                // which has none passes the event on.
+                let can_move = |delta: f64, offset: f64, max: f64| match delta {
+                    d if d > 0.0 => offset < max,
+                    d if d < 0.0 => offset > 0.0,
+                    _ => false,
+                };
+                let takes = can_move(x, offset.x, max.x) || can_move(y, offset.y, max.y);
+                if takes {
+                    return self.scroll(
+                        ScrollRequest {
+                            target: ScrollTarget::Node(node_id),
+                            amount: ScrollAmount::By(Point { x, y }),
+                            overflow: ScrollOverflow::Clamp,
+                            source: ScrollSource::User,
+                            behavior: ScrollBehavior::Instant,
+                            interrupt_animation: true,
+                        },
+                        dispatch_event,
+                    );
+                }
+            }
+            current = self.nodes.get(node_id).and_then(|node| node.parent);
+        }
+        false
+    }
+
     /// Duration (in milliseconds) of an animated scroll.
     const SMOOTH_SCROLL_DURATION_MS: f64 = 300.0;
 

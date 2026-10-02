@@ -185,6 +185,14 @@ try {
     const expected = await runChromium(browser, scenario, dir);
     if (process.env.CHROMIUM_ONLY) {
       console.log(scenario.name, JSON.stringify(expected));
+      // Counted like any other result, so the summary line is not "0/0" when only the expected
+      // values were asked for.
+      results.push({
+        name: scenario.name,
+        observations: expected.length,
+        mismatches: [],
+        pass: true,
+      });
       continue;
     }
 
@@ -192,6 +200,10 @@ try {
     withFont.ops[0].css = FONT + withFont.ops[0].css;
     writeFileSync(join(dir, "batch.json"), JSON.stringify(withFont));
     writeFileSync(join(dir, "script.json"), JSON.stringify(scenario.script));
+    // The device Chromium is given as `hasTouch` above is a fact about the run, not a step in
+    // it, so it travels beside the script: the engine is told the pointer is a finger, which is
+    // what makes `(hover: none)` match here and `(hover: hover)` stop matching.
+    writeFileSync(join(dir, "env.json"), JSON.stringify({ touch: scenario.touch === true }));
     const run = spawnSync(
       "cargo",
       [

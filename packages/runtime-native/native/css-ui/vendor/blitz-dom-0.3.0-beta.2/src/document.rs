@@ -205,6 +205,9 @@ pub struct BaseDocument {
     pub(crate) viewport_scroll: crate::Point<f64>,
     /// CSS media type used to evaluate `@media` rules.
     pub(crate) media_type: MediaType,
+    /// Whether the device this document is rendered on is driven by touch alone,
+    /// which is what `@media (hover: none)` and `(pointer: coarse)` report.
+    pub(crate) touch: bool,
     /// Strategy for Stylo's style traversal during `resolve`.
     pub(crate) style_threading: StyleThreading,
     /// Whether incremental layout is enabled for this document.
@@ -356,12 +359,22 @@ pub(crate) fn make_device(
     viewport: &Viewport,
     media_type: MediaType,
     font_ctx: Arc<Mutex<FontContext>>,
+    touch: bool,
 ) -> Device {
     let width = viewport.window_size.0 as f32 / viewport.scale();
     let height = viewport.window_size.1 as f32 / viewport.scale();
     let viewport_size = euclid::Size2D::new(width, height);
     let device_size = euclid::Size2D::new(width, height) * viewport.scale();
     let device_pixel_ratio = euclid::Scale::new(viewport.scale());
+
+    // A touch-only device cannot hover and has no fine pointer
+    // (https://drafts.csswg.org/mediaqueries-4/#hover), which is what a mouse reports
+    // instead.
+    let pointer_capabilities = if touch {
+        PointerCapabilities::COARSE
+    } else {
+        PointerCapabilities::FINE | PointerCapabilities::HOVER
+    };
 
     Device::new(
         media_type,
@@ -375,7 +388,7 @@ pub(crate) fn make_device(
             ColorScheme::Light => PrefersColorScheme::Light,
             ColorScheme::Dark => PrefersColorScheme::Dark,
         },
-        PointerCapabilities::default(),
+        pointer_capabilities,
         PointerCapabilities::default(),
     )
 }
@@ -427,7 +440,7 @@ impl BaseDocument {
 
         let viewport = config.viewport.unwrap_or_default();
         let media_type = config.media_type.unwrap_or_else(MediaType::screen);
-        let device = make_device(&viewport, media_type.clone(), font_ctx.clone());
+        let device = make_device(&viewport, media_type.clone(), font_ctx.clone(), false);
         let stylist = Stylist::new(device, QuirksMode::NoQuirks);
         let snapshots = SnapshotMap::new();
         let nodes = Box::new(NodeTree::new());
@@ -468,6 +481,7 @@ impl BaseDocument {
             nodes_to_id,
             viewport,
             media_type,
+            touch: false,
             style_threading: config.style_threading,
             incremental_layout: config.incremental.unwrap_or(true),
             subdocument_depth: config.subdocument_depth,
@@ -1678,6 +1692,15 @@ impl BaseDocument {
         self.mousedown_node_id = node_id.and_then(|id| self.nearest_non_anonymous_ancestor(id));
     }
     pub fn set_focus_to(&mut self, focus_node_id: NodeId) -> bool {
+        self.set_focus_visible(focus_node_id, true)
+    }
+
+    /// Focus a node, choosing whether `:focus-visible` matches it.
+    ///
+    /// A keyboard-driven focus shows the focus ring; a pointer-driven one (a click
+    /// on a control) focuses without it. Callers which do not know which kind of
+    /// focus caused the change use [`Self::set_focus_to`], which shows the ring.
+    pub fn set_focus_visible(&mut self, focus_node_id: NodeId, focus_visible: bool) -> bool {
         let Some(focus_node_id) = self.nearest_non_anonymous_ancestor(focus_node_id) else {
             return false;
         };
@@ -1701,7 +1724,7 @@ impl BaseDocument {
         self.snapshot_node_and(
             focus_node_id,
             ElementState::FOCUS | ElementState::FOCUSRING,
-            |node| node.focus(shell_provider),
+            |node| node.focus(shell_provider, focus_visible),
         );
 
         self.focus_node_id = Some(focus_node_id);
@@ -1820,7 +1843,7 @@ impl BaseDocument {
         let mut scrollbar = None;
         let hit = self
             .root_element()
-            .hit_inner(x, y, self.viewport().scale_f64(), &mut scrollbar);
+            .hit_inner(x, y, self.viewport().scale_f64(), &mut scrollbar, None);
         (hit, scrollbar)
     }
 
@@ -1959,6 +1982,7 @@ impl BaseDocument {
             &self.viewport,
             self.media_type.clone(),
             self.font_ctx.clone(),
+            self.touch,
         ));
         self.scroll_viewport_by(0.0, 0.0); // Clamp scroll offset
 
@@ -1984,6 +2008,22 @@ impl BaseDocument {
             &self.viewport,
             self.media_type.clone(),
             self.font_ctx.clone(),
+            self.touch,
+        ));
+    }
+
+    /// Whether the device is driven by touch alone, which is what `@media (hover: none)`
+    /// and `(pointer: coarse)` report. A mouse-driven device reports `(hover: hover)`.
+    pub fn set_touch(&mut self, touch: bool) {
+        if self.touch == touch {
+            return;
+        }
+        self.touch = touch;
+        self.set_stylist_device(make_device(
+            &self.viewport,
+            self.media_type.clone(),
+            self.font_ctx.clone(),
+            self.touch,
         ));
     }
 

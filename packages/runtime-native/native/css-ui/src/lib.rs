@@ -13,10 +13,12 @@
 //! contract with the host is the C ABI in [`abi`]; [`CssUi`] is the same implementation behind a
 //! Rust signature so it can be tested without a process boundary.
 //!
-//! **Scope of this slice.** Static document construction from JSON mutation batches, hover and
-//! pointer state, and `click`. No keyboard traversal, no scrolling. Text is laid out with Parley,
-//! from the device's system fonts and from any `@font-face` font or `<img>` the `ui/` directory
-//! ships — see [`Assets`].
+//! **Scope of this slice.** Static document construction from JSON mutation batches, pointer and
+//! keyboard input (`click`, focus traversal, activation, wheel scrolling), hover and focus state,
+//! CSS transitions and the environment media queries a device answers (`prefers-color-scheme`,
+//! `prefers-reduced-motion`, `(hover: …)`). No text editing, no `<input>`, no scrolling by the
+//! game. Text is laid out with Parley, from the device's system fonts and from any `@font-face`
+//! font or `<img>` the `ui/` directory ships — see [`Assets`].
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -25,11 +27,11 @@ use std::sync::{Arc, Mutex};
 
 use blitz_dom::{
     local_name, ns, BaseDocument, Document, DocumentConfig, EventDriver, EventHandler, LocalName,
-    NodeId, QualName,
+    Node, NodeId, QualName,
 };
 use blitz_traits::events::{
-    BlitzPointerEvent, BlitzPointerId, DomEvent, EventState, MouseEventButton, MouseEventButtons,
-    PointerCoords, PointerDetails, UiEvent,
+    BlitzPointerEvent, BlitzPointerId, DomEvent, DomEventData, EventState, MouseEventButton,
+    MouseEventButtons, PointerCoords, PointerDetails, UiEvent,
 };
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request, Url};
 use blitz_traits::shell::{ColorScheme, ShellProvider, Viewport};
@@ -369,7 +371,19 @@ pub struct CssUi {
     width: u32,
     height: u32,
     scale: f32,
+    /// The animation clock, in milliseconds. Virtual: the host passes its own frame time, so
+    /// this crate has no wall-clock dependency and a test can seek an animation exactly.
+    time: f64,
+    /// `prefers-color-scheme: dark`.
+    dark: bool,
+    /// `prefers-reduced-motion: reduce`, as the [`REDUCED_MOTION_CSS`] sheet implements it.
+    reduced_motion: bool,
+    /// Whether the pointer is a finger rather than a mouse: it does not hover, and the device
+    /// reports `(hover: none)` and `(pointer: coarse)`.
+    touch: bool,
     ua_css: String,
+    /// The reduced-motion sheet, while it is applied (see [`REDUCED_MOTION_CSS`]).
+    motion_css: String,
     redraw: Arc<Redraw>,
     assets: Arc<Assets>,
     dirty: bool,
@@ -436,7 +450,12 @@ impl CssUi {
             width,
             height,
             scale,
+            time: 0.0,
+            dark: false,
+            reduced_motion: false,
+            touch: false,
             ua_css: String::new(),
+            motion_css: String::new(),
             redraw,
             assets,
             dirty: true,
@@ -749,21 +768,98 @@ impl CssUi {
             (width as f32 * scale) as u32,
             (height as f32 * scale) as u32,
             scale,
-            ColorScheme::Light,
+            self.color_scheme(),
         ));
         self.dirty = true;
+    }
+
+    /// The animation clock, in milliseconds: what CSS transitions and animations are resolved
+    /// against. The clock is monotonic — a time before the one already passed is ignored, so a
+    /// frame time that goes backwards (a paused clock, a second host frame in the same tick)
+    /// cannot rewind an animation that is running. It is the host's own frame time, which is
+    /// why this crate reads no wall clock of its own.
+    pub fn set_time(&mut self, ms: f64) {
+        self.time = self.time.max(ms);
+    }
+
+    /// The animation clock, in milliseconds.
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+
+    /// The same clock in the unit Stylo counts animation time in: seconds, since that is what a
+    /// CSS duration resolves to (`transition: 200ms` is `0.2`).
+    fn animation_seconds(&self) -> f64 {
+        self.time / 1000.0
+    }
+
+    /// The device the UI is styled for: `dark` drives `prefers-color-scheme`, and
+    /// `reduced_motion` drives `prefers-reduced-motion`.
+    ///
+    /// The reduced-motion half is a sheet rather than a media query: Stylo's media features are
+    /// Gecko's or Servo's, and Servo's list has no `prefers-reduced-motion` at all (the Gecko
+    /// one reads it through gecko bindings this crate has no way to reach), so
+    /// `@media (prefers-reduced-motion: reduce)` can never match here. What that query asks for
+    /// is honoured directly instead: while it is set, nothing animates — see
+    /// [`REDUCED_MOTION_CSS`]. A game's own `!important` still wins, which is the same
+    /// precedence a browser gives it.
+    pub fn set_env(&mut self, dark: bool, reduced_motion: bool) {
+        self.dark = dark;
+        self.reduced_motion = reduced_motion;
+        self.doc.set_viewport(Viewport::new(
+            (self.width as f32 * self.scale) as u32,
+            (self.height as f32 * self.scale) as u32,
+            self.scale,
+            self.color_scheme(),
+        ));
+        if !self.motion_css.is_empty() {
+            self.doc.remove_user_agent_stylesheet(&self.motion_css);
+            self.motion_css.clear();
+        }
+        if reduced_motion {
+            self.doc.add_user_agent_stylesheet(REDUCED_MOTION_CSS);
+            self.motion_css = REDUCED_MOTION_CSS.to_string();
+        }
+        self.dirty = true;
+        self.sync_dirty();
+    }
+
+    /// Whether the pointer is a finger rather than a mouse.
+    ///
+    /// A touch-only device matches `(hover: none)` and `(pointer: coarse)`, so a hover rule
+    /// guarded by Tailwind's `@media (hover:hover)` — the one Tailwind puts around every
+    /// `hover:` class — does not apply after a tap. A pointer event from a finger also drops the
+    /// hover state when it is released, so a tap never leaves a hover behind. There is one
+    /// pointer for the whole UI: a host with both a mouse and a touchscreen picks which one the
+    /// game is being driven by.
+    pub fn set_pointer_kind(&mut self, touch: bool) {
+        self.touch = touch;
+        self.doc.set_touch(touch);
+        self.dirty = true;
+        self.sync_dirty();
+    }
+
+    fn color_scheme(&self) -> ColorScheme {
+        if self.dark {
+            ColorScheme::Dark
+        } else {
+            ColorScheme::Light
+        }
     }
 
     /// Repaint if anything changed. Returns whether a new frame was produced; the frame counter
     /// advances only when it was.
     pub fn render(&mut self) -> bool {
         self.sync_dirty();
-        if !self.dirty {
+        // A running transition is itself a reason to repaint: it moves pixels on every frame
+        // until the clock passes its end, at which point `is_animating` goes false and the
+        // counter stops again. An idle UI still never repaints.
+        if !self.dirty && !self.doc.is_animating() {
             return false;
         }
         let (width, height, scale) = (self.width, self.height, self.scale);
         let (pw, ph) = (device_px(width, scale), device_px(height, scale));
-        self.doc.resolve(0.0);
+        self.doc.resolve(self.animation_seconds());
         let mut scene = anyrender_vello_cpu::VelloCpuScenePainter::new(pw as u16, ph as u16);
         blitz_paint::paint_scene(
             &mut scene,
@@ -806,7 +902,7 @@ impl CssUi {
         }
         // Hit testing reads layout, so it has to be current even when the host has not asked for
         // a frame since the last batch.
-        self.doc.resolve(0.0);
+        self.doc.resolve(self.animation_seconds());
         let consumed = self.hit_test_at(x, y);
         if kind == "leave" {
             if self.doc.clear_hover() {
@@ -816,7 +912,11 @@ impl CssUi {
         }
 
         let data = BlitzPointerEvent {
-            id: BlitzPointerId::Mouse,
+            id: if self.touch {
+                BlitzPointerId::Finger(0)
+            } else {
+                BlitzPointerId::Mouse
+            },
             is_primary: true,
             coords: PointerCoords {
                 page_x: x,
@@ -841,8 +941,14 @@ impl CssUi {
             active_pointers: Default::default(),
         };
         let ui_event = match kind {
-            "move" => UiEvent::PointerMove(data),
-            "down" => UiEvent::PointerDown(data),
+            "move" => UiEvent::PointerMove(data.clone()),
+            "down" => {
+                // A press focuses what it lands on, as a browser does, and without the focus
+                // ring: `:focus-visible` matches a control focused by keyboard, not one focused
+                // by a click.
+                self.focus_at(x, y, false);
+                UiEvent::PointerDown(data)
+            }
             _ => UiEvent::PointerUp(data),
         };
 
@@ -866,14 +972,220 @@ impl CssUi {
             );
             driver.handle_ui_event(ui_event);
         }
+        if kind == "up" {
+            // Blitz's click default action blurs whenever nothing matched, which for a plain
+            // `<button>` is every time. A browser focuses the control a click lands on and
+            // leaves it focused, so the focus a press set is restored after the click.
+            self.focus_at(x, y, false);
+        }
         self.sync_dirty();
         Ok(consumed)
+    }
+
+    /// Focus the element under the pointer, with or without the focus ring, if it is one a Tab
+    /// would stop at. A disabled control is not focusable, so a click on it does not move focus
+    /// either.
+    fn focus_at(&mut self, x: f32, y: f32, focus_visible: bool) {
+        if let Some(node) = self.doc.element_from_point(x, y) {
+            if is_focusable(&self.doc, node) {
+                self.doc.set_focus_visible(node, focus_visible);
+            }
+        }
+    }
+
+    /// Deliver a key press or release, and report whether the UI consumed it — that is, whether
+    /// it moved focus or activated anything. `key` is a `KeyboardEvent.key` value; only `Tab`,
+    /// `Enter` and the space key (`" "`) are modelled, and any other key is left to the game.
+    ///
+    /// `Tab` and `Shift+Tab` move focus through the focusable elements in document order: a
+    /// non-disabled `<button>`, anything with `tabindex` `>= 0`, an `<a href>`, a text input.
+    /// Like a browser, running off either end takes focus out of the document (which is
+    /// [`None`] from [`CssUi::focused_id`]) and the next Tab re-enters at the far end, rather
+    /// than wrapping silently.
+    ///
+    /// Activation is the browser's own split: `Enter` fires the click on the key press and the
+    /// space key on the key release, so a held space key does not repeat its click.
+    pub fn key(&mut self, key: &str, down: bool, shift: bool) -> bool {
+        match key {
+            "Tab" => {
+                if down {
+                    self.tab(shift);
+                    true
+                } else {
+                    // A Tab release moves nothing; only its press traverses.
+                    false
+                }
+            }
+            "Enter" => {
+                // Key press only: a browser activates here, so holding Enter does not repeat.
+                down && self.activate()
+            }
+            " " => {
+                // Key release only: the other half of the same rule.
+                !down && self.activate()
+            }
+            _ => false,
+        }
+    }
+
+    /// The id of the focused element, or [`None`] when nothing in the document has focus.
+    pub fn focused_id(&self) -> Option<u32> {
+        let node = self.doc.get_focussed_node_id()?;
+        self.callers.get(&node).copied()
+    }
+
+    /// Move focus one element forwards (`shift` for backwards), or out of the document when
+    /// there is nowhere left to go.
+    fn tab(&mut self, shift: bool) {
+        let stops = self.tab_stops();
+        let current = self.doc.get_focussed_node_id();
+        let next = match current.and_then(|node| stops.iter().position(|stop| *stop == node)) {
+            // Focus is on a stop: the next one in document order, or none — a browser does not
+            // wrap from the last stop to the first, it moves focus out of the document.
+            Some(at) => {
+                if shift {
+                    stops[..at].last().copied()
+                } else {
+                    stops.get(at + 1).copied()
+                }
+            }
+            // Focus is outside the document (the body, or nowhere): a Tab re-enters at the far
+            // end.
+            None => {
+                if shift {
+                    stops.last().copied()
+                } else {
+                    stops.first().copied()
+                }
+            }
+        };
+        match next {
+            Some(node) => {
+                self.doc.set_focus_visible(node, true);
+            }
+            None => {
+                self.doc.clear_focus();
+            }
+        }
+        self.dirty = true;
+        self.sync_dirty();
+    }
+
+    /// Every element a Tab stops at, in document order: blitz's own focusability, which is a
+    /// non-disabled `<button>`, `<a href>` or text input, or anything with `tabindex` `>= 0`.
+    fn tab_stops(&self) -> Vec<NodeId> {
+        let mut stops = Vec::new();
+        let mut stack = vec![self.doc.root_node().id];
+        while let Some(node_id) = stack.pop() {
+            let Some(node) = self.doc.get_node(node_id) else {
+                continue;
+            };
+            if node.is_focussable() {
+                stops.push(node_id);
+            }
+            // Pushed in reverse, so the first child is walked first: document order is what Tab
+            // follows, and it is also what `next_node` cannot be used for here because that
+            // wraps round to the start instead of running out.
+            stack.extend(node.children.iter().rev().copied());
+        }
+        stops
+    }
+
+    /// Fire one `click` on the focused element if a browser would: Enter and the space key
+    /// activate a button, and nothing else here.
+    fn activate(&mut self) -> bool {
+        let Some(node) = self.doc.get_focussed_node_id() else {
+            return false;
+        };
+        let is_button = self
+            .doc
+            .get_node(node)
+            .is_some_and(|n| tag_name(n) == local_name!("button"));
+        if !is_button || is_disabled(&self.doc, node) {
+            return false;
+        }
+        // The click goes to the same listeners a pointer click would, and stops there: the
+        // button's own default action (`handle_click`) is form submission and focus bookkeeping,
+        // neither of which this document has, and running it would clear the focus that
+        // activation is supposed to leave alone.
+        let chain = self.doc.node_chain(node);
+        let mut event = DomEvent::new(node, DomEventData::Click(self.synthetic_pointer()));
+        let mut state = EventState::default();
+        Recorder {
+            callers: &self.callers,
+            listeners: &self.listeners,
+            out: &mut self.out,
+            dropped: &mut self.dropped,
+        }
+        .handle_event(&chain, &mut event, &mut self.doc, &mut state);
+        self.dirty = true;
+        self.sync_dirty();
+        true
+    }
+
+    /// A pointer event at the focus ring's own position, which is what a `click` DOM event
+    /// carries: the coords are only read by handlers for pointer compatibility.
+    fn synthetic_pointer(&self) -> BlitzPointerEvent {
+        BlitzPointerEvent {
+            id: BlitzPointerId::Mouse,
+            is_primary: true,
+            coords: PointerCoords {
+                page_x: 0.0,
+                page_y: 0.0,
+                screen_x: 0.0,
+                screen_y: 0.0,
+                client_x: 0.0,
+                client_y: 0.0,
+            },
+            button: MouseEventButton::Main,
+            buttons: MouseEventButtons::None,
+            mods: Default::default(),
+            details: PointerDetails {
+                pressure: 0.0,
+                ..Default::default()
+            },
+            element: Default::default(),
+            active_pointers: Default::default(),
+        }
+    }
+
+    /// Scroll at `nx`/`ny` by `dx`/`dy` CSS pixels, and report whether anything moved.
+    ///
+    /// The nearest ancestor of the element under the pointer which can move in that direction
+    /// takes the whole delta, and the scroll stops there: a wheel tick is latched to one
+    /// scroller, so a list that took part of the delta does not hand the rest to the page. A
+    /// scroller that cannot move at all passes the event to the next one.
+    pub fn wheel(&mut self, nx: f32, ny: f32, dx: f32, dy: f32) -> bool {
+        if dx == 0.0 && dy == 0.0 {
+            return false;
+        }
+        self.doc.resolve(self.animation_seconds());
+        let hit = self
+            .doc
+            .element_from_point(nx * self.width as f32, ny * self.height as f32);
+        let moved = self.doc.scroll_wheel(hit, dx as f64, dy as f64, &mut |_| {});
+        if moved {
+            self.dirty = true;
+            self.sync_dirty();
+        }
+        moved
+    }
+
+    /// `[scrollLeft, scrollTop]` of an element, in CSS pixels.
+    pub fn scroll_offset(&mut self, id: u32) -> Option<[f64; 2]> {
+        let node = *self.ids.get(&id)?;
+        let node = self.doc.get_node(node)?;
+        if !node.is_element() {
+            return None;
+        }
+        let offset = *node.scroll_offset();
+        Some([offset.x, offset.y])
     }
 
     /// Whether the UI consumes the pointer at `nx`/`ny`. The same predicate [`CssUi::pointer`]
     /// returns, without delivering an event.
     pub fn hit_test(&mut self, nx: f32, ny: f32) -> bool {
-        self.doc.resolve(0.0);
+        self.doc.resolve(self.animation_seconds());
         self.hit_test_at(nx * self.width as f32, ny * self.height as f32)
     }
 
@@ -881,7 +1193,7 @@ impl CssUi {
     /// reports the line box its text laid out to, so this is where a font's own advances are read
     /// back. Layout is resolved first, so it answers even before the first `render`.
     pub fn node_box(&mut self, id: u32) -> Option<[f64; 4]> {
-        self.doc.resolve(0.0);
+        self.doc.resolve(self.animation_seconds());
         let node = *self.ids.get(&id)?;
         // A text node has no layout of its own to ask: blitz panics rather than answering.
         if !self.doc.get_node(node)?.is_element() {
@@ -1036,6 +1348,22 @@ fn is_disabled(doc: &BaseDocument, node: NodeId) -> bool {
         .is_some_and(|n| n.attr(local_name!("disabled")).is_some())
 }
 
+/// Whether a node is one `Tab` stops at: focusable in blitz's sense, which is exactly a
+/// non-disabled `<button>`, `<a href>`, `<summary>` or text input, or anything with
+/// `tabindex` `>= 0`.
+fn is_focusable(doc: &BaseDocument, node: NodeId) -> bool {
+    doc.get_node(node)
+        .is_some_and(|n| n.is_focussable() && !is_disabled(doc, node))
+}
+
+/// The element's tag name, for the one place the activation rule needs it.
+fn tag_name(node: &Node) -> LocalName {
+    node.data
+        .downcast_element()
+        .map(|el| el.name.local.clone())
+        .unwrap_or_default()
+}
+
 fn is_allowed_attr(name: &str) -> bool {
     ATTRS.contains(&name) || name.starts_with("data-") || name.starts_with("aria-")
 }
@@ -1079,6 +1407,16 @@ fn root_box_css(width: u32, height: u32) -> String {
 /// engine resolves "Arial" to — Chromium asks fontconfig, this engine asks fontique — which is a
 /// font-stack question rather than a user-agent one, and the corpus cannot pin it.
 const UA_CSS: &str = "button { box-sizing: border-box; font: 400 13.3333px Arial; }";
+
+/// What `prefers-reduced-motion: reduce` asks for, as a user-agent sheet: no transition and no
+/// animation takes any time, delays included (a transition that keeps its delay is still a
+/// transition the user asked not to see). It is `!important`, which outranks every author
+/// declaration that is not itself `!important` — the same precedence the cascade gives it in a
+/// browser.
+///
+/// See [`CssUi::set_env`] for why this is a sheet and not a media query.
+const REDUCED_MOTION_CSS: &str = "* { transition-duration: 0s !important; transition-delay: 0s !important; \
+     animation-duration: 0s !important; animation-delay: 0s !important; }";
 
 fn qual(tag: &str) -> QualName {
     QualName::new(None, ns!(html), LocalName::from(tag))

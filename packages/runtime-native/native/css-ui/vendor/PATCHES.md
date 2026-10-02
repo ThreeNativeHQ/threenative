@@ -11,7 +11,16 @@ a single property so that dropping a patch is a one-line change in `Cargo.toml`.
 the one the browser cannot see, blitz-dom hunk 4, a retained record that only shows up in
 `bench mount`'s resident set and in the crate's own release build.
 
-Run `cd examples/native-css-hud && node corpus/oracle.mjs` for the measurements quoted below.
+Run `cd examples/native-css-hud && node corpus/oracle.mjs` for the measurements quoted below, and
+`node corpus/interaction.mjs` for the interaction scenarios (hunks 8-12), which is the oracle an
+interaction hunk is proved against.
+
+Two hunks are over the ~80-line guideline: parley hunk 1 below, and blitz-dom hunk 11. Hunk 11 is
+the hit-test clip, and the overage is the rounded-rectangle test (~20 of those lines): a
+`border-radius` may round a corner to an ellipse, so one point needs both radii to be answered, and
+answering it in the shared walk is what keeps a click in a clipped-away corner from being one hit
+per ancestor. The separable part is the `clip` argument on `hit_inner`; dropping it leaves the
+radius half working for the element's own box only.
 
 ## `blitz-paint-0.3.0-beta.2` — 31 added code lines
 
@@ -40,7 +49,7 @@ Run `cd examples/native-css-hud && node corpus/oracle.mjs` for the measurements 
   the uncut line, which is what keeps a resize honest.
 * **Proves it:** `text-ellipsis` — SSIM 0.9603 → 0.9947, fixture passes on the strict 0.99 bar.
 
-## `blitz-dom-0.3.0-beta.2` — 165 added code lines
+## `blitz-dom-0.3.0-beta.2` — 328 added code lines
 
 ### 1. hoisted (`z-index`) children were painted one frame late, at the wrong offset
 
@@ -151,12 +160,85 @@ Run `cd examples/native-css-hud && node corpus/oracle.mjs` for the measurements 
   `text-overflow-fits` proves the other half, that a line which fits comes out exactly as it would
   with no `text-overflow` at all (forcing the ellipsis on a fitting line drops it to 0.9786).
 
+### 8. `:focus-visible` never matched, and a pointer focus could not be told from a keyboard one
+
+* **Where:** `src/stylo.rs` (`NonTSPseudoClass::FocusVisible`), `src/document.rs` (the new
+  `set_focus_visible`, with `set_focus_to` delegating to it), `src/node/node.rs` (`Node::focus`
+  takes the focus-visible flag).
+* **Why:** `:focus-visible` was hard-coded to `false`, so a control focused by Tab looked the
+  same as one never focused — a keyboard HUD gave no feedback at all. Matching it needs a state bit
+  to read, and `ElementState::FOCUSRING` was already set on *every* focus, so there was no way to
+  keep a pointer focus (a click on a button) from raising the ring. `focus_visible` is the flag
+  that separates them, and it is a per-call argument rather than a document setting because the
+  caller is the only one that knows which kind of focus caused the change.
+* **Proves it:** `focus-traversal-and-activation` — the pixel after two Tabs is `#f59e0b`, the
+  `:focus-visible` colour, and the pixel after a mouse click on the same button is its own
+  `#334155`; `tests/interaction.rs::a_pointer_focus_is_not_a_focus_visible_one`. Reverting the
+  `stylo.rs` line alone fails the scenario and the test.
+
+### 9. the device could not say it was driven by touch
+
+* **Where:** `src/document.rs` (`make_device` takes a `touch` flag, the new `set_touch`, and the
+  `touch` field), `src/mutator.rs` (one argument at the `ViewportMut` drop).
+* **Why:** `make_device` passed `PointerCapabilities::default()`, which is a mouse with hover on
+  every non-mobile target, so `@media (hover: hover)` and `(pointer: coarse)` could not be
+  answered at all. A touch-only device is `(hover: none) (pointer: coarse)`, which is what makes
+  Tailwind's `@media (hover:hover){.hover\:bg-…:hover{…}}` — the wrapper Tailwind puts around
+  every `hover:` class — not apply on a phone. The flag is a plain `bool` rather than the stylo
+  `PointerCapabilities` bitflags so that no caller has to name a stylo type to reach it.
+* **Proves it:** `touch-hover-and-environment` (a tap leaves `.h` its own colour under
+  `(hover:hover)`, and `tests/interaction.rs::a_mouse_hovers_and_a_finger_does_not`), plus
+  `a_tap_leaves_no_hover_behind`.
+
+### 10. a wheel delta that a scroller could not fully take was handed to its parent
+
+* **Where:** `src/scrolling.rs` (the new `scroll_wheel`).
+* **Why:** `scroll_chain_by` transfers whatever the first scroller could not consume to its parent
+  within the same event, which is right for a fling and wrong for a wheel tick: a browser latches
+  the tick to one scroller. Over a list that could take 90px of a 300px tick, the browser scrolled
+  the list by 90 and stopped, while this scrolled the list by 90 and the page by 210. It also
+  walked the whole ancestor chain for a *programmatic* scroll, which is not a user scroll at all.
+  `scroll_wheel` takes the nearest scroller that can move in the requested direction — one with
+  room left takes the whole delta and keeps the rest, one at its limit passes the event on — and
+  never reaches the viewport, because this document has no page to scroll.
+* **Proves it:** `nested-scroll` — three wheels of 50, 300 and 300px land at `[0,50]`, `[0,140]`
+  (outer still 0) and `[0,300]`, and `tests/interaction.rs`'s three wheel tests.
+
+### 11. hit testing ignored the overflow clip, the border radius, and `pointer-events` on the element itself
+
+* **Where:** `src/node/node.rs` (the new `Clip` and `Node::clip_shape`, and `hit_inner` taking the
+  ancestor clip and testing it), `src/document.rs` (`hit_with_scrollbar` passes `None`).
+* **Why:** `hit_inner` descended into children whose box lay outside a clipping ancestor, so a
+  click in the clipped-away part of a scroll panel hit the content that was not painted there: an
+  `overflow: hidden` HUD card with a tall list inside it would swallow clicks meant for the game
+  behind it. It also compared points against each element's plain rectangle, so the corner a
+  `border-radius` rounds away was still a hit, and the clip an ancestor establishes was never
+  intersected with a child's. `clip_shape` is the one place that knows both halves — the padding
+  box when the node clips its overflow, the border-radius curve always, since a rounded corner is
+  not painted — and the clip is threaded down the same walk, in the coordinate space each level is
+  already tested in, so transforms need no special case. `pointer-events: none` was already
+  honoured (hunk-free); the element's own rounded box was not.
+* **Proves it:** `clipped-hit-test` (four clicks: inside the clip, outside it, in the rounded
+  corner, in the circle) and `transform-hit-test-and-pointer-events`, plus five tests in
+  `tests/interaction.rs`. Dropping the clip test, the radius test, or the inverse transform fails
+  one of them each.
+
+### 12. `<button disabled>` was focusable, because an empty attribute value does not parse as `false`
+
+* **Where:** `src/node/element.rs` (`flush_is_focussable`).
+* **Why:** `attr_parsed::<bool>("disabled")` on `<button disabled>` — the attribute HTML writes
+  with no value — returns `None`, and `unwrap_or(false)` read that as "not disabled". So a
+  disabled button was in the tab order, and `focus-traversal-and-activation` stopped on it. What
+  disables a control is the attribute's presence, which the sibling `ElementState::DISABLED` code
+  already used (`has_attr`).
+* **Proves it:** `focus-traversal-and-activation` — Tab visits 1, 3, 4 and 6 and never the disabled
+  2 — and `tests/interaction.rs::tab_stops_at_focusable_elements_in_document_order`.
+
 ## `parley-0.11.1` — 124 added code lines
 
-This is the one patch over the ~80-line guideline, and the overage is honest: ~25 of hunk 1's lines
-are the shared `leading_box` helper, which replaced two copies of the same half-leading arithmetic.
-Hunk 1 is the separable one — dropping it reverts `box-model-and-sizing` and changes nothing else —
-and hunk 2 below is 10 lines on its own.
+The overage here is honest: ~25 of hunk 1's lines are the shared `leading_box` helper, which
+replaced two copies of the same half-leading arithmetic. Hunk 1 is the separable one — dropping it
+reverts `box-model-and-sizing` and changes nothing else — and hunk 2 below is 10 lines on its own.
 
 Line counts are added lines against the crates.io source of the same version, comments and blank
 lines excluded: `diff -ru ~/.cargo/registry/src/*/<crate> <crate>`.

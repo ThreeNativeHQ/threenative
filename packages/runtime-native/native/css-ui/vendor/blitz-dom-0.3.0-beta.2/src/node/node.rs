@@ -88,6 +88,42 @@ impl NodeFlags {
     }
 }
 
+/// A rounded rectangle a node's subtree is clipped to during hit testing, in the
+/// coordinates of that node's parent.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Clip {
+    rect: KurboRect,
+    /// The corner radii, clockwise from the top-left, each an (x, y) pair: a CSS
+    /// `border-radius` may round a corner to an ellipse.
+    radii: [(f64, f64); 4],
+}
+
+impl Clip {
+    fn contains(&self, x: f64, y: f64) -> bool {
+        let rect = self.rect;
+        if x < rect.x0 || x > rect.x1 || y < rect.y0 || y > rect.y1 {
+            return false;
+        }
+        // A point inside the rectangle is excluded only by the corner it lies in, so one ellipse
+        // test decides it: each corner's ellipse covers the quadrant outside its own centre,
+        // clockwise from the top-left.
+        let [tl, tr, br, bl] = self.radii;
+        let corners = [
+            ((rect.x0 + tl.0, rect.y0 + tl.1), tl, x < rect.x0 + tl.0, y < rect.y0 + tl.1),
+            ((rect.x1 - tr.0, rect.y0 + tr.1), tr, x > rect.x1 - tr.0, y < rect.y0 + tr.1),
+            ((rect.x1 - br.0, rect.y1 - br.1), br, x > rect.x1 - br.0, y > rect.y1 - br.1),
+            ((rect.x0 + bl.0, rect.y1 - bl.1), bl, x < rect.x0 + bl.0, y > rect.y1 - bl.1),
+        ];
+        for ((cx, cy), (rx, ry), past_x, past_y) in corners {
+            if past_x && past_y {
+                return rx <= 0.0 || ry <= 0.0
+                    || ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2) <= 1.0;
+            }
+        }
+        true
+    }
+}
+
 pub struct Node {
     // The actual tree we belong to. This is unsafe!!
     tree: *mut crate::NodeTree,
@@ -574,10 +610,19 @@ impl Node {
             .is_some_and(|data| data.element_state.contains(ElementState::HOVER))
     }
 
-    pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>) {
+    /// Focus the node, choosing whether `:focus-visible` matches it.
+    ///
+    /// `focus_visible` is what separates a keyboard focus from a pointer one
+    /// (https://drafts.csswg.org/selectors-4/#focus-visible): a control focused
+    /// by Tab matches it, the same control focused by a click does not.
+    pub fn focus(&mut self, shell_provider: Arc<dyn ShellProvider>, focus_visible: bool) {
         if let Some(data) = self.element_data_mut() {
-            data.element_state
-                .insert(ElementState::FOCUS | ElementState::FOCUSRING);
+            data.element_state.insert(ElementState::FOCUS);
+            if focus_visible {
+                data.element_state.insert(ElementState::FOCUSRING);
+            } else {
+                data.element_state.remove(ElementState::FOCUSRING);
+            }
         }
         self.mark_ancestors_dirty();
 
@@ -1164,6 +1209,67 @@ impl Node {
         false
     }
 
+    /// The region this node paints its subtree in, in this node's own (untransformed)
+    /// coordinates: its border-radius curve, and its overflow clip when it clips.
+    ///
+    /// `None` means the subtree is unbounded — no radius and nothing clipped away — which
+    /// is the common case and costs nothing to test.
+    fn clip_shape(&self) -> Option<Clip> {
+        use style::values::computed::Overflow;
+
+        let style = self.primary_styles()?;
+        let layout = self.final_layout();
+        let scroll = self.scroll_offset();
+        let width = layout.size.width as f64;
+        let height = layout.size.height as f64;
+        // The overflow clip edge is the padding box, and the local coordinates already carry
+        // this node's scroll offset (a scrolled box's own edge is at `scroll`, not at 0).
+        let x0 = scroll.x as f64 + layout.border.left as f64;
+        let y0 = scroll.y as f64 + layout.border.top as f64;
+        let x1 = x0 + width - layout.border.left as f64 - layout.border.right as f64;
+        let y1 = y0 + height - layout.border.top as f64 - layout.border.bottom as f64;
+
+        let border = style.get_border();
+        let resolve = |radius: &style::values::computed::BorderCornerRadius| {
+            let resolve_w = CSSPixelLength::new(width as _);
+            let resolve_h = CSSPixelLength::new(height as _);
+            (
+                // A radius is clamped to half of its side, so `border-radius: 50%` is the
+                // ellipse inscribed in the box rather than one which excludes its corners.
+                radius
+                    .0
+                    .width
+                    .0
+                    .resolve(resolve_w)
+                    .px()
+                    .clamp(0.0, width as f32 / 2.0) as f64,
+                radius
+                    .0
+                    .height
+                    .0
+                    .resolve(resolve_h)
+                    .px()
+                    .clamp(0.0, height as f32 / 2.0) as f64,
+            )
+        };
+        let radii = [
+            resolve(&border.border_top_left_radius),
+            resolve(&border.border_top_right_radius),
+            resolve(&border.border_bottom_right_radius),
+            resolve(&border.border_bottom_left_radius),
+        ];
+        let clips = !matches!(style.clone_overflow_x(), Overflow::Visible)
+            || !matches!(style.clone_overflow_y(), Overflow::Visible);
+
+        if !clips && radii.iter().all(|(rx, ry)| *rx == 0.0 && *ry == 0.0) {
+            return None;
+        }
+        Some(Clip {
+            rect: KurboRect::new(x0, y0, x1, y1),
+            radii,
+        })
+    }
+
     /// Takes an (x, y) position (relative to the *parent's* top-left corner) and returns:
     ///    - None if the position is outside of this node's bounds
     ///    - Some(HitResult) if the position is within the node but doesn't match any children
@@ -1173,22 +1279,33 @@ impl Node {
     /// TODO: z-index
     /// (If multiple children are positioned at the position then a random one will be recursed into)
     pub fn hit(&self, x: f32, y: f32, scale: f64) -> Option<HitResult> {
-        self.hit_inner(x, y, scale, &mut None)
+        self.hit_inner(x, y, scale, &mut None, None)
     }
 
     /// [`hit`](Self::hit), also resolving the innermost overlay scrollbar
     /// thumb under the point into `scrollbar` during the same descent (so
     /// thumb hit-testing shares the exact coordinate handling — transforms
     /// included — of every other hit test).
+    ///
+    /// `clip` is the region an ancestor clips this node's subtree to, in the same
+    /// coordinates as `x` and `y`; a point outside it hits nothing here.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn hit_inner(
         &self,
         x: f32,
         y: f32,
         scale: f64,
         scrollbar: &mut Option<crate::node::ScrollbarRef>,
+        clip: Option<Clip>,
     ) -> Option<HitResult> {
         use style::computed_values::pointer_events::T as PointerEvents;
         use style::computed_values::visibility::T as Visibility;
+
+        if let Some(clip) = clip
+            && !clip.contains(x as f64, y as f64)
+        {
+            return None;
+        }
 
         // Don't hit on visbility:hidden elements
         if let Some(style) = self.primary_styles() {
@@ -1215,11 +1332,17 @@ impl Node {
             y = (p.y / scale) as f32;
         }
 
+        // The region this node paints (and therefore hit-tests) its subtree in: its own
+        // border radius, and its overflow clip when it clips.
+        let clip = self.clip_shape();
+
         let size = self.final_layout().size;
         let matches_self = !(x < 0.0
             || x > size.width + self.scroll_offset().x as f32
             || y < 0.0
-            || y > size.height + self.scroll_offset().y as f32);
+            || y > size.height + self.scroll_offset().y as f32)
+            // A corner rounded away is not painted, so a point in it hits nothing.
+            && clip.is_none_or(|clip| clip.contains(x as f64, y as f64));
 
         let overflow_rect = self.final_layout().scrollable_overflow_rect;
         let matches_content = !(x < 0.0
@@ -1279,7 +1402,7 @@ impl Node {
                     let y = y - hoisted_child.position.y;
                     if let Some(hit) = self
                         .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
+                        .hit_inner(x, y, scale, scrollbar, clip)
                     {
                         return Some(hit);
                     }
@@ -1289,7 +1412,7 @@ impl Node {
 
         // Call `.hit()` on each child in turn. If any return `Some` then return that value. Else return `Some(self.id).
         for child_id in self.paint_children.borrow().iter().flatten().rev() {
-            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar) {
+            if let Some(hit) = self.with(*child_id).hit_inner(x, y, scale, scrollbar, clip) {
                 return Some(hit);
             }
         }
@@ -1302,7 +1425,7 @@ impl Node {
                     let y = y - hoisted_child.position.y;
                     if let Some(hit) = self
                         .with(hoisted_child.node_id)
-                        .hit_inner(x, y, scale, scrollbar)
+                        .hit_inner(x, y, scale, scrollbar, clip)
                     {
                         return Some(hit);
                     }
