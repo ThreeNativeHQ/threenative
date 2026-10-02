@@ -36,6 +36,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 - [ ] Integrate upstream decal projection with existing picking/base-geometry data and explicit receiver support. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
 - [ ] Implement deterministic pool limits, eviction, receiver cleanup and borrowed-resource ownership. proof: `pnpm exec vitest run packages/core/__tests__/vq-bounded-decals.spec.ts`.
   - Partial, 2026-10-02: the existing generated shooter `DecalField` now releases each cloned slot material, family material and shared geometry once; its texture remains borrowed. `node node_modules/vitest/vitest.mjs run packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts` passed 4 tests after reproducing 4 failures on the original implementation. This repairs the existing 224-slot template; it does not implement the proposed 256-decal receiver/projection fixture or introduce an engine pool.
+  - Caller ownership follow-up, 2026-10-02: `Play` registers its procedural decal texture in the existing scene registry after the borrowing field. The real `Play.load`/`enter` and registry teardown regression proves all 224 material disposals precede one texture disposal on each of three scene lifecycles; repeated cleanup does not redispose it, and the borrowed sky texture is retained. proof: `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/template-runtime-cost.spec.ts -t 'releases the shooter-owned decal texture'` — missing-disposal failure before the fix, pass afterward.
 
 ### Phase 2 — Preserve authored appearance and receiver motion
 
@@ -66,10 +67,17 @@ Browser/native visual qualification needs a runnable fixture and GPU/runtime lan
 
 Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
 
-2026-10-02 bounded ownership repair:
+2026-10-02 initial bounded ownership repair at `d134451e` (historical results from the prior environment; not a fresh aggregate pass for later changes):
 
 - Red/green: the final four-test lifetime regression failed all four cases on the original `decals.ts` and passed all four with the repair. No Three disposal implementation is replaced; listeners and call-through spies observe the real methods.
 - `node node_modules/vitest/vitest.mjs run --maxWorkers 1 packages/create-threenative/__tests__/shooter-decals-lifetime.spec.ts packages/create-threenative/__tests__/world-environment-lifetime.spec.ts packages/create-threenative/__tests__/shooter-rig.spec.ts packages/create-threenative/__tests__/template-runtime-cost.spec.ts`: 4 files, 13 tests passed after building local package prerequisites. Existing Rapier/Three warnings were emitted.
 - `pnpm typecheck` and `pnpm --filter create-threenative build`: exit 0 after building package prerequisites. `pnpm lint`: exit 0 with 1,000 existing warnings. `node --import tsx scripts/check-doc-links.ts`: exit 0, 2,395 links checked. The doc-link/evidence-budget/evidence-citations suites passed 31 tests using the `node --import tsx` loader in place of the CLI's unavailable IPC socket.
 - Full `pnpm test` was attempted and stopped at the `tsx` IPC socket with `EPERM`; its loader-based retry was interrupted during aggregate builds to avoid running the batch's full suite concurrently. This is not a full-suite pass. No browser, native, GPU-allocation or visible-result claim is made.
 - All six phase boxes and both acceptance boxes remain open. The proposed 256-mark projection fixture, receiver motion/removal, LOD handling, appearance controls and platform scenarios are still to be implemented or qualified.
+
+2026-10-02 caller texture ownership follow-up, verified in the recovered environment:
+
+- Fresh red/green on the actual shooter caller: its generated map emitted zero disposal events after scene/registry teardown before the fix. After the fix, the new regression passes through three scene construction/teardown cycles, checks borrower-before-texture disposal ordering and idempotent cleanup, and leaves the borrowed sky map untouched.
+- The same four-file focused/adjacent command above passes 14/14 tests with `--maxWorkers 1`, including the original four field-ownership regressions. Fixture Rapier/Three warnings remain visible; no real disposal implementation is replaced.
+- `node node_modules/typescript/bin/tsc --noEmit -p packages/create-threenative/tsconfig.json`: exit 0. Biome check on the changed caller and test: exit 0 with six existing complexity warnings. `node --import tsx scripts/check-doc-links.ts`: exit 0, 2,395 links checked.
+- This follow-up does not rerun aggregate root build/typecheck/test lanes while parallel rendering work is active. Browser/native qualification, actual relevant runtime screenshot proof, required CI and independent review remain open; the PR stays draft. Projection/receiver feature expansion is not included in this ownership repair.

@@ -7,12 +7,14 @@ import {
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   Scene,
   Texture,
   Vector2,
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { Registry } from "../../core/src/entities.js";
 import { createRandom } from "../../core/src/random.js";
 import { rapier } from "../../physics/src/index.js";
 import type { IPhysicsContext } from "../../physics/src/plugin.js";
@@ -276,6 +278,65 @@ function runSceneFrames(frame: unknown, context: unknown, beforeMeasure?: () => 
 }
 
 describe("generated template ordinary-frame runtime cost", () => {
+  it("releases the shooter-owned decal texture after its borrowers on repeated scene teardown", async () => {
+    const { Play } = await import("../templates/shooter/src/scenes/Play.js");
+    const { ENEMY_CLIPS } = await import("../templates/shooter/src/entities/Enemy.js");
+    const maps = new Set<Texture>();
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const physics = await physicsFixture();
+      const entities = new Registry();
+      const context = { ...sceneContext(physics.physics, Play.initialState), entities };
+      const sky = new Texture();
+      const skyDisposed = vi.fn();
+      sky.addEventListener("dispose", skyDisposed);
+      const play = new Play();
+      try {
+        await play.load({
+          ...context,
+          assets: {
+            ...context.assets,
+            model: async <T>(): Promise<T> => templatedRig(ENEMY_CLIPS) as T,
+            texture: async () => sky,
+          },
+        } as never);
+        play.enter(context as never);
+        const slots = context.scene.children.filter(
+          (child): child is Mesh<PlaneGeometry, MeshBasicMaterial> =>
+            child instanceof Mesh &&
+            child.geometry instanceof PlaneGeometry &&
+            child.renderOrder === 23,
+        );
+        expect(slots).toHaveLength(224);
+        const map = slots[0]?.material.map;
+        if (map === undefined || map === null) throw new Error("Shooter decal texture missing.");
+        expect(new Set(slots.map((slot) => slot.material.map))).toEqual(new Set([map]));
+        expect(maps.has(map)).toBe(false);
+        maps.add(map);
+        let releasedMaterials = 0;
+        for (const slot of slots) {
+          slot.material.addEventListener("dispose", () => {
+            releasedMaterials += 1;
+          });
+        }
+        const mapDisposed = vi.fn(() => expect(releasedMaterials).toBe(slots.length));
+        map.addEventListener("dispose", mapDisposed);
+
+        play.exit();
+        entities.clear();
+        expect(mapDisposed).toHaveBeenCalledTimes(1);
+        play.exit();
+        entities.clear();
+        expect(mapDisposed).toHaveBeenCalledTimes(1);
+        expect(skyDisposed).not.toHaveBeenCalled();
+      } finally {
+        play.exit();
+        entities.clear();
+        physics.dispose();
+        sky.dispose();
+      }
+    }
+  });
+
   it("executes 600 steady frames per template without fresh vector work", async () => {
     const minimal = await import("../templates/minimal/src/render/camera.js");
     const starter = await import("../templates/starter/src/entities/Player.js");
