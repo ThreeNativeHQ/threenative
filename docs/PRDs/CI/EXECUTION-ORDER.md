@@ -28,7 +28,7 @@ flowchart TD
 | 2 | [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) | Biggest wall-clock win: no queue. Its routing expression is what every later workflow edit builds on | fork-PR approval setting, before the first job is routed | ~2 h |
 | 2 | [PRD-481](PRD-481-ci-does-each-piece-of-work-once.md) phase 2 | Independent of 480. It edits `ci.yml` jobs, not `runs-on`, so it runs in parallel | — | ~3 h |
 | 2 | PRD-481 phase 3 | Small trigger trims, independent | — | ~1 h |
-| 3 | PRD-481 phase 1 | Tree reuse is cheapest to prove once runs are short and stable | merge queue | ~4 h |
+| 3 | PRD-481 phase 1 | Reuse only an equivalent validation (see review below); cheapest to prove once runs are short and stable | merge queue, enabled only after `merge_group` is on `develop` | ~4 h |
 | 3 | [PRD-380](PRD-380-a-pull-request-never-starves-the-runner-pool.md) | After 480, its native-matrix phase only has to cover the hosted macOS, Windows and iOS legs | — | ~3 h |
 | 4 | PRD-482 phase 2 | The push rule and dropping the local full board only make sense once the runners are proven | PRD-480 AC-1 | ~1 h |
 
@@ -39,10 +39,11 @@ which jobs each one touches.
 
 - ~~**Runner token**~~ — done 2026-10-02; it lives in the operator's untracked runner env file, never
   in the repository.
-- **Fork-PR approval:** set to "Require approval for all outside collaborators", under Settings →
-  Actions → General. On 2026-10-02 it reads `first_time_contributors`, which is too loose once jobs run
-  on a private machine.
-- **Merge queue:** enable it on `develop` in the repository ruleset.
+- ~~**Fork-PR approval**~~ — done 2026-10-02: `all_external_contributors`, applied with the owner's approval.
+- **Merge queue:** the owner approved enabling it on `develop` (2026-10-02). It waits until `ci.yml`'s
+  `merge_group` trigger is on `develop`, since the ruleset requires `ci-required` and a queue whose
+  check never reports stalls every merge. Start with a build concurrency of 2 and raise it only on measured
+  queue time.
 
 ## Working this file as a goal
 
@@ -53,6 +54,20 @@ which jobs each one touches.
   owner once.
 - **Rules:** one draft PR per PRD, branched from `origin/develop` (root `AGENTS.md`). Tick a box only on
   a green proof. Update this table's sizes and blockers as rows land.
+
+## Review by Astra (2026-10-02), adopted
+
+- **Same tree is not same validation.** A reduced PR matrix (PRD-380 phase 2) passing on tree T must not
+  satisfy a promotion PR on T, whose full native matrix never ran. PRD-481's reuse now needs an identical
+  tree *and* a source run whose validation profile covers the current one: the full board, every
+  currently required check and matrix leg passed, the same target tier and the same runner profile.
+  Tests prove that a reduced pass cannot satisfy a promotion, and that a profile change refuses reuse.
+- **Light lane.** `scope`, `ci-required` and the summaries get a reserved runner (PRD-480), so a join never
+  queues behind a 20-minute build.
+- **Build once before reusing verdicts.** PRD-481 phase 2 (artifact sharing, cache warming, shards) runs
+  ahead of phase 1. That was already the order.
+- **Not now:** narrower affected-check selection (a follow-up PRD, once the planner's exemptions are
+  proven one at a time), a remote compiler cache, more machines, Nx/Bazel/ARC. Measure first.
 
 ## Triage of the older CI PRDs (2026-10-02)
 
