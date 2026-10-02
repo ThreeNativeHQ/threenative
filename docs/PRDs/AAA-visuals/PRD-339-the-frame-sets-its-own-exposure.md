@@ -270,8 +270,10 @@ settled by 114/42 updates; raw one-stop settled by 57. Raw eleven-stop failed on
 
 `TN_EXPOSURE_NOT_SETTLED: Terminal GPU measurement remains unsettled after 180 rendered updates; observed time {"renderedUpdates":180,"adaptationSeconds":2.99999999999999,"realConsumedSeconds":10.978800000000414,"realElapsedSeconds":32.52129999999997,"clock":"deterministic-per-render"}.`
 
-Its actual final frame is visibly dark while the corrected endpoint remains readable, qualifying
-acceptance 1's same-budget mutation proof. Live-clock forward/reverse cuts also pass. Fixed/off
+Its actual final frame is visibly dark while the corrected endpoint remains readable. This proves
+the same-budget radiometric step mutation, but the current fixture changes lighting at a fixed
+camera. Acceptance 1 stays open until an actual cut between camera poses repeats the comparison.
+Live-clock forward/reverse intensity steps also pass. Fixed/off
 reports measured luminance with `applied=false` and zero exposure stops, while the early-return
 mutation fails only `TN_EXPOSURE_MEASUREMENT_MISSING`; both final PNGs are byte-identical, qualifying
 acceptance 3. Doubled-meter and wrong-clock controls fail their specific named gates. These are
@@ -298,7 +300,7 @@ history, native proof and full required CI remain open; phase progress remains 3
 
 ## Acceptance criteria
 
-- [x] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
+- [ ] **The settle time is independent of the size of the change.** proof: `exposure settle playtest`. A playtest scenario cuts the camera
    between a bright pose and a dark pose eleven stops apart, and between two poses one stop apart,
    and asserts both reach within 0.25 stops of their steady value inside the same frame budget.
    *Red-green:* replace the `log2` interpolation in `auto-exposure.ts` with `mix(prev, cur, rate)` on
