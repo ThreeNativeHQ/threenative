@@ -151,7 +151,7 @@ Phase boxes below are the acceptance criteria; each names its proof.
 
 #### Phase 1: `FluidParticles3D` runs a dam break on the GPU at 60 fps
 
-**Status:** PARTIAL (2 of 3 boxes)
+**Status:** PARTIAL (2 of 3 boxes; the third needs a presentation lane)
 **Files:** `packages/core/src/fluid-particles.ts` (new), `packages/core/src/index.ts` (export +
 JSDoc tags), `packages/core/__tests__/fluid-particles.spec.ts` (new),
 `examples/prd476-fluid-particles/` (new, copied from the `prd249-fluid-field` layout: `game.ts`,
@@ -171,7 +171,7 @@ beside the third box.
 
 #### Phase 2: bodies splash and float, and the native host runs the solver
 
-**Status:** NOT STARTED
+**Status:** DONE (2 of 2 boxes)
 **Files:** `packages/core/src/fluid-particles.ts` (colliders, column heights, `heightAt`),
 `examples/prd476-fluid-particles/src/game.ts` (a sphere and two boxes),
 `packages/runtime-native/conformance/registry.json` (new case),
@@ -181,8 +181,8 @@ projects particles out of them; the column-height grid feeds `heightAt` through 
 `Buoyancy3D` consumes it unchanged. Register a conformance case next to `77-fluid-field` with
 `desktopGate: true`, using the example's `conformance.js`.
 
-- [ ] A 1,900 kg/m³ sphere dropped into the tank displaces the surface and comes to rest on the floor, while a 550 kg/m³ box ends floating with its centre within 0.2 m of `heightAt` after 5 s (GameState assertions). proof: the Phase 1 playtest command with the coupling scenario
-- [ ] The desktop host runs the solver and matches the web capture within the case tolerance. proof: `pnpm parity` (case `fluid-particles`) and the `fluid-particles-desktop` playtest
+- [x] A 1,900 kg/m³ sphere dropped into the tank displaces the surface and comes to rest on the floor, while a 550 kg/m³ box ends floating with its centre within 0.2 m of `heightAt` after 5 s (GameState assertions). proof: the Phase 1 playtest command with the coupling scenario — pass x2 (`fluid-particles-coupling.playtest.json --url http://127.0.0.1:5173/?scene=coupling --headed`): sphere rests at y 0.299 m with speed 0, the 550 kg/m³ box ends 0.04 m from `heightAt` (limit 0.2), surface disturbance seen, 0 console errors. Hull is one centre point (heave only): off-centre points fed splash noise into torque and tumbled the box.
+- [x] The desktop host runs the solver and matches the web capture within the case tolerance. proof: `pnpm parity` (case `fluid-particles`) and the `fluid-particles-desktop` playtest — `run-conformance.mjs --target web` then `--target desktop --only-tests fluid-particles` against `build/tn-linux/mystral`: pass, pixelMismatchRatio 0, perceptualDeltaE 0 (tolerance 0.08 / 6.0), 0 GPU validation errors; `--target desktop` playtest passes (peak front 2.9 m, final max speed 0.09 m/s, stats readback works natively); web capture on `nvidia/turing`
 
 **Verification:** both proofs; regenerate the census in the same commit as the registry change
 (`pnpm census`).
