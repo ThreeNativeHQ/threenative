@@ -1,5 +1,5 @@
 import { MATERIAL_IDS } from "./masks.js";
-import { OPERATION_TYPES } from "./operations.js";
+import { OPERATION_TYPES, followsTerrain } from "./operations.js";
 import type {
   IMask,
   IMaterialRule,
@@ -24,6 +24,9 @@ const brush = [
   "spacing",
   "jitter",
 ];
+
+/** Terrain-following grading, shared by the spline operations. */
+const grade = ["followTerrain", "maxGrade", "maxCut", "maxFill"];
 
 /** The parameters each operation accepts. Anything else is rejected before the state changes. */
 export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object.freeze({
@@ -104,7 +107,7 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "alignToNormal",
   ],
   clear: ["target", "asset", "name"],
-  road: ["points", "width", "shoulder", "material", "smooth"],
+  road: ["points", "width", "shoulder", "material", "smooth", ...grade],
   river: [
     "points",
     "width",
@@ -116,8 +119,9 @@ export const PARAMS: Readonly<Record<OperationType, readonly string[]>> = Object
     "waterWidth",
     "color",
     "enforceDownhill",
+    ...grade,
   ],
-  ramp: ["from", "to", "width", "shoulder", "material"],
+  ramp: ["from", "to", "width", "shoulder", "material", ...grade],
   water: ["kind", "at", "radius", "level", "color"],
   heightmap: ["data", "scale", "offset", "blend", "at", "size", "rotation", "falloff"],
 });
@@ -253,9 +257,53 @@ export function validateMask(m: IMask, depth = 0): void {
   if (m.falloff !== undefined) num(m.falloff, "mask.falloff", 0, 1);
 }
 
+/** A control point: X and Z are always metres; Y may only be left out when the spline follows. */
+function splinePoint(v: unknown, name: string, follows: boolean): void {
+  if (!Array.isArray(v) || v.length !== 3) fail(`${name} must contain 3 numbers`);
+  num(v[0], name);
+  num(v[2], name);
+  const y = v[1];
+  if (y === null || y === undefined) {
+    if (follows) return;
+    fail(`${name} must contain 3 numbers`);
+  }
+  if (typeof y !== "number") fail(`${name} must contain 3 numbers`);
+  if (!Number.isFinite(y) && !follows) fail(`${name} elevation must be finite`);
+}
+
+/** Whether a spline layer grades itself to the ground it crosses. */
+function layerFollowsTerrain(layer: Layer): boolean {
+  if (!layer || typeof layer !== "object" || !["road", "river", "ramp"].includes(layer.type))
+    return false;
+  const params = (layer.params ?? {}) as Record<string, unknown>;
+  const source = (layer.type === "ramp" ? [params.from, params.to] : params.points) as
+    | readonly (readonly [number, number, number | null])[]
+    | undefined;
+  if (!Array.isArray(source)) return false;
+  return followsTerrain(source, params.followTerrain as boolean | undefined);
+}
+
+/**
+ * `finiteTree` cannot tell an elevation the recipe left out from a mistake, so a document is
+ * checked against a copy whose omitted slots read zero. The evaluator takes the ground there.
+ */
+function omittedElevations(layer: Layer, follows: boolean): unknown {
+  if (!follows) return layer;
+  const params = (layer.params ?? {}) as Record<string, unknown>;
+  const zero = (p: unknown): unknown => (Array.isArray(p) && p.length === 3 ? [p[0], 0, p[2]] : p);
+  const points = params.points;
+  const fixes = {
+    ...(Array.isArray(points) ? { points: points.map(zero) } : {}),
+    ...(Array.isArray(params.from) ? { from: zero(params.from) } : {}),
+    ...(Array.isArray(params.to) ? { to: zero(params.to) } : {}),
+  };
+  return Object.keys(fixes).length ? { ...layer, params: { ...params, ...fixes } } : layer;
+}
+
 /** Validates one recipe layer against its operation's allow-list, bounds and enum values. */
 export function validateLayer(layer: Layer): void {
-  finiteTree(layer, "layer");
+  const follows = layerFollowsTerrain(layer);
+  finiteTree(omittedElevations(layer, follows), "layer");
   if (!layer || typeof layer !== "object") fail("layer must be an object");
   for (const k of Object.keys(layer))
     if (!["id", "name", "type", "params", "enabled", "opacity", "mask"].includes(k))
@@ -283,20 +331,23 @@ export function validateLayer(layer: Layer): void {
     "smooth",
     "water",
     "enforceDownhill",
+    "followTerrain",
   ])
     if (params[key] !== undefined && typeof params[key] !== "boolean")
       fail(`${key} must be boolean`);
   if (params.seed !== undefined) num(params.seed, "seed", 0, 4294967295, true);
   if (params.at !== undefined) vec(params.at, "at", 2);
-  if (params.from !== undefined) vec(params.from, "from", 3);
-  if (params.to !== undefined) vec(params.to, "to", 3);
+  if (params.from !== undefined) splinePoint(params.from, "from", follows);
+  if (params.to !== undefined) splinePoint(params.to, "to", follows);
   const points = params.points;
   const isSpline = ["road", "river"].includes(layer.type);
   if (points) {
     if (!Array.isArray(points) || !points.length || points.length > 8192)
       fail("points must have 1..8192 entries");
     const dimensions = isSpline ? 3 : 2;
-    for (const point of points) vec(point, "point", dimensions);
+    for (const point of points)
+      if (isSpline) splinePoint(point, "point", follows);
+      else vec(point, "point", dimensions);
   }
   if (Array.isArray(points) && !isSpline) {
     const stroke = points as readonly (readonly number[])[];
@@ -348,7 +399,7 @@ export function validateLayer(layer: Layer): void {
     "rotation",
   ])
     if (params[key] !== undefined && !(key === "base" && layer.type === "materials"))
-      num(params[key], key);
+      if (params[key] !== null || key !== "height") num(params[key], key);
   for (const key of ["width", "step"])
     if (params[key] !== undefined) num(params[key], key, 0.001, 1e6);
   for (const key of [
@@ -359,6 +410,8 @@ export function validateLayer(layer: Layer): void {
     "minDistance",
     "depth",
     "capacity",
+    "maxCut",
+    "maxFill",
   ])
     if (params[key] !== undefined) num(params[key], key, 0, 1e6);
   for (const key of [
@@ -372,6 +425,7 @@ export function validateLayer(layer: Layer): void {
     "rate",
     "value",
     "waterWidth",
+    "maxGrade",
   ])
     if (params[key] !== undefined) num(params[key], key, 0, 1);
   if (params.spacing !== undefined) num(params.spacing, "spacing", 0.01, 2);
@@ -484,7 +538,15 @@ export function validateLayer(layer: Layer): void {
  * @example validateDocument(new Terrain({ resolution: 17 }).toJSON());
  */
 export function validateDocument(doc: ITerrainDocument): void {
-  finiteTree(doc, "recipe");
+  finiteTree(
+    Array.isArray(doc.layers)
+      ? {
+          ...doc,
+          layers: doc.layers.map((layer) => omittedElevations(layer, layerFollowsTerrain(layer))),
+        }
+      : doc,
+    "recipe",
+  );
   if (doc.version !== 1) fail("Unsupported recipe version; expected 1");
   validateConfig(doc.config);
   if (!Array.isArray(doc.layers) || doc.layers.length > 512)

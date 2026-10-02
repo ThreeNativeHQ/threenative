@@ -24,16 +24,20 @@ export const forest = new Terrain({ size: 512, resolution: 257, seed: 73 })
   })
   .road({
     id: "access-road",
+    // No absolute elevations: the road is graded to the ground it crosses, so it is a bench cut
+    // into the hillside instead of a causeway standing 15 m above it.
+    followTerrain: true,
     points: [
-      [-240, 20, 160],
-      [-100, 22, 160],
-      [30, 25, 160],
-      [230, 28, 160],
+      [-240, null, 160],
+      [-100, null, 160],
+      [30, null, 160],
+      [230, null, 160],
     ],
     width: 10,
     shoulder: 8,
   })
-  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, height: 22, falloff: 0.35 })
+  // The pad takes the local terrain height; its blend reaches as far as the deepest cut or fill.
+  .flatten({ id: "building-pad", at: [-120, 150], radius: 18, falloff: 0.35 })
   .paint({ id: "pad-surface", at: [-120, 150], radius: 18, material: "dirt" })
   .river({
     id: "river",
