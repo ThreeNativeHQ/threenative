@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'packages/create-threenative/templates/starter/src/render/volumetricFog.ts'
+      - 'packages/create-threenative/template-assets/worldEnvironment.ts'
+      - 'packages/core/src/renderer.ts'
+      - 'packages/core/src/render/chain.ts'
       - 'examples/abyss-framework/vq-fog/**'
       - 'examples/abyss-framework/playtests/vq-volumetric-fog.playtest.json'
       - 'scripts/verify-volumetric-fog.ts'

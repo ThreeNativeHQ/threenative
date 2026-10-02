@@ -1,7 +1,7 @@
 import type { MRTNode, Node } from "three/webgpu";
 
 import type { IFrameBudgetWindow } from "../frame-budget.js";
-import type { RendererKind } from "../renderer.js";
+import type { IRenderOutputInstallation, RenderOutputSetter, RendererKind } from "../renderer.js";
 import { velocityTexture, withVelocityContext } from "./velocity.js";
 import type { IVelocityRenderPass } from "./velocity.js";
 
@@ -54,11 +54,10 @@ export interface IRenderChainRenderer {
   readonly kind: RendererKind;
   readonly raw: unknown;
   clearOutputNode?(expectedNode?: unknown): void;
-  isOutputNodeCurrent?(node: unknown): boolean;
   /** Internal renderer seam used to turn on core-owned previous-frame bookkeeping for active temporal stages. */
   setRenderChainVelocityEnabled?(enabled: boolean): void;
   /** Install a graph and identify the authored world pass that follows the rendered scene root. */
-  setOutputNode(node: unknown, worldPass?: unknown): void;
+  setOutputNode: RenderOutputSetter;
 }
 
 const TIER_LEVEL: Record<RenderChainTier, number> = {
@@ -277,6 +276,7 @@ export class RenderChain {
   #ownedVelocityMrt: MRTNode | null | undefined = undefined;
   #disposed = false;
   #installedNode: unknown;
+  #installation: IRenderOutputInstallation | undefined;
   #applied: IRenderChainApplied;
 
   constructor(renderer: IRenderChainRenderer, options?: Omit<IRenderChainOptions, "renderer">);
@@ -423,7 +423,18 @@ export class RenderChain {
 
     if (stages.length > 0) {
       try {
-        this.#renderer.setOutputNode(node, this.#worldPass ?? this.#requestVelocity.pass);
+        const installation = this.#renderer.setOutputNode(
+          node,
+          this.#worldPass ?? this.#requestVelocity.pass,
+        );
+        // Historical void-style callbacks can return an ignored value (for example Array.push).
+        // Only an explicit receipt upgrades that adapter to installation ownership.
+        this.#installation =
+          installation &&
+          typeof installation.isCurrent === "function" &&
+          typeof installation.dispose === "function"
+            ? installation
+            : undefined;
         this.#installedNode = node;
       } catch (error) {
         const reason = `install:${errorMessage(error)}`;
@@ -473,7 +484,7 @@ export class RenderChain {
   /** Samples the active temporal stage's completed velocity result after rendering. */
   observeFrame(): IRenderChainApplied {
     if (this.#disposed) throw new Error("RenderChain.observeFrame called after dispose().");
-    if (this.#renderer.isOutputNodeCurrent?.(this.#installedNode) === false) return this.#applied;
+    if (this.#installation?.isCurrent() === false) return this.#applied;
     const requiresMeasurement = this.#applied.stages.some((name) =>
       requiresVelocityFor(this.#stageDefinitions.get(name), name),
     );
@@ -499,8 +510,7 @@ export class RenderChain {
   /** Feed the chain the same render-window evidence used by the frame budget. */
   observeFrameBudget(window: IRenderChainBudgetWindow): RenderChainTier {
     if (this.#disposed) throw new Error("RenderChain.observeFrameBudget called after dispose().");
-    if (!this.#automatic || this.#renderer.isOutputNodeCurrent?.(this.#installedNode) === false)
-      return this.#tier;
+    if (!this.#automatic || this.#installation?.isCurrent() === false) return this.#tier;
     const renderP95 = window.phases.render?.p95;
     if (typeof renderP95 !== "number" || !Number.isFinite(renderP95) || renderP95 < 0) {
       throw new Error("RenderChain frame budget render.p95 must be a finite non-negative number.");
@@ -543,8 +553,11 @@ export class RenderChain {
   }
 
   #clearOwnedOutput(): void {
-    if (this.#installedNode === undefined) return;
-    this.#renderer.clearOutputNode?.(this.#installedNode);
+    if (this.#installation !== undefined) this.#installation.dispose();
+    // Compatibility only: a void-returning adapter cannot distinguish same-node reinstalls.
+    else if (this.#installedNode !== undefined)
+      this.#renderer.clearOutputNode?.(this.#installedNode);
+    this.#installation = undefined;
     this.#installedNode = undefined;
   }
 

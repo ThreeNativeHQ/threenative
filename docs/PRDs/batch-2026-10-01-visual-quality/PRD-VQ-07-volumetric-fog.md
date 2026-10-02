@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-VQ-07 — Local volumetric fog composes with depth, lights and existing atmosphere
 
-**Status:** PARTIAL — 2026-10-02. Output-lifetime prerequisite implemented; fog and runtime qualification remain open.
+**Status:** PARTIAL — 2026-10-02. Phase 1 browser reference proof is complete; receipt review and broader lifecycle/native qualification remain open.
 **Batch:** [Visual quality execution batch](https://github.com/ThreeNativeHQ/threenative/blob/docs/visual-quality-batch-2026-10-01/docs/PRDs/batch-2026-10-01-visual-quality/README.md). **Wave:** 2 / atmosphere.
 **Dependencies:** Independent of clouds. Reuse VQ-06 only for any local-light feature it has actually qualified.
 
@@ -33,8 +33,8 @@ All proof paths below are **planned implementation targets**, not existing passi
 
 ### Phase 1 — Depth-correct participating volume
 
-- [ ] Implement game-owned volumetric composition using the admitted upstream/kit mechanism and shared scene depth. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
-- [ ] Cover zero density, inside/outside camera positions and opaque occlusion with analytic or reference fixtures. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
+- [x] Implement game-owned volumetric composition using the admitted upstream/kit mechanism and shared scene depth. Verified: generated source builds on the pinned shader compiler and hosted WebGPU run 36990624761 renders it; proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
+- [x] Cover zero density, inside/outside camera positions and opaque occlusion with analytic or reference fixtures. Verified: run 36990624761 captured all positions, exact off/zero image identity and the unchanged foreground-wall reference patch recorded below; proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts`.
 
 ### Phase 2 — Compose with the existing environment
 
@@ -86,3 +86,8 @@ Actual diagnostic progress: [hosted run 36989192897](https://github.com/ThreeNat
 The unchanged-HTML diagnostic rerun [36990205268](https://github.com/ThreeNativeHQ/threenative/actions/runs/36990205268) identifies the exact failed resource in `off/http-errors.jsonl`: `/favicon.ico`, HTTP404. The fixture now uses the repository's existing inline-favicon convention. Its new source regression failed first; fog/verifier tests then pass 24/24 and the production bundle builds. No error assertion was weakened. The next hosted run must verify that this removes the console failure and reaches fog-on capture.
 
 First successful actual fog captures: [run 36990624761](https://github.com/ThreeNativeHQ/threenative/actions/runs/36990624761), source `4f8fe47b1801282827c9b5d0f0cba40b99c7c2a7`, Chromium WebGPU / Google SwiftShader / 640×400. All nine named variants passed with empty diagnostic lists, and off/zero images were pixel-identical. The unchanged [fog-on PNG](../../verification/vq07-progress/4f8fe47b1/fog.png), [inside-volume PNG](../../verification/vq07-progress/4f8fe47b1/inside.png), [off baseline](../../verification/vq07-progress/4f8fe47b1/off.png) and [all-variant provenance](../../verification/vq07-progress/4f8fe47b1/provenance.json) are retained. Visual inspection confirms bounded mist and light response. The fixed wall-center patch (x184, y216, 18×18) has exactly zero changed pixels against off; full/half fog mean absolute difference is 0.0695/255. This is browser software-rendered correctness progress, not native or hardware-performance qualification. Same-node replacement ownership still needs a unique installation receipt; a green screenshot run does not close that review finding.
+
+
+Installation ownership correction: `setOutputNode` now returns a unique optional receipt with `isCurrent()` / `dispose()`, capturing the actual `RenderPipeline` installation. Same-node reinstall regressions failed first; old observers and disposers now respect the receipt, as does the generated direct base-colour path. Legacy void-style adapters (including historically ignored return values) retain compatibility behavior but do not gain installation-level guarantees. Receipts own only the installed pipeline; graph dependencies still belong to their explicit caller. The superseded node-equality query was removed. The focused renderer/chain/environment/shared-source/scaffold suite passes 157/157, core and touched-source/test typechecks pass, and API/capability checks pass. Generated-source hashes are refreshed only for this intentional shared lifecycle edit. Fresh hosted capture is selected for subsequent renderer/chain/canonical-environment changes.
+
+Independent receipt review of staged tree `2062ba7783c53bc27a5ba6537a8b60874b9c06fa` passed for pipeline-installation ownership: the reviewer reran renderer/render-chain/WorldEnvironment tests, 89/89 passed, with no blocking defect in that delta. This explicitly does not transfer or guarantee arbitrary shared graph-dependency lifetimes. Hosted pixel proof will be rerun at the published receipt head.

@@ -327,6 +327,11 @@ function stage(definition: {
 function denoised(node: ReturnType<typeof denoise>): ChainNode {
   return node as unknown as ChainNode;
 }
+type OutputInstallation = { isCurrent(): boolean; dispose(): void };
+type OutputSetter =
+  | ((node: unknown, worldPass?: unknown) => void)
+  | ((node: unknown, worldPass?: unknown) => OutputInstallation);
+
 export type OutputRenderer = {
   kind: string;
   raw: unknown;
@@ -335,8 +340,8 @@ export type OutputRenderer = {
    * stage is off: the chain installs nothing for an empty stage list, and dropping the game's
    * own composition on the floor would be the silent no-op this class exists to prevent.
    */
-  setOutputNode?: (node: unknown, worldPass?: unknown) => void;
-  /** Clear only the named current graph, so an obsolete scene cannot clear its replacement. */
+  setOutputNode?: OutputSetter;
+  /** Legacy node-only clear. The returned receipt distinguishes same-node reinstalls. */
   clearOutputNode?: (expectedNode?: unknown) => void;
   createRenderChain?: (options: {
     input?: unknown;
@@ -755,8 +760,15 @@ export class WorldEnvironment {
         releaseGraph();
         throw new Error("Output node installation and ownership-aware disposal are required.");
       }
+      let installation: OutputInstallation | undefined;
       try {
-        renderer.setOutputNode(exposed, scenePass);
+        const returned = renderer.setOutputNode(exposed, scenePass);
+        installation =
+          returned &&
+          typeof returned.isCurrent === "function" &&
+          typeof returned.dispose === "function"
+            ? returned
+            : undefined;
       } catch (error) {
         releaseGraph();
         throw error;
@@ -767,7 +779,9 @@ export class WorldEnvironment {
         stages: [],
         dispose: () => {
           if (released) return;
-          renderer.clearOutputNode?.(exposed);
+          if (installation) installation.dispose();
+          // Legacy adapters returning void retain node-only, not installation-level safety.
+          else renderer.clearOutputNode?.(exposed);
           releaseGraph();
         },
       };

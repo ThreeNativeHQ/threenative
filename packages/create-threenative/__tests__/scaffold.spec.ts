@@ -185,19 +185,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "7e245a89396cb372e81b30607583e8047d8cb37fd073215e40cec61057132d12",
-  minimal: "a07aba83d5f576c943eec9201955aaeb7773178e4207303a9dba6c85f3274d64",
-  platformer: "91abe84959d599c7c7fcf676b0c09596bfd09017976350649941539e1dd51003",
-  puzzle: "6e47791f5adc872715ecad22ec09b5437039def2bbc689d3f6fae1bd64e973e2",
-  racing: "08f71b94ee94e19165278a7bfe42888772f1125b9b7242f71a4ed70719c69a12",
-  rain: "79df918785707d0f47cbf35edb22b55d9980e20f7882ca727ae60662a59fffae",
-  rts: "09230e7eb29441f55acac473f2f73f02b0ad918038e0b43c37522dbf964b2aee",
-  runner: "50191f843787d7a8267846ceae8e9f69daa4a24b5403d406e5552bf68f82b61c",
-  sailing: "da6621de99aacfb80cd2459e9bdbb04421160df57d28122e0abb6638d61f0f9d",
-  shooter: "494e877394128762d70bb0b7ad95a3e72ee6e6f6a5f5d956cbf2c2e1b4d565ed",
-  snow: "c5d9630d80557145bbde1ff03fc8cb3619f5514c3bf6903fd5ad1deb0e38e4a2",
-  starter: "64e651980e3f8e9f39a4f0fa23b5d7913a7e1c99f606a4ea737aec112ae2e435",
-  "tower-defense": "00af2e6b3584af6d8c03ab81ec89590ebbb8af6a9e10bdea8e0b9c1b5558c564",
+  "action-rpg": "88a0c2b6a5de858b825b48163aa6baaf0247a6c37adf7cd22804ca2aece99537",
+  minimal: "2f4a541b17adc6ac92ac469dd2a3d2adb6c2c819d49302d0c69e2b0b758d4f27",
+  platformer: "eeae46b7bd30b454c86bb69f9962c99d014d5ec486f0cce9dff331ad2e3dc5f8",
+  puzzle: "66e94555c964bc98ee57ad5a2bdaaac9e3555a5e0d372817d7563b5c10698afe",
+  racing: "9e7d23bcc707ceb0e764ee8aba8a1d47feeb32941a87fdf80de1e786d8fd7116",
+  rain: "145eab4d9196781dec520645944daa4ec6f94ede6b5e9a67565df3e50e7fa762",
+  rts: "c105e4ee6b31452e75891f82c62a0d9dc7ccdb952ffdf3ca6228730848e3647a",
+  runner: "7579c2d75ea26c4b17afc01c43a5f9db5b507910edf39833aa05e6996d5151a9",
+  sailing: "515123a0e72b1989f7a762d0c1ab03d6bdaeaf4e8b7e3e010c670d6f278ce514",
+  shooter: "626dfe4c6745ff4229c7f0a87b5520e919c7bc7564a6b3be0c546e5042ea5f60",
+  snow: "59970d8620faa76537fc95da8d0a26c0aa5ce05e772470c5b96711a2e789feb7",
+  starter: "94188f510247a627d559cbce020b5c9ce1701a3a63a426cfb04ffd9378e3c527",
+  "tower-defense": "afb52872545273c7bd566f0f432aba102f93dde33bf480a1ac264b9964e052a6",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

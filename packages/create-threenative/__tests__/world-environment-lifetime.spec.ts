@@ -145,3 +145,23 @@ it.each(["texture", "rtt"])("leaves caller-owned %s resources alive", (kind) => 
   borrowedRtt?._quadMesh.material.dispose();
   supplied.value.dispose();
 });
+
+it("releases the unique direct installation receipt rather than the legacy node identity", () => {
+  const dispose = vi.fn();
+  const clearOutputNode = vi.fn();
+  const applied = new WorldEnvironment({ bloomEnabled: false, screenSpaceAA: "disabled" }).apply(
+    {
+      kind: "webgpu",
+      raw: {},
+      clearOutputNode,
+      setOutputNode: () => ({ isCurrent: () => true, dispose }),
+    },
+    new Scene(),
+    new PerspectiveCamera(),
+    { baseColour: (scenePass) => scenePass },
+  );
+  applied.dispose?.();
+  applied.dispose?.();
+  expect(dispose).toHaveBeenCalledTimes(1);
+  expect(clearOutputNode).not.toHaveBeenCalled();
+});
