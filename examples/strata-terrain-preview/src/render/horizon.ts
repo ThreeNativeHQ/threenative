@@ -83,7 +83,11 @@ export function createHorizonGeometry(
                 massif * (170 + ridge ** 1.8 * 330) +
                 fineRidge ** 3 * Math.min(1, massif * 3) * 60 +
                 crags * Math.min(1, massif * 2) * 0.5
-              : hills;
+              : hills -
+                Math.min(1, massif * 2) *
+                  (Math.abs(noise.noise(nx * 0.008, 8.5, nz * 0.008)) * 95 +
+                    Math.abs(noise.noise(nx * 0.019, 1.6, nz * 0.019)) * 28) +
+                noise.noise(nx * 0.04, 5.3, nz * 0.04) * Math.min(1, massif * 2) * 8;
       const height = data.waterLevel === null ? inland : data.waterLevel - 28;
       // The collider seam is exact. Short baked rills fade into broad shoulders before the massif.
       const detail = data.waterLevel === null ? Math.exp(-distance / 45) : 1;

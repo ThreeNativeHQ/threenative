@@ -19,6 +19,7 @@ import {
   buildPropVariants,
   createProps,
   flatPropMaterials,
+  variantFor,
 } from "./render/props.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/river.js";
 import { type IPlacementField, scatterProps } from "./render/scatter.js";
@@ -472,9 +473,39 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
           from: { x, y: top + 2, z },
           to: { x, y: -100, z },
         });
+        let height = visual?.point.y ?? physical?.position.y ?? null;
+        if (
+          height !== null &&
+          (world === "forest" || world === "coastal") &&
+          ["boulder", "riverrock", "scree"].includes(placement.asset)
+        ) {
+          const stone = propParts
+            .get(`${placement.asset}:${variantFor(placement, placement.asset)}`)
+            ?.find((part) => part.role === "stone")?.geometry;
+          stone?.computeBoundingBox();
+          const box = stone?.boundingBox;
+          if (box) {
+            // GroundSnap's single lowest point left the downhill footprint hanging on thin stones.
+            const reach =
+              Math.max(box.max.x - box.min.x, box.max.z - box.min.z) * placement.scale * 0.28;
+            for (const [dx, dz] of [
+              [-reach, 0],
+              [reach, 0],
+              [0, -reach],
+              [0, reach],
+            ]) {
+              const foot = ctx.raycast({
+                direction: new Vector3(0, -1, 0),
+                origin: new Vector3(x + (dx ?? 0), top + 2, z + (dz ?? 0)),
+                targets: [mesh],
+              });
+              if (foot) height = Math.min(height, foot.point.y);
+            }
+          }
+        }
         const [originX, originY, originZ] = placement.position;
         return {
-          height: visual?.point.y ?? physical?.position.y ?? null,
+          height,
           offset: originY - field.heightAt(originX, originZ),
         };
       };

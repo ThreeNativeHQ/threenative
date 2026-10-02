@@ -173,8 +173,11 @@ export function scatterProps(
       asset,
       id: `temperate-${asset}:${index}${suffix}`,
       layer: `temperate-${asset}`,
-      alignToNormal: false,
-      normal: [0, 1, 0],
+      alignToNormal: temperate && (asset === "spruce" || asset === "sapling"),
+      normal:
+        temperate && (asset === "spruce" || asset === "sapling")
+          ? [Math.sin(x * 1.17 + z) * 0.045, 1, Math.cos(z * 1.31 - x) * 0.045]
+          : [0, 1, 0],
       position: [x, clampedHeight(data, x, z), z],
       rotation: random() * Math.PI * 2,
       scale,
@@ -199,7 +202,7 @@ export function scatterProps(
       slopeDegrees(data, x, z) > 32 ||
       (data.world === "alpine" && clampedHeight(data, x, z) > 52) ||
       grassWeight(data, x, z) < (temperate ? 0.3 : 0.18) ||
-      forestWeight(x, z) < 0.42
+      forestWeight(x, z) < (temperate ? 0.3 : 0.42)
     )
       continue;
     const cx = Math.floor(x / SCATTER.spruceSpacing);
@@ -217,7 +220,9 @@ export function scatterProps(
       tundra || alpine ? "sapling" : "spruce",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.45 : 1.05) + random() * (temperate ? 0.5 : 0.4),
+      temperate
+        ? 0.6 + 0.8 * clamp01((forestWeight(x * 0.4, z * 0.4) - 0.15) * 0.7 + random() * 0.4)
+        : (tundra ? 0.45 : 1.05) + random() * 0.4,
     );
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = forestWeight(x, z) < 0.57;
@@ -253,6 +258,17 @@ export function scatterProps(
     }
     for (let k = 0; k < 2 + Math.floor(random() * 3); k++)
       put("boulder", x + (random() - 0.5) * 8, z + (random() - 0.5) * 8, 0.45 + random() * 0.8);
+  }
+  if (temperate && data.waterLevel !== null) {
+    // Reuse the river stones for a broken rocky tide line, below the vegetation's beach exclusion.
+    for (let i = 0; i < 2200; i++) {
+      const x = (random() - 0.5) * data.size;
+      const z = (random() - 0.5) * data.size;
+      const above = clampedHeight(data, x, z) - data.waterLevel;
+      if (above < 0.4 || above > 4.8 || slopeDegrees(data, x, z) > 38 || random() > 0.28) continue;
+      put("riverrock", x, z, 0.8 + random() * 2.4);
+      if (random() < 0.22) put("boulder", x + 1.2, z - 1.2, 0.3 + random() * 0.5);
+    }
   }
   for (const river of data.rivers ?? []) {
     for (let i = 1; i < river.points.length; i++) {

@@ -1290,3 +1290,13 @@ and fill controls pending. Initial full baseline was interrupted by signal after
 forest/coast; no full-baseline PASS claimed. Doctor passes Node/Chromium/Xvfb.
 Terrain unit tests 69/69 PASS; doc links (2,386) and six document test files
 (180 tests) PASS.
+
+Round-11 measured increment (still in progress): licensed full scenario
+`forest-r11-pass2` PASS; meadow/overview frame p50 2.2/2.4 ms. Example typecheck
+and Biome error gate PASS; temperate placement assertions PASS (3,200 trees,
+0.6–1.4 age scale and varied lean). Crown streaks remain: no visual PASS claimed.
+Atlas white bleed, received shadows and fog ablations do not explain them.
+Earlier clear-crown cold ablations were already clear before the edit and cannot
+prove specular/transmission causality. Terrain patches were too brown in this
+iteration and are being reduced. Alpine/desert baseline luminance p05/p50/p95
+deltas ≤0.061; tundra deltas reach 2.715, under investigation before acceptance.
