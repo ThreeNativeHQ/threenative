@@ -302,7 +302,7 @@ export function installOutdoorOcclusion(
   );
   scene.fogNode = heightFog;
   // AO must darken RGB, not canvas alpha: lowered alpha leaked the backdrop through dark crowns.
-  // Preserve the other worlds' existing output for this forest/coast round.
+  // Keep every world opaque; the distance fade changes only AO strength.
   const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   const world = pass(scene, camera);
   world.setMRT(mrt({ output, normal: normalView }));

@@ -789,6 +789,28 @@
             "equals": true
           }
         ]
+      },
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "baseRingBuried",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "props",
+        "component": "crags",
+        "path": "baseRingMeasured",
+        "atSteps": [
+          {
+            "label": "alpine-ridge",
+            "equals": true
+          }
+        ]
       }
     ]
   }

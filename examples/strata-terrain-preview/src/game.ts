@@ -547,6 +547,10 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         // The props never move either: the wind is a vertex shader and a distance band changes which
         // instances draw, not where any object is.
         markStatic(props.object);
+        const alpineCrags =
+          world === "alpine"
+            ? [...props.byId.values()].filter((instance) => instance.placement.asset === "mountain")
+            : [];
         ctx.entities.add("props", {
           object: props.object,
           debug: () => ({
@@ -566,6 +570,30 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
               .filter(([key]) => /^(mountain|volcanic|reveal):/.test(key))
               .reduce((sum, [, parts]) => sum + parts.length, 0),
             crags: {
+              ...(world === "alpine"
+                ? {
+                    maxBaseClearance: alpineCrags.length
+                      ? Math.max(...alpineCrags.map((instance) => instance.cragBaseClearance ?? 1))
+                      : 1,
+                    baseRingSamples: alpineCrags.reduce(
+                      (sum, instance) => sum + (instance.cragRingSamples ?? 0),
+                      0,
+                    ),
+                    count: alpineCrags.length,
+                    baseRingBuried:
+                      alpineCrags.length > 0 &&
+                      alpineCrags.every(
+                        (instance) =>
+                          (instance.cragBaseClearance ?? 1) <= -0.49 &&
+                          (instance.cragRingSamples ?? 0) >= 4,
+                      ),
+                    baseRingMeasured:
+                      alpineCrags.reduce(
+                        (sum, instance) => sum + (instance.cragRingSamples ?? 0),
+                        0,
+                      ) >= 100,
+                  }
+                : {}),
               drawn:
                 props?.meshes.some(
                   (draw) =>

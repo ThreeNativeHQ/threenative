@@ -276,6 +276,7 @@ export function buildPropVariants(
       }
       const fallback = boulder(VARIANTS.seed ^ variant);
       if (["mountain", "volcanic", "reveal"].includes(asset)) {
+        if (asset === "mountain") fallback.scale(0.65, 1.45, 1.8);
         fallback.computeBoundingBox();
         const size = fallback.boundingBox?.getSize(new Vector3());
         const scale =
@@ -320,6 +321,8 @@ export interface IPropInstance {
   geometry: BufferGeometry;
   grounding: boolean;
   clearance: number | null;
+  cragBaseClearance?: number;
+  cragRingSamples?: number;
   /** Every draw of this placement, so a transform write reaches all of them. */
   parts: { mesh: InstancedMesh; index: number }[];
 }
@@ -381,10 +384,54 @@ function preparePose(
         (placement.asset === "mountain" ? 0.7 : crag ? 0.55 : BOULDER_BURIAL) * height;
     }
   }
+  let cragBaseClearance: number | undefined;
+  let cragRingSamples: number | undefined;
+  if (grounding && !transform && placement.asset === "mountain") {
+    // Probe the outermost vertices of the lowest ring, not a bounding-box centre.
+    const box = geometry.boundingBox;
+    if (!box) throw new Error(`Crag '${placement.id}' has no bounds`);
+    const vertices = geometry.getAttribute("position");
+    const ring: (Vector3 | undefined)[] = Array.from({ length: 16 });
+    const centre = box.getCenter(new Vector3());
+    for (let i = 0; i < vertices.count; i++) {
+      const point = new Vector3().fromBufferAttribute(vertices, i);
+      if (point.y > box.min.y + (box.max.y - box.min.y) * 0.18) continue;
+      const angle = Math.atan2(point.z - centre.z, point.x - centre.x);
+      const bin = Math.min(15, Math.floor(((angle + Math.PI) / (2 * Math.PI)) * 16));
+      const held = ring[bin];
+      if (
+        !held ||
+        Math.hypot(point.x - centre.x, point.z - centre.z) >
+          Math.hypot(held.x - centre.x, held.z - centre.z)
+      )
+        ring[bin] = point;
+    }
+    model.updateMatrix();
+    let highestGap = Number.NEGATIVE_INFINITY;
+    cragRingSamples = 0;
+    for (const vertex of ring) {
+      if (!vertex) continue;
+      const point = vertex.applyMatrix4(model.matrix);
+      const contact = groundAt(placement, point.toArray()).height;
+      if (contact === null) throw new Error(`Missing ground under crag ring '${placement.id}'`);
+      highestGap = Math.max(highestGap, point.y - contact);
+      cragRingSamples++;
+    }
+    if (cragRingSamples < 4) throw new Error(`Incomplete base ring for crag '${placement.id}'`);
+    const sink = Math.max(0, highestGap + 0.5);
+    model.position.y -= sink;
+    cragBaseClearance = highestGap - sink;
+  }
   model.updateMatrix();
   if (!new Float32Array(model.matrix.elements).every(Number.isFinite))
     throw new Error(`Transform exceeds the renderer range for '${placement.id}'`);
-  return { matrix: model.matrix.clone(), grounding, clearance: snap.clearance };
+  return {
+    matrix: model.matrix.clone(),
+    grounding,
+    clearance: snap.clearance,
+    cragBaseClearance,
+    cragRingSamples,
+  };
 }
 export function preparePropTransform(
   instance: IPropInstance,
@@ -413,6 +460,8 @@ export function writePropTransform(
   }
   instance.grounding = prepared.grounding;
   instance.clearance = prepared.clearance;
+  instance.cragBaseClearance = prepared.cragBaseClearance;
+  instance.cragRingSamples = prepared.cragRingSamples;
 }
 export function readPropTransform(instance: IPropInstance): IPlacementOverride {
   const matrix = instance.pose;
@@ -576,6 +625,8 @@ export function createProps(
     entries.push({
       instance: {
         clearance: pose.clearance,
+        cragBaseClearance: pose.cragBaseClearance,
+        cragRingSamples: pose.cragRingSamples,
         grounding: pose.grounding,
         index: 0,
         // Filled in below once this group's meshes exist; the trunk draw is the one the editor

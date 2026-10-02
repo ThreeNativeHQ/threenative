@@ -1,13 +1,21 @@
+import type { Texture } from "three";
 /** Game-owned biome choices; all five worlds share the same rendering and collision paths. */
 import {
+  abs,
+  dot,
   float,
   mix,
   mx_fractal_noise_float,
+  mx_noise_float,
   mx_worley_noise_vec2,
   normalWorldGeometry,
   positionWorld,
+  rotateUV,
   smoothstep,
+  texture,
+  vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import {
@@ -67,7 +75,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     world: "alpine",
     horizon: "alpine",
     grassTint: [0.43, 0.8, 0.35],
-    stoneTint: [0.69, 0.72, 0.77],
+    stoneTint: [0.86, 0.88, 0.9],
     snowTint: [1.6, 1.65, 1.7],
     distantStone: [0.23, 0.225, 0.215],
     snow: [54, 88, 0.39],
@@ -119,7 +127,7 @@ export const BIOMES: Record<WorldName, IBiome> = {
     ...temperate,
     world: "tundra",
     horizon: "plain",
-    grassTint: [0.94, 0.91, 0.67],
+    grassTint: [0.83, 0.88, 0.82],
     stoneTint: [0.7, 0.74, 0.77],
     snowTint: [1.2, 1.24, 1.28],
     distantStone: [0.18, 0.2, 0.21],
@@ -128,8 +136,8 @@ export const BIOMES: Record<WorldName, IBiome> = {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
       grass: {
-        diffuse: "lichen_rock/lichen_rock_diff_512.jpg",
-        normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
+        diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
+        normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
       },
       dirt: {
         diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
@@ -189,17 +197,24 @@ export function biomeWeights(
     vec3(positionWorld.x, 0, positionWorld.z).mul(0.13).add(drift.mul(0.35)),
   );
   const polygon = smoothstep(0.025, 0.11, cells.y.sub(cells.x));
+  const mats = smoothstep(
+    0.48,
+    0.78,
+    float(0.52)
+      .add(positionWorld.x.mul(0.049).add(positionWorld.z.mul(0.0216)).sin().mul(0.27))
+      .add(positionWorld.z.mul(0.0516).sub(positionWorld.x.mul(0.0238)).add(1.3).sin().mul(0.24))
+      .add(positionWorld.x.mul(0.0994).add(positionWorld.z.mul(0.0732)).sin().mul(0.12)),
+  );
   return {
     dirt:
       biome.world === "tundra"
-        ? smoothstep(0.08, 0.5, hollow).mul(0.45).max(polygon.oneMinus().mul(0.7))
+        ? smoothstep(0.08, 0.5, hollow)
+            .mul(0.28)
+            .max(polygon.oneMinus().mul(0.3))
+            .mul(mats.oneMinus())
         : smoothstep(0.08, 0.5, hollow).mul(0.55),
     moss:
-      biome.world === "tundra"
-        ? smoothstep(-0.18, 0.25, drift)
-            .mul(snow.oneMinus())
-            .mul(mix(0.38, 0.82, polygon))
-        : float(0),
+      biome.world === "tundra" ? mats.mul(snow.oneMinus()).mul(mix(0.72, 0.98, polygon)) : float(0),
     rock:
       biome.world === "alpine"
         ? stone
@@ -211,6 +226,65 @@ export function biomeWeights(
             )
             .mul(float(1).sub(smoothstep(0.08, 0.4, hollow).mul(0.4)))
         : stone,
-    snow: biome.world === "tundra" ? snow.mul(mix(0.42, 1, smoothstep(-0.22, 0.25, drift))) : snow,
+    snow:
+      biome.world === "tundra"
+        ? snow.mul(mix(0.42, 1, smoothstep(-0.22, 0.25, drift)))
+        : alpineSnowCover(),
   };
+}
+
+/** One world-space RockFace003 projection on both the massif and its protruding ribs. */
+export function alpineRockTap(source: Texture, plane: Node<"vec2">, relief = false): Node<"vec4"> {
+  const tap = (scale: number, angle: number, offset: Node<"vec2">) => {
+    const sampled = texture(source, rotateUV(plane.div(scale), float(angle), vec2(0)).add(offset));
+    if (!relief) return sampled;
+    const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
+    return vec4(tangent, sampled.z.mul(2).sub(1), 1);
+  };
+  const patch = smoothstep(-0.35, 0.35, mx_noise_float(positionWorld.mul(0.025)));
+  return mix(tap(8, 0.17, vec2(0)), tap(32, -0.21, vec2(0.37, 0.61)), patch.mul(0.3).add(0.2));
+}
+
+export function alpineRockAlbedo(source: Texture): Node<"vec3"> {
+  const axis = abs(normalWorldGeometry).pow(4);
+  const share = axis.div(axis.x.add(axis.y).add(axis.z));
+  return share.x
+    .mul(alpineRockTap(source, positionWorld.zy).rgb)
+    .add(share.y.mul(alpineRockTap(source, positionWorld.xz).rgb))
+    .add(share.z.mul(alpineRockTap(source, positionWorld.xy).rgb));
+}
+
+export function alpineRockColor(sample: Node<"vec3">): Node<"vec3"> {
+  const grey = dot(sample, vec3(0.2126, 0.7152, 0.0722));
+  return mix(sample, vec3(grey), 0.25).mul(vec3(...BIOMES.alpine.stoneTint));
+}
+
+/** Snow respects world elevation and upward faces, including tilted instanced scans. */
+export function alpineSnowCover(): Node<"float"> {
+  const drift = mx_fractal_noise_float(positionWorld.mul(0.033), 3);
+  const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
+  return smoothstep(54, 88, positionWorld.y.add(drift.mul(22)))
+    .mul(smoothstep(0.67, 0.84, normalWorldGeometry.y))
+    .mul(float(1).sub(exposure.mul(0.28)));
+}
+
+/** Thin sediment beds have varying thickness; varnish runs down, not around, a wall. */
+export function desertRockColor(sample: Node<"vec3">): Node<"vec3"> {
+  const grain = dot(sample, vec3(0.2126, 0.7152, 0.0722));
+  const warp = mx_fractal_noise_float(positionWorld.mul(vec3(0.012, 0.003, 0.012)), 3).mul(5);
+  const height = positionWorld.y.add(warp);
+  const beds = mx_noise_float(vec3(0, height.mul(1.55), 0));
+  const fine = height.mul(4.1).add(beds.mul(2.8)).sin().mul(0.035);
+  const ledge = smoothstep(0.38, 0.62, mx_noise_float(vec3(0, height.mul(0.19), 0))).mul(0.11);
+  const varnish = smoothstep(
+    -0.18,
+    0.28,
+    mx_fractal_noise_float(positionWorld.mul(vec3(0.42, 0.004, 0.42)), 3),
+  )
+    .mul(normalWorldGeometry.y.abs().oneMinus())
+    .mul(0.18);
+  return vec3(1.52, 0.9, 0.5)
+    .mul(grain)
+    .mul(beds.mul(0.11).add(fine).add(1).sub(ledge))
+    .mul(mix(vec3(1), vec3(0.55, 0.48, 0.42), varnish));
 }

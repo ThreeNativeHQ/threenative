@@ -73,7 +73,7 @@ import {
   PROP_MAPS,
   SOIL_MAP,
 } from "../world/terrainAssets.js";
-import type { IBiome } from "./biomes.js";
+import { type IBiome, alpineRockAlbedo, alpineRockColor, alpineSnowCover } from "./biomes.js";
 import type { IPropMaterials } from "./props.js";
 
 /** How much a mip level shrinks a needle card's alpha; see {@link mipCompensatedCutoff}. */
@@ -753,7 +753,10 @@ export async function createPropSurfaces(
     map(assets, NEEDLE_ATLAS, false),
     map(assets, NEEDLE_SURFACE, true),
   ]);
+  const alpineSnow =
+    biome?.world === "alpine" ? await map(assets, biome.maps.snow.diffuse, false) : undefined;
   const textures: Texture[] = [
+    ...(alpineSnow ? [alpineSnow] : []),
     ...(under ? [under.texture] : []),
     ...(soil ? [soil] : []),
     ...[fernDiffuse, fernAlpha].filter((found): found is Texture => found !== undefined),
@@ -925,15 +928,21 @@ export async function createPropSurfaces(
       ),
     );
     grassMaterial.emissiveNode = vec3(0);
-    if (biome.world === "tundra") {
-      // Basal colour alone does not occlude the sky/fog contribution after lighting.
-      const root = smoothstep(0.02, 0.22, positionGeometry.y);
-      grassMaterial.outputNode = vec4(output.rgb.mul(mix(0.08, 1, root)), output.a);
-    }
     if (stoneMaterial.colorNode)
       stoneMaterial.colorNode = (stoneMaterial.colorNode as Node<"vec3">).mul(
         vec3(...biome.stoneTint),
       );
+  }
+  if (biome?.world === "alpine") {
+    const rock = stone.diffuse ? alpineRockAlbedo(stone.diffuse) : vec3(0.42, 0.43, 0.38);
+    const snow = alpineSnow
+      ? texture(alpineSnow, positionWorld.xz.div(12)).rgb
+      : vec3(0.82, 0.86, 0.9);
+    stoneMaterial.colorNode = mix(
+      alpineRockColor(rock),
+      snow.mul(vec3(...biome.snowTint)),
+      smoothstep(0.12, 0.82, alpineSnowCover()),
+    );
   }
   let disposed = false;
   return {

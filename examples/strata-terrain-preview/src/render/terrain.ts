@@ -41,6 +41,7 @@ import {
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.js";
+import { alpineRockAlbedo, alpineRockColor, alpineRockTap, desertRockColor } from "./biomes.js";
 // The ground's look, and every number in it, lives in this game: which surface covers which
 // height and slope, how many metres one texture tile spans, and how the blend edges break. The
 // evaluator in `packages/terrain` produces heights and eight material channels; none of that is a
@@ -427,7 +428,7 @@ export function createGroundMaterial(
       return vec4(tangent, sampled.z.mul(2).sub(1), 1);
     };
     return biome?.world === "alpine"
-      ? mix(tap(3.8, 0.17, vec2(0)), tap(24, -0.21, vec2(0.37, 0.61)), patch.mul(0.3).add(0.2))
+      ? alpineRockTap(source, plane, relief)
       : mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
   };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
@@ -441,12 +442,13 @@ export function createGroundMaterial(
     if (otherBiome && biome.world === "tundra" && key === "dirt")
       return vec4(flat.rgb.mul(vec3(0.7, 0.58, 0.42)), flat.a);
     if (otherBiome && biome.world === "tundra" && key === "moss")
-      return vec4(flat.rgb.mul(vec3(0.85, 1.15, 0.48)), flat.a);
+      return vec4(flat.rgb.mul(vec3(1.08, 1.07, 0.65)), flat.a);
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
     const walls =
       otherBiome && key === "rock"
         ? (() => {
+            if (biome.world === "alpine") return vec4(alpineRockAlbedo(diffuse), 1);
             // Two rotated, incommensurate projections break the photographed tile lattice.
             const axis = abs(normalWorldGeometry).pow(4);
             const share = axis.div(axis.x.add(axis.y).add(axis.z));
@@ -464,27 +466,8 @@ export function createGroundMaterial(
       let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.25 : 0.35).mul(
         vec3(...(otherBiome ? biome.stoneTint : [0.66, 0.67, 0.64])),
       );
-      if (otherBiome && biome.world === "desert") {
-        const band = positionWorld.y
-          .sub(2)
-          .mul(Math.PI / 5.3)
-          .add(mx_noise_float(positionWorld.mul(0.035)).mul(0.9))
-          .sin()
-          .mul(0.5)
-          .add(0.5);
-        stone = vec3(grey)
-          .mul(vec3(1.65, 0.86, 0.43))
-          .mul(mix(vec3(0.56, 0.39, 0.27), vec3(1.12, 1.02, 0.85), smoothstep(0.18, 0.62, band)));
-      }
-      if (otherBiome && biome.world === "alpine") {
-        const seams = positionWorld.y
-          .mul(0.34)
-          .add(positionWorld.x.mul(0.11))
-          .add(positionWorld.z.mul(0.07))
-          .add(mx_fractal_noise_float(positionWorld.mul(0.075), 3).mul(5))
-          .sin();
-        stone = stone.mul(float(1).sub(smoothstep(0.85, 0.97, seams).mul(0.22)));
-      }
+      if (otherBiome && biome.world === "desert") stone = desertRockColor(blended.rgb);
+      if (otherBiome && biome.world === "alpine") stone = alpineRockColor(blended.rgb);
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
       const distant = vec3(...(otherBiome ? biome.distantStone : [0.16, 0.17, 0.155])).mul(
@@ -494,7 +477,9 @@ export function createGroundMaterial(
         mix(
           stone,
           distant,
-          smoothstep(35, 220, positionView.length()).mul(otherBiome ? 0.28 : 0.65),
+          smoothstep(35, 220, positionView.length()).mul(
+            biome?.world === "alpine" ? 0 : otherBiome ? 0.28 : 0.65,
+          ),
         ),
         blended.a,
       );
@@ -599,6 +584,7 @@ export function createGroundMaterial(
     .mul(weights.grass)
     .mul(biome?.world === "alpine" ? mix(1, 0.05, smoothstep(45, 130, positionView.length())) : 1)
     .add(microGrain().mul(oneMinus(smoothstep(12, 60, positionView.length()))));
+  if (biome?.world === "desert") normal = normal.add(sandRipples().mul(weights.grass));
   // The crevice term follows the surface the eye is actually looking at, so it is blended by the
   // same weights as the colour rather than applied to every layer at once.
   for (const key of LAYERS) {

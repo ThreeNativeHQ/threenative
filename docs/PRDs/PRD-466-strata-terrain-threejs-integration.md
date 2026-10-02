@@ -1476,3 +1476,15 @@ RGBA multiplication to `vec4(vec3(occlusion), 1)`: the full-resolution alpha-onl
 capture loses the white/blue grass bases while all grass material/root settings
 remain identical. `worlds-r4-tundra-alpha/` scenario 4/4 PASS, zero diagnostics.
 The previously retained root-output darkening now reads black and will be removed.
+
+Composition pass1: enhanced full licensed scenario 44/44 PASS, zero diagnostics;
+example tsc and example Biome error gate PASS. Alpine ridge/overview CPU p50
+2.3/2.0 ms, desert 1.3/1.2 ms, tundra 2.0/2.3 ms. Actual alpine lower-ring
+ray probes pass the burial and nonempty-observation assertions. The rock layer
+and scanned ribs now sample the same RockFace003 world projection and tint;
+scans are normalized to 24 m after elongation, then placed at 30–80 m.
+Licensed spruce/sapling models are retained, with a darker other-biome tint.
+Full-resolution pass1 review rejects completion: alpine ribs are better embedded
+but still isolated; desert thin beds are too faint and ripple normals form eddies;
+tundra cover mask leaves the defining foreground bare. Further composition tuning
+is required. AO-only blue cover pixels in the fixed ROI fell 5,856 → 0.
