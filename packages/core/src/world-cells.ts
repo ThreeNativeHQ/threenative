@@ -3945,8 +3945,8 @@ export class WorldCells extends Group implements IComputeDriven {
     // resident ring puts them in, through the same build every first-seen asset takes.
     if (this.#gpuScene.on && this.#gpuSeeded === false) {
       this.#gpuSeeded = true;
-      this.#seedGpuKeys();
       this.#seedGpuSources();
+      this.#seedGpuKeys();
       // After the keys, because that is the only point at which the marker can say how many of the
       // world's main meshes are dressed: printed at enable it would read the ring as it was a frame
       // earlier, which is the state the run that found this was in.
@@ -6046,6 +6046,15 @@ export class WorldCells extends Group implements IComputeDriven {
    * not a frame of holes.
    */
   #seedGpuSources(): void {
+    // A pending build may already have consumed CPU-only slices. Restart it before any swap can
+    // publish a partial source list; its outgoing batches keep drawing until the new build lands.
+    const pending = this.#jobs;
+    this.#jobs = [];
+    for (const job of pending) {
+      this.#queued.delete(job.run);
+      for (const entry of job.fresh) this.#clearSegment(entry);
+      this.#queueBuild(job.asset, job.cell, job.run, true, job.force);
+    }
     for (const cell of this.#resident.values())
       for (const batch of cell.batches) {
         const asset = this.#assets.get(batch.asset);
