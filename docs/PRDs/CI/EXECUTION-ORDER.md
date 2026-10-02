@@ -10,7 +10,7 @@ jobs spent 239 min waiting for a runner against 146 min of work. The full audit 
 ```mermaid
 flowchart TD
   A["PRD-482 phase 1<br/>pre-push hook green, under 15 s"] --> P["push the local develop backlog"]
-  T(["owner: runner token"]) --> B["PRD-480<br/>Linux CI on tn-local runners"]
+  T(["owner: fork-PR approval"]) --> B["PRD-480<br/>Linux CI on tn-local runners"]
   P --> B
   P --> C["PRD-481 phase 2<br/>each run does work once"]
   M(["owner: merge queue on develop"]) --> D["PRD-481 phase 1<br/>tree reuse + merge queue"]
@@ -25,7 +25,7 @@ flowchart TD
 | # | Work | Why here | Blocked on | Size |
 |---|---|---|---|---|
 | 1 | [PRD-482](../tooling/PRD-482-the-local-agent-loop-costs-only-what-it-catches.md) phase 1 | The pre-push hook is red on clean `develop`, so the local backlog cannot be pushed without skipping it | — | ~30 min |
-| 2 | [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) | Biggest wall-clock win: no queue. Its routing expression is what every later workflow edit builds on | runner token | ~2 h |
+| 2 | [PRD-480](PRD-480-linux-ci-runs-on-the-owner-machine.md) | Biggest wall-clock win: no queue. Its routing expression is what every later workflow edit builds on | fork-PR approval setting, before the first job is routed | ~2 h |
 | 2 | [PRD-481](PRD-481-ci-does-each-piece-of-work-once.md) phase 2 | Independent of 480. It edits `ci.yml` jobs, not `runs-on`, so it runs in parallel | — | ~3 h |
 | 2 | PRD-481 phase 3 | Small trigger trims, independent | — | ~1 h |
 | 3 | PRD-481 phase 1 | Tree reuse is cheapest to prove once runs are short and stable | merge queue | ~4 h |
@@ -37,12 +37,22 @@ which jobs each one touches.
 
 ## Owner actions
 
-- **Runner token:** a fine-grained token on `ThreeNativeHQ/threenative`, only that repository, repository
-  permission **Administration: read & write** (Metadata read is added automatically). The existing
-  "threenative" token has only Actions read & write, so it cannot register runners.
-- **Fork-PR approval:** confirm "Require approval for all outside collaborators" is on, under Settings →
-  Actions → General.
+- ~~**Runner token**~~ — done 2026-10-02; it lives in the operator's untracked runner env file, never
+  in the repository.
+- **Fork-PR approval:** set to "Require approval for all outside collaborators", under Settings →
+  Actions → General. On 2026-10-02 it reads `first_time_contributors`, which is too loose once jobs run
+  on a private machine.
 - **Merge queue:** enable it on `develop` in the repository ruleset.
+
+## Working this file as a goal
+
+- **Done when:** PRD-380, PRD-480, PRD-481 and PRD-482 are all in `docs/PRDs/done/`, each with its
+  acceptance boxes ticked from real runs.
+- **Pick work:** take the lowest-numbered row whose blocker is clear. When a row is blocked on an owner
+  action, record that under the PRD's `## Blocked on`, move on to the next independent row, and ask the
+  owner once.
+- **Rules:** one draft PR per PRD, branched from `origin/develop` (root `AGENTS.md`). Tick a box only on
+  a green proof. Update this table's sizes and blockers as rows land.
 
 ## Triage of the older CI PRDs (2026-10-02)
 

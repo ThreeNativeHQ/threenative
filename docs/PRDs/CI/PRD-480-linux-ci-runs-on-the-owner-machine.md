@@ -99,10 +99,8 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 
 ## Blocked on
 
-- Fine-grained token with "Administration: read & write" on `ThreeNativeHQ/threenative`,
-  written to the runner env file — unblocked by João.
-- Repository setting "Require approval for all outside collaborators" for fork PR workflows
-  confirmed on — unblocked by João.
+- Fork PR workflow approval set to "Require approval for all outside collaborators" (the API reads
+  `first_time_contributors` on 2026-10-02; it must read `all_external_contributors`) — unblocked by João.
 
 ## Integration Ledger
 
@@ -112,6 +110,10 @@ while `TN_RUNNER` is set: jobs queue until the switch is cleared.
 | Runner lifecycle and kill switch | `scripts/ci-runners.sh up/down` → compose stack + `TN_RUNNER` variable | New | Phase 1 |
 
 ## Decisions
+
+- 2026-10-02 (João): the runner registration token exists. It is a fine-grained token on
+  `ThreeNativeHQ/threenative` only, with Administration read & write, stored in the operator's untracked
+  runner env file. Verified by listing the repository's runners (0).
 
 - 2026-10-02 (João): self-hosted runners rather than local runs vouching for a commit. A self-hosted
   runner gives the same offload with no forgeable status and no stale merge-ref verdict, and it keeps
