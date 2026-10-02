@@ -35,14 +35,14 @@ const POPPY_PETAL = { u0: 0.5, v0: 0, u1: 1, v1: 0.5 };
 /** How many variants of each prop the starter builds, and the seed they are built from. */
 export const VARIANTS = {
   boulder: 3,
-  bush: 4,
-  fern: 6,
-  grass: 8,
-  poppy: 8,
-  sapling: 4,
-  scrub: 8,
+  bush: 2,
+  fern: 3,
+  grass: 4,
+  poppy: 4,
+  sapling: 3,
+  scrub: 3,
   spruce: 5,
-  litter: 3,
+  litter: 2,
   seed: 0x9e3779b9,
 } as const;
 
