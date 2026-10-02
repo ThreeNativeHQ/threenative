@@ -128,6 +128,21 @@ export function scatterProps(
     );
   const put = (asset: string, x: number, z: number, scale: number, suffix = "") => {
     if (!inside(x, z) || (asset !== "riverrock" && wet(x, z))) return;
+    if (asset === "cliff") {
+      // The 18 m slab needs an inland scarp across its footprint, never a coastal grass ledge.
+      const reach = 9 * scale;
+      if (
+        data.waterLevel !== null ||
+        grassWeight(data, x, z) > 0.05 ||
+        [
+          [x - reach, z],
+          [x + reach, z],
+          [x, z - reach],
+          [x, z + reach],
+        ].some(([px = 0, pz = 0]) => slopeDegrees(data, px, pz) < 43)
+      )
+        return;
+    }
     const index = counts[asset] ?? 0;
     placements.push({
       asset,

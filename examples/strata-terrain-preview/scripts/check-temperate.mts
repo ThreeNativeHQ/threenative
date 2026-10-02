@@ -11,7 +11,7 @@ import {
   readPropTransform,
   writePropTransform,
 } from "../src/render/props.js";
-import { scatterProps } from "../src/render/scatter.js";
+import { grassWeight, scatterProps, slopeDegrees } from "../src/render/scatter.js";
 
 const data = JSON.parse(
   readFileSync(new URL("../src/world/baked.json", import.meta.url), "utf8"),
@@ -39,6 +39,20 @@ for (const [x, z] of [
   );
   assert.ok(grass.length > 3000, `Missing dense ground cover at ${x},${z}`);
 }
+for (const cliff of scatter.placements.filter((one) => one.asset === "cliff")) {
+  const [x, , z] = cliff.position;
+  const reach = 9 * Number(cliff.scale);
+  assert.ok(grassWeight({ ...data, field }, x, z) <= 0.05);
+  for (const [px, pz] of [
+    [x - reach, z],
+    [x + reach, z],
+    [x, z - reach],
+    [x, z + reach],
+  ])
+    assert.ok(slopeDegrees({ ...data, field }, px, pz) >= 43);
+}
+// Even steep coastal grass ledges cannot acquire the pack's rectangular cliff slab.
+assert.equal(scatterProps({ ...data, field, waterLevel: 0 }, { x: 186, z: 76 }).counts.cliff, 0);
 const materials = flatPropMaterials();
 const parts = buildPropVariants();
 const ground = () => ({ height: 0, offset: 0 });
