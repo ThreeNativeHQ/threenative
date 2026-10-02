@@ -2116,3 +2116,23 @@ Local checkpoints: **aaa0c4b62**, **a9c844015**, **83f612795**, followed by the
 final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
 (**6.4 GiB**): it is unmerged and holds requested local licensed assets/captures,
 so it cannot be removed under the cleanup rules.
+
+
+### Round 18 atmosphere lane — 2026-10-02 (in progress)
+
+Complexity: 3 → LOW; risk override: none. Reuse the installed `Atmosphere` and its
+`AtmosphereLuts`; appearance stays in `src/render/atmosphere.ts`. Existing
+`createOutdoorSky` and `installOutdoorOcclusion` reach the shared five-world scene.
+Replace the Preetham colour override and fixed-colour height fog with LUT-derived
+sky, solar transmittance, sunward scattering and height-aware surface extinction.
+Keep the GI chain/shadows/exposure unchanged. Biome additions own weather tuning.
+
+- [ ] Physical sky, halo and clouds share the biome sun; proof: 1920×1080 scratch playtest captures and 1:1 reference crops.
+- [ ] All fog-enabled lit surfaces share LUT air; proof: full licensed and fallback `terrain.playtest.json`, `verify-ocean.mjs`, every view CPU p50 ≤4 ms.
+- [ ] Required local checks pass; proof: example `tsc --noEmit`, example Biome, terrain vitest (and any modified package spec).
+
+Engine defect: `sampleLut` used integer `textureLoad`, bypassing `LinearFilter`;
+filtered reads now use an explicit mip level on fragment and compute paths.
+Regression: new sampler assertion red (false), then 31/31 atmosphere specs green;
+`pnpm --filter @threenative/core build` passed. The missing physics dist was rebuilt
+without source changes. Baseline/final captures remain pending.
