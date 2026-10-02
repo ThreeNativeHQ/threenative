@@ -155,9 +155,9 @@ job ever does.
 - [ ] Structure spec enforces the routing. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`
   passes, and it fails on a job left at a bare `ubuntu-latest`.
 - [ ] With `TN_RUNNER` set, a PR run lands its Linux jobs on `tn-local`. proof: AC-1 run.
-- [ ] `AGENTS.md` tells agents to run focused checks and push, not the full board, while `TN_RUNNER` is set.
-  proof: `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts`
-  pass after the edit. Land it only after the AC-1 run is green.
+- [ ] `AGENTS.md` says focused checks then push, not the full board, while `TN_RUNNER` is set. proof:
+  `pnpm sync:agents --check` and `pnpm exec vitest run scripts/__tests__/sync-agent-docs.spec.ts` pass.
+  Land it only after the AC-1 run is green.
 - [ ] With `TN_RUNNER` unset, the same workflow runs fully hosted. proof: `workflow_dispatch` run id with
   every `runner_name` hosted.
 
