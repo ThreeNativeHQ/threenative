@@ -273,8 +273,19 @@ export function buildPropVariants(
       { geometry: cluster.petals, role: "petal", variant: i },
     ]);
   }
-  for (let i = 0; i < VARIANTS.litter; i += 1)
-    variants.set(`litter:${i}`, prepared?.get(`litter:${i}`) ?? []);
+  for (let i = 0; i < VARIANTS.litter; i += 1) {
+    const ready = prepared?.get(`litter:${i}`);
+    if (ready) {
+      variants.set(`litter:${i}`, [...ready]);
+      continue;
+    }
+    // Needle litter has no procedural model, and an empty part list throws away the whole prop
+    // build: a machine without the licensed pack then draws no vegetation at all, because the
+    // floor of the wood was the one layer with nothing behind it. A flattened clump stands in.
+    const twig = grassClump((VARIANTS.seed ^ (i * 0x9e3779b1)) >>> 0);
+    twig.scale(1.7, 0.22, 1.7);
+    variants.set(`litter:${i}`, [{ geometry: twig, role: "grass", variant: i }]);
+  }
   for (const asset of ["riverrock", "scree", "cliff", "mountain", "volcanic", "reveal"])
     for (
       let variant = 0;
