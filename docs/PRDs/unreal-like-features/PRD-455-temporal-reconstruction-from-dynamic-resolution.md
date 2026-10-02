@@ -115,6 +115,15 @@ experimental path or mark the draft ready before the outstanding acceptance evid
 - [ ] On a GPU-bound representative game, sub-1.0 rendering plus reconstruction lowers GPU/render p95 versus full-resolution rendering while meeting the Phase-2 visual thresholds. **proof:** paired fixed-route browser WebGPU and desktop-native table records internal pixels, reconstruction cost, total GPU/render p50/p95 and visual metrics; no “FPS only” verdict.
 - [ ] Automatic resolution can move between at least three scales during one run without history corruption, allocation growth or a reconstruction cost spike larger than the saved raster cost. **proof:** scripted scaler route records scale transitions, history resets, render-target allocation count and per-stage cost; repeated up/down cycles end at the initial allocation baseline.
 
+## Runtime screenshot progress
+
+- [Diagnostic no-AA reference](../../verification/prd455/diagnostic-reference.png), hosted run
+  `36986673556`, source `bbbf93ca8c10a30b168fdb984d31a7567ebeccaf`. Actual canvas PNG inspected;
+  [provenance](../../verification/prd455/diagnostic-reference.json) records SwiftShader/software
+  WebGPU. This is a baseline progress frame, not temporal/motion/native/performance proof.
+  The run stopped at the source-runner callback error; fixed-step rendering also needs a distinct
+  Three.js frame boundary before temporal frame counts can qualify a motion sequence.
+
 ## Acceptance criteria
 
 The win is **not** “TRAA is enabled.” The win is that a lower internal raster produces a stable
