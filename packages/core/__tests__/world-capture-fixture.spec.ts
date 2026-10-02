@@ -10,6 +10,7 @@ import {
 } from "three";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { evaluateRichPlaytestAssertions } from "../../playtest/src/assertion-evaluators.js";
 import { resolveDiagnosticsPolicy } from "../../playtest/src/assertion-report.js";
 import { loadPlaytestScenario } from "../../playtest/src/scenario.js";
 import { Registry } from "../src/entities.js";
@@ -161,6 +162,56 @@ describe("PRD-477 world capture fixture", () => {
     expect(scenario.steps[0]?.screenshot).toBe("phase477-pose-start");
     expect(scenario.steps.at(-1)?.screenshot).toBe("phase477-pose-end");
   });
+
+  it.each([
+    ["traverses and returns to the same resident count", 3, 8, 9, true],
+    ["frozen warm-up residency", 3, 2, 9, false],
+    ["never evicts", 3, 8, 0, false],
+    ["ends over the residency cap", 26, 8, 9, false],
+    ["ends with no resident cells", 0, 8, 9, false],
+  ])(
+    "checks actual streaming churn: %s",
+    async (_name, residentCells, changes, evictions, pass) => {
+      const scenario = await loadPlaytestScenario(
+        root,
+        `${fixture}/playtests/phase477-world-capture.playtest.json`,
+      );
+      // Reproduce the hosted route's equal endpoint counts through the real evaluator.
+      // These synthetic observations test the assertion contract, not runtime acceptance.
+      scenario.assert = {
+        components: scenario.assert?.components?.filter(({ component }) =>
+          ["residentCells", "residenceChanges", "evictions"].includes(component),
+        ),
+      };
+      const result = evaluateRichPlaytestAssertions({
+        scenario,
+        report: {
+          diagnostics: [],
+          distance: 0,
+          entity: "world",
+          expectMoved: false,
+          frames: 1,
+          trivialityOptOuts: [],
+          observations: {
+            console: [],
+            network: [],
+            hud: {},
+            resources: {},
+            components: {
+              world: {
+                residentCells: { before: 3, after: residentCells },
+                residenceChanges: { before: 2, after: changes },
+                evictions: { before: 0, after: evictions },
+              },
+            },
+          },
+        },
+      });
+      const checks = result.assertions.filter(({ id }) => id.startsWith("component.world."));
+      expect(checks).toHaveLength(3);
+      expect(checks.every((assertion) => assertion.pass)).toBe(pass);
+    },
+  );
 
   it.each(["desktop", "android"])(
     "loads the %s proof contract with real upper bounds and settle assertions",

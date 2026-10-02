@@ -257,8 +257,7 @@
         "component": "residentCells",
         "entity": "world",
         "gte": 1,
-        "changed": true,
-        "allowTrivial": "Residency is already nonzero after warm-up; the load-bearing half is that the count changed as the camera crossed cell boundaries.",
+        "allowTrivial": "The route starts and ends with the same resident count. Measured residenceChanges and evictions prove churn; throughoutSteps preserves the residency ceiling.",
         "lte": 25
       },
       {
@@ -271,8 +270,9 @@
       {
         "component": "residenceChanges",
         "entity": "world",
+        "changed": true,
         "gte": 1,
-        "allowTrivial": "Residency changes during warm-up too, so the floor can hold at the baseline observation."
+        "allowTrivial": "Residency changes during warm-up too; the changed check requires additional observed transitions during the route."
       },
       {
         "component": "evictions",
