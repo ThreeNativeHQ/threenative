@@ -299,6 +299,8 @@ export function createDecalFixture(hideDecals = false, atlasFade = false, hideDu
           ctx.state.set({ residencyGeneration: generation });
           console.info(`TN_DECAL_FIXTURE:${JSON.stringify(observation())}`);
         }
+        // Native exposes state resources, not the browser's component assertion family.
+        ctx.state.set({ ...observation(), residencyGeneration: residencySampled ? generation : 0 });
         if (frames % 30 === 0) console.info(`TN_DECAL_FIXTURE:${JSON.stringify(observation())}`);
       };
     }
