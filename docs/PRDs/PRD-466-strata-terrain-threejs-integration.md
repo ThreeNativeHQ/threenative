@@ -605,6 +605,27 @@ worn dirt scatter, `river.png` the lake sitting in the basin the traced stream f
 open** — this fixes terrain only; the five environments' art, atmosphere and the coastal/alpine/
 desert/tundra *defining views* are not yet captured and judged.
 
+### AC-5 ground round 2 — 2026-10-02 (continuation)
+
+First increment preserves the retained rock height blend and mountain layering, then reduces
+the grass warp (the stronger warp drew swirls), blends rotated texture scales with the same
+mask in colour and normals, retains distant stone detail, and refines the horizon mesh.
+Rock is brown-grey and restricted to scarps; distant scenery has forest, rock and high snow
+bands. Directly inspected captures: `examples/strata-terrain-preview/artifacts/playtest/round2-material/`
+(`meadow-close.png`, `overview.png`, `forest-walk.png`, `river.png`). Full-frame display-space
+Y p05/p50/p95: meadow **0.236/0.431/0.738**, overview **0.217/0.402/0.484**,
+walk **0.078/0.385/0.495**, river **0.012/0.415/0.815**; these are image statistics, not
+linear-light luminance or a visual-quality score. Existing WebGPU scenario, NVIDIA/Turing,
+passes every resource assertion (595 contact samples, max error **0.000004 m**); only
+`diagnostics` fails, with the known destroyed `ShadowDepthTexture` errors after the coastal
+switch. Meadow/overview engine frame p50: **3.9/3.3 ms**, excluding presented-frame gaps.
+Example typecheck and root lint pass (lint warnings remain); terrain tests **60/60** pass.
+An interrupted capture was invalidated by a measurement rebaking JSON during Vite play;
+the recorded retry ran with no file writes. Decisions: reuse existing maps and daylight,
+keep appearance in game source, leave the collider and other lanes untouched. Gullies,
+water and contact AO remain the next increments; the mountains still need stronger relief.
+**AC-5 remains open; this is an improvement, not an Unreal-level verdict.**
+
 - [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
 - [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.

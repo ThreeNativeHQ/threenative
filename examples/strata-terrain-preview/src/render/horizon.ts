@@ -6,7 +6,7 @@ import type { IBakedWorld } from "./terrain.js";
 export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
   const segments = data.resolution - 1;
   const perimeter = segments * 4;
-  const rings = 40;
+  const rings = 112;
   const noise = new ImprovedNoise();
   const starts = [
     [0, 0],
@@ -25,7 +25,7 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
   const indices: number[] = [];
   for (let ring = 0; ring <= rings; ring++) {
     const distance = (ring / rings) ** 1.65 * 2100;
-    const t = Math.min(1, distance / 850);
+    const t = Math.min(1, distance / 480);
     const blend = t * t * (3 - 2 * t);
     for (let vertex = 0; vertex < perimeter; vertex++) {
       const side = Math.floor(vertex / segments);
@@ -39,10 +39,15 @@ export function createHorizonGeometry(data: IBakedWorld): BufferGeometry {
       const x = (column / segments - 0.5) * data.size * scale;
       const z = (row / segments - 0.5) * data.size * scale;
       // ponytail: static low-resolution scenery; use authored distant meshes for a larger world.
-      const broad = noise.noise(x * 0.0013, 4.7, z * 0.0013);
-      const ridge = noise.noise(x * 0.0031, 9.2, z * 0.0031) * 0.45;
-      const detail = noise.noise(x * 0.009, 2.4, z * 0.009) * 12;
-      const hills = 24 + Math.max(0, broad + ridge + 0.32) ** 2 * 310 + detail;
+      const warp = noise.noise(x * 0.0018, 7.3, z * 0.0018) * 150;
+      const nx = x + warp;
+      const nz = z - warp * 0.7;
+      const broad = noise.noise(nx * 0.0013, 4.7, nz * 0.0013);
+      const ridge = 1 - Math.abs(noise.noise(nx * 0.0022, 9.2, nz * 0.0022));
+      const fineRidge = 1 - Math.abs(noise.noise(nx * 0.005, 2.4, nz * 0.005));
+      const massif = Math.max(0, broad + 0.38);
+      const hills =
+        18 + massif * (220 + ridge ** 2 * 280) + fineRidge ** 2 * Math.min(1, massif * 3) * 24;
       const height = data.waterLevel === null ? hills : data.waterLevel - 28;
       positions.push(x, (data.heights[edge] as number) * (1 - blend) + height * blend, z);
       colors.push(
