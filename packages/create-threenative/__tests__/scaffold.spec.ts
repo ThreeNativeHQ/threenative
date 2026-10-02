@@ -85,6 +85,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // capability reference derived from it, and every scaffold embeds both, so exporting one public
 // symbol moves every template's bytes. Six of the seven moved for that reason alone; platformer
 // also carries its chasers' route change.
+// Recomputed 2026-10-02 for create-threenative 0.2.8: every template pins the scaffolder version.
 // Recomputed 2026-08-31 from the values CI measured, not from a local run.
 //
 // These were updated three times in a row and were wrong all three times, because they were
@@ -183,19 +184,19 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-01 on the merge of develop (PRD-470/471/472/474) into the rain + snow
   // branch (PRD-469, PRD-473): the merged tree carries both sides' engine and manifest bytes, so
   // all thirteen trees, rain and snow included, were re-measured through createProject.
-  "action-rpg": "27ffb8848810701f1a4223d905df82bc232c80792bde054299860e014fd9b2e6",
-  minimal: "a00b35afaf128b64d79334d38a4023b9f7df99c3c333e7f5fb3061cd711c26b6",
-  platformer: "50cbcd00f96329d8dd4b38c9202579648b3f43864fb4ac5da4790c584ebace24",
-  puzzle: "181fee3456efd8a0ea22214b3bed8e3d70550d32f37ac3e68f9bc17cdb4b8916",
-  racing: "16d72f0576fffd0080fc4feb5dea122e8d8b0075b63c128f75d41cd288a294da",
-  rain: "819b63af62cd6d5b94cefd383e3a1574ed24f2eff9d101e61a0973d132607673",
-  rts: "822da647ae54c3d16b890dd29f74f06828ec08651f4ad30e89c4286f76aa0405",
-  runner: "98673f4075d8e66e5f199137d7d5aa8f8b1052c4d9cf9cfb5e5383a8812a3cb7",
-  sailing: "93f7526320547acd320a340774e5384b2c42c109379bff2437cb2b01e1b0e149",
-  shooter: "d5a0cf3706e7a0b621fa9290564ac896467b256154d7f6abdf75ca4c36aade91",
-  snow: "d59cab83418e9636bb9b48f8b802b3c36defdc5889e4a03c96b1167b7a4f2623",
-  starter: "d6d685a7ddba9d074869bf76afa1400357503ece29e96d857a3322c8ca61c078",
-  "tower-defense": "d50982f0cdfe90786e0042e7d7113d847856c9d9eed71673adfb42e6a9349287",
+  "action-rpg": "7303ff74e0a1e38346f7907924b3e7a8c5bc87b71991ae7468321d7d1cfdcc95",
+  minimal: "ba165bc6b0cf67d083a0c5bfe1377bef851e7b47e50579b680fa53126a8bd4c8",
+  platformer: "6d1b064fc45436c3202e4e3c7b3425ac3e42733ba73c2c5bc723e83073703713",
+  puzzle: "f5e6efac3f4414a9d70fa4fc7caeddb729b5c780d7e609988cf601d7b0a87896",
+  racing: "32320ec0aafa27374a88bf4e2de4f364a859cf1cb414f10a5e70a2f0b951ff24",
+  rain: "98079bbecdd78ad82a64f1aeea3ac1a79cc98bc7e8c1dc8c9ada38fe09eb25af",
+  rts: "45a4cd67b5c4e6dbba60ea6813636effc6ecaa294acc9f5ae49262fc64141b1c",
+  runner: "3348101ae79785e5e286df38628f13e747b91f1ea6527fa71acd9d62f767d3a3",
+  sailing: "69b54c3c07cf4fe65f4cd06f1ce315750d198332129425b031853f1022d2e99b",
+  shooter: "386f6bca602b4939bf9d860d5cadba0ede803adef95222faedbdc8e33d205590",
+  snow: "f6555492e02901960b8d733568f4f9c07ae1e11baa03e95b9b498d24c3eee1c6",
+  starter: "064de9e02c8b09cd378fdf42186b499580e474d323717eecbe4edb59964b94f6",
+  "tower-defense": "2967805234d96f52d79a398463ddb980658a53efafecf4b7a8ecf33ad1a5679f",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
