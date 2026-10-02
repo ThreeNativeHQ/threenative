@@ -52,11 +52,11 @@ import { setCanopySun } from "./propMaterials.js";
  */
 export const SUN = {
   colour: new Color(0xffeed0),
-  /** Towards the sun. A 48 degree afternoon sun: high enough to light the meadow, low enough that
+  /** Towards the sun. A 41 degree afternoon sun: high enough to light the meadow, low enough that
    *  every spruce throws a shadow long enough to see the ground between the trees. */
-  direction: new Vector3(-180, 240, 120),
+  direction: new Vector3(-180, 185, 120),
   /** Irradiance in three's physical units — the same number a Blender sun strength carries. */
-  intensity: 3.2,
+  intensity: 4.6,
 } as const;
 
 /**
@@ -76,39 +76,20 @@ export const SUN = {
 export const SUN_VECTOR = uniform(SUN.direction.clone().normalize()) as unknown as Node<"vec3">;
 
 const RIG = {
-  sky: { turbidity: 2.4, rayleigh: 2.2, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
-  /**
-   * Sky fill from above, bounce from below. This is the only thing standing between a spruce's
-   * shadow and a hole in the meadow, and at 0.9 the shadows on the hillside read as ink: a real
-   * shadow in open ground is lit by the whole dome above it, and the ground half is the meadow's
-   * own green, so the shaded side of a rock is lit by the grass it stands in.
-   */
-  fill: { sky: new Color(0xa8c8e8), ground: new Color(0x6a6f4e), intensity: 1.45 },
-  /**
-   * Haze in the horizon colour, and the density is the aerial perspective. A quarter of a
-   * kilometre of exponential-squared haze puts a third of the sky into the far ridge and three
-   * quarters into the next one, which is the difference between a landscape with distance in it and
-   * a green plane that stops.
-   */
-  haze: { color: new Color(0xa9c4d8), density: 0.0017 },
+  sky: { turbidity: 2.0, rayleigh: 3.0, mieCoefficient: 0.003, mieDirectionalG: 0.82 },
+  /** Blue sky fill preserves detail in shade without cancelling the directional sun. */
+  fill: { sky: new Color(0xa8c8e8), ground: new Color(0x464937), intensity: 0.62 },
+  /** Near terrain stays clear; kilometre-scale ridges fade gradually into blue air. */
+  haze: { color: new Color(0x8ca8ba), density: 0.00065 },
   /** Linear exposure for the AgX curve, as 2^EV. AgX already rolls its highlights off, so this sits
    *  below one: a temperate noon here is a bright sky and green that still has detail in it. */
-  exposure: 2 ** -0.18,
+  exposure: 2 ** -0.38,
   /** Edge of the sky box in metres. The camera's far plane is 5000, and the box's corners are half a
    *  diagonal inside that, so this is as large as the world can carry. */
-  skySize: 3600,
-  /**
-   * Shadow windows, finest first. Two, not three, and the gap between them is the point: each
-   * window costs two of the sixteen samplers a WebGPU fragment stage has, and the ground material
-   * spends ten of them on its own layers. Twelve metres is a spruce's contact shadow at six
-   * centimetres a texel; a hundred and twenty is the whole visible hillside at the same six. The
-   * window in between would be a third of the picture for a third of the budget the ground has left.
-   */
-  shadowExtents: [12, 120],
+  skySize: 5000,
+  /** Two 2048-pixel clip levels cover contacts and the elevated overview, at four bindings. */
+  shadowExtents: [24, 320],
 } as const;
-
-/** The colour everything fades into: the sky's own horizon, and the deck's floor. */
-const HAZE = RIG.haze.color;
 
 /** The cumulus deck. Every number is this game's weather. */
 const CLOUDS = {
@@ -131,7 +112,7 @@ const CLOUDS = {
   /** The band of sky the deck occupies: its base just above the horizon, thinning towards the zenith. */
   band: [0.02, 0.1, 0.99, 0.5],
   /** Peak opacity of a fully covered patch of sky. */
-  opacity: 0.95,
+  opacity: 0.76,
   /** Sunlit crown, shaded underside, and the silver a thin fringe takes when it faces the sun. */
   tint: { lit: 0xf7f8f9, shade: 0xc8d3de, silver: 0xfff2d4 },
   /** How much a dense core is darkened relative to a thin fringe. */
@@ -141,16 +122,7 @@ const CLOUDS = {
    * times above one, so a cloud written as plain white came out darker than the blue around it —
    * grey blobs — once the rig stopped fogging its own dome.
    */
-  radiance: 4.5,
-  /**
-   * How far below the horizon the deck's own haze reaches, and how far it has faded by then.
-   *
-   * A landscape seen from a hillside has a bottom to it: past the last ridge there is nothing but
-   * more air, and it is the *haze* colour, not the sky's. Without this the world's own edge is a
-   * hard diagonal against a blue box, which is the one thing that gives away that this is a
-   * five-hundred-metre square.
-   */
-  floor: [0.02, -0.05, 0.92],
+  radiance: 1.9,
 } as const;
 
 /**
@@ -190,11 +162,6 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
   const deck = smoothstep(float(CLOUDS.band[0]), float(CLOUDS.band[1]), direction.y).mul(
     smoothstep(float(CLOUDS.band[2]), float(CLOUDS.band[3]), direction.y),
   );
-  // Everything below the horizon is haze, at the density the ground fades into at the same rate:
-  // a second horizon for the eye to stop at, and the world's edge dissolved into it.
-  const floor = smoothstep(float(CLOUDS.floor[0]), float(CLOUDS.floor[1]), direction.y).mul(
-    CLOUDS.floor[2],
-  );
   const toSun = max(dot(direction, sun), 0);
   const lit = mix(
     color(CLOUDS.tint.shade),
@@ -206,20 +173,15 @@ function cloudDome(sun: Node<"vec3">): MeshBasicNodeMaterial {
     .mul(pow(toSun, float(8)))
     .mul(float(1).sub(coverage))
     .mul(float(0.55));
-  material.colorNode = mix(
-    lit
-      .add(fringe)
-      .mul(mix(float(1), float(CLOUDS.core), coverage))
-      .mul(CLOUDS.radiance),
-    color(HAZE),
-    floor,
-  );
+  material.colorNode = lit
+    .add(fringe)
+    .mul(mix(float(1), float(CLOUDS.core), coverage))
+    .mul(CLOUDS.radiance);
   // Feathering the last of the edge keeps a puff from ending on a hard noise contour.
   const density = coverage
     .mul(smoothstep(float(CLOUDS.bank[0]), float(CLOUDS.bank[1]), bank))
     .mul(deck)
-    .mul(smoothstep(float(0), float(0.3), coverage))
-    .max(floor);
+    .mul(smoothstep(float(0), float(0.3), coverage));
   material.opacityNode = density.mul(CLOUDS.opacity);
   return material;
 }
@@ -247,9 +209,12 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
   const sun = new DirectionalLight(SUN.colour, SUN.intensity);
   sun.name = "temperate-sun";
   sun.castShadow = true;
-  sun.shadow.shadowNode = new VirtualShadowNode(sun, { clipExtents: [...RIG.shadowExtents] });
-  // The target stays out of the scene on purpose: its world matrix is the identity, so the light's
-  // direction is the position below and nothing in the world can swing it by accident.
+  sun.shadow.normalBias = 0.035;
+  sun.shadow.shadowNode = new VirtualShadowNode(sun, {
+    clipExtents: [...RIG.shadowExtents],
+    mapSize: 2048,
+  });
+  // A fixed world-origin target keeps the L-key direction independent of the following sky.
   sun.position.copy(SUN.direction);
 
   const daylight = new Daylight({
@@ -264,13 +229,18 @@ export function createOutdoorSky(camera: Object3D): IOutdoorSky {
     sunDirection: SUN.direction,
     sunIntensity: 0,
   });
+  // The physical sky's radiance is calibrated separately from ground irradiance.
+  daylight.sky.cloudCoverage.value = 0; // This game owns one cloud deck.
+  const skyMaterial = daylight.sky.material;
+  if (skyMaterial.colorNode) skyMaterial.colorNode = skyMaterial.colorNode.mul(0.32);
   daylight.sun.visible = false;
+  daylight.add(sun.target);
 
   const sunDirection = SUN_VECTOR;
   // The deck rides inside the rig's own sky box, so it needs no follow of its own: the box is put
-  // back on the eye every frame and the dome is its child. 32 by 16 is enough, because the pattern
+  // back on the eye every frame and the dome is its child. 64 by 32 is enough, because the pattern
   // is per fragment and nothing here is shaded from the dome's own normals.
-  const deck = new Mesh(new SphereGeometry(1, 32, 16), cloudDome(sunDirection));
+  const deck = new Mesh(new SphereGeometry(1, 64, 32), cloudDome(sunDirection));
   deck.name = "cumulus-deck";
   deck.scale.setScalar(0.9);
   deck.frustumCulled = false;
