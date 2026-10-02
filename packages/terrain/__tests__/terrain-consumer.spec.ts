@@ -14,6 +14,28 @@ import { BufferGeometry, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "thr
 import { describe, expect, it } from "vitest";
 
 describe("public terrain consumer", () => {
+  it("applies a brush operation over the whole world when no brush is given", () => {
+    // A layer with no `at`/`points` means "everywhere", not "nowhere": the whole-grid fallback
+    // used to allocate an uninitialised Float32Array, which is all zeros, so a brushless `smooth`
+    // was silently a no-op and a brushless `sculpt` moved nothing.
+    const rough = () =>
+      new Terrain({ size: 64, resolution: 33, seed: 1 }).noise({
+        id: "n",
+        amplitude: 12,
+        scale: 9,
+      });
+    const before = rough().evaluate().height;
+    const smoothed = rough().smooth({ id: "sm", iterations: 4 }).evaluate().height;
+    let moved = 0;
+    for (let i = 0; i < before.length; i += 1)
+      moved += Math.abs((before[i] as number) - (smoothed[i] as number));
+    expect(moved / before.length).toBeGreaterThan(0.001);
+
+    const sculpted = rough().sculpt({ id: "up", strength: 5 }).evaluate().height;
+    for (let i = 0; i < sculpted.length; i += 1)
+      expect((sculpted[i] as number) - (before[i] as number)).toBeCloseTo(5, 5);
+  });
+
   it("rejects missing or nonnumeric height samples before changing a recipe", () => {
     const terrain = new Terrain({ size: 16, resolution: 17 });
     const before = terrain.toJSON();
@@ -122,10 +144,12 @@ describe("public terrain consumer", () => {
       .erode({ id: "talus", method: "thermal", iterations: 3, talus: 32 })
       .evaluate();
     // Generated from the supplied source, not from this port. The hydraulic pass changed when
-    // erosion and deposition moved onto a brush (it used to leave single-cell spikes); the noise
-    // coefficients that feed it are untouched.
+    // erosion and deposition moved onto a brush (it used to leave single-cell spikes), and again
+    // when the per-step erosion default dropped from 0.25 to 0.03 so a dense droplet budget cuts
+    // shallow lines instead of dimples; the noise coefficients that feed it are untouched, and
+    // this recipe pins its own droplets and maxSteps.
     expect(createHash("sha256").update(state.height).digest("hex")).toBe(
-      "f58707a3bc5f3c71c015fb2a578547b29cc0e15e264558b4c438c51d329b88cc",
+      "4d620f3aed39b13716f6f2fa31e65c0f757e74cd39e059a65de24b2325973c21",
     );
   });
 

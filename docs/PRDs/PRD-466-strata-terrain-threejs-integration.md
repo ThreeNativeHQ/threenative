@@ -556,7 +556,56 @@ was **not** raised. With the folder absent the world grows the procedural spruce
 and poppy as before; that fallback run is recorded with this note. AC-5 stays open: one environment's
 vegetation is not five.
 
-- [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: pending; inspect actual defining views of all five with Temperate first, including coast/ocean; qualify licenses/provenance and each selected starter's 25 MiB cooked budget, with no CDN/marketplace runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
+#### Terrain relief pass (2026-10-02), Evidence: measured, plus four engine bugs
+
+Owner feedback on the round-4 captures: *"everything too plane and thin. No erosion, cliffs, etc.
+Looks unrealistic and synthetic."* Three of the four causes were engine defects, not recipe taste.
+
+**Engine.** `hydraulic()` defaulted to a flat 5000 droplets at any resolution, so a 257-vertex world
+got one droplet per 13 cells. The default is now grid-scaled (`n²` droplets, `maxSteps` that can cross
+the world). Raising the count alone was not the fix: with the old 0.25 per-step bite, one droplet per
+cell carved **746** single-cell dimples standing a metre proud of their neighbours, and incision
+*fell* past ~0.5 n² because every extra droplet re-dug the same lines. A shallow 0.03 bite over the
+same budget incises the same drainage (0.8 % of cells) with 14 spikes. Both are red-green in
+`packages/terrain/__tests__/erosion-defaults.spec.ts`, including the spike assertion, which fails
+against the 0.25 bite.
+
+Two further engine bugs surfaced while measuring, both silent:
+- `brushWeights` fell back to `mask ?? new Float32Array(len)` for a layer with no `at`/`points`.
+  A fresh `Float32Array` is all **zeros**, so a brushless layer covered *nothing*: `smooth` was a
+  no-op and `sculpt` added nothing. Now filled with ones
+  (`terrain-consumer.spec.ts`: "applies a brush operation over the whole world when no brush is given").
+- The bake cache's skip called `process.exit(0)`, which killed `measure-spikes.mjs` — it reported
+  zero spikes without ever counting any. The skip is now entry-point only.
+
+**Recipes** (`scripts/bake.mjs`, all five worlds). Billow folds for the shoulders and troughs the
+carve then drains; one settle pass, not two; a thermal talus per world (40° scree on the alpine,
+38° coastal cliff, 36° forest); terrace on the mesa walls; every hardcoded 1200-5000 droplet count
+dropped for the grid default. The forest stream is re-traced — the old points ran off the east edge
+under the new landform — and the lake reseeded onto the basin it actually ends in.
+
+Measured by `scripts/measure-terrain.mjs` (D8 flow accumulation, prominence > 1 m as a spike):
+
+| world | relief | % >30° | % >45° | channels % | spikes | bake ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| forest | 76 → **91 m** | 3.8 → **22.4** | 0.7 → **3.0** | 7.4 → 4.9 | 1 → **3** | 2595 |
+| coastal | 118 → **124 m** | 9.5 → **30.9** | 1.7 → **6.3** | 10.9 → 6.6 | 1 → **5** | 1554 |
+| alpine | 150 → **181 m** | 21.3 → **35.6** | 11.8 → **15.7** | 7.4 → 6.6 | 104 → **28** | 1903 |
+| desert | 74 → **70 m** | 11.3 → 11.3 | 8.5 → **6.5** | 5.9 → 4.4 | 93 → **10** | 1604 |
+| tundra | 14 → **46 m** | 0.6 → **22.4** | 0.0 → 1.2 | 5.3 → 4.7 | 10 → **0** | 1787 |
+
+Alpine and desert spikes fell from 104/93 to 28/10; the mesa stamp's own fbm skin at `roughness:
+0.25` was standing a metre proud over a tenth of the desert, now 0.06. Bake is authoring-time only and
+`pnpm dev` now skips an unchanged bake (19 s → 0.07 s), which the 15 s dev-server readiness budget
+required. Gates: `pnpm --filter @threenative/terrain build` clean, `vitest run packages/terrain` 59/59,
+`--filter strata-terrain-preview typecheck` clean, `pnpm lint` shows no diagnostic in any file this
+change touches (its 10 errors are pre-existing on `develop`). Captures inspected directly:
+`overview.png` shows dendritic drainage with rock in the channels, `forest-walk.png` a cut bank and a
+worn dirt scatter, `river.png` the lake sitting in the basin the traced stream feeds. **AC-5 stays
+open** — this fixes terrain only; the five environments' art, atmosphere and the coastal/alpine/
+desert/tundra *defining views* are not yet captured and judged.
+
+- [ ] AC-5 [local, actor: implementing agent]: The five editable starter environments satisfy their defining terrain/art coverage and Unreal-like visual rubric. proof: planned `pnpm exec vitest run packages/terrain/__tests__/starter-assets.spec.ts` plus AC-3/AC-4 benchmark captures — Evidence: partial (terrain half; see the relief pass above). Terrain relief, drainage, talus and mesa benches are measured and the temperate captures inspected; still pending: the four non-temperate defining views, final art and atmosphere, and the 25 MiB cooked budget per starter with no runtime fetches. Asset tests or nonblank captures alone cannot tick this visual criterion.
 - [ ] AC-6 [local, actor: implementing agent]: A consumer completely replaces starter materials and placement models without generator edits. proof: `pnpm --filter strata-terrain-preview test:terrain:custom` — Evidence: pending; planned script runs the existing scenario with custom local material/model mappings, verifies the new model/material identities, zero starter asset requests, and unchanged terrain/collision arrays; a missing referenced asset fails by name.
 - [ ] AC-7 [local, actor: implementing agent]: Installed capability lookup leads an agent to the actual public terrain authoring API. proof: `pnpm build` plus `pnpm capabilities:check` and packed-consumer capability lookup in `test:consumer` — Evidence: pending; request/individual-mechanic queries resolve installed imports and truthful constraints, including units, seed, resolution, synchronous evaluation, and custom art ownership. Fresh create-threenative output includes the optional terrain/editor install and workflow instructions, linked to the shipped addon guide; verify the generated AGENTS/CLAUDE mirrors and packed editor entry without adding authoring dependencies to ordinary game runtime.
 
