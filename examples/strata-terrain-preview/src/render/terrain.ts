@@ -18,6 +18,7 @@
 // sitting in the texture that was already sampled for the tilt: a texel the map painted as facing
 // away from the sky is a crevice, and darkening it costs no binding at all.
 import type { IAssetLoader } from "@threenative/core";
+import { GROUND_MAPS, GROUND_TILE, type LayerKey } from "../world/terrainAssets.js";
 import { Heightfield } from "@threenative/core/world";
 import {
   type BufferGeometry,
@@ -86,8 +87,6 @@ export interface IGroundCurvature {
   readonly texture: DataTexture;
 }
 
-type LayerKey = "grass" | "dirt" | "rock" | "moss" | "sand" | "snow";
-
 /** The layers that cover ground, ordered so the heavier surface blends over the base one. */
 const LAYERS: readonly LayerKey[] = ["dirt", "moss", "sand", "rock", "snow"];
 
@@ -95,45 +94,6 @@ interface ILayerMaps {
   diffuse: Texture;
   normal?: Texture;
 }
-
-/**
- * One tile of each layer, in metres — the distance over which its texture repeats.
- *
- * Grass repeats every 2.6 m so a blade pattern still reads under the player's feet; the cliff rock
- * every 9 m, because its strata are wider than the cliff they sit on; snow every 12 m, because a
- * drift has no detail at the scale of a footprint. The same numbers are recorded per map in
- * `packages/terrain/starter-assets/credits.json`.
- */
-const TILE: Record<LayerKey, number> = {
-  dirt: 3.4,
-  grass: 2.6,
-  moss: 3.6,
-  rock: 9,
-  sand: 3.2,
-  snow: 12,
-};
-
-/** Which CC0 starter maps each surface binds. This mapping is the game's, not the package's. */
-const MAPS: Record<LayerKey, { diffuse: string; normal?: string }> = {
-  dirt: {
-    diffuse: "forest_ground_04/forest_ground_04_diff_1k.jpg",
-    normal: "forest_ground_04/forest_ground_04_nor_gl_1k.jpg",
-  },
-  grass: {
-    diffuse: "leafy_grass/leafy_grass_diff_1k.jpg",
-    normal: "leafy_grass/leafy_grass_nor_gl_1k.jpg",
-  },
-  moss: {
-    diffuse: "mossy_rock/mossy_rock_diff_1k.jpg",
-    normal: "mossy_rock/mossy_rock_nor_gl_1k.jpg",
-  },
-  rock: {
-    diffuse: "cliff_side/cliff_side_diff_1k.jpg",
-    normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
-  },
-  sand: { diffuse: "sand_01/sand_01_diff_1k.jpg" },
-  snow: { diffuse: "snow_02/snow_02_diff_1k.jpg" },
-};
 
 /**
  * How far a crevice darkens its layer, as a share of the normal map's own up-facing channel.
@@ -215,7 +175,7 @@ const BARE_LIFT = vec3(0.09, 0.075, 0.05);
  */
 function layerUV(key: LayerKey, scale = 1): Node<"vec2"> {
   return rotateUV(
-    positionWorld.xz.div(float(TILE[key])).mul(scale),
+    positionWorld.xz.div(float(GROUND_TILE[key])).mul(scale),
     mx_noise_float(positionWorld.mul(0.006)).mul(1.4),
     vec2(0, 0),
   );
@@ -256,7 +216,7 @@ interface IAntiTile {
  * times the hash.
  */
 function antiTile(key: LayerKey, tiles: number, scale = 1): IAntiTile {
-  const tile = float(TILE[key]).mul(scale);
+  const tile = float(GROUND_TILE[key]).mul(scale);
   const cells = Math.max(1, Math.round(tiles));
   const world = positionWorld.div(tile).mul(float(1 / cells));
   const hash = hashCell(world.floor());
@@ -271,7 +231,7 @@ function antiTile(key: LayerKey, tiles: number, scale = 1): IAntiTile {
 /** A layer's UV with its own stochastic shift and rotation folded in. */
 function tiledUV(key: LayerKey, tiles: number, scale = 1): Node<"vec2"> {
   const jitter = antiTile(key, tiles, scale);
-  const base = positionWorld.xz.div(float(TILE[key]).mul(scale));
+  const base = positionWorld.xz.div(float(GROUND_TILE[key]).mul(scale));
   return rotateUV(
     base.add(jitter.offset).add(vec2(0.37, 0.19)),
     mx_noise_float(positionWorld.mul(0.006)).mul(1.4).add(jitter.rotation),
@@ -314,7 +274,7 @@ function planarRelief(source: Texture, uv: Node<"vec2">, strength: number): IRel
  * tangential direction, which is what a wall projection always does without this.
  */
 function triplanarRelief(source: Texture, key: LayerKey, roughnessScale = 1): IRelief {
-  const tile = float(TILE[key]).mul(roughnessScale);
+  const tile = float(GROUND_TILE[key]).mul(roughnessScale);
   const x = texture(source, positionWorld.yz.div(tile));
   const y = texture(source, positionWorld.zx.div(tile));
   const z = texture(source, positionWorld.xy.div(tile));
@@ -392,7 +352,7 @@ function sandRipples(): Node<"vec3"> {
  * its own length.
  */
 function triplanarAlbedo(source: Texture, key: LayerKey): Node<"vec4"> {
-  const tile = float(TILE[key]);
+  const tile = float(GROUND_TILE[key]);
   const wall = tile.mul(0.7);
   const weight = abs(normalWorld).normalize();
   const x = texture(source, positionWorld.yz.div(wall));
@@ -772,7 +732,7 @@ async function loadGroundMaps(
   assets: IAssetLoader,
 ): Promise<Partial<Record<LayerKey, ILayerMaps>>> {
   const layers = await Promise.all(
-    Object.entries(MAPS).map(async ([key, paths]) => {
+    Object.entries(GROUND_MAPS).map(async ([key, paths]) => {
       // A layer without its albedo has no place in the blend, so the set comes back without it.
       const diffuse = await get(assets, paths.diffuse, false);
       if (diffuse === undefined) return undefined;

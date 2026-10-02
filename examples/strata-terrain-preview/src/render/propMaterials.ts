@@ -60,6 +60,17 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
+import {
+  FERN_MAPS,
+  FIR_MAPS,
+  IMPOSTOR_CARD,
+  NEEDLE_ATLAS,
+  NEEDLE_SURFACE,
+  PINE_ATLAS,
+  type ISurfaceMaps,
+  PROP_MAPS,
+  SOIL_MAP,
+} from "../world/terrainAssets.js";
 import type { IPropMaterials } from "./props.js";
 
 /** How much a mip level shrinks a needle card's alpha; see {@link mipCompensatedCutoff}. */
@@ -147,6 +158,15 @@ function canopyTranslucency(amount: number, tint: number = CANOPY.tint): Node<"v
 const CUTOUT = 0.42;
 
 /**
+ * Metres one tile of each mapped prop surface spans. Bark plates are a hand wide; rock is metres.
+ *
+ * A size of a pattern rather than a fact about a file, which is why it stays here and the paths do
+ * not: replacing the bark map with one of a different resolution changes nothing about how big a
+ * bark plate is.
+ */
+const TILE = { bark: 1.6, stone: 2.4 } as const;
+
+/**
  * The prepared pine's own cutoff, which is a seventh of the shared one.
  *
  * Not a fudge and not a preference: it is what the pine's atlas measures. A Scots pine spray is
@@ -169,51 +189,6 @@ const CUTOUT = 0.42;
  * something corrugated. So the pine gets the atlas's colour and its alpha, the shared waxy
  * roughness, and the same wrapped two-sided canopy light every other crown gets.
  */
-const PINE_ATLAS = "prepared/pine-tall-atlas.png";
-
-/** The far card, baked from the uncut crown by the same script. One card, eight triangles. */
-const IMPOSTOR_CARD = "prepared/pine-tall-impostor.png";
-
-/** Which CC0 starter maps each surface binds. This mapping is the game's, not the package's. */
-interface ISurfaceMaps {
-  readonly diffuse: string;
-  readonly normal: string;
-  readonly roughness: string;
-}
-
-const MAPS: Record<"bark" | "stone", ISurfaceMaps> = {
-  bark: {
-    diffuse: "bark_brown_02/bark_brown_02_diff_1k.jpg",
-    normal: "bark_brown_02/bark_brown_02_nor_gl_1k.jpg",
-    roughness: "bark_brown_02/bark_brown_02_rough_1k.jpg",
-  },
-  stone: {
-    diffuse: "mossy_rock/mossy_rock_diff_1k.jpg",
-    normal: "mossy_rock/mossy_rock_nor_gl_1k.jpg",
-    roughness: "mossy_rock/mossy_rock_rough_1k.jpg",
-  },
-};
-
-/** Metres one tile of each mapped surface spans. Bark plates are a hand wide; rock is metres. */
-const TILE = { bark: 1.6, stone: 2.4 } as const;
-
-/** The generated needle atlas, served beside the starter maps. */
-const NEEDLE_ATLAS = "needle-atlas.png";
-/** Its relief: RG a tangent-space normal per needle, B the occlusion the canopy drops on itself. */
-const NEEDLE_SURFACE = "needle-surface.png";
-
-/**
- * The prepared fir's own maps, which are Poly Haven's atlas of twig cards at one texture per map.
- *
- * Its arms are packed the usual way: occlusion in red, roughness in green, metal in blue. This
- * surface binds all three, which is the whole reason the prepared crown costs two files rather
- * than the six a per-material atlas would need.
- */
-const FIR_MAPS = {
-  arms: "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
-  normal: "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
-  surface: "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
-} as const;
 
 /** Load one starter map, or nothing. A prop still draws without it, on its own colours. */
 async function map(assets: IAssetLoader | undefined, path: string, data: boolean) {
@@ -636,11 +611,6 @@ function needleMaterial(
   return material;
 }
 
-/** Where the fern's frond atlas lives: Poly Haven `fern_02`, diffuse and its separate alpha. */
-const FERN_MAPS = {
-  alpha: "fern_02/fern_02_alpha_512.png",
-  diffuse: "fern_02/fern_02_diff_512.jpg",
-} as const;
 
 /**
  * Bracken: each card one photographed frond, cut by the atlas's own alpha.
@@ -708,10 +678,10 @@ export async function createPropSurfaces(
     map(assets, FERN_MAPS.diffuse, false),
     map(assets, FERN_MAPS.alpha, true),
   ]);
-  const soil = await map(assets, "forest_ground_04/forest_ground_04_diff_1k.jpg", false);
+  const soil = await map(assets, SOIL_MAP, false);
   const [bark, stone, atlas, relief] = await Promise.all([
-    surfaceMaps(assets, MAPS.bark),
-    surfaceMaps(assets, MAPS.stone),
+    surfaceMaps(assets, PROP_MAPS.bark),
+    surfaceMaps(assets, PROP_MAPS.stone),
     map(assets, NEEDLE_ATLAS, false),
     map(assets, NEEDLE_SURFACE, true),
   ]);
