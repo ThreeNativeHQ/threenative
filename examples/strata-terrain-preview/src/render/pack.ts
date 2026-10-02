@@ -126,9 +126,7 @@ function surface(
       cutout && canopy
         ? otherBiome
           ? ([0.3, 0.42, 0.32] as const)
-          : kite
-            ? ([0.75, 0.98, 1.05] as const)
-            : ([0.38, 0.78, 0.82] as const)
+          : ([0.6, 0.78, 0.34] as const)
         : cutout && asset !== "poppy"
           ? otherBiome
             ? ([0.55, 0.82, 0.42] as const)
@@ -140,7 +138,7 @@ function surface(
               : ([1, 1, 1] as const);
 
     material.colorNode = sampled.rgb.mul(vec3(...tint));
-    if (!otherBiome && canopy && cutout) {
+    if (world === "forest" && canopy && cutout) {
       const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
       const wood = smoothstep(0.04, 0.16, sampled.r.sub(sampled.g));
       material.colorNode = mix(
@@ -248,12 +246,16 @@ function surface(
         material.colorNode = material.colorNode.mul(
           mix(otherBiome ? 0.42 : 0.48, 1, otherBiome ? inner : inner.pow(2)),
         );
-        if (!otherBiome)
+        if (world === "forest")
           material.colorNode = material.colorNode.mul(
             mix(0.3, 1, smoothstep(0.35, 0.9, sampled.a)),
           );
-        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.06, 0.85, inner.pow(2));
-        if (!otherBiome) material.normalNode = normalViewGeometry;
+        material.aoNode = otherBiome
+          ? mix(0.12, 0.58, inner)
+          : world === "forest"
+            ? mix(0.06, 0.85, inner.pow(2))
+            : mix(0.26, 0.72, inner.pow(2));
+        if (world === "forest") material.normalNode = normalViewGeometry;
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
@@ -276,11 +278,14 @@ function surface(
       material.alphaTestNode =
         world === "tundra" && !canopy
           ? float(0.5)
-          : float(source.alphaTest).div(float(1).add(mip.mul(0.25)));
+          : float(world === "forest" ? source.alphaTest : 0.42).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
       if (canopy) {
         lightNeedles(material, material.aoNode as Node<"float">);
-        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.05);
+        if (!otherBiome)
+          material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(
+            world === "forest" ? 0.05 : 0.18,
+          );
         if (world === "alpine" && material.emissiveNode)
           material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
       } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
@@ -359,7 +364,7 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets) return undefined;
       try {
-        if (world === "forest" && one.asset === "spruce" && one.variant === 0 && !one.level) {
+        if (world === "forest" && one.asset === "spruce" && !one.level) {
           const pine = await assets
             .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
             .catch(() => undefined);
@@ -421,6 +426,7 @@ export async function loadPack(
       if (world === "tundra" && one.asset === "scrub") geometry.scale(2.8, 1.2, 2.8);
       if (one.asset === "spruce") geometry.scale(1.12, 1, 1.12);
       if (world === "coastal" && one.asset === "grass") geometry.scale(0.55, 1.35, 0.55);
+      if (world === "forest" && one.asset === "poppy") geometry.scale(1, 1.4, 1);
       // spruce_full_03_low ships zero normals. Repair the optional art, including existing cooks.
       const normals = geometry.getAttribute("normal");
       if (!normals || Math.hypot(normals.getX(0), normals.getY(0), normals.getZ(0)) < 0.01)
@@ -443,7 +449,7 @@ export async function loadPack(
           ),
         );
         geometry.setAttribute("inner", new BufferAttribute(inner, 1));
-        if (world === "forest" || world === "coastal") {
+        if (world === "forest") {
           const crownNormals = new Float32Array(positions.count * 3);
           const direction = new Vector3();
           for (let i = 0; i < positions.count; i++) {

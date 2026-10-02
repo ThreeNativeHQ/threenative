@@ -1801,3 +1801,26 @@ counted stale incremental hashes as live payload; the unchanged 130 MB bound now
 counts manifest outputs and shared images once. Trial atlas budgets were fixed by
 removing unused crown normal/specular maps and keeping juvenile atlases at 1K,
 without dropping crown cards.
+
+19:52 UTC crop decision: the first pine trial used a 1K needle atlas and an overly
+permissive alpha cutoff. The full-card 2K/authored-cutoff crop reads as connected
+branches and needle clusters, better than the remaining hanging card faces in the
+mixed candidate. Final selection is full Kite crowns throughout the near ring,
+original conical spruce farther out, and natural-size Spruce_08 regeneration.
+No light/sky/haze/grade values changed. The corrected numeric CPU assertion uses
+the installed `throughoutSteps` contract; the mixed control passes **46/46**,
+forest player/meadow/overview/river **3.6/2.4/2.6/3.1 ms**, with zero diagnostics
+or console errors. Its ocean probe passes (wave change 0.639, glint change 0.530,
+lagoon-blue fraction 1.0). Final-head licensed/fallback runs remain pending.
+
+20:00 UTC checkpoint: the first full-2K scenario passed 45/46 assertions but
+failed its throughout-step CPU bound at the river (**5.0 ms**); it is retained as
+`canopy-full-2k-verified-trial`, not final proof. Coastal native crop comparison
+revealed pale crown tops introduced by shared crown normals. New color/AO/normals
+and emission changes are now forest-only; coastal shading is restored exactly.
+The distant forest's exposed soil was also authored by a dry-noise dirt mask,
+which now applies only to the coast; normal forest banks, rock and snow remain.
+Typecheck and root Biome pass; terrain vitest rerun **12 files / 69 tests PASS**.
+Fresh full licensed proof is running. The shorter ScotsPine_01 source was inspected
+(19 m crown width versus Tall's 8.5 m); it was not rendered or selected, and no
+visual verdict on that untested candidate is claimed.

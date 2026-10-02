@@ -381,9 +381,11 @@ export function createGroundMaterial(
 
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
   if (!otherBiome) {
-    // Real surface patches survive the cover cull; colour noise alone left an uninterrupted lawn.
-    const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
-    weights.dirt = max(weights.dirt, dry.mul(0.7)).mul(sand.oneMinus());
+    // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
+    if (biome?.world === "coastal") {
+      const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));
+      weights.dirt = max(weights.dirt, dry.mul(0.7)).mul(sand.oneMinus());
+    }
     weights.moss = max(
       weights.moss,
       smoothstep(-0.14, -0.38, macro.add(mottling.mul(0.4))).mul(0.42),
@@ -577,7 +579,13 @@ export function createGroundMaterial(
   const flowers = smoothstep(0.3, 0.47, mx_noise_float(positionWorld.mul(0.95))).mul(
     smoothstep(0.05, 0.3, mottling),
   );
-  const farGrass = mix(vec3(0.025, 0.055, 0.013), vec3(0.12, 0.105, 0.035), meadowDry)
+  const farGrass = mix(
+    vec3(0.025, 0.055, 0.013),
+    biome?.world === "forest" || biome === undefined
+      ? vec3(0.06, 0.11, 0.035)
+      : vec3(0.12, 0.105, 0.035),
+    meadowDry,
+  )
     .mul(cover)
     .mul(meadowValue)
     .add(vec3(0.11, 0.09, 0.04).mul(flowers));
