@@ -933,13 +933,10 @@ describe("CI pipeline structure", () => {
     expect(ci).toMatch(/push:\n\s+branches:\n\s+- main/u);
     expect(ci).toMatch(/pull_request:\n\s+branches:\n\s+- main/u);
     expect(ci).toContain("group: ci-${{ github.event_name }}-${{ github.ref }}");
-    // Main evidence arrives via CI completion, never via the push itself: every
-    // `workflow_run` run shares `github.ref` (the default branch), so the group also
-    // keys on the triggering CI head SHA - a new completion for a newer main SHA gets
-    // its own group instead of queueing behind a superseded evidence run.
-    expect(native).toContain(
-      "group: native-release-${{ github.event_name }}-${{ github.event.workflow_run.head_sha }}-${{ github.ref }}",
-    );
+    // Every release proof shares one group now, whatever triggered it: a per-ref or per-SHA key
+    // is what let a promotion PR, a manual dispatch and a main CI completion hold the pool at
+    // once. `native-release-proof.spec.ts` owns the setting; this is the structural backstop.
+    expect(native).toContain("group: native-release-proof");
     expect(native).toContain("cancel-in-progress: false");
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_run:");
@@ -956,6 +953,20 @@ describe("CI pipeline structure", () => {
     // Tag publication and manual proof keep the single-shot lookup they always had.
     expect(native).toMatch(/gh run list .*--workflow ci\.yml --commit/u);
     expect(npm).toContain('gh release view "runtime-native-v${native_version}"');
+  });
+
+  it("holds every release proof in one cross-branch concurrency group", async () => {
+    const native = await readFile(path.join(repo, ".github/workflows/native-release.yml"), "utf8");
+    const concurrency = triggerSection(native).split("\nconcurrency:\n")[1] ?? "";
+    expect(concurrency, "native-release declares no concurrency block").not.toBe("");
+    // Exactly one, and carrying nothing event-derived. A `${{ github.ref }}` or
+    // `${{ github.event.workflow_run.head_sha }}` suffix is a second proof running beside the
+    // first, which is exactly the starvation this group exists to end (PRD-380: 7.0k
+    // runner-minutes of PR proof against a pool of about three).
+    const groups = [...concurrency.matchAll(/^\x20{2}group: (.*)$/gmu)].map((match) => match[1]);
+    expect(groups).toEqual(["native-release-proof"]);
+    // `false`, not a conditional: a superseded run still lets its queued consumer finish.
+    expect(concurrency).toContain("cancel-in-progress: false");
   });
 
   // A `gh` call infers its repository from a git checkout. A job that never checks out has
