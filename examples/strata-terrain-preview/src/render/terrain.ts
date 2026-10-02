@@ -381,6 +381,9 @@ export function createGroundMaterial(
 
   if (biome) Object.assign(weights, biomeWeights(biome, steep, hollow, breakUp));
   if (!otherBiome) {
+    // Ordinary forest hills carry turf; reserve exposed soil for drainage banks.
+    if (biome?.world === "forest" || biome === undefined)
+      weights.dirt = drainage.mul(0.18).mul(sand.oneMinus());
     // Coastal soil patches remain; the forest meadow keeps turf between distant blade clusters.
     if (biome?.world === "coastal") {
       const dry = smoothstep(0.14, 0.42, macro.add(mottling.mul(0.85)).sub(hollow.mul(0.12)));

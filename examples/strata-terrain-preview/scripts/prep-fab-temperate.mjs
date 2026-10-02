@@ -231,6 +231,17 @@ async function prepare(source, pack, logical) {
   const document = await io.readBinary(glb(json, Buffer.concat(buffers)));
   if (logical.startsWith("kite-spruce/")) {
     // Preserve every authored crown card; a 21% near crown was visibly sparse.
+    const bark = document
+      .getRoot()
+      .listMaterials()
+      .find((one) => one.getName() === "ScotsPine_01_Branches_Mat");
+    if (!bark) throw new Error(`Missing Kite bark material: ${logical}`);
+    // Both bark sections share albedo/UVs.
+    // ponytail: secondary bark uses trunk relief; split the draw if its normal detail becomes visible.
+    for (const mesh of document.getRoot().listMeshes())
+      for (const primitive of mesh.listPrimitives())
+        if (primitive.getMaterial()?.getName() === "ScotsPine_01_Branches_2_Mat")
+          primitive.setMaterial(bark);
     for (const material of document.getRoot().listMaterials())
       if (material.getAlphaMode() === "MASK")
         material.setNormalTexture(null).setMetallicRoughnessTexture(null);

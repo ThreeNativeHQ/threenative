@@ -1776,9 +1776,9 @@ remain gitignored and procedural art stays available. Hard stop: 20:58 UTC.
    close meadow gaps using the existing cover pipeline without changing other biomes.
 3. Run all requested gates, record grades/CPU/crops here, commit by path; no push/merge.
 
-- [ ] Near canopy improves against Gaia; proof: before/candidate/after 1:1 crops under `artifacts/playtest/canopy-final/`.
-- [ ] Meadow has connected blade/flower cover; proof: full-resolution meadow-close and forest-start captures.
-- [ ] Licensed shared scenario and ocean pass with every measured view CPU p50 ≤4 ms; proof: `canopy-final/licensed/capture.json`, `verify-ocean.mjs`.
+- [x] Near canopy improves against Gaia; proof: before/candidate/after 1:1 crops under `artifacts/playtest/canopy-final/`.
+- [x] Meadow has connected blade/flower cover; proof: full-resolution meadow-close and forest-start captures.
+- [x] Licensed shared scenario and ocean pass with every measured view CPU p50 ≤4 ms; proof: `canopy-final/licensed/capture.json`, `verify-ocean.mjs`.
 - [ ] Procedural fallback shared scenario and ocean pass; proof: `canopy-final/fallback/capture.json`, `verify-ocean.mjs`.
 - [x] Example typecheck, root Biome and terrain vitest pass; proof: example `pnpm exec tsc --noEmit` exit 0, root Biome 72 files PASS, terrain vitest 12 files / 69 tests PASS (checkpoint; rerun if changed).
 
@@ -1824,3 +1824,45 @@ Typecheck and root Biome pass; terrain vitest rerun **12 files / 69 tests PASS**
 Fresh full licensed proof is running. The shorter ScotsPine_01 source was inspected
 (19 m crown width versus Tall's 8.5 m); it was not rendered or selected, and no
 visual verdict on that untested candidate is claimed.
+
+20:23 UTC: full crowns now pass the entire scenario twice. The four-section
+render exceeded river/player bounds in two attempts; the re-plan joins the two
+bark sections that already share albedo/UVs, reusing trunk normal relief.
+Installed join/weld yields **3 sections, 27,824 total triangles, 22,320 crown
+triangles** (inline GLB assertions PASS). No crown cards or other geometry were
+removed. Live cook payload is **119.9 MiB**, below the unchanged 130 MB bound.
+The remaining ordinary-hill soil mask is removed only in the forest; drainage
+banks, rocks and other biomes retain their rules.
+
+Final licensed head: **46/46 PASS**, zero diagnostics and console errors, NVIDIA
+Turing hardware WebGPU, 16 captures at 1920×1080. Every closed CPU window at all
+scenario steps is ≤3.0 ms. Captured forest start/meadow/overview/river/walk
+**3.0/2.1/2.2/2.7/2.7 ms**; coast early/ocean/horizon/sun
+**2.4/2.6/2.0/2.3 ms**; alpine ridge/overview **2.0/1.9 ms**; desert
+mesa/overview **1.3/1.2 ms**; tundra plain/overview **1.9/1.6 ms**.
+Ocean probes PASS: moving-water ratio **0.625**, sun-change ratio **0.519**,
+sheltered blue fraction **1.0**. Example tsc, root Biome (72 files), terrain
+vitest (12 files/69 tests) and documentation links (2,386 links) PASS.
+
+Native crops compared without scaling under `canopy-final/comparisons/`: Gaia
+tree (480×772) and grass (680×256); before/after tree (768×768 at x200,y170),
+grass (768×512 at x1000,y568) and forest ground (768×512 at x1024,y568).
+Also compared the 1K pine, full-2K pine, repaired spruce and mixed candidates.
+Full Kite crowns replace the nearest hanging card faces; FieldGrass closes the
+previous basal soil gaps and flowers stand above the mat. Remaining visual
+limits: pine crown silhouette differs from Gaia spruce, fine foliage still
+sparkles, far cover remains flatter, and broader terrain/cloud quality is
+outside this lane. No independent judge-score gain or full Gaia parity is claimed.
+
+Fallback proof remains pending: all local assets are temporarily moved under
+ignored artifacts with automatic restoration on exit. A mistyped loopback host
+failed server startup and was corrected; the subsequent exit 75 is a shared
+capture-lock timeout, not a test verdict. Doctor PASS for web; exact requested
+host/port command is now retrying while the other lane captures.
+
+CPU reporting distinction: captured-step closed-window samples peak at **3.0 ms**.
+The existing per-view latched medians are forest player/meadow/overview/river
+**3.1/2.1/2.2/2.8 ms**, alpine **2.0/1.9 ms**, desert **1.2/1.2 ms**, tundra
+**1.9/1.7 ms**. Coastal and walk values above are captured closed-window medians.
+Thus the highest reported per-view licensed p50 is **3.1 ms**. Fallback has
+acquired the capture lock with `local-assets/` absent.

@@ -33,6 +33,8 @@ Round 16 adds a bounded `--canopy` cook: the unthinned `ScotsPineTall_01`,
 `SM_FieldGrass_01` with its recovered `T_FieldGrass_01_D` color/alpha atlas,
 and `Spruce_08` with opacity from the blue channel of `Spruce_AORO`.
 The pine keeps its authored alpha cutoff and 2K needle atlas; the sapling atlas is 1K.
+Its two bark sections share albedo and UVs; they share trunk relief so the existing
+join pass reduces four draws to three without removing geometry.
 The forest uses full-crown pine in its near ring, conical mature spruce farther out,
 the new spruce at sapling size, and a broad FieldGrass mat. Each optional addition falls back to the
 previous species before procedural art. Coast retains its existing species.
