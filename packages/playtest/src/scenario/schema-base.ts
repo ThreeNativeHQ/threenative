@@ -1,3 +1,4 @@
+import type { IToneMetrics } from "../tone.js";
 import type { IPlaytestGeometryCaptureRequest, PlaytestFramePassKind, PlaytestFramePhase } from "../protocol.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -575,7 +576,13 @@ export interface IPlaytestAudioAssertion {
   minGapMs?: number;
 }
 
+export interface IPlaytestToneAssertion extends Partial<Record<keyof IToneMetrics, { min?: number; max?: number }>> {
+  /** Omit to bound the final capture, otherwise capture after this named step. */
+  atStep?: string;
+}
+
 export interface IPlaytestScenarioAssertions {
+  tone?: IPlaytestToneAssertion[];
   aerodynamics?: IPlaytestAerodynamicsAssertion[];
   audio?: IPlaytestAudioAssertion[];
   animation?: IPlaytestAnimationAssertion[];

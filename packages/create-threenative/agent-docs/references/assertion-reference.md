@@ -856,3 +856,20 @@ Proves the render chain reports its quality tier, authored stage ids/order, grap
   }
 }
 ```
+
+
+## Captured tone
+
+Use `tone` to gate exposure from decoded frame pixels. Each row takes an optional `atStep`
+(named step; omitted means final frame) and at least one metric bound. `mean`, `p1`, `p50`, `p99`
+use display luminance 0..255; `clipFraction` and `blackFraction` use 0..1. Bounds take inclusive
+min/max numbers. Empty, invalid and contradictory bounds throw at load; a missing capture fails.
+
+```json
+{ "tone": [{ "atStep": "landed", "mean": { "min": 60, "max": 140 }, "p99": { "min": 150 }, "clipFraction": { "max": 0.005 } }] }
+```
+
+The host uses one rounded 256-bin Rec.709 luminance histogram; fully transparent pixels are
+excluded. The CLI command `threenative-playtest tone shot.png other.png` reports the same six
+metrics plus an unweighted frame-average row without starting a browser. Tone is an exposure
+gate, not an aesthetic verdict. Retain and inspect the actual runtime screenshots.

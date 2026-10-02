@@ -122,7 +122,7 @@ export function runNeedsPixels(
   if (config.headless !== true) return true;
   const takesScreenshot = scenario.artifacts?.screenshots !== false
     || scenario.steps.some(({ screenshot }) => screenshot !== undefined);
-  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0;
+  const evaluatesVisual = (scenario.assert?.visual?.length ?? 0) > 0 || (scenario.assert?.tone?.length ?? 0) > 0;
   return takesScreenshot || evaluatesVisual || scenario.assert?.framebufferCoverage !== undefined;
 }
 
