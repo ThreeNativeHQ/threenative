@@ -601,6 +601,9 @@ interface IScopeFixture {
 function isolatedGitEnvironment(): NodeJS.ProcessEnv {
   const environment = { ...process.env };
   for (const variable of [
+    // A fixture repo is never a CI run: inherited from the CI job, this turned on the live tree-reuse
+    // lookup and the plan grew an Actions API error.
+    "GITHUB_ACTIONS",
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "GIT_COMMON_DIR",
     "GIT_DIR",

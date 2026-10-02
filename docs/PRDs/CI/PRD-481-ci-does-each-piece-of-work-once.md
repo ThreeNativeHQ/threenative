@@ -134,9 +134,9 @@ skip it.
 
 - [ ] A promotion PR whose tree already passed reports `reused`, under 2 min. proof: CI run id plus the
   source run id it cites.
-- [x] A tree that changed by one byte runs the full board, and a tree that already passed is reused
-  only when a source run covers this run's validation profile. proof:
-  `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`, with a case where the trees differ by one
+- [x] (proof: `pnpm exec vitest run scripts/__tests__/ci-needs.spec.ts`) A tree that changed by one byte
+  runs the full board, and a tree that already passed is reused only when a source run covers this run's
+  validation profile; the spec carries a case where the trees differ by one
   file, a case where the API errors, and the four coverage cases: a develop pull request's pass cited
   for a promotion, a source that never ran a matrix leg this run requires, a source whose jobs ran on
   another runner class, and a promotion pass satisfying a develop pull request. Evidence: 2026-10-02,
@@ -179,9 +179,9 @@ land unreviewed).
   (pull request #394 merged 2026-10-02) are both removed; every integration job now carries
   `!github.event.pull_request.draft`, and each trigger gained `ready_for_review` so that guard cannot
   silence the lane.
-- [x] The per-feature `integration-*.yml` files fold into one `integration.yml`, one job per feature with
-  its own `paths` gate, draft guard and routing expression kept per job. proof:
-  `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` — its allow-list lists one integration
+- [x] (proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts`) The per-feature
+  `integration-*.yml` files fold into one `integration.yml`, one job per feature with its own `paths`
+  gate, draft guard and routing expression kept per job — its allow-list lists one integration
   workflow and rejects a new `integration-*.yml`. Evidence: 2026-10-02, 131 passed, each of the two
   new assertions red first: a lane without `needs: paths` and a lane gate without
   `!github.event.pull_request.draft` both fail, and adding `integration-newlane.yml` fails the
