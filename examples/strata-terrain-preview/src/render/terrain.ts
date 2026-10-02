@@ -397,7 +397,21 @@ export function createGroundMaterial(
    * two are blended rather than switched so the crossover has no seam to find.
    */
   const flatLayer = (key: LayerKey): boolean => key !== "rock" && key !== "sand";
+  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
 
+  // Keep colour and tangent relief on the same rotated projections and scales.
+  const rockTap = (source: Texture, plane: Node<"vec2">, relief = false): Node<"vec4"> => {
+    const tap = (scale: number, angle: number, offset: Node<"vec2">) => {
+      const sampled = texture(
+        source,
+        rotateUV(plane.div(scale), float(angle), vec2(0)).add(offset),
+      );
+      if (!relief) return sampled;
+      const tangent = rotateUV(sampled.xy.mul(2).sub(1), float(-angle), vec2(0));
+      return vec4(tangent, sampled.z.mul(2).sub(1), 1);
+    };
+    return mix(tap(6.7, 0.57, vec2(0)), tap(11.3, -0.83, vec2(0.37, 0.61)), patch);
+  };
   const albedoOf = (key: LayerKey): Node<"vec4"> => {
     const { diffuse } = layer(key);
     held.add(diffuse);
@@ -408,15 +422,37 @@ export function createGroundMaterial(
     );
     if (flatLayer(key))
       return key === "snow" && biome ? vec4(flat.rgb.mul(vec3(...biome.snowTint)), flat.a) : flat;
-    const walls = triplanarAlbedo(diffuse, key);
+    const walls =
+      otherBiome && key === "rock"
+        ? (() => {
+            // Two rotated, incommensurate projections break the photographed tile lattice.
+            const axis = abs(normalWorldGeometry).pow(4);
+            const share = axis.div(axis.x.add(axis.y).add(axis.z));
+            return share.x
+              .mul(rockTap(diffuse, positionWorld.zy))
+              .add(share.y.mul(rockTap(diffuse, positionWorld.xz)))
+              .add(share.z.mul(rockTap(diffuse, positionWorld.xy))) as Node<"vec4">;
+          })()
+        : triplanarAlbedo(diffuse, key);
     const blended = key === "rock" ? walls : mix(walls, flat, planarShare);
     // The wet band, applied to the sand only. It belongs here rather than in the layer blend below
     // because it is a *height* fact about the water's last reach, not a weight another surface has.
     if (key === "rock") {
       const grey = dot(blended.rgb, vec3(0.2126, 0.7152, 0.0722));
-      const stone = mix(blended.rgb, vec3(grey), 0.35).mul(
+      let stone = mix(blended.rgb, vec3(grey), otherBiome ? 0.72 : 0.35).mul(
         vec3(...(biome?.stoneTint ?? [0.48, 0.44, 0.39])),
       );
+      if (otherBiome && biome.world === "desert") {
+        const band = positionWorld.y
+          .mul(1.15)
+          .add(mx_noise_float(positionWorld.mul(0.035)).mul(0.9))
+          .sin()
+          .mul(0.5)
+          .add(0.5);
+        stone = stone.mul(
+          mix(vec3(0.74, 0.66, 0.53), vec3(1.16, 1.05, 0.87), smoothstep(0.25, 0.75, band)),
+        );
+      }
       // Resolved stone underfoot; broad weathering once the photograph's repeats become visible.
       const weathering = mx_noise_float(positionWorld.mul(0.012)).mul(0.15).add(1);
       const distant = vec3(...(biome?.distantStone ?? [0.115, 0.105, 0.088])).mul(weathering);
@@ -437,7 +473,22 @@ export function createGroundMaterial(
     if (source === undefined) return { crevice: float(1), tilt: vec3(0) };
     held.add(source);
     if (key === "rock") {
-      const walls = triplanarRelief(source, key);
+      const walls = otherBiome
+        ? (() => {
+            const axis = abs(normalWorldGeometry).pow(4);
+            const share = axis.div(axis.x.add(axis.y).add(axis.z));
+            const x = rockTap(source, positionWorld.zy, true);
+            const y = rockTap(source, positionWorld.xz, true);
+            const z = rockTap(source, positionWorld.xy, true);
+            return {
+              crevice: float(1),
+              tilt: share.x
+                .mul(vec3(0, x.y, x.x.mul(sign(normalWorldGeometry.x))))
+                .add(share.y.mul(vec3(y.x, 0, y.y)))
+                .add(share.z.mul(vec3(z.x.mul(sign(normalWorldGeometry.z)), z.y, 0))),
+            };
+          })()
+        : triplanarRelief(source, key);
       return {
         crevice: walls.crevice,
         tilt: walls.tilt
@@ -470,7 +521,6 @@ export function createGroundMaterial(
   };
 
   const grassRelief = reliefOf("grass", 0.38);
-  const otherBiome = biome !== undefined && biome.world !== "forest" && biome.world !== "coastal";
   // Metre-scale tufts survive the grass photograph's mips beyond individual blades.
   const cover = mx_fractal_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.75), 2)
     .mul(0.55)

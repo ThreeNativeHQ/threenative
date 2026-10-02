@@ -109,6 +109,7 @@ export function scatterProps(
   const temperate = data.world === undefined || data.world === "forest" || data.world === "coastal";
   const desert = data.world === "desert";
   const tundra = data.world === "tundra";
+  const alpine = data.world === "alpine";
   const treeLimit = temperate ? SCATTER.spruceCount : desert ? 0 : tundra ? 55 : 600;
   const placements: IPlacement[] = [];
   const counts: Record<string, number> = Object.fromEntries(
@@ -156,7 +157,8 @@ export function scatterProps(
   const cells = new Map<string, [number, number]>();
   for (
     let tries = 0;
-    (counts[tundra ? "sapling" : "spruce"] ?? 0) < treeLimit && tries < SCATTER.spruceAttempts;
+    (counts[tundra || alpine ? "sapling" : "spruce"] ?? 0) < treeLimit &&
+    tries < SCATTER.spruceAttempts;
     tries++
   ) {
     const x = (random() - 0.5) * data.size;
@@ -183,10 +185,10 @@ export function scatterProps(
     if (crowded || cells.has(key)) continue;
     cells.set(key, [x, z]);
     put(
-      tundra ? "sapling" : "spruce",
+      tundra || alpine ? "sapling" : "spruce",
       x,
       z,
-      (temperate ? 0.8 : tundra ? 0.45 : 0.55) + random() * (temperate ? 0.5 : 0.4),
+      (temperate ? 0.8 : tundra ? 0.45 : 1.05) + random() * (temperate ? 0.5 : 0.4),
     );
     // Regeneration at stand edges; ferns stay under established crowns.
     const edge = forestWeight(x, z) < 0.57;
@@ -212,7 +214,7 @@ export function scatterProps(
       if (temperate && random() < 0.22) put("cliff", x, z, 0.65 + random() * 0.5);
       continue;
     }
-    if (slope > 28 && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
+    if (slope > (temperate ? 28 : 18) && random() < 0.45) put("scree", x, z, 0.7 + random() * 0.7);
     for (let k = 0; k < 2 + Math.floor(random() * 3); k++)
       put("boulder", x + (random() - 0.5) * 8, z + (random() - 0.5) * 8, 0.45 + random() * 0.8);
   }
@@ -246,12 +248,7 @@ export function scatterProps(
       return;
     const drift = 0.65 + 0.35 * forestWeight(x * 3.1, z * 2.7);
     if (random() > density * drift) return;
-    put(
-      desert ? "scrub" : "grass",
-      x,
-      z,
-      (temperate ? 0.8 : 0.38) + random() * (temperate ? 0.65 : 0.35),
-    );
+    put("grass", x, z, (temperate ? 0.8 : 0.38) + random() * (temperate ? 0.65 : 0.35));
     if (!desert && random() < 0.3)
       put("scrub", x + (random() - 0.5), z + (random() - 0.5), 0.9 + random() * 0.6);
   };

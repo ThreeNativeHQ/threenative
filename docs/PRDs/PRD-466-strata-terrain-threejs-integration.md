@@ -1066,3 +1066,39 @@ exports and packed-scaffold handoff remain open. The generated API/capability
 snapshots and shipped addon guide now name the explicit `/export` contract.
 Actual vanilla/native/reassignment screenshots are tracked under
 `docs/verification/visuals/strata/` and will be attached to PR #381.
+
+### AC-5 Alpine / Desert / Tundra round 2 (2026-10-02)
+
+Complexity: 2 → LOW; risk override: none. Bounded example appearance changes using
+installed Terrain operations and shared prop/water rendering. AC-5 remains open.
+
+1. Replace rounded landforms with arêtes/cirques, mesa caprock/benches and moraine/kettle drainage.
+2. Break rock repetition, place snow by slope/exposure and dress optional props per biome.
+3. Capture defining views at 1920×1080, compare forest luminance and measure frame-window p50.
+
+Proof: bake, spike measurement, terrain Vitest; example typecheck and root Biome per commit;
+shared terrain scenario with zero console errors. Decisions: ridged noise already ships;
+thaw-season liquid tundra pools; licensed local art remains optional with procedural/CC0
+fallbacks. Forest/coast recipes stay untouched. No push or native claim.
+
+First round-2 increment: shared scenario **36/36 PASS**, zero diagnostics/console errors
+(`/tmp/worlds-r2-pass3.log`, `artifacts/playtest/worlds-r2-pass3/`), NVIDIA Turing WebGPU
+at 1920×1080. Frame-window p50 meadow/overview/alpine/desert/tundra: **2.2/2.4/1.3/1.1/2.0 ms**.
+The scenario now observes two drawn kettle-pond material groups and waits for actual water triangles.
+Terrain Vitest: **69/69 PASS**. Example typecheck and root Biome error gate pass.
+Spike counts alpine/desert/tundra: **30/11/0**, worst **2.7/2.3/0 m**. Forest meadow display
+luminance p5/p50/p95: baseline **15.5078/77.0686/176.5044**, increment
+**15.4356/77.0658/176.5044**, all differences below 0.5. Forest/coast recipes are unchanged.
+
+The initial steep alpine experiment produced 151 spikes and vertical pillars; lower hydraulic
+capacity/bite and unmasked low-rate thermal settling reduced them. Multi-lake rendering previously
+threw at tundra entry (pass1); it now merges ordinary geometry with one material group per pond,
+advancing and disposing each existing water surface. Desert optional Kite variant 0 is no longer
+overwritten by its CC0 fallback. Colour and normal projections share rotations and tile scales.
+
+Read-only review confirmed these fixes but found remaining water-footprint/prop-exclusion and
+river-width mismatches for the new tundra channels. Inspected captures remain below Gaia/Unreal:
+alpine still reads too broad and grey with weak snow/cirques; desert strata/dunes are regular;
+tundra needs clearer patterned ground and less regular cover. AC-5 stays open; a visual follow-up
+within this round is next. A run interrupted by edits timed out during a screenshot (pass2); it is
+not evidence. No licensed bytes committed, no push, native unverified.

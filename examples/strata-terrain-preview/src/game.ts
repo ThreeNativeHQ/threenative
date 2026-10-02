@@ -183,6 +183,8 @@ const initialState = {
   waveRange: 0,
   sampleSlopeRange: 0,
   lakePlacementError: 1,
+  lakeSurfaceCount: 0,
+  lakeTriangles: 0,
   sunX: -180,
   propDraws: 0,
   propInstances: 0,
@@ -376,6 +378,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         const centre = lake.mesh.geometry.getAttribute("position");
         const at = data.lakes?.[0]?.at;
         ctx.state.set({
+          lakeSurfaceCount: Math.max(1, lake.mesh.geometry.groups.length),
+          lakeTriangles: (lake.mesh.geometry.index?.count ?? 0) / 3,
           lakePlacementError: Math.hypot(
             centre.getX(0) - (at?.[0] ?? 0),
             centre.getZ(0) - (at?.[1] ?? 0),
@@ -464,7 +468,8 @@ function terrainScene(world: WorldName): new () => Scene<TerrainState, IPhysicsC
         const parts = new Map([...prepared.parts, ...pack.parts]);
         // The shipped dry-world stones use both CC0 scans, including the otherwise primitive slot.
         const dryStone = prepared.parts.get("boulder:1");
-        if (world === "desert" && dryStone) parts.set("boulder:0", dryStone);
+        if (world === "desert" && dryStone && !pack.parts.has("boulder:0"))
+          parts.set("boulder:0", dryStone);
         propParts = buildPropVariants(parts);
         if (released) {
           preparedDispose();

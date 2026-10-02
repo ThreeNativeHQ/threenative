@@ -386,6 +386,16 @@
       "release": true
     },
     {
+      "label": "tundra-water-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "lakeTriangles",
+        "gte": 100
+      },
+      "timeoutMs": 15000,
+      "release": true
+    },
+    {
       "kind": "wait",
       "label": "tundra-plain",
       "waitTicks": 180,
@@ -687,6 +697,17 @@
             "equals": "overview"
           }
         ]
+      },
+      {
+        "id": "GameState",
+        "path": "lakeSurfaceCount",
+        "atSteps": [
+          {
+            "label": "tundra-plain",
+            "equals": 2
+          }
+        ],
+        "allowTrivial": "Both baked kettle ponds must produce distinct material groups in the drawn lake mesh."
       }
     ],
     "renderChain": {

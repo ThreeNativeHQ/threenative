@@ -30,6 +30,7 @@
 import { WaterSurface3D, WaveField } from "@threenative/core";
 import type { Heightfield } from "@threenative/core/world";
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, Mesh } from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import {
   attribute,
   cameraPosition,
@@ -696,7 +697,35 @@ export function createLakes(
 ): IRiverWater | undefined {
   const lake = lakes[0];
   if (lake === undefined) return undefined;
-  if (lakes.length > 1) throw new Error("The Temperate lake surface draws one lake; got more.");
+  if (lakes.length > 1) {
+    const ponds = lakes.map((one) => createLakes([one], field)).filter((one) => one !== undefined);
+    if (ponds.length === 0) return undefined;
+    const geometry = mergeGeometries(
+      ponds.map((one) => one.mesh.geometry),
+      true,
+    );
+    if (!geometry) {
+      for (const pond of ponds) pond.dispose();
+      throw new Error("Lake geometries have incompatible attributes");
+    }
+    const mesh = new Mesh(
+      geometry,
+      ponds.flatMap((one) => one.mesh.material),
+    );
+    mesh.layers.set(WATER_LAYER);
+    mesh.name = "lake-surfaces";
+    mesh.renderOrder = 2;
+    return {
+      mesh,
+      advance(elapsed) {
+        for (const pond of ponds) pond.advance(elapsed);
+      },
+      dispose() {
+        geometry.dispose();
+        for (const pond of ponds) pond.dispose();
+      },
+    };
+  }
   const [cx = 0, cz = 0] = lake.at;
   const reach = waterlineRadius(field, lake.at, lake.level) * LAKE.reach;
   if (reach <= 0) return undefined;

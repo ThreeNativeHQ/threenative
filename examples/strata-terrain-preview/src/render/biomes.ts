@@ -1,5 +1,14 @@
 /** Game-owned biome choices; all five worlds share the same rendering and collision paths. */
-import { float, mix, mx_fractal_noise_float, positionWorld, smoothstep } from "three/tsl";
+import {
+  float,
+  mix,
+  mx_fractal_noise_float,
+  mx_worley_noise_float,
+  normalWorldGeometry,
+  positionWorld,
+  smoothstep,
+  vec3,
+} from "three/tsl";
 import type { Node } from "three/webgpu";
 import { GROUND_MAPS, type IGroundMaps, type LayerKey } from "../world/terrainAssets.js";
 
@@ -53,10 +62,10 @@ export const BIOMES: Record<WorldName, IBiome> = {
     world: "alpine",
     horizon: "alpine",
     grassTint: [0.56, 0.65, 0.36],
-    stoneTint: [0.79, 0.76, 0.72],
-    snowTint: [3.2, 3.25, 3.3],
+    stoneTint: [0.94, 0.97, 1.02],
+    snowTint: [1.18, 1.22, 1.28],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [44, 82, 0.9],
+    snow: [64, 110, 0.29],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -65,23 +74,21 @@ export const BIOMES: Record<WorldName, IBiome> = {
         diffuse: "river_small_rocks/river_small_rocks_diff_512.jpg",
         normal: "river_small_rocks/river_small_rocks_nor_gl_512.jpg",
       },
-      rock: {
-        diffuse: "cliff_side/cliff_side_diff_1k.jpg",
-        normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
-      },
+      rock: GROUND_MAPS.rock,
     },
-    sun: { color: 0xfff1dd, intensity: 4.2, direction: [-180, 130, 80] },
-    sky: { turbidity: 2.1, rayleigh: 2.4, mieCoefficient: 0.003, mieDirectionalG: 0.8 },
-    haze: { color: 0xa0b5bf, density: 0.00055 },
-    clouds: 0.67,
+    sun: { color: 0xfff3e5, intensity: 4.6, direction: [-180, 165, 80] },
+    sky: { turbidity: 1.3, rayleigh: 2.1, mieCoefficient: 0.0018, mieDirectionalG: 0.8 },
+    haze: { color: 0x9aafc3, density: 0.00035 },
+    fill: { sky: 0xb2c6de, ground: 0x656963, intensity: 0.65 },
+    clouds: 0.34,
   },
   desert: {
     ...temperate,
     world: "desert",
     horizon: "mesa",
     grassTint: [1, 1, 1],
-    stoneTint: [1.08, 0.62, 0.34],
-    distantStone: [0.36, 0.18, 0.085],
+    stoneTint: [1.16, 0.82, 0.55],
+    distantStone: [0.31, 0.205, 0.12],
     snow: [10000, 10001, 0.22],
     maps: {
       ...GROUND_MAPS,
@@ -94,15 +101,12 @@ export const BIOMES: Record<WorldName, IBiome> = {
         diffuse: "cliff_side/cliff_side_diff_1k.jpg",
         normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
       },
-      rock: {
-        diffuse: "cliff_side/cliff_side_diff_1k.jpg",
-        normal: "cliff_side/cliff_side_nor_gl_1k.jpg",
-      },
+      rock: GROUND_MAPS.rock,
     },
     sun: { color: 0xffe0ad, intensity: 4.8, direction: [-180, 120, -90] },
     sky: { turbidity: 3.5, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.8 },
     fill: { sky: 0xc2d3db, ground: 0x9e7147, intensity: 0.55 },
-    haze: { color: 0xd1b99b, density: 0.0007 },
+    haze: { color: 0xd1b99b, density: 0.0011 },
     exposure: 2 ** -0.48,
     clouds: 0.12,
   },
@@ -110,11 +114,11 @@ export const BIOMES: Record<WorldName, IBiome> = {
     ...temperate,
     world: "tundra",
     horizon: "plain",
-    grassTint: [0.86, 0.79, 0.62],
+    grassTint: [0.67, 0.67, 0.47],
     stoneTint: [0.7, 0.74, 0.77],
     snowTint: [1.2, 1.24, 1.28],
     distantStone: [0.18, 0.2, 0.21],
-    snow: [-6, 18, 0.3],
+    snow: [17, 30, 0.18],
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -130,9 +134,9 @@ export const BIOMES: Record<WorldName, IBiome> = {
         normal: "lichen_rock/lichen_rock_nor_gl_512.jpg",
       },
     },
-    sun: { color: 0xe9efff, intensity: 2.8, direction: [-180, 90, -120] },
+    sun: { color: 0xe9efff, intensity: 1.7, direction: [-180, 90, -120] },
     sky: { turbidity: 3.2, rayleigh: 2.2, mieCoefficient: 0.004, mieDirectionalG: 0.78 },
-    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 0.8 },
+    fill: { sky: 0xb9ccdf, ground: 0x555851, intensity: 1.15 },
     haze: { color: 0xb1c0c9, density: 0.00065 },
     exposure: 2 ** -0.28,
     clouds: 0.9,
@@ -157,17 +161,30 @@ export function biomeWeights(
       rock: stone,
       snow: float(0),
     };
+  // Wind-scoured convex/exposed faces shed snow; sheltered shelves keep it.
+  const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
   const snow = smoothstep(biome.snow[0], biome.snow[1], positionWorld.y.add(drift.mul(32))).mul(
-    float(1).sub(smoothstep(biome.world === "alpine" ? 0.55 : 0.08, biome.snow[2], steep)),
+    float(1)
+      .sub(smoothstep(biome.world === "alpine" ? 0.12 : 0.04, biome.snow[2], steep))
+      .mul(float(1).sub(exposure.mul(0.28))),
   );
+  const polygon = mx_worley_noise_float(vec3(positionWorld.x, 0, positionWorld.z).mul(0.16));
   return {
     dirt: smoothstep(0.08, 0.5, hollow).mul(biome.world === "alpine" ? 0.55 : 0.45),
     moss:
       biome.world === "tundra"
-        ? smoothstep(-0.18, 0.25, drift).mul(snow.oneMinus()).mul(0.7)
+        ? smoothstep(-0.18, 0.25, drift)
+            .mul(snow.oneMinus())
+            .mul(mix(0.38, 0.82, smoothstep(0.2, 0.65, polygon)))
         : float(0),
     rock:
-      biome.world === "alpine" ? stone.max(smoothstep(36, 90, positionWorld.y).mul(0.58)) : stone,
+      biome.world === "alpine"
+        ? stone.max(smoothstep(40, 90, positionWorld.y).mul(0.58)).max(
+            smoothstep(0.12, 0.5, hollow)
+              .mul(smoothstep(35, 80, positionWorld.y))
+              .mul(0.45),
+          )
+        : stone,
     snow: biome.world === "tundra" ? snow.mul(mix(0.42, 1, smoothstep(-0.22, 0.25, drift))) : snow,
   };
 }

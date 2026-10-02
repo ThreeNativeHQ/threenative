@@ -1,4 +1,4 @@
-const { forest } = await import(`${process.cwd()}/scripts/bake.mjs`);
+const { forest, alpine, desert, tundra } = await import(`${process.cwd()}/scripts/bake.mjs`);
 function count(s) {
   const n = s.resolution;
   let k = 0;
@@ -29,3 +29,6 @@ for (const id of ["weathering", "eroded-hill", "hills"]) {
   console.log(`-${id}:`, count(forest.evaluate()));
   forest.toggle(id, true);
 }
+
+for (const [name, terrain] of Object.entries({ alpine, desert, tundra }))
+  console.log(`${name}:`, count(terrain.evaluate()));
