@@ -327,14 +327,19 @@ export function installOutdoorOcclusion(
         build: (input) =>
           (input as Node<"vec4">).mul(
             otherBiome
-              ? mix(
+              ? vec4(
+                  vec3(
+                    mix(
+                      1,
+                      occlusion.r,
+                      biome?.world === "alpine" || biome?.world === "tundra"
+                        ? float(0.65).mul(
+                            float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())),
+                          )
+                        : 0.65,
+                    ),
+                  ),
                   1,
-                  occlusion.r,
-                  biome?.world === "alpine" || biome?.world === "tundra"
-                    ? float(0.65).mul(
-                        float(1).sub(smoothstep(30, 100, world.getViewZNode().negate())),
-                      )
-                    : 0.65,
                 )
               : vec4(vec3(mix(1, occlusion.r, 0.65)), 1),
           ),

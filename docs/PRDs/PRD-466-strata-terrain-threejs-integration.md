@@ -1447,3 +1447,32 @@ AC-5 remains open. Fallback proves function, not licensed visual parity.
 Delivery: final captures remain local in the requested directory; four implementation/
 diagnosis commits plus this final notes commit are local, with no push or merge.
 The worktree remains in use by the unfinished PRD/PR and retains licensed local data.
+
+### AC-5 Worlds round 4 — alpine/desert/tundra composition (2026-10-02)
+
+Complexity: 2 → LOW; risk override: none. Existing game appearance and three bake
+recipes only. Integration unchanged: Digit3/4/5 → shared scene → biome surfaces,
+licensed optional models or procedural fallback. Forest/coast code, recipes and
+licensed asset bytes are protected; no push/merge or purchases.
+
+1. Embed fewer 30–80 m elongated alpine crags, measure their lower vertex ring
+   against drawn terrain, share RockFace003 tint/projection with terrain, align
+   upward-face snow, darken existing licensed spruce/sapling art, dress talus feet.
+2. Replace candy stripes with thin warped low-contrast sediment beds and varnish;
+   move desert rocks to wall feet/cap rims, add wash-side scrub and dune ripples.
+   Diagnose tundra AO alpha contamination before retaining a fix; cluster cover
+   into mats/sedge/shrubs with connected bare gravel.
+3. Run example tsc, example Biome error gate, terrain Vitest, full licensed and
+   fallback scenarios on port 5297. Judge six full-resolution captures; per-view
+   CPU p50 ≤4 ms, protected forest/coast luminance p05/p50/p95 delta ≤0.5.
+
+Results pending. Final captures: `artifacts/playtest/worlds-r4-final/`.
+
+Baseline licensed and absent-licensed full scenarios PASS (42/42 each), terrain
+Vitest 69/69 PASS. No models recooked; forest/coast capture identity is now pinned
+in `artifacts/playtest/worlds-r4-baseline/` and its `fallback/` directory.
+Tundra cause confirmed by changing only the other-biome AO multiplier from scalar
+RGBA multiplication to `vec4(vec3(occlusion), 1)`: the full-resolution alpha-only
+capture loses the white/blue grass bases while all grass material/root settings
+remain identical. `worlds-r4-tundra-alpha/` scenario 4/4 PASS, zero diagnostics.
+The previously retained root-output darkening now reads black and will be removed.
