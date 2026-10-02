@@ -2118,7 +2118,7 @@ final notes commit. The checkout remains at `.worktrees/prd-466-468-assets/`
 so it cannot be removed under the cleanup rules.
 
 
-### Round 18 atmosphere lane — 2026-10-02 (in progress)
+### Round 18 atmosphere lane — 2026-10-02 (licensed verified; fallback unverified)
 
 Complexity: 3 → LOW; risk override: none. Reuse the installed `Atmosphere` and its
 `AtmosphereLuts`; appearance stays in `src/render/atmosphere.ts`. Existing
@@ -2173,3 +2173,42 @@ and ocean verification are still unverified; the fallback runner will move
 assets only after it owns the capture lock and restore them on exit. Local
 source gates are green. The shared lock, not a shader error, is the remaining
 validation constraint.
+
+2026-10-02 final licensed proof: **52/52 checks PASS**, zero console errors,
+17 measured views, maximum per-view CPU p50 **3.8 ms**. Ocean verification
+passed waves, changed sun direction and sheltered water. Capture folder:
+`examples/strata-terrain-preview/artifacts/playtest/atmosphere-final/`.
+The full original scenario and its thresholds were unchanged.
+
+| World | Whole-scene self-grade /10 | Licensed CPU p50 range (ms) | 1:1 crop |
+| --- | --- | --- | --- |
+| Forest | 4.1 | 2.3–3.8 | `overview-crop.png` |
+| Coast | 4.1 | 2.2–2.7 | `coastal-overview-crop.png` |
+| Alpine | 4.4 | 2.2–2.7 | `alpine-ridge-crop.png` |
+| Desert | 4.0 | 1.6–1.7 | `desert-overview-crop.png` |
+| Tundra | 4.0 | 2.8–3.0 | `tundra-plain-crop.png` |
+
+These are lane self-grades, not an independent judge or a Gaia acceptance.
+Crop names above are in the final folder, use the same 1000×550 pixel crop
+at 1:1 as `atmosphere-before/` (forest/alpine/desert) and
+`atmosphere-before-extra/` (coast/tundra). The coastal final scenario flips
+the sun, so that coast comparison does not isolate atmospheric changes.
+Distance separation and the desert MSAA pixel improve; the broad finite
+horizon, cloud detail and the visible white tundra sun disc still fall short
+of the references. The physical halo is broad rather than a bloom flare;
+GI bloom must see HDR sky before grading clamps it.
+
+Fallback attempt: startup returned `TN_PLAYTEST_BRIDGE_MISSING` before any
+frames or screenshots; ocean verification consequently could not read its
+input PNGs. Assets were restored successfully. A retry used the exact
+`pnpm dev` command with saved startup output, but was cancelled while queued
+to remain within the 115-minute wall. No fallback frames were recorded.
+Fallback startup/runtime/performance proof remains unverified, and its checkbox
+stays open. No renderer or vegetation changes were made to conceal this failure.
+
+Final cleanup: licensed `local-assets/temperate` is back in place, the temporary
+held-assets directory is absent, and port 5303 has no listener. The unmerged
+checkout `.worktrees/prd-466-468-atmos/` is retained (**1.2 GiB**) with requested
+local assets and captures; removal is not authorized. No push, merge or PR
+comment was made. Documentation checks passed: 2386 links and six suites,
+180/180 tests. `prd:progress` remains `prd:75%`, Gaia acceptance 0/1.
