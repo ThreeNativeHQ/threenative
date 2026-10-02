@@ -234,6 +234,18 @@ describe("threenative doctor", () => {
     expect(check(report, "dependencies").fix).toMatch(/install/i);
   });
 
+  it("accepts a patch difference inside one 0.x series", () => {
+    const report = diagnoseProject(
+      snapshot({
+        installedVersions: new Map([
+          ["@threenative/core", "0.3.4"],
+          ["@threenative/physics", "0.3.5"],
+        ]),
+      }),
+    );
+    expect(check(report, "versions").status).toBe("ok");
+  });
+
   it("fails when installed @threenative packages disagree on version, naming both", () => {
     const report = diagnoseProject(
       snapshot({

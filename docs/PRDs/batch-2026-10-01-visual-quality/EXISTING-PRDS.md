@@ -14,7 +14,7 @@ Baseline inspected: `d72778382b134ef8763f58825cb4d4fd8cc0f6e3` on `develop`. Old
 | Wave 2 | [PRD-457](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/unreal-like-features/PRD-457-virtual-shadows-scale-by-measurement.md) | Shadow scheduling, sparse-page admission, local-light boundary | Reuse. Directional virtual shadows already exist; phase 3 also owns local-light work. | Coordinate VQ-06; preserve a correct cached-level fallback. |
 | Wave 2 | [PRD-344](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/AAA-visuals/PRD-344-contact-occlusion-baked-from-the-geometry-it-ships-with.md) | Cheap baked contact occlusion | Reuse; distinguish this outcome from existing lightmaps and imported AO textures. | Use current cook/mesh data; retain mobile low-tier benefit. |
 | Wave 2 | [PRD-268](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/lighting/PRD-268-light-that-comes-from-off-screen.md) | Static diffuse probes / off-screen lighting | Source exists; reconcile implementation and remaining proof before any extension. | Precondition for VQ-09; not a replacement for specular VQ-03. |
-| Cross-cutting | [PRD-341](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/AAA-visuals/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) | Tone and luminance assertions | Reuse only missing observations/assertions. A luminance score is not an aesthetic verdict. | Useful for 339, VQ-02 and matched material tests. |
+| Cross-cutting | [PRD-341](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md) | Tone and luminance assertions | Implemented and archived by [PR #392](https://github.com/ThreeNativeHQ/threenative/pull/392), merged 2026-10-02. Reuse its captured-tone observations, assertions and CLI; a luminance score is not an aesthetic verdict. | Useful for 339, VQ-02 and matched material tests. |
 | Cross-cutting | [PRD-342](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/AAA-visuals/PRD-342-where-the-frame-goes-pass-cost-ablation.md) | Measured post-stage ablation | Reuse rather than build another profiler. Inspect current frame/pass instrumentation first. | Useful for 455 and every optional expensive effect. |
 
 ## Canonical checkout paths
@@ -28,7 +28,7 @@ docs/PRDs/unreal-like-features/PRD-456-distant-world-cell-proxies.md
 docs/PRDs/unreal-like-features/PRD-457-virtual-shadows-scale-by-measurement.md
 docs/PRDs/AAA-visuals/PRD-344-contact-occlusion-baked-from-the-geometry-it-ships-with.md
 docs/PRDs/lighting/PRD-268-light-that-comes-from-off-screen.md
-docs/PRDs/AAA-visuals/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md
+docs/PRDs/done/PRD-341-a-frames-tone-is-a-number-and-the-number-is-a-gate.md
 docs/PRDs/AAA-visuals/PRD-342-where-the-frame-goes-pass-cost-ablation.md
 ```
 

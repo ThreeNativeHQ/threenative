@@ -39,7 +39,7 @@ Start VQ-01 and VQ-02 independently. In parallel, qualify the unresolved PRD-269
 | 3 / character-quality gate | [VQ-14](PRD-VQ-14-skin-material-qualification.md) | Skin shading reuses upstream material support and preserves facial animation | License-clear animated head; upstream material |
 | 3 / character-quality gate | [VQ-15](PRD-VQ-15-hair-card-material-qualification.md) | Hair cards preserve coverage, tangent highlights and shadow behavior across quality tiers | Hair-card fixture; temporal/alpha qualification |
 
-The ten reused owners are **269, 455, 339, 460, 456, 457, 344, 268, 341 and 342**. Their full paths, residual work and companion PRDs are in [EXISTING-PRDS.md](EXISTING-PRDS.md). Read it before starting either a new or reused item.
+The ten reused owners are **269, 455, 339, 460, 456, 457, 344, 268, 341 and 342**. Their full paths, residual work and companion PRDs are in [EXISTING-PRDS.md](EXISTING-PRDS.md). Read it before starting either a new or reused item. PRD-341 is now implemented and archived by [PR #392](https://github.com/ThreeNativeHQ/threenative/pull/392); reuse its tone gate rather than reopening that work.
 
 ## Dependency outline
 
