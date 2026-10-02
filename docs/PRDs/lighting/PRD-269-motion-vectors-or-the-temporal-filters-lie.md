@@ -4,7 +4,9 @@ prd_contract: v1
 
 # PRD-269 — motion vectors for skinned and instanced geometry, or the temporal filters lie
 
-**Status:** PROPOSED — filed 2026-08-29, measured at `7e5a9fe1`. Depends on
+**Status:** PARTIAL — reopened for qualification on 2026-10-02 at `d7277838`; originally
+filed 2026-08-29, measured at `7e5a9fe1`. Implementation landed in `3630847a`
+(`squash: deliver PRD-269 motion history`), but the acceptance below is not fully qualified. Depends on
 [PRD-266](../useful-defaults/PRD-266-the-render-chain-names-the-tier-it-actually-ran.md); lands before
 [PRD-268](./PRD-268-light-that-comes-from-off-screen.md) is judged. Batch:
 [docs/PRDs/lighting](./README.md).
@@ -69,6 +71,44 @@ PRD-266 chain as a provisioning stage rather than a user-facing effect:
 commands, so per-sub-draw previous transforms are what the velocity pass needs — the aggregate
 object transform is not enough and will read as correct in every static test.
 
+## Current implementation and bounded repair
+
+The problem measurements below are historical, not a claim that the shipped engine has no
+velocity implementation. Commit `3630847a` added `VelocityTracker`, RenderChain MRT provisioning,
+the patched Three.js accessors, and CPU software-rasterization coverage. Reuse those mechanisms.
+The engine-layer defect at `d7277838` is narrower: `SceneRenderProjection.reconcile()` and
+`commit()` skip temporal bookkeeping when `renderer.projection: false`, so an authored
+`BatchedMesh` has no previous-matrix texture even with temporal rendering active. Its patched
+accessor consequently uses current sub-draw matrices as history. Projection opt-out must still
+build no mirror and perform no eligibility scan; temporal-off must retain no history work.
+
+### Phase 1 — qualify shipped motion history
+
+- [ ] Verify the existing per-object transform and MRT provisioning implementation. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
+- [ ] Verify the shipped batched accessor and projection pipeline integration. proof: `pnpm exec vitest run packages/core/__tests__/batched-velocity.spec.ts packages/core/__tests__/render-projection-pipeline.spec.ts`
+
+### Phase 2 — preserve temporal history through projection opt-out
+
+- [ ] Preserve explicit BatchedMesh sub-draw history across first and subsequent rendered frames with projection disabled. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts`
+- [ ] Release/reset history on temporal toggles, removal and disposal without a projection scan or temporal-off traversal. proof: `pnpm exec vitest run packages/core/__tests__/render-velocity.spec.ts packages/core/__tests__/renderProjection.spec.ts`
+
+### Phase 3 — close original image-space acceptance
+
+- [ ] Add a playtest fixture for an authored moving BatchedMesh with projection disabled. proof: its scenario loads through `packages/playtest` and asserts the moving versus static sub-draw result
+- [ ] Add the original animated-character ghosting playtest with a measured rejection-fraction assertion. proof: scenario drives the active temporal stage and fails if the velocity source is removed
+
+The two Phase 3 fixtures remain implementation work; existing CPU software rasterization is not
+GPU image-space or native proof. The original acceptance and mutation descriptions are preserved
+below and remain unqualified wherever no real lane has run.
+
+## Blocked on
+
+Browser/native GPU execution requires a working WebGPU device or supported native host. This
+cloud environment has no `/dev/dri`, Android device tooling or `/dev/kvm`; the batch's attempted
+Xvfb launch failed with `EPERM`. Keep the PR draft until the original image-space and native
+acceptance has real execution evidence. No GPU, frame-cost, ghosting or platform-parity result
+is inferred from the CPU tests.
+
 ## Acceptance criteria
 
 1. **A moving skinned mesh produces non-zero velocity where it moved, and zero where it did not.**
@@ -104,6 +144,12 @@ ships in `templates/*/src/render/` on top of this. Velocity for the atmosphere a
 paths, which have their own lifetimes.
 
 ## Verification
+
+2026-10-02 qualification start: existing `render-velocity.spec.ts` passes 11/11 CPU tests.
+`node --import tsx scripts/check-doc-links.ts` resolves 2,395 links; agent mirrors are in sync.
+The prose test lane passes 178/180 tests; two `evidence-budget.spec.ts` subprocess cases are
+blocked by tsx IPC `listen EPERM` in this environment. No code was changed for those failures.
+
 
 `pnpm typecheck && pnpm lint && pnpm test`; the ghosting playtest with the before/after rejection
 fraction pasted; `pnpm visuals:ab` on a template with an animated character. Native parity follows
