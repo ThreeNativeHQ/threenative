@@ -1,5 +1,5 @@
 /** Game-owned Fab art. Optional, local-only; missing species keep their procedural fallback. */
-import type { IAssetLoader } from "@threenative/core";
+import { type IAssetLoader, baseGeometryOf } from "@threenative/core";
 import {
   Box3,
   BufferAttribute,
@@ -27,6 +27,7 @@ import {
   mix,
   mx_noise_float,
   normalMap,
+  normalViewGeometry,
   normalWorldGeometry,
   positionGeometry,
   positionLocal,
@@ -106,6 +107,8 @@ function surface(
   const stone = STONE.has(asset);
   const cutout = !stone && source.alphaTest > 0;
   const canopy = asset === "spruce" || asset === "sapling";
+  const kite = source.name.startsWith("ScotsPine");
+  const fieldGrass = asset === "grass" && source.name === "open-world-demo";
   const otherBiome = world !== "forest" && world !== "coastal";
   const material = new MeshPhysicalNodeMaterial({
     map: source.map,
@@ -123,7 +126,9 @@ function surface(
       cutout && canopy
         ? otherBiome
           ? ([0.3, 0.42, 0.32] as const)
-          : ([0.6, 0.78, 0.34] as const)
+          : kite
+            ? ([0.75, 0.98, 1.05] as const)
+            : ([0.38, 0.78, 0.82] as const)
         : cutout && asset !== "poppy"
           ? otherBiome
             ? ([0.55, 0.82, 0.42] as const)
@@ -135,7 +140,16 @@ function surface(
               : ([1, 1, 1] as const);
 
     material.colorNode = sampled.rgb.mul(vec3(...tint));
-    if (!otherBiome && canopy && !cutout)
+    if (!otherBiome && canopy && cutout) {
+      const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
+      const wood = smoothstep(0.04, 0.16, sampled.r.sub(sampled.g));
+      material.colorNode = mix(
+        grain.mul(vec3(0.28, 0.72, 0.54)),
+        sampled.rgb.mul(vec3(0.24, 0.22, 0.14)),
+        wood,
+      );
+    }
+    if (!otherBiome && canopy && !cutout && !kite)
       material.colorNode = sampled.rgb.mul(vec3(0.42, 0.27, 0.15));
     if (!otherBiome && (asset === "grass" || asset === "scrub")) {
       const tip = smoothstep(0.008, asset === "grass" ? 0.34 : 0.065, positionGeometry.y);
@@ -145,6 +159,10 @@ function surface(
       const straw = mix(vec3(0.4, 0.29, 0.12), vec3(1.18, 0.94, 0.48), tip);
       const grain = dot(sampled.rgb, vec3(0.2126, 0.7152, 0.0722));
       material.colorNode = mix(sampled.rgb.mul(green), straw.mul(grain), dry.max(dune));
+      if (fieldGrass)
+        material.colorNode = mix(vec3(0.025, 0.052, 0.008), vec3(0.2, 0.31, 0.065), tip).mul(
+          grain.mul(24).clamp(0.4, 1.4),
+        );
       material.aoNode = mix(0.35, 0.95, tip);
     }
     if (otherBiome && stone)
@@ -230,7 +248,12 @@ function surface(
         material.colorNode = material.colorNode.mul(
           mix(otherBiome ? 0.42 : 0.48, 1, otherBiome ? inner : inner.pow(2)),
         );
-        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.26, 0.72, inner.pow(2));
+        if (!otherBiome)
+          material.colorNode = material.colorNode.mul(
+            mix(0.3, 1, smoothstep(0.35, 0.9, sampled.a)),
+          );
+        material.aoNode = otherBiome ? mix(0.12, 0.58, inner) : mix(0.06, 0.85, inner.pow(2));
+        if (!otherBiome) material.normalNode = normalViewGeometry;
       } else if (asset === "poppy") {
         // Keep the photographed red petals; lift only the nearly black stems/seed pods.
         const dark = smoothstep(0.045, 0.008, sampled.r.max(sampled.g).max(sampled.b));
@@ -251,11 +274,13 @@ function surface(
       );
       // Low tundra mats must reject blurred photographic background in alpha mips.
       material.alphaTestNode =
-        world === "tundra" && !canopy ? float(0.5) : float(0.42).div(float(1).add(mip.mul(0.25)));
+        world === "tundra" && !canopy
+          ? float(0.5)
+          : float(source.alphaTest).div(float(1).add(mip.mul(0.25)));
       material.opacityNode = sampled.a;
       if (canopy) {
         lightNeedles(material, material.aoNode as Node<"float">);
-        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.18);
+        if (!otherBiome) material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.05);
         if (world === "alpine" && material.emissiveNode)
           material.emissiveNode = (material.emissiveNode as Node<"vec3">).mul(0.4);
       } else if (asset !== "poppy") material.emissiveNode = material.colorNode.mul(0.025);
@@ -334,6 +359,24 @@ export async function loadPack(
     selected.map(async (one) => {
       if (!assets) return undefined;
       try {
+        if (world === "forest" && one.asset === "spruce" && one.variant === 0 && !one.level) {
+          const pine = await assets
+            .model<{ scene?: Group }>("temperate/kite-spruce/0.glb")
+            .catch(() => undefined);
+          if (pine) return pine;
+        }
+        if (world === "forest" && one.asset === "sapling") {
+          const spruce = await assets
+            .model<{ scene?: Group }>("temperate/needle-spruce/0.glb")
+            .catch(() => undefined);
+          if (spruce) return spruce;
+        }
+        if (world === "forest" && one.asset === "grass") {
+          const grass = await assets
+            .model<{ scene?: Group }>("temperate/fieldgrass/0.glb")
+            .catch(() => undefined);
+          if (grass) return grass;
+        }
         return await assets.model<{ scene?: Group }>(`temperate/${one.path}.glb`);
       } catch {
         return undefined;
@@ -363,7 +406,7 @@ export async function loadPack(
       }
       if (!source.map) return;
       // One whole-model scale/base for all sections: scaling each part separately detached crowns.
-      const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+      const geometry = baseGeometryOf(mesh).clone().applyMatrix4(mesh.matrixWorld);
       const centre = box.getCenter(new Vector3());
       const centredStone = stone && (world === "forest" || world === "coastal");
       geometry.translate(centredStone ? -centre.x : 0, -box.min.y, centredStone ? -centre.z : 0);
@@ -400,6 +443,17 @@ export async function loadPack(
           ),
         );
         geometry.setAttribute("inner", new BufferAttribute(inner, 1));
+        if (world === "forest" || world === "coastal") {
+          const crownNormals = new Float32Array(positions.count * 3);
+          const direction = new Vector3();
+          for (let i = 0; i < positions.count; i++) {
+            direction
+              .set(positions.getX(i), Math.max(0.1, radii[band(i)] ?? 0) * 0.45, positions.getZ(i))
+              .normalize();
+            direction.toArray(crownNormals, i * 3);
+          }
+          geometry.setAttribute("normal", new BufferAttribute(crownNormals, 3));
+        }
       }
       if (stone) {
         const blend = Float32Array.from({ length: positions.count }, (_, i) =>

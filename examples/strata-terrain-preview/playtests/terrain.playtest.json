@@ -764,6 +764,90 @@
         "path": "playerFrameP50",
         "gte": 0.01,
         "lte": 4
+      },
+      {
+        "id": "GameState",
+        "path": "windowFrameMs",
+        "gte": 0.01,
+        "lte": 4,
+        "atSteps": [
+          {
+            "label": "grounded",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "meadow-close",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "overview",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "river",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "walk",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "ocean-early",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "ocean",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "horizon-sea",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "sun-change",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "alpine-ridge",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "alpine-overview",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "desert-mesa",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "desert-overview",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "tundra-plain",
+            "gte": 0.01,
+            "lte": 4
+          },
+          {
+            "label": "tundra-overview",
+            "gte": 0.01,
+            "lte": 4
+          }
+        ],
+        "allowTrivial": "A closed CPU budget window at every captured view must be observed and remain within 4 ms; missing or zero observations fail."
       }
     ],
     "renderChain": {

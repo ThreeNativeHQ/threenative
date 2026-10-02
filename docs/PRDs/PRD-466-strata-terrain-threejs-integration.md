@@ -1760,3 +1760,44 @@ changed in this round: the pre-round commit and final HEAD both contain
 **75,711,439 tracked bytes across 897 files** in this tree. The cap
 was not raised and unrelated evidence was not deleted. Requested example
 tsc/root Biome/terrain/full scenarios/ocean/CPU gates all pass.
+
+
+### AC-5 round 16 — canopy and meadow (2026-10-02; IN PROGRESS)
+
+Complexity: 1 → LOW; risk override: none. Game appearance layer only.
+Integration unchanged: game → loadPack/buildPropVariants → existing InstancedBatch
+and GroundSnap. Reuse the installed asset cook; no new rendering system.
+Form-lane files and final sun/sky/haze/grade values are excluded. Licensed bytes
+remain gitignored and procedural art stays available. Hard stop: 20:58 UTC.
+
+1. Compare current near spruce/grass with full-crown Kite pine and repaired FieldGrass
+   at native crop resolution. Choose the visible result, then measure CPU cost.
+2. Correct canopy albedo, normals, interior occlusion and needle transmission;
+   close meadow gaps using the existing cover pipeline without changing other biomes.
+3. Run all requested gates, record grades/CPU/crops here, commit by path; no push/merge.
+
+- [ ] Near canopy improves against Gaia; proof: before/candidate/after 1:1 crops under `artifacts/playtest/canopy-final/`.
+- [ ] Meadow has connected blade/flower cover; proof: full-resolution meadow-close and forest-start captures.
+- [ ] Licensed shared scenario and ocean pass with every measured view CPU p50 ≤4 ms; proof: `canopy-final/licensed/capture.json`, `verify-ocean.mjs`.
+- [ ] Procedural fallback shared scenario and ocean pass; proof: `canopy-final/fallback/capture.json`, `verify-ocean.mjs`.
+- [x] Example typecheck, root Biome and terrain vitest pass; proof: example `pnpm exec tsc --noEmit` exit 0, root Biome 72 files PASS, terrain vitest 12 files / 69 tests PASS (checkpoint; rerun if changed).
+
+Checkpoint at 19:35 UTC: baseline scenario **44/44 PASS**, zero diagnostics/console
+errors. Full-crown Kite trial **44/44 PASS**, forest player/meadow/overview/river
+CPU p50 **3.6/2.5/3.0/3.4 ms**; other checked views **1.3–2.2 ms**.
+At native-resolution crops, all-pine broad crowns and bare lower trunks are a poorer
+Gaia silhouette; enlarged Spruce_08 is visibly juvenile and sparse. Current selection
+uses pine as one adult variant and Spruce_08 at sapling size, retaining mature spruce
+elsewhere. FieldGrass closes the previous basal gaps; forest eye spacing is 0.5 m
+instead of 0.34 m to avoid overlapping whole meadow patches. Final visual/performance
+proof remains pending. The scenario now bounds the closed CPU window at every
+captured view, including coastal views.
+
+Root causes found: olive canopy tint, flat imported card normals, weak interior AO,
+excess green emissive fill, and grass consisting of seed stalks rather than blades.
+FieldGrass import had bound a packed mask as albedo and a water normal; the cook
+uses the actual color/alpha image and drops the unrelated normal. Old cook budgets
+counted stale incremental hashes as live payload; the unchanged 130 MB bound now
+counts manifest outputs and shared images once. Trial atlas budgets were fixed by
+removing unused crown normal/specular maps and keeping juvenile atlases at 1K,
+without dropping crown cards.
