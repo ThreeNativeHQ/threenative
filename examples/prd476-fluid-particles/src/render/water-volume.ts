@@ -50,9 +50,9 @@ export function createWaterVolume(
   options: IWaterVolumeOptions = {},
 ): Mesh {
   const steps = options.steps ?? 72;
-  const deep = vec3(...(options.deep ?? [0.02, 0.18, 0.3]));
-  const shallow = vec3(...(options.shallow ?? [0.35, 0.8, 0.9]));
-  const absorption = vec3(...(options.absorption ?? [1.1, 0.35, 0.18]));
+  const deep = vec3(...(options.deep ?? [0.0, 0.2, 0.45]));
+  const shallow = vec3(...(options.shallow ?? [0.15, 0.72, 0.95]));
+  const absorption = vec3(...(options.absorption ?? [0.7, 0.22, 0.1]));
   const { min: lo, max: hi } = water.bounds;
   const bmin = vec3(...lo);
   const bmax = vec3(...hi);
@@ -72,12 +72,12 @@ export function createWaterVolume(
     );
   };
   const sky = (d: N): N =>
-    mix(vec3(0.55, 0.7, 0.85), vec3(0.08, 0.16, 0.34), clamp(d.y.mul(1.4), 0, 1));
+    mix(vec3(0.7, 0.85, 1.0), vec3(0.12, 0.3, 0.6), clamp(d.y.mul(1.4), 0, 1));
   const floorColor = (p: N): N => {
     const cell = floor(p.x.mul(2))
       .add(floor(p.z.mul(2)))
       .mod(2);
-    return mix(vec3(0.16, 0.19, 0.24), vec3(0.3, 0.34, 0.4), cell);
+    return mix(vec3(0.12, 0.2, 0.3), vec3(0.28, 0.42, 0.55), cell);
   };
 
   const march = Fn(() => {

@@ -13,11 +13,11 @@ import { vec3 } from "three/tsl";
 import { Sprite, SpriteNodeMaterial } from "three/webgpu";
 import { createWaterVolume } from "./water-volume.js";
 
-/** Debug look only: one lit dot per live particle, a tank outline, a dark backdrop. */
+/** The raymarched water by default; `?points` swaps in the debug look, one flat dot per particle. */
 export function createPointsView(water: FluidParticles3D, scene: Scene, camera: Camera): Group {
-  scene.background = new Color(0x05070e);
-  camera.position.set(0, 2.4, 8.2);
-  camera.lookAt(0, 1.9, 0);
+  scene.background = new Color(0x0e2238);
+  camera.position.set(0, 3.0, 7.6);
+  camera.lookAt(0, 1.3, 0);
 
   const view = new Group();
   const material = new SpriteNodeMaterial({ transparent: false, depthWrite: true });
@@ -29,15 +29,15 @@ export function createPointsView(water: FluidParticles3D, scene: Scene, camera: 
   const points = new Sprite(material);
   points.count = water.capacity;
   points.frustumCulled = false;
-  const volume = new URLSearchParams(globalThis.location?.search ?? "").has("volume");
-  if (volume) view.add(createWaterVolume(water));
-  else view.add(points);
+  const debug = new URLSearchParams(globalThis.location?.search ?? "").has("points");
+  if (debug) view.add(points);
+  else view.add(createWaterVolume(water));
 
   const { min, max } = water.bounds;
   const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as const;
   const tank = new LineSegments(
     new EdgesGeometry(new BoxGeometry(...size)),
-    new LineBasicMaterial({ color: 0x3a5a7a }),
+    new LineBasicMaterial({ color: 0x6f95b8 }),
   );
   tank.position.set(min[0] + size[0] / 2, min[1] + size[1] / 2, min[2] + size[2] / 2);
   view.add(tank);
