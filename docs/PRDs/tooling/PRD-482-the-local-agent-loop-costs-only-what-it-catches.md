@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-482 — The local agent loop costs only what it catches
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 and 2 verified; AC-1 audits the 7 days after this lands
 **Complexity:** 2 (LOW)
 **Owner:** CI tooling
 **Depends on:** [PRD-480](../CI/PRD-480-linux-ci-runs-on-the-owner-machine.md) for the push rule's wording
@@ -72,7 +72,7 @@ Audit on 2026-10-02 of what an agent pays between starting a task and pushing it
 
 #### Phase 2: Instructions and injections carry only what agents use
 
-**Status:** IN PROGRESS — push rule and hook landed; playtest AGENTS.md trim pending
+**Status:** COMPLETE
 **Files:** EDIT `AGENTS.md` (push rule; `gate:*` lines move to `docs/architecture/` or the scripts' `--help`),
 `.claude/settings.json` (ponytail hook on SessionStart and compact only), `packages/playtest/AGENTS.md`
 (reference sections move to a linked doc), the `CLAUDE.md` mirrors.
@@ -85,5 +85,14 @@ Audit on 2026-10-02 of what an agent pays between starting a task and pushing it
   lists neither `UserPromptSubmit` nor `SubagentStart` for it.
   Evidence: 2026-10-02, `jq '.hooks | keys'` prints `["SessionStart"]`; SessionStart has no matcher, so it
   also fires on compaction.
-- [ ] `packages/playtest/AGENTS.md` is under 2,000 words. proof: `wc -w packages/playtest/AGENTS.md`, and
+- [x] `packages/playtest/AGENTS.md` is under 2,000 words. proof: `wc -w packages/playtest/AGENTS.md`, and
   `pnpm check:docs` passes with every moved section linked.
+  Evidence: 2026-10-02, 5,256 → 1,113 words. Twelve reference sections (flags and exit codes, the
+  private-Xvfb frame rate, `assert.tone[]`, the four targets, `perf`, `audio`, startup
+  observations, `deviceMetrics`, the room and the feet, `assert.causedBy`, `setup`/`aimAt`, tick
+  semantics and the startup wait) moved verbatim into `packages/playtest/docs/reference.md` and
+  `docs/determinism.md`, each linked from the section it left; a coverage diff over every line of
+  the 5,256-word file finds no paragraph missing. `pnpm check:docs` 2,504 links / 1,223 files
+  clean, `pnpm sync:agents --check` 22 mirrors in sync, sync-agent-docs + primary-docs +
+  instruction-budget + check-doc-links 36 passed, `packages/playtest/__tests__/doc-drift.spec.ts`
+  2 passed, `pnpm lint` exit 0.
